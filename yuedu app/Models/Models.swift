@@ -219,6 +219,11 @@ enum PageRenderState: Equatable {
     case failed
 }
 
+enum ReadingGateState: Equatable {
+    case loading   // 顯示 spinner，翻頁手勢不響應
+    case open      // 允許閱讀
+}
+
 struct BookResource: Codable, Equatable {
     let href: String
     let mediaType: String
