@@ -53,6 +53,11 @@ final class PageSnapshotProvider: ObservableObject {
         }
     }
 
+    /// Gate 預渲染推入：直接寫入 NSCache，繞過 priority queue 的距離限制。
+    func store(image: UIImage, forGlobalPage page: Int) {
+        cache.setObject(image, forKey: NSNumber(value: page))
+    }
+
     private func syncGenerationIfNeeded() {
         guard let renderer else { return }
         if lastRenderSessionID == nil || lastLayoutGeneration == nil {
