@@ -1,4 +1,5 @@
 import Combine
+import SwiftUI
 import UIKit
 import WebKit
 
@@ -6,6 +7,7 @@ import WebKit
 final class EPUBPageRenderer: ObservableObject {
     private let engine = LiveWebReader()
     @Published var readingGate: ReadingGateState = .loading
+    private lazy var snapshotWebView = EPUBSnapshotWebView(schemeHandler: engine.schemeHandler)
     private var subscriptions: Set<AnyCancellable> = []
     private var snapshotCallbacks: [Int: [(UIImage?) -> Void]] = [:]
     private var snapshotWatchers: [Int: AnyCancellable] = [:]
@@ -81,6 +83,13 @@ final class EPUBPageRenderer: ObservableObject {
                 settings: settings
             )
         }
+        readingGate = .loading
+        Task { [weak self] in
+            guard let self else { return }
+            // 等 engine 開始載入（100ms 讓 publicationSession 建立）
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            self.triggerReadingGate(forChapter: 0)
+        }
     }
 
     func loadEPUBScroll(source: EPUBReaderSource, settings: ReaderRenderSettings) {
@@ -92,6 +101,13 @@ final class EPUBPageRenderer: ObservableObject {
                 bookIdentifier: session.sourceURL.standardizedFileURL.path,
                 settings: settings
             )
+        }
+        readingGate = .loading
+        Task { [weak self] in
+            guard let self else { return }
+            // 等 engine 開始載入（100ms 讓 publicationSession 建立）
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            self.triggerReadingGate(forChapter: 0)
         }
     }
 
@@ -109,6 +125,11 @@ final class EPUBPageRenderer: ObservableObject {
 
     func jumpToChapter(_ chapterIdx: Int, preferredLocalPage: Int? = nil) {
         engine.jumpToChapter(chapterIdx, preferredLocalPage: preferredLocalPage)
+        // Gate 判斷：目標章節第 0 頁截圖不存在才觸發
+        let firstPage = engine.firstGlobalPage(forChapter: chapterIdx) ?? -1
+        if firstPage < 0 || engine.snapshot(forPage: firstPage) == nil {
+            triggerReadingGate(forChapter: chapterIdx)
+        }
     }
 
     func chapterIndex(forGlobalPage page: Int) -> Int {
@@ -193,6 +214,32 @@ final class EPUBPageRenderer: ObservableObject {
 
     func prepareDisplaySnapshot(forPage page: Int, priority: Int = 0) {
         engine.prepareDisplaySnapshot(forPage: page, priority: priority)
+    }
+
+    private func triggerReadingGate(forChapter chapterIdx: Int) {
+        readingGate = .loading
+        snapshotWebView.cancel()
+        Task { [weak self] in
+            guard let self else { return }
+            guard let (html, baseURL) = await self.chapterHTMLForSnapshot(at: chapterIdx) else {
+                self.readingGate = .open
+                return
+            }
+            let globalOffset = self.engine.firstGlobalPage(forChapter: chapterIdx) ?? 0
+            self.snapshotWebView.loadAndCapture(
+                html: html,
+                baseURL: baseURL,
+                globalPageOffset: globalOffset,
+                onPageReady: { [weak self] globalPage, image in
+                    self?.storeSnapshot(image: image, forGlobalPage: globalPage)
+                },
+                onGateReady: { [weak self] in
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        self?.readingGate = .open
+                    }
+                }
+            )
+        }
     }
 
     func storeSnapshot(image: UIImage, forGlobalPage page: Int) {
