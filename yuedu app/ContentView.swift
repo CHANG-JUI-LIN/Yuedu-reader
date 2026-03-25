@@ -21,4 +21,4 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environmentObject(BookStore())
-}
+}   

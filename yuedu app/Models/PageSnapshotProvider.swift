@@ -33,8 +33,11 @@ final class PageSnapshotProvider: ObservableObject {
         renderer.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                guard let self else { return }
-                self.version &+= 1
+                guard self != nil else { return }
+                // Defer to avoid publishing during SwiftUI view update cycle
+                DispatchQueue.main.async { [weak self] in
+                    self?.version &+= 1
+                }
             }
             .store(in: &subscriptions)
     }
@@ -44,7 +47,10 @@ final class PageSnapshotProvider: ObservableObject {
         pendingCallbacks.removeAll()
         queuedPriorities.removeAll()
         activePage = nil
-        version &+= 1
+        // Defer to avoid publishing during SwiftUI view update cycle
+        DispatchQueue.main.async { [weak self] in
+            self?.version &+= 1
+        }
     }
 
     private func syncGenerationIfNeeded() {

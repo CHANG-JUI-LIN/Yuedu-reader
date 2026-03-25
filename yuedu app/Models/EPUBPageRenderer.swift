@@ -51,6 +51,8 @@ final class EPUBPageRenderer: ObservableObject {
     var currentChapterIdx: Int { engine.currentChapterIdx }
     var snapshotProgress: Double { engine.snapshotProgress }
     var isCommitting: Bool { engine.isCommitting }
+    var globalPageMap: [(chapter: Int, page: Int)] { engine.globalPageMap }
+    var pipelineKind: BookPipelineKind { engine.pipelineKind }
 
     func load(package: RenderPackage, settings: ReaderRenderSettings) {
         engine.load(package: package, settings: settings)

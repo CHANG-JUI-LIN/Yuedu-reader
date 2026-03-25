@@ -13,7 +13,9 @@ struct SnapshotReaderView: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> ReaderPageViewController {
-        snapshotProvider.attach(renderer: renderer)
+        let provider = snapshotProvider
+        let rend = renderer
+        DispatchQueue.main.async { provider.attach(renderer: rend) }
         let controller = ReaderPageViewController(
             renderer: renderer,
             snapshotProvider: snapshotProvider,
@@ -24,14 +26,20 @@ struct SnapshotReaderView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: ReaderPageViewController, context: Context) {
-        snapshotProvider.attach(renderer: renderer)
+        let provider = snapshotProvider
+        let rend = renderer
+        DispatchQueue.main.async { provider.attach(renderer: rend) }
         controller.onTapCenter = onTapCenter
         let previousPage = context.coordinator.lastPage
-        let stepDelta = abs(currentPage - previousPage)
-        let shouldAnimate = context.transaction.animation != nil && !context.transaction.disablesAnimations && stepDelta == 1
-        controller.updateCurrentPage(currentPage, animated: shouldAnimate)
+        // 只在 SwiftUI 侧 currentPage 真正变化时才告知 UIKit 跳页，
+        // 防止 UIKit 手势翻页后 @State 尚未更新就被强制跳回旧页（竞态导致的闪回）
+        if currentPage != previousPage {
+            let stepDelta = abs(currentPage - previousPage)
+            let shouldAnimate = context.transaction.animation != nil && !context.transaction.disablesAnimations && stepDelta == 1
+            controller.updateCurrentPage(currentPage, animated: shouldAnimate)
+            context.coordinator.lastPage = currentPage
+        }
         controller.refreshVisiblePage()
-        context.coordinator.lastPage = currentPage
     }
 
     final class Coordinator {

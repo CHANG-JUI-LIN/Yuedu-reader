@@ -51,16 +51,9 @@ final class EPUBPageView: UIViewController {
     }
     
     private func loadSnapshot() {
+        // Snapshot loading is handled by EPUBPageViewController and PageSnapshotProvider
+        // This will be managed by the container when needed
         loadingIndicator.startAnimating()
-        fetchTask?.cancel()
-        fetchTask = Task {
-            if let image = await EPUBSnapshotManager.shared.requestSnapshot(chapter: chapterIndex, page: localPage, priority: .immediate) {
-                if !Task.isCancelled {
-                    imageView.image = image
-                    loadingIndicator.stopAnimating()
-                }
-            }
-        }
     }
     
     override func viewDidAppear(_ animated: Bool) {
