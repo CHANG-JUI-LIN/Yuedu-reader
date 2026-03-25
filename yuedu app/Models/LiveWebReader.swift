@@ -133,7 +133,7 @@ final class LiveWebReader: NSObject, ObservableObject {
 
     private(set) var webView: WKWebView!
     private var messageHandler: LiveReaderMessageHandler?
-    private let schemeHandler = ReaderSchemeHandler()
+    let schemeHandler = ReaderSchemeHandler()
 
     // MARK: - 書籍資料
 
@@ -2048,6 +2048,15 @@ final class LiveWebReader: NSObject, ObservableObject {
         snapshotImages[page]
     }
 
+    /// 供 EPUBSnapshotWebView 直接推入截圖結果，繞過 scroll-capture 流程。
+    func storeSnapshot(image: UIImage, forGlobalPage page: Int) {
+        snapshotImages[page] = image
+        snapshotStates[page] = .full
+        snapshotTasks[page]?.cancel()
+        snapshotTasks.removeValue(forKey: page)
+        snapshotVersion += 1
+    }
+
     func pageSnapshotState(forPage page: Int) -> PageRenderState {
         snapshotStates[page] ?? (isReady ? .missing : .loading)
     }
@@ -2352,6 +2361,23 @@ final class LiveWebReader: NSObject, ObservableObject {
 
     private func buildChapterHTML(chapterHTML: String, chapterBaseURL: URL, bridgeName: String, inlineBookCSS: String = "", useReadiumCSS: Bool = false) -> String {
         return EPUBHTMLBuilder.buildChapterHTML(chapterHTML: chapterHTML, chapterBaseURL: chapterBaseURL, bridgeName: bridgeName, inlineBookCSS: inlineBookCSS, config: htmlConfig)
+    }
+
+    /// 供 EPUBSnapshotWebView 用：以 snapshotBridge 名稱構建章節 HTML。
+    func chapterHTMLForSnapshot(at index: Int) async -> (html: String, baseURL: URL)? {
+        guard let session = publicationSession else { return nil }
+        do {
+            let rawHTML = try await session.chapterHTML(at: index)
+            let baseURL = session.chapterBaseURL(at: index)
+            let wrapped = buildChapterHTML(
+                chapterHTML: rawHTML,
+                chapterBaseURL: baseURL,
+                bridgeName: "snapshotBridge"
+            )
+            return (wrapped, baseURL)
+        } catch {
+            return nil
+        }
     }
 
     internal func testing_getJSContractString() -> String {
