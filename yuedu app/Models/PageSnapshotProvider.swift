@@ -33,11 +33,8 @@ final class PageSnapshotProvider: ObservableObject {
         renderer.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                guard self != nil else { return }
-                // Defer to avoid publishing during SwiftUI view update cycle
-                DispatchQueue.main.async { [weak self] in
-                    self?.version &+= 1
-                }
+                guard let self else { return }
+                self.version &+= 1
             }
             .store(in: &subscriptions)
     }
@@ -47,19 +44,7 @@ final class PageSnapshotProvider: ObservableObject {
         pendingCallbacks.removeAll()
         queuedPriorities.removeAll()
         activePage = nil
-        // Defer to avoid publishing during SwiftUI view update cycle
-        DispatchQueue.main.async { [weak self] in
-            self?.version &+= 1
-        }
-    }
-
-    /// Gate 預渲染推入：直接寫入 NSCache，繞過 priority queue 的距離限制。
-    func store(image: UIImage, forGlobalPage page: Int) {
-        cache.setObject(image, forKey: NSNumber(value: page))
-        // 延遲 bump 避免在 SwiftUI view update cycle 內 publish
-        DispatchQueue.main.async { [weak self] in
-            self?.version &+= 1
-        }
+        version &+= 1
     }
 
     private func syncGenerationIfNeeded() {
@@ -147,23 +132,11 @@ final class PageSnapshotProvider: ObservableObject {
         guard let renderer else { return }
         guard !queuedPriorities.isEmpty else { return }
 
-        // Drop stale requests that are too far from the current page (> preload window).
-        let current = renderer.currentEpubPage
-        let maxDistance = 4
-        let stalePages = queuedPriorities.keys.filter { abs($0 - current) > maxDistance }
-        for stalePage in stalePages {
-            queuedPriorities.removeValue(forKey: stalePage)
-            let callbacks = pendingCallbacks.removeValue(forKey: stalePage) ?? []
-            for callback in callbacks { callback(nil) }
-        }
-
-        guard !queuedPriorities.isEmpty else { return }
-
         let sortedPages = queuedPriorities.keys.sorted { lhs, rhs in
             let lp = queuedPriorities[lhs] ?? 0
             let rp = queuedPriorities[rhs] ?? 0
             if lp == rp {
-                return abs(lhs - current) < abs(rhs - current)
+                return abs(lhs - renderer.currentEpubPage) < abs(rhs - renderer.currentEpubPage)
             }
             return lp < rp
         }

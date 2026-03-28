@@ -148,23 +148,18 @@ final class ReaderPageViewController: UIPageViewController {
         let controller = makeController(for: clamped)
         let shouldAnimate = pageTurnStyle != .none && pageTurnStyle != .cover && animated
         setViewControllers([controller], direction: direction, animated: shouldAnimate) { _ in
-            DispatchQueue.main.async {
-                self.renderer.endGestureInteraction(targetPage: clamped)
-                self.renderer.goToPage(clamped)
-                self.renderer.settleInteractionPage(clamped, style: self.rendererStyle)
-            }
+            self.renderer.endGestureInteraction(targetPage: clamped)
+            self.renderer.goToPage(clamped)
+            self.renderer.settleInteractionPage(clamped, style: self.rendererStyle)
         }
-        DispatchQueue.main.async {
-            self.renderer.willDisplayPage(clamped, style: self.rendererStyle)
-        }
-        snapshotProvider.warmWindow(around: clamped, radius: self.preloadRadius)
+        renderer.willDisplayPage(clamped, style: rendererStyle)
+        snapshotProvider.warmWindow(around: clamped, radius: preloadRadius)
     }
 
     func refreshVisiblePage() {
-        let bg = renderer.themeBackgroundColor()
-        view.backgroundColor = bg
+        view.backgroundColor = renderer.themeBackgroundColor()
         for case let controller as SnapshotPageContentController in viewControllers ?? [] {
-            controller.view.backgroundColor = bg
+            controller.refresh(backgroundColor: renderer.themeBackgroundColor())
         }
     }
 
@@ -180,19 +175,17 @@ final class ReaderPageViewController: UIPageViewController {
     private var preloadRadius: Int {
         switch pageTurnStyle {
         case .curl:
-            return 3
+            return 1
         case .slide, .cover:
-            return 4
+            return 2
         case .none:
             return 0
         }
     }
 
-    private func makeController(for pageIndex: Int) -> SnapshotPageContentController {
-        let maxIndex = max(0, renderer.totalPages - 1)
-        let safeIndex = min(pageIndex, maxIndex)
-        return SnapshotPageContentController(
-            pageIndex: safeIndex,
+    private func makeController(for page: Int) -> SnapshotPageContentController {
+        SnapshotPageContentController(
+            pageIndex: page,
             provider: snapshotProvider,
             backgroundColor: renderer.themeBackgroundColor()
         )
