@@ -1267,7 +1267,7 @@ final class LiveWebReader: NSObject, ObservableObject {
         }
     }
 
-    fileprivate var chapterLoadContinuation: CheckedContinuation<Bool, Never>?
+    private var chapterLoadContinuation: CheckedContinuation<Bool, Never>?
 
     fileprivate func onPaginationReady(pageCount: Int, pageOffsets: [CGFloat]? = nil) {
         // 更新當前章節頁數（以可見 WebView 為準）
@@ -2203,7 +2203,7 @@ final class LiveWebReader: NSObject, ObservableObject {
         max(currentViewportSize.height, webView.bounds.height, 1)
     }
 
-    fileprivate func requestPaginationMetrics(
+    private func requestPaginationMetrics(
         in targetWebView: WKWebView
     ) async -> (pageCount: Int, pageOffsets: [CGFloat]?)? {
         let script = """
@@ -2338,7 +2338,7 @@ final class LiveWebReader: NSObject, ObservableObject {
             readiumBeforeCSS = bundle.beforeStyleTag
             readiumDefaultCSS = bundle.defaultStyleTag
             readiumAfterCSS = bundle.afterStyleTag
-            htmlAttrs = bundle.htmlAttributes.attributeString()
+            htmlAttrs = bundle.htmlAttributes
         } else {
             readiumBeforeCSS = ""
             readiumDefaultCSS = ""
@@ -2687,25 +2687,15 @@ final class LiveWebReader: NSObject, ObservableObject {
             });
         }, true);
 
-        function gotoPage(index) {
-            var targetX = _pageOffsetAt(index);
-            window.scrollTo(targetX, 0);
-        }
-
-        // 初始化：等 fonts + images 載入後計算分頁並發送 renderReady 合約
+        // 初始化：等 fonts + images 載入後計算分頁
         (function() {
-            function calculateAndNotify() {
+            var done = false;
+            var timer = setTimeout(function() {
+                if (!done) { done = true; calculate(); }
+            }, 3000);
+
+            function calculate() {
                 var metrics = getPaginationMetrics();
-                
-                // 新的 Minimal Contract: renderReady 
-                window.webkit.messageHandlers.\(bridgeName).postMessage({
-                    type: 'renderReady',
-                    payload: {
-                        pageIndex: 0
-                    }
-                });
-                
-                // 相容舊架構的 paginationReady
                 window.webkit.messageHandlers.\(bridgeName).postMessage({
                     type: 'paginationReady',
                     payload: {
@@ -2715,44 +2705,60 @@ final class LiveWebReader: NSObject, ObservableObject {
                 });
             }
 
+            function finishReady() {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                setTimeout(calculate, 80);
+            }
+
             function waitForWindowLoad() {
                 return new Promise(function(resolve) {
-                    if (document.readyState === 'complete') return resolve();
-                    window.addEventListener('load', resolve, { once: true });
+                    if (document.readyState === 'complete') {
+                        resolve();
+                        return;
+                    }
+                    window.addEventListener('load', function() { setTimeout(resolve, 40); }, { once: true });
                 });
             }
 
             function waitForFonts() {
-                if (document.fonts && document.fonts.ready) return document.fonts.ready.catch(function(){});
+                if (document.fonts && document.fonts.ready) {
+                    return document.fonts.ready.catch(function() {});
+                }
                 return Promise.resolve();
             }
 
             function waitForImages() {
                 var imgs = Array.from(document.images);
-                var imagePromises = imgs.map(function(img) {
-                    if (img.complete) return Promise.resolve();
-                    if (typeof img.decode === 'function') {
-                        return img.decode().catch(function(){});
+                if (imgs.length === 0) {
+                    return Promise.resolve();
+                }
+                return new Promise(function(resolve) {
+                    var loaded = 0;
+                    function markDone() {
+                        loaded += 1;
+                        if (loaded >= imgs.length) {
+                            resolve();
+                        }
                     }
-                    return new Promise(function(resolve) {
-                        img.addEventListener('load', resolve, { once: true });
-                        img.addEventListener('error', resolve, { once: true });
+                    imgs.forEach(function(img) {
+                        if (img.complete) {
+                            markDone();
+                        } else {
+                            img.addEventListener('load', markDone, { once: true });
+                            img.addEventListener('error', markDone, { once: true });
+                        }
                     });
                 });
-                return Promise.all(imagePromises); // Promise.all(imagePromises)
             }
 
-            Promise.all([waitForWindowLoad(), waitForFonts(), waitForImages()]).then(calculateAndNotify).catch(calculateAndNotify);
+            Promise.allSettled([waitForWindowLoad(), waitForFonts(), waitForImages()]).then(finishReady);
         })();
         </script>
         </body>
         </html>
         """
-    }
-
-    // For Unit Test access
-    internal func testing_getJSContractString() -> String {
-        return buildChapterHTML(chapterHTML: "", chapterBaseURL: URL(fileURLWithPath: "/"), bridgeName: "testBridge")
     }
 
     // MARK: - Scroll Mode HTML（上下滑動專用，無 CSS Column）
@@ -2809,7 +2815,7 @@ final class LiveWebReader: NSObject, ObservableObject {
             readiumBeforeCSS = bundle.beforeStyleTag
             readiumDefaultCSS = bundle.defaultStyleTag
             readiumAfterCSS = bundle.afterStyleTag
-            htmlAttrs = bundle.htmlAttributes.attributeString()
+            htmlAttrs = bundle.htmlAttributes
         } else {
             readiumBeforeCSS = ""
             readiumDefaultCSS = ""
@@ -3068,54 +3074,19 @@ final class LiveWebReader: NSObject, ObservableObject {
             }
         }, true);
 
-        function gotoPage(index) {
-            window.scrollTo(0, 0);
-        }
-        function getPaginationMetrics() {
-            return { pageCount: 1, pageOffsets: [0] };
-        }
-
         // 通知 Swift ready
         (function() {
             function notifyReady() {
-                window.webkit.messageHandlers.\(bridgeName).postMessage({
-                    type: 'renderReady',
-                    payload: { pageIndex: 0 }
-                });
-                window.webkit.messageHandlers.\(bridgeName).postMessage({
+                _postMessage({
                     type: 'paginationReady',
                     payload: { pageCount: 1, scrollMode: true }
                 });
             }
-            
-            function waitForWindowLoad() {
-                return new Promise(function(resolve) {
-                    if (document.readyState === 'complete') return resolve();
-                    window.addEventListener('load', resolve, { once: true });
-                });
+            if (document.fonts && document.fonts.ready) {
+                document.fonts.ready.then(function() { setTimeout(notifyReady, 30); }).catch(notifyReady);
+            } else {
+                window.addEventListener('load', function() { setTimeout(notifyReady, 50); });
             }
-
-            function waitForFonts() {
-                if (document.fonts && document.fonts.ready) return document.fonts.ready.catch(function(){});
-                return Promise.resolve();
-            }
-
-            function waitForImages() {
-                var imgs = Array.from(document.images);
-                var imagePromises = imgs.map(function(img) {
-                    if (img.complete) return Promise.resolve();
-                    if (typeof img.decode === 'function') {
-                        return img.decode().catch(function(){});
-                    }
-                    return new Promise(function(resolve) {
-                        img.addEventListener('load', resolve, { once: true });
-                        img.addEventListener('error', resolve, { once: true });
-                    });
-                });
-                return Promise.all(imagePromises); // Promise.all(imagePromises)
-            }
-
-            Promise.all([waitForWindowLoad(), waitForFonts(), waitForImages()]).then(notifyReady).catch(notifyReady);
         })();
         </script>
         </body>

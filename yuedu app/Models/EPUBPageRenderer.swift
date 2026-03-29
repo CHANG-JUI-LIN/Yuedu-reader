@@ -6,9 +6,6 @@ import WebKit
 final class EPUBPageRenderer: ObservableObject {
     private let engine = LiveWebReader()
     private var subscriptions: Set<AnyCancellable> = []
-    private var snapshotCallbacks: [Int: [(UIImage?) -> Void]] = [:]
-    private var snapshotWatchers: [Int: AnyCancellable] = [:]
-    private var snapshotTimeouts: [Int: DispatchWorkItem] = [:]
 
     init() {
         engine.objectWillChange
@@ -68,39 +65,11 @@ final class EPUBPageRenderer: ObservableObject {
         )
     }
 
-    func loadEPUB(source: EPUBReaderSource, settings: ReaderRenderSettings) {
-        switch source {
-        case .publication(let session):
-            engine.setTransition("horizontal")
-            engine.load(
-                publicationSession: session,
-                bookIdentifier: session.sourceURL.standardizedFileURL.path,
-                settings: settings
-            )
-        }
-    }
-
-    func loadEPUBScroll(source: EPUBReaderSource, settings: ReaderRenderSettings) {
-        switch source {
-        case .publication(let session):
-            engine.setTransition("vertical")
-            engine.load(
-                publicationSession: session,
-                bookIdentifier: session.sourceURL.standardizedFileURL.path,
-                settings: settings
-            )
-        }
-    }
-
     func reloadWithUpdatedPackage(_ package: RenderPackage, settings: ReaderRenderSettings) {
         engine.reloadWithUpdatedPackage(package, settings: settings)
     }
 
     func goToPage(_ page: Int, completion: (() -> Void)? = nil) {
-        engine.goToPage(page, completion: completion)
-    }
-
-    func goToGlobalPage(_ page: Int, completion: (() -> Void)? = nil) {
         engine.goToPage(page, completion: completion)
     }
 
@@ -126,10 +95,6 @@ final class EPUBPageRenderer: ObservableObject {
 
     func syncProgressToPage(_ page: Int, flush: Bool = false) {
         engine.syncProgressToPage(page, flush: flush)
-    }
-
-    func open(locator: ReaderLocator) {
-        engine.open(locator: locator)
     }
 
     func flushProgress() {
@@ -230,59 +195,29 @@ final class EPUBPageRenderer: ObservableObject {
 
         engine.prepareDisplaySnapshot(forPage: page, priority: page == engine.currentEpubPage ? -1 : 0)
 
-        snapshotCallbacks[page, default: []].append(completion)
-
-        if snapshotWatchers[page] == nil {
-            snapshotWatchers[page] = engine.objectWillChange
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] _ in
-                    self?.resolveSnapshotIfReady(for: page)
-                }
-        }
-
-        if snapshotTimeouts[page] == nil {
-            let timeoutWork = DispatchWorkItem { [weak self] in
-                self?.finishSnapshotRequest(for: page, image: nil)
+        var attempts = 0
+        func poll() {
+            if let image = self.engine.snapshot(forPage: page) {
+                completion(image)
+                return
             }
-            snapshotTimeouts[page] = timeoutWork
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: timeoutWork)
+            if attempts >= 20 {
+                completion(nil)
+                return
+            }
+            attempts += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                poll()
+            }
         }
-
-        resolveSnapshotIfReady(for: page)
+        poll()
     }
 
     func cancelSnapshotRequest(for page: Int) {
         engine.cancelSnapshot(forPage: page)
-        finishSnapshotRequest(for: page, image: nil)
     }
 
     func settleDrag(toGlobalPage page: Int, style: PageTurnStyle) {
         engine.settleDrag(toGlobalPage: page, style: style)
-    }
-
-    private func resolveSnapshotIfReady(for page: Int) {
-        if let image = engine.snapshot(forPage: page) {
-            finishSnapshotRequest(for: page, image: image)
-            return
-        }
-
-        let state = engine.pageSnapshotState(forPage: page)
-        if state == .failed {
-            finishSnapshotRequest(for: page, image: nil)
-        }
-    }
-
-    private func finishSnapshotRequest(for page: Int, image: UIImage?) {
-        let callbacks = snapshotCallbacks.removeValue(forKey: page) ?? []
-        snapshotWatchers[page]?.cancel()
-        snapshotWatchers.removeValue(forKey: page)
-
-        if let timeout = snapshotTimeouts.removeValue(forKey: page) {
-            timeout.cancel()
-        }
-
-        for callback in callbacks {
-            callback(image)
-        }
     }
 }

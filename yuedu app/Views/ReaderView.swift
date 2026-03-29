@@ -109,15 +109,14 @@ struct ReaderView: View {
 
     private func restoreReaderDisplayStateAfterResume() {
         guard useWebRenderer else { return }
-        guard let restored = ReaderWebRenderCoordinator.restoreDisplayState(renderer: epubRenderer)
-        else { return }
-        currentPage = restored.currentPage
-        currentChapterIndex = restored.chapterIndex
+        guard epubRenderer.totalPages > 0 else { return }
+        let targetPage = max(0, min(epubRenderer.currentEpubPage, epubRenderer.totalPages - 1))
+        currentPage = targetPage
+        currentChapterIndex = epubRenderer.chapterIndex(forGlobalPage: targetPage)
     }
 
     // EPUB 渲染器（直接 WKWebView 呈現）
     @StateObject private var epubRenderer = EPUBPageRenderer()
-    @StateObject private var snapshotProvider = PageSnapshotProvider()
     @State private var useWebRenderer = false  // true = EPUB/TXT 用 EPUBPageRenderer + 直接 WKWebView
     @State private var isWebRenderReady = false // WebView 真正畫好第一頁才為 true（消除白屏閃爍）
 
@@ -202,6 +201,33 @@ struct ReaderView: View {
         return "txt"
     }
 
+    /// EPUB 字型資源目錄（Documents/{uuid}_epub_assets/）
+    var epubAssetsURL: URL? {
+        guard let b = book, b.isLegacyParsedEPUB else { return nil }
+        let assetsDir = b.contentFilename.replacingOccurrences(
+            of: "_epub.json", with: "_epub_assets")
+        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = docsDir.appendingPathComponent(assetsDir)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// 當前章節的 baseURL：assets 根 + 章節所在子目錄（用於解析 CSS 內的相對字型路徑）
+    var epubBaseURL: URL? {
+        guard let assetsURL = epubAssetsURL else { return nil }
+        if isEPUB {
+            guard chapters.indices.contains(currentChapterIndex) else { return assetsURL }
+            let href = chapters[currentChapterIndex].href
+            guard !href.isEmpty, href != "synthetic_cover" else { return assetsURL }
+            let hrefDir = (href as NSString).deletingLastPathComponent
+            return hrefDir.isEmpty ? assetsURL : assetsURL.appendingPathComponent(hrefDir)
+        }
+        guard chapters.indices.contains(currentPage) else { return assetsURL }
+        let href = chapters[currentPage].href
+        guard !href.isEmpty, href != "synthetic_cover" else { return assetsURL }
+        let hrefDir = (href as NSString).deletingLastPathComponent
+        return hrefDir.isEmpty ? assetsURL : assetsURL.appendingPathComponent(hrefDir)
+    }
+
     var currentChapterTitle: String {
         if useWebRenderer {
             let chIdx = epubRenderer.chapterIndex(forGlobalPage: currentPage)
@@ -214,8 +240,6 @@ struct ReaderView: View {
 
     var canGoPrevChapter: Bool { currentChapterIndex > 0 }
     var canGoNextChapter: Bool { currentChapterIndex < chapters.count - 1 }
-    private var usesLiveEPUBScroll: Bool { useWebRenderer && settings.scrollMode }
-    private var usesSnapshotPaging: Bool { useWebRenderer && !settings.scrollMode }
 
     /// Footer 文字區本體高度（pt），不含 safe area bottom
     private let footerOverlayHeight: CGFloat = 24
@@ -823,89 +847,47 @@ struct ReaderView: View {
 
     private var webReaderBody: some View {
         ZStack(alignment: .bottom) {
-            if usesLiveEPUBScroll {
-                ReaderWebContainerView(
-                    renderer: epubRenderer,
-                    pageTurnStyle: settings.pageTurnStyle,
-                    onTapZone: { zone in
-                        switch zone {
-                        case "left":
-                            guard !showBars else { return }
-                            goToPrevPage()
-                        case "right":
-                            guard !showBars else { return }
-                            goToNextPage()
-                        default:
-                            withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
-                        }
-                    }
-                )
-                .ignoresSafeArea()
-                .onChange(of: epubRenderer.currentEpubPage) { page in
-                    if page != currentPage {
-                        currentPage = page
-                    }
-                    currentChapterIndex = epubRenderer.chapterIndex(forGlobalPage: page)
-                    autoSaveProgress()
-                }
-                .onChange(of: showBars) { visible in
-                    // 打開工具列時同步（slider 需要 currentPage）
-                    if visible {
-                        currentPage = epubRenderer.currentEpubPage
-                    }
-                }
-                .onChange(of: currentPage) { newPage in
-                    if newPage != epubRenderer.currentEpubPage {
-                        epubRenderer.goToPage(newPage)
-                    }
-                    currentChapterIndex = epubRenderer.chapterIndex(forGlobalPage: newPage)
-                    autoSaveProgress()
-                }
-                .onAppear {
-                    if epubRenderer.isReady {
-                        currentPage = epubRenderer.currentEpubPage
-                        currentChapterIndex = epubRenderer.chapterIndex(forGlobalPage: currentPage)
-                    }
-                }
-            } else if usesSnapshotPaging {
-                SnapshotReaderView(
-                    renderer: epubRenderer,
-                    snapshotProvider: snapshotProvider,
-                    pageTurnStyle: settings.pageTurnStyle,
-                    currentPage: currentPage,
-                    onTapCenter: {
+            ReaderWebContainerView(
+                renderer: epubRenderer,
+                pageTurnStyle: settings.pageTurnStyle,
+                onTapZone: { zone in
+                    switch zone {
+                    case "left":
+                        guard !showBars else { return }
+                        goToPrevPage()
+                    case "right":
+                        guard !showBars else { return }
+                        goToNextPage()
+                    default:
                         withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
                     }
-                )
-                .ignoresSafeArea()
-                .onChange(of: epubRenderer.currentEpubPage) { page in
-                    if page != currentPage {
-                        currentPage = page
-                    }
-                    currentChapterIndex = epubRenderer.chapterIndex(forGlobalPage: page)
-                    autoSaveProgress()
                 }
-                .onChange(of: showBars) { visible in
-                    if visible {
-                        currentPage = epubRenderer.currentEpubPage
-                    }
+            )
+            .ignoresSafeArea()
+            .onChange(of: epubRenderer.currentEpubPage) { page in
+                if page != currentPage {
+                    currentPage = page
                 }
-                .onChange(of: currentPage) { newPage in
-                    let clamped = max(0, min(newPage, max(epubRenderer.totalPages - 1, 0)))
-                    if clamped != newPage {
-                        currentPage = clamped
-                        return
-                    }
-                    currentChapterIndex = epubRenderer.chapterIndex(forGlobalPage: clamped)
-                    autoSaveProgress()
+                currentChapterIndex = epubRenderer.chapterIndex(forGlobalPage: page)
+                autoSaveProgress()
+            }
+            .onChange(of: showBars) { visible in
+                // 打開工具列時同步（slider 需要 currentPage）
+                if visible {
+                    currentPage = epubRenderer.currentEpubPage
                 }
-                .onAppear {
-                    snapshotProvider.attach(renderer: epubRenderer)
-                    snapshotProvider.warmWindow(around: currentPage, radius: 2)
-                    if epubRenderer.isReady {
-                        currentPage = epubRenderer.currentEpubPage
-                        currentChapterIndex = epubRenderer.chapterIndex(forGlobalPage: currentPage)
-                    }
+            }
+            .onChange(of: currentPage) { newPage in
+                if newPage != epubRenderer.currentEpubPage {
+                    epubRenderer.goToPage(newPage)
+                }
+                currentChapterIndex = epubRenderer.chapterIndex(forGlobalPage: newPage)
+                autoSaveProgress()
+            }
+            .onAppear {
+                if epubRenderer.isReady {
+                    currentPage = epubRenderer.currentEpubPage
+                    currentChapterIndex = epubRenderer.chapterIndex(forGlobalPage: currentPage)
                 }
             }
 
@@ -1040,13 +1022,7 @@ struct ReaderView: View {
     private func goToPrevPage() {
         guard currentPage > 0 else { return }
         if useWebRenderer {
-            if usesLiveEPUBScroll {
-                epubRenderer.turnPageProgrammatically(forward: false, style: settings.pageTurnStyle)
-            } else {
-                withAnimation(.easeInOut(duration: PageTurnAnimation.slideDuration)) {
-                    currentPage -= 1
-                }
-            }
+            epubRenderer.turnPageProgrammatically(forward: false, style: settings.pageTurnStyle)
             return
         }
         switch settings.pageTurnStyle {
@@ -1067,13 +1043,7 @@ struct ReaderView: View {
         let maxPage = useWebRenderer ? epubRenderer.totalPages - 1 : allPages.count - 1
         guard currentPage < maxPage else { return }
         if useWebRenderer {
-            if usesLiveEPUBScroll {
-                epubRenderer.turnPageProgrammatically(forward: true, style: settings.pageTurnStyle)
-            } else {
-                withAnimation(.easeInOut(duration: PageTurnAnimation.slideDuration)) {
-                    currentPage += 1
-                }
-            }
+            epubRenderer.turnPageProgrammatically(forward: true, style: settings.pageTurnStyle)
             return
         }
         switch settings.pageTurnStyle {
@@ -1478,7 +1448,6 @@ struct ReaderView: View {
         }
         if isEPUB && useWebRenderer {
             epubRenderer.jumpToChapter(idx, preferredLocalPage: 0)
-            currentPage = epubRenderer.currentEpubPage
             currentChapterIndex = idx
         } else {
             currentChapterIndex = idx
@@ -1492,15 +1461,14 @@ struct ReaderView: View {
 
         // 儲存 ReadingPosition（章節索引 + 頁碼偏移，與字體/螢幕無關）
         if useWebRenderer {
-            currentChapterIndex =
-                ReaderWebRenderCoordinator.syncProgress(
-                    bookId: bookId,
-                    currentPage: currentPage,
-                    isRestoringPosition: isRestoringPosition,
-                    renderer: epubRenderer,
-                    store: store,
-                    flush: false
-                ) ?? currentChapterIndex
+            // EPUB：使用 epubRenderer 的確切頁數（allPages 可能滯後於掃描進度）
+            let total = epubRenderer.totalPages
+            guard total > 0 else { return }
+            epubRenderer.syncProgressToPage(currentPage, flush: false)
+            let chIdx = epubRenderer.chapterIndex(forGlobalPage: currentPage)
+            let pct = Double(currentPage) / Double(max(total - 1, 1))
+            currentChapterIndex = chIdx
+            store.updatePosition(bookId: bookId, position: min(1.0, max(0.0, pct)))
         } else if !settings.scrollMode && !allPages.isEmpty {
             // TXT：使用 allPages
             let page = allPages[min(currentPage, allPages.count - 1)]
@@ -1530,14 +1498,7 @@ struct ReaderView: View {
         isRestoringPosition = wasRestoring
         // EPUB: 立即 flush debounced 進度到磁碟
         if useWebRenderer {
-            _ = ReaderWebRenderCoordinator.syncProgress(
-                bookId: bookId,
-                currentPage: currentPage,
-                isRestoringPosition: false,
-                renderer: epubRenderer,
-                store: store,
-                flush: true
-            )
+            epubRenderer.syncProgressToPage(currentPage, flush: true)
         }
     }
 
@@ -1735,52 +1696,138 @@ struct ReaderView: View {
         settings: ReaderRenderSettings,
         deferCurrentPageSync: Bool = false
     ) {
-        let state = ReaderWebRenderCoordinator.apply(
-            package: package,
-            book: book,
-            renderer: epubRenderer,
-            settings: settings,
-            viewportSize: readerViewportSize,
-            safeAreaInsets: UIEdgeInsets(
-                top: effectiveReaderSafeTop,
-                left: 0,
-                bottom: windowSafeBottom,
-                right: 0
-            ),
-            bookId: bookId,
-            store: store,
-            deferCurrentPageSync: deferCurrentPageSync
+        let tocLevelMap: [String: Int] = Dictionary(
+            package.manifest.toc.map { ($0.href, $0.level) },
+            uniquingKeysWith: { first, _ in first }
         )
-        applyWebRenderState(state)
+
+        useWebRenderer = true
+        txtXHTMLBasePath = package.pipelineKind == .epub ? nil : package.basePath
+        if let onlineRefs = book?.onlineChapters, !onlineRefs.isEmpty, book?.isOnline == true {
+            chapters = onlineRefs.enumerated().map { (i, ref) in
+                let href = "chapter_\(i).xhtml"
+                let level =
+                    tocLevelMap[href]
+                    ?? tocLevelMap.first(where: {
+                        href.hasSuffix($0.key) || $0.key.hasSuffix(href)
+                    })?.value
+                    ?? 0
+                return BookChapter(
+                    index: i,
+                    title: ref.title,
+                    content: "",
+                    href: href,
+                    level: level
+                )
+            }
+        } else if package.pipelineKind == .epub {
+            chapters = [BookChapter(index: 0, title: package.title, content: "")]
+        } else {
+            chapters = package.parsedBook.chapters.enumerated().map { (i, ch) in
+                let level =
+                    tocLevelMap[ch.href]
+                    ?? tocLevelMap.first(where: {
+                        ch.href.hasSuffix($0.key) || $0.key.hasSuffix(ch.href)
+                    })?.value
+                    ?? 0
+                return BookChapter(
+                    index: i,
+                    title: ch.title,
+                    content: "",
+                    href: ch.href,
+                    level: level
+                )
+            }
+        }
+        if chapters.isEmpty {
+            chapters = [BookChapter(index: 0, title: package.title, content: "")]
+        }
+        allPages = [
+            PageContent(
+                chapterIndex: 0,
+                chapterTitle: package.title,
+                content: "",
+                pageInChapter: 0
+            )
+        ]
+
+        epubRenderer.setTransition("horizontal")
+        epubRenderer.setViewport(
+            size: readerViewportSize,
+            safeAreaInsets: UIEdgeInsets(top: effectiveReaderSafeTop, left: 0, bottom: windowSafeBottom, right: 0)
+        )
+        epubRenderer.load(package: package, settings: settings)
+        epubRenderer.onRelocated = { [weak store] _, pct in
+            store?.updatePosition(bookId: bookId, position: pct)
+        }
+
+        if deferCurrentPageSync {
+            currentPage = 0
+        } else {
+            currentPage = epubRenderer.currentEpubPage
+        }
+        isLoadingPipeline = false
+        isRestoringPosition = false
+        hasInitializedWebPackage = true
     }
 
-    private func applyEPUBDocument(_ document: ReaderEPUBDocument, settings: ReaderRenderSettings) {
-        let state = ReaderWebRenderCoordinator.apply(
-            document: document,
-            scrollMode: self.settings.scrollMode,
-            renderer: epubRenderer,
-            settings: settings,
-            viewportSize: readerViewportSize,
-            safeAreaInsets: UIEdgeInsets(
-                top: effectiveReaderSafeTop,
-                left: 0,
-                bottom: windowSafeBottom,
-                right: 0
-            ),
-            store: store
+    private func applyPublicationSession(
+        _ session: PublicationSession,
+        book: ReadingBook,
+        settings: ReaderRenderSettings
+    ) {
+        let tocLevelMap: [String: Int] = Dictionary(
+            session.tocEntries.map { ($0.href, $0.level) },
+            uniquingKeysWith: { first, _ in first }
         )
-        applyWebRenderState(state)
-    }
 
-    private func applyWebRenderState(_ state: ReaderWebRenderState) {
-        useWebRenderer = state.useWebRenderer
-        txtXHTMLBasePath = state.txtXHTMLBasePath
-        chapters = state.chapters
-        allPages = state.pages
-        currentPage = state.currentPage
-        isLoadingPipeline = state.isLoadingPipeline
-        isRestoringPosition = state.isRestoringPosition
-        hasInitializedWebPackage = state.hasInitializedWebPackage
+        useWebRenderer = true
+        txtXHTMLBasePath = nil
+        chapters = session.chapters.map { chapter in
+            let level =
+                tocLevelMap[chapter.href]
+                ?? tocLevelMap.first(where: {
+                    chapter.href.hasSuffix($0.key) || $0.key.hasSuffix(chapter.href)
+                })?.value
+                ?? 0
+            return BookChapter(
+                index: chapter.index,
+                title: chapter.title,
+                content: "",
+                href: chapter.href,
+                level: level
+            )
+        }
+        if chapters.isEmpty {
+            chapters = [BookChapter(index: 0, title: session.bookTitle, content: "")]
+        }
+        allPages = [
+            PageContent(
+                chapterIndex: 0,
+                chapterTitle: session.bookTitle,
+                content: "",
+                pageInChapter: 0
+            )
+        ]
+
+        epubRenderer.setTransition("horizontal")
+        epubRenderer.setViewport(
+            size: readerViewportSize,
+            safeAreaInsets: UIEdgeInsets(top: effectiveReaderSafeTop, left: 0, bottom: windowSafeBottom, right: 0)
+        )
+        epubRenderer.load(
+            publicationSession: session,
+            bookIdentifier: session.sourceURL.standardizedFileURL.path,
+            settings: settings
+        )
+        epubRenderer.onRelocated = { [weak store] _, pct in
+            store?.updatePosition(bookId: book.id, position: pct)
+        }
+
+        currentPage = epubRenderer.currentEpubPage
+        isLoadingPipeline = false
+        isRestoringPosition = false
+        hasInitializedWebPackage = true
     }
 
     private func currentWebLocalPage(preferredChapter: Int) -> Int {
@@ -2133,13 +2180,10 @@ struct ReaderView: View {
         let settings = currentRenderSettings(marginH: marginH, marginV: marginV)
         Task {
             do {
-                let document = try await EPUBBookService.shared.prepareReaderDocument(
-                    for: book,
-                    using: store
-                )
+                let session = try await EPUBBookService.shared.openSession(for: book, using: store)
                 await MainActor.run {
-                    guard self.book?.id == document.book.id else { return }
-                    self.applyEPUBDocument(document, settings: settings)
+                    guard self.book?.id == book.id else { return }
+                    self.applyPublicationSession(session, book: book, settings: settings)
                 }
             } catch {
                 await MainActor.run {
@@ -2170,7 +2214,17 @@ struct ReaderView: View {
             return
         }
         if b.resolvedPipelineKind == .epub {
-            applyWebRenderState(ReaderWebRenderCoordinator.epubPlaceholderState(for: b, using: store))
+            let bookTitle = b.title
+            self.chapters = [BookChapter(index: 0, title: bookTitle, content: "")]
+            self.allPages = [
+                PageContent(
+                    chapterIndex: 0,
+                    chapterTitle: bookTitle,
+                    content: "",
+                    pageInChapter: 0
+                )
+            ]
+            self.currentPage = 0
             loadLocalEPUB(b, marginH: marginH, marginV: marginV)
             return
         }
@@ -2453,3 +2507,5 @@ private struct HideTabBarModifier: ViewModifier {
         }
     }
 }
+
+// EPUBWebViewWrapper 已移除（正式路徑使用 LiveWebReader，不再直接顯示舊 wrapper）

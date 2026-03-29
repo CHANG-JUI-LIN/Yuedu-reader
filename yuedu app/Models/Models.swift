@@ -168,11 +168,15 @@ struct ReadingBook: Identifiable, Codable {
 
 extension ReadingBook {
     var resolvedPipelineKind: BookPipelineKind {
-        Self.inferPipelineKind(
-            source: source,
-            contentFilename: contentFilename,
-            isOnline: isOnline
-        )
+        if isOnline { return .html }
+        if source == "local_epub" || contentFilename.hasSuffix("_epub.json") {
+            return .epub
+        }
+        return contentPipelineKind
+    }
+
+    var isLegacyParsedEPUB: Bool {
+        contentFilename.hasSuffix("_epub.json")
     }
 }
 
@@ -524,7 +528,10 @@ class BookStore: ObservableObject {
         let sourceURL = URL(string: book.source)
         switch book.resolvedPipelineKind {
         case .epub:
-            let epubURL = localEPUBURL(for: book)
+            let epubFilename = book.contentFilename.hasSuffix(".epub")
+                ? book.contentFilename
+                : book.contentFilename.replacingOccurrences(of: "_epub.json", with: ".epub")
+            let epubURL = documentsURL(for: epubFilename)
             let placeholder = EPUBParsedBook.placeholder(
                 title: book.title,
                 author: book.author,
@@ -559,11 +566,20 @@ class BookStore: ObservableObject {
             }
         }
 
+        // 🛑 核心：如果是 EPUB，不走 TXT 解析器
+        // 新格式（epub.js 方案）：contentFilename 直接是 .epub，由閱讀器的 JS 引擎解析 TOC
         if book.resolvedPipelineKind == .epub {
-            if let manifest = epubManifest(for: book) {
-                return EPUBManifestStore.chapters(from: manifest)
+            // 舊格式：曾解析為 _epub.json
+            if book.isLegacyParsedEPUB {
+                let url = documentsURL(for: book.contentFilename)
+                if let data = try? Data(contentsOf: url),
+                    let decoded = try? JSONDecoder().decode([BookChapter].self, from: data)
+                {
+                    return decoded
+                }
             }
-            return []
+            // 新格式 / 舊格式解析失敗：回傳佔位章節，epub.js 的 onTOC 回調會在閱讀器啟動後更新
+            return [BookChapter(index: 0, title: book.title, content: "")]
         }
 
         if book.resolvedPipelineKind == .html {
@@ -586,40 +602,34 @@ class BookStore: ObservableObject {
     // MARK: 🟢修改3：匯入 EPUB 檔案
     @discardableResult
     func importEpub(url: URL, title: String? = nil) async throws -> ReadingBook {
+        // 0. 產生 UUID 作為新檔名
         let uuid = UUID().uuidString
         let filename = "\(uuid).epub"
         let destURL = documentsURL(for: filename)
 
+        // 1. 複製 EPUB 檔案到 Documents 目錄
         if FileManager.default.fileExists(atPath: destURL.path) {
             try FileManager.default.removeItem(at: destURL)
         }
         try FileManager.default.copyItem(at: url, to: destURL)
 
-        let session = try await PublicationSession.open(sourceURL: destURL)
-        let manifest = session.manifestSnapshot()
-
+        // 2. 提取封面圖片（在背景線程完成）
         var coverFilename: String? = nil
-        if let coverImage = await session.extractCoverImage() {
+        if let coverImage = await EPUBBookService.shared.extractCoverImage(from: destURL) {
             let coverName = "\(uuid)_cover.jpg"
             let coverURL = documentsURL(for: coverName)
+            // 將封面轉為 JPEG 儲存（壓縮節省空間）
             if let jpegData = coverImage.jpegData(compressionQuality: 0.85) {
                 try? jpegData.write(to: coverURL)
                 coverFilename = coverName
             }
         }
 
-        let resolvedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let bookTitle = resolvedTitle?.isEmpty == false
-            ? resolvedTitle!
-            : (manifest.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? url.deletingPathExtension().lastPathComponent
-                : manifest.title)
-        let bookAuthor = manifest.author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "未知作者"
-            : manifest.author
+        // 3. 建立書籍模型
+        let bookTitle = title ?? url.deletingPathExtension().lastPathComponent
         var book = ReadingBook(
             title: bookTitle,
-            author: bookAuthor,
+            author: "未知",
             source: "local_epub",
             contentFilename: filename
         )
@@ -629,7 +639,6 @@ class BookStore: ObservableObject {
 
         await MainActor.run {
             self.books.insert(finalBook, at: 0)
-            self.saveEPUBManifest(manifest, forEPUBFilename: filename)
             self.saveMeta()
         }
         return finalBook
@@ -752,9 +761,13 @@ class BookStore: ObservableObject {
                 let cacheDir = documentsURL(for: "online_cache/\(bookId.uuidString)")
                 try? FileManager.default.removeItem(at: cacheDir)
             } else {
-                try? FileManager.default.removeItem(at: localEPUBURL(for: book))
                 try? FileManager.default.removeItem(at: documentsURL(for: book.contentFilename))
-                try? FileManager.default.removeItem(at: epubManifestURL(for: book))
+                // 同步刪除 EPUB 字型資源目錄
+                if book.isLegacyParsedEPUB {
+                    let assetsDir = book.contentFilename.replacingOccurrences(
+                        of: "_epub.json", with: "_epub_assets")
+                    try? FileManager.default.removeItem(at: documentsURL(for: assetsDir))
+                }
             }
             books.remove(at: idx)
             saveMeta()
@@ -996,55 +1009,10 @@ class BookStore: ObservableObject {
     }
 
     func localEPUBURL(for book: ReadingBook) -> URL {
-        documentsURL(for: resolvedLocalEPUBFilename(for: book.contentFilename))
-    }
-
-    func epubManifestURL(for book: ReadingBook) -> URL {
-        epubManifestURL(forEPUBFilename: resolvedLocalEPUBFilename(for: book.contentFilename))
-    }
-
-    func epubManifest(for book: ReadingBook) -> BookManifest? {
-        EPUBManifestStore.load(from: epubManifestURL(for: book))
-    }
-
-    func saveEPUBManifest(_ manifest: BookManifest, forEPUBFilename filename: String) {
-        let url = epubManifestURL(forEPUBFilename: filename)
-        try? EPUBManifestStore.save(manifest, to: url)
-    }
-
-    @discardableResult
-    func prepareLocalEPUBRecord(bookId: UUID) -> ReadingBook? {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return nil }
-        guard !books[idx].isOnline, books[idx].resolvedPipelineKind == .epub else {
-            return books[idx]
-        }
-
-        let currentFilename = books[idx].contentFilename
-        let resolvedFilename = resolvedLocalEPUBFilename(for: currentFilename)
-        if currentFilename != resolvedFilename,
-           FileManager.default.fileExists(atPath: documentsURL(for: resolvedFilename).path)
-        {
-            books[idx].contentFilename = resolvedFilename
-            saveMeta()
-        }
-        return books[idx]
-    }
-
-    func syncEPUBSession(_ session: PublicationSession, for bookId: UUID) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        let manifest = session.manifestSnapshot()
-        let trimmedTitle = manifest.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedAuthor = manifest.author.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if !trimmedTitle.isEmpty {
-            books[idx].title = trimmedTitle
-        }
-        if !trimmedAuthor.isEmpty {
-            books[idx].author = trimmedAuthor
-        }
-        books[idx].contentPipelineKind = .epub
-        saveEPUBManifest(manifest, forEPUBFilename: books[idx].contentFilename)
-        saveMeta()
+        let epubFilename = book.contentFilename.hasSuffix(".epub")
+            ? book.contentFilename
+            : book.contentFilename.replacingOccurrences(of: "_epub.json", with: ".epub")
+        return documentsURL(for: epubFilename)
     }
 
     private func saveMeta() {
@@ -1058,44 +1026,8 @@ class BookStore: ObservableObject {
             let decoded = try? JSONDecoder().decode([ReadingBook].self, from: data)
         {
             books = decoded
-            migratePersistedLegacyEPUBFilenamesIfNeeded()
+            // 修復舊版殘留的 HTML 片段 URL（如 <a href="...">第1章</a>）
             sanitizePersistedChapterURLs()
-        }
-    }
-
-    private func resolvedLocalEPUBFilename(for filename: String) -> String {
-        if filename.hasSuffix(".epub") {
-            return filename
-        }
-        if filename.hasSuffix("_epub.json") {
-            return filename.replacingOccurrences(of: "_epub.json", with: ".epub")
-        }
-        return filename
-    }
-
-    private func epubManifestURL(forEPUBFilename filename: String) -> URL {
-        EPUBManifestStore.sidecarURL(
-            forEPUBFilename: filename,
-            documentsRoot: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        )
-    }
-
-    private func migratePersistedLegacyEPUBFilenamesIfNeeded() {
-        var changed = false
-        for index in books.indices {
-            guard !books[index].isOnline, books[index].resolvedPipelineKind == .epub else { continue }
-            let currentFilename = books[index].contentFilename
-            guard currentFilename.hasSuffix("_epub.json") else { continue }
-
-            let resolvedFilename = resolvedLocalEPUBFilename(for: currentFilename)
-            let resolvedURL = documentsURL(for: resolvedFilename)
-            guard FileManager.default.fileExists(atPath: resolvedURL.path) else { continue }
-
-            books[index].contentFilename = resolvedFilename
-            changed = true
-        }
-        if changed {
-            saveMeta()
         }
     }
 

@@ -132,23 +132,11 @@ final class PageSnapshotProvider: ObservableObject {
         guard let renderer else { return }
         guard !queuedPriorities.isEmpty else { return }
 
-        // Drop stale requests that are too far from the current page (> preload window).
-        let current = renderer.currentEpubPage
-        let maxDistance = 4
-        let stalePages = queuedPriorities.keys.filter { abs($0 - current) > maxDistance }
-        for stalePage in stalePages {
-            queuedPriorities.removeValue(forKey: stalePage)
-            let callbacks = pendingCallbacks.removeValue(forKey: stalePage) ?? []
-            for callback in callbacks { callback(nil) }
-        }
-
-        guard !queuedPriorities.isEmpty else { return }
-
         let sortedPages = queuedPriorities.keys.sorted { lhs, rhs in
             let lp = queuedPriorities[lhs] ?? 0
             let rp = queuedPriorities[rhs] ?? 0
             if lp == rp {
-                return abs(lhs - current) < abs(rhs - current)
+                return abs(lhs - renderer.currentEpubPage) < abs(rhs - renderer.currentEpubPage)
             }
             return lp < rp
         }

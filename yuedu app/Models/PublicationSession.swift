@@ -160,32 +160,6 @@ final class PublicationSession {
         }
     }
 
-    func extractCoverImage() async -> UIImage? {
-        switch await publication.cover() {
-        case .success(let image):
-            return image
-        case .failure:
-            return nil
-        }
-    }
-
-    func manifestSnapshot() -> BookManifest {
-        BookManifest(
-            title: bookTitle,
-            author: author,
-            pipelineKind: .epub,
-            spine: chapters.map { chapter in
-                BookSpineItem(
-                    href: chapter.href,
-                    title: chapter.title,
-                    mediaType: chapter.mediaType
-                )
-            },
-            resources: [],
-            toc: tocEntries
-        )
-    }
-
     func resourceURL(for href: String) -> URL {
         var components = URLComponents()
         components.scheme = Self.scheme

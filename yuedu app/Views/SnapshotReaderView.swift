@@ -8,10 +8,6 @@ struct SnapshotReaderView: UIViewControllerRepresentable {
     var currentPage: Int
     var onTapCenter: () -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(initialPage: currentPage)
-    }
-
     func makeUIViewController(context: Context) -> ReaderPageViewController {
         snapshotProvider.attach(renderer: renderer)
         let controller = ReaderPageViewController(
@@ -26,19 +22,7 @@ struct SnapshotReaderView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: ReaderPageViewController, context: Context) {
         snapshotProvider.attach(renderer: renderer)
         controller.onTapCenter = onTapCenter
-        let previousPage = context.coordinator.lastPage
-        let stepDelta = abs(currentPage - previousPage)
-        let shouldAnimate = context.transaction.animation != nil && !context.transaction.disablesAnimations && stepDelta == 1
-        controller.updateCurrentPage(currentPage, animated: shouldAnimate)
+        controller.updateCurrentPage(currentPage, animated: false)
         controller.refreshVisiblePage()
-        context.coordinator.lastPage = currentPage
-    }
-
-    final class Coordinator {
-        var lastPage: Int
-
-        init(initialPage: Int) {
-            self.lastPage = initialPage
-        }
     }
 }
