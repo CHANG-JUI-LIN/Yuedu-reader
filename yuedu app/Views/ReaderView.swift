@@ -879,16 +879,23 @@ struct ReaderView: View {
                 )
                 .ignoresSafeArea()
                 .onChange(of: epubRenderer.currentEpubPage) { page in
-                    if page != currentPage { currentPage = page }
+                    if page != currentPage {
+                        currentPage = page
+                    }
                     currentChapterIndex = epubRenderer.chapterIndex(forGlobalPage: page)
                     autoSaveProgress()
                 }
                 .onChange(of: showBars) { visible in
-                    if visible { currentPage = epubRenderer.currentEpubPage }
+                    if visible {
+                        currentPage = epubRenderer.currentEpubPage
+                    }
                 }
                 .onChange(of: currentPage) { newPage in
                     let clamped = max(0, min(newPage, max(epubRenderer.totalPages - 1, 0)))
-                    if clamped != newPage { currentPage = clamped; return }
+                    if clamped != newPage {
+                        currentPage = clamped
+                        return
+                    }
                     currentChapterIndex = epubRenderer.chapterIndex(forGlobalPage: clamped)
                     autoSaveProgress()
                 }

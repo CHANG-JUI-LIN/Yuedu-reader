@@ -97,8 +97,9 @@ final class EPUBPageViewController: UIPageViewController, UIPageViewControllerDa
             view.mountWebView(wv)
             wv.evaluateJavaScript("gotoPage(\(view.localPage))")
         }
-
-        // Prefetching is now handled by PageSnapshotProvider and the renderer
+        
+        let map = pageMap[view.globalPage]
+        EPUBSnapshotManager.shared.prefetchRange(chapter: map.chapter, centerPage: map.page, radius: 2)
     }
     
     func pageViewDidUnsettle(_ view: EPUBPageView) {

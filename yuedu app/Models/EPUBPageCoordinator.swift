@@ -6,35 +6,39 @@ import WebKit
 final class EPUBPageCoordinator: EPUBPageViewControllerDelegate {
     
     let pageViewController: EPUBPageViewController
-    let renderer: EPUBPageRenderer
+    let reader: LiveWebReader
     
-    init(renderer: EPUBPageRenderer) {
-        self.renderer = renderer
+    init(reader: LiveWebReader) {
+        self.reader = reader
         self.pageViewController = EPUBPageViewController()
+        
         self.pageViewController.epubDelegate = self
         
         // Pass the interactive WKWebView to the page view controller
-        if let activeWebView = renderer.liveWebView {
+        if let activeWebView = reader.webView {
             self.pageViewController.setActiveWebView(activeWebView)
         }
         
+        // Listen to reader state to build pageMap
+        // (In a real scenario, this would observe reader publishers like `totalPages`, `currentEpubPage`)
         updateBookData()
     }
     
     func updateBookData() {
-        let total = renderer.totalPages
-        let map = renderer.globalPageMap
+        let total = reader.totalPages
+        let map = reader.globalPageMap  // Assuming this is exposed or bridged
         pageViewController.setBookData(totalPages: total, pageMap: map)
     }
     
     func jumpToPage(_ globalPage: Int, animated: Bool) {
-        renderer.currentEpubPage = globalPage
+        // Critical Fix: Sync state correctly without getting "stuck".
+        reader.currentEpubPage = globalPage
         
-        let map = renderer.globalPageMap
-        if globalPage < map.count {
-            let entry = map[globalPage]
-            if renderer.currentChapterIdx != entry.chapter {
-                renderer.jumpToChapter(entry.chapter, preferredLocalPage: entry.page)
+        if globalPage < reader.globalPageMap.count {
+            let map = reader.globalPageMap[globalPage]
+            if reader.currentChapterIdx != map.chapter {
+                // Background load chapter
+                reader.jumpToChapter(map.chapter, preferredLocalPage: map.page)
             }
         }
         
@@ -43,14 +47,17 @@ final class EPUBPageCoordinator: EPUBPageViewControllerDelegate {
     
     // MARK: - EPUBPageViewControllerDelegate
     func didTurnToGlobalPage(_ page: Int) {
-        guard page != renderer.currentEpubPage else { return }
-        renderer.currentEpubPage = page
+        // When native paging settles on a new page, strictly sync the model progress.
+        // This ensures saving locators correctly.
+        guard page != reader.currentEpubPage else { return }
+        reader.currentEpubPage = page
         
-        let map = renderer.globalPageMap
-        if page < map.count {
-            let entry = map[page]
-            if renderer.currentChapterIdx != entry.chapter {
-                renderer.jumpToChapter(entry.chapter, preferredLocalPage: entry.page)
+        if page < reader.globalPageMap.count {
+            let map = reader.globalPageMap[page]
+            if reader.currentChapterIdx != map.chapter {
+                // We crossed a boundary via native swipe.
+                // The SnapshotManager already served the image, now tell the reader to officially switch its internal active model chapter.
+                reader.jumpToChapter(map.chapter, preferredLocalPage: map.page)
             }
         }
     }

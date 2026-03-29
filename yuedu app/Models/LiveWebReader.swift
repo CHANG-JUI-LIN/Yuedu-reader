@@ -19,7 +19,7 @@ final class LiveWebReader: NSObject, ObservableObject {
     // MARK: - 公開狀態
 
     @Published var isReady = false
-    @Published var totalPages = 1
+    @Published var totalPages = 0
     @Published var currentEpubPage = 0
     @Published var errorMessage: String?
     @Published var tocItems: [[String: Any]] = []
@@ -159,10 +159,6 @@ final class LiveWebReader: NSObject, ObservableObject {
     private var snapshotStates: [Int: PageRenderState] = [:]
     private var snapshotRevisions: [Int: Int] = [:]
     private var snapshotTasks: [Int: Task<Void, Never>] = [:]
-    /// 按 WebView 實例分別加鎖，防止同一 WebView 的並發 scroll 導致截圖內容錯亂
-    /// 不同 WebView（main / pool.prev / pool.next）各自獨立，可以並行截圖
-    private var snapshotLockByWebView: [ObjectIdentifier: Bool] = [:]
-    private var snapshotWaitersByWebView: [ObjectIdentifier: [CheckedContinuation<Void, Never>]] = [:]
     private var crossChapterTransitionTask: Task<Void, Never>?
     private var tapTurnLockUntil: CFAbsoluteTime = 0
 
@@ -736,15 +732,11 @@ final class LiveWebReader: NSObject, ObservableObject {
 
         // 等待 JS paginationReady 回調
         let success = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            if let old = self.chapterLoadContinuation {
-                old.resume(returning: false)
-            }
             self.chapterLoadContinuation = continuation
-            // 超時保護：3 秒 (使用強參照確保 deinit 前必定 resume 並釋放)
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                if let c = self.chapterLoadContinuation {
-                    self.chapterLoadContinuation = nil
+            // 超時保護：3 秒
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                if let c = self?.chapterLoadContinuation {
+                    self?.chapterLoadContinuation = nil
                     c.resume(returning: false)
                 }
             }
@@ -899,11 +891,6 @@ final class LiveWebReader: NSObject, ObservableObject {
         sourceWebView: WKWebView?,
         fallbackRole: WebViewRole?
     ) {
-        if type == "jsLog" {
-            print("🪲 JS Error/Log: \(payload["message"] ?? "Unknown")")
-            return
-        }
-
         switch type {
         case "paginationReady":
             let pageCount = payload["pageCount"] as? Int ?? 1
@@ -1098,14 +1085,10 @@ final class LiveWebReader: NSObject, ObservableObject {
 
         // 等待 JS paginationReady 回調
         let _ = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            if let old = self.chapterLoadContinuation {
-                old.resume(returning: false)
-            }
             self.chapterLoadContinuation = continuation
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                if let c = self.chapterLoadContinuation {
-                    self.chapterLoadContinuation = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                if let c = self?.chapterLoadContinuation {
+                    self?.chapterLoadContinuation = nil
                     c.resume(returning: false)
                 }
             }
@@ -2060,7 +2043,7 @@ final class LiveWebReader: NSObject, ObservableObject {
         transitionTurnState(to: .animatingCommit(target: page, animator: nil), event: .transitionWillDisplay)
         prepareDisplaySnapshot(forPage: page, priority: -1)
         if style == .curl || style == .cover {
-            preloadSnapshots(around: page, radius: 3)
+            preloadSnapshots(around: page, radius: 1)
         }
     }
 
@@ -2115,12 +2098,6 @@ final class LiveWebReader: NSObject, ObservableObject {
         snapshotStates.removeAll()
         snapshotRevisions.removeAll()
         snapshotVersion += 1
-        // 釋放所有 per-WebView 等待截圖鎖的 continuations，避免記憶體洩漏
-        // 被取消的 Task 在 snapshotImage 開頭的 guard !Task.isCancelled 會提前退出
-        let allWaiters = snapshotWaitersByWebView.values.flatMap { $0 }
-        snapshotWaitersByWebView.removeAll()
-        snapshotLockByWebView.removeAll()
-        allWaiters.forEach { $0.resume() }
     }
 
     func cancelSnapshot(forPage page: Int) {
@@ -2162,34 +2139,7 @@ final class LiveWebReader: NSObject, ObservableObject {
         return nil
     }
 
-    private func acquireSnapshotLock(for webView: WKWebView) async {
-        let key = ObjectIdentifier(webView)
-        if snapshotLockByWebView[key] != true {
-            snapshotLockByWebView[key] = true
-            return
-        }
-        await withCheckedContinuation { continuation in
-            snapshotWaitersByWebView[key, default: []].append(continuation)
-        }
-    }
-
-    private func releaseSnapshotLock(for webView: WKWebView) {
-        let key = ObjectIdentifier(webView)
-        if snapshotWaitersByWebView[key]?.isEmpty != false {
-            snapshotLockByWebView.removeValue(forKey: key)
-        } else {
-            snapshotWaitersByWebView[key]?.removeFirst().resume()
-        }
-    }
-
     private func snapshotImage(of sourceWebView: WKWebView, localPage: Int) async -> UIImage? {
-        // 按 WebView 實例序列化截圖：同一 WebView 每次只允許一個 Task scroll 並截圖。
-        // 不同 WebView（main / pool.prev / pool.next）各自獨立，可並行。
-        guard !Task.isCancelled else { return nil }
-        await acquireSnapshotLock(for: sourceWebView)
-        defer { releaseSnapshotLock(for: sourceWebView) }
-        guard !Task.isCancelled else { return nil }
-
         let pageCount = resolvedPageCount(for: sourceWebView)
         let targetOffset = resolvedPageOffset(for: localPage, in: sourceWebView, pageCount: pageCount)
         let originalOffset = sourceWebView.scrollView.contentOffset
@@ -2199,34 +2149,13 @@ final class LiveWebReader: NSObject, ObservableObject {
         let originalRole = webViewPool.first(where: { $0.value === sourceWebView })?.key
         let originalPreloadedChapter = originalRole.flatMap { preloadedChapter[$0] }
 
-        // 在同一個 JS 任務中執行 scroll + rAF，確保兩者在 WebKit 內部的順序一致。
-        // 若分開呼叫（UIKit setContentOffset + callAsyncJavaScript），
-        // 兩者的 IPC 抵達 WebKit process 的順序不保證，
-        // rAF 可能在 scroll 前觸發，截到上一頁殘影（兩頁內容一樣的 bug）。
+        sourceWebView.scrollView.setContentOffset(CGPoint(x: targetOffset, y: 0), animated: false)
         let jsTarget = Double(targetOffset)
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            var resumed = false
-            let onComplete: () -> Void = {
-                guard !resumed else { return }
-                resumed = true
-                continuation.resume()
-            }
-            // 500ms 超時保底：hidden pooled WebView 不在視圖層級時 rAF 可能不觸發；
-            // 封面圖片解碼需要額外時間，但不能無限等
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: onComplete)
-            sourceWebView.callAsyncJavaScript("""
-                if (typeof _scrollTo === 'function') _scrollTo(\(jsTarget));
-                else window.scrollTo(\(jsTarget), 0);
-                const pending = [...document.images].filter(i => !i.complete);
-                if (pending.length > 0) {
-                    await Promise.race([
-                        Promise.all(pending.map(i => new Promise(r => { i.onload = r; i.onerror = r; }))),
-                        new Promise(r => setTimeout(r, 400))
-                    ]);
-                }
-                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-            """, arguments: [:], in: nil, in: .page) { _ in onComplete() }
-        }
+        sourceWebView.evaluateJavaScript(
+            "if(typeof _scrollTo==='function'){_scrollTo(\(jsTarget));}else{window.scrollTo(\(jsTarget),0);}"
+        ) { _, _ in }
+
+        try? await Task.sleep(nanoseconds: 35_000_000)
 
         let rect = CGRect(
             x: 0,
@@ -2246,10 +2175,9 @@ final class LiveWebReader: NSObject, ObservableObject {
 
         let canRestore: Bool
         if wasCurrentWebView {
-            // 只要章節沒換就可以還原，不限制頁碼是否改變
-            // 頁碼改變是正常的翻頁行為，還原 scroll 位置不會影響正確性
             canRestore = sourceWebView === webView
                 && currentLoadedChapter == currentChapterAtStart
+                && currentEpubPage == currentPageAtStart
         } else if let originalRole {
             canRestore = webViewPool[originalRole] === sourceWebView
                 && preloadedChapter[originalRole] == originalPreloadedChapter
@@ -2329,53 +2257,507 @@ final class LiveWebReader: NSObject, ObservableObject {
         return offsets.isEmpty ? nil : offsets
     }
 
-    // MARK: - EPUBHTMLBuilder Proxy
+    // MARK: - HTML 建構
 
-    private var htmlConfig: EPUBHTMLConfig {
-        let size = currentViewportSize == .zero ? UIScreen.main.bounds.size : currentViewportSize
-        return EPUBHTMLConfig(
-            viewportSize: size,
-            marginH: Int(renderMarginH),
-            marginV: Int(renderMarginV),
-            theme: renderTheme,
-            fontSize: renderFontSize,
-            isEPUB: pipelineKind == .epub,
-            scrollModeEnabled: scrollModeEnabled,
-            safeAreaInsets: currentSafeAreaInsets,
-            footerHeight: renderFooterHeight
+    private func buildChapterHTML(chapter: EPUBChapterRaw, bridgeName: String) -> String {
+        let bookCSS = chapter.cssEntries.map { entry in
+            rewriteCSSURLs(entry.content, cssBaseDir: entry.baseDir)
+        }.joined(separator: "\n")
+        return buildChapterHTML(
+            chapterHTML: chapter.html,
+            chapterBaseURL: chapter.baseURL,
+            bridgeName: bridgeName,
+            inlineBookCSS: bookCSS,
+            useReadiumCSS: pipelineKind == .epub
         )
     }
 
-    private func buildChapterHTML(chapter: EPUBChapterRaw, bridgeName: String) -> String {
-        return EPUBHTMLBuilder.buildChapterHTML(chapter: chapter, bridgeName: bridgeName, config: htmlConfig)
-    }
+    private func buildChapterHTML(
+        chapterHTML: String,
+        chapterBaseURL: URL,
+        bridgeName: String,
+        inlineBookCSS: String = "",
+        useReadiumCSS: Bool = false
+    ) -> String {
+        let size = currentViewportSize == .zero ? UIScreen.main.bounds.size : currentViewportSize
+        let marginH = Int(renderMarginH)
+        let marginV = Int(renderMarginV)
+        let (bgColor, textColor) = themeColors(renderTheme)
+        let adapterCSS = useReadiumCSS ? "" : ReaderAdapterAssets.css()
+        let adapterJS = useReadiumCSS ? "" : ReaderAdapterAssets.javaScript()
+        let adapterCSSBlock = adapterCSS.isEmpty ? "" : "<style>\(adapterCSS)</style>"
+        let adapterJSBlock = adapterJS.isEmpty ? "" : "<script>\(adapterJS)</script>"
 
-    private func buildChapterHTML(chapterHTML: String, chapterBaseURL: URL, bridgeName: String, inlineBookCSS: String = "", useReadiumCSS: Bool = false) -> String {
-        return EPUBHTMLBuilder.buildChapterHTML(chapterHTML: chapterHTML, chapterBaseURL: chapterBaseURL, bridgeName: bridgeName, inlineBookCSS: inlineBookCSS, config: htmlConfig)
-    }
-
-    internal func testing_getJSContractString() -> String {
-        return EPUBHTMLBuilder.buildChapterHTML(chapterHTML: "", chapterBaseURL: URL(fileURLWithPath: "/"), bridgeName: "testBridge", config: htmlConfig)
-    }
-
-    private func scrollChapterBodyHTML(at index: Int) async -> (bodyHTML: String, title: String, baseURL: URL)? {
-        if let session = publicationSession {
-            guard index >= 0, index < session.chapters.count else { return nil }
-            do {
-                let html = try await session.chapterHTML(at: index)
-                let body = EPUBHTMLBuilder.extractBodyContent(html)
-                return (body, session.chapters[index].title, session.chapterBaseURL(at: index))
-            } catch { return nil }
-        } else if let parsed = parsedBook {
-            guard index >= 0, index < parsed.chapters.count else { return nil }
-            let chapter = parsed.chapters[index]
-            let body = EPUBHTMLBuilder.extractBodyContent(chapter.html)
-            return (body, chapter.title, chapter.baseURL)
+        let bodyContent = extractBodyContent(chapterHTML)
+        let headContent = extractHeadContent(chapterHTML)
+        let bodyAttributes = useReadiumCSS ? extractBodyAttributes(chapterHTML) : ""
+        let bodyTagAttributes = bodyAttributes.isEmpty ? "" : " \(bodyAttributes)"
+        let wrappedBodyContent: String
+        if useReadiumCSS {
+            wrappedBodyContent = bodyContent
+        } else if bodyContent.contains("id=\"reader-content\"") {
+            wrappedBodyContent = bodyContent
+        } else {
+            wrappedBodyContent = "<div id=\"reader-content\">\(bodyContent)</div>"
         }
-        return nil
+
+        let layoutConfigJS = layoutConfigJSLiteral(marginH: marginH, marginV: marginV)
+        let layoutBootstrapJS = useReadiumCSS ? "" : "applyReaderLayoutConfig(\(layoutConfigJS));"
+
+        let viewportWidth = max(Int(size.width.rounded(.down)), 1)
+        let topPadding = max(Int(currentSafeAreaInsets.top.rounded(.up)) + 6, marginV)
+        let bottomPadding = max(
+            Int(currentSafeAreaInsets.bottom.rounded(.up)) + Int(renderFooterHeight.rounded(.up)),
+            marginV
+        )
+
+        // Readium CSS 注入（EPUB 專用，提供頂級排版品質）
+        // 三明治順序：before → 出版 CSS → default → adapter/inline → after
+        let readiumBeforeCSS: String
+        let readiumDefaultCSS: String
+        let readiumAfterCSS: String
+        let htmlAttrs: String
+        if useReadiumCSS {
+            let fontSizePct = "\(Int(renderFontSize / 16.0 * 100))%"
+            let readiumTheme: String
+            switch renderTheme {
+            case "night": readiumTheme = "readium-night-on"
+            case "sepia": readiumTheme = "readium-sepia-on"
+            default: readiumTheme = "readium-default-on"
+            }
+            let bundle = ReadiumCSSLoader.bundle(
+                configuration: ReadiumCSSConfiguration(
+                    fontSize: fontSizePct,
+                    lineHeight: "1.6",
+                    theme: readiumTheme,
+                    colWidth: viewportWidth,
+                    pageGutter: marginH,
+                    scroll: scrollModeEnabled
+                )
+            )
+            readiumBeforeCSS = bundle.beforeStyleTag
+            readiumDefaultCSS = bundle.defaultStyleTag
+            readiumAfterCSS = bundle.afterStyleTag
+            htmlAttrs = bundle.htmlAttributes.attributeString()
+        } else {
+            readiumBeforeCSS = ""
+            readiumDefaultCSS = ""
+            readiumAfterCSS = ""
+            htmlAttrs = ""
+        }
+
+        // EPUB 只保留 Readium CSS，避免和自訂排版規則互相覆蓋。
+        // 非 EPUB 仍使用原本的 inline CSS 控制排版。
+        let inlineLayoutCSS: String
+        if useReadiumCSS {
+            inlineLayoutCSS = """
+            html {
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                overflow: hidden;
+                background: \(bgColor);
+                color: \(textColor);
+            }
+            body {
+                height: 100vh;
+                margin: 0;
+                overflow: visible;
+                padding-top: \(topPadding)px !important;
+                padding-bottom: \(bottomPadding)px !important;
+                box-sizing: border-box;
+            }
+            img, video, audio, object, svg {
+                max-width: 100% !important;
+                height: auto;
+                display: block;
+                break-inside: avoid;
+                margin-left: auto;
+                margin-right: auto;
+            }
+            @page { margin: 0 !important; }
+            .calibre, .calibre1, .calibre2, .calibre3, .calibre4, .calibre5,
+            .calibre6, .calibre7, .calibre8, .calibre9, .calibre10 {
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+            }
+            """
+        } else {
+            // 非 EPUB（TXT 等）：完整 inline CSS 控制所有排版
+            inlineLayoutCSS = """
+            html {
+                height: 100%; margin: 0; padding: 0; overflow: hidden;
+                background: \(bgColor);
+            }
+            body {
+                height: 100%;
+                margin: 0 !important;
+                overflow: visible !important;
+                background: \(bgColor);
+                -webkit-column-width: \(viewportWidth)px !important;
+                column-width: \(viewportWidth)px !important;
+                -webkit-column-gap: 0 !important;
+                column-gap: 0 !important;
+                column-fill: auto !important;
+                -webkit-column-fill: auto !important;
+                padding-top: \(topPadding)px !important;
+                padding-bottom: \(bottomPadding)px !important;
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+                box-sizing: border-box !important;
+                color: \(textColor);
+                font-size: \(Int(renderFontSize))px;
+                line-height: 1.6;
+                text-align: justify;
+                text-justify: inter-ideograph;
+                -webkit-text-size-adjust: none;
+                word-break: break-word;
+                overflow-wrap: break-word;
+                hyphens: none;
+                line-break: strict;
+                text-rendering: optimizeLegibility;
+            }
+            img {
+                max-width: 100% !important; height: auto; display: block;
+                break-inside: avoid; page-break-inside: avoid; -webkit-column-break-inside: avoid;
+            }
+            svg { max-width: 100% !important; }
+            @page { margin: 0 !important; }
+            p, p[class], blockquote, blockquote[class], pre, pre[class],
+            li, li[class], dd, dd[class], dt, dt[class], figcaption, figcaption[class] {
+                line-height: 1.6 !important;
+                margin-block-start: 0 !important; margin-block-end: 0.5em !important;
+                padding-block-start: 0 !important; padding-block-end: 0 !important;
+                height: auto !important; min-height: 0 !important; max-height: none !important;
+                break-inside: auto !important; page-break-inside: auto !important;
+                -webkit-column-break-inside: auto !important;
+                widows: 1 !important; orphans: 1 !important;
+                word-break: normal !important; overflow-wrap: anywhere !important;
+                white-space: normal !important;
+            }
+            p, p[class] {
+                text-indent: 2em !important;
+                text-align: justify !important;
+                text-justify: inter-ideograph !important;
+            }
+            p.lk, p.dibian, p[class~="lk"], p[class~="dibian"],
+            p.normaltext2, p[class~="normaltext2"] {
+                text-indent: 0 !important; text-align: right !important;
+            }
+            p.yingwen, p[class~="yingwen"] {
+                text-indent: 0 !important; text-align: center !important;
+            }
+            div, div[class], section, section[class], article, article[class], figure, figure[class] {
+                margin-block-start: 0 !important; margin-block-end: 0 !important;
+                padding-block-start: 0 !important; padding-block-end: 0 !important;
+                height: auto !important; min-height: 0 !important; max-height: none !important;
+            }
+            h1, h1[class], h2, h2[class], h3, h3[class],
+            h4, h4[class], h5, h5[class], h6, h6[class] {
+                break-after: avoid !important; break-inside: auto !important;
+                page-break-inside: auto !important; -webkit-column-break-inside: auto !important;
+                margin-block-start: 0.8em !important; margin-block-end: 0.4em !important;
+                line-height: 1.4 !important; text-indent: 0 !important;
+            }
+            h1.title, h2.title, h3.title, h1.title1, h2.title1, h3.title1,
+            h1.title2, h2.title2, h3.title2, h1.title3, h2.title3, h3.title3,
+            h1.bqbt, h2.bqbt, h3.bqbt, .title, .title1, .title2, .title3, .bqbt {
+                margin-block-start: 0 !important; margin-block-end: 0.6em !important;
+            }
+            body > *:first-child, #reader-content > *:first-child { margin-block-start: 0 !important; }
+            body > *:last-child, #reader-content > *:last-child { margin-block-end: 0 !important; }
+            body, html { max-width: none !important; max-height: none !important; position: static !important; }
+            body > div, body > section, body > article,
+            #reader-content > div, #reader-content > section {
+                height: auto !important; min-height: 0 !important; max-height: none !important;
+                width: auto !important; max-width: 100% !important;
+                margin: 0 !important; position: static !important; float: none !important;
+            }
+            #reader-content {
+                padding-left: \(marginH)px !important; padding-right: \(marginH)px !important;
+                padding-top: 0 !important; padding-bottom: 0 !important;
+                box-sizing: border-box !important;
+            }
+            .calibre, .calibre1, .calibre2, .calibre3, .calibre4, .calibre5,
+            .calibre6, .calibre7, .calibre8, .calibre9, .calibre10 {
+                height: auto !important; min-height: 0 !important; max-height: none !important;
+                margin: 0 !important; padding: 0 !important; position: static !important;
+            }
+            """
+        }
+
+        return """
+        <!DOCTYPE html>
+        <html \(htmlAttrs)>
+        <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=\(viewportWidth), initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no, viewport-fit=cover">
+        <base href="\(chapterBaseURL.absoluteString)">
+        \(readiumBeforeCSS)
+        \(headContent)
+        \(inlineBookCSS.isEmpty ? "" : "<style>\(inlineBookCSS)</style>")
+        \(readiumDefaultCSS)
+        \(adapterCSSBlock)
+        <style>\(inlineLayoutCSS)</style>
+        \(readiumAfterCSS)
+        \(adapterJSBlock)
+        </head>
+        <body\(bodyTagAttributes)>
+        \(wrappedBodyContent)
+        <script>
+        \(layoutBootstrapJS)
+
+        // 跟手翻頁全域狀態
+        var _currentLocalPage = 0;
+        var _pageSpan = \(viewportWidth);
+        var _totalPages = 1;
+        var _pageOffsets = [0];
+        var _isDragging = false;
+        var _dragBaseScroll = 0;
+
+        function _pageOffsetAt(n) {
+            if (!_pageOffsets.length) return 0;
+            if (n <= 0) return _pageOffsets[0] || 0;
+            if (n >= _pageOffsets.length) return _pageOffsets[_pageOffsets.length - 1] || 0;
+            return _pageOffsets[n] || 0;
+        }
+
+        function _markPagesForNodes(nodes, pageMap) {
+            var currentScroll = window.scrollX || document.documentElement.scrollLeft || document.body.scrollLeft || 0;
+            Array.from(nodes || []).forEach(function(el) {
+                if (!el || !el.tagName) return;
+                var tag = el.tagName.toLowerCase();
+                if (['script', 'style', 'link', 'meta', 'br'].indexOf(tag) !== -1) return;
+                var style = window.getComputedStyle(el);
+                if (!style || style.display === 'none' || style.visibility === 'hidden') return;
+
+                var rect = el.getBoundingClientRect();
+                if (!rect || rect.height < 2 || rect.width < 2) return;
+
+                var text = (el.innerText || el.textContent || '').replace(/\\s+/g, '');
+                var isContentTag =
+                    /^h[1-6]$/.test(tag)
+                    || ['p', 'li', 'dt', 'dd', 'blockquote', 'pre', 'figcaption', 'address', 'img', 'svg', 'video', 'audio', 'object', 'canvas', 'figure', 'table', 'hr'].indexOf(tag) !== -1;
+                if (!isContentTag && text.length === 0) return;
+
+                var left = rect.left + currentScroll;
+                var right = rect.right + currentScroll;
+                var firstPage = Math.max(0, Math.floor(left / _pageSpan));
+                var lastPage = Math.max(firstPage, Math.floor((Math.max(right - 1, left)) / _pageSpan));
+                for (var page = firstPage; page <= lastPage; page += 1) {
+                    pageMap[page] = true;
+                }
+            });
+        }
+
+        function _collectPageOffsets() {
+            var pages = Object.create(null);
+            _markPagesForNodes(
+                document.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,pre,figcaption,address,img,svg,video,audio,object,canvas,figure,table,hr'),
+                pages
+            );
+
+            if (Object.keys(pages).length === 0 && document.body) {
+                _markPagesForNodes(document.body.children, pages);
+            }
+
+            var pageIndexes = Object.keys(pages)
+                .map(function(value) { return parseInt(value, 10); })
+                .filter(function(value) { return !isNaN(value) && value >= 0; })
+                .sort(function(a, b) { return a - b; });
+
+            if (pageIndexes.length === 0) {
+                var sw = Math.max(document.body.scrollWidth, document.documentElement.scrollWidth, _pageSpan);
+                var fallbackCount = Math.max(1, Math.ceil(sw / _pageSpan));
+                for (var i = 0; i < fallbackCount; i += 1) {
+                    pageIndexes.push(i);
+                }
+            }
+
+            return pageIndexes.map(function(index) { return index * _pageSpan; });
+        }
+
+        function getPaginationMetrics() {
+            \(useReadiumCSS ? "" : "updateColumnWidth(\(Int(renderFooterHeight)));")
+            _pageSpan = Math.max(window.innerWidth, 1);
+            _pageOffsets = _collectPageOffsets();
+            _totalPages = Math.max(1, _pageOffsets.length);
+            if (_currentLocalPage >= _totalPages) {
+                _currentLocalPage = _totalPages - 1;
+            }
+            return { pageCount: _totalPages, pageOffsets: _pageOffsets };
+        }
+
+        function initLiveReader() {
+            return getPaginationMetrics().pageCount;
+        }
+
+        function _scrollTo(x) {
+            document.documentElement.scrollLeft = x;
+            document.body.scrollLeft = x;
+            window.scrollTo(x, 0);
+        }
+
+        function setPageOffset(dx) {
+            if (!_isDragging) {
+                _isDragging = true;
+                _dragBaseScroll = _pageOffsetAt(_currentLocalPage);
+            }
+            var raw = _dragBaseScroll - dx;
+            var maxScroll = _pageOffsetAt(_totalPages - 1);
+            var clamped = Math.max(0, Math.min(raw, maxScroll));
+            _scrollTo(clamped);
+
+            // 超出邊界的部分用 translateX 跟手（跨章預覽）
+            var overflow = clamped - raw;
+            if (Math.abs(overflow) > 1) {
+                document.body.style.transition = 'none';
+                document.body.style.transform = 'translateX(' + overflow + 'px)';
+            } else {
+                document.body.style.transform = 'none';
+            }
+        }
+
+        function animateToPage(n, ms) {
+            _isDragging = false;
+            // 重置跨章拖動的 translateX
+            if (ms > 0) {
+                document.body.style.transition = 'transform ' + ms + 'ms ease-out';
+            } else {
+                document.body.style.transition = 'none';
+            }
+            document.body.style.transform = 'none';
+
+            if (n >= 0 && n < _totalPages) _currentLocalPage = n;
+            var target = _pageOffsetAt(n);
+            if (ms > 0) {
+                var start = document.documentElement.scrollLeft || document.body.scrollLeft || 0;
+                var distance = target - start;
+                if (Math.abs(distance) < 1) { _scrollTo(target); return; }
+                var startTime = performance.now();
+                function step(now) {
+                    var elapsed = now - startTime;
+                    var progress = Math.min(elapsed / ms, 1);
+                    var eased = 1 - Math.pow(1 - progress, 3);
+                    _scrollTo(start + distance * eased);
+                    if (progress < 1) requestAnimationFrame(step);
+                }
+                requestAnimationFrame(step);
+            } else {
+                _scrollTo(target);
+            }
+        }
+
+        function snapToPage(n) { animateToPage(n, 0); }
+
+        function recalcPages() {
+            return getPaginationMetrics().pageCount;
+        }
+
+        document.addEventListener('click', function(e) {
+            if (!window.webkit || !window.webkit.messageHandlers || !window.webkit.messageHandlers.\(bridgeName)) {
+                return;
+            }
+            var interactive = e.target && e.target.closest
+                ? e.target.closest('a, button, input, textarea, select, summary, label')
+                : null;
+            if (interactive) {
+                return;
+            }
+
+            var x = e.clientX || 0;
+            var y = e.clientY || 0;
+            var w = Math.max(window.innerWidth, 1);
+            var h = Math.max(window.innerHeight, 1);
+            if (y < h * 0.1 || y > h * 0.9) {
+                return;
+            }
+
+            var zone = 'center';
+            if (x < w / 3) {
+                zone = 'left';
+            } else if (x > w * 2 / 3) {
+                zone = 'right';
+            }
+
+            window.webkit.messageHandlers.\(bridgeName).postMessage({
+                type: 'tap',
+                payload: { zone: zone }
+            });
+        }, true);
+
+        function gotoPage(index) {
+            var targetX = _pageOffsetAt(index);
+            window.scrollTo(targetX, 0);
+        }
+
+        // 初始化：等 fonts + images 載入後計算分頁並發送 renderReady 合約
+        (function() {
+            function calculateAndNotify() {
+                var metrics = getPaginationMetrics();
+                
+                // 新的 Minimal Contract: renderReady 
+                window.webkit.messageHandlers.\(bridgeName).postMessage({
+                    type: 'renderReady',
+                    payload: {
+                        pageIndex: 0
+                    }
+                });
+                
+                // 相容舊架構的 paginationReady
+                window.webkit.messageHandlers.\(bridgeName).postMessage({
+                    type: 'paginationReady',
+                    payload: {
+                        pageCount: metrics.pageCount,
+                        pageOffsets: metrics.pageOffsets
+                    }
+                });
+            }
+
+            function waitForWindowLoad() {
+                return new Promise(function(resolve) {
+                    if (document.readyState === 'complete') return resolve();
+                    window.addEventListener('load', resolve, { once: true });
+                });
+            }
+
+            function waitForFonts() {
+                if (document.fonts && document.fonts.ready) return document.fonts.ready.catch(function(){});
+                return Promise.resolve();
+            }
+
+            function waitForImages() {
+                var imgs = Array.from(document.images);
+                var imagePromises = imgs.map(function(img) {
+                    if (img.complete) return Promise.resolve();
+                    if (typeof img.decode === 'function') {
+                        return img.decode().catch(function(){});
+                    }
+                    return new Promise(function(resolve) {
+                        img.addEventListener('load', resolve, { once: true });
+                        img.addEventListener('error', resolve, { once: true });
+                    });
+                });
+                return Promise.all(imagePromises); // Promise.all(imagePromises)
+            }
+
+            Promise.all([waitForWindowLoad(), waitForFonts(), waitForImages()]).then(calculateAndNotify).catch(calculateAndNotify);
+        })();
+        </script>
+        </body>
+        </html>
+        """
     }
 
+    // For Unit Test access
+    internal func testing_getJSContractString() -> String {
+        return buildChapterHTML(chapterHTML: "", chapterBaseURL: URL(fileURLWithPath: "/"), bridgeName: "testBridge")
+    }
 
+    // MARK: - Scroll Mode HTML（上下滑動專用，無 CSS Column）
+
+    /// 為上下滑動模式建構 HTML：自然垂直流、章節容器、JS 注入 API
     private func buildScrollModeHTML(
         startChapterIndex: Int,
         chapterBodyHTML: String,
@@ -2387,38 +2769,567 @@ final class LiveWebReader: NSObject, ObservableObject {
         inlineBookCSS: String = "",
         useReadiumCSS: Bool = false
     ) -> String {
-        return EPUBHTMLBuilder.buildScrollModeHTML(
-            startChapterIndex: startChapterIndex,
-            chapterBodyHTML: chapterBodyHTML,
-            chapterTitle: chapterTitle,
-            chapterBaseURL: chapterBaseURL,
-            chapterHeadHTML: chapterHeadHTML,
-            bodyAttributes: bodyAttributes,
-            bridgeName: bridgeName,
-            inlineBookCSS: inlineBookCSS,
-            config: htmlConfig
+        let size = currentViewportSize == .zero ? UIScreen.main.bounds.size : currentViewportSize
+        let marginH = Int(renderMarginH)
+        let marginV = Int(renderMarginV)
+        let (bgColor, textColor) = themeColors(renderTheme)
+        let adapterCSS = useReadiumCSS ? "" : ReaderAdapterAssets.css()
+        let adapterCSSBlock = adapterCSS.isEmpty ? "" : "<style>\(adapterCSS)</style>"
+
+        let viewportWidth = max(Int(size.width.rounded(.down)), 1)
+        let topPadding = max(Int(currentSafeAreaInsets.top.rounded(.up)) + 6, marginV)
+        let bottomPadding = max(
+            Int(currentSafeAreaInsets.bottom.rounded(.up)) + Int(renderFooterHeight.rounded(.up)),
+            marginV
         )
+
+        // Readium CSS 三明治注入（EPUB 專用）
+        let readiumBeforeCSS: String
+        let readiumDefaultCSS: String
+        let readiumAfterCSS: String
+        let htmlAttrs: String
+        if useReadiumCSS {
+            let fontSizePct = "\(Int(renderFontSize / 16.0 * 100))%"
+            let readiumTheme: String
+            switch renderTheme {
+            case "night": readiumTheme = "readium-night-on"
+            case "sepia": readiumTheme = "readium-sepia-on"
+            default: readiumTheme = "readium-default-on"
+            }
+            let bundle = ReadiumCSSLoader.bundle(
+                configuration: ReadiumCSSConfiguration(
+                    fontSize: fontSizePct,
+                    lineHeight: "1.6",
+                    theme: readiumTheme,
+                    colWidth: viewportWidth,
+                    pageGutter: marginH,
+                    scroll: true
+                )
+            )
+            readiumBeforeCSS = bundle.beforeStyleTag
+            readiumDefaultCSS = bundle.defaultStyleTag
+            readiumAfterCSS = bundle.afterStyleTag
+            htmlAttrs = bundle.htmlAttributes.attributeString()
+        } else {
+            readiumBeforeCSS = ""
+            readiumDefaultCSS = ""
+            readiumAfterCSS = ""
+            htmlAttrs = ""
+        }
+
+        let bodyContent: String
+        if useReadiumCSS {
+            bodyContent = chapterBodyHTML
+        } else if chapterBodyHTML.contains("id=\"reader-content\"") {
+            bodyContent = chapterBodyHTML
+        } else {
+            bodyContent = "<div id=\"reader-content\">\(chapterBodyHTML)</div>"
+        }
+        let bodyTagAttributes = bodyAttributes.isEmpty ? "" : " \(bodyAttributes)"
+
+        // 滾動模式：EPUB 不再疊加自訂排版，只保留最小容器與安全邊界。
+        let scrollInlineCSS: String
+        if useReadiumCSS {
+            scrollInlineCSS = """
+            html {
+                height: auto;
+                margin: 0;
+                padding: 0;
+                overflow-x: hidden;
+                overflow-y: auto;
+                background: \(bgColor);
+                color: \(textColor);
+            }
+            body {
+                min-height: 100vh;
+                margin: 0;
+                padding-top: \(topPadding)px;
+                padding-bottom: \(bottomPadding)px;
+                box-sizing: border-box;
+            }
+            img, video, audio, object, svg {
+                max-width: 100% !important;
+                height: auto;
+                display: block;
+                break-inside: avoid;
+                margin-left: auto;
+                margin-right: auto;
+            }
+            @page { margin: 0 !important; }
+            .calibre, .calibre1, .calibre2, .calibre3, .calibre4, .calibre5,
+            .calibre6, .calibre7, .calibre8, .calibre9, .calibre10 {
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+            }
+            #scroll-content { min-height: 100vh; }
+            .chapter-container { box-sizing: border-box; }
+            """
+        } else {
+            scrollInlineCSS = """
+            html {
+                height: auto !important; margin: 0; padding: 0;
+                overflow-x: hidden !important; overflow-y: auto !important;
+                background: \(bgColor);
+            }
+            body {
+                height: auto !important; margin: 0 !important; overflow: visible !important;
+                background: \(bgColor);
+                column-width: auto !important; -webkit-column-width: auto !important;
+                column-count: auto !important; -webkit-column-count: auto !important;
+                padding-top: \(topPadding)px !important;
+                padding-bottom: \(bottomPadding)px !important;
+                padding-left: 0 !important; padding-right: 0 !important;
+                box-sizing: border-box !important;
+                color: \(textColor);
+                font-size: \(Int(renderFontSize))px;
+                line-height: 1.6; text-align: justify; text-justify: inter-ideograph;
+                -webkit-text-size-adjust: none;
+                word-break: break-word; overflow-wrap: break-word;
+                hyphens: none; line-break: strict; text-rendering: optimizeLegibility;
+            }
+            #scroll-content { min-height: 100vh; }
+            .chapter-container { padding-left: \(marginH)px; padding-right: \(marginH)px; box-sizing: border-box; }
+            .chapter-title-bar {
+                font-size: \(Int(renderFontSize) + 2)px; font-weight: bold;
+                color: \(textColor); opacity: 0.5; padding: 1.5em 0 0.8em 0;
+                text-align: center; text-indent: 0 !important;
+            }
+            .chapter-separator {
+                border: none;
+                border-top: 1px solid \(renderTheme == "night" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)");
+                margin: 0 \(marginH)px;
+            }
+            img { max-width: 100% !important; height: auto; display: block; }
+            svg { max-width: 100% !important; }
+            p, p[class] {
+                line-height: 1.6 !important; margin-block-start: 0 !important;
+                margin-block-end: 0.5em !important;
+                text-indent: 2em !important; text-align: justify !important;
+            }
+            h1, h2, h3, h4, h5, h6 {
+                margin-block-start: 0.8em !important; margin-block-end: 0.4em !important;
+                line-height: 1.4 !important; text-indent: 0 !important;
+            }
+            body > *:first-child, #reader-content > *:first-child,
+            .chapter-body > *:first-child { margin-block-start: 0 !important; }
+            body > *:last-child, #reader-content > *:last-child,
+            .chapter-body > *:last-child { margin-block-end: 0 !important; }
+            body, html { max-width: none !important; max-height: none !important; position: static !important; }
+            .calibre, .calibre1, .calibre2, .calibre3, .calibre4, .calibre5,
+            .calibre6, .calibre7, .calibre8, .calibre9, .calibre10 {
+                height: auto !important; min-height: 0 !important; max-height: none !important;
+                margin: 0 !important; padding: 0 !important; position: static !important;
+            }
+            """
+        }
+
+        return """
+        <!DOCTYPE html>
+        <html \(htmlAttrs)>
+        <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=\(viewportWidth), initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no, viewport-fit=cover">
+        <base href="\(chapterBaseURL.absoluteString)">
+        \(readiumBeforeCSS)
+        \(chapterHeadHTML)
+        \(inlineBookCSS.isEmpty ? "" : "<style>\(inlineBookCSS)</style>")
+        \(readiumDefaultCSS)
+        \(adapterCSSBlock)
+        <style>\(scrollInlineCSS)</style>
+        \(readiumAfterCSS)
+        </head>
+        <body\(bodyTagAttributes)>
+        <div id="scroll-content">
+            <div class="chapter-container" data-chapter="\(startChapterIndex)" id="ch-\(startChapterIndex)">
+                <div class="chapter-body">\(bodyContent)</div>
+            </div>
+        </div>
+        <script>
+        // ===== 上下滑動模式 JS Bridge =====
+        var _scrollChapters = [\(startChapterIndex)];
+        var _bridgeName = '\(bridgeName)';
+        var _showChapterChrome = \(useReadiumCSS ? "false" : "true");
+
+        function _postMessage(msg) {
+            try { window.webkit.messageHandlers[_bridgeName].postMessage(msg); } catch(e) {}
+        }
+
+        // 注入章節到 DOM
+        function _injectChapter(index, base64html, title, position) {
+            if (document.getElementById('ch-' + index)) return -1; // 已存在
+
+            var div = document.createElement('div');
+            div.className = 'chapter-container';
+            div.dataset.chapter = String(index);
+            div.id = 'ch-' + index;
+
+            var bodyDiv = document.createElement('div');
+            bodyDiv.className = 'chapter-body';
+            bodyDiv.innerHTML = decodeURIComponent(escape(window.atob(base64html)));
+
+            if (_showChapterChrome) {
+                var titleBar = document.createElement('div');
+                titleBar.className = 'chapter-title-bar';
+                titleBar.textContent = title;
+                div.appendChild(titleBar);
+            }
+            div.appendChild(bodyDiv);
+
+            var content = document.getElementById('scroll-content');
+            var sep = null;
+            if (_showChapterChrome) {
+                sep = document.createElement('hr');
+                sep.className = 'chapter-separator';
+            }
+
+            if (position === 'before') {
+                var oldHeight = document.documentElement.scrollHeight;
+                var oldScroll = window.scrollY || window.pageYOffset;
+                content.insertBefore(div, content.firstChild);
+                if (sep) content.insertBefore(sep, div.nextSibling);
+                // 補償滾動位置，讓畫面不跳
+                var newHeight = document.documentElement.scrollHeight;
+                window.scrollTo(0, oldScroll + (newHeight - oldHeight));
+            } else {
+                if (sep) content.appendChild(sep);
+                content.appendChild(div);
+            }
+
+            _scrollChapters.push(index);
+            _scrollChapters.sort(function(a, b) { return a - b; });
+            return document.documentElement.scrollHeight;
+        }
+
+        // 移除遠端章節（虛擬 DOM）
+        function _removeChapter(index) {
+            var el = document.getElementById('ch-' + index);
+            if (!el) return;
+            var isAbove = (el.offsetTop + el.offsetHeight) < (window.scrollY || 0);
+            var removedHeight = el.offsetHeight;
+
+            // 移除分隔線
+            if (_showChapterChrome) {
+                var prev = el.previousElementSibling;
+                var next = el.nextElementSibling;
+                if (next && next.className === 'chapter-separator') next.remove();
+                else if (prev && prev.className === 'chapter-separator') prev.remove();
+            }
+            el.remove();
+
+            // 如果移除的是上方章節，補償滾動位置
+            if (isAbove) {
+                window.scrollTo(0, Math.max(0, (window.scrollY || 0) - removedHeight));
+            }
+
+            _scrollChapters = _scrollChapters.filter(function(c) { return c !== index; });
+        }
+
+        // 回傳當前可見章節及進度
+        function _getVisibleChapter() {
+            var chapters = document.querySelectorAll('.chapter-container');
+            var anchor = (window.scrollY || 0) + window.innerHeight * 0.3;
+            var best = null;
+            for (var i = 0; i < chapters.length; i++) {
+                var ch = chapters[i];
+                var top = ch.offsetTop;
+                var bottom = top + ch.offsetHeight;
+                if (anchor >= top && anchor <= bottom) {
+                    var progress = Math.min(1, Math.max(0, (anchor - top) / Math.max(ch.offsetHeight, 1)));
+                    best = { chapter: parseInt(ch.dataset.chapter), progress: progress };
+                    break;
+                }
+            }
+            if (!best && chapters.length > 0) {
+                var last = chapters[chapters.length - 1];
+                best = { chapter: parseInt(last.dataset.chapter), progress: 1.0 };
+            }
+            return best || { chapter: \(startChapterIndex), progress: 0 };
+        }
+
+        // 跳到指定章節
+        function _scrollToChapter(index, progressInChapter) {
+            var el = document.getElementById('ch-' + index);
+            if (!el) return;
+            var targetY = el.offsetTop;
+            if (progressInChapter > 0) {
+                targetY += el.offsetHeight * Math.min(1, progressInChapter);
+            }
+            window.scrollTo(0, targetY);
+        }
+
+        // 點擊區域偵測（上下滑動也需要點中間呼出工具列）
+        document.addEventListener('click', function(e) {
+            var x = e.clientX, w = window.innerWidth;
+            var y = e.clientY, h = window.innerHeight;
+            // 中間 1/3 區域
+            if (x > w / 3 && x < w * 2 / 3 && y > h / 4 && y < h * 3 / 4) {
+                _postMessage({ type: 'tap', payload: { zone: 'center' } });
+            }
+        }, true);
+
+        function gotoPage(index) {
+            window.scrollTo(0, 0);
+        }
+        function getPaginationMetrics() {
+            return { pageCount: 1, pageOffsets: [0] };
+        }
+
+        // 通知 Swift ready
+        (function() {
+            function notifyReady() {
+                window.webkit.messageHandlers.\(bridgeName).postMessage({
+                    type: 'renderReady',
+                    payload: { pageIndex: 0 }
+                });
+                window.webkit.messageHandlers.\(bridgeName).postMessage({
+                    type: 'paginationReady',
+                    payload: { pageCount: 1, scrollMode: true }
+                });
+            }
+            
+            function waitForWindowLoad() {
+                return new Promise(function(resolve) {
+                    if (document.readyState === 'complete') return resolve();
+                    window.addEventListener('load', resolve, { once: true });
+                });
+            }
+
+            function waitForFonts() {
+                if (document.fonts && document.fonts.ready) return document.fonts.ready.catch(function(){});
+                return Promise.resolve();
+            }
+
+            function waitForImages() {
+                var imgs = Array.from(document.images);
+                var imagePromises = imgs.map(function(img) {
+                    if (img.complete) return Promise.resolve();
+                    if (typeof img.decode === 'function') {
+                        return img.decode().catch(function(){});
+                    }
+                    return new Promise(function(resolve) {
+                        img.addEventListener('load', resolve, { once: true });
+                        img.addEventListener('error', resolve, { once: true });
+                    });
+                });
+                return Promise.all(imagePromises); // Promise.all(imagePromises)
+            }
+
+            Promise.all([waitForWindowLoad(), waitForFonts(), waitForImages()]).then(notifyReady).catch(notifyReady);
+        })();
+        </script>
+        </body>
+        </html>
+        """
     }
+
+    /// 取得章節的 body HTML（供 scroll mode 注入用）
+    private func scrollChapterBodyHTML(at index: Int) async -> (bodyHTML: String, title: String, baseURL: URL)? {
+        if let session = publicationSession {
+            guard index >= 0, index < session.chapters.count else { return nil }
+            do {
+                let html = try await session.chapterHTML(at: index)
+                let body = extractBodyContent(html)
+                return (body, session.chapters[index].title, session.chapterBaseURL(at: index))
+            } catch { return nil }
+        } else if let parsed = parsedBook {
+            guard index >= 0, index < parsed.chapters.count else { return nil }
+            let chapter = parsed.chapters[index]
+            let body = extractBodyContent(chapter.html)
+            return (body, chapter.title, chapter.baseURL)
+        }
+        return nil
+    }
+
+    // MARK: - Layout Config JS
+
+    private func layoutConfigJSLiteral(marginH: Int, marginV: Int) -> String {
+        let size = currentViewportSize == .zero ? UIScreen.main.bounds.size : currentViewportSize
+        let viewportWidth = Int(size.width)
+        let viewportHeight = Int(size.height)
+        // SO 最佳實踐：pageWidth = viewportWidth（CSS box-sizing 處理 padding）
+        // column-gap = 0，pageSpan = viewportWidth
+        let pageWidth = viewportWidth
+        let pageHeight = viewportHeight
+        let pageSpan = viewportWidth
+
+        return """
+        {
+            flow: '\(renderFlowMode == "vertical" ? "vertical" : "horizontal")',
+            paginated: true,
+            fontSize: \(Int(renderFontSize)),
+            horizontalProfile: {
+                geometry: {
+                    strategy: 'paged-columns',
+                    writingMode: 'horizontal-tb',
+                    pageAxis: 'x',
+                    pageProgression: 'ltr',
+                    viewportWidth: \(viewportWidth),
+                    viewportHeight: \(viewportHeight),
+                    pageWidth: \(pageWidth),
+                    pageHeight: \(pageHeight),
+                    pageSpan: \(pageSpan),
+                    pageInsetBlockStart: 0,
+                    pageInsetBlockEnd: 0,
+                    pageInsetInlineStart: 0,
+                    pageInsetInlineEnd: 0,
+                    columnGap: 0
+                },
+                typography: {
+                    lineHeight: 1.6,
+                    paddingVertical: \(marginV),
+                    paddingHorizontal: \(marginH),
+                    paragraphIndent: '2em',
+                    paragraphSpacing: 0.9,
+                    headingTop: 0.75,
+                    headingBottom: 0.42
+                }
+            },
+            verticalProfile: {
+                geometry: {
+                    strategy: 'stacked-pages',
+                    writingMode: 'horizontal-tb',
+                    pageAxis: 'y',
+                    pageProgression: 'ltr',
+                    viewportWidth: \(viewportWidth),
+                    viewportHeight: \(viewportHeight),
+                    pageWidth: \(pageWidth),
+                    pageHeight: \(pageHeight),
+                    pageSpan: \(viewportHeight),
+                    pageInsetBlockStart: 0,
+                    pageInsetBlockEnd: 0,
+                    pageInsetInlineStart: 0,
+                    pageInsetInlineEnd: 0,
+                    columnGap: 0
+                },
+                typography: {
+                    lineHeight: 1.6,
+                    paddingVertical: \(marginV),
+                    paddingHorizontal: \(marginH),
+                    paragraphIndent: '2em',
+                    paragraphSpacing: 0.82,
+                    headingTop: 0.58,
+                    headingBottom: 0.35
+                }
+            }
+        }
+        """
+    }
+
+    // MARK: - HTML 工具
 
     private func extractBodyContent(_ html: String) -> String {
-        return EPUBHTMLBuilder.extractBodyContent(html)
-    }
-
-    private func extractHeadContent(_ html: String) -> String {
-        return EPUBHTMLBuilder.extractHeadContent(html)
+        let lower = html.lowercased()
+        if let bodyStart = lower.range(of: "<body"),
+           let tagEnd = lower[bodyStart.upperBound...].range(of: ">")
+        {
+            let contentStart = tagEnd.upperBound
+            if let bodyEnd = lower.range(of: "</body>") {
+                let startIdx = html.index(html.startIndex, offsetBy: lower.distance(from: lower.startIndex, to: contentStart))
+                let endIdx = html.index(html.startIndex, offsetBy: lower.distance(from: lower.startIndex, to: bodyEnd.lowerBound))
+                return String(html[startIdx..<endIdx])
+            }
+        }
+        return html
     }
 
     private func extractBodyAttributes(_ html: String) -> String {
-        return EPUBHTMLBuilder.extractBodyAttributes(html)
+        let lower = html.lowercased()
+        guard let bodyStart = lower.range(of: "<body"),
+              let tagEnd = lower[bodyStart.upperBound...].range(of: ">")
+        else {
+            return ""
+        }
+
+        let attrStart = html.index(
+            html.startIndex,
+            offsetBy: lower.distance(from: lower.startIndex, to: bodyStart.upperBound)
+        )
+        let attrEnd = html.index(
+            html.startIndex,
+            offsetBy: lower.distance(from: lower.startIndex, to: tagEnd.lowerBound)
+        )
+        return String(html[attrStart..<attrEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func extractHeadContent(_ html: String) -> String {
+        let lower = html.lowercased()
+        guard let headStart = lower.range(of: "<head"),
+              let headTagEnd = lower[headStart.upperBound...].range(of: ">"),
+              let headEnd = lower.range(of: "</head>")
+        else {
+            return ""
+        }
+
+        let contentStart = html.index(html.startIndex, offsetBy: lower.distance(from: lower.startIndex, to: headTagEnd.upperBound))
+        let contentEnd = html.index(html.startIndex, offsetBy: lower.distance(from: lower.startIndex, to: headEnd.lowerBound))
+        return String(html[contentStart..<contentEnd])
+    }
+
+    private func extractHeadStyles(_ html: String, chapterBaseURL: URL) -> String {
+        var styles: [String] = []
+        let pattern = #"<style[^>]*>([\s\S]*?)</style>"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return "" }
+        let ns = html as NSString
+        let lower = html.lowercased()
+        let searchRange: NSRange
+        if let headStart = lower.range(of: "<head"),
+           let headEnd = lower.range(of: "</head>")
+        {
+            let start = lower.distance(from: lower.startIndex, to: headStart.lowerBound)
+            let end = lower.distance(from: lower.startIndex, to: headEnd.upperBound)
+            searchRange = NSRange(location: start, length: end - start)
+        } else {
+            searchRange = NSRange(location: 0, length: ns.length)
+        }
+        for m in regex.matches(in: html, range: searchRange) {
+            if m.numberOfRanges >= 2 {
+                let cssContent = ns.substring(with: m.range(at: 1))
+                let rewritten = rewriteCSSURLs(cssContent, cssBaseDir: chapterBaseURL)
+                styles.append("<style>\(rewritten)</style>")
+            } else {
+                styles.append(ns.substring(with: m.range))
+            }
+        }
+        return styles.joined(separator: "\n")
     }
 
     private func rewriteCSSURLs(_ css: String, cssBaseDir: URL) -> String {
-        return EPUBHTMLBuilder.rewriteCSSURLs(css, cssBaseDir: cssBaseDir)
+        let pattern = #"url\(\s*(['"]?)([^)'"]+)\1\s*\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return css }
+        let ns = css as NSString
+        var result = css
+        let matches = regex.matches(in: css, range: NSRange(location: 0, length: ns.length)).reversed()
+        for m in matches {
+            guard m.numberOfRanges >= 3 else { continue }
+            let quoteRange = m.range(at: 1)
+            let pathRange = m.range(at: 2)
+            let fullRange = m.range
+            let quote = ns.substring(with: quoteRange)
+            let rawPath = ns.substring(with: pathRange)
+            if rawPath.hasPrefix("data:") || rawPath.hasPrefix("http://") || rawPath.hasPrefix("https://") || rawPath.hasPrefix("file://") {
+                continue
+            }
+            let resolved = cssBaseDir.appendingPathComponent(rawPath).standardized
+            let replacement = "url(\(quote)\(resolved.absoluteString)\(quote))"
+            let start = result.index(result.startIndex, offsetBy: fullRange.location)
+            let end = result.index(start, offsetBy: fullRange.length)
+            result.replaceSubrange(start..<end, with: replacement)
+        }
+        return result
     }
 
+    // MARK: - 主題工具
+
     private func themeColors(_ theme: String) -> (bg: String, text: String) {
-        return EPUBHTMLBuilder.themeColors(theme)
+        switch theme {
+        case "white": return ("#ffffff", "#333333")
+        case "sepia": return ("#f4ecd8", "#5b4636")
+        case "night": return ("#1a1a1a", "#d9d9d9")
+        default: return ("#f4ecd8", "#5b4636")
+        }
     }
+
     func themeBackgroundUIColor() -> UIColor {
         switch renderTheme {
         case "white": return .white
