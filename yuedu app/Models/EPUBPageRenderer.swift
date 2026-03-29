@@ -20,21 +20,6 @@ final class EPUBPageRenderer: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &subscriptions)
-
-        // 監聽讀取 WebView 的 paginationReady 信號：分頁完成後才觸發截圖 gate，
-        // 確保 publicationSession 和 chapterPageOffsets 都已就緒
-        engine.$chapterPaginationVersion
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self, self.readingGate == .loading else { return }
-                let chapter = self.engine.currentLoadedChapter
-                guard chapter >= 0, self.engine.currentChapterPageCount > 0 else { return }
-                let offsets = self.engine.currentChapterPageOffsets
-                let pageCount = self.engine.currentChapterPageCount
-                self.triggerReadingGate(forChapter: chapter, offsets: offsets, pageCount: pageCount)
-            }
-            .store(in: &subscriptions)
     }
 
     var onRelocated: ((String, Double) -> Void)? {
@@ -99,8 +84,12 @@ final class EPUBPageRenderer: ObservableObject {
             )
         }
         readingGate = .loading
-        snapshotWebView.cancel()
-        // gate 由 engine.$chapterPaginationVersion 在 paginationReady 後觸發，無需固定延遲
+        Task { [weak self] in
+            guard let self else { return }
+            // 等 engine 開始載入（100ms 讓 publicationSession 建立）
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            self.triggerReadingGate(forChapter: 0)
+        }
     }
 
     func loadEPUBScroll(source: EPUBReaderSource, settings: ReaderRenderSettings) {
@@ -114,8 +103,12 @@ final class EPUBPageRenderer: ObservableObject {
             )
         }
         readingGate = .loading
-        snapshotWebView.cancel()
-        // gate 由 engine.$chapterPaginationVersion 在 paginationReady 後觸發，無需固定延遲
+        Task { [weak self] in
+            guard let self else { return }
+            // 等 engine 開始載入（100ms 讓 publicationSession 建立）
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            self.triggerReadingGate(forChapter: 0)
+        }
     }
 
     func reloadWithUpdatedPackage(_ package: RenderPackage, settings: ReaderRenderSettings) {
@@ -133,13 +126,9 @@ final class EPUBPageRenderer: ObservableObject {
     func jumpToChapter(_ chapterIdx: Int, preferredLocalPage: Int? = nil) {
         engine.jumpToChapter(chapterIdx, preferredLocalPage: preferredLocalPage)
         // Gate 判斷：目標章節第 0 頁截圖不存在才觸發
-        // offsets 在 jumpToChapter 後可能尚未就緒（等 paginationReady），
-        // 由 engine.$chapterPaginationVersion 訂閱在 paginationReady 後自動觸發
         let firstPage = engine.firstGlobalPage(forChapter: chapterIdx) ?? -1
         if firstPage < 0 || engine.snapshot(forPage: firstPage) == nil {
-            readingGate = .loading
-            snapshotWebView.cancel()
-            // 實際截圖 gate 由 paginationReady 訂閱觸發
+            triggerReadingGate(forChapter: chapterIdx)
         }
     }
 
@@ -227,8 +216,7 @@ final class EPUBPageRenderer: ObservableObject {
         engine.prepareDisplaySnapshot(forPage: page, priority: priority)
     }
 
-    /// offsets/pageCount 由讀取 WebView 的 paginationReady 提供，確保 JS 已就緒才觸發
-    private func triggerReadingGate(forChapter chapterIdx: Int, offsets: [CGFloat], pageCount: Int) {
+    private func triggerReadingGate(forChapter chapterIdx: Int) {
         readingGate = .loading
         snapshotWebView.cancel()
         Task { [weak self] in
@@ -241,8 +229,6 @@ final class EPUBPageRenderer: ObservableObject {
             self.snapshotWebView.loadAndCapture(
                 html: html,
                 baseURL: baseURL,
-                pageOffsets: offsets,
-                pageCount: pageCount,
                 globalPageOffset: globalOffset,
                 onPageReady: { [weak self] globalPage, image in
                     self?.storeSnapshot(image: image, forGlobalPage: globalPage)

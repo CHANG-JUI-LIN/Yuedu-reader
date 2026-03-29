@@ -33,8 +33,6 @@ final class LiveWebReader: NSObject, ObservableObject {
     @Published private(set) var pageStatesVersion: Int = 0
     @Published var snapshotProgress: Double = 1.0
     @Published var snapshotVersion: Int = 0
-    /// 每次 paginationReady 信號到達時遞增，供 EPUBPageRenderer 觀察觸發 gate
-    @Published var chapterPaginationVersion: Int = 0
     @Published var isCommitting = false
     @Published private(set) var restoredFromDisk = false
 
@@ -144,7 +142,7 @@ final class LiveWebReader: NSObject, ObservableObject {
     private var chapterPageCounts: [Int: Int] = [:]
     private var chapterPageOffsets: [Int: [CGFloat]] = [:]
     private(set) var globalPageMap: [(chapter: Int, page: Int)] = []
-    var currentLoadedChapter: Int = -1
+    private var currentLoadedChapter: Int = -1
 
     // MARK: - 渲染設定
 
@@ -161,9 +159,6 @@ final class LiveWebReader: NSObject, ObservableObject {
     private var snapshotStates: [Int: PageRenderState] = [:]
     private var snapshotRevisions: [Int: Int] = [:]
     private var snapshotTasks: [Int: Task<Void, Never>] = [:]
-    /// Per-WebView 截圖互斥鎖，防止多個 Task 並發 scroll 同一 WebView 導致截圖內容混亂
-    private var snapshotLockByWebView: [ObjectIdentifier: Bool] = [:]
-    private var snapshotWaitersByWebView: [ObjectIdentifier: [CheckedContinuation<Void, Never>]] = [:]
     private var crossChapterTransitionTask: Task<Void, Never>?
     private var tapTurnLockUntil: CFAbsoluteTime = 0
 
@@ -1303,7 +1298,6 @@ final class LiveWebReader: NSObject, ObservableObject {
             chapterLoadContinuation = nil
             c.resume(returning: true)
         }
-        chapterPaginationVersion &+= 1
     }
 
     // MARK: - 翻頁
@@ -1596,11 +1590,6 @@ final class LiveWebReader: NSObject, ObservableObject {
     /// 取得當前章節的本地頁數（給手勢層判斷邊界用）
     var currentChapterPageCount: Int {
         chapterPageCounts[currentLoadedChapter] ?? 1
-    }
-
-    /// 當前章節各頁的精確 scroll offset（由 JS paginationReady 提供）
-    var currentChapterPageOffsets: [CGFloat] {
-        chapterPageOffsets[currentLoadedChapter] ?? []
     }
 
     /// 取得當前本地頁碼
@@ -2131,11 +2120,6 @@ final class LiveWebReader: NSObject, ObservableObject {
         snapshotStates.removeAll()
         snapshotRevisions.removeAll()
         snapshotVersion += 1
-        // 釋放所有等待截圖鎖的 continuations，避免 Task 洩漏
-        let allWaiters = snapshotWaitersByWebView.values.flatMap { $0 }
-        snapshotWaitersByWebView.removeAll()
-        snapshotLockByWebView.removeAll()
-        allWaiters.forEach { $0.resume() }
     }
 
     func cancelSnapshot(forPage page: Int) {
@@ -2177,30 +2161,7 @@ final class LiveWebReader: NSObject, ObservableObject {
         return nil
     }
 
-    private func acquireSnapshotLock(for webView: WKWebView) async {
-        let key = ObjectIdentifier(webView)
-        if snapshotLockByWebView[key] != true {
-            snapshotLockByWebView[key] = true
-            return
-        }
-        await withCheckedContinuation { continuation in
-            snapshotWaitersByWebView[key, default: []].append(continuation)
-        }
-    }
-
-    private func releaseSnapshotLock(for webView: WKWebView) {
-        let key = ObjectIdentifier(webView)
-        if snapshotWaitersByWebView[key]?.isEmpty != false {
-            snapshotLockByWebView.removeValue(forKey: key)
-        } else {
-            snapshotWaitersByWebView[key]?.removeFirst().resume()
-        }
-    }
-
     private func snapshotImage(of sourceWebView: WKWebView, localPage: Int) async -> UIImage? {
-        guard !Task.isCancelled else { return nil }
-        await acquireSnapshotLock(for: sourceWebView)
-        defer { releaseSnapshotLock(for: sourceWebView) }
         guard !Task.isCancelled else { return nil }
 
         let pageCount = resolvedPageCount(for: sourceWebView)

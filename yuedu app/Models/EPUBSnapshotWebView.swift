@@ -15,7 +15,6 @@ private final class WeakScriptMessageProxy: NSObject, WKScriptMessageHandler {
 
 /// 獨立截圖 WebView：放在隱藏 UIWindow 中，串行為每頁截圖。
 /// 與閱讀 WebView 完全分離，消除 scroll/render 競爭。
-/// 使用讀取 WebView 已計算好的 pageOffsets，不再等待自身的 paginationReady。
 @MainActor
 final class EPUBSnapshotWebView: NSObject {
 
@@ -26,11 +25,18 @@ final class EPUBSnapshotWebView: NSObject {
     private let webView: WKWebView
     private let snapshotWindow: UIWindow
     private var currentCaptureTask: Task<Void, Never>?
-    private var navigationContinuation: CheckedContinuation<Bool, Never>?
+    private var paginationContinuation: CheckedContinuation<PaginationInfo?, Never>?
+    private var paginationGeneration = 0
+
+    struct PaginationInfo {
+        let pageCount: Int
+        let pageOffsets: [CGFloat]
+    }
 
     // MARK: - 初始化
 
     init(schemeHandler: ReaderSchemeHandler) {
+        // 1. 建立獨立 WKWebViewConfiguration（bridge name: snapshotBridge）
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
@@ -39,6 +45,7 @@ final class EPUBSnapshotWebView: NSObject {
         let ucc = WKUserContentController()
         config.userContentController = ucc
 
+        // 2. 建立 WKWebView（全螢幕尺寸，確保截圖分辨率正確）
         let size = UIScreen.main.bounds.size
         let wv = WKWebView(frame: CGRect(origin: .zero, size: size), configuration: config)
         wv.isOpaque = false
@@ -46,7 +53,7 @@ final class EPUBSnapshotWebView: NSObject {
         wv.scrollView.isScrollEnabled = false
         self.webView = wv
 
-        // 隱藏 UIWindow：isHidden=false 讓 WebView 進渲染樹，alpha=0 對用戶不可見
+        // 3. 建立隱藏 UIWindow（必須 isHidden=false 才能進渲染樹，alpha=0 對用戶不可見）
         let window: UIWindow
         if let scene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
@@ -65,12 +72,13 @@ final class EPUBSnapshotWebView: NSObject {
 
         super.init()
 
+        // 4. 把 WebView 加入 window
         window.addSubview(wv)
         wv.frame = window.bounds
-        wv.navigationDelegate = self
 
-        // snapshotBridge 保留（HTML 可能仍有 postMessage 呼叫），用 weak proxy 避免 retain cycle
+        // 5. 註冊 JS message handler
         ucc.add(WeakScriptMessageProxy(target: self), name: "snapshotBridge")
+        wv.navigationDelegate = self
     }
 
     deinit {
@@ -84,19 +92,16 @@ final class EPUBSnapshotWebView: NSObject {
         currentCaptureTask?.cancel()
         currentCaptureTask = nil
         isCapturing = false
-        navigationContinuation?.resume(returning: false)
-        navigationContinuation = nil
+        paginationContinuation?.resume(returning: nil)
+        paginationContinuation = nil
     }
 
     // MARK: - 主要截圖流程
 
-    /// 載入章節 HTML，使用讀取 WebView 已計算好的 pageOffsets 串行截圖。
-    /// 不再等待自身的 paginationReady，改用 WKNavigationDelegate.didFinish + rAF。
+    /// 載入章節 HTML 並串行截圖。
     func loadAndCapture(
         html: String,
         baseURL: URL,
-        pageOffsets: [CGFloat],
-        pageCount: Int,
         globalPageOffset: Int,
         onPageReady: @escaping (Int, UIImage) -> Void,
         onGateReady: @escaping () -> Void
@@ -108,42 +113,44 @@ final class EPUBSnapshotWebView: NSObject {
             guard let self else { return }
             defer { self.isCapturing = false }
 
-            // 載入 HTML，等待 didFinish（頁面 DOM + CSS 初始化完成）
+            // 載入 HTML
             self.webView.stopLoading()
             self.webView.loadHTMLString(html, baseURL: baseURL)
 
-            guard await self.waitForNavigation() else {
+            // 等待 paginationReady（最多 5 秒）
+            guard let pagination = await self.waitForPagination() else {
                 onGateReady()
                 return
             }
             guard !Task.isCancelled else { return }
 
-            // 等兩個 rAF 讓 CSS multi-column layout 完成計算
-            await self.waitForTwoFrames()
-            guard !Task.isCancelled else { return }
-
-            let safePageCount = max(pageCount, 1)
-            let gatePageCount = min(8, safePageCount)
+            let pageCount = max(pagination.pageCount, 1)
+            let offsets = pagination.pageOffsets
+            let gatePageCount = min(8, pageCount)
             var gateTriggered = false
 
-            for localPage in 0..<safePageCount {
+            for localPage in 0..<pageCount {
                 guard !Task.isCancelled else { return }
 
-                let targetOffset: CGFloat = pageOffsets.indices.contains(localPage)
-                    ? pageOffsets[localPage]
+                // 滾到目標頁
+                let targetOffset: CGFloat = offsets.indices.contains(localPage)
+                    ? offsets[localPage]
                     : CGFloat(localPage) * self.webView.bounds.width
                 self.webView.scrollView.setContentOffset(
                     CGPoint(x: targetOffset, y: 0), animated: false
                 )
 
+                // 等待渲染完成
                 let hasImages = await self.pageHasImages()
                 await self.waitForPageReady(hasImages: hasImages)
                 guard !Task.isCancelled else { return }
 
+                // 截圖
                 if let image = await self.captureCurrentPage() {
                     onPageReady(globalPageOffset + localPage, image)
                 }
 
+                // 前 min(8, total) 頁截完後觸發 gate
                 if !gateTriggered && (localPage + 1) >= gatePageCount {
                     gateTriggered = true
                     onGateReady()
@@ -156,32 +163,17 @@ final class EPUBSnapshotWebView: NSObject {
 
     // MARK: - 私有輔助
 
-    /// 等待 WKNavigationDelegate.didFinish，最多 10 秒超時
-    private func waitForNavigation() async -> Bool {
-        await withCheckedContinuation { continuation in
-            navigationContinuation = continuation
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
-                guard let self, self.navigationContinuation != nil else { return }
-                self.navigationContinuation?.resume(returning: false)
-                self.navigationContinuation = nil
+    private func waitForPagination() async -> PaginationInfo? {
+        paginationGeneration &+= 1
+        let myGeneration = paginationGeneration
+        return await withCheckedContinuation { continuation in
+            paginationContinuation = continuation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                guard let self, self.paginationGeneration == myGeneration,
+                      self.paginationContinuation != nil else { return }
+                self.paginationContinuation?.resume(returning: nil)
+                self.paginationContinuation = nil
             }
-        }
-    }
-
-    /// 等兩個 rAF 讓 CSS layout 完成，100ms 超時保底
-    private func waitForTwoFrames() async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            var done = false
-            let finish: () -> Void = {
-                guard !done else { return }
-                done = true
-                continuation.resume()
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: finish)
-            webView.callAsyncJavaScript(
-                "await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))",
-                arguments: [:], in: nil, in: .page
-            ) { _ in finish() }
         }
     }
 
@@ -241,33 +233,24 @@ final class EPUBSnapshotWebView: NSObject {
 }
 
 // MARK: - WKNavigationDelegate
-extension EPUBSnapshotWebView: WKNavigationDelegate {
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        navigationContinuation?.resume(returning: true)
-        navigationContinuation = nil
-    }
+extension EPUBSnapshotWebView: WKNavigationDelegate {}
 
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        navigationContinuation?.resume(returning: false)
-        navigationContinuation = nil
-    }
-
-    func webView(
-        _ webView: WKWebView,
-        didFailProvisionalNavigation navigation: WKNavigation!,
-        withError error: Error
-    ) {
-        navigationContinuation?.resume(returning: false)
-        navigationContinuation = nil
-    }
-}
-
-// MARK: - WKScriptMessageHandler（保留以避免 HTML 的 postMessage 呼叫出現 console 錯誤）
+// MARK: - WKScriptMessageHandler
 extension EPUBSnapshotWebView: WKScriptMessageHandler {
     func userContentController(
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
-        // snapshotBridge 的訊息不再用於控制流程，靜默忽略
+        guard message.name == "snapshotBridge",
+              let body = message.body as? [String: Any],
+              let type = body["type"] as? String,
+              type == "paginationReady",
+              let payload = body["payload"] as? [String: Any] else { return }
+
+        let pageCount = payload["pageCount"] as? Int ?? 0
+        let offsets = (payload["pageOffsets"] as? [Double])?.map { CGFloat($0) } ?? []
+        let info = PaginationInfo(pageCount: pageCount, pageOffsets: offsets)
+        paginationContinuation?.resume(returning: info)
+        paginationContinuation = nil
     }
 }
