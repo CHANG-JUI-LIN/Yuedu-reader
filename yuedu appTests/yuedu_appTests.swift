@@ -229,6 +229,43 @@ struct yuedu_appTests {
         #expect(hasDelegate)
     }
 
+    @Test func paginatorPageRangesTotalLengthEqualsAttrStrLength() async {
+        let text = String(repeating: "一二三四五六七八九十", count: 200)
+        let attrStr = NSAttributedString(
+            string: text,
+            attributes: [.font: UIFont.systemFont(ofSize: 18)]
+        )
+        let paginator = CoreTextPaginator()
+        let layout = await paginator.paginate(
+            spineIndex: 0,
+            attrStr: attrStr,
+            renderSize: CGSize(width: 375, height: 600),
+            fontSize: 18
+        )
+        let total = layout.pageRanges.reduce(0) { $0 + $1.length }
+        #expect(total == attrStr.length)
+        #expect(!layout.pageRanges.isEmpty)
+    }
+
+    @Test func paginatorBinarySearchFindsCorrectPage() async {
+        let text = String(repeating: "Hello world ", count: 300)
+        let attrStr = NSAttributedString(
+            string: text,
+            attributes: [.font: UIFont.systemFont(ofSize: 18)]
+        )
+        let paginator = CoreTextPaginator()
+        let layout = await paginator.paginate(
+            spineIndex: 0,
+            attrStr: attrStr,
+            renderSize: CGSize(width: 375, height: 600),
+            fontSize: 18
+        )
+        guard layout.pageRanges.count > 1 else { return }
+        let secondPageStart = Int(layout.pageRanges[1].location)
+        let foundPage = layout.pageIndex(for: secondPageStart)
+        #expect(foundPage == 1)
+    }
+
     @Test func refreshOnlineBookMetadataRepairsLegacyShelfEntry() async throws {
         let source = try loadSource(named: "速读谷")
         let previousSources = BookSourceStore.shared.sources
