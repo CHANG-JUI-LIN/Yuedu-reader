@@ -7,6 +7,8 @@
 
 import Testing
 import Foundation
+import CoreText
+import UIKit
 @testable import yuedu_app
 
 struct yuedu_appTests {
@@ -188,6 +190,43 @@ struct yuedu_appTests {
             .appendingPathComponent("CharOffsetStoreTest-\(UUID().uuidString)")
         let store = CharOffsetStore(directoryURL: dir)
         #expect(store.load(bookId: "unknown") == nil)
+    }
+
+    @Test func htmlBuilderConvertsBasicParagraph() async {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white
+        )
+        let html = "<p>Hello <strong>world</strong></p>"
+        let result = await builder.build(html: html, config: config)
+        #expect(result.string.contains("Hello"))
+        #expect(result.string.contains("world"))
+    }
+
+    @Test func htmlBuilderInsertsPlaceholderForImg() async {
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { _ in UIImage(systemName: "photo") }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 0, textColor: .black, backgroundColor: .white
+        )
+        let html = "<p>Before</p><img src='cover.jpg'><p>After</p>"
+        let result = await builder.build(html: html, config: config)
+        #expect(result.string.contains("\u{FFFC}"))
+        var hasDelegate = false
+        result.enumerateAttribute(
+            NSAttributedString.Key(kCTRunDelegateAttributeName as String),
+            in: NSRange(location: 0, length: result.length),
+            options: []
+        ) { value, _, _ in
+            if value != nil { hasDelegate = true }
+        }
+        #expect(hasDelegate)
     }
 
     @Test func refreshOnlineBookMetadataRepairsLegacyShelfEntry() async throws {
