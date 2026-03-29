@@ -39,6 +39,7 @@ final class CharOffsetStore {
     }
 
     func flushSync() {
+        dispatchPrecondition(condition: .notOnQueue(queue))
         queue.sync { [weak self] in
             guard let self else { return }
             self.debounceWork?.cancel()
@@ -51,19 +52,30 @@ final class CharOffsetStore {
     }
 
     func load(bookId: String) -> CharOffsetRecord? {
-        let url = fileURL(for: bookId)
-        guard FileManager.default.fileExists(atPath: url.path),
-              let data = try? Data(contentsOf: url) else { return nil }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(CharOffsetRecord.self, from: data)
+        // Must be called from outside queue to avoid deadlock.
+        // Synchronises with queue to ensure any pending flushSync writes are visible.
+        var result: CharOffsetRecord?
+        queue.sync {
+            let url = self.fileURL(for: bookId)
+            guard FileManager.default.fileExists(atPath: url.path),
+                  let data = try? Data(contentsOf: url) else { return }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            result = try? decoder.decode(CharOffsetRecord.self, from: data)
+        }
+        return result
     }
 
     private func write(_ record: CharOffsetRecord) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(record) else { return }
-        try? data.write(to: fileURL(for: record.bookId), options: .atomic)
+        do {
+            try data.write(to: fileURL(for: record.bookId), options: .atomic)
+        } catch {
+            // Silent failure is hard to diagnose; log for production debugging.
+            print("[CharOffsetStore] write failed for bookId \(record.bookId): \(error)")
+        }
     }
 
     private func fileURL(for bookId: String) -> URL {
