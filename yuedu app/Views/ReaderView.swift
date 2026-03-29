@@ -903,20 +903,6 @@ struct ReaderView: View {
             }
 
         }
-        .overlay {
-            if epubRenderer.readingGate == .loading {
-                ZStack {
-                    Color.black.opacity(0.01)  // 吸收觸摸事件防止穿透
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .scaleEffect(1.5)
-                        .tint(.gray)
-                }
-                .ignoresSafeArea()
-                .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: 0.2), value: epubRenderer.readingGate)
     }
 
 
