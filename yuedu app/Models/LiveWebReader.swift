@@ -159,6 +159,10 @@ final class LiveWebReader: NSObject, ObservableObject {
     private var snapshotStates: [Int: PageRenderState] = [:]
     private var snapshotRevisions: [Int: Int] = [:]
     private var snapshotTasks: [Int: Task<Void, Never>] = [:]
+    /// 按 WebView 實例分別加鎖，防止同一 WebView 的並發 scroll 導致截圖內容錯亂
+    /// 不同 WebView（main / pool.prev / pool.next）各自獨立，可以並行截圖
+    private var snapshotLockByWebView: [ObjectIdentifier: Bool] = [:]
+    private var snapshotWaitersByWebView: [ObjectIdentifier: [CheckedContinuation<Void, Never>]] = [:]
     private var crossChapterTransitionTask: Task<Void, Never>?
     private var tapTurnLockUntil: CFAbsoluteTime = 0
 
@@ -2120,6 +2124,12 @@ final class LiveWebReader: NSObject, ObservableObject {
         snapshotStates.removeAll()
         snapshotRevisions.removeAll()
         snapshotVersion += 1
+        // 釋放所有 per-WebView 等待截圖鎖的 continuations，避免記憶體洩漏
+        // 被取消的 Task 在 snapshotImage 開頭的 guard !Task.isCancelled 會提前退出
+        let allWaiters = snapshotWaitersByWebView.values.flatMap { $0 }
+        snapshotWaitersByWebView.removeAll()
+        snapshotLockByWebView.removeAll()
+        allWaiters.forEach { $0.resume() }
     }
 
     func cancelSnapshot(forPage page: Int) {
@@ -2161,7 +2171,32 @@ final class LiveWebReader: NSObject, ObservableObject {
         return nil
     }
 
+    private func acquireSnapshotLock(for webView: WKWebView) async {
+        let key = ObjectIdentifier(webView)
+        if snapshotLockByWebView[key] != true {
+            snapshotLockByWebView[key] = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            snapshotWaitersByWebView[key, default: []].append(continuation)
+        }
+    }
+
+    private func releaseSnapshotLock(for webView: WKWebView) {
+        let key = ObjectIdentifier(webView)
+        if snapshotWaitersByWebView[key]?.isEmpty != false {
+            snapshotLockByWebView.removeValue(forKey: key)
+        } else {
+            snapshotWaitersByWebView[key]?.removeFirst().resume()
+        }
+    }
+
     private func snapshotImage(of sourceWebView: WKWebView, localPage: Int) async -> UIImage? {
+        // 按 WebView 實例序列化截圖：同一 WebView 每次只允許一個 Task scroll 並截圖。
+        // 不同 WebView（main / pool.prev / pool.next）各自獨立，可並行。
+        guard !Task.isCancelled else { return nil }
+        await acquireSnapshotLock(for: sourceWebView)
+        defer { releaseSnapshotLock(for: sourceWebView) }
         guard !Task.isCancelled else { return nil }
 
         let pageCount = resolvedPageCount(for: sourceWebView)
