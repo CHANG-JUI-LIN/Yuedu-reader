@@ -2,13 +2,30 @@ import Combine
 import UIKit
 import WebKit
 
+/// Thin adapter that keeps the existing public interface ReaderView depends on while
+/// also exposing a CoreTextPageEngine for the CoreText rendering path.
+///
+/// The web rendering path (LiveWebReader) is preserved unchanged so that the
+/// existing useWebRenderer flow in ReaderView continues to compile and work.
 @MainActor
 final class EPUBPageRenderer: ObservableObject {
-    private let engine = LiveWebReader()
+
+    // MARK: - Web renderer (existing path)
+
+    private let webEngine = LiveWebReader()
     private var subscriptions: Set<AnyCancellable> = []
 
+    // MARK: - CoreText engine (new path)
+
+    private(set) var engine: CoreTextPageEngine?
+
+    /// Returns the CoreTextPageEngine as a PageRenderingProvider when available.
+    var pageRenderingProvider: PageRenderingProvider? { engine }
+
+    // MARK: - Init
+
     init() {
-        engine.objectWillChange
+        webEngine.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
@@ -16,188 +33,254 @@ final class EPUBPageRenderer: ObservableObject {
             .store(in: &subscriptions)
     }
 
+    // MARK: - Published / computed properties (delegates to web engine)
+
     var onRelocated: ((String, Double) -> Void)? {
-        get { engine.onRelocated }
-        set { engine.onRelocated = newValue }
+        get { webEngine.onRelocated }
+        set { webEngine.onRelocated = newValue }
     }
 
     var onTapZone: ((String) -> Void)? {
-        get { engine.onTapZone }
-        set { engine.onTapZone = newValue }
+        get { webEngine.onTapZone }
+        set { webEngine.onTapZone = newValue }
     }
 
-    var isReady: Bool { engine.isReady }
-    var isScrollModeEnabled: Bool { engine.scrollModeEnabled }
-    var totalPages: Int { engine.totalPages }
-    var renderSessionID: Int { engine.renderSessionID }
-    var layoutGeneration: Int { engine.layoutGeneration }
-    var webViewGeneration: Int { engine.webViewGeneration }
-    var liveWebView: WKWebView? { engine.webView }
+    var isReady: Bool { webEngine.isReady }
+    var isScrollModeEnabled: Bool { webEngine.scrollModeEnabled }
+    var totalPages: Int { webEngine.totalPages }
+    var renderSessionID: Int { webEngine.renderSessionID }
+    var layoutGeneration: Int { webEngine.layoutGeneration }
+    var webViewGeneration: Int { webEngine.webViewGeneration }
+    var liveWebView: WKWebView? { webEngine.webView }
     var currentEpubPage: Int {
-        get { engine.currentEpubPage }
+        get { webEngine.currentEpubPage }
         set {
-            guard newValue != engine.currentEpubPage else { return }
-            engine.goToPage(newValue)
+            guard newValue != webEngine.currentEpubPage else { return }
+            webEngine.goToPage(newValue)
         }
     }
-    var errorMessage: String? { engine.errorMessage }
-    var tocItems: [[String: Any]] { engine.tocItems }
-    var tocCount: Int { engine.tocCount }
-    var bookTitle: String { engine.bookTitle }
-    var percentage: Double { engine.percentage }
-    var currentChapterIdx: Int { engine.currentChapterIdx }
-    var snapshotProgress: Double { engine.snapshotProgress }
-    var isCommitting: Bool { engine.isCommitting }
+    var errorMessage: String? { webEngine.errorMessage }
+    var tocItems: [[String: Any]] { webEngine.tocItems }
+    var tocCount: Int { webEngine.tocCount }
+    var bookTitle: String { webEngine.bookTitle }
+    var percentage: Double { webEngine.percentage }
+    var currentChapterIdx: Int { webEngine.currentChapterIdx }
+    var snapshotProgress: Double { webEngine.snapshotProgress }
+    var isCommitting: Bool { webEngine.isCommitting }
+
+    // MARK: - Load methods
 
     func load(package: RenderPackage, settings: ReaderRenderSettings) {
-        engine.load(package: package, settings: settings)
+        webEngine.load(package: package, settings: settings)
     }
 
+    /// Web renderer path — delegates to LiveWebReader.
     func load(
         publicationSession session: PublicationSession,
         bookIdentifier: String,
         settings: ReaderRenderSettings
     ) {
-        engine.load(
+        webEngine.load(
             publicationSession: session,
             bookIdentifier: bookIdentifier,
             settings: settings
         )
     }
 
-    func reloadWithUpdatedPackage(_ package: RenderPackage, settings: ReaderRenderSettings) {
-        engine.reloadWithUpdatedPackage(package, settings: settings)
+    /// CoreText path — creates a CoreTextPageEngine and kicks off async loading.
+    /// Call this when you want to use the CoreText renderer instead of the web renderer.
+    func load(
+        publicationSession session: PublicationSession,
+        bookIdentifier: String,
+        renderSize: CGSize,
+        settings: ReaderRenderSettings
+    ) {
+        let docsURL = FileManager.default.urls(
+            for: .documentDirectory, in: .userDomainMask
+        ).first!
+        let progressDir = docsURL.appendingPathComponent(
+            "epub_charoffsets/\(bookIdentifier)"
+        )
+        let store = CharOffsetStore(directoryURL: progressDir)
+        let newEngine = CoreTextPageEngine(session: session, offsetStore: store)
+        self.engine = newEngine
+        Task {
+            await newEngine.start(renderSize: renderSize, bookId: bookIdentifier)
+        }
     }
 
+    func reloadWithUpdatedPackage(_ package: RenderPackage, settings: ReaderRenderSettings) {
+        webEngine.reloadWithUpdatedPackage(package, settings: settings)
+    }
+
+    // MARK: - Navigation
+
     func goToPage(_ page: Int, completion: (() -> Void)? = nil) {
-        engine.goToPage(page, completion: completion)
+        webEngine.goToPage(page, completion: completion)
     }
 
     func jumpToChapter(_ chapterIdx: Int, preferredLocalPage: Int? = nil) {
-        engine.jumpToChapter(chapterIdx, preferredLocalPage: preferredLocalPage)
+        webEngine.jumpToChapter(chapterIdx, preferredLocalPage: preferredLocalPage)
     }
 
     func chapterIndex(forGlobalPage page: Int) -> Int {
-        engine.chapterIndex(forGlobalPage: page)
+        webEngine.chapterIndex(forGlobalPage: page)
     }
 
     func localPage(forGlobalPage page: Int) -> Int {
-        engine.localPage(forGlobalPage: page)
+        webEngine.localPage(forGlobalPage: page)
     }
 
     func pageCount(forChapter index: Int) -> Int {
-        engine.pageCount(forChapter: index)
+        webEngine.pageCount(forChapter: index)
     }
 
     func firstGlobalPage(forChapter index: Int, preferredLocalPage: Int? = nil) -> Int? {
-        engine.firstGlobalPage(forChapter: index, preferredLocalPage: preferredLocalPage)
+        webEngine.firstGlobalPage(forChapter: index, preferredLocalPage: preferredLocalPage)
     }
 
+    // MARK: - Progress persistence
+
     func syncProgressToPage(_ page: Int, flush: Bool = false) {
-        engine.syncProgressToPage(page, flush: flush)
+        webEngine.syncProgressToPage(page, flush: flush)
     }
 
     func flushProgress() {
-        engine.flushProgress()
+        webEngine.flushProgress()
     }
 
+    /// CoreText progress persistence: saves a CharOffsetRecord for the given bookId.
+    func syncProgress(bookId: String) {
+        guard let eng = engine else { return }
+        let (spineIndex, charOffset) = eng.charOffset(forPage: eng.currentPage)
+        let record = CharOffsetRecord(
+            bookId: bookId,
+            spineIndex: spineIndex,
+            charOffset: charOffset,
+            timestamp: Date()
+        )
+        eng.offsetStore.save(record)
+    }
+
+    /// CoreText progress persistence: flushes pending saves synchronously.
+    func flushProgress(bookId: String) {
+        engine?.offsetStore.flushSync()
+    }
+
+    // MARK: - Viewport / layout settings
+
     func setViewport(size: CGSize, safeAreaInsets: UIEdgeInsets) {
-        engine.setViewport(size: size, safeAreaInsets: safeAreaInsets)
+        webEngine.setViewport(size: size, safeAreaInsets: safeAreaInsets)
     }
 
     func setFontSize(_ size: CGFloat) {
-        engine.setFontSize(size)
+        webEngine.setFontSize(size)
+        // Invalidate CoreText layout when font size changes.
+        if let eng = engine {
+            Task { await eng.invalidateLayout(newSize: eng.renderSize) }
+        }
     }
 
     func setTheme(_ theme: String) {
-        engine.setTheme(theme)
+        webEngine.setTheme(theme)
+        // Apply theme to CoreText engine without re-paginating body text.
+        if let eng = engine {
+            eng.applyThemeChange(textColor: .label, backgroundColor: .systemBackground)
+        }
     }
 
     func setPageMargins(horizontal: CGFloat, vertical: CGFloat) {
-        engine.setPageMargins(horizontal: horizontal, vertical: vertical)
+        webEngine.setPageMargins(horizontal: horizontal, vertical: vertical)
     }
 
     func setTransition(_ mode: String) {
-        engine.setTransition(mode)
+        webEngine.setTransition(mode)
     }
 
+    // MARK: - Gesture / animation passthrough
+
     func dragOffset(_ dx: CGFloat) {
-        engine.dragOffset(dx)
+        webEngine.dragOffset(dx)
     }
 
     func interruptAnimation() -> CGFloat? {
-        engine.interruptAnimation()
+        webEngine.interruptAnimation()
     }
 
     func beginGestureInteraction(interruptedOffset: CGFloat? = nil) {
-        engine.beginGestureInteraction(interruptedOffset: interruptedOffset)
+        webEngine.beginGestureInteraction(interruptedOffset: interruptedOffset)
     }
 
     func updateGestureInteraction() {
-        engine.updateGestureInteraction()
+        webEngine.updateGestureInteraction()
     }
 
     func endGestureInteraction(targetPage: Int) {
-        engine.endGestureInteraction(targetPage: targetPage)
+        webEngine.endGestureInteraction(targetPage: targetPage)
     }
 
     func resetDragBase() {
-        engine.resetDragBase()
+        webEngine.resetDragBase()
     }
 
+    // MARK: - Snapshot / display
+
     func snapshot(forPage page: Int) -> UIImage? {
-        engine.snapshot(forPage: page)
+        webEngine.snapshot(forPage: page)
     }
 
     func pageSnapshotState(forPage page: Int) -> PageRenderState {
-        engine.pageSnapshotState(forPage: page)
+        webEngine.pageSnapshotState(forPage: page)
     }
 
     func prepareDisplaySnapshot(forPage page: Int, priority: Int = 0) {
-        engine.prepareDisplaySnapshot(forPage: page, priority: priority)
+        webEngine.prepareDisplaySnapshot(forPage: page, priority: priority)
     }
 
     func preloadSnapshots(around page: Int, radius: Int = 2) {
-        engine.preloadSnapshots(around: page, radius: radius)
+        webEngine.preloadSnapshots(around: page, radius: radius)
     }
 
     func willDisplayPage(_ page: Int, style: PageTurnStyle) {
-        engine.willDisplayPage(page, style: style)
+        webEngine.willDisplayPage(page, style: style)
     }
 
     func settleInteractionPage(_ page: Int, style: PageTurnStyle) {
-        engine.settleInteractionPage(page, style: style)
+        webEngine.settleInteractionPage(page, style: style)
     }
 
     func cancelInteractionPage(_ page: Int, style: PageTurnStyle) {
-        engine.cancelInteractionPage(page, style: style)
+        webEngine.cancelInteractionPage(page, style: style)
     }
 
     func turnPageProgrammatically(forward: Bool) {
         let target = currentEpubPage + (forward ? 1 : -1)
         guard target >= 0, target < totalPages else { return }
-        engine.turnPageProgrammatically(forward: forward, style: .slide)
+        webEngine.turnPageProgrammatically(forward: forward, style: .slide)
     }
 
     func turnPageProgrammatically(forward: Bool, style: PageTurnStyle) {
-        engine.turnPageProgrammatically(forward: forward, style: style)
+        webEngine.turnPageProgrammatically(forward: forward, style: style)
     }
 
     func themeBackgroundColor() -> UIColor {
-        engine.themeBackgroundUIColor()
+        webEngine.themeBackgroundUIColor()
     }
 
     func requestSnapshot(for page: Int, completion: @escaping (UIImage?) -> Void) {
-        if let image = engine.snapshot(forPage: page) {
+        if let image = webEngine.snapshot(forPage: page) {
             completion(image)
             return
         }
 
-        engine.prepareDisplaySnapshot(forPage: page, priority: page == engine.currentEpubPage ? -1 : 0)
+        webEngine.prepareDisplaySnapshot(
+            forPage: page,
+            priority: page == webEngine.currentEpubPage ? -1 : 0
+        )
 
         var attempts = 0
         func poll() {
-            if let image = self.engine.snapshot(forPage: page) {
+            if let image = self.webEngine.snapshot(forPage: page) {
                 completion(image)
                 return
             }
@@ -214,10 +297,10 @@ final class EPUBPageRenderer: ObservableObject {
     }
 
     func cancelSnapshotRequest(for page: Int) {
-        engine.cancelSnapshot(forPage: page)
+        webEngine.cancelSnapshot(forPage: page)
     }
 
     func settleDrag(toGlobalPage page: Int, style: PageTurnStyle) {
-        engine.settleDrag(toGlobalPage: page, style: style)
+        webEngine.settleDrag(toGlobalPage: page, style: style)
     }
 }
