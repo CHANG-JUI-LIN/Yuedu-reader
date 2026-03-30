@@ -24,8 +24,9 @@ final class EPUBPageRenderer: ObservableObject {
 
     @Published var isCoreTextReady: Bool = false
 
-    /// Deferred start bookId: set when load() was called with renderSize == .zero.
-    /// ReaderView must call resumeCoreTextStart(size:) when it gets a valid viewport size.
+    /// Last non-zero viewport size reported by ReaderView via notifyViewportSize().
+    private var lastViewportSize: CGSize = .zero
+    /// bookId waiting for a valid viewport size before CoreTextPageEngine.start() can run.
     private var pendingStartBookId: String?
 
     // MARK: - Init
@@ -113,24 +114,26 @@ final class EPUBPageRenderer: ObservableObject {
         self.engine = newEngine
         isCoreTextReady = false
 
-        guard renderSize.width > 0, renderSize.height > 0 else {
-            // Size not yet available — defer until resumeCoreTextStart(size:) is called
-            pendingStartBookId = bookIdentifier
-            return
-        }
+        // Resolve effective size: use passed-in size, fall back to last known viewport size
+        let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
 
-        Task {
-            await newEngine.start(renderSize: renderSize, bookId: bookIdentifier)
-            self.isCoreTextReady = true
+        if effectiveSize.width > 0 {
+            Task {
+                await newEngine.start(renderSize: effectiveSize, bookId: bookIdentifier)
+                self.isCoreTextReady = true
+            }
+        } else {
+            // Size not yet available — defer until notifyViewportSize() delivers a valid size
+            pendingStartBookId = bookIdentifier
         }
     }
 
-    /// Called by ReaderView when the viewport size first becomes valid (non-zero).
-    /// Starts the CoreText engine if load() was called earlier with a zero renderSize.
-    func resumeCoreTextStart(size: CGSize) {
-        guard size.width > 0, size.height > 0,
-              let bookId = pendingStartBookId,
-              let eng = engine else { return }
+    /// Called by ReaderView whenever the viewport size changes (onPreferenceChange).
+    /// Stores the size and starts the CoreText engine if load() was called before layout.
+    func notifyViewportSize(_ size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        lastViewportSize = size
+        guard let bookId = pendingStartBookId, let eng = engine else { return }
         pendingStartBookId = nil
         Task {
             await eng.start(renderSize: size, bookId: bookId)
