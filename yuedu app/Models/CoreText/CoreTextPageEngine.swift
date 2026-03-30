@@ -1,3 +1,4 @@
+import CoreText
 import UIKit
 
 @MainActor
@@ -7,6 +8,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private(set) var currentPage: Int = 0
 
     private(set) var layouts: [Int: CoreTextPaginator.ChapterLayout] = [:]
+    private var chapterSnapshots: [Int: UIImage] = [:]
     private var spinePageOffsets: [Int] = []
     private(set) var renderSize: CGSize = .zero
 
@@ -105,6 +107,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             fontSize: config.fontSize
         )
         layouts[spineIndex] = layout
+        generateSnapshot(for: spineIndex)
         rebuildPageOffsets()
     }
 
@@ -113,6 +116,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         renderSize = newSize
         paginator.invalidate(reason: .viewSizeChanged)
         layouts.removeAll()
+        chapterSnapshots.removeAll()
 
         await withTaskGroup(of: Void.self) { group in
             for i in session.chapters.indices {
@@ -125,16 +129,41 @@ final class CoreTextPageEngine: PageRenderingProvider {
     func warmUpNext(currentGlobalPage: Int) {
         let (spineIndex, localPage) = localPosition(for: currentGlobalPage)
         guard let layout = layouts[spineIndex] else { return }
-        let remaining = layout.pageRanges.count - localPage
-        if remaining <= 3 {
+        let total = layout.pageRanges.count
+        // Trigger at 20% remaining (minimum 3 pages) so snapshot is ready before chapter boundary
+        let threshold = max(3, Int(Double(total) * 0.20))
+        let remaining = total - localPage
+        if remaining <= threshold {
             let nextSpine = spineIndex + 1
             guard nextSpine < session.chapters.count else { return }
-            Task { await preloadChapter(at: nextSpine) }
+            Task { [weak self] in await self?.preloadChapter(at: nextSpine) }
         }
+    }
+
+    func snapshotViewController(at index: Int) -> UIViewController? {
+        let (spineIndex, localPage) = localPosition(for: index)
+        guard localPage == 0,
+              let snapshot = chapterSnapshots[spineIndex] else { return nil }
+        let bgColor: UIColor
+        if let layout = layouts[spineIndex],
+           layout.attributedString.length > 0,
+           let color = layout.attributedString.attribute(
+               .backgroundColor, at: 0, effectiveRange: nil
+           ) as? UIColor {
+            bgColor = color
+        } else {
+            bgColor = .systemBackground
+        }
+        return SnapshotPageViewController(
+            image: snapshot,
+            globalPage: index,
+            backgroundColor: bgColor
+        )
     }
 
     func applyThemeChange(textColor: UIColor, backgroundColor: UIColor) {
         paginator.invalidate(reason: .themeChanged)
+        chapterSnapshots.removeAll()
         for (spineIndex, layout) in layouts {
             let updated = NSMutableAttributedString(attributedString: layout.attributedString)
             let fullRange = NSRange(location: 0, length: updated.length)
@@ -149,11 +178,55 @@ final class CoreTextPageEngine: PageRenderingProvider {
                     fontSize: layout.fontSize
                 )
                 self.layouts[spineIndex] = newLayout
+                self.generateSnapshot(for: spineIndex)
             }
         }
     }
 
     // MARK: - Private helpers
+
+    /// 將章節第 0 頁預渲染成 UIImage，存入 chapterSnapshots 以供跨章節動畫接力。
+    /// 在 preloadChapter 完成後同步呼叫（MainActor）。
+    private func generateSnapshot(for spineIndex: Int) {
+        guard let layout = layouts[spineIndex],
+              !layout.pageRanges.isEmpty,
+              chapterSnapshots[spineIndex] == nil,
+              renderSize.width > 0, renderSize.height > 0 else { return }
+
+        let bgColor: UIColor
+        if layout.attributedString.length > 0,
+           let color = layout.attributedString.attribute(
+               .backgroundColor, at: 0, effectiveRange: nil
+           ) as? UIColor {
+            bgColor = color
+        } else {
+            bgColor = .systemBackground
+        }
+
+        let size = renderSize
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { rendererCtx in
+            let ctx = rendererCtx.cgContext
+            ctx.setFillColor(bgColor.cgColor)
+            ctx.fill(CGRect(origin: .zero, size: size))
+
+            ctx.textMatrix = .identity
+            ctx.translateBy(x: 0, y: size.height)
+            ctx.scaleBy(x: 1.0, y: -1.0)
+
+            let path = CGPath(rect: CGRect(origin: .zero, size: size), transform: nil)
+            let frame = CTFramesetterCreateFrame(layout.framesetter, layout.pageRanges[0], path, nil)
+            CTFrameDraw(frame, ctx)
+
+            ctx.scaleBy(x: 1.0, y: -1.0)
+            ctx.translateBy(x: 0, y: -size.height)
+
+            if let imgRect = layout.imageRects[0], let img = layout.pageImages[0] {
+                img.draw(in: imgRect)
+            }
+        }
+        chapterSnapshots[spineIndex] = image
+    }
 
     private func localPosition(for globalPage: Int) -> (spineIndex: Int, localPage: Int) {
         guard !spinePageOffsets.isEmpty else { return (0, globalPage) }

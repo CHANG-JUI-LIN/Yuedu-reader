@@ -2602,7 +2602,12 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         ) -> UIViewController? {
             guard let vc = viewController as? any PageIndexProviding & UIViewController,
                   vc.globalPageIndex < currentEngine.totalPages - 1 else { return nil }
-            return currentEngine.pageViewController(at: vc.globalPageIndex + 1)
+            let nextIndex = vc.globalPageIndex + 1
+            // 快照接力：若下一頁是新章節且快照已就緒，回傳靜態圖 VC 供動畫用
+            if let snapVC = currentEngine.snapshotViewController(at: nextIndex) {
+                return snapVC
+            }
+            return currentEngine.pageViewController(at: nextIndex)
         }
 
         func pageViewController(
@@ -2611,8 +2616,21 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             previousViewControllers: [UIViewController],
             transitionCompleted completed: Bool
         ) {
-            guard completed,
-                  let vc = pvc.viewControllers?.first as? any PageIndexProviding & UIViewController else { return }
+            guard completed else { return }
+
+            // 若落地的是快照 VC，立即換成真正的渲染 VC（佈局已就緒，視覺上無縫）
+            if let snapVC = pvc.viewControllers?.first as? SnapshotPageViewController {
+                let realVC = currentEngine.pageViewController(at: snapVC.globalPageIndex)
+                pvc.setViewControllers([realVC], direction: .forward, animated: false)
+                currentPage = snapVC.globalPageIndex
+                onPageChanged(snapVC.globalPageIndex)
+                Task { @MainActor in
+                    currentEngine.warmUpNext(currentGlobalPage: snapVC.globalPageIndex)
+                }
+                return
+            }
+
+            guard let vc = pvc.viewControllers?.first as? any PageIndexProviding & UIViewController else { return }
             currentPage = vc.globalPageIndex
             onPageChanged(vc.globalPageIndex)
             Task { @MainActor in

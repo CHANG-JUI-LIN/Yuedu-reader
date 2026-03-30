@@ -104,6 +104,32 @@ final class CoreTextPageViewController: UIViewController {
 
 extension CoreTextPageViewController: PageIndexProviding {}
 
+/// 跨章節翻頁動畫接力用的快照 ViewController。
+/// 顯示預先渲染好的 UIImage，動畫結束後由 Coordinator 換成真正的 CoreTextPageViewController。
+final class SnapshotPageViewController: UIViewController {
+    private let imageView = UIImageView()
+    private(set) var globalPageIndex: Int
+
+    init(image: UIImage, globalPage: Int, backgroundColor: UIColor) {
+        self.globalPageIndex = globalPage
+        super.init(nibName: nil, bundle: nil)
+        imageView.image = image
+        imageView.contentMode = .scaleAspectFill
+        view.backgroundColor = backgroundColor
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) not used") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        imageView.frame = view.bounds
+        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(imageView)
+    }
+}
+
+extension SnapshotPageViewController: PageIndexProviding {}
+
 /// 章節尚未計算完成時的佔位 ViewController（顯示章節標題 + 載入指示器）
 final class PlaceholderPageViewController: UIViewController {
     private let titleLabel = UILabel()

@@ -30,6 +30,14 @@ protocol PageRenderingProvider: AnyObject {
     func invalidateLayout(newSize: CGSize) async
 
     /// 在 UIPageViewController.didFinishAnimating 中呼叫
-    /// 當前章節剩餘 ≤ 3 頁時自動預熱下一章
+    /// 當前章節剩餘 ≤ 20% 時自動預熱下一章
     func warmUpNext(currentGlobalPage: Int)
+
+    /// 取得第 index 頁的快照 ViewController（跨章節動畫接力用）。
+    /// 只在該頁為章節第一頁且快照已就緒時才回傳非 nil；其餘情況回傳 nil。
+    func snapshotViewController(at index: Int) -> UIViewController?
+}
+
+extension PageRenderingProvider {
+    func snapshotViewController(at index: Int) -> UIViewController? { nil }
 }
