@@ -303,6 +303,18 @@ struct ReaderView: View {
                     Spacer()
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            } else if let ctEngine = epubRenderer.engine, epubRenderer.isReady {
+                // 在 EPUB 渲染區塊，当 engine 已就緒時改用 CoreText
+                CoreTextPageEngineView(
+                    engine: ctEngine,
+                    currentPage: $currentPage,
+                    onPageChanged: { newPage in
+                        currentChapterIndex = ctEngine.charOffset(forPage: newPage).spineIndex
+                        epubRenderer.currentEpubPage = newPage
+                    }
+                )
+                .ignoresSafeArea()
+                .transition(.opacity.animation(.easeOut(duration: 0.25)))
             } else if useWebRenderer {
                 webReaderBody
                     .transition(.opacity.animation(.easeOut(duration: 0.25)))
@@ -452,6 +464,14 @@ struct ReaderView: View {
         ) { _ in
             saveProgress()
             if useWebRenderer { epubRenderer.flushProgress() }
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)
+        ) { _ in
+            guard let engine = epubRenderer.engine else { return }
+            Task {
+                await engine.invalidateLayout(newSize: UIScreen.main.bounds.size)
+            }
         }
         .onChange(of: settings.readerBrightness) { val in
             if !settings.followSystemBrightness { UIScreen.main.brightness = CGFloat(val) }
@@ -2509,3 +2529,81 @@ private struct HideTabBarModifier: ViewModifier {
 }
 
 // EPUBWebViewWrapper 已移除（正式路徑使用 LiveWebReader，不再直接顯示舊 wrapper）
+
+// MARK: - CoreText UIPageViewController 橋接
+
+private struct CoreTextPageEngineView: UIViewControllerRepresentable {
+    let engine: CoreTextPageEngine
+    @Binding var currentPage: Int
+    let onPageChanged: (Int) -> Void
+
+    func makeUIViewController(context: Context) -> UIPageViewController {
+        let pvc = UIPageViewController(
+            transitionStyle: .pageCurl,
+            navigationOrientation: .horizontal
+        )
+        pvc.dataSource = context.coordinator
+        pvc.delegate = context.coordinator
+        let initialVC = engine.pageViewController(at: max(0, currentPage))
+        pvc.setViewControllers([initialVC], direction: .forward, animated: false)
+        return pvc
+    }
+
+    func updateUIViewController(_ uiViewController: UIPageViewController, context: Context) {
+        context.coordinator.currentEngine = engine
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(engine: engine, currentPage: $currentPage, onPageChanged: onPageChanged)
+    }
+
+    final class Coordinator: NSObject,
+        UIPageViewControllerDataSource,
+        UIPageViewControllerDelegate
+    {
+        var currentEngine: CoreTextPageEngine
+        @Binding var currentPage: Int
+        let onPageChanged: (Int) -> Void
+
+        init(engine: CoreTextPageEngine,
+             currentPage: Binding<Int>,
+             onPageChanged: @escaping (Int) -> Void) {
+            self.currentEngine = engine
+            self._currentPage = currentPage
+            self.onPageChanged = onPageChanged
+        }
+
+        func pageViewController(
+            _ pvc: UIPageViewController,
+            viewControllerBefore viewController: UIViewController
+        ) -> UIViewController? {
+            guard let vc = viewController as? CoreTextPageViewController,
+                  vc.globalPageIndex > 0 else { return nil }
+            return currentEngine.pageViewController(at: vc.globalPageIndex - 1)
+        }
+
+        func pageViewController(
+            _ pvc: UIPageViewController,
+            viewControllerAfter viewController: UIViewController
+        ) -> UIViewController? {
+            guard let vc = viewController as? CoreTextPageViewController,
+                  vc.globalPageIndex < currentEngine.totalPages - 1 else { return nil }
+            return currentEngine.pageViewController(at: vc.globalPageIndex + 1)
+        }
+
+        func pageViewController(
+            _ pvc: UIPageViewController,
+            didFinishAnimating finished: Bool,
+            previousViewControllers: [UIViewController],
+            transitionCompleted completed: Bool
+        ) {
+            guard completed,
+                  let vc = pvc.viewControllers?.first as? CoreTextPageViewController else { return }
+            currentPage = vc.globalPageIndex
+            onPageChanged(vc.globalPageIndex)
+            Task { @MainActor in
+                currentEngine.warmUpNext(currentGlobalPage: vc.globalPageIndex)
+            }
+        }
+    }
+}
