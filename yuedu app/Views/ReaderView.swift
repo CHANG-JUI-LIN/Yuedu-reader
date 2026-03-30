@@ -305,6 +305,7 @@ struct ReaderView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else if let ctEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
                 // 在 EPUB 渲染區塊，当 engine 已就緒時改用 CoreText
+                let _ = { print("[ReaderView] ✅ 使用 CoreText 引擎") }()
                 CoreTextPageEngineView(
                     engine: ctEngine,
                     currentPage: $currentPage,
@@ -316,6 +317,7 @@ struct ReaderView: View {
                 .ignoresSafeArea()
                 .transition(.opacity.animation(.easeOut(duration: 0.25)))
             } else if useWebRenderer {
+                let _ = { print("[ReaderView] ⚠️ 使用 WKWebView 引擎（CoreText 未就緒：engine=\(epubRenderer.engine == nil ? "nil" : "有"), isCoreTextReady=\(epubRenderer.isCoreTextReady)）") }()
                 webReaderBody
                     .transition(.opacity.animation(.easeOut(duration: 0.25)))
             } else if settings.scrollMode {
@@ -1839,6 +1841,7 @@ struct ReaderView: View {
         epubRenderer.load(
             publicationSession: session,
             bookIdentifier: session.sourceURL.standardizedFileURL.path,
+            renderSize: readerViewportSize,
             settings: settings
         )
         epubRenderer.onRelocated = { [weak store] _, pct in
