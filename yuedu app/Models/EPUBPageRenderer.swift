@@ -25,7 +25,9 @@ final class EPUBPageRenderer: ObservableObject {
     @Published var isCoreTextReady: Bool = false
 
     /// Last non-zero viewport size reported by ReaderView via notifyViewportSize().
-    private var lastViewportSize: CGSize = .zero
+    /// Initialized to screen bounds so load() always has a usable fallback size
+    /// even if GeometryReader fires before reporting a valid size.
+    private var lastViewportSize: CGSize = UIScreen.main.bounds.size
     /// bookId waiting for a valid viewport size before CoreTextPageEngine.start() can run.
     private var pendingStartBookId: String?
 
@@ -116,6 +118,7 @@ final class EPUBPageRenderer: ObservableObject {
 
         // Resolve effective size: use passed-in size, fall back to last known viewport size
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
+        print("[EPUBRenderer] load renderSize=\(renderSize) lastViewport=\(lastViewportSize) effective=\(effectiveSize)")
 
         if effectiveSize.width > 0 {
             Task {
@@ -123,7 +126,7 @@ final class EPUBPageRenderer: ObservableObject {
                 self.isCoreTextReady = true
             }
         } else {
-            // Size not yet available — defer until notifyViewportSize() delivers a valid size
+            print("[EPUBRenderer] deferring start, pendingStartBookId set")
             pendingStartBookId = bookIdentifier
         }
     }
@@ -131,6 +134,7 @@ final class EPUBPageRenderer: ObservableObject {
     /// Called by ReaderView whenever the viewport size changes (onPreferenceChange).
     /// Stores the size and starts the CoreText engine if load() was called before layout.
     func notifyViewportSize(_ size: CGSize) {
+        print("[EPUBRenderer] notifyViewportSize=\(size) pendingBookId=\(pendingStartBookId ?? "nil") engine=\(engine == nil ? "nil" : "有")")
         guard size.width > 0, size.height > 0 else { return }
         lastViewportSize = size
         guard let bookId = pendingStartBookId, let eng = engine else { return }
