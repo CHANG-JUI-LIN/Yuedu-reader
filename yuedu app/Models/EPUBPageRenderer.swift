@@ -24,6 +24,10 @@ final class EPUBPageRenderer: ObservableObject {
 
     @Published var isCoreTextReady: Bool = false
 
+    /// Deferred start bookId: set when load() was called with renderSize == .zero.
+    /// ReaderView must call resumeCoreTextStart(size:) when it gets a valid viewport size.
+    private var pendingStartBookId: String?
+
     // MARK: - Init
 
     init() {
@@ -90,7 +94,8 @@ final class EPUBPageRenderer: ObservableObject {
     }
 
     /// CoreText path — creates a CoreTextPageEngine and kicks off async loading.
-    /// Call this when you want to use the CoreText renderer instead of the web renderer.
+    /// If renderSize is zero (view not yet laid out), start is deferred until
+    /// resumeCoreTextStart(size:) is called with a valid size.
     func load(
         publicationSession session: PublicationSession,
         bookIdentifier: String,
@@ -107,8 +112,28 @@ final class EPUBPageRenderer: ObservableObject {
         let newEngine = CoreTextPageEngine(session: session, offsetStore: store)
         self.engine = newEngine
         isCoreTextReady = false
+
+        guard renderSize.width > 0, renderSize.height > 0 else {
+            // Size not yet available — defer until resumeCoreTextStart(size:) is called
+            pendingStartBookId = bookIdentifier
+            return
+        }
+
         Task {
             await newEngine.start(renderSize: renderSize, bookId: bookIdentifier)
+            self.isCoreTextReady = true
+        }
+    }
+
+    /// Called by ReaderView when the viewport size first becomes valid (non-zero).
+    /// Starts the CoreText engine if load() was called earlier with a zero renderSize.
+    func resumeCoreTextStart(size: CGSize) {
+        guard size.width > 0, size.height > 0,
+              let bookId = pendingStartBookId,
+              let eng = engine else { return }
+        pendingStartBookId = nil
+        Task {
+            await eng.start(renderSize: size, bookId: bookId)
             self.isCoreTextReady = true
         }
     }

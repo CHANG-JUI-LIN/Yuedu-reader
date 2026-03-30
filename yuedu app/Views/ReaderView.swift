@@ -377,6 +377,8 @@ struct ReaderView: View {
                     safeAreaInsets: UIEdgeInsets(top: effectiveReaderSafeTop, left: 0, bottom: windowSafeBottom, right: 0)
                 )
             }
+            // CoreText engine の load() が zero-size で呼ばれた場合、ここで start を再実行
+            epubRenderer.resumeCoreTextStart(size: $0)
         }
         .animation(.easeInOut(duration: 0.25), value: chapters.isEmpty)
         .statusBarHidden(!showBars)
