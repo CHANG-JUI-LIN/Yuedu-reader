@@ -25,10 +25,9 @@ struct yuedu_appTests {
     {
         let source = try loadSource(named: sourceName)
         let books = try await BookSourceFetcher.shared.search(query: keyword, in: source)
-        let book = try #require(
-            books.first(where: { $0.name == expectedTitle })
-                ?? books.first(where: { $0.name.contains(expectedTitle) })
-        )
+        let exactMatch = books.first(where: { $0.name == expectedTitle })
+        let partialMatch = books.first(where: { $0.name.contains(expectedTitle) })
+        let book = try #require(exactMatch ?? partialMatch)
         let info = try await BookSourceFetcher.shared.fetchBookInfo(
             url: book.bookUrl,
             source: source,
@@ -286,6 +285,34 @@ struct yuedu_appTests {
         #expect(page < layout.pageRanges.count)
     }
 
+    @Test func charOffsetSurvivesFontSizeChange() async {
+        // 同一段文字，字號從 18 改成 24，charOffset 指向同一個字符段落
+        let text = String(repeating: "測試文字內容，這是一段較長的段落用於驗證重排後位置還原。", count: 50)
+        let attrStr18 = NSAttributedString(
+            string: text,
+            attributes: [.font: UIFont.systemFont(ofSize: 18)]
+        )
+        let attrStr24 = NSAttributedString(
+            string: text,
+            attributes: [.font: UIFont.systemFont(ofSize: 24)]
+        )
+        let paginator = CoreTextPaginator()
+        let size = CGSize(width: 375, height: 600)
+
+        let layout18 = await paginator.paginate(spineIndex: 0, attrStr: attrStr18, renderSize: size, fontSize: 18)
+        let layout24 = await paginator.paginate(spineIndex: 1, attrStr: attrStr24, renderSize: size, fontSize: 24)
+
+        // 字號 18 時讀到第 2 頁
+        guard layout18.pageRanges.count > 2 else { return }
+        let charOffset = Int(layout18.pageRanges[2].location)
+
+        // 字號改成 24 後，charOffset 應仍落在 layout24 的某頁範圍內
+        let page24 = layout24.pageIndex(for: charOffset)
+        let range24 = layout24.pageRanges[page24]
+        #expect(range24.location <= charOffset)
+        #expect(charOffset < range24.location + range24.length)
+    }
+
     @Test func refreshOnlineBookMetadataRepairsLegacyShelfEntry() async throws {
         let source = try loadSource(named: "速读谷")
         let previousSources = BookSourceStore.shared.sources
@@ -295,10 +322,9 @@ struct yuedu_appTests {
         }
 
         let books = try await BookSourceFetcher.shared.search(query: "斗罗大陆", in: source)
-        let book = try #require(
-            books.first(where: { $0.name == "斗罗大陆" })
-                ?? books.first(where: { $0.name.contains("斗罗大陆") })
-        )
+        let exactMatch = books.first(where: { $0.name == "斗罗大陆" })
+        let partialMatch = books.first(where: { $0.name.contains("斗罗大陆") })
+        let book = try #require(exactMatch ?? partialMatch)
 
         let store = BookStore()
         let stale = store.addOnlineBook(
