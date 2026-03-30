@@ -312,6 +312,18 @@ struct ReaderView: View {
                     onPageChanged: { newPage in
                         currentChapterIndex = ctEngine.charOffset(forPage: newPage).spineIndex
                         epubRenderer.currentEpubPage = newPage
+                    },
+                    onTapZone: { zone in
+                        switch zone {
+                        case "left":
+                            guard !showBars else { return }
+                            goToPrevPage()
+                        case "right":
+                            guard !showBars else { return }
+                            goToNextPage()
+                        default:
+                            withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
+                        }
                     }
                 )
                 .ignoresSafeArea()
@@ -2541,6 +2553,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
     let engine: any PageRenderingProvider
     @Binding var currentPage: Int
     let onPageChanged: (Int) -> Void
+    let onTapZone: (String) -> Void
 
     func makeUIViewController(context: Context) -> UIPageViewController {
         let pvc = UIPageViewController(
@@ -2551,6 +2564,14 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         pvc.delegate = context.coordinator
         let initialVC = engine.pageViewController(at: max(0, currentPage))
         pvc.setViewControllers([initialVC], direction: .forward, animated: false)
+
+        // Tap zone recognizer: left 30% → prev, right 30% → next, center → menu
+        let tap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap(_:))
+        )
+        tap.cancelsTouchesInView = false
+        pvc.view.addGestureRecognizer(tap)
 
         NotificationCenter.default.addObserver(
             forName: .coreTextEngineChapterReady,
@@ -2572,7 +2593,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(engine: engine, currentPage: $currentPage, onPageChanged: onPageChanged)
+        Coordinator(engine: engine, currentPage: $currentPage, onPageChanged: onPageChanged, onTapZone: onTapZone)
     }
 
     final class Coordinator: NSObject,
@@ -2582,13 +2603,25 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         var currentEngine: any PageRenderingProvider
         @Binding var currentPage: Int
         let onPageChanged: (Int) -> Void
+        let onTapZone: (String) -> Void
 
         init(engine: any PageRenderingProvider,
              currentPage: Binding<Int>,
-             onPageChanged: @escaping (Int) -> Void) {
+             onPageChanged: @escaping (Int) -> Void,
+             onTapZone: @escaping (String) -> Void) {
             self.currentEngine = engine
             self._currentPage = currentPage
             self.onPageChanged = onPageChanged
+            self.onTapZone = onTapZone
+        }
+
+        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
+            guard recognizer.state == .ended,
+                  let view = recognizer.view else { return }
+            let x = recognizer.location(in: view).x
+            let w = view.bounds.width
+            let zone = x < w * 0.3 ? "left" : x > w * 0.7 ? "right" : "center"
+            DispatchQueue.main.async { self.onTapZone(zone) }
         }
 
         func pageViewController(

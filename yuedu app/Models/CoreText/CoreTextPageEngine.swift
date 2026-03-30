@@ -41,12 +41,14 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     func start(renderSize: CGSize, bookId: String) async {
         self.renderSize = renderSize
+        print("[CoreTextEngine] start renderSize=\(renderSize) chapters=\(session.chapters.count)")
 
         await withTaskGroup(of: Void.self) { group in
             for i in 0..<min(3, session.chapters.count) {
                 group.addTask { await self.preloadChapter(at: i) }
             }
         }
+        print("[CoreTextEngine] start done totalPages=\(totalPages)")
 
         if let record = offsetStore.load(bookId: bookId) {
             currentPage = pageIndex(forSpine: record.spineIndex, charOffset: record.charOffset)
@@ -96,16 +98,33 @@ final class CoreTextPageEngine: PageRenderingProvider {
     func preloadChapter(at spineIndex: Int) async {
         guard session.chapters.indices.contains(spineIndex),
               layouts[spineIndex] == nil else { return }
-        guard let html = try? await session.chapterHTML(at: spineIndex) else { return }
+        guard let html = try? await session.chapterHTML(at: spineIndex) else {
+            print("[CoreTextEngine] preloadChapter[\(spineIndex)] FAILED to get HTML")
+            return
+        }
+
+        let chapterHref = session.chapters[spineIndex].href
+        let localBuilder = HTMLAttributedStringBuilder()
+        localBuilder.imageLoader = { [weak session] src in
+            guard let session else { return nil }
+            let resolved = Self.resolveImageHref(src, chapterHref: chapterHref)
+            guard let response = try? await session.response(
+                for: session.resourceURL(for: resolved)
+            ) else { return nil }
+            return UIImage(data: response.data)
+        }
 
         let config = currentBuilderConfig()
-        let attrStr = await builder.build(html: html, config: config)
+        print("[CoreTextEngine] preloadChapter[\(spineIndex)] htmlLen=\(html.count) fontSize=\(config.fontSize) renderSize=\(renderSize)")
+        let attrStr = await localBuilder.build(html: html, config: config)
+        print("[CoreTextEngine] preloadChapter[\(spineIndex)] attrStrLen=\(attrStr.length)")
         let layout = await paginator.paginate(
             spineIndex: spineIndex,
             attrStr: attrStr,
             renderSize: renderSize,
             fontSize: config.fontSize
         )
+        print("[CoreTextEngine] preloadChapter[\(spineIndex)] pageCount=\(layout.pageRanges.count)")
         layouts[spineIndex] = layout
         generateSnapshot(for: spineIndex)
         rebuildPageOffsets()
@@ -274,6 +293,21 @@ final class CoreTextPageEngine: PageRenderingProvider {
     /// Returns appropriate background color using the system adaptive background color.
     private func currentBackgroundColor() -> UIColor {
         .systemBackground
+    }
+
+    /// 將 HTML img src（可能是相對路徑）解析成相對於章節 href 的絕對 EPUB 路徑。
+    /// 例：chapterHref="OEBPS/Text/ch01.xhtml", src="../Images/fig.jpg" → "OEBPS/Images/fig.jpg"
+    private static func resolveImageHref(_ src: String, chapterHref: String) -> String {
+        guard !src.isEmpty,
+              !src.hasPrefix("http://"),
+              !src.hasPrefix("https://"),
+              !src.hasPrefix("data:") else { return src }
+        if src.hasPrefix("/") { return String(src.dropFirst()) }
+        let baseStr = "x://b/" + chapterHref
+        guard let base = URL(string: baseStr),
+              let resolved = URL(string: src, relativeTo: base)?.standardized else { return src }
+        let path = resolved.path
+        return path.hasPrefix("/") ? String(path.dropFirst()) : path
     }
 
     private func migrateFromLegacyProgressIfNeeded(bookId: String) {

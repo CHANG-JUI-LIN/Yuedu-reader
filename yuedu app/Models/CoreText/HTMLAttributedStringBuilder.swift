@@ -139,6 +139,7 @@ final class HTMLAttributedStringBuilder {
             attributes: [
                 .font: font,
                 .foregroundColor: config.textColor,
+                .backgroundColor: config.backgroundColor,
             ]
         )
     }
@@ -166,6 +167,7 @@ final class HTMLAttributedStringBuilder {
         style.lineSpacing = config.lineSpacing
         style.paragraphSpacing = config.paragraphSpacing
         style.firstLineHeadIndent = config.firstLineIndent
+        style.alignment = .justified
         attrStr.addAttribute(.paragraphStyle,
                              value: style,
                              range: NSRange(location: 0, length: attrStr.length))
