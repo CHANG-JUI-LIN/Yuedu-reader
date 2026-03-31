@@ -71,6 +71,7 @@ final class CharOffsetStore {
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(record) else { return }
         do {
+            try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
             try data.write(to: fileURL(for: record.bookId), options: .atomic)
         } catch {
             // Silent failure is hard to diagnose; log for production debugging.
@@ -79,6 +80,14 @@ final class CharOffsetStore {
     }
 
     private func fileURL(for bookId: String) -> URL {
-        directoryURL.appendingPathComponent("\(bookId).json")
+        directoryURL.appendingPathComponent("\(safeFileStem(for: bookId)).json")
+    }
+
+    private func safeFileStem(for bookId: String) -> String {
+        let encoded = Data(bookId.utf8).base64EncodedString()
+        return encoded
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "=", with: "")
     }
 }

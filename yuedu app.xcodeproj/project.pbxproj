@@ -10,6 +10,7 @@
 		3021769152B9F41FC1F2CBA5 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 489E6E08B47AA3AC9F140CAD /* SwiftSoup */; };
 		460274832F710D7500486947 /* ReadiumAdapterGCDWebServer in Frameworks */ = {isa = PBXBuildFile; productRef = 460274822F710D7500486947 /* ReadiumAdapterGCDWebServer */; };
 		460274852F710D7500486947 /* ReadiumAdapterLCPSQLite in Frameworks */ = {isa = PBXBuildFile; productRef = 460274842F710D7500486947 /* ReadiumAdapterLCPSQLite */; };
+		4675984E2F7A8D760073996D /* DTCoreText in Frameworks */ = {isa = PBXBuildFile; productRef = 4675984D2F7A8D760073996D /* DTCoreText */; };
 		54FF42D0FA99075B5C91D59B /* ReadiumZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 7F41A49C749809CDAB632913 /* ReadiumZIPFoundation */; };
 		54FF42D1FA99075B5C91D59B /* ReadiumShared in Frameworks */ = {isa = PBXBuildFile; productRef = 54FF42D2FA99075B5C91D59B /* ReadiumShared */; };
 		54FF42D3FA99075B5C91D59B /* ReadiumStreamer in Frameworks */ = {isa = PBXBuildFile; productRef = 54FF42D4FA99075B5C91D59B /* ReadiumStreamer */; };
@@ -62,6 +63,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				460274852F710D7500486947 /* ReadiumAdapterLCPSQLite in Frameworks */,
+				4675984E2F7A8D760073996D /* DTCoreText in Frameworks */,
 				54FF42D1FA99075B5C91D59B /* ReadiumShared in Frameworks */,
 				54FF42D3FA99075B5C91D59B /* ReadiumStreamer in Frameworks */,
 				54FF42D0FA99075B5C91D59B /* ReadiumZIPFoundation in Frameworks */,
@@ -133,6 +135,7 @@
 				460274842F710D7500486947 /* ReadiumAdapterLCPSQLite */,
 				54FF42D2FA99075B5C91D59B /* ReadiumShared */,
 				54FF42D4FA99075B5C91D59B /* ReadiumStreamer */,
+				4675984D2F7A8D760073996D /* DTCoreText */,
 			);
 			productName = "yuedu app";
 			productReference = 460D36592F51C5B8006E774C /* yuedu app.app */;
@@ -216,6 +219,7 @@
 				46935AA62F52E48600662F9D /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 				46935AA72F52E49B00662F9D /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 				460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */,
+				4675984C2F7A8D760073996D /* XCRemoteSwiftPackageReference "DTCoreText" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 460D365A2F51C5B8006E774C /* Products */;
@@ -646,6 +650,14 @@
 				minimumVersion = 3.8.0;
 			};
 		};
+		4675984C2F7A8D760073996D /* XCRemoteSwiftPackageReference "DTCoreText" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Cocoanetics/DTCoreText.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.6.28;
+			};
+		};
 		46935AA62F52E48600662F9D /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/readium/ZIPFoundation.git";
@@ -674,6 +686,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */;
 			productName = ReadiumAdapterLCPSQLite;
+		};
+		4675984D2F7A8D760073996D /* DTCoreText */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4675984C2F7A8D760073996D /* XCRemoteSwiftPackageReference "DTCoreText" */;
+			productName = DTCoreText;
 		};
 		489E6E08B47AA3AC9F140CAD /* SwiftSoup */ = {
 			isa = XCSwiftPackageProductDependency;

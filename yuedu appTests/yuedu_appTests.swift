@@ -191,6 +191,22 @@ struct yuedu_appTests {
         #expect(store.load(bookId: "unknown") == nil)
     }
 
+    @Test func charOffsetStoreSupportsBookIdWithSlashes() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CharOffsetStoreTest-\(UUID().uuidString)")
+        let store = CharOffsetStore(directoryURL: dir)
+        let record = CharOffsetRecord(
+            bookId: "/var/mobile/Documents/book.epub",
+            spineIndex: 1,
+            charOffset: 42,
+            timestamp: Date(timeIntervalSince1970: 1_700_000_100)
+        )
+        store.save(record)
+        store.flushSync()
+        let loaded = store.load(bookId: record.bookId)
+        #expect(loaded == record)
+    }
+
     @Test func htmlBuilderConvertsBasicParagraph() async {
         let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
@@ -202,7 +218,7 @@ struct yuedu_appTests {
             backgroundColor: .white
         )
         let html = "<p>Hello <strong>world</strong></p>"
-        let result = await builder.build(html: html, config: config)
+        let result = await builder.build(html: html, config: config).attributedString
         #expect(result.string.contains("Hello"))
         #expect(result.string.contains("world"))
     }
@@ -215,7 +231,7 @@ struct yuedu_appTests {
             firstLineIndent: 0, textColor: .black, backgroundColor: .white
         )
         let html = "<p>Before</p><img src='cover.jpg'><p>After</p>"
-        let result = await builder.build(html: html, config: config)
+        let result = await builder.build(html: html, config: config).attributedString
         #expect(result.string.contains("\u{FFFC}"))
         var hasDelegate = false
         result.enumerateAttribute(
@@ -226,6 +242,166 @@ struct yuedu_appTests {
             if value != nil { hasDelegate = true }
         }
         #expect(hasDelegate)
+    }
+
+    @Test func htmlBuilderMapsFontFamilyAlias() async {
+        let builder = HTMLAttributedStringBuilder()
+        builder.resolvedFontFamily = { name in
+            name == "kai" ? "Courier" : nil
+        }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+        )
+        let html = """
+        <html><head><style>.kai { font-family: kai; font-weight: bold; }</style></head>
+        <body><p class='kai'>你好</p></body></html>
+        """
+        let result = await builder.build(html: html, config: config).attributedString
+        let font = result.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+        #expect(font?.fontName.localizedCaseInsensitiveContains("courier") == true)
+    }
+
+    @Test func htmlBuilderPreservesPostScriptFontNameWhenWeightApplied() async {
+        let builder = HTMLAttributedStringBuilder()
+        builder.resolvedFontFamily = { name in
+            name == "kai" ? "TimesNewRomanPSMT" : nil
+        }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+        )
+        let html = """
+        <html><head><style>.kai { font-family: kai; font-weight: bold; }</style></head>
+        <body><p class='kai'>你好</p></body></html>
+        """
+        let result = await builder.build(html: html, config: config).attributedString
+        let font = result.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+        #expect(font?.fontName.localizedCaseInsensitiveContains("timesnewroman") == true)
+    }
+
+    @Test func htmlBuilderPreservesNestedBoldInsideBlock() async {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+        )
+        let html = "<p>Hello <strong>world</strong></p>"
+        let result = await builder.build(html: html, config: config).attributedString
+
+        let regularFont = result.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+        let boldIndex = (result.string as NSString).range(of: "world").location
+        let boldFont = result.attribute(.font, at: boldIndex, effectiveRange: nil) as? UIFont
+
+        #expect(regularFont?.fontName != boldFont?.fontName)
+    }
+
+    @Test func htmlBuilderAppliesCSSColor() async {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+        )
+        let html = """
+        <html><head><style>.title { color: #254c8b; }</style></head>
+        <body><p class='title'>標題</p></body></html>
+        """
+        let result = await builder.build(html: html, config: config).attributedString
+        let color = result.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor
+        #expect(color != UIColor.black)
+    }
+
+    @Test func htmlBuilderDelegatesFontSelectionWithWeightAndItalic() async {
+        let builder = HTMLAttributedStringBuilder()
+        var capturedFamilies: [String] = []
+        var capturedWeight = 0
+        var capturedItalic = false
+        var capturedSize: CGFloat = 0
+        builder.resolvedFont = { families, weight, italic, size in
+            capturedFamilies = families
+            capturedWeight = weight
+            capturedItalic = italic
+            capturedSize = size
+            return UIFont(name: "Courier", size: size)
+        }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+        )
+        let html = """
+        <html><head><style>.emph { font-family: kai; font-weight: 700; font-style: italic; }</style></head>
+        <body><p class='emph'>測試</p></body></html>
+        """
+        let result = await builder.build(html: html, config: config).attributedString
+        let font = result.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+        #expect(capturedFamilies == ["kai"])
+        #expect(capturedWeight == 700)
+        #expect(capturedItalic == true)
+        #expect(capturedSize == 18)
+        #expect(font?.fontName.localizedCaseInsensitiveContains("courier") == true)
+    }
+
+    @Test func htmlBuilderKeepsInlineSpeakerAndDialogueInSameParagraph() async {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+        )
+        let html = "<p class='normaltext'><b class='calibre3'>青年：</b>那麼，我就重新向您發問了。</p>"
+        let result = await builder.build(html: html, config: config).attributedString
+
+        #expect(result.string.contains("青年：那麼，我就重新向您發問了。"))
+        #expect(!result.string.contains("青年：\n"))
+        #expect(!result.string.contains("青年：\u{2028}"))
+    }
+
+    @Test func htmlBuilderUsesLineSeparatorForBrWithoutCreatingParagraphBreak() async {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+        )
+        let html = "<p>青年：<br/>那麼，我就重新向您發問了。</p>"
+        let result = await builder.build(html: html, config: config).attributedString
+
+        #expect(result.string.contains("\u{2028}"))
+        #expect(!result.string.contains("\n\n"))
+    }
+
+    @Test func htmlBuilderTreatsBlockBrAsParagraphBreak() async {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+        )
+        let html = """
+        <html><head><style>.calibre1 { display: block; }</style></head>
+        <body><p class='banquan'>书名：测试<br class='calibre1'/>作者：某某</p></body></html>
+        """
+        let result = await builder.build(html: html, config: config).attributedString
+
+        #expect(result.string.contains("书名：测试\n作者：某某"))
+        #expect(!result.string.contains("\u{2028}"))
+
+        let authorIndex = (result.string as NSString).range(of: "作者：某某").location
+        let titleParagraph = result.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        let authorParagraph = result.attribute(.paragraphStyle, at: authorIndex, effectiveRange: nil) as? NSParagraphStyle
+        #expect(titleParagraph?.firstLineHeadIndent == 36)
+        #expect(authorParagraph?.firstLineHeadIndent == 0)
+    }
+
+    @Test func htmlBuilderDetectsSingleImagePage() async {
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { _ in UIImage(systemName: "book") }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 0, textColor: .black, backgroundColor: .white
+        )
+        let html = """
+        <html><body><div><svg><image xlink:href='cover.jpeg' width='100' height='160' /></svg></div></body></html>
+        """
+        let result = await builder.build(html: html, config: config)
+        #expect(result.imagePage?.source == "cover.jpeg")
     }
 
     @Test func paginatorPageRangesTotalLengthEqualsAttrStrLength() async {

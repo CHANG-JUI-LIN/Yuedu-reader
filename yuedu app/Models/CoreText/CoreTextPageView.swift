@@ -34,6 +34,14 @@ final class CoreTextPageView: UIView {
             let ctx = UIGraphicsGetCurrentContext()
         else { return }
 
+        if layout.pageKinds[localPageIndex] == .image {
+            if let imgRect = layout.imageRects[localPageIndex],
+               let image = layout.pageImages[localPageIndex] {
+                image.draw(in: imgRect)
+            }
+            return
+        }
+
         let range = layout.pageRanges[localPageIndex]
 
         // 1. CoreText 座標系：左下角為原點，需翻轉
@@ -114,7 +122,7 @@ final class SnapshotPageViewController: UIViewController {
         self.globalPageIndex = globalPage
         super.init(nibName: nil, bundle: nil)
         imageView.image = image
-        imageView.contentMode = .scaleAspectFill
+        imageView.contentMode = .scaleAspectFit
         view.backgroundColor = backgroundColor
     }
 

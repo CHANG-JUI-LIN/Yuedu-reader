@@ -186,6 +186,29 @@ struct ReaderView: View {
         book?.resolvedPipelineKind == .epub
     }
 
+    private var usesCoreTextEPUB: Bool {
+        isEPUB && epubRenderer.engine != nil
+    }
+
+    private var usesPagedRenderer: Bool {
+        useWebRenderer || usesCoreTextEPUB
+    }
+
+    private var renderedPageCount: Int {
+        if let engine = epubRenderer.engine, isEPUB {
+            return engine.totalPages
+        }
+        if useWebRenderer {
+            return epubRenderer.totalPages
+        }
+        return allPages.count
+    }
+
+    private var localEPUBBookIdentifier: String? {
+        guard let currentBook = book, isEPUB else { return nil }
+        return store.localEPUBURL(for: currentBook).standardizedFileURL.path
+    }
+
     private var telemetryPipelineKind: String {
         if let b = book {
             if b.isOnline { return "online" }
@@ -234,6 +257,12 @@ struct ReaderView: View {
             if chIdx >= 0, chIdx < chapters.count { return chapters[chIdx].title }
             return epubRenderer.bookTitle.isEmpty ? "EPUB" : epubRenderer.bookTitle
         }
+        if usesCoreTextEPUB {
+            if chapters.indices.contains(currentChapterIndex) {
+                return chapters[currentChapterIndex].title
+            }
+            return book?.title ?? ""
+        }
         guard !allPages.isEmpty else { return "" }
         return allPages[min(currentPage, allPages.count - 1)].chapterTitle
     }
@@ -261,6 +290,11 @@ struct ReaderView: View {
         if useWebRenderer {
             return String(format: "%.2f%%", epubRenderer.percentage * 100)
         }
+        if usesCoreTextEPUB {
+            let total = max(renderedPageCount - 1, 1)
+            let pct = Double(min(max(currentPage, 0), total)) / Double(total) * 100
+            return String(format: "%.2f%%", pct)
+        }
         guard !allPages.isEmpty else { return "0.00%" }
         let pct = Double(currentPage) / Double(max(allPages.count - 1, 1)) * 100
         return String(format: "%.2f%%", pct)
@@ -276,6 +310,14 @@ struct ReaderView: View {
                 return "\(localP)/\(chTotal)"
             }
             return ""
+        }
+        if let engine = epubRenderer.engine, isEPUB {
+            let (spineIndex, charOffset) = engine.charOffset(forPage: currentPage)
+            guard let layout = engine.layouts[spineIndex], !layout.pageRanges.isEmpty else {
+                return ""
+            }
+            let localPage = layout.pageIndex(for: charOffset) + 1
+            return "\(localPage)/\(layout.pageRanges.count)"
         }
         guard !allPages.isEmpty else { return "" }
         let page = allPages[min(currentPage, allPages.count - 1)]
@@ -328,6 +370,13 @@ struct ReaderView: View {
                 )
                 .ignoresSafeArea()
                 .transition(.opacity.animation(.easeOut(duration: 0.25)))
+            } else if usesCoreTextEPUB {
+                VStack {
+                    Spacer()
+                    ProgressView(settings.t("載入中…"))
+                    Spacer()
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else if useWebRenderer {
                 let _ = { print("[ReaderView] ⚠️ 使用 WKWebView 引擎（CoreText 未就緒：engine=\(epubRenderer.engine == nil ? "nil" : "有"), isCoreTextReady=\(epubRenderer.isCoreTextReady)）") }()
                 webReaderBody
@@ -469,7 +518,11 @@ struct ReaderView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .background || phase == .inactive {
                 saveProgress()
-                if useWebRenderer { epubRenderer.flushProgress() }
+                if useWebRenderer {
+                    epubRenderer.flushProgress()
+                } else if let bookId = localEPUBBookIdentifier {
+                    epubRenderer.flushProgress(bookId: bookId)
+                }
             } else if phase == .active {
                 restoreReaderDisplayStateAfterResume()
             }
@@ -478,7 +531,11 @@ struct ReaderView: View {
             NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
         ) { _ in
             saveProgress()
-            if useWebRenderer { epubRenderer.flushProgress() }
+            if useWebRenderer {
+                epubRenderer.flushProgress()
+            } else if let bookId = localEPUBBookIdentifier {
+                epubRenderer.flushProgress(bookId: bookId)
+            }
         }
         .onReceive(
             NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)
@@ -514,27 +571,41 @@ struct ReaderView: View {
         }
         .onChange(of: fontSize) { val in
             settings.readerFontSize = Double(val)
-            if useWebRenderer { epubRenderer.setFontSize(val) } else { rebuildPages() }
+            if usesPagedRenderer {
+                epubRenderer.setFontSize(val)
+            } else {
+                rebuildPages()
+            }
         }
         .onChange(of: settings.pageMarginH) { _ in
-            if useWebRenderer {
+            if usesPagedRenderer {
                 epubRenderer.setPageMargins(horizontal: effectivePageMarginH, vertical: effectivePageMarginV)
             } else {
                 rebuildPages()
             }
         }
         .onChange(of: settings.pageMarginV) { _ in
-            if useWebRenderer {
+            if usesPagedRenderer {
                 epubRenderer.setPageMargins(horizontal: effectivePageMarginH, vertical: effectivePageMarginV)
             } else {
                 rebuildPages()
             }
         }
-        .onChange(of: settings.lineSpacing) { _ in if !useWebRenderer { rebuildPages() } }
-        .onChange(of: settings.letterSpacing) { _ in if !useWebRenderer { rebuildPages() } }
+        .onChange(of: settings.lineSpacing) { _ in
+            if usesCoreTextEPUB {
+                epubRenderer.invalidateCoreTextLayout()
+            } else if !useWebRenderer {
+                rebuildPages()
+            }
+        }
+        .onChange(of: settings.letterSpacing) { _ in
+            if !usesPagedRenderer {
+                rebuildPages()
+            }
+        }
         .onChange(of: readerTheme) { _ in
             readerTheme.persist()
-            if useWebRenderer {
+            if usesPagedRenderer {
                 epubRenderer.setTheme(readerTheme.epubJSName)
             } else if isEPUB {
                 rebuildPages()
@@ -576,7 +647,7 @@ struct ReaderView: View {
                     bookmarks: book?.bookmarks ?? [],
                     onSelect: { bookmark in
                         showBookmarkList = false
-                        if bookmark.pageIndex < (isEPUB ? chapters.count : allPages.count) {
+                        if bookmark.pageIndex < renderedPageCount {
                             withAnimation(.easeInOut(duration: PageTurnAnimation.slideDuration)) {
                                 currentPage = bookmark.pageIndex
                             }
@@ -982,6 +1053,14 @@ struct ReaderView: View {
             let chTotal = epubRenderer.pageCount(forChapter: chIdx)
             let pct = Double(idx) / Double(max(epubRenderer.totalPages - 1, 1)) * 100
             return ("\(localP)/\(chTotal)", String(format: "%.2f%%", pct))
+        } else if let engine = epubRenderer.engine, isEPUB {
+            let (spineIndex, charOffset) = engine.charOffset(forPage: idx)
+            guard let layout = engine.layouts[spineIndex], !layout.pageRanges.isEmpty else {
+                return ("", "0.00%")
+            }
+            let localPage = layout.pageIndex(for: charOffset) + 1
+            let pct = Double(idx) / Double(max(engine.totalPages - 1, 1)) * 100
+            return ("\(localPage)/\(layout.pageRanges.count)", String(format: "%.2f%%", pct))
         } else {
             guard !allPages.isEmpty, idx >= 0, idx < allPages.count else { return ("", "0.00%") }
             let page = allPages[idx]
@@ -1485,6 +1564,9 @@ struct ReaderView: View {
         if isEPUB && useWebRenderer {
             epubRenderer.jumpToChapter(idx, preferredLocalPage: 0)
             currentChapterIndex = idx
+        } else if let engine = epubRenderer.engine, isEPUB {
+            currentChapterIndex = idx
+            currentPage = engine.pageIndex(forSpine: idx, charOffset: 0)
         } else {
             currentChapterIndex = idx
             if let p = findChapterFirstPage(idx) { currentPage = p }
@@ -1504,6 +1586,16 @@ struct ReaderView: View {
             let chIdx = epubRenderer.chapterIndex(forGlobalPage: currentPage)
             let pct = Double(currentPage) / Double(max(total - 1, 1))
             currentChapterIndex = chIdx
+            store.updatePosition(bookId: bookId, position: min(1.0, max(0.0, pct)))
+        } else if let engine = epubRenderer.engine, isEPUB {
+            let total = engine.totalPages
+            guard total > 0 else { return }
+            if let progressBookId = localEPUBBookIdentifier {
+                epubRenderer.syncProgress(bookId: progressBookId)
+            }
+            let (spineIndex, _) = engine.charOffset(forPage: currentPage)
+            currentChapterIndex = spineIndex
+            let pct = Double(currentPage) / Double(max(total - 1, 1))
             store.updatePosition(bookId: bookId, position: min(1.0, max(0.0, pct)))
         } else if !settings.scrollMode && !allPages.isEmpty {
             // TXT：使用 allPages
@@ -1535,6 +1627,8 @@ struct ReaderView: View {
         // EPUB: 立即 flush debounced 進度到磁碟
         if useWebRenderer {
             epubRenderer.syncProgressToPage(currentPage, flush: true)
+        } else if let bookId = localEPUBBookIdentifier {
+            epubRenderer.flushProgress(bookId: bookId)
         }
     }
 
@@ -1817,7 +1911,7 @@ struct ReaderView: View {
             uniquingKeysWith: { first, _ in first }
         )
 
-        useWebRenderer = true
+        useWebRenderer = false
         txtXHTMLBasePath = nil
         chapters = session.chapters.map { chapter in
             let level =
@@ -1864,7 +1958,7 @@ struct ReaderView: View {
         currentPage = epubRenderer.currentEpubPage
         isLoadingPipeline = false
         isRestoringPosition = false
-        hasInitializedWebPackage = true
+        hasInitializedWebPackage = false
     }
 
     private func currentWebLocalPage(preferredChapter: Int) -> Int {

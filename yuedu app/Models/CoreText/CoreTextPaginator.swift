@@ -3,6 +3,11 @@ import UIKit
 
 final class CoreTextPaginator {
 
+    enum PageKind {
+        case text
+        case image
+    }
+
     // MARK: - ChapterLayout
 
     struct ChapterLayout {
@@ -16,6 +21,8 @@ final class CoreTextPaginator {
         let imageRects: [Int: CGRect]
         /// pageIndex → 嵌入圖片（來自 CTRunDelegate 的 ImageRunInfo）
         let pageImages: [Int: UIImage]
+        let pageKinds: [PageKind]
+        let anchorOffsets: [String: Int]
         let renderSize: CGSize
         let fontSize: CGFloat
     }
@@ -39,6 +46,8 @@ final class CoreTextPaginator {
     func paginate(
         spineIndex: Int,
         attrStr: NSAttributedString,
+        imagePage: HTMLAttributedStringBuilder.ImagePage? = nil,
+        anchorOffsets: [String: Int] = [:],
         renderSize: CGSize,
         fontSize: CGFloat
     ) async -> ChapterLayout {
@@ -51,6 +60,8 @@ final class CoreTextPaginator {
         let layout = await Task.detached(priority: .userInitiated) {
             Self.computeLayout(spineIndex: spineIndex,
                                attrStr: attrStr,
+                               imagePage: imagePage,
+                               anchorOffsets: anchorOffsets,
                                renderSize: renderSize,
                                fontSize: fontSize)
         }.value
@@ -74,9 +85,31 @@ final class CoreTextPaginator {
     private static func computeLayout(
         spineIndex: Int,
         attrStr: NSAttributedString,
+        imagePage: HTMLAttributedStringBuilder.ImagePage?,
+        anchorOffsets: [String: Int],
         renderSize: CGSize,
         fontSize: CGFloat
     ) -> ChapterLayout {
+        if let imagePage {
+            let framesetter = CTFramesetterCreateWithAttributedString(attrStr)
+            let imageRect = aspectFitRect(
+                for: imagePage.image?.size ?? CGSize(width: renderSize.width, height: renderSize.height),
+                in: CGRect(origin: .zero, size: renderSize)
+            )
+            return ChapterLayout(
+                spineIndex: spineIndex,
+                attributedString: attrStr,
+                framesetter: framesetter,
+                pageRanges: [CFRangeMake(0, max(attrStr.length, 1))],
+                imageRects: [0: imageRect],
+                pageImages: imagePage.image.map { [0: $0] } ?? [:],
+                pageKinds: [.image],
+                anchorOffsets: anchorOffsets,
+                renderSize: renderSize,
+                fontSize: fontSize
+            )
+        }
+
         let framesetter = CTFramesetterCreateWithAttributedString(attrStr)
         let pagePath = CGPath(rect: CGRect(origin: .zero, size: renderSize), transform: nil)
 
@@ -94,7 +127,7 @@ final class CoreTextPaginator {
             currentLocation += advance
         }
 
-        let (imageRects, pageImages) = extractImages(
+        let (imageRects, pageImages, pageKinds) = extractImages(
             framesetter: framesetter,
             pageRanges: pageRanges,
             renderSize: renderSize,
@@ -108,6 +141,8 @@ final class CoreTextPaginator {
             pageRanges: pageRanges,
             imageRects: imageRects,
             pageImages: pageImages,
+            pageKinds: pageKinds,
+            anchorOffsets: anchorOffsets,
             renderSize: renderSize,
             fontSize: fontSize
         )
@@ -118,10 +153,11 @@ final class CoreTextPaginator {
         pageRanges: [CFRange],
         renderSize: CGSize,
         attrStr: NSAttributedString
-    ) -> (rects: [Int: CGRect], images: [Int: UIImage]) {
+    ) -> (rects: [Int: CGRect], images: [Int: UIImage], kinds: [PageKind]) {
         let pagePath = CGPath(rect: CGRect(origin: .zero, size: renderSize), transform: nil)
         var rects: [Int: CGRect] = [:]
         var images: [Int: UIImage] = [:]
+        var kinds = Array(repeating: PageKind.text, count: pageRanges.count)
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
 
         for (pageIdx, range) in pageRanges.enumerated() {
@@ -160,7 +196,32 @@ final class CoreTextPaginator {
                 }
             }
         }
-        return (rects, images)
+
+        let visibleContent = attrStr.string.unicodeScalars.filter { scalar in
+            scalar != "\u{FFFC}" && !CharacterSet.whitespacesAndNewlines.contains(scalar)
+        }
+
+        if pageRanges.count == 1,
+           visibleContent.isEmpty,
+           images.count == 1,
+           let image = images[0] {
+            rects[0] = aspectFitRect(for: image.size, in: CGRect(origin: .zero, size: renderSize))
+            kinds[0] = .image
+        }
+
+        return (rects, images, kinds)
+    }
+
+    private static func aspectFitRect(for imageSize: CGSize, in bounds: CGRect) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return bounds }
+        let ratio = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let size = CGSize(width: imageSize.width * ratio, height: imageSize.height * ratio)
+        return CGRect(
+            x: bounds.minX + (bounds.width - size.width) / 2,
+            y: bounds.minY + (bounds.height - size.height) / 2,
+            width: size.width,
+            height: size.height
+        )
     }
 }
 

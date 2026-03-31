@@ -203,6 +203,10 @@ final class EPUBPageRenderer: ObservableObject {
         engine?.offsetStore.flushSync()
     }
 
+    func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int? {
+        await engine?.resolveInternalLink(href, fromSpineIndex: spineIndex)
+    }
+
     // MARK: - Viewport / layout settings
 
     func setViewport(size: CGSize, safeAreaInsets: UIEdgeInsets) {
@@ -237,6 +241,14 @@ final class EPUBPageRenderer: ObservableObject {
 
     func setPageMargins(horizontal: CGFloat, vertical: CGFloat) {
         webEngine.setPageMargins(horizontal: horizontal, vertical: vertical)
+        if let eng = engine {
+            Task { await eng.invalidateLayout(newSize: eng.renderSize) }
+        }
+    }
+
+    func invalidateCoreTextLayout() {
+        guard let eng = engine else { return }
+        Task { await eng.invalidateLayout(newSize: eng.renderSize) }
     }
 
     func setTransition(_ mode: String) {
