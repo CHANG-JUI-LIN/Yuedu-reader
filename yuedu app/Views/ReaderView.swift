@@ -290,9 +290,9 @@ struct ReaderView: View {
         if useWebRenderer {
             return String(format: "%.2f%%", epubRenderer.percentage * 100)
         }
-        if usesCoreTextEPUB {
-            let total = max(renderedPageCount - 1, 1)
-            let pct = Double(min(max(currentPage, 0), total)) / Double(total) * 100
+        if usesCoreTextEPUB, let engine = epubRenderer.engine {
+            let (spine, offset) = engine.charOffset(forPage: currentPage)
+            let pct = engine.totalProgress(forSpine: spine, charOffset: offset) * 100
             return String(format: "%.2f%%", pct)
         }
         guard !allPages.isEmpty else { return "0.00%" }
@@ -1059,7 +1059,7 @@ struct ReaderView: View {
                 return ("", "0.00%")
             }
             let localPage = layout.pageIndex(for: charOffset) + 1
-            let pct = Double(idx) / Double(max(engine.totalPages - 1, 1)) * 100
+            let pct = engine.totalProgress(forSpine: spineIndex, charOffset: charOffset) * 100
             return ("\(localPage)/\(layout.pageRanges.count)", String(format: "%.2f%%", pct))
         } else {
             guard !allPages.isEmpty, idx >= 0, idx < allPages.count else { return ("", "0.00%") }
@@ -1593,9 +1593,9 @@ struct ReaderView: View {
             if let progressBookId = localEPUBBookIdentifier {
                 epubRenderer.syncProgress(bookId: progressBookId)
             }
-            let (spineIndex, _) = engine.charOffset(forPage: currentPage)
+            let (spineIndex, charOffset) = engine.charOffset(forPage: currentPage)
             currentChapterIndex = spineIndex
-            let pct = Double(currentPage) / Double(max(total - 1, 1))
+            let pct = engine.totalProgress(forSpine: spineIndex, charOffset: charOffset)
             store.updatePosition(bookId: bookId, position: min(1.0, max(0.0, pct)))
         } else if !settings.scrollMode && !allPages.isEmpty {
             // TXT：使用 allPages

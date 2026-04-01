@@ -26,6 +26,10 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private var registeredFontFaces: [String: RegisteredFontFace] = [:]
     private var registeredFontFileURLs: [String: URL] = [:]
 
+    private var currentBookId: String?
+    /// 各章節的原始 Data 大小（bytes），用於全書進度估算
+    private var chapterByteSizes: [Int] = []
+
     private(set) var isRelaying = false
 
     deinit {
@@ -56,20 +60,79 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     func start(renderSize: CGSize, bookId: String) async {
         self.renderSize = renderSize
+        self.currentBookId = bookId
         print("[CoreTextEngine] start renderSize=\(renderSize) chapters=\(session.chapters.count)")
 
+        // 1. 掃描全書章節 Data 大小（秒完，用於 Bytes 進度估算）
+        await scanChapterByteSizes()
+
+        // 2. 讀存檔 → 決定優先載入哪些章節
+        let record = offsetStore.load(bookId: bookId)
+        let savedSpine = record?.spineIndex ?? 0
+
+        // 3. 載入存檔鄰域 [n-1, n, n+1]（+ 第 0 章如果不在範圍內）
+        var priority = Set<Int>()
+        priority.insert(0) // 封面/目錄始終需要
+        for i in max(0, savedSpine - 1)...min(savedSpine + 1, session.chapters.count - 1) {
+            priority.insert(i)
+        }
+
         await withTaskGroup(of: Void.self) { group in
-            for i in 0..<min(3, session.chapters.count) {
+            for i in priority.sorted() {
                 group.addTask { await self.preloadChapter(at: i) }
             }
         }
         print("[CoreTextEngine] start done totalPages=\(totalPages)")
 
-        if let record = offsetStore.load(bookId: bookId) {
+        // 4. 恢復位置（存檔章節已載入，不會 fallback 到 0）
+        if let record {
             currentPage = pageIndex(forSpine: record.spineIndex, charOffset: record.charOffset)
         } else {
             migrateFromLegacyProgressIfNeeded(bookId: bookId)
         }
+    }
+
+    private func scanChapterByteSizes() async {
+        chapterByteSizes = await withTaskGroup(of: (Int, Int).self) { group in
+            for i in session.chapters.indices {
+                group.addTask {
+                    let size = (try? await self.session.chapterDataSize(at: i)) ?? 0
+                    return (i, size)
+                }
+            }
+            var sizes = [Int](repeating: 0, count: session.chapters.count)
+            for await (idx, size) in group { sizes[idx] = size }
+            return sizes
+        }
+    }
+
+    /// 全書進度（0.0 ~ 1.0）= (前 N-1 章總 Bytes + 當前章 charOffset) / 全書總 Bytes
+    func totalProgress(forSpine spineIndex: Int, charOffset: Int) -> Double {
+        guard !chapterByteSizes.isEmpty else { return 0 }
+        let total = chapterByteSizes.reduce(0, +)
+        guard total > 0 else { return 0 }
+        let prior = chapterByteSizes.prefix(spineIndex).reduce(0, +)
+
+        // 當前章的 charOffset 要按比例轉換為 bytes
+        let currentChapterBytes = chapterByteSizes.indices.contains(spineIndex) ? chapterByteSizes[spineIndex] : 0
+        let currentChapterChars = layouts[spineIndex]?.attributedString.length ?? currentChapterBytes
+        let scaledOffset: Int
+        if currentChapterChars > 0 {
+            scaledOffset = Int(Double(charOffset) / Double(currentChapterChars) * Double(currentChapterBytes))
+        } else {
+            scaledOffset = charOffset
+        }
+        return min(1.0, Double(prior + scaledOffset) / Double(total))
+    }
+
+    /// 釋放距離當前章超過 1 的 layout，記憶體只保留 [n-1, n, n+1]
+    private func evictDistantChapters(currentSpine: Int) {
+        let keep = Set(max(0, currentSpine - 1)...min(currentSpine + 1, session.chapters.count - 1))
+        for key in layouts.keys where !keep.contains(key) {
+            layouts.removeValue(forKey: key)
+            chapterSnapshots.removeValue(forKey: key)
+        }
+        rebuildPageOffsets()
     }
 
     func pageViewController(at index: Int) -> UIViewController {
@@ -200,13 +263,22 @@ final class CoreTextPageEngine: PageRenderingProvider {
         isRelaying = true
         renderSize = newSize
         paginator.invalidate(reason: .viewSizeChanged)
+
+        // 只重排目前記憶體中有的章節
+        let loadedSpines = Array(layouts.keys.sorted())
         layouts.removeAll()
         chapterSnapshots.removeAll()
 
         await withTaskGroup(of: Void.self) { group in
-            for i in session.chapters.indices {
+            for i in loadedSpines {
                 group.addTask { await self.preloadChapter(at: i) }
             }
+        }
+
+        // 重新掃描 byte sizes 不需要（不隨字號變化）
+        // 恢復 currentPage（charOffset 不變，但頁碼可能不同）
+        if let bookId = currentBookId, let record = offsetStore.load(bookId: bookId) {
+            currentPage = pageIndex(forSpine: record.spineIndex, charOffset: record.charOffset)
         }
         isRelaying = false
     }
@@ -240,6 +312,10 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     func warmUpNext(currentGlobalPage: Int) {
         let (spineIndex, localPage) = localPosition(for: currentGlobalPage)
+
+        // 翻頁時呼叫釋放遠端章節
+        evictDistantChapters(currentSpine: spineIndex)
+
         guard let layout = layouts[spineIndex] else { return }
         let total = layout.pageRanges.count
         // Trigger at 20% remaining (minimum 3 pages) so snapshot is ready before chapter boundary
@@ -363,7 +439,8 @@ final class CoreTextPageEngine: PageRenderingProvider {
         var offset = 0
         spinePageOffsets = session.chapters.indices.map { i in
             let start = offset
-            offset += layouts[i]?.pageRanges.count ?? 0
+            // 未載入章節估 1 頁，確保 spinePageOffsets 和 totalPages 不崩壞
+            offset += layouts[i]?.pageRanges.count ?? 1
             return start
         }
         totalPages = offset

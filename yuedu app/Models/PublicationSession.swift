@@ -187,6 +187,17 @@ final class PublicationSession {
         resourceURL(for: chapters[index].href)
     }
 
+    func chapterDataSize(at index: Int) async throws -> Int {
+        let descriptor = chapters[index]
+        guard let resource = resource(for: descriptor.href) else {
+            throw PublicationSessionError.resourceNotFound(descriptor.href)
+        }
+        switch await resource.read() {
+        case .success(let data): return data.count
+        case .failure: return 0
+        }
+    }
+
     func chapterIndex(for href: String) -> Int? {
         let normalized = Self.normalizedHREF(href)
         return chapters.firstIndex(where: {
