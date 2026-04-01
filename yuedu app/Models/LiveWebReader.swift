@@ -858,13 +858,19 @@ final class LiveWebReader: NSObject, ObservableObject {
     /// 預載完成回調
     func onPreloadReady(role: WebViewRole, pageCount: Int, pageOffsets: [CGFloat]? = nil) {
         guard let ch = preloadedChapter[role] else { return }
-        chapterPageCounts[ch] = max(1, pageCount)
+        let oldCount = chapterPageCounts[ch] ?? 1
+        let newCount = max(1, pageCount)
+        chapterPageCounts[ch] = newCount
         storePageOffsets(
             pageOffsets,
             forChapter: ch,
-            pageCount: pageCount,
+            pageCount: newCount,
             fallbackWidth: pageRenderWidth(for: webViewPool[role] ?? webView)
         )
+        if oldCount != newCount || pageOffsets != nil {
+            let startPage = firstGlobalPage(forChapter: ch, preferredLocalPage: 0) ?? 0
+            invalidateSnapshots(fromGlobalPage: startPage)
+        }
         preloadedReady[role] = true
         rebuildGlobalPageMap()
     }
@@ -909,6 +915,7 @@ final class LiveWebReader: NSObject, ObservableObject {
             let pageCount = payload["pageCount"] as? Int ?? 1
             onPaginationReady(pageCount: pageCount)
         case "tap":
+            guard sourceWebView === webView else { return }
             let zone = payload["zone"] as? String ?? "center"
             routeTap(zone: zone)
         default:
@@ -1272,13 +1279,20 @@ final class LiveWebReader: NSObject, ObservableObject {
     fileprivate func onPaginationReady(pageCount: Int, pageOffsets: [CGFloat]? = nil) {
         // 更新當前章節頁數（以可見 WebView 為準）
         if currentLoadedChapter >= 0 {
-            chapterPageCounts[currentLoadedChapter] = max(1, pageCount)
+            let chapter = currentLoadedChapter
+            let oldCount = chapterPageCounts[chapter] ?? 1
+            let newCount = max(1, pageCount)
+            chapterPageCounts[chapter] = newCount
             storePageOffsets(
                 pageOffsets,
-                forChapter: currentLoadedChapter,
-                pageCount: pageCount,
+                forChapter: chapter,
+                pageCount: newCount,
                 fallbackWidth: pageRenderWidth(for: webView)
             )
+            if oldCount != newCount || pageOffsets != nil {
+                let startPage = firstGlobalPage(forChapter: chapter, preferredLocalPage: 0) ?? 0
+                invalidateSnapshots(fromGlobalPage: startPage)
+            }
             rebuildGlobalPageMap()
         }
         if let c = chapterLoadContinuation {
@@ -1845,8 +1859,91 @@ final class LiveWebReader: NSObject, ObservableObject {
         currentSafeAreaInsets = safeAreaInsets
         bumpLayoutGeneration()
         clearMemoryCache()
-        if publicationSession != nil {
+
+        // 先嘗試用 JS 注入 CSS 變數 + 重新分頁（不需重載 HTML，更流暢）
+        // 如果目前章節未載入或 webView 不可用，才 fallback 到整章重載
+        if currentLoadedChapter >= 0, webView != nil, !scrollModeEnabled {
+            injectViewportAndRepaginate()
+        } else if publicationSession != nil {
             relayoutAroundCurrentLocation()
+        }
+    }
+
+    /// 透過 JS 注入新的 viewport/safe-area/padding CSS 變數，觸發 reflow + 重新分頁。
+    /// 不需重載 HTML，旋轉/改設定時大幅減少卡頓。
+    private func injectViewportAndRepaginate() {
+        let marginH = Int(renderMarginH)
+        let marginV = Int(renderMarginV)
+        let viewportWidth = max(Int(currentViewportSize.width.rounded(.down)), 1)
+        let viewportHeight = max(Int(currentViewportSize.height.rounded(.down)), 1)
+        let safeTop = Int(currentSafeAreaInsets.top.rounded(.up))
+        let safeBottom = Int(currentSafeAreaInsets.bottom.rounded(.up))
+        let footerHeight = Int(renderFooterHeight.rounded(.up))
+        let topPadding = max(safeTop + 6, marginV)
+        let bottomPadding = max(safeBottom + footerHeight, marginV)
+
+        // 記住當前閱讀位置（用 chapter progression 比 pageIndex 更穩定）
+        let savedChapter = currentLoadedChapter
+        let savedProgression = currentChapterPageCount > 1
+            ? Double(currentLocalPage) / Double(max(currentChapterPageCount - 1, 1))
+            : 0.0
+
+        // 更新 WebView frame
+        webView.frame = CGRect(origin: webView.frame.origin, size: currentViewportSize)
+
+        let js = """
+        (function() {
+            var result = _updateViewportVars({
+                safeTop: \(safeTop),
+                safeBottom: \(safeBottom),
+                footerHeight: \(footerHeight),
+                userPaddingTop: \(marginV),
+                userPaddingBottom: \(marginV),
+                userPaddingLeft: \(marginH),
+                userPaddingRight: \(marginH),
+                viewportWidth: \(viewportWidth),
+                viewportHeight: \(viewportHeight),
+                contentPaddingTop: \(topPadding),
+                contentPaddingBottom: \(bottomPadding)
+            });
+            return JSON.stringify(result);
+        })()
+        """
+
+        webView.evaluateJavaScript(js) { [weak self] result, error in
+            guard let self else { return }
+            guard let jsonStr = result as? String,
+                  let data = jsonStr.data(using: .utf8),
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let pageCount = dict["pageCount"] as? Int
+            else {
+                // JS 注入失敗，fallback 到整章重載
+                if self.publicationSession != nil {
+                    self.relayoutAroundCurrentLocation()
+                }
+                return
+            }
+
+            let pageOffsets = self.decodePageOffsets(from: dict["pageOffsets"])
+            self.onPaginationReady(pageCount: pageCount, pageOffsets: pageOffsets)
+
+            // 用 progression 還原到最接近的頁碼
+            if savedChapter == self.currentLoadedChapter {
+                let localPage = min(
+                    max(Int(round(savedProgression * Double(max(pageCount - 1, 0)))), 0),
+                    max(pageCount - 1, 0)
+                )
+                self.snapToLocalPage(localPage)
+                if let gp = self.firstGlobalPage(forChapter: savedChapter, preferredLocalPage: localPage) {
+                    self.currentEpubPage = gp
+                }
+                self.updateCurrentState()
+            }
+
+            // 預載鄰居也需要刷新
+            self.preloadedChapter.removeAll()
+            self.preloadedReady.removeAll()
+            self.preloadNeighbors()
         }
     }
 
@@ -2109,6 +2206,22 @@ final class LiveWebReader: NSObject, ObservableObject {
         snapshotVersion += 1
     }
 
+    private func invalidateSnapshots(fromGlobalPage startPage: Int) {
+        guard startPage > 0 else {
+            clearMemoryCache()
+            return
+        }
+
+        for (page, task) in snapshotTasks where page >= startPage {
+            task.cancel()
+            snapshotTasks.removeValue(forKey: page)
+        }
+        snapshotImages = snapshotImages.filter { $0.key < startPage }
+        snapshotStates = snapshotStates.filter { $0.key < startPage }
+        snapshotRevisions = snapshotRevisions.filter { $0.key < startPage }
+        snapshotVersion += 1
+    }
+
     func captureSnapshot(forGlobalPage page: Int) async -> UIImage? {
         guard page >= 0, page < totalPages, page < globalPageMap.count else { return nil }
         let target = globalPageMap[page]
@@ -2130,10 +2243,10 @@ final class LiveWebReader: NSObject, ObservableObject {
     }
 
     private func pooledWebView(forChapter chapter: Int) -> WKWebView? {
-        if preloadedChapter[.next] == chapter {
+        if preloadedChapter[.next] == chapter, preloadedReady[.next] == true {
             return webViewPool[.next]
         }
-        if preloadedChapter[.prev] == chapter {
+        if preloadedChapter[.prev] == chapter, preloadedReady[.prev] == true {
             return webViewPool[.prev]
         }
         return nil
@@ -2305,11 +2418,11 @@ final class LiveWebReader: NSObject, ObservableObject {
         let layoutBootstrapJS = useReadiumCSS ? "" : "applyReaderLayoutConfig(\(layoutConfigJS));"
 
         let viewportWidth = max(Int(size.width.rounded(.down)), 1)
-        let topPadding = max(Int(currentSafeAreaInsets.top.rounded(.up)) + 6, marginV)
-        let bottomPadding = max(
-            Int(currentSafeAreaInsets.bottom.rounded(.up)) + Int(renderFooterHeight.rounded(.up)),
-            marginV
-        )
+        let safeTop = Int(currentSafeAreaInsets.top.rounded(.up))
+        let safeBottom = Int(currentSafeAreaInsets.bottom.rounded(.up))
+        let footerHeight = Int(renderFooterHeight.rounded(.up))
+        let topPadding = max(safeTop + 6, marginV)
+        let bottomPadding = max(safeBottom + footerHeight, marginV)
 
         // Readium CSS 注入（EPUB 專用，提供頂級排版品質）
         // 三明治順序：before → 出版 CSS → default → adapter/inline → after
@@ -2351,6 +2464,20 @@ final class LiveWebReader: NSObject, ObservableObject {
         let inlineLayoutCSS: String
         if useReadiumCSS {
             inlineLayoutCSS = """
+            :root {
+                --rv-safe-top: \(safeTop)px;
+                --rv-safe-bottom: \(safeBottom)px;
+                --rv-header-height: 0px;
+                --rv-footer-height: \(footerHeight)px;
+                --rv-user-padding-top: \(marginV)px;
+                --rv-user-padding-bottom: \(marginV)px;
+                --rv-user-padding-left: \(marginH)px;
+                --rv-user-padding-right: \(marginH)px;
+                --rv-viewport-width: \(viewportWidth)px;
+                --rv-viewport-height: \(Int(size.height))px;
+                --rv-content-padding-top: \(topPadding)px;
+                --rv-content-padding-bottom: \(bottomPadding)px;
+            }
             html {
                 height: 100%;
                 margin: 0;
@@ -2363,8 +2490,8 @@ final class LiveWebReader: NSObject, ObservableObject {
                 height: 100vh;
                 margin: 0;
                 overflow: visible;
-                padding-top: \(topPadding)px !important;
-                padding-bottom: \(bottomPadding)px !important;
+                padding-top: var(--rv-content-padding-top) !important;
+                padding-bottom: var(--rv-content-padding-bottom) !important;
                 box-sizing: border-box;
             }
             img, video, audio, object, svg {
@@ -2386,6 +2513,20 @@ final class LiveWebReader: NSObject, ObservableObject {
         } else {
             // 非 EPUB（TXT 等）：完整 inline CSS 控制所有排版
             inlineLayoutCSS = """
+            :root {
+                --rv-safe-top: \(safeTop)px;
+                --rv-safe-bottom: \(safeBottom)px;
+                --rv-header-height: 0px;
+                --rv-footer-height: \(footerHeight)px;
+                --rv-user-padding-top: \(marginV)px;
+                --rv-user-padding-bottom: \(marginV)px;
+                --rv-user-padding-left: \(marginH)px;
+                --rv-user-padding-right: \(marginH)px;
+                --rv-viewport-width: \(viewportWidth)px;
+                --rv-viewport-height: \(Int(size.height))px;
+                --rv-content-padding-top: \(topPadding)px;
+                --rv-content-padding-bottom: \(bottomPadding)px;
+            }
             html {
                 height: 100%; margin: 0; padding: 0; overflow: hidden;
                 background: \(bgColor);
@@ -2401,8 +2542,8 @@ final class LiveWebReader: NSObject, ObservableObject {
                 column-gap: 0 !important;
                 column-fill: auto !important;
                 -webkit-column-fill: auto !important;
-                padding-top: \(topPadding)px !important;
-                padding-bottom: \(bottomPadding)px !important;
+                padding-top: var(--rv-content-padding-top) !important;
+                padding-bottom: var(--rv-content-padding-bottom) !important;
                 padding-left: 0 !important;
                 padding-right: 0 !important;
                 box-sizing: border-box !important;
@@ -2507,6 +2648,34 @@ final class LiveWebReader: NSObject, ObservableObject {
         \(wrappedBodyContent)
         <script>
         \(layoutBootstrapJS)
+
+        // 動態更新 viewport / safe area / padding CSS 變數（native 在旋轉或改設定時呼叫）
+        // 回傳新的 { pageCount, pageOffsets } 供 native 更新 mapping
+        function _updateViewportVars(vars) {
+            var root = document.documentElement;
+            if (vars.safeTop !== undefined) root.style.setProperty('--rv-safe-top', vars.safeTop + 'px');
+            if (vars.safeBottom !== undefined) root.style.setProperty('--rv-safe-bottom', vars.safeBottom + 'px');
+            if (vars.headerHeight !== undefined) root.style.setProperty('--rv-header-height', vars.headerHeight + 'px');
+            if (vars.footerHeight !== undefined) root.style.setProperty('--rv-footer-height', vars.footerHeight + 'px');
+            if (vars.userPaddingTop !== undefined) root.style.setProperty('--rv-user-padding-top', vars.userPaddingTop + 'px');
+            if (vars.userPaddingBottom !== undefined) root.style.setProperty('--rv-user-padding-bottom', vars.userPaddingBottom + 'px');
+            if (vars.userPaddingLeft !== undefined) root.style.setProperty('--rv-user-padding-left', vars.userPaddingLeft + 'px');
+            if (vars.userPaddingRight !== undefined) root.style.setProperty('--rv-user-padding-right', vars.userPaddingRight + 'px');
+            if (vars.viewportWidth !== undefined) root.style.setProperty('--rv-viewport-width', vars.viewportWidth + 'px');
+            if (vars.viewportHeight !== undefined) root.style.setProperty('--rv-viewport-height', vars.viewportHeight + 'px');
+            if (vars.contentPaddingTop !== undefined) root.style.setProperty('--rv-content-padding-top', vars.contentPaddingTop + 'px');
+            if (vars.contentPaddingBottom !== undefined) root.style.setProperty('--rv-content-padding-bottom', vars.contentPaddingBottom + 'px');
+            // 更新 column-width（影響分頁計算）
+            if (vars.viewportWidth !== undefined) {
+                _pageSpan = Math.max(vars.viewportWidth, 1);
+                if (document.body) {
+                    document.body.style.setProperty('-webkit-column-width', _pageSpan + 'px', 'important');
+                    document.body.style.setProperty('column-width', _pageSpan + 'px', 'important');
+                }
+            }
+            // 重新計算分頁
+            return getPaginationMetrics();
+        }
 
         // 跟手翻頁全域狀態
         var _currentLocalPage = 0;
@@ -2659,6 +2828,9 @@ final class LiveWebReader: NSObject, ObservableObject {
             if (!window.webkit || !window.webkit.messageHandlers || !window.webkit.messageHandlers.\(bridgeName)) {
                 return;
             }
+            if (_isDragging) {
+                return;
+            }
             var interactive = e.target && e.target.closest
                 ? e.target.closest('a, button, input, textarea, select, summary, label')
                 : null;
@@ -2667,12 +2839,7 @@ final class LiveWebReader: NSObject, ObservableObject {
             }
 
             var x = e.clientX || 0;
-            var y = e.clientY || 0;
             var w = Math.max(window.innerWidth, 1);
-            var h = Math.max(window.innerHeight, 1);
-            if (y < h * 0.1 || y > h * 0.9) {
-                return;
-            }
 
             var zone = 'center';
             if (x < w / 3) {
@@ -3066,12 +3233,24 @@ final class LiveWebReader: NSObject, ObservableObject {
 
         // 點擊區域偵測（上下滑動也需要點中間呼出工具列）
         document.addEventListener('click', function(e) {
-            var x = e.clientX, w = window.innerWidth;
-            var y = e.clientY, h = window.innerHeight;
-            // 中間 1/3 區域
-            if (x > w / 3 && x < w * 2 / 3 && y > h / 4 && y < h * 3 / 4) {
-                _postMessage({ type: 'tap', payload: { zone: 'center' } });
+            var interactive = e.target && e.target.closest
+                ? e.target.closest('a, button, input, textarea, select, summary, label')
+                : null;
+            if (interactive) {
+                return;
             }
+
+            var x = e.clientX || 0;
+            var w = Math.max(window.innerWidth, 1);
+
+            var zone = 'center';
+            if (x < w / 3) {
+                zone = 'left';
+            } else if (x > w * 2 / 3) {
+                zone = 'right';
+            }
+
+            _postMessage({ type: 'tap', payload: { zone: zone } });
         }, true);
 
         // 通知 Swift ready

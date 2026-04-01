@@ -25,6 +25,8 @@ final class CoreTextPaginator {
         let anchorOffsets: [String: Int]
         let renderSize: CGSize
         let fontSize: CGFloat
+        /// 排版時使用的四邊邊距（UIEdgeInsets；CoreText path 已按此偏移）
+        let contentInsets: UIEdgeInsets
     }
 
     enum InvalidationReason {
@@ -39,6 +41,8 @@ final class CoreTextPaginator {
         let width: CGFloat
         let height: CGFloat
         let fontSize: CGFloat
+        let marginH: CGFloat
+        let marginV: CGFloat
     }
 
     // MARK: - 公開 API
@@ -49,12 +53,15 @@ final class CoreTextPaginator {
         imagePage: HTMLAttributedStringBuilder.ImagePage? = nil,
         anchorOffsets: [String: Int] = [:],
         renderSize: CGSize,
-        fontSize: CGFloat
+        fontSize: CGFloat,
+        contentInsets: UIEdgeInsets = .zero
     ) async -> ChapterLayout {
         let key = CacheKey(spineIndex: spineIndex,
                            width: renderSize.width,
                            height: renderSize.height,
-                           fontSize: fontSize)
+                           fontSize: fontSize,
+                           marginH: contentInsets.left,
+                           marginV: contentInsets.top)
         if let cached = cache[key] { return cached }
 
         let layout = await Task.detached(priority: .userInitiated) {
@@ -63,7 +70,8 @@ final class CoreTextPaginator {
                                imagePage: imagePage,
                                anchorOffsets: anchorOffsets,
                                renderSize: renderSize,
-                               fontSize: fontSize)
+                               fontSize: fontSize,
+                               contentInsets: contentInsets)
         }.value
 
         cache[key] = layout
@@ -88,13 +96,29 @@ final class CoreTextPaginator {
         imagePage: HTMLAttributedStringBuilder.ImagePage?,
         anchorOffsets: [String: Int],
         renderSize: CGSize,
-        fontSize: CGFloat
+        fontSize: CGFloat,
+        contentInsets: UIEdgeInsets
     ) -> ChapterLayout {
+        // 有效內容區域（UIKit 座標：左上角原點）
+        let contentRect = CGRect(
+            x: contentInsets.left,
+            y: contentInsets.top,
+            width: max(1, renderSize.width - contentInsets.left - contentInsets.right),
+            height: max(1, renderSize.height - contentInsets.top - contentInsets.bottom)
+        )
+        // CoreText 座標（y 從底部向上）：y = bottom inset
+        let contentPathRect = CGRect(
+            x: contentInsets.left,
+            y: contentInsets.bottom,
+            width: contentRect.width,
+            height: contentRect.height
+        )
+
         if let imagePage {
             let framesetter = CTFramesetterCreateWithAttributedString(attrStr)
             let imageRect = aspectFitRect(
-                for: imagePage.image?.size ?? CGSize(width: renderSize.width, height: renderSize.height),
-                in: CGRect(origin: .zero, size: renderSize)
+                for: imagePage.image?.size ?? contentRect.size,
+                in: contentRect
             )
             return ChapterLayout(
                 spineIndex: spineIndex,
@@ -106,12 +130,13 @@ final class CoreTextPaginator {
                 pageKinds: [.image],
                 anchorOffsets: anchorOffsets,
                 renderSize: renderSize,
-                fontSize: fontSize
+                fontSize: fontSize,
+                contentInsets: contentInsets
             )
         }
 
         let framesetter = CTFramesetterCreateWithAttributedString(attrStr)
-        let pagePath = CGPath(rect: CGRect(origin: .zero, size: renderSize), transform: nil)
+        let pagePath = CGPath(rect: contentPathRect, transform: nil)
 
         var pageRanges: [CFRange] = []
         var currentLocation = 0
@@ -131,6 +156,7 @@ final class CoreTextPaginator {
             framesetter: framesetter,
             pageRanges: pageRanges,
             renderSize: renderSize,
+            contentPathRect: contentPathRect,
             attrStr: attrStr
         )
 
@@ -144,7 +170,8 @@ final class CoreTextPaginator {
             pageKinds: pageKinds,
             anchorOffsets: anchorOffsets,
             renderSize: renderSize,
-            fontSize: fontSize
+            fontSize: fontSize,
+            contentInsets: contentInsets
         )
     }
 
@@ -152,9 +179,10 @@ final class CoreTextPaginator {
         framesetter: CTFramesetter,
         pageRanges: [CFRange],
         renderSize: CGSize,
+        contentPathRect: CGRect,
         attrStr: NSAttributedString
     ) -> (rects: [Int: CGRect], images: [Int: UIImage], kinds: [PageKind]) {
-        let pagePath = CGPath(rect: CGRect(origin: .zero, size: renderSize), transform: nil)
+        let pagePath = CGPath(rect: contentPathRect, transform: nil)
         var rects: [Int: CGRect] = [:]
         var images: [Int: UIImage] = [:]
         var kinds = Array(repeating: PageKind.text, count: pageRanges.count)
@@ -205,7 +233,14 @@ final class CoreTextPaginator {
            visibleContent.isEmpty,
            images.count == 1,
            let image = images[0] {
-            rects[0] = aspectFitRect(for: image.size, in: CGRect(origin: .zero, size: renderSize))
+            // 將 contentPathRect（CoreText 座標）轉換為 UIKit 座標的內容區域
+            let uiContentRect = CGRect(
+                x: contentPathRect.origin.x,
+                y: renderSize.height - contentPathRect.maxY,
+                width: contentPathRect.width,
+                height: contentPathRect.height
+            )
+            rects[0] = aspectFitRect(for: image.size, in: uiContentRect)
             kinds[0] = .image
         }
 

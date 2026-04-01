@@ -2,7 +2,7 @@ import CoreText
 import UIKit
 
 /// 單頁 CoreText 渲染視圖。
-/// 使用 draw(_ rect:) 直接以 CTFrameDraw 繪製，不截圖、不快取 layer。
+/// 使用 draw(_ rect:) 逐行繪製（支援 CJK 兩端對齊），不截圖、不快取 layer。
 final class CoreTextPageView: UIView {
     private var layout: CoreTextPaginator.ChapterLayout?
     private var localPageIndex: Int = 0
@@ -43,16 +43,28 @@ final class CoreTextPageView: UIView {
         }
 
         let range = layout.pageRanges[localPageIndex]
+        let insets = layout.contentInsets
 
         // 1. CoreText 座標系：左下角為原點，需翻轉
         ctx.textMatrix = .identity
         ctx.translateBy(x: 0, y: bounds.height)
         ctx.scaleBy(x: 1.0, y: -1.0)
 
-        // 2. 建立 CTFrame 並繪製文字
-        let path = CGPath(rect: bounds, transform: nil)
+        // 2. 建立 CTFrame，逐行繪製（支援 CJK 兩端對齊）
+        let contentPathRect = CGRect(
+            x: insets.left,
+            y: insets.bottom,
+            width: max(1, bounds.width - insets.left - insets.right),
+            height: max(1, bounds.height - insets.top - insets.bottom)
+        )
+        let path = CGPath(rect: contentPathRect, transform: nil)
         let frame = CTFramesetterCreateFrame(layout.framesetter, range, path, nil)
-        CTFrameDraw(frame, ctx)
+        CoreTextPageView.drawLines(
+            of: frame,
+            contentWidth: contentPathRect.width,
+            attrStr: layout.attributedString,
+            in: ctx
+        )
 
         // 3. 翻轉回 UIView 座標系，繪製圖片
         ctx.scaleBy(x: 1.0, y: -1.0)
@@ -61,6 +73,65 @@ final class CoreTextPageView: UIView {
         if let imgRect = layout.imageRects[localPageIndex],
            let image = layout.pageImages[localPageIndex] {
             image.draw(in: imgRect)
+        }
+    }
+
+    /// 逐行繪製 CTFrame 的所有文字行，對 justified 非末行套用 CTLineCreateJustifiedLine。
+    /// 共用於 draw(_ rect:) 和 CoreTextPageEngine.generateSnapshot()。
+    /// 呼叫前必須已在 CGContext 中設定好 CoreText 座標系（y 軸向上翻轉）。
+    static func drawLines(
+        of frame: CTFrame,
+        contentWidth: CGFloat,
+        attrStr: NSAttributedString,
+        in ctx: CGContext
+    ) {
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        guard !lines.isEmpty else { return }
+
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+
+        let nsString = attrStr.string as NSString
+        let stringLength = attrStr.length
+
+        for (lineIdx, line) in lines.enumerated() {
+            let origin = origins[lineIdx]
+            ctx.textPosition = CGPoint(x: origin.x, y: origin.y)
+
+            let lineRange = CTLineGetStringRange(line)
+            let lineEnd = lineRange.location + lineRange.length
+
+            // 判斷是否為段落最後一行（最後一行不做 justify，避免強制撐開）
+            let isParagraphLastLine: Bool
+            if lineEnd >= stringLength {
+                isParagraphLastLine = true
+            } else {
+                let nextCharCode = nsString.character(at: lineEnd)
+                // \n (0x000A) 或 Unicode line separator (0x2028)
+                isParagraphLastLine = nextCharCode == 0x000A || nextCharCode == 0x2028
+            }
+
+            // 取得段落對齊方式
+            let isJustified: Bool
+            if lineRange.location < stringLength {
+                let paraStyle = attrStr.attribute(
+                    .paragraphStyle, at: lineRange.location, effectiveRange: nil
+                ) as? NSParagraphStyle
+                isJustified = paraStyle?.alignment == .justified
+            } else {
+                isJustified = false
+            }
+
+            // 非最後一行且設定 justified：用 CTLineCreateJustifiedLine 改善 CJK 字間分配
+            let lineToDraw: CTLine
+            if isJustified && !isParagraphLastLine,
+               let justified = CTLineCreateJustifiedLine(line, 1.0, Double(contentWidth)) {
+                lineToDraw = justified
+            } else {
+                lineToDraw = line
+            }
+
+            CTLineDraw(lineToDraw, ctx)
         }
     }
 

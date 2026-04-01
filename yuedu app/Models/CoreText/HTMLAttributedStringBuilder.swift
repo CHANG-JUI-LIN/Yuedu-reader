@@ -33,6 +33,12 @@ final class HTMLAttributedStringBuilder {
         let anchorOffsets: [String: Int]
     }
 
+    enum VerticalAlign {
+        case baseline
+        case `super`
+        case sub
+    }
+
     struct ResolvedStyle {
         var fontSize: CGFloat
         var fontFamilies: [String]
@@ -42,7 +48,15 @@ final class HTMLAttributedStringBuilder {
         var textAlign: NSTextAlignment
         var textIndent: CGFloat
         var lineHeight: CGFloat
+        /// CSS 是否明確指定了 line-height（true = 不做 clamp）
+        var lineHeightExplicit: Bool
         var paragraphSpacing: CGFloat
+        var paragraphSpacingBefore: CGFloat
+        /// margin-left（blockquote / 巢狀列表縮排）
+        var marginLeft: CGFloat
+        /// list item 的 bullet 或序號字串（如 "•" / "1."），nil 表示非列表項
+        var listBullet: String?
+        var verticalAlign: VerticalAlign
         var isBlock: Bool
         var backgroundImage: String?
     }
@@ -135,7 +149,9 @@ final class HTMLAttributedStringBuilder {
         }
         let anchorOffsets = collectAnchorOffsets(in: mutable)
         debugLog(result: mutable)
-        return BuildResult(attributedString: mutable, imagePage: nil, anchorOffsets: anchorOffsets)
+        // CJK 標點擠壓（相鄰全形標點施加負 kern）
+        let processed = CJKTypographyProcessor.apply(to: mutable)
+        return BuildResult(attributedString: processed, imagePage: nil, anchorOffsets: anchorOffsets)
     }
 
     private func collectStyles(from document: Document) async -> [String] {
@@ -471,9 +487,21 @@ final class HTMLAttributedStringBuilder {
     }
 
     private func baseTextAttributes(style: ResolvedStyle, config: Config) -> [NSAttributedString.Key: Any] {
-        [
+        let lineHeight = style.lineHeightExplicit
+            ? max(style.fontSize, style.lineHeight)
+            : clampLineHeight(absolute: style.lineHeight, fontSize: style.fontSize)
+        // 讓文字在行高內垂直置中（CoreText 預設貼底部）
+        var baselineOffset = (lineHeight - style.fontSize) / 4
+        // sup / sub 的額外基線偏移
+        switch style.verticalAlign {
+        case .super: baselineOffset += style.fontSize * 0.4
+        case .sub:   baselineOffset -= style.fontSize * 0.25
+        case .baseline: break
+        }
+        return [
             .font: makeFont(from: style, config: config),
             .foregroundColor: style.textColor,
+            .baselineOffset: baselineOffset,
         ]
     }
 
@@ -563,13 +591,40 @@ final class HTMLAttributedStringBuilder {
     private func makeParagraphStyle(for style: ResolvedStyle, config: Config) -> NSParagraphStyle {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = style.textAlign
-        paragraph.firstLineHeadIndent = style.textIndent
         paragraph.lineBreakMode = .byWordWrapping
         paragraph.paragraphSpacing = style.paragraphSpacing
-        paragraph.minimumLineHeight = style.lineHeight
-        paragraph.maximumLineHeight = style.lineHeight
-        paragraph.lineSpacing = max(0, style.lineHeight - style.fontSize)
+        paragraph.paragraphSpacingBefore = style.paragraphSpacingBefore
+
+        if let bullet = style.listBullet {
+            // 列表項：懸掛縮排（bullet 在 marginLeft，續行縮排 bullet 寬度）
+            let bulletWidth = bulletMeasuredWidth(bullet, fontSize: style.fontSize)
+            paragraph.firstLineHeadIndent = style.marginLeft
+            paragraph.headIndent = style.marginLeft + bulletWidth
+            let tabStop = NSTextTab(textAlignment: .natural, location: style.marginLeft + bulletWidth)
+            paragraph.tabStops = [tabStop]
+            paragraph.defaultTabInterval = style.marginLeft + bulletWidth
+        } else {
+            // 一般段落：marginLeft 控制左邊距，textIndent 控制首行額外縮排
+            paragraph.headIndent = style.marginLeft
+            paragraph.firstLineHeadIndent = style.marginLeft + style.textIndent
+        }
+
+        // 用 min/maxLineHeight 固定行高，不再重複設 lineSpacing（會導致行距雙重計算）
+        let lineHeight = style.lineHeightExplicit
+            ? max(style.fontSize, style.lineHeight)
+            : clampLineHeight(absolute: style.lineHeight, fontSize: style.fontSize)
+        paragraph.minimumLineHeight = lineHeight
+        paragraph.maximumLineHeight = lineHeight
         return paragraph
+    }
+
+    /// 估算 bullet 字串的渲染寬度（用於計算懸掛縮排距離）
+    private func bulletMeasuredWidth(_ bullet: String, fontSize: CGFloat) -> CGFloat {
+        let font = UIFont.systemFont(ofSize: fontSize)
+        let str = bullet + "\t"
+        let size = (str as NSString).size(withAttributes: [.font: font])
+        // 預留一個半形空格的額外間距
+        return ceil(size.width) + fontSize * 0.25
     }
 
     private func makeImagePlaceholder(image: UIImage?, config: Config, style: ResolvedStyle) -> NSAttributedString {
@@ -668,7 +723,12 @@ final class HTMLAttributedStringBuilder {
             textAlign: parent.textAlign,
             textIndent: tag == "p" ? parent.textIndent : 0,
             lineHeight: parent.lineHeight,
+            lineHeightExplicit: parent.lineHeightExplicit,
             paragraphSpacing: parent.paragraphSpacing,
+            paragraphSpacingBefore: 0,
+            marginLeft: parent.marginLeft,
+            listBullet: nil,
+            verticalAlign: .baseline,
             isBlock: false,
             backgroundImage: nil
         )
@@ -688,7 +748,12 @@ final class HTMLAttributedStringBuilder {
             textAlign: .natural,
             textIndent: config.firstLineIndent,
             lineHeight: defaultLineHeight,
+            lineHeightExplicit: false,
             paragraphSpacing: config.paragraphSpacing,
+            paragraphSpacingBefore: 0,
+            marginLeft: 0,
+            listBullet: nil,
+            verticalAlign: .baseline,
             isBlock: true,
             backgroundImage: nil
         )
@@ -698,9 +763,15 @@ final class HTMLAttributedStringBuilder {
         switch tag {
         case "body":
             return ["display": "block"]
-        case "div", "p", "section", "article", "blockquote":
+        case "div", "p", "section", "article":
             return [
                 "display": "block",
+                "line-height": "\(config.lineHeight / max(config.fontSize, 1))",
+            ]
+        case "blockquote":
+            return [
+                "display": "block",
+                "margin-left": "2em",
                 "line-height": "\(config.lineHeight / max(config.fontSize, 1))",
             ]
         case "h1":
@@ -711,12 +782,22 @@ final class HTMLAttributedStringBuilder {
             return ["display": "block", "font-size": "1.17em", "font-weight": "700", "text-indent": "0"]
         case "h4", "h5", "h6":
             return ["display": "block", "font-size": "1em", "font-weight": "700", "text-indent": "0"]
+        case "ul", "ol":
+            return ["display": "block", "margin-left": "1.5em"]
+        case "li":
+            return ["display": "block", "text-indent": "0"]
+        case "hr":
+            return ["display": "block"]
         case "img", "image", "svg":
             return ["display": "inline-block"]
         case "b", "strong":
             return ["font-weight": "700"]
         case "i", "em":
             return ["font-style": "italic"]
+        case "sup":
+            return ["font-size": "0.75em", "vertical-align": "super"]
+        case "sub":
+            return ["font-size": "0.75em", "vertical-align": "sub"]
         default:
             return [:]
         }
@@ -771,7 +852,9 @@ final class HTMLAttributedStringBuilder {
         }
         if let lineHeight = declarations["line-height"] {
             if let resolved = resolveLineHeight(lineHeight, fontSize: style.fontSize, rootFontSize: rootFontSize) {
-                style.lineHeight = clampLineHeight(absolute: resolved, fontSize: style.fontSize)
+                // CSS 明確指定時不做 clamp，尊重 EPUB 排版意圖
+                style.lineHeight = resolved
+                style.lineHeightExplicit = true
             }
         }
         if let paragraphSpacing = declarations["margin-bottom"] ?? declarations["paragraph-spacing"],
@@ -782,6 +865,31 @@ final class HTMLAttributedStringBuilder {
                 relativeBase: style.fontSize
            ) {
             style.paragraphSpacing = max(0, value)
+        }
+        if let marginTop = declarations["margin-top"],
+           let value = resolveLength(
+                marginTop,
+                currentFontSize: style.fontSize,
+                rootFontSize: rootFontSize,
+                relativeBase: style.fontSize
+           ) {
+            style.paragraphSpacingBefore = max(0, value)
+        }
+        if let marginLeft = declarations["margin-left"],
+           let value = resolveLength(
+                marginLeft,
+                currentFontSize: style.fontSize,
+                rootFontSize: rootFontSize,
+                relativeBase: style.fontSize
+           ) {
+            style.marginLeft = max(0, value)
+        }
+        if let verticalAlign = declarations["vertical-align"] {
+            switch verticalAlign.trimmingCharacters(in: .whitespaces).lowercased() {
+            case "super": style.verticalAlign = .super
+            case "sub":   style.verticalAlign = .sub
+            default:      style.verticalAlign = .baseline
+            }
         }
     }
 
