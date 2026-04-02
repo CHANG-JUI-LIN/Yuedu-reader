@@ -282,9 +282,9 @@ final class CoreTextPaginator {
                         CTRunGetStringRange(run).location,
                         nil
                     )
-                    let ctY = lineOrigin.y - info.height
+                    let ctY = contentPathRect.origin.y + lineOrigin.y - info.height
                     let uiY = renderSize.height - ctY - info.height
-                    let runBounds = CGRect(x: lineOrigin.x + xOffset,
+                    let runBounds = CGRect(x: contentPathRect.origin.x + lineOrigin.x + xOffset,
                                           y: uiY,
                                           width: info.width,
                                           height: info.height)

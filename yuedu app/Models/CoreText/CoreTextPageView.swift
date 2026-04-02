@@ -140,7 +140,8 @@ final class CoreTextPageView: UIView {
             }
 
             var origin = origins[lineIdx]
-            origin.y += accumulatedShift
+            origin.x += contentMinX
+            origin.y += (accumulatedShift + contentMinY)
 
             let lineRange = CTLineGetStringRange(line)
 
@@ -153,14 +154,14 @@ final class CoreTextPageView: UIView {
                 ctx.saveGState()
                 ctx.setStrokeColor(UIColor.separator.cgColor)
                 ctx.setLineWidth(0.5)
-                ctx.move(to: CGPoint(x: contentMinX, y: origin.y))
-                ctx.addLine(to: CGPoint(x: contentMinX + contentWidth, y: origin.y))
+                ctx.move(to: CGPoint(x: origin.x, y: origin.y))
+                ctx.addLine(to: CGPoint(x: origin.x + contentWidth, y: origin.y))
                 ctx.strokePath()
                 ctx.restoreGState()
                 continue
             }
 
-            ctx.textPosition = CGPoint(x: origin.x, y: origin.y)
+            ctx.textPosition = origin
 
             let lineEnd = lineRange.location + lineRange.length
 
