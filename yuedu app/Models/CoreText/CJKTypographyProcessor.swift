@@ -16,18 +16,36 @@ enum CJKTypographyProcessor {
     // MARK: - 標點分類
 
     /// 閉括號 / 句尾標點：字形在左，右半為空白
-    private static let closingMarks: Set<Unicode.Scalar> = [
+    public static let closingMarks: Set<Unicode.Scalar> = [
         "」", "』", "）", "】", "〕", "｝", "〉", "》",
         "。", "．", "，", "、", "；", "：", "！", "？",
         "\u{2026}", // …
     ]
 
     /// 開括號：字形在右，左半為空白
-    private static let openingMarks: Set<Unicode.Scalar> = [
+    public static let openingMarks: Set<Unicode.Scalar> = [
         "「", "『", "（", "【", "〔", "｛", "〈", "《",
     ]
 
+    /// 行首禁則：不應該出現在行首的標點（通常是閉括號）
+    public static let lineStartForbidden: Set<Unicode.Scalar> = closingMarks
+
+    /// 行末禁則：不應該出現在行末的標點（通常是開括號）
+    public static let lineEndForbidden: Set<Unicode.Scalar> = openingMarks
+
     // MARK: - 公開 API
+
+    /// 判斷第一個字是否為開括號，用於行首擠壓
+    static func isOpening(_ char: Character) -> Bool {
+        guard let first = char.unicodeScalars.first else { return false }
+        return openingMarks.contains(first)
+    }
+
+    /// 判斷最後一個字是否為閉括號，用於行末擠壓
+    static func isClosing(_ char: Character) -> Bool {
+        guard let first = char.unicodeScalars.first else { return false }
+        return closingMarks.contains(first)
+    }
 
     /// 對 `attrStr` 套用 CJK 標點擠壓，回傳修改後的副本。
     static func apply(to attrStr: NSAttributedString) -> NSAttributedString {

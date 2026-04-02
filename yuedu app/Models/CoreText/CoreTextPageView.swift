@@ -144,6 +144,19 @@ final class CoreTextPageView: UIView {
             origin.y += (accumulatedShift + contentMinY)
 
             let lineRange = CTLineGetStringRange(line)
+            let lineStart = lineRange.location
+            let lineEnd = lineRange.location + lineRange.length
+
+            // 1. 行首避頭尾 (Hanging Punctuation)：如果行首是開括號，向左偏移讓字形對齊
+            if lineStart < stringLength {
+                let firstChar = nsString.character(at: lineStart)
+                if let scalar = Unicode.Scalar(firstChar),
+                   CJKTypographyProcessor.openingMarks.contains(scalar) {
+                    let fontSize = attrStr.attribute(.font, at: lineStart, effectiveRange: nil) as? UIFont
+                    let offset = (fontSize?.pointSize ?? 17) * 0.45
+                    origin.x -= offset
+                }
+            }
 
             // Phase 4: HR 分隔線
             if lineRange.location < stringLength,
@@ -188,9 +201,27 @@ final class CoreTextPageView: UIView {
 
             // 非最後一行且設定 justified：用 CTLineCreateJustifiedLine 改善 CJK 字間分配
             let lineToDraw: CTLine
-            if isJustified && !isParagraphLastLine,
-               let justified = CTLineCreateJustifiedLine(line, 1.0, Double(contentWidth)) {
-                lineToDraw = justified
+            if isJustified && !isParagraphLastLine {
+                // 行末避頭尾 (Hanging Punctuation)：如果行末是閉括號，微調寬度讓其視覺上對齊
+                var effectiveWidth = contentWidth
+                if lineEnd > 0 {
+                    let lastChar = nsString.character(at: lineEnd - 1)
+                    if let scalar = Unicode.Scalar(lastChar),
+                       CJKTypographyProcessor.closingMarks.contains(scalar) {
+                        let fontSize = attrStr.attribute(.font, at: lineEnd - 1, effectiveRange: nil) as? UIFont
+                        let bonus = (fontSize?.pointSize ?? 17) * 0.4
+                        effectiveWidth += bonus
+                    }
+                }
+
+                // 限制 Justification 拉伸比例，避免字數過少時產生醜陋的間距（大餅臉）
+                // 若文字實際寬度不足 contentWidth 的 60%，則不做 justify
+                let lineWidth = CTLineGetTypographicBounds(line, nil, nil, nil)
+                if lineWidth > Double(contentWidth) * 0.6 {
+                    lineToDraw = CTLineCreateJustifiedLine(line, 1.0, Double(effectiveWidth)) ?? line
+                } else {
+                    lineToDraw = line
+                }
             } else {
                 lineToDraw = line
             }
