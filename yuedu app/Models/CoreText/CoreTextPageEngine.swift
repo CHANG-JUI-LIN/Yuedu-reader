@@ -51,9 +51,20 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
         self.builder.imageLoader = { [weak session] href in
             guard let session else { return nil }
-            guard let response = try? await session.response(
-                for: session.resourceURL(for: href)
-            ) else { return nil }
+            if let absolute = URL(string: href), absolute.scheme != nil {
+                if let response = try? await session.response(for: absolute) {
+                    return UIImage(data: response.data)
+                }
+                if absolute.scheme == PublicationSession.scheme {
+                    let fallbackHref = absolute.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                    if let response = try? await session.response(for: session.resourceURL(for: fallbackHref)) {
+                        return UIImage(data: response.data)
+                    }
+                }
+                return nil
+            }
+            let url = session.resourceURL(for: href)
+            guard let response = try? await session.response(for: url) else { return nil }
             return UIImage(data: response.data)
         }
     }
@@ -210,19 +221,9 @@ final class CoreTextPageEngine: PageRenderingProvider {
             return self.registeredFontFaces[normalized]?.postScriptName
                 ?? self.registeredFontFaces[normalized]?.familyName
         }
-        localBuilder.imageLoader = { [weak session] src in
-            guard let session else { return nil }
-            // src 可能是相對路徑或完整 reader-book:// URL
-            if src.hasPrefix(PublicationSession.scheme + "://"),
-               let url = URL(string: src) {
-                guard let response = try? await session.response(for: url) else { return nil }
-                return UIImage(data: response.data)
-            }
-            let resolved = Self.resolveImageHref(src, chapterHref: chapterHref)
-            guard let response = try? await session.response(
-                for: session.resourceURL(for: resolved)
-            ) else { return nil }
-            return UIImage(data: response.data)
+        localBuilder.imageLoader = { [weak self] src in
+            guard let self else { return nil }
+            return await self.loadImageResource(from: src, chapterHref: chapterHref)
         }
         localBuilder.cssLoader = { [weak session] href in
             guard let session else { return nil }
@@ -244,11 +245,17 @@ final class CoreTextPageEngine: PageRenderingProvider {
         print("[CoreTextEngine] preloadChapter[\(spineIndex)] htmlLen=\(html.count) fontSize=\(config.fontSize) renderSize=\(renderSize)")
         let buildResult = await localBuilder.build(html: html, config: config)
         let attrStr = buildResult.attributedString
+        let pageBackgroundImage = await resolvedPageBackgroundImage(
+            initial: buildResult.pageBackgroundImage,
+            source: buildResult.pageBackgroundImageSource,
+            chapterHref: chapterHref
+        )
         print("[CoreTextEngine] preloadChapter[\(spineIndex)] attrStrLen=\(attrStr.length)")
         let layout = await paginator.paginate(
             spineIndex: spineIndex,
             attrStr: attrStr,
             imagePage: buildResult.imagePage,
+            pageBackgroundImage: pageBackgroundImage,
             anchorOffsets: buildResult.anchorOffsets,
             renderSize: renderSize,
             fontSize: config.fontSize,
@@ -258,6 +265,94 @@ final class CoreTextPageEngine: PageRenderingProvider {
         layouts[spineIndex] = layout
         generateSnapshot(for: spineIndex)
         rebuildPageOffsets()
+    }
+
+    private func resolvedPageBackgroundImage(
+        initial: UIImage?,
+        source: String?,
+        chapterHref: String
+    ) async -> UIImage? {
+        if let initial {
+            return initial
+        }
+        guard let source, !source.isEmpty else { return nil }
+        if let image = await loadImageResource(from: source, chapterHref: chapterHref) {
+            return image
+        }
+        print("[CoreTextEngine] page background load FAILED source=\(source) chapter=\(chapterHref)")
+        return nil
+    }
+
+    private func loadImageResource(from source: String, chapterHref: String) async -> UIImage? {
+        let candidates = imageCandidateHrefs(for: source, chapterHref: chapterHref)
+        print("[ImageLoader] src=\(source) chapter=\(chapterHref) candidates=\(candidates)")
+        for candidate in candidates {
+            if let absolute = URL(string: candidate), absolute.scheme != nil {
+                if let response = try? await session.response(for: absolute),
+                   let image = UIImage(data: response.data) {
+                    print("[ImageLoader] ✅ loaded via absolute URL: \(candidate)")
+                    return image
+                }
+                if absolute.scheme == PublicationSession.scheme {
+                    let fallbackHref = absolute.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                    if let response = try? await session.response(for: session.resourceURL(for: fallbackHref)),
+                       let image = UIImage(data: response.data) {
+                        print("[ImageLoader] ✅ loaded via scheme fallback: \(fallbackHref)")
+                        return image
+                    }
+                    print("[ImageLoader] ❌ scheme fallback failed: \(fallbackHref)")
+                } else {
+                    print("[ImageLoader] ❌ absolute URL failed: \(candidate)")
+                }
+            } else if let response = try? await session.response(for: session.resourceURL(for: candidate)),
+                      let image = UIImage(data: response.data) {
+                print("[ImageLoader] ✅ loaded via relative path: \(candidate)")
+                return image
+            } else {
+                let url = session.resourceURL(for: candidate)
+                if let response = try? await session.response(for: url) {
+                    print("[ImageLoader] ❌ UIImage decode failed for: \(candidate) dataLen=\(response.data.count) url=\(url)")
+                } else {
+                    print("[ImageLoader] ❌ session.response failed for: \(candidate) url=\(url)")
+                }
+            }
+        }
+        print("[ImageLoader] ❌ ALL candidates failed for src=\(source)")
+        return nil
+    }
+
+    private func imageCandidateHrefs(for source: String, chapterHref: String) -> [String] {
+        guard !source.isEmpty else { return [] }
+        var candidates: [String] = []
+
+        if source.hasPrefix(PublicationSession.scheme + "://") || source.hasPrefix("http://") || source.hasPrefix("https://") {
+            candidates.append(source)
+            if let absolute = URL(string: source), absolute.scheme == PublicationSession.scheme {
+                let fallbackHref = absolute.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                if !fallbackHref.isEmpty {
+                    candidates.append(fallbackHref)
+                }
+            }
+        } else {
+            candidates.append(Self.resolveImageHref(source, chapterHref: chapterHref))
+            let raw = source.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if !raw.isEmpty {
+                candidates.append(raw)
+            }
+            let basename = (raw as NSString).lastPathComponent
+            if !basename.isEmpty {
+                candidates.append(basename)
+            }
+        }
+
+        var deduped: [String] = []
+        var seen = Set<String>()
+        for candidate in candidates where !candidate.isEmpty {
+            if seen.insert(candidate).inserted {
+                deduped.append(candidate)
+            }
+        }
+        return deduped
     }
 
     func invalidateLayout(newSize: CGSize) async {
@@ -367,6 +462,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
                 let newLayout = await self.paginator.paginate(
                     spineIndex: spineIndex,
                     attrStr: updated,
+                    pageBackgroundImage: layout.pageBackgroundImage,
                     renderSize: self.renderSize,
                     fontSize: layout.fontSize
                 )
@@ -402,43 +498,12 @@ final class CoreTextPageEngine: PageRenderingProvider {
             let ctx = rendererCtx.cgContext
             ctx.setFillColor(bgColor.cgColor)
             ctx.fill(CGRect(origin: .zero, size: size))
-
-            if layout.pageKinds[0] == .image {
-                if let imgRect = layout.imageRects[0], let img = layout.pageImages[0] {
-                    img.draw(in: imgRect)
-                }
-                return
-            }
-
-            ctx.textMatrix = .identity
-            ctx.translateBy(x: 0, y: size.height)
-            ctx.scaleBy(x: 1.0, y: -1.0)
-
-            let insets = layout.contentInsets
-            let contentPathRect = CGRect(
-                x: insets.left,
-                y: insets.bottom,
-                width: max(1, size.width - insets.left - insets.right),
-                height: max(1, size.height - insets.top - insets.bottom)
+            CoreTextPageView.renderPage(
+                layout: layout,
+                pageIndex: 0,
+                in: ctx,
+                bounds: CGRect(origin: .zero, size: size)
             )
-            let path = CGPath(rect: contentPathRect, transform: nil)
-            let frame = CTFramesetterCreateFrame(layout.framesetter, layout.pageRanges[0], path, nil)
-            CoreTextPageView.drawLines(
-                of: frame,
-                contentWidth: contentPathRect.width,
-                contentMinX: contentPathRect.minX,
-                contentMinY: contentPathRect.minY,
-                isLastPage: layout.pageRanges.count == 1,
-                attrStr: layout.attributedString,
-                in: ctx
-            )
-
-            ctx.scaleBy(x: 1.0, y: -1.0)
-            ctx.translateBy(x: 0, y: -size.height)
-
-            if let imgRect = layout.imageRects[0], let img = layout.pageImages[0] {
-                img.draw(in: imgRect)
-            }
         }
         chapterSnapshots[spineIndex] = image
     }
@@ -599,7 +664,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             }
             let resolved = Self.resolveCSSRelativePath(rawHref, cssHref: cssHref)
             let absolute = session.resourceURL(for: resolved).absoluteString
-            result = (result as NSString).replacingCharacters(in: match.range, with: absolute)
+            result = (result as NSString).replacingCharacters(in: match.range(at: 1), with: absolute)
         }
         return result
     }

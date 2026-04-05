@@ -356,6 +356,16 @@ final class LiveWebReader: NSObject, ObservableObject {
         let savedChapter = currentChapterIdx
         let savedLocalPage = localPage(forGlobalPage: currentEpubPage)
 
+        renderFontSize = settings.fontSize
+        renderMarginH = settings.marginH
+        renderMarginV = settings.marginV
+        renderTheme = settings.theme
+        renderFooterHeight = settings.footerHeight
+        webView.backgroundColor = themeBackgroundUIColor()
+        webView.scrollView.backgroundColor = themeBackgroundUIColor()
+        bumpLayoutGeneration()
+        clearMemoryCache()
+
         parsedBook = package.parsedBook
         chapterPageOffsets.removeAll()
         bookTitle = package.parsedBook.title
@@ -1834,8 +1844,8 @@ final class LiveWebReader: NSObject, ObservableObject {
         renderFooterHeight = height
         bumpLayoutGeneration()
         clearMemoryCache()
-        if publicationSession != nil {
-            relayoutAroundCurrentLocation()
+        if publicationSession != nil || parsedBook != nil {
+            reloadCurrentLocationForLayoutChange()
         }
     }
 
@@ -1844,8 +1854,8 @@ final class LiveWebReader: NSObject, ObservableObject {
         renderMarginV = vertical
         bumpLayoutGeneration()
         clearMemoryCache()
-        if publicationSession != nil {
-            relayoutAroundCurrentLocation()
+        if publicationSession != nil || parsedBook != nil {
+            reloadCurrentLocationForLayoutChange()
         }
     }
 
@@ -1980,6 +1990,37 @@ final class LiveWebReader: NSObject, ObservableObject {
                 target.chapterIndex,
                 localPage: 0,
                 restoreProgression: target.chapterProgression
+            )
+        }
+    }
+
+    private func reloadCurrentLocationForLayoutChange() {
+        if publicationSession != nil {
+            relayoutAroundCurrentLocation()
+            return
+        }
+
+        guard parsedBook != nil else { return }
+        let fallbackChapter = max(currentLoadedChapter, 0)
+
+        if scrollModeEnabled {
+            let targetChapter = max(scrollVisibleChapterIndex, fallbackChapter)
+            Task {
+                await self.loadScrollMode(startChapter: targetChapter)
+            }
+            return
+        }
+
+        let chapterPageCount = max(currentChapterPageCount, 1)
+        let progression = chapterPageCount > 1
+            ? Double(currentLocalPage) / Double(max(chapterPageCount - 1, 1))
+            : 0
+
+        Task {
+            await self.loadChapter(
+                fallbackChapter,
+                localPage: 0,
+                restoreProgression: progression
             )
         }
     }

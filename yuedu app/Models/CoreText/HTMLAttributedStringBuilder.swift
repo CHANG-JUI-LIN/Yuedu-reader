@@ -9,6 +9,9 @@ final class HTMLAttributedStringBuilder {
     static let internalLinkAttribute = NSAttributedString.Key("ReaderInternalLink")
     static let anchorIDAttribute = NSAttributedString.Key("ReaderAnchorID")
     static let hrDividerAttribute = NSAttributedString.Key("ReaderHRDivider")
+    static let blockBackgroundColorAttribute = NSAttributedString.Key("ReaderBlockBackgroundColor")
+    static let blockRenderStyleAttribute = NSAttributedString.Key("ReaderBlockRenderStyle")
+    static let blockRenderIDAttribute = NSAttributedString.Key("ReaderBlockRenderID")
     private static let paragraphSeparator = "\n"
     private static let lineSeparator = "\u{2028}"
 
@@ -31,6 +34,8 @@ final class HTMLAttributedStringBuilder {
     struct BuildResult {
         let attributedString: NSAttributedString
         let imagePage: ImagePage?
+        let pageBackgroundImage: UIImage?
+        let pageBackgroundImageSource: String?
         let anchorOffsets: [String: Int]
     }
 
@@ -53,6 +58,7 @@ final class HTMLAttributedStringBuilder {
         var lineHeightExplicit: Bool
         var paragraphSpacing: CGFloat
         var paragraphSpacingBefore: CGFloat
+        var visualOffsetBefore: CGFloat
         /// margin-left（blockquote / 巢狀列表縮排）
         var marginLeft: CGFloat
         /// list item 的 bullet 或序號字串（如 "•" / "1."），nil 表示非列表項
@@ -60,6 +66,49 @@ final class HTMLAttributedStringBuilder {
         var verticalAlign: VerticalAlign
         var isBlock: Bool
         var backgroundImage: String?
+        var backgroundFillColor: UIColor?
+        var width: CGFloat?
+        var height: CGFloat?
+        var marginRight: CGFloat
+        var paddingLeft: CGFloat
+        var paddingRight: CGFloat
+        var isHorizontallyCentered: Bool
+        var borderTopWidth: CGFloat
+        var borderBottomWidth: CGFloat
+        var borderTopColor: UIColor?
+        var borderBottomColor: UIColor?
+        var opacity: CGFloat
+    }
+
+    struct BlockRenderStyle {
+        struct BlockImage {
+            let image: UIImage?
+            let source: String
+            let drawSize: CGSize
+            let opacity: CGFloat
+            let alignment: NSTextAlignment
+            let paddingLeft: CGFloat
+            let paddingRight: CGFloat
+        }
+
+        let backgroundFillColor: UIColor?
+        let borderTopWidth: CGFloat
+        let borderBottomWidth: CGFloat
+        let borderTopColor: UIColor?
+        let borderBottomColor: UIColor?
+        let width: CGFloat?
+        let height: CGFloat?
+        let textAlign: NSTextAlignment
+        let isHorizontallyCentered: Bool
+        let paragraphSpacingBefore: CGFloat
+        let visualOffsetBefore: CGFloat
+        let paddingLeft: CGFloat
+        let paddingRight: CGFloat
+        let blockImage: BlockImage?
+
+        var hasVisualDecoration: Bool {
+            backgroundFillColor != nil || borderTopWidth > 0 || borderBottomWidth > 0 || blockImage != nil
+        }
     }
 
     indirect enum ASTNode {
@@ -94,7 +143,13 @@ final class HTMLAttributedStringBuilder {
         guard let document = try? SwiftSoup.parse(html),
               let body = document.body()
         else {
-            return BuildResult(attributedString: NSAttributedString(), imagePage: nil, anchorOffsets: [:])
+            return BuildResult(
+                attributedString: NSAttributedString(),
+                imagePage: nil,
+                pageBackgroundImage: nil,
+                pageBackgroundImageSource: nil,
+                anchorOffsets: [:]
+            )
         }
 
         let stylesheetTexts = await collectStyles(from: document)
@@ -135,6 +190,8 @@ final class HTMLAttributedStringBuilder {
             return BuildResult(
                 attributedString: NSAttributedString(string: "\u{FFFC}", attributes: attrs),
                 imagePage: imagePage,
+                pageBackgroundImage: nil,
+                pageBackgroundImageSource: nil,
                 anchorOffsets: [:]
             )
         }
@@ -149,10 +206,22 @@ final class HTMLAttributedStringBuilder {
             )
         }
         let anchorOffsets = collectAnchorOffsets(in: mutable)
+        let pageBackgroundImageSource = backgroundImageSource(from: ast)
+        let pageBackgroundImage = await loadBackgroundImage(from: ast)
+        // 有頁面背景圖時，移除文字的白色 backgroundColor，讓背景圖透出
+        if pageBackgroundImage != nil, mutable.length > 0 {
+            mutable.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: mutable.length))
+        }
         debugLog(result: mutable)
         // CJK 標點擠壓（相鄰全形標點施加負 kern）
         let processed = CJKTypographyProcessor.apply(to: mutable)
-        return BuildResult(attributedString: processed, imagePage: nil, anchorOffsets: anchorOffsets)
+        return BuildResult(
+            attributedString: processed,
+            imagePage: nil,
+            pageBackgroundImage: pageBackgroundImage,
+            pageBackgroundImageSource: pageBackgroundImageSource,
+            anchorOffsets: anchorOffsets
+        )
     }
 
     private func collectStyles(from document: Document) async -> [String] {
@@ -252,15 +321,82 @@ final class HTMLAttributedStringBuilder {
     ) async -> NSAttributedString {
         let output = NSMutableAttributedString()
         for node in nodes {
-            let rendered = await renderNode(node, inheritedStyle: parentStyle, config: config)
+            let nodeToRender: ASTNode
+            if output.length == 0,
+               case .element(let element) = node,
+               element.resolvedStyle.isBlock,
+               element.resolvedStyle.paragraphSpacingBefore > 0 {
+                output.append(makeTopSpacer(height: element.resolvedStyle.paragraphSpacingBefore, style: parentStyle, config: config))
+                nodeToRender = .element(adjustedTopLevelBlockElement(element))
+            } else {
+                nodeToRender = node
+            }
+            let rendered = await renderNode(nodeToRender, inheritedStyle: parentStyle, config: config)
             if rendered.length == 0 { continue }
             // 跳過 block 頂層的純空白 text node（body 與 block 元素之間的縮排空白），
             // 避免它們被 CoreText 歸入下一個 paragraph，污染該段落的 paragraphStyle
-            if rendered.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
+            if rendered.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               !containsRenderableMetadata(rendered) {
+                continue
+            }
             appendNode(rendered, to: output)
         }
         trimTrailingBreaks(in: output)
         return output
+    }
+
+    private func adjustedTopLevelBlockElement(_ element: ElementNode) -> ElementNode {
+        var style = element.resolvedStyle
+        style.visualOffsetBefore = style.paragraphSpacingBefore
+        style.paragraphSpacingBefore = 0
+        return ElementNode(
+            tag: element.tag,
+            id: element.id,
+            classes: element.classes,
+            attributes: element.attributes,
+            resolvedStyle: style,
+            children: element.children
+        )
+    }
+
+    private func makeTopSpacer(height: CGFloat, style: ResolvedStyle, config: Config) -> NSAttributedString {
+        guard height > 0 else { return NSAttributedString() }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = height
+        paragraph.maximumLineHeight = height
+        paragraph.paragraphSpacing = 0
+        paragraph.paragraphSpacingBefore = 0
+        return NSAttributedString(
+            string: Self.paragraphSeparator,
+            attributes: [
+                .font: makeFont(from: style, config: config),
+                .foregroundColor: UIColor.clear,
+                .paragraphStyle: paragraph,
+            ]
+        )
+    }
+
+    private func containsRenderableMetadata(_ string: NSAttributedString) -> Bool {
+        guard string.length > 0 else { return false }
+        let range = NSRange(location: 0, length: string.length)
+        let keys: [NSAttributedString.Key] = [
+            Self.blockBackgroundColorAttribute,
+            Self.blockRenderStyleAttribute,
+            Self.blockRenderIDAttribute,
+            Self.hrDividerAttribute,
+            NSAttributedString.Key(kCTRunDelegateAttributeName as String),
+        ]
+        for key in keys {
+            var found = false
+            string.enumerateAttribute(key, in: range, options: []) { value, _, stop in
+                if value != nil {
+                    found = true
+                    stop.pointee = true
+                }
+            }
+            if found { return true }
+        }
+        return false
     }
 
     private func renderNode(
@@ -285,7 +421,12 @@ final class HTMLAttributedStringBuilder {
             if element.tag == "img" || element.tag == "image" {
                 let src = imageSource(from: element)
                 let image = src.isEmpty ? nil : await imageLoader?(src)
-                return makeImagePlaceholder(image: image, config: config, style: element.resolvedStyle)
+                return makeImagePlaceholder(
+                    image: image,
+                    config: config,
+                    style: element.resolvedStyle,
+                    imageSource: src
+                )
             }
 
             if element.resolvedStyle.isBlock {
@@ -351,9 +492,14 @@ final class HTMLAttributedStringBuilder {
             return makeHRDivider(style: element.resolvedStyle, config: config)
         }
 
+        if let imageOnlyBlock = await renderImageOnlyBlockElement(element, config: config) {
+            return imageOnlyBlock
+        }
+
         let output = NSMutableAttributedString()
         var segment = NSMutableAttributedString()
         var paragraphIndex = 0
+        let blockRenderID = UUID().uuidString
 
         // 列表項：前置 bullet 字串（hanging indent 由 makeParagraphStyle 處理）
         if let bullet = element.resolvedStyle.listBullet {
@@ -374,6 +520,25 @@ final class HTMLAttributedStringBuilder {
                 value: makeParagraphStyle(for: segmentStyle, config: config),
                 range: paragraphRange
             )
+            if let backgroundFillColor = segmentStyle.backgroundFillColor {
+                segment.addAttribute(
+                    Self.blockBackgroundColorAttribute,
+                    value: backgroundFillColor,
+                    range: paragraphRange
+                )
+            }
+            if let blockRenderStyle = makeBlockRenderStyle(from: segmentStyle) {
+                segment.addAttribute(
+                    Self.blockRenderStyleAttribute,
+                    value: blockRenderStyle,
+                    range: paragraphRange
+                )
+                segment.addAttribute(
+                    Self.blockRenderIDAttribute,
+                    value: blockRenderID,
+                    range: paragraphRange
+                )
+            }
             output.append(segment)
             if !isLast {
                 output.append(
@@ -411,7 +576,122 @@ final class HTMLAttributedStringBuilder {
             }
         }
 
+        // 若 segment 只有空白字元但元素有視覺裝飾（如 border-top），
+        // 把空白 segment 換成受控高度的 spacer，避免空白被 appendNode 丟棄，
+        // 也避免 \n 字元撐出不必要的高度。
+        let segStyle0 = paragraphSegmentStyle(base: element.resolvedStyle, paragraphIndex: 0, isLast: true)
+        if segment.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let blockRenderStyle = makeBlockRenderStyle(from: segStyle0),
+           blockRenderStyle.hasVisualDecoration {
+            let bTop = element.resolvedStyle.borderTopWidth
+            let bBottom = element.resolvedStyle.borderBottomWidth
+            let spacerHeight = max(bTop + bBottom > 0 ? max(bTop, bBottom) * 2 + 2 : 0, 6)
+            let para = NSMutableParagraphStyle()
+            para.minimumLineHeight = spacerHeight
+            para.maximumLineHeight = spacerHeight
+            para.paragraphSpacing = 0
+            para.paragraphSpacingBefore = 0
+            segment = NSMutableAttributedString(
+                string: "\u{200B}",
+                attributes: [
+                    .font: makeFont(from: element.resolvedStyle, config: config),
+                    .foregroundColor: UIColor.clear,
+                    .paragraphStyle: para,
+                ]
+            )
+        }
+
         appendSegment(isLast: true)
+
+        return output
+    }
+
+    private func renderImageOnlyBlockElement(
+        _ element: ElementNode,
+        config: Config
+    ) async -> NSAttributedString? {
+        let renderables = flattenRenderableNodes(element.children)
+        guard renderables.count == 1,
+              case .element(let imageElement) = renderables[0],
+              imageElement.tag == "img" || imageElement.tag == "image"
+        else {
+            return nil
+        }
+
+        let src = imageSource(from: imageElement)
+        let image = src.isEmpty ? nil : await imageLoader?(src)
+
+        var attachmentStyle = element.resolvedStyle
+        if let width = imageElement.resolvedStyle.width {
+            attachmentStyle.width = width
+        }
+        if let height = imageElement.resolvedStyle.height {
+            attachmentStyle.height = height
+        }
+        attachmentStyle.paddingLeft += imageElement.resolvedStyle.paddingLeft
+        attachmentStyle.paddingRight += imageElement.resolvedStyle.paddingRight
+        attachmentStyle.opacity = imageElement.resolvedStyle.opacity
+
+        let segmentStyle = paragraphSegmentStyle(base: attachmentStyle, paragraphIndex: 0, isLast: true)
+        let imageMetrics = resolvedImageMetrics(image: image, config: config, style: segmentStyle)
+        let placeholder = NSMutableAttributedString(
+            attributedString: makeImagePlaceholder(
+                image: image,
+                config: config,
+                style: segmentStyle,
+                imageSource: src,
+                displayMode: .block,
+                precomputedMetrics: imageMetrics
+            )
+        )
+
+        let range = NSRange(location: 0, length: placeholder.length)
+        placeholder.addAttribute(
+            .paragraphStyle,
+            value: makeParagraphStyle(for: segmentStyle, config: config),
+            range: range
+        )
+        if let backgroundFillColor = segmentStyle.backgroundFillColor {
+            placeholder.addAttribute(
+                Self.blockBackgroundColorAttribute,
+                value: backgroundFillColor,
+                range: range
+            )
+        }
+        if let blockRenderStyle = makeBlockRenderStyle(
+            from: segmentStyle,
+            blockImage: BlockRenderStyle.BlockImage(
+                image: image,
+                source: src,
+                drawSize: CGSize(width: imageMetrics.drawWidth, height: imageMetrics.drawHeight),
+                opacity: segmentStyle.opacity,
+                alignment: segmentStyle.textAlign,
+                paddingLeft: segmentStyle.paddingLeft,
+                paddingRight: segmentStyle.paddingRight
+            )
+        ) {
+            let blockRenderID = UUID().uuidString
+            placeholder.addAttribute(
+                Self.blockRenderStyleAttribute,
+                value: blockRenderStyle,
+                range: range
+            )
+            placeholder.addAttribute(
+                Self.blockRenderIDAttribute,
+                value: blockRenderID,
+                range: range
+            )
+        }
+
+        let output = NSMutableAttributedString(attributedString: placeholder)
+        if shouldTerminateBlock(element) {
+            output.append(
+                NSAttributedString(
+                    string: Self.paragraphSeparator,
+                    attributes: paragraphTerminatorAttributes(style: segmentStyle, config: config)
+                )
+            )
+        }
         return output
     }
 
@@ -425,6 +705,8 @@ final class HTMLAttributedStringBuilder {
             while trimmed.length > 0,
                   let scalar = trimmed.string.unicodeScalars.first,
                   CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                // Never delete a character that carries block render metadata
+                if trimmed.attribute(Self.blockRenderStyleAttribute, at: 0, effectiveRange: nil) != nil { break }
                 trimmed.deleteCharacters(in: NSRange(location: 0, length: 1))
             }
             output.append(trimmed)
@@ -461,6 +743,7 @@ final class HTMLAttributedStringBuilder {
             // 連續段（同一 block element 被 <br display:block> 切開後的第 2+ 段）
             // 不繼承 paragraphSpacingBefore，避免 margin-top 重複施加
             style.paragraphSpacingBefore = 0
+            style.visualOffsetBefore = 0
             // 列表項的後續段落不加 bullet，但保留 hanging indent（marginLeft 不變）
             style.listBullet = nil
         }
@@ -468,6 +751,29 @@ final class HTMLAttributedStringBuilder {
             style.paragraphSpacing = 0
         }
         return style
+    }
+
+    private func makeBlockRenderStyle(
+        from style: ResolvedStyle,
+        blockImage: BlockRenderStyle.BlockImage? = nil
+    ) -> BlockRenderStyle? {
+        let renderStyle = BlockRenderStyle(
+            backgroundFillColor: style.backgroundFillColor,
+            borderTopWidth: style.borderTopWidth,
+            borderBottomWidth: style.borderBottomWidth,
+            borderTopColor: style.borderTopColor,
+            borderBottomColor: style.borderBottomColor,
+            width: style.width,
+            height: style.height,
+            textAlign: style.textAlign,
+            isHorizontallyCentered: style.isHorizontallyCentered,
+            paragraphSpacingBefore: style.paragraphSpacingBefore,
+            visualOffsetBefore: style.visualOffsetBefore,
+            paddingLeft: style.paddingLeft,
+            paddingRight: style.paddingRight,
+            blockImage: blockImage
+        )
+        return renderStyle.hasVisualDecoration ? renderStyle : nil
     }
 
     private func containsSemanticBlock(_ node: ASTNode) -> Bool {
@@ -492,6 +798,16 @@ final class HTMLAttributedStringBuilder {
         guard !src.isEmpty else { return nil }
         let image = await imageLoader?(src)
         return ImagePage(source: src, image: image)
+    }
+
+    private func loadBackgroundImage(from body: ElementNode) async -> UIImage? {
+        guard let src = body.resolvedStyle.backgroundImage, !src.isEmpty else { return nil }
+        return await imageLoader?(src)
+    }
+
+    private func backgroundImageSource(from body: ElementNode) -> String? {
+        guard let src = body.resolvedStyle.backgroundImage, !src.isEmpty else { return nil }
+        return src
     }
 
     private func flattenRenderableNodes(_ nodes: [ASTNode]) -> [ASTNode] {
@@ -641,9 +957,17 @@ final class HTMLAttributedStringBuilder {
             paragraph.tabStops = [tabStop]
             paragraph.defaultTabInterval = style.marginLeft + bulletWidth
         } else {
-            // 一般段落：marginLeft 控制左邊距，textIndent 控制首行額外縮排
-            paragraph.headIndent = style.marginLeft
-            paragraph.firstLineHeadIndent = style.marginLeft + style.textIndent
+            let widthInset: CGFloat
+            if style.isHorizontallyCentered, let width = style.width {
+                widthInset = max(0, (config.renderWidth - width) / 2)
+            } else {
+                widthInset = 0
+            }
+            let leftInset = widthInset + style.marginLeft + style.paddingLeft
+            let rightInset = widthInset + style.marginRight + style.paddingRight
+            paragraph.headIndent = leftInset
+            paragraph.firstLineHeadIndent = leftInset + style.textIndent
+            paragraph.tailIndent = -rightInset
         }
 
         // 用 min/maxLineHeight 固定行高，不再重複設 lineSpacing（會導致行距雙重計算）
@@ -664,16 +988,69 @@ final class HTMLAttributedStringBuilder {
         return ceil(size.width) + fontSize * 0.25
     }
 
-    private func makeImagePlaceholder(image: UIImage?, config: Config, style: ResolvedStyle) -> NSAttributedString {
+    private struct ImageMetrics {
+        let drawWidth: CGFloat
+        let drawHeight: CGFloat
+        let totalWidth: CGFloat
+        let ascent: CGFloat
+        let descent: CGFloat
+    }
+
+    private func resolvedImageMetrics(
+        image: UIImage?,
+        config: Config,
+        style: ResolvedStyle
+    ) -> ImageMetrics {
         let maxWidth = config.renderWidth
-        let (width, height): (CGFloat, CGFloat)
+        let drawWidth: CGFloat
+        let drawHeight: CGFloat
         if let image {
-            let ratio = min(1.0, maxWidth / max(image.size.width, 1))
-            width = image.size.width * ratio
-            height = image.size.height * ratio
+            if let explicitWidth = style.width, let explicitHeight = style.height {
+                drawWidth = explicitWidth
+                drawHeight = explicitHeight
+            } else if let explicitWidth = style.width {
+                let ratio = max(0.01, explicitWidth / max(image.size.width, 1))
+                drawWidth = explicitWidth
+                drawHeight = image.size.height * ratio
+            } else {
+                let resolvedHeight = style.height ?? image.size.height
+                let ratio = max(0.01, resolvedHeight / max(image.size.height, 1))
+                drawWidth = image.size.width * ratio
+                drawHeight = resolvedHeight
+            }
         } else {
-            width = maxWidth
-            height = maxWidth * 0.6
+            let fallbackHeight = style.height ?? (maxWidth * 0.6)
+            drawWidth = min(maxWidth, style.width ?? fallbackHeight)
+            drawHeight = fallbackHeight
+        }
+        let totalWidth = min(maxWidth, drawWidth + style.paddingLeft + style.paddingRight)
+        let font = makeFont(from: style, config: config)
+        let lineHeight = max(style.fontSize, font.lineHeight)
+        let verticalSlack = max(0, lineHeight - drawHeight)
+        let ascent = min(lineHeight, drawHeight + verticalSlack * 0.7)
+        let descent: CGFloat = max(0, lineHeight - ascent)
+        return ImageMetrics(
+            drawWidth: drawWidth,
+            drawHeight: drawHeight,
+            totalWidth: totalWidth,
+            ascent: ascent,
+            descent: descent
+        )
+    }
+
+    private func makeImagePlaceholder(
+        image: UIImage?,
+        config: Config,
+        style: ResolvedStyle,
+        imageSource: String = "",
+        displayMode: ImageRunInfo.DisplayMode = .inline,
+        precomputedMetrics: ImageMetrics? = nil
+    ) -> NSAttributedString {
+        let metrics: ImageMetrics
+        if let precomputedMetrics {
+            metrics = precomputedMetrics
+        } else {
+            metrics = resolvedImageMetrics(image: image, config: config, style: style)
         }
 
         var callbacks = CTRunDelegateCallbacks(
@@ -682,14 +1059,29 @@ final class HTMLAttributedStringBuilder {
                 Unmanaged<ImageRunInfo>.fromOpaque(pointer).release()
             },
             getAscent: { pointer in
-                Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue().height
+                Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue().ascent
             },
-            getDescent: { _ in 0 },
+            getDescent: { pointer in
+                Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue().descent
+            },
             getWidth: { pointer in
                 Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue().width
             }
         )
-        let info = ImageRunInfo(image: image, width: width, height: height)
+        let info = ImageRunInfo(
+            image: image,
+            width: metrics.totalWidth,
+            height: metrics.drawHeight,
+            drawWidth: metrics.drawWidth,
+            drawHeight: metrics.drawHeight,
+            ascent: metrics.ascent,
+            descent: metrics.descent,
+            paddingLeft: style.paddingLeft,
+            paddingRight: style.paddingRight,
+            source: imageSource,
+            displayMode: displayMode,
+            opacity: style.opacity
+        )
         let retained = Unmanaged.passRetained(info).toOpaque()
         guard let delegate = CTRunDelegateCreate(&callbacks, retained) else {
             return NSAttributedString(string: "\u{FFFC}")
@@ -783,11 +1175,24 @@ final class HTMLAttributedStringBuilder {
             lineHeightExplicit: parent.lineHeightExplicit,
             paragraphSpacing: parent.paragraphSpacing,
             paragraphSpacingBefore: 0,
+            visualOffsetBefore: 0,
             marginLeft: parent.marginLeft,
             listBullet: nil,
             verticalAlign: .baseline,
             isBlock: false,
-            backgroundImage: nil
+            backgroundImage: nil,
+            backgroundFillColor: nil,
+            width: nil,
+            height: nil,
+            marginRight: 0,
+            paddingLeft: 0,
+            paddingRight: 0,
+            isHorizontallyCentered: false,
+            borderTopWidth: 0,
+            borderBottomWidth: 0,
+            borderTopColor: nil,
+            borderBottomColor: nil,
+            opacity: 1
         )
     }
 
@@ -808,11 +1213,24 @@ final class HTMLAttributedStringBuilder {
             lineHeightExplicit: false,
             paragraphSpacing: config.paragraphSpacing,
             paragraphSpacingBefore: 0,
+            visualOffsetBefore: 0,
             marginLeft: 0,
             listBullet: nil,
             verticalAlign: .baseline,
             isBlock: true,
-            backgroundImage: nil
+            backgroundImage: nil,
+            backgroundFillColor: nil,
+            width: nil,
+            height: nil,
+            marginRight: 0,
+            paddingLeft: 0,
+            paddingRight: 0,
+            isHorizontallyCentered: false,
+            borderTopWidth: 0,
+            borderBottomWidth: 0,
+            borderTopColor: nil,
+            borderBottomColor: nil,
+            opacity: 1
         )
     }
 
@@ -890,13 +1308,46 @@ final class HTMLAttributedStringBuilder {
             style.textAlign = cssAlignment(textAlign)
         }
         if let display = declarations["display"] {
-            style.isBlock = display.lowercased().contains("block")
+            style.isBlock = cssDisplayIsBlock(display)
         }
         if let color = declarations["color"], let resolved = parseColor(color) {
             style.textColor = resolved
         }
+        if let opacity = declarations["opacity"], let value = Double(opacity.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            style.opacity = max(0, min(1, CGFloat(value)))
+        }
         if let backgroundImage = declarations["background-image"] {
             style.backgroundImage = extractURL(from: backgroundImage)
+        }
+        if let background = declarations["background"] {
+            if style.backgroundImage == nil {
+                style.backgroundImage = extractURL(from: background)
+            }
+            if style.backgroundFillColor == nil {
+                style.backgroundFillColor = parseEmbeddedColor(in: background)
+            }
+        }
+        if let backgroundColor = declarations["background-color"],
+           let resolved = parseColor(backgroundColor) {
+            style.backgroundFillColor = resolved
+        }
+        if let width = declarations["width"],
+           let value = resolveLength(
+                width,
+                currentFontSize: style.fontSize,
+                rootFontSize: rootFontSize,
+                relativeBase: style.fontSize
+           ) {
+            style.width = max(0, value)
+        }
+        if let height = declarations["height"],
+           let value = resolveLength(
+                height,
+                currentFontSize: style.fontSize,
+                rootFontSize: rootFontSize,
+                relativeBase: style.fontSize
+           ) {
+            style.height = max(0, value)
         }
         if let textIndent = declarations["text-indent"],
            let value = resolveLength(
@@ -931,6 +1382,15 @@ final class HTMLAttributedStringBuilder {
                 relativeBase: style.fontSize
            ) {
             style.paragraphSpacingBefore = max(0, value)
+            style.visualOffsetBefore = max(0, value)
+        }
+        if let margin = declarations["margin"] {
+            applyMarginShorthand(
+                margin,
+                to: &style,
+                currentFontSize: style.fontSize,
+                rootFontSize: rootFontSize
+            )
         }
         if let marginLeft = declarations["margin-left"],
            let value = resolveLength(
@@ -941,12 +1401,134 @@ final class HTMLAttributedStringBuilder {
            ) {
             style.marginLeft = max(0, value)
         }
+        if let marginRight = declarations["margin-right"],
+           let value = resolveLength(
+                marginRight,
+                currentFontSize: style.fontSize,
+                rootFontSize: rootFontSize,
+                relativeBase: style.fontSize
+           ) {
+            style.marginRight = max(0, value)
+        }
+        if let padding = declarations["padding"] {
+            applyPaddingShorthand(
+                padding,
+                to: &style,
+                currentFontSize: style.fontSize,
+                rootFontSize: rootFontSize
+            )
+        }
+        if let paddingLeft = declarations["padding-left"],
+           let value = resolveLength(
+                paddingLeft,
+                currentFontSize: style.fontSize,
+                rootFontSize: rootFontSize,
+                relativeBase: style.fontSize
+           ) {
+            style.paddingLeft = max(0, value)
+        }
+        if let paddingRight = declarations["padding-right"],
+           let value = resolveLength(
+                paddingRight,
+                currentFontSize: style.fontSize,
+                rootFontSize: rootFontSize,
+                relativeBase: style.fontSize
+           ) {
+            style.paddingRight = max(0, value)
+        }
         if let verticalAlign = declarations["vertical-align"] {
             switch verticalAlign.trimmingCharacters(in: .whitespaces).lowercased() {
             case "super": style.verticalAlign = .super
             case "sub":   style.verticalAlign = .sub
             default:      style.verticalAlign = .baseline
             }
+        }
+        if let borderTop = declarations["border-top"] {
+            applyBorderShorthand(borderTop, edge: .top, to: &style)
+        }
+        if let borderBottom = declarations["border-bottom"] {
+            applyBorderShorthand(borderBottom, edge: .bottom, to: &style)
+        }
+        if let borderTopWidth = declarations["border-top-width"],
+           let value = resolveLength(
+                borderTopWidth,
+                currentFontSize: style.fontSize,
+                rootFontSize: rootFontSize,
+                relativeBase: style.fontSize
+           ) {
+            style.borderTopWidth = max(0, value)
+        }
+        if let borderBottomWidth = declarations["border-bottom-width"],
+           let value = resolveLength(
+                borderBottomWidth,
+                currentFontSize: style.fontSize,
+                rootFontSize: rootFontSize,
+                relativeBase: style.fontSize
+           ) {
+            style.borderBottomWidth = max(0, value)
+        }
+        if let borderTopColor = declarations["border-top-color"] {
+            style.borderTopColor = parseBorderColor(borderTopColor, currentTextColor: style.textColor)
+        }
+        if let borderBottomColor = declarations["border-bottom-color"] {
+            style.borderBottomColor = parseBorderColor(borderBottomColor, currentTextColor: style.textColor)
+        }
+    }
+
+    private enum BorderEdge {
+        case top
+        case bottom
+    }
+
+    private func applyBorderShorthand(_ raw: String, edge: BorderEdge, to style: inout ResolvedStyle) {
+        let tokens = raw
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+        guard !tokens.isEmpty else { return }
+
+        let lowered = tokens.map { $0.lowercased() }
+        if lowered.contains("none") {
+            setBorder(width: 0, color: nil, edge: edge, to: &style)
+            return
+        }
+
+        var width: CGFloat?
+        var color: UIColor?
+        for token in tokens {
+            if width == nil,
+               let resolvedWidth = resolveLength(
+                    token,
+                    currentFontSize: style.fontSize,
+                    rootFontSize: style.fontSize,
+                    relativeBase: style.fontSize
+               ) {
+                width = max(0, resolvedWidth)
+                continue
+            }
+            if color == nil {
+                color = parseBorderColor(token, currentTextColor: style.textColor)
+            }
+        }
+
+        setBorder(width: width ?? 0, color: color, edge: edge, to: &style)
+    }
+
+    private func parseBorderColor(_ raw: String, currentTextColor: UIColor) -> UIColor? {
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized == "currentcolor" {
+            return currentTextColor
+        }
+        return parseColor(raw)
+    }
+
+    private func setBorder(width: CGFloat, color: UIColor?, edge: BorderEdge, to style: inout ResolvedStyle) {
+        switch edge {
+        case .top:
+            style.borderTopWidth = width
+            style.borderTopColor = color
+        case .bottom:
+            style.borderBottomWidth = width
+            style.borderBottomColor = color
         }
     }
 
@@ -987,6 +1569,87 @@ final class HTMLAttributedStringBuilder {
             return CGFloat(number)
         }
         return nil
+    }
+
+    private func applyMarginShorthand(
+        _ raw: String,
+        to style: inout ResolvedStyle,
+        currentFontSize: CGFloat,
+        rootFontSize: CGFloat
+    ) {
+        let tokens = raw
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+        guard !tokens.isEmpty else { return }
+        let resolved = expandBoxShorthand(tokens)
+        if let top = resolved.top, let topValue = resolveBoxValue(top, currentFontSize: currentFontSize, rootFontSize: rootFontSize) {
+            style.paragraphSpacingBefore = max(0, topValue)
+            style.visualOffsetBefore = max(0, topValue)
+        }
+        if let bottom = resolved.bottom, let bottomValue = resolveBoxValue(bottom, currentFontSize: currentFontSize, rootFontSize: rootFontSize) {
+            style.paragraphSpacing = max(0, bottomValue)
+        }
+        if let left = resolved.left {
+            if left.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "auto" {
+                style.isHorizontallyCentered = true
+            } else if let leftValue = resolveBoxValue(left, currentFontSize: currentFontSize, rootFontSize: rootFontSize) {
+                style.marginLeft = max(0, leftValue)
+            }
+        }
+        if let right = resolved.right {
+            if right.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "auto" {
+                style.isHorizontallyCentered = true
+            } else if let rightValue = resolveBoxValue(right, currentFontSize: currentFontSize, rootFontSize: rootFontSize) {
+                style.marginRight = max(0, rightValue)
+            }
+        }
+    }
+
+    private func applyPaddingShorthand(
+        _ raw: String,
+        to style: inout ResolvedStyle,
+        currentFontSize: CGFloat,
+        rootFontSize: CGFloat
+    ) {
+        let tokens = raw
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+        guard !tokens.isEmpty else { return }
+        let resolved = expandBoxShorthand(tokens)
+        if let left = resolved.left, let leftValue = resolveBoxValue(left, currentFontSize: currentFontSize, rootFontSize: rootFontSize) {
+            style.paddingLeft = max(0, leftValue)
+        }
+        if let right = resolved.right, let rightValue = resolveBoxValue(right, currentFontSize: currentFontSize, rootFontSize: rootFontSize) {
+            style.paddingRight = max(0, rightValue)
+        }
+    }
+
+    private func expandBoxShorthand(_ tokens: [String]) -> (top: String?, right: String?, bottom: String?, left: String?) {
+        switch tokens.count {
+        case 1:
+            return (tokens[0], tokens[0], tokens[0], tokens[0])
+        case 2:
+            return (tokens[0], tokens[1], tokens[0], tokens[1])
+        case 3:
+            return (tokens[0], tokens[1], tokens[2], tokens[1])
+        default:
+            return (tokens[0], tokens[1], tokens[2], tokens[3])
+        }
+    }
+
+    private func resolveBoxValue(
+        _ raw: String,
+        currentFontSize: CGFloat,
+        rootFontSize: CGFloat
+    ) -> CGFloat? {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard value != "auto" else { return nil }
+        return resolveLength(
+            value,
+            currentFontSize: currentFontSize,
+            rootFontSize: rootFontSize,
+            relativeBase: currentFontSize
+        )
     }
 
     private func resolveCalc(
@@ -1093,6 +1756,10 @@ final class HTMLAttributedStringBuilder {
             }
         }
 
+        if value.hasPrefix("rgba(") || value.hasPrefix("rgb(") {
+            return parseRGBColor(value)
+        }
+
         switch value {
         case "red":
             return .red
@@ -1106,6 +1773,63 @@ final class HTMLAttributedStringBuilder {
             return .blue
         default:
             return nil
+        }
+    }
+
+    private func parseEmbeddedColor(in raw: String) -> UIColor? {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let rgbaRange = value.range(of: #"rgba?\([^)]+\)"#, options: .regularExpression) {
+            return parseColor(String(value[rgbaRange]))
+        }
+        if let hexRange = value.range(of: #"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})"#, options: .regularExpression) {
+            return parseColor(String(value[hexRange]))
+        }
+        return nil
+    }
+
+    private func parseRGBColor(_ raw: String) -> UIColor? {
+        guard let start = raw.firstIndex(of: "("),
+              let end = raw.lastIndex(of: ")"),
+              start < end else {
+            return nil
+        }
+        let components = raw[raw.index(after: start)..<end]
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard components.count == 3 || components.count == 4 else { return nil }
+        guard let red = parseRGBComponent(components[0]),
+              let green = parseRGBComponent(components[1]),
+              let blue = parseRGBComponent(components[2]) else {
+            return nil
+        }
+        let alpha: CGFloat
+        if components.count == 4 {
+            guard let parsedAlpha = Double(components[3]) else { return nil }
+            alpha = max(0, min(1, CGFloat(parsedAlpha)))
+        } else {
+            alpha = 1
+        }
+        return UIColor(red: red, green: green, blue: blue, alpha: alpha)
+    }
+
+    private func parseRGBComponent(_ raw: String) -> CGFloat? {
+        if raw.hasSuffix("%") {
+            guard let value = Double(raw.dropLast()) else { return nil }
+            return max(0, min(1, CGFloat(value / 100)))
+        }
+        guard let value = Double(raw) else { return nil }
+        return max(0, min(1, CGFloat(value / 255)))
+    }
+
+    private func cssDisplayIsBlock(_ raw: String) -> Bool {
+        let value = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        switch value {
+        case "block", "list-item", "table", "flex", "grid":
+            return true
+        default:
+            return false
         }
     }
 
@@ -1339,13 +2063,49 @@ private extension UIFont {
 }
 
 final class ImageRunInfo {
+    enum DisplayMode {
+        case inline
+        case block
+    }
+
     let image: UIImage?
     let width: CGFloat
     let height: CGFloat
+    let drawWidth: CGFloat
+    let drawHeight: CGFloat
+    let ascent: CGFloat
+    let descent: CGFloat
+    let paddingLeft: CGFloat
+    let paddingRight: CGFloat
+    let source: String
+    let displayMode: DisplayMode
+    let opacity: CGFloat
 
-    init(image: UIImage?, width: CGFloat, height: CGFloat) {
+    init(
+        image: UIImage?,
+        width: CGFloat,
+        height: CGFloat,
+        drawWidth: CGFloat,
+        drawHeight: CGFloat,
+        ascent: CGFloat,
+        descent: CGFloat,
+        paddingLeft: CGFloat,
+        paddingRight: CGFloat,
+        source: String,
+        displayMode: DisplayMode,
+        opacity: CGFloat
+    ) {
         self.image = image
         self.width = width
         self.height = height
+        self.drawWidth = drawWidth
+        self.drawHeight = drawHeight
+        self.ascent = ascent
+        self.descent = descent
+        self.paddingLeft = paddingLeft
+        self.paddingRight = paddingRight
+        self.source = source
+        self.displayMode = displayMode
+        self.opacity = opacity
     }
 }

@@ -214,11 +214,11 @@ final class EPUBPageRenderer: ObservableObject {
     }
 
     func setFontSize(_ size: CGFloat) {
-        webEngine.setFontSize(size)
-        // Invalidate CoreText layout when font size changes.
         if let eng = engine {
             Task { await eng.invalidateLayout(newSize: eng.renderSize) }
+            return
         }
+        webEngine.setFontSize(size)
     }
 
     func setTheme(_ theme: String) {

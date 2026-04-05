@@ -12,6 +12,8 @@ import UIKit
 @testable import yuedu_app
 
 struct yuedu_appTests {
+    private let testEPUBPath = "/Users/zhangruilin/Library/Mobile Documents/com~apple~CloudDocs/被讨厌的勇气：“自我启发之父”阿德勒的哲学课 = 嫌われる勇気：自己啓発の源流「アドラー」の教え ([日] 岸见一郎，[日] 古贺史健 著；渠海霞 译) (z-library.sk, 1lib.sk, z-lib.sk).epub"
+
 
     private func loadSource(named name: String) throws -> BookSource {
         let sourceFile = "/Users/zhangruilin/Library/Mobile Documents/com~apple~CloudDocs/书源(856)-已测试并去重.json"
@@ -368,6 +370,38 @@ struct yuedu_appTests {
         #expect(!result.string.contains("\n\n"))
     }
 
+    @Test func htmlBuilderPreservesDecorativeBlockWithWhitespaceContent() async {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white,
+            renderWidth: 320
+        )
+        let html = """
+        <html><head><style>
+        .shangkuang { display: block; width: 200px; border-top: #254c8b double 3px; margin: 0.5em 0; }
+        </style></head><body>
+        <div class='shangkuang'>      </div>
+        <p>正文</p>
+        </body></html>
+        """
+
+        let result = await builder.build(html: html, config: config).attributedString
+        var foundDecorativeBlock = false
+        result.enumerateAttribute(
+            HTMLAttributedStringBuilder.blockRenderStyleAttribute,
+            in: NSRange(location: 0, length: result.length),
+            options: []
+        ) { value, _, stop in
+            guard let style = value as? HTMLAttributedStringBuilder.BlockRenderStyle else { return }
+            if style.borderTopWidth > 0 {
+                foundDecorativeBlock = true
+                stop.pointee = true
+            }
+        }
+        #expect(foundDecorativeBlock)
+    }
+
     @Test func htmlBuilderTreatsBlockBrAsParagraphBreak() async {
         let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
@@ -388,6 +422,183 @@ struct yuedu_appTests {
         let authorParagraph = result.attribute(.paragraphStyle, at: authorIndex, effectiveRange: nil) as? NSParagraphStyle
         #expect(titleParagraph?.firstLineHeadIndent == 36)
         #expect(authorParagraph?.firstLineHeadIndent == 0)
+    }
+
+    @Test func htmlBuilderDoesNotTreatInlineBlockImageAsParagraphBoundary() async {
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { _ in UIImage(systemName: "diamond.fill") }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+        )
+        let html = """
+        <html><head><style>
+        .title2 { color: #3767b4; display: block; font-size: 1.29167em; font-weight: bold; text-indent: 0; }
+        .dian { display: inline-block; padding: 0 5px; }
+        .normaltext { display: block; text-indent: 2em; }
+        </style></head><body>
+        <h2 class='title2'><img class='dian' src='diamond.jpeg'/>不为人知的心理学“第三巨头”</h2>
+        <p class='normaltext'><b>青年：</b>刚才您提到“另一种哲学”。</p>
+        </body></html>
+        """
+
+        let result = await builder.build(html: html, config: config).attributedString
+        let string = result.string
+
+        #expect(string.contains("不为人知的心理学“第三巨头”\n青年：刚才您提到“另一种哲学”。"))
+        #expect(!string.contains("不为人知的心理学“第三巨头”青年："))
+    }
+
+    @Test func htmlBuilderLoadsPageBackgroundAndCentersFixedWidthTitleBlock() async {
+        let builder = HTMLAttributedStringBuilder()
+        let background = UIGraphicsImageRenderer(size: CGSize(width: 422, height: 751)).image { ctx in
+            UIColor.systemBlue.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 422, height: 751))
+        }
+        builder.imageLoader = { src in
+            src == "images/00008.jpeg" ? background : nil
+        }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white,
+            renderWidth: 320
+        )
+        let html = """
+        <html><head><style>
+        .part { background-image: url(images/00008.jpeg); }
+        .title1 { color: #fff; display: block; width: 280px; margin: 200px auto 0; text-indent: 0; }
+        </style></head><body class='part'>
+        <h1 class='title1'>第一夜\u{2028}我们的不幸是谁的错？</h1>
+        </body></html>
+        """
+
+        let result = await builder.build(html: html, config: config)
+        #expect(result.pageBackgroundImage != nil)
+        #expect(result.pageBackgroundImageSource == "images/00008.jpeg")
+        let paragraph = result.attributedString.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        let fillColor = result.attributedString.attribute(
+            HTMLAttributedStringBuilder.blockBackgroundColorAttribute,
+            at: 0,
+            effectiveRange: nil
+        ) as? UIColor
+        #expect(paragraph?.headIndent == 20)
+        #expect(paragraph?.tailIndent == -20)
+        #expect(fillColor != nil)
+    }
+
+    @Test func htmlBuilderEmitsGenericBlockRenderStyleForBackgroundAndBorders() async {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 0, textColor: .black, backgroundColor: .white,
+            renderWidth: 320
+        )
+        let html = """
+        <html><head><style>
+        .title1 {
+            display: block;
+            width: 280px;
+            margin: 200px auto 0;
+            text-indent: 0;
+            background: rgba(55,103,180,0.2);
+            border-top: currentColor double 3px;
+        }
+        </style></head><body><h1 class='title1'>第一夜</h1></body></html>
+        """
+
+        let result = await builder.build(html: html, config: config).attributedString
+        let renderStyle = result.attribute(
+            HTMLAttributedStringBuilder.blockRenderStyleAttribute,
+            at: 0,
+            effectiveRange: nil
+        ) as? HTMLAttributedStringBuilder.BlockRenderStyle
+
+        #expect(renderStyle != nil)
+        #expect(renderStyle?.backgroundFillColor != nil)
+        #expect((renderStyle?.borderTopWidth ?? 0) > 0)
+        #expect(abs((renderStyle?.width ?? 0) - 280) < 0.1)
+        #expect(renderStyle?.isHorizontallyCentered == true)
+    }
+
+    @Test func htmlBuilderAppliesInlineImageCssGeometry() async {
+        let builder = HTMLAttributedStringBuilder()
+        let diamond = UIGraphicsImageRenderer(size: CGSize(width: 36, height: 35)).image { ctx in
+            UIColor.systemBlue.setFill()
+            ctx.cgContext.fill(CGRect(x: 0, y: 0, width: 36, height: 35))
+        }
+        builder.imageLoader = { _ in diamond }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 0, textColor: .black, backgroundColor: .white,
+            renderWidth: 320
+        )
+        let html = """
+        <html><head><style>
+        .dian { display: inline-block; height: 14px; padding: 0 5px; }
+        </style></head><body><h2><img class='dian' src='diamond.jpeg'/>不为人知的心理学“第三巨头”</h2></body></html>
+        """
+
+        let result = await builder.build(html: html, config: config).attributedString
+        var captured: ImageRunInfo?
+        result.enumerateAttribute(
+            NSAttributedString.Key(kCTRunDelegateAttributeName as String),
+            in: NSRange(location: 0, length: result.length),
+            options: []
+        ) { value, _, stop in
+            guard let value else { return }
+            let delegate = value as! CTRunDelegate
+            let ptr = CTRunDelegateGetRefCon(delegate)
+            captured = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
+            stop.pointee = true
+        }
+
+        #expect(captured != nil)
+        #expect(abs((captured?.drawHeight ?? 0) - 14) < 0.1)
+        #expect(abs((captured?.paddingLeft ?? 0) - 5) < 0.1)
+        #expect(abs((captured?.paddingRight ?? 0) - 5) < 0.1)
+        #expect(abs((captured?.width ?? 0) - 24.4) < 1.0)
+        #expect((captured?.ascent ?? 0) > 14)
+        #expect((captured?.descent ?? 0) >= 0)
+    }
+
+    @Test func htmlBuilderUsesCssWidthForBlockDecorativeImageWhenHeightIsAuto() async {
+        let builder = HTMLAttributedStringBuilder()
+        let banner = UIGraphicsImageRenderer(size: CGSize(width: 452, height: 74)).image { ctx in
+            UIColor(red: 0.72, green: 0.82, blue: 0.98, alpha: 1).setFill()
+            ctx.cgContext.fill(CGRect(x: 0, y: 0, width: 452, height: 74))
+        }
+        builder.imageLoader = { _ in banner }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white,
+            renderWidth: 320
+        )
+        let html = """
+        <html><head><style>
+        .dibian { display: block; text-align: right; margin-top: 0.5em; margin-bottom: 0.5em; }
+        .calibre5 { width: 220px; height: auto; opacity: 0.2; }
+        </style></head><body>
+        <div class='dibian'><img class='calibre5' src='banner.jpeg'/></div>
+        </body></html>
+        """
+
+        let result = await builder.build(html: html, config: config).attributedString
+        var captured: ImageRunInfo?
+        result.enumerateAttribute(
+            NSAttributedString.Key(kCTRunDelegateAttributeName as String),
+            in: NSRange(location: 0, length: result.length),
+            options: []
+        ) { value, _, stop in
+            guard let value else { return }
+            let delegate = value as! CTRunDelegate
+            let ptr = CTRunDelegateGetRefCon(delegate)
+            captured = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
+            stop.pointee = true
+        }
+
+        #expect(captured != nil)
+        #expect(abs((captured?.drawWidth ?? 0) - 220) < 1.0)
+        #expect(abs((captured?.drawHeight ?? 0) - (220.0 * 74.0 / 452.0)) < 1.0)
     }
 
     @Test func htmlBuilderDetectsSingleImagePage() async {
@@ -532,6 +743,1081 @@ struct yuedu_appTests {
         )
         #expect(!package.content.isEmpty)
         BookSourceFetcher.shared.clearAllChapterCache(bookId: stale.id)
+    }
+
+    @Test func coreTextEngineLoadsActualPartPageBackgroundImage() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        #expect(FileManager.default.fileExists(atPath: sourceURL.path))
+
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPageBackgroundTest-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
+        await engine.preloadChapter(at: chapterIndex)
+
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        #expect(layout.pageBackgroundImage != nil)
+        #expect(layout.attributedString.string.contains("第一夜"))
+        #expect(layout.attributedString.string.contains("我们的不幸是谁的错？"))
+
+        let titleRange = (layout.attributedString.string as NSString).range(of: "第一夜")
+        #expect(titleRange.location != NSNotFound)
+        if titleRange.location != NSNotFound {
+            let textColor = layout.attributedString.attribute(.foregroundColor, at: titleRange.location, effectiveRange: nil) as? UIColor
+            let renderStyle = layout.attributedString.attribute(
+                HTMLAttributedStringBuilder.blockRenderStyleAttribute,
+                at: titleRange.location,
+                effectiveRange: nil
+            ) as? HTMLAttributedStringBuilder.BlockRenderStyle
+            #expect(textColor != nil)
+            #expect(renderStyle?.backgroundFillColor != nil)
+        }
+        let firstRenderable = try #require(layout.blockRenderables[0]?.first)
+        #expect(firstRenderable.rect.minY < layout.renderSize.height * 0.7)
+        #expect(firstRenderable.rect.maxY < layout.renderSize.height * 0.9)
+        #expect(abs(firstRenderable.rect.width - 280) < 2.0)
+    }
+
+    @Test func coreTextEngineRendersActualPart0010BodyText() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        #expect(FileManager.default.fileExists(atPath: sourceURL.path))
+
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0010Test-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0010.html"))
+        await engine.preloadChapter(at: chapterIndex)
+
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        #expect(layout.attributedString.string.contains("一进入书房"))
+        #expect((layout.blockAttachments[0]?.isEmpty ?? true) == false)
+
+        let blockAttachment = try #require(layout.blockAttachments[0]?.first)
+        #expect(abs(blockAttachment.rect.width - 220) < 2.0)
+        #expect(abs(blockAttachment.rect.height - (220.0 * 74.0 / 452.0)) < 2.0)
+        let firstRenderable = try #require(layout.blockRenderables[0]?.first)
+        #expect(abs(firstRenderable.rect.width - 200) < 3.0)
+
+        let pageSize = layout.renderSize
+        let image = await MainActor.run { () -> UIImage in
+            let view = CoreTextPageView(frame: CGRect(origin: .zero, size: pageSize))
+            view.configure(layout: layout, pageIndex: 0)
+            return UIGraphicsImageRenderer(size: pageSize).image { context in
+                CoreTextPageView.renderPage(
+                    layout: layout,
+                    pageIndex: 0,
+                    in: context.cgContext,
+                    bounds: CGRect(origin: .zero, size: pageSize)
+                )
+            }
+        }
+        if let data = image.pngData() {
+            try? data.write(to: URL(fileURLWithPath: "/tmp/part0009-render.png"))
+        }
+
+        guard let cgImage = image.cgImage,
+              let providerData = cgImage.dataProvider?.data else {
+            Issue.record("Unable to inspect rendered image data")
+            return
+        }
+        let data = providerData as Data
+        let bytesPerPixel = 4
+        let bytesPerRow = cgImage.bytesPerRow
+        var foundDarkPixel = false
+        for y in stride(from: 180, to: 520, by: 8) {
+            for x in stride(from: 40, to: 320, by: 8) {
+                let idx = y * bytesPerRow + x * bytesPerPixel
+                guard idx + 2 < data.count else { continue }
+                let b = Int(data[idx])
+                let g = Int(data[idx + 1])
+                let r = Int(data[idx + 2])
+                if r < 220 || g < 220 || b < 220 {
+                    foundDarkPixel = true
+                    break
+                }
+            }
+            if foundDarkPixel { break }
+        }
+        #expect(foundDarkPixel)
+    }
+
+
+    @Test func coreTextEngineRendersActualPart0009TitleCardAboveLowerHalf() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0009RenderTest-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        let debugRects = layout.blockRenderables[0]?.map(\.rect) ?? []
+        print("[TEST part0009] renderSize=", layout.renderSize)
+        print("[TEST part0009] pageKinds=", layout.pageKinds)
+        print("[TEST part0009] pageBackgroundImage nil? ", layout.pageBackgroundImage == nil)
+        print("[TEST part0009] blockRenderables=", debugRects)
+        if let first = layout.blockRenderables[0]?.first {
+            print("[TEST part0009] block style width=", first.style.width as Any, "height=", first.style.height as Any, "bg=", first.style.backgroundFillColor as Any, "spacingBefore=", first.style.paragraphSpacingBefore)
+        }
+        print("[TEST part0009] text=", layout.attributedString.string)
+        #expect((layout.blockRenderables[0]?.count ?? 0) == 1, "part0009 block renderables = \(debugRects)")
+        let titleRenderable = try #require(layout.blockRenderables[0]?.first)
+        let renderableText = try #require(titleRenderable.attributedText)
+        #expect(renderableText.string.contains("第一夜"))
+        #expect(renderableText.string.contains("我们的不幸是谁的错"))
+        let firstForeground = renderableText.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor
+        #expect(firstForeground != nil)
+
+        let pageSize = layout.renderSize
+        let image = await MainActor.run { () -> UIImage in
+            let rendered = UIGraphicsImageRenderer(size: pageSize).image { context in
+                CoreTextPageView.renderPage(
+                    layout: layout,
+                    pageIndex: 0,
+                    in: context.cgContext,
+                    bounds: CGRect(origin: .zero, size: pageSize)
+                )
+            }
+            if let data = rendered.pngData() {
+                try? data.write(to: URL(fileURLWithPath: "/tmp/part0009-render.png"))
+            }
+            return rendered
+        }
+
+        guard let cgImage = image.cgImage,
+              let providerData = cgImage.dataProvider?.data else {
+            Issue.record("Unable to inspect rendered image data")
+            return
+        }
+        let data = providerData as Data
+        let bytesPerPixel = 4
+        let bytesPerRow = cgImage.bytesPerRow
+
+        func sample(_ x: Int, _ y: Int) -> (Int, Int, Int)? {
+            let idx = y * bytesPerRow + x * bytesPerPixel
+            guard idx + 2 < data.count else { return nil }
+            return (Int(data[idx + 2]), Int(data[idx + 1]), Int(data[idx]))
+        }
+
+        var foundBlueInMiddleBand = false
+        for y in stride(from: 240, to: 520, by: 8) {
+            for x in stride(from: 60, to: 330, by: 8) {
+                guard let (r,g,b) = sample(x, y) else { continue }
+                if b > r + 15 && b > g + 15 && !(r > 240 && g > 240 && b > 240) {
+                    foundBlueInMiddleBand = true
+                    break
+                }
+            }
+            if foundBlueInMiddleBand { break }
+        }
+
+        var foundBlueOnlyAtBottom = false
+        for y in stride(from: 620, to: 820, by: 8) {
+            for x in stride(from: 60, to: 330, by: 8) {
+                guard let (r,g,b) = sample(x, y) else { continue }
+                if b > r + 15 && b > g + 15 && !(r > 240 && g > 240 && b > 240) {
+                    foundBlueOnlyAtBottom = true
+                    break
+                }
+            }
+            if foundBlueOnlyAtBottom { break }
+        }
+
+        var bluePixelCount = 0
+        var sampledPixelCount = 0
+        for y in stride(from: 60, to: 760, by: 12) {
+            for x in stride(from: 24, to: 366, by: 12) {
+                guard let (r, g, b) = sample(x, y) else { continue }
+                sampledPixelCount += 1
+                if b > r + 15 && b > g + 15 && !(r > 240 && g > 240 && b > 240) {
+                    bluePixelCount += 1
+                }
+            }
+        }
+
+        #expect(foundBlueInMiddleBand)
+        #expect(!foundBlueOnlyAtBottom)
+        #expect(bluePixelCount > max(20, sampledPixelCount / 20))
+    }
+
+    @Test func coreTextEngineRendersActualPart0009VisibleTitleTextInsideCard() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0009VisibleTitleTest-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        let titleRenderable = try #require(layout.blockRenderables[0]?.first)
+
+        let pageSize = layout.renderSize
+        let image = await MainActor.run { () -> UIImage in
+            UIGraphicsImageRenderer(size: pageSize).image { context in
+                CoreTextPageView.renderPage(
+                    layout: layout,
+                    pageIndex: 0,
+                    in: context.cgContext,
+                    bounds: CGRect(origin: .zero, size: pageSize)
+                )
+            }
+        }
+
+        guard let cgImage = image.cgImage,
+              let providerData = cgImage.dataProvider?.data else {
+            Issue.record("Unable to inspect rendered image data")
+            return
+        }
+        let data = providerData as Data
+        let bytesPerPixel = 4
+        let bytesPerRow = cgImage.bytesPerRow
+
+        func sample(_ x: Int, _ y: Int) -> (Int, Int, Int)? {
+            let idx = y * bytesPerRow + x * bytesPerPixel
+            guard idx + 2 < data.count else { return nil }
+            return (Int(data[idx + 2]), Int(data[idx + 1]), Int(data[idx]))
+        }
+
+        let minX = max(0, Int(titleRenderable.rect.minX) + 24)
+        let maxX = min(cgImage.width - 1, Int(titleRenderable.rect.maxX) - 24)
+        let minY = max(0, Int(titleRenderable.rect.minY) + 20)
+        let maxY = min(cgImage.height - 1, Int(titleRenderable.rect.maxY) - 20)
+
+        let sampleCenterX = min(max(minX + 8, (minX + maxX) / 2), maxX)
+        let sampleCenterY = min(max(minY + 8, (minY + maxY) / 2), maxY)
+        let baseFill = try #require(sample(sampleCenterX, sampleCenterY))
+
+        var foundContrastPixel = false
+        var foundBrightGlyphPixel = false
+        for y in stride(from: minY, through: maxY, by: 3) {
+            for x in stride(from: minX, through: maxX, by: 3) {
+                guard let (r, g, b) = sample(x, y) else { continue }
+                let distance =
+                    abs(r - baseFill.0) +
+                    abs(g - baseFill.1) +
+                    abs(b - baseFill.2)
+                if distance > 45 {
+                    foundContrastPixel = true
+                }
+                if r > 235 && g > 235 && b > 235 {
+                    foundBrightGlyphPixel = true
+                }
+            }
+            if foundContrastPixel && foundBrightGlyphPixel { break }
+        }
+
+        #expect(
+            foundContrastPixel,
+            "Expected visible title glyph pixels inside the title card rect. fill=\(baseFill) rect=\(titleRenderable.rect)"
+        )
+        #expect(
+            foundBrightGlyphPixel,
+            "Expected bright title glyph pixels inside the title card rect. fill=\(baseFill) rect=\(titleRenderable.rect)"
+        )
+    }
+
+    @Test func coreTextEnginePromotesActualPart0009TitleCardTextIntoBlockRenderable() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0009BlockTextTest-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        let titleRenderable = try #require(layout.blockRenderables[0]?.first)
+        let blockText = try #require(titleRenderable.attributedText)
+
+        #expect(blockText.string.contains("第一夜"))
+        #expect(blockText.string.contains("我们的不幸是谁的错？"))
+    }
+
+    @Test func coreTextEngineNormalizesActualPart0009BlockTextParagraphGeometry() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0009BlockTextGeometryTest-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        let titleRenderable = try #require(layout.blockRenderables[0]?.first)
+        let blockText = try #require(titleRenderable.attributedText)
+
+        let paragraphStyle = try #require(
+            blockText.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        )
+
+        #expect(paragraphStyle.paragraphSpacingBefore == 0)
+        #expect(paragraphStyle.paragraphSpacing == 0)
+        #expect(paragraphStyle.alignment == .center)
+        #expect(paragraphStyle.firstLineHeadIndent == 0)
+        #expect(paragraphStyle.headIndent == 0)
+        #expect(paragraphStyle.tailIndent == 0)
+    }
+
+    @Test func debugActualPart0009BlockTextMetrics() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0009DebugMetrics-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        let titleRenderable = try #require(layout.blockRenderables[0]?.first)
+        let text = try #require(titleRenderable.attributedText)
+        let measured = text.boundingRect(
+            with: CGSize(width: max(1, titleRenderable.rect.width - titleRenderable.style.paddingLeft - titleRenderable.style.paddingRight),
+                         height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        )
+        let attrs = text.attributes(at: 0, effectiveRange: nil)
+        print("[TEST part0009 debug] rect=", titleRenderable.rect)
+        print("[TEST part0009 debug] text=", text.string)
+        print("[TEST part0009 debug] measured=", measured)
+        print("[TEST part0009 debug] attrs=", attrs)
+        #expect(!text.string.isEmpty)
+    }
+
+    @Test func coreTextEnginePlacesActualPart0009TitleLinesInsideTitleCard() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0009LinePlacementTest-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        let titleRenderable = try #require(layout.blockRenderables[0]?.first)
+        let range = layout.pageRanges[0]
+        let insets = layout.contentInsets
+        let bounds = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let contentPathRect = CGRect(
+            x: insets.left,
+            y: insets.bottom,
+            width: max(1, bounds.width - insets.left - insets.right),
+            height: max(1, bounds.height - insets.top - insets.bottom)
+        )
+        let path = CGPath(rect: contentPathRect, transform: nil)
+        let frame = CTFramesetterCreateFrame(layout.framesetter, range, path, nil)
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+
+        let titleText = "第一夜\n我们的不幸是谁的错？"
+        let titleRange = (layout.attributedString.string as NSString).range(of: titleText)
+        #expect(titleRange.location != NSNotFound)
+
+        var titleLineRects: [CGRect] = []
+        for (index, line) in lines.enumerated() {
+            let stringRange = CTLineGetStringRange(line)
+            let lineRange = NSRange(location: stringRange.location, length: stringRange.length)
+            guard NSIntersectionRange(lineRange, titleRange).length > 0 else { continue }
+
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
+            let origin = origins[index]
+            let rect = CGRect(
+                x: contentPathRect.minX + origin.x,
+                y: bounds.height - (contentPathRect.minY + origin.y + ascent),
+                width: width,
+                height: ascent + descent
+            )
+            titleLineRects.append(rect)
+        }
+
+        #expect(!titleLineRects.isEmpty)
+        let union = titleLineRects.reduce(into: CGRect.null) { partial, rect in
+            partial = partial.isNull ? rect : partial.union(rect)
+        }
+
+        let overlap = union.intersection(titleRenderable.rect)
+        print("[TEST part0009 lines] titleRect=", titleRenderable.rect, "lineUnion=", union, "overlap=", overlap)
+        #expect(!overlap.isNull && overlap.height > 20, "Expected title text lines to overlap title card. rect=\(titleRenderable.rect) lines=\(union)")
+    }
+
+    @Test func coreTextEngineSnapshotViewControllerRendersActualPart0009Background() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0009SnapshotTest-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        let globalPage = await MainActor.run { engine.pageIndex(forSpine: chapterIndex, charOffset: 0) }
+        let snapshotVC = try #require(await MainActor.run { engine.snapshotViewController(at: globalPage) as? SnapshotPageViewController })
+
+        let image = await MainActor.run { () -> UIImage in
+            snapshotVC.view.frame = CGRect(origin: .zero, size: layout.renderSize)
+            snapshotVC.loadViewIfNeeded()
+            let rendered = UIGraphicsImageRenderer(size: layout.renderSize).image { context in
+                snapshotVC.view.drawHierarchy(in: snapshotVC.view.bounds, afterScreenUpdates: true)
+            }
+            if let data = rendered.pngData() {
+                try? data.write(to: URL(fileURLWithPath: "/tmp/part0009-snapshot.png"))
+            }
+            return rendered
+        }
+
+        guard let cgImage = image.cgImage,
+              let providerData = cgImage.dataProvider?.data else {
+            Issue.record("Unable to inspect snapshot image data")
+            return
+        }
+        let data = providerData as Data
+        let bytesPerPixel = 4
+        let bytesPerRow = cgImage.bytesPerRow
+
+        func sample(_ x: Int, _ y: Int) -> (Int, Int, Int)? {
+            let idx = y * bytesPerRow + x * bytesPerPixel
+            guard idx + 2 < data.count else { return nil }
+            return (Int(data[idx + 2]), Int(data[idx + 1]), Int(data[idx]))
+        }
+
+        var foundBlue = false
+        for y in stride(from: 90, to: 240, by: 8) {
+            for x in stride(from: 40, to: 350, by: 8) {
+                guard let (r, g, b) = sample(x, y) else { continue }
+                if b > r + 20 && b > g + 20 && !(r > 240 && g > 240 && b > 240) {
+                    foundBlue = true
+                    break
+                }
+            }
+            if foundBlue { break }
+        }
+
+        #expect(foundBlue)
+    }
+
+    @Test func coreTextEngineSnapshotViewControllerRendersActualPart0009VisibleTitleTextInsideCard() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0009SnapshotVisibleTitle-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        let titleRenderable = try #require(layout.blockRenderables[0]?.first)
+        let globalPage = await MainActor.run { engine.pageIndex(forSpine: chapterIndex, charOffset: 0) }
+        let snapshotVC = try #require(await MainActor.run { engine.snapshotViewController(at: globalPage) as? SnapshotPageViewController })
+
+        let image = await MainActor.run { () -> UIImage in
+            snapshotVC.view.frame = CGRect(origin: .zero, size: layout.renderSize)
+            snapshotVC.loadViewIfNeeded()
+            return UIGraphicsImageRenderer(size: layout.renderSize).image { _ in
+                snapshotVC.view.drawHierarchy(in: snapshotVC.view.bounds, afterScreenUpdates: true)
+            }
+        }
+
+        guard let cgImage = image.cgImage,
+              let providerData = cgImage.dataProvider?.data else {
+            Issue.record("Unable to inspect snapshot image data")
+            return
+        }
+        let data = providerData as Data
+        let bytesPerPixel = 4
+        let bytesPerRow = cgImage.bytesPerRow
+
+        func sample(_ x: Int, _ y: Int) -> (Int, Int, Int)? {
+            let idx = y * bytesPerRow + x * bytesPerPixel
+            guard idx + 2 < data.count else { return nil }
+            return (Int(data[idx + 2]), Int(data[idx + 1]), Int(data[idx]))
+        }
+
+        let minX = max(0, Int(titleRenderable.rect.minX) + 24)
+        let maxX = min(cgImage.width - 1, Int(titleRenderable.rect.maxX) - 24)
+        let minY = max(0, Int(titleRenderable.rect.minY) + 20)
+        let maxY = min(cgImage.height - 1, Int(titleRenderable.rect.maxY) - 20)
+
+        let sampleCenterX = min(max(minX + 8, (minX + maxX) / 2), maxX)
+        let sampleCenterY = min(max(minY + 8, (minY + maxY) / 2), maxY)
+        let baseFill = try #require(sample(sampleCenterX, sampleCenterY))
+
+        var foundContrastPixel = false
+        var foundBrightGlyphPixel = false
+        for y in stride(from: minY, through: maxY, by: 3) {
+            for x in stride(from: minX, through: maxX, by: 3) {
+                guard let (r, g, b) = sample(x, y) else { continue }
+                let distance =
+                    abs(r - baseFill.0) +
+                    abs(g - baseFill.1) +
+                    abs(b - baseFill.2)
+                if distance > 45 {
+                    foundContrastPixel = true
+                }
+                if r > 235 && g > 235 && b > 235 {
+                    foundBrightGlyphPixel = true
+                }
+            }
+            if foundContrastPixel && foundBrightGlyphPixel { break }
+        }
+
+        #expect(foundContrastPixel, "Expected visible snapshot title glyph pixels inside the title card rect. fill=\(baseFill) rect=\(titleRenderable.rect)")
+        #expect(foundBrightGlyphPixel, "Expected bright snapshot title glyph pixels inside the title card rect. fill=\(baseFill) rect=\(titleRenderable.rect)")
+    }
+
+    @Test @MainActor
+    func snapshotPageViewControllerFillsBoundsInsteadOfLetterboxing() throws {
+        let expected = (Int(0.15 * 255.0), Int(0.35 * 255.0), Int(0.75 * 255.0))
+        let sourceImage = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 100)).image { ctx in
+            UIColor(red: 0.15, green: 0.35, blue: 0.75, alpha: 1).setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 200, height: 100))
+        }
+        let snapshotVC = SnapshotPageViewController(
+            image: sourceImage,
+            globalPage: 0,
+            backgroundColor: .white
+        )
+        snapshotVC.view.frame = CGRect(x: 0, y: 0, width: 300, height: 300)
+        snapshotVC.loadViewIfNeeded()
+
+        let rendered = UIGraphicsImageRenderer(size: snapshotVC.view.bounds.size).image { _ in
+            snapshotVC.view.drawHierarchy(in: snapshotVC.view.bounds, afterScreenUpdates: true)
+        }
+
+        guard let cgImage = rendered.cgImage,
+              let providerData = cgImage.dataProvider?.data else {
+            Issue.record("Unable to inspect snapshot image data")
+            return
+        }
+        let data = providerData as Data
+        let bytesPerPixel = 4
+        let bytesPerRow = cgImage.bytesPerRow
+
+        func sample(_ x: Int, _ y: Int) -> (Int, Int, Int)? {
+            let idx = y * bytesPerRow + x * bytesPerPixel
+            guard idx + 2 < data.count else { return nil }
+            return (Int(data[idx + 2]), Int(data[idx + 1]), Int(data[idx]))
+        }
+
+        let topLeft = try #require(sample(10, 10))
+        let bottomRight = try #require(sample(cgImage.width - 10, cgImage.height - 10))
+
+        func isNearExpected(_ rgb: (Int, Int, Int)) -> Bool {
+            abs(rgb.0 - expected.0) < 20 &&
+            abs(rgb.1 - expected.1) < 20 &&
+            abs(rgb.2 - expected.2) < 20
+        }
+
+        #expect(isNearExpected(topLeft), "Expected snapshot image to fill bounds with source color at top-left. pixel=\(topLeft)")
+        #expect(isNearExpected(bottomRight), "Expected snapshot image to fill bounds with source color at bottom-right. pixel=\(bottomRight)")
+    }
+
+    @Test func coreTextPageViewLiveRenderShowsActualPart0009TitleGlyphsInsideCard() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0009LiveRender-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        let titleRenderable = try #require(layout.blockRenderables[0]?.first)
+
+        let image = await MainActor.run { () -> UIImage in
+            let view = CoreTextPageView(frame: CGRect(origin: .zero, size: layout.renderSize))
+            view.configure(layout: layout, pageIndex: 0)
+            view.layoutIfNeeded()
+            return UIGraphicsImageRenderer(size: layout.renderSize).image { context in
+                view.layer.render(in: context.cgContext)
+            }
+        }
+
+        let debugURL = URL(fileURLWithPath: "/Users/zhangruilin/Desktop/yuedu app/.debug-part0009-live-render.png")
+        try image.pngData()?.write(to: debugURL)
+        print("[TEST part0009 live render] image=", debugURL.path)
+        print("[TEST part0009 live render] rect=", titleRenderable.rect)
+        print("[TEST part0009 live render] text=", titleRenderable.attributedText?.string ?? "<nil>")
+
+        guard let cgImage = image.cgImage,
+              let providerData = cgImage.dataProvider?.data else {
+            Issue.record("Unable to inspect live rendered image data")
+            return
+        }
+        let data = providerData as Data
+        let bytesPerPixel = 4
+        let bytesPerRow = cgImage.bytesPerRow
+
+        func sample(_ x: Int, _ y: Int) -> (Int, Int, Int)? {
+            let idx = y * bytesPerRow + x * bytesPerPixel
+            guard idx + 2 < data.count else { return nil }
+            return (Int(data[idx + 2]), Int(data[idx + 1]), Int(data[idx]))
+        }
+
+        let minX = max(0, Int(titleRenderable.rect.minX) + 24)
+        let maxX = min(cgImage.width - 1, Int(titleRenderable.rect.maxX) - 24)
+        let minY = max(0, Int(titleRenderable.rect.minY) + 20)
+        let maxY = min(cgImage.height - 1, Int(titleRenderable.rect.maxY) - 20)
+
+        var foundBrightGlyphPixel = false
+        for y in stride(from: minY, through: maxY, by: 3) {
+            for x in stride(from: minX, through: maxX, by: 3) {
+                guard let (r, g, b) = sample(x, y) else { continue }
+                if r > 235 && g > 235 && b > 235 {
+                    foundBrightGlyphPixel = true
+                    break
+                }
+            }
+            if foundBrightGlyphPixel { break }
+        }
+
+        #expect(foundBrightGlyphPixel, "Expected bright live title glyph pixels inside the title card rect. rect=\(titleRenderable.rect)")
+    }
+
+    @Test func coreTextPageViewLiveRenderShowsActualPart0009BlueBackgroundNearTop() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0009LiveBackground-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+
+        let image = await MainActor.run { () -> UIImage in
+            let view = CoreTextPageView(frame: CGRect(origin: .zero, size: layout.renderSize))
+            view.configure(layout: layout, pageIndex: 0)
+            view.layoutIfNeeded()
+            return UIGraphicsImageRenderer(size: layout.renderSize).image { context in
+                view.layer.render(in: context.cgContext)
+            }
+        }
+
+        guard let cgImage = image.cgImage,
+              let providerData = cgImage.dataProvider?.data else {
+            Issue.record("Unable to inspect live render image data")
+            return
+        }
+        let data = providerData as Data
+        let bytesPerPixel = 4
+        let bytesPerRow = cgImage.bytesPerRow
+
+        func sample(_ x: Int, _ y: Int) -> (Int, Int, Int)? {
+            let idx = y * bytesPerRow + x * bytesPerPixel
+            guard idx + 2 < data.count else { return nil }
+            return (Int(data[idx + 2]), Int(data[idx + 1]), Int(data[idx]))
+        }
+
+        var foundBlue = false
+        for y in stride(from: 40, through: min(220, cgImage.height - 1), by: 8) {
+            for x in stride(from: 40, through: min(cgImage.width - 40, cgImage.width - 1), by: 8) {
+                guard let (r, g, b) = sample(x, y) else { continue }
+                if b > g + 15 && g > r + 10 {
+                    foundBlue = true
+                    break
+                }
+            }
+            if foundBlue { break }
+        }
+
+        #expect(foundBlue, "Expected visible blue background pixels near top of live rendered part0009 page")
+    }
+
+    @Test func coreTextEnginePlacesActualPart0010BottomDecorationBelowBodyText() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0010DecorationPlacement-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0010.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        let decoration = try #require(layout.blockAttachments[0]?.first(where: { $0.rect.width > 150 }))
+
+        let range = layout.pageRanges[0]
+        let insets = layout.contentInsets
+        let bounds = CGRect(origin: .zero, size: layout.renderSize)
+        let contentPathRect = CGRect(
+            x: insets.left,
+            y: insets.bottom,
+            width: max(1, bounds.width - insets.left - insets.right),
+            height: max(1, bounds.height - insets.top - insets.bottom)
+        )
+        let path = CGPath(rect: contentPathRect, transform: nil)
+        let frame = CTFramesetterCreateFrame(layout.framesetter, range, path, nil)
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+
+        var union = CGRect.null
+        for (index, line) in lines.enumerated() {
+            let stringRange = CTLineGetStringRange(line)
+            guard stringRange.length > 0 else { continue }
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
+            let origin = origins[index]
+            let rect = CGRect(
+                x: contentPathRect.minX + origin.x,
+                y: bounds.height - (contentPathRect.minY + origin.y + ascent),
+                width: width,
+                height: ascent + descent
+            )
+            union = union.isNull ? rect : union.union(rect)
+        }
+
+        #expect(!union.isNull)
+        #expect(
+            decoration.rect.minY >= union.maxY + 8,
+            "Expected part0010 bottom decoration below body text. decoration=\(decoration.rect) text=\(union)"
+        )
+    }
+
+    @Test func coreTextPageViewDrawBlockRenderableTextDrawsVisibleGlyphs() async throws {
+        let font = UIFont.systemFont(ofSize: 28, weight: .bold)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.paragraphSpacing = 0
+        paragraph.paragraphSpacingBefore = 0
+        let text = NSAttributedString(
+            string: "第一夜\u{2028}我们的不幸是谁的错？",
+            attributes: [
+                .font: font,
+                .foregroundColor: UIColor.white,
+                .paragraphStyle: paragraph,
+            ]
+        )
+
+        let pageSize = CGSize(width: 390, height: 844)
+        let cardRect = CGRect(x: 55, y: 290, width: 280, height: 132)
+
+        let image = await MainActor.run { () -> UIImage in
+            UIGraphicsImageRenderer(size: pageSize).image { context in
+                UIColor.white.setFill()
+                context.fill(CGRect(origin: .zero, size: pageSize))
+                context.cgContext.setFillColor(UIColor(red: 0.80, green: 0.86, blue: 0.95, alpha: 1).cgColor)
+                context.cgContext.fill(cardRect)
+                CoreTextPageView.drawBlockRenderableText(
+                    text,
+                    in: cardRect,
+                    paddingLeft: 0,
+                    paddingRight: 0,
+                    boundsHeight: pageSize.height,
+                    context: context.cgContext
+                )
+            }
+        }
+
+        guard let cgImage = image.cgImage,
+              let providerData = cgImage.dataProvider?.data else {
+            Issue.record("Unable to inspect rendered image data")
+            return
+        }
+        let data = providerData as Data
+        let bytesPerPixel = 4
+        let bytesPerRow = cgImage.bytesPerRow
+
+        func sample(_ x: Int, _ y: Int) -> (Int, Int, Int)? {
+            let idx = y * bytesPerRow + x * bytesPerPixel
+            guard idx + 2 < data.count else { return nil }
+            return (Int(data[idx + 2]), Int(data[idx + 1]), Int(data[idx]))
+        }
+
+        var foundBrightPixel = false
+        for y in stride(from: Int(cardRect.minY) + 12, to: Int(cardRect.maxY) - 12, by: 3) {
+            for x in stride(from: Int(cardRect.minX) + 12, to: Int(cardRect.maxX) - 12, by: 3) {
+                guard let (r, g, b) = sample(x, y) else { continue }
+                if r > 235 && g > 235 && b > 235 {
+                    foundBrightPixel = true
+                    break
+                }
+            }
+            if foundBrightPixel { break }
+        }
+
+        #expect(foundBrightPixel, "Expected bright white glyphs inside the blue title card")
+    }
+
+    @Test func coreTextPageViewRenderPageKeepsPart0009TitleVisibleWhenBoundsDifferFromLayoutSize() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0009ScaledRender-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+        let titleRenderable = try #require(layout.blockRenderables[0]?.first)
+
+        let targetBounds = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let image = await MainActor.run { () -> UIImage in
+            UIGraphicsImageRenderer(size: targetBounds.size).image { context in
+                CoreTextPageView.renderPage(
+                    layout: layout,
+                    pageIndex: 0,
+                    in: context.cgContext,
+                    bounds: targetBounds
+                )
+            }
+        }
+
+        guard let cgImage = image.cgImage,
+              let providerData = cgImage.dataProvider?.data else {
+            Issue.record("Unable to inspect scaled rendered image data")
+            return
+        }
+        let data = providerData as Data
+        let bytesPerPixel = 4
+        let bytesPerRow = cgImage.bytesPerRow
+
+        func sample(_ x: Int, _ y: Int) -> (Int, Int, Int)? {
+            let idx = y * bytesPerRow + x * bytesPerPixel
+            guard idx + 2 < data.count else { return nil }
+            return (Int(data[idx + 2]), Int(data[idx + 1]), Int(data[idx]))
+        }
+
+        let scaleX = targetBounds.width / layout.renderSize.width
+        let scaleY = targetBounds.height / layout.renderSize.height
+        let scaledRect = CGRect(
+            x: titleRenderable.rect.minX * scaleX,
+            y: titleRenderable.rect.minY * scaleY,
+            width: titleRenderable.rect.width * scaleX,
+            height: titleRenderable.rect.height * scaleY
+        )
+
+        let minX = max(0, Int(scaledRect.minX) + 24)
+        let maxX = min(cgImage.width - 1, Int(scaledRect.maxX) - 24)
+        let minY = max(0, Int(scaledRect.minY) + 20)
+        let maxY = min(cgImage.height - 1, Int(scaledRect.maxY) - 20)
+
+        var foundBrightGlyphPixel = false
+        for y in stride(from: minY, through: maxY, by: 3) {
+            for x in stride(from: minX, through: maxX, by: 3) {
+                guard let (r, g, b) = sample(x, y) else { continue }
+                if r > 235 && g > 235 && b > 235 {
+                    foundBrightGlyphPixel = true
+                    break
+                }
+            }
+            if foundBrightGlyphPixel { break }
+        }
+
+        #expect(foundBrightGlyphPixel, "Expected bright title glyphs after scaling render from layout size \(layout.renderSize) to \(targetBounds.size)")
+    }
+
+    @Test func coreTextEngineRendersActualPart0010BottomDecoration() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0010RenderDecorTest-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0010.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+
+        let image = await MainActor.run { () -> UIImage in
+            let view = CoreTextPageView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+            view.configure(layout: layout, pageIndex: 0)
+            return UIGraphicsImageRenderer(size: CGSize(width: 390, height: 844)).image { context in
+                view.layer.render(in: context.cgContext)
+            }
+        }
+
+        guard let cgImage = image.cgImage,
+              let providerData = cgImage.dataProvider?.data else {
+            Issue.record("Unable to inspect rendered image data")
+            return
+        }
+        let data = providerData as Data
+        let bytesPerPixel = 4
+        let bytesPerRow = cgImage.bytesPerRow
+        var foundBottomDecoration = false
+        for y in stride(from: 560, to: 780, by: 8) {
+            for x in stride(from: 140, to: 360, by: 8) {
+                let idx = y * bytesPerRow + x * bytesPerPixel
+                guard idx + 2 < data.count else { continue }
+                let b = Int(data[idx])
+                let g = Int(data[idx + 1])
+                let r = Int(data[idx + 2])
+                if !(r > 240 && g > 240 && b > 240) && b >= g && g >= r {
+                    foundBottomDecoration = true
+                    break
+                }
+            }
+            if foundBottomDecoration { break }
+        }
+        #expect(foundBottomDecoration)
+    }
+
+    @Test func coreTextEngineDoesNotDuplicateActualPart0010BottomDecoration() async throws {
+        let sourceURL = URL(fileURLWithPath: testEPUBPath)
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let storeDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextPart0010NoDupDecorTest-\(UUID().uuidString)")
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                session: session,
+                offsetStore: CharOffsetStore(directoryURL: storeDir)
+            )
+        }
+
+        let chapterIndex = try #require(session.chapterIndex(for: "text/part0010.html"))
+        await engine.preloadChapter(at: chapterIndex)
+        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
+
+        #expect((layout.blockRenderables[0]?.count ?? 0) > 0)
+        #expect(layout.blockAttachments[0] == nil || layout.blockAttachments[0]?.isEmpty == true)
+    }
+
+    @Test func coreTextPageViewRendersBackgroundImagePixels() async {
+        let builder = HTMLAttributedStringBuilder()
+        let background = UIGraphicsImageRenderer(size: CGSize(width: 422, height: 751)).image { ctx in
+            UIColor(red: 0.05, green: 0.35, blue: 0.75, alpha: 1).setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 422, height: 751))
+        }
+        builder.imageLoader = { src in
+            src == "images/00008.jpeg" ? background : nil
+        }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
+            firstLineIndent: 36, textColor: .black, backgroundColor: .white,
+            renderWidth: 320
+        )
+        let html = """
+        <html><head><style>
+        .part { background-image: url(images/00008.jpeg); background-position: center center; background-repeat: no-repeat; background-size: contain; }
+        .title1 { background: rgba(55, 103, 180, 0.2); color: #fff; display: block; width: 280px; margin: 200px auto 0; text-indent: 0; }
+        </style></head><body class='part'>
+        <h1 class='title1'>第一夜\u{2028}我们的不幸是谁的错？</h1>
+        </body></html>
+        """
+
+        let buildResult = await builder.build(html: html, config: config)
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: buildResult.attributedString,
+            imagePage: buildResult.imagePage,
+            pageBackgroundImage: buildResult.pageBackgroundImage,
+            anchorOffsets: buildResult.anchorOffsets,
+            renderSize: CGSize(width: 390, height: 844),
+            fontSize: config.fontSize,
+            contentInsets: .init(top: 24, left: 32, bottom: 60, right: 32)
+        )
+
+        let image = await MainActor.run { () -> UIImage in
+            let view = CoreTextPageView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+            view.configure(layout: layout, pageIndex: 0)
+            return UIGraphicsImageRenderer(size: CGSize(width: 390, height: 844)).image { context in
+                view.layer.render(in: context.cgContext)
+            }
+        }
+
+        guard let cgImage = image.cgImage,
+              let providerData = cgImage.dataProvider?.data else {
+            Issue.record("Unable to inspect rendered image data")
+            return
+        }
+        let data = providerData as Data
+        let centerX = 195
+        let centerY = 300
+        let bytesPerPixel = 4
+        let bytesPerRow = cgImage.bytesPerRow
+        let idx = centerY * bytesPerRow + centerX * bytesPerPixel
+        guard idx + 2 < data.count else {
+            Issue.record("Rendered image index out of range")
+            return
+        }
+        let b = data[idx]
+        let g = data[idx + 1]
+        let r = data[idx + 2]
+        #expect(!(r > 240 && g > 240 && b > 240))
     }
 
 }

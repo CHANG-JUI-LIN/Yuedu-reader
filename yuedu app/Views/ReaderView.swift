@@ -1557,8 +1557,13 @@ struct ReaderView: View {
             epubRenderer.jumpToChapter(idx, preferredLocalPage: 0)
             currentChapterIndex = idx
         } else if let engine = epubRenderer.engine, isEPUB {
-            currentChapterIndex = idx
-            currentPage = engine.pageIndex(forSpine: idx, charOffset: 0)
+            Task { @MainActor in
+                await engine.preloadChapter(at: idx)
+                let targetPage = engine.pageIndex(forSpine: idx, charOffset: 0)
+                currentChapterIndex = idx
+                currentPage = targetPage
+                epubRenderer.currentEpubPage = targetPage
+            }
         } else {
             currentChapterIndex = idx
             if let p = findChapterFirstPage(idx) { currentPage = p }
@@ -2651,15 +2656,17 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             forName: .coreTextEngineChapterReady,
             object: engine as AnyObject,
             queue: .main
-        ) { [weak pvc] _ in
+        ) { [weak pvc, weak coordinator = context.coordinator] _ in
             guard let pvc else { return }
+            let targetPage = max(0, min(coordinator?.currentPage ?? 0, max(engine.totalPages - 1, 0)))
+            let direction: UIPageViewController.NavigationDirection
             if let first = pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController) {
-                // Get a fresh VC with updated layout (covers both lazy-load and relayout cases)
-                let freshVC = engine.pageViewController(at: first.globalPageIndex)
-                pvc.setViewControllers([freshVC], direction: .forward, animated: false)
-            } else if let first = pvc.viewControllers?.first {
-                pvc.setViewControllers([first], direction: .forward, animated: false)
+                direction = targetPage >= first.globalPageIndex ? .forward : .reverse
+            } else {
+                direction = .forward
             }
+            let freshVC = engine.pageViewController(at: targetPage)
+            pvc.setViewControllers([freshVC], direction: direction, animated: false)
         }
 
         return pvc
@@ -2667,6 +2674,19 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIPageViewController, context: Context) {
         context.coordinator.currentEngine = engine
+        let clampedPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
+
+        if let visible = uiViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController) {
+            guard visible.globalPageIndex != clampedPage else { return }
+            let direction: UIPageViewController.NavigationDirection =
+                clampedPage >= visible.globalPageIndex ? .forward : .reverse
+            let targetVC = engine.pageViewController(at: clampedPage)
+            uiViewController.setViewControllers([targetVC], direction: direction, animated: false)
+            return
+        }
+
+        let targetVC = engine.pageViewController(at: clampedPage)
+        uiViewController.setViewControllers([targetVC], direction: .forward, animated: false)
     }
 
     func makeCoordinator() -> Coordinator {

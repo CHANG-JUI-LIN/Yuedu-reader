@@ -118,16 +118,20 @@ final class PublicationSession {
             uniquingKeysWith: { first, _ in first }
         )
         let readingOrder = chapterLinks(from: publication)
+        var lastResolvedTOCTitle: String?
         let chapters = readingOrder.enumerated().map { (index, link) in
             let href = normalizedHREF(link.href)
-            let fallbackTitle = chapterTitleMap[href] ?? chapterTitleMap.first(where: {
+            let matchedTOCTitle = chapterTitleMap[href] ?? chapterTitleMap.first(where: {
                 href.hasSuffix($0.key) || $0.key.hasSuffix(href)
             })?.value
+            if let matchedTOCTitle, !matchedTOCTitle.isEmpty {
+                lastResolvedTOCTitle = matchedTOCTitle
+            }
             return PublicationChapterDescriptor(
                 index: index,
                 href: href,
                 title: sanitizedTitle(
-                    link.title ?? fallbackTitle,
+                    link.title ?? matchedTOCTitle ?? lastResolvedTOCTitle,
                     fallbackHref: href,
                     chapterIndex: index
                 ),

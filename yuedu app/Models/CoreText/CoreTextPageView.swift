@@ -34,48 +34,119 @@ final class CoreTextPageView: UIView {
             let ctx = UIGraphicsGetCurrentContext()
         else { return }
 
-        if layout.pageKinds[localPageIndex] == .image {
-            if let imgRect = layout.imageRects[localPageIndex],
-               let image = layout.pageImages[localPageIndex] {
-                image.draw(in: imgRect)
+        Self.renderPage(
+            layout: layout,
+            pageIndex: localPageIndex,
+            in: ctx,
+            bounds: bounds
+        )
+    }
+
+    static func renderPage(
+        layout: CoreTextPaginator.ChapterLayout,
+        pageIndex: Int,
+        in ctx: CGContext,
+        bounds: CGRect
+    ) {
+        guard pageIndex < layout.pageRanges.count else { return }
+
+        let layoutSize = CGSize(
+            width: max(1, layout.renderSize.width),
+            height: max(1, layout.renderSize.height)
+        )
+        let canonicalBounds = CGRect(origin: .zero, size: layoutSize)
+        let scaleX = bounds.width / layoutSize.width
+        let scaleY = bounds.height / layoutSize.height
+
+        ctx.saveGState()
+        ctx.translateBy(x: bounds.minX, y: bounds.minY)
+        ctx.scaleBy(x: scaleX, y: scaleY)
+
+        if layout.pageKinds[pageIndex] == .image {
+            for attachment in layout.blockAttachments[pageIndex] ?? [] {
+                attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
             }
+            ctx.restoreGState()
             return
         }
 
-        let range = layout.pageRanges[localPageIndex]
+        if let backgroundImage = layout.pageBackgroundImage {
+            drawPageBackground(backgroundImage, in: canonicalBounds)
+        }
+
+        // Phase 1: CG 幾何操作（背景色、邊框）— 不受座標系影響
+        drawBlockRenderables(layout.blockRenderables[pageIndex] ?? [], in: ctx, boundsHeight: layoutSize.height)
+
+        let range = layout.pageRanges[pageIndex]
         let insets = layout.contentInsets
 
-        // 1. CoreText 座標系：左下角為原點，需翻轉
         ctx.textMatrix = .identity
-        ctx.translateBy(x: 0, y: bounds.height)
+        ctx.translateBy(x: 0, y: layoutSize.height)
         ctx.scaleBy(x: 1.0, y: -1.0)
 
-        // 2. 建立 CTFrame，逐行繪製（支援 CJK 兩端對齊）
         let contentPathRect = CGRect(
             x: insets.left,
             y: insets.bottom,
-            width: max(1, bounds.width - insets.left - insets.right),
-            height: max(1, bounds.height - insets.top - insets.bottom)
+            width: max(1, layoutSize.width - insets.left - insets.right),
+            height: max(1, layoutSize.height - insets.top - insets.bottom)
         )
         let path = CGPath(rect: contentPathRect, transform: nil)
         let frame = CTFramesetterCreateFrame(layout.framesetter, range, path, nil)
-        CoreTextPageView.drawLines(
+        drawLines(
             of: frame,
             contentWidth: contentPathRect.width,
             contentMinX: contentPathRect.minX,
             contentMinY: contentPathRect.minY,
-            isLastPage: localPageIndex == layout.pageRanges.count - 1,
+            isLastPage: pageIndex == layout.pageRanges.count - 1,
             attrStr: layout.attributedString,
             in: ctx
         )
 
-        // 3. 翻轉回 UIView 座標系，繪製圖片
+        // Phase 3: flip-back 後統一用 UIImage.draw() 繪製所有圖片
+        // UIImage.draw() 需要 UIKit 標準環境（左上原點，Y 向下）
         ctx.scaleBy(x: 1.0, y: -1.0)
-        ctx.translateBy(x: 0, y: -bounds.height)
+        ctx.translateBy(x: 0, y: -layoutSize.height)
 
-        if let imgRect = layout.imageRects[localPageIndex],
-           let image = layout.pageImages[localPageIndex] {
-            image.draw(in: imgRect)
+        // 3a. Block attachments（無 blockRenderStyle 的區塊圖片）
+        Self.drawAttachments(layout.blockAttachments[pageIndex] ?? [])
+
+        // 3b. Inline attachments（行內圖片）
+        for attachment in layout.inlineAttachments[pageIndex] ?? [] {
+            attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
+        }
+
+        // 3c. Block images（有 blockRenderStyle 的裝飾圖片，如浮水印）
+        for item in layout.blockRenderables[pageIndex] ?? [] {
+            if let blockImage = item.style.blockImage,
+               let image = blockImage.image {
+                let availableRect = item.rect
+                let contentWidth = max(1, availableRect.width - blockImage.paddingLeft - blockImage.paddingRight)
+                let drawWidth = min(blockImage.drawSize.width, contentWidth)
+                let drawHeight = blockImage.drawSize.height
+                let imgX: CGFloat
+                switch blockImage.alignment {
+                case .center:
+                    imgX = availableRect.minX + blockImage.paddingLeft + max(0, (contentWidth - drawWidth) / 2)
+                case .right:
+                    imgX = availableRect.minX + blockImage.paddingLeft + max(0, contentWidth - drawWidth)
+                default:
+                    imgX = availableRect.minX + blockImage.paddingLeft
+                }
+                let imgY = availableRect.minY + max(0, (availableRect.height - drawHeight) / 2)
+                image.draw(
+                    in: CGRect(x: imgX, y: imgY, width: drawWidth, height: drawHeight),
+                    blendMode: .normal,
+                    alpha: blockImage.opacity
+                )
+            }
+        }
+
+        ctx.restoreGState()
+    }
+
+    static func drawAttachments(_ attachments: [CoreTextPaginator.RenderedAttachment]) {
+        for attachment in attachments {
+            attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
         }
     }
 
@@ -133,6 +204,7 @@ final class CoreTextPageView: UIView {
 
         var accumulatedShift: CGFloat = 0
 
+        accumulatedShift = 0
         for (lineIdx, line) in lines.enumerated() {
             // 累積段落間距補償
             if lineIdx > 0 && paragraphGapAfterLine.contains(lineIdx - 1) {
@@ -226,6 +298,130 @@ final class CoreTextPageView: UIView {
 
             CTLineDraw(lineToDraw, ctx)
         }
+    }
+
+    static func drawBlockRenderables(
+        _ renderables: [CoreTextPaginator.RenderedBlockRenderable],
+        in ctx: CGContext,
+        boundsHeight: CGFloat
+    ) {
+        for item in renderables {
+            ctx.saveGState()
+            if let fillColor = item.style.backgroundFillColor {
+                ctx.setFillColor(fillColor.cgColor)
+                ctx.fill(item.rect)
+            }
+            if item.style.borderTopWidth > 0 {
+                let lineW = item.style.borderTopWidth
+                let y = item.rect.minY + lineW / 2
+                ctx.setStrokeColor((item.style.borderTopColor ?? .label).cgColor)
+                ctx.setLineWidth(lineW)
+                let (bx, bw) = borderXAndWidth(for: item)
+                ctx.move(to: CGPoint(x: bx, y: y))
+                ctx.addLine(to: CGPoint(x: bx + bw, y: y))
+                ctx.strokePath()
+            }
+            if item.style.borderBottomWidth > 0 {
+                let lineW = item.style.borderBottomWidth
+                let y = item.rect.maxY - lineW / 2
+                ctx.setStrokeColor((item.style.borderBottomColor ?? .label).cgColor)
+                ctx.setLineWidth(lineW)
+                let (bx, bw) = borderXAndWidth(for: item)
+                ctx.move(to: CGPoint(x: bx, y: y))
+                ctx.addLine(to: CGPoint(x: bx + bw, y: y))
+                ctx.strokePath()
+            }
+            // block image 統一在 Phase 3（flip-back 後）用 UIImage.draw() 繪製
+            ctx.restoreGState()
+        }
+    }
+
+    // 根據 style.width 和 textAlign 計算 border 的起始 x 和寬度
+    private static func borderXAndWidth(for item: CoreTextPaginator.RenderedBlockRenderable) -> (CGFloat, CGFloat) {
+        guard let constrainedWidth = item.style.width else {
+            return (item.rect.minX, item.rect.width)
+        }
+        let bw = min(constrainedWidth, item.rect.width)
+        let bx: CGFloat
+        switch item.style.textAlign {
+        case .center:
+            bx = item.rect.minX + max(0, (item.rect.width - bw) / 2)
+        case .right:
+            bx = item.rect.minX + max(0, item.rect.width - bw)
+        default:
+            bx = item.rect.minX
+        }
+        return (bx, bw)
+    }
+
+    static func drawBlockRenderableText(
+        _ text: NSAttributedString,
+        in rect: CGRect,
+        paddingLeft: CGFloat,
+        paddingRight: CGFloat,
+        boundsHeight: CGFloat,
+        context ctx: CGContext
+    ) {
+        let contentRect = CGRect(
+            x: rect.minX + paddingLeft,
+            y: rect.minY,
+            width: max(1, rect.width - paddingLeft - paddingRight),
+            height: rect.height
+        )
+        let framesetter = CTFramesetterCreateWithAttributedString(text)
+        let suggestedSize = CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter,
+            CFRange(location: 0, length: text.length),
+            nil,
+            CGSize(width: contentRect.width, height: .greatestFiniteMagnitude),
+            nil
+        )
+        let measuredHeight = ceil(suggestedSize.height)
+        let drawRect = CGRect(
+            x: contentRect.minX,
+            y: contentRect.minY + max(0, (contentRect.height - measuredHeight) / 2),
+            width: contentRect.width,
+            height: min(contentRect.height, measuredHeight)
+        )
+        let coreTextRect = CGRect(
+            x: drawRect.minX,
+            y: boundsHeight - drawRect.maxY,
+            width: drawRect.width,
+            height: drawRect.height
+        )
+        let path = CGPath(rect: coreTextRect, transform: nil)
+        let frame = CTFramesetterCreateFrame(
+            framesetter,
+            CFRange(location: 0, length: text.length),
+            path,
+            nil
+        )
+
+        ctx.saveGState()
+        ctx.textMatrix = .identity
+        ctx.translateBy(x: 0, y: boundsHeight)
+        ctx.scaleBy(x: 1, y: -1)
+        CTFrameDraw(frame, ctx)
+        ctx.restoreGState()
+    }
+
+    static func drawPageBackground(_ image: UIImage, in bounds: CGRect) {
+        let drawRect = backgroundImageRect(for: image.size, in: bounds)
+        image.draw(in: drawRect)
+    }
+
+    private static func backgroundImageRect(for imageSize: CGSize, in bounds: CGRect) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0, bounds.width > 0, bounds.height > 0 else {
+            return bounds
+        }
+        let ratio = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let size = CGSize(width: imageSize.width * ratio, height: imageSize.height * ratio)
+        return CGRect(
+            x: bounds.minX + (bounds.width - size.width) / 2,
+            y: bounds.minY + (bounds.height - size.height) / 2,
+            width: size.width,
+            height: size.height
+        )
     }
 
     private func extractBackgroundColor(from attrStr: NSAttributedString) -> UIColor {

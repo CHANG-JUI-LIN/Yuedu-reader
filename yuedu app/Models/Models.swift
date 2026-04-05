@@ -432,8 +432,8 @@ struct ReaderRenderSettings: Equatable {
 
 enum ReaderLayoutMetrics {
     static let footerHeight: CGFloat = 24
-    static let footerBottomGap: CGFloat = 20
-    static let footerVisualBottomPadding: CGFloat = 4
+    static let footerBottomGap: CGFloat = 28
+    static let footerVisualBottomPadding: CGFloat = 0
     static let minimumVerticalPadding: CGFloat = 24
     static let topSafeAreaExtra: CGFloat = 10
 
