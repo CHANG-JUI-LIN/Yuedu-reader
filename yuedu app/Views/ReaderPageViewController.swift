@@ -1,3 +1,5 @@
+/* DISABLED: WebView rendering path temporarily removed pending CoreText migration
+
 import UIKit
 
 @MainActor
@@ -391,3 +393,4 @@ extension ReaderPageViewController: UIPageViewControllerDelegate {
         .min
     }
 }
+*/

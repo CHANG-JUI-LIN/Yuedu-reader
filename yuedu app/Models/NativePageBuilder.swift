@@ -1,3 +1,5 @@
+/* DISABLED: WebView rendering path temporarily removed pending CoreText migration
+
 import CoreText
 import Foundation
 import UIKit
@@ -51,7 +53,8 @@ final class NativePageBuilder {
             // 第一頁留出標題空間
             var availableHeight = pageSize.height
             if pageNum == 0, let titleAttrs = titleAttributes {
-                let titleStr = NSAttributedString(string: chapterTitle + "\n", attributes: titleAttrs)
+                let titleStr = NSAttributedString(string: chapterTitle + "
+", attributes: titleAttrs)
                 let titleFramesetter = CTFramesetterCreateWithAttributedString(titleStr)
                 let titleSize = CTFramesetterSuggestFrameSizeWithConstraints(
                     titleFramesetter,
@@ -320,3 +323,4 @@ final class NativePageBuilder {
         return CGSize(width: w, height: h)
     }
 }
+*/

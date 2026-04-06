@@ -1,5 +1,4 @@
 import Foundation
-import SwiftSoup
 
 // MARK: - TXT → XHTML 轉換器（大廠做法：語意化後重用 EPUB 渲染管線）
 
@@ -227,6 +226,9 @@ final class TXTToXHTMLConverter {
 
         throw TXTConvertError.encodingNotSupported
     }
+}
+
+extension TXTToXHTMLConverter {
 
     // MARK: - 章節解析
 
@@ -566,6 +568,8 @@ final class TXTToXHTMLConverter {
     }
 }
 
+#if false // DISABLED: TXT/HTML ingestion temporarily disabled pending CoreText migration
+
 struct TXTBookIngester: BookIngesting {
     let text: String?
     let chapterInputs: [TXTToXHTMLConverter.ChapterInput]?
@@ -734,6 +738,8 @@ struct HTMLBookIngester: BookIngesting {
         html.range(of: #"<h[1-6][\s>]"#, options: .regularExpression) != nil
     }
 }
+
+#endif // DISABLED
 
 // MARK: - 錯誤定義
 

@@ -1,3 +1,5 @@
+/* DISABLED: WebView rendering path temporarily removed pending CoreText migration
+
 import Combine
 import CryptoKit
 import UIKit
@@ -1069,7 +1071,8 @@ final class LiveWebReader: NSObject, ObservableObject {
         if let parsed = parsedBook, chapter < parsed.chapters.count {
             inlineBookCSS = parsed.chapters[chapter].cssEntries.map { entry in
                 rewriteCSSURLs(entry.content, cssBaseDir: entry.baseDir)
-            }.joined(separator: "\n")
+            }.joined(separator: "
+")
         } else {
             inlineBookCSS = ""
         }
@@ -1171,8 +1174,8 @@ final class LiveWebReader: NSObject, ObservableObject {
 
         let base64 = Data(content.bodyHTML.utf8).base64EncodedString()
         let escapedTitle = content.title
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\", with: "\\")
+            .replacingOccurrences(of: "'", with: "\'")
 
         let js = "_injectChapter(\(index), '\(base64)', '\(escapedTitle)', '\(position)')"
         let _ = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
@@ -2428,7 +2431,8 @@ final class LiveWebReader: NSObject, ObservableObject {
     private func buildChapterHTML(chapter: EPUBChapterRaw, bridgeName: String) -> String {
         let bookCSS = chapter.cssEntries.map { entry in
             rewriteCSSURLs(entry.content, cssBaseDir: entry.baseDir)
-        }.joined(separator: "\n")
+        }.joined(separator: "
+")
         return buildChapterHTML(
             chapterHTML: chapter.html,
             chapterBaseURL: chapter.baseURL,
@@ -2757,7 +2761,7 @@ final class LiveWebReader: NSObject, ObservableObject {
                 var rect = el.getBoundingClientRect();
                 if (!rect || rect.height < 2 || rect.width < 2) return;
 
-                var text = (el.innerText || el.textContent || '').replace(/\\s+/g, '');
+                var text = (el.innerText || el.textContent || '').replace(/\s+/g, '');
                 var isContentTag =
                     /^h[1-6]$/.test(tag)
                     || ['p', 'li', 'dt', 'dd', 'blockquote', 'pre', 'figcaption', 'address', 'img', 'svg', 'video', 'audio', 'object', 'canvas', 'figure', 'table', 'hr'].indexOf(tag) !== -1;
@@ -3491,7 +3495,8 @@ final class LiveWebReader: NSObject, ObservableObject {
                 styles.append(ns.substring(with: m.range))
             }
         }
-        return styles.joined(separator: "\n")
+        return styles.joined(separator: "
+")
     }
 
     private func rewriteCSSURLs(_ css: String, cssBaseDir: URL) -> String {
@@ -3653,3 +3658,4 @@ private class LivePreloadMessageHandler: NSObject, WKScriptMessageHandler {
         }
     }
 }
+*/

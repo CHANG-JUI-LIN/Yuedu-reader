@@ -1,104 +1,30 @@
 import Combine
 import UIKit
-import WebKit
 
-/// Thin adapter that keeps the existing public interface ReaderView depends on while
-/// also exposing a CoreTextPageEngine for the CoreText rendering path.
-///
-/// The web rendering path (LiveWebReader) is preserved unchanged so that the
-/// existing useWebRenderer flow in ReaderView continues to compile and work.
+/// CoreText-only EPUB renderer adapter.
+/// WebView rendering path has been removed; all functionality routes to CoreTextPageEngine.
 @MainActor
 final class EPUBPageRenderer: ObservableObject {
 
-    // MARK: - Web renderer (existing path)
-
-    private let webEngine = LiveWebReader()
-    private var subscriptions: Set<AnyCancellable> = []
-
-    // MARK: - CoreText engine (new path)
+    // MARK: - CoreText engine
 
     private(set) var engine: CoreTextPageEngine?
 
-    /// Returns the CoreTextPageEngine as a PageRenderingProvider when available.
-    var pageRenderingProvider: PageRenderingProvider? { engine }
-
     @Published var isCoreTextReady: Bool = false
 
+    /// Tracks the current global page index (kept in sync by ReaderView / CoreTextPageEngineView).
+    var currentEpubPage: Int = 0
+
     /// Last non-zero viewport size reported by ReaderView via notifyViewportSize().
-    /// Initialized to screen bounds so load() always has a usable fallback size
-    /// even if GeometryReader fires before reporting a valid size.
     private var lastViewportSize: CGSize = UIScreen.main.bounds.size
     /// bookId waiting for a valid viewport size before CoreTextPageEngine.start() can run.
     private var pendingStartBookId: String?
 
-    // MARK: - Init
-
-    init() {
-        webEngine.objectWillChange
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
-            .store(in: &subscriptions)
-    }
-
-    // MARK: - Published / computed properties (delegates to web engine)
-
-    var onRelocated: ((String, Double) -> Void)? {
-        get { webEngine.onRelocated }
-        set { webEngine.onRelocated = newValue }
-    }
-
-    var onTapZone: ((String) -> Void)? {
-        get { webEngine.onTapZone }
-        set { webEngine.onTapZone = newValue }
-    }
-
-    var isReady: Bool { webEngine.isReady }
-    var isScrollModeEnabled: Bool { webEngine.scrollModeEnabled }
-    var totalPages: Int { webEngine.totalPages }
-    var renderSessionID: Int { webEngine.renderSessionID }
-    var layoutGeneration: Int { webEngine.layoutGeneration }
-    var webViewGeneration: Int { webEngine.webViewGeneration }
-    var liveWebView: WKWebView? { webEngine.webView }
-    var currentEpubPage: Int {
-        get { webEngine.currentEpubPage }
-        set {
-            guard newValue != webEngine.currentEpubPage else { return }
-            webEngine.goToPage(newValue)
-        }
-    }
-    var errorMessage: String? { webEngine.errorMessage }
-    var tocItems: [[String: Any]] { webEngine.tocItems }
-    var tocCount: Int { webEngine.tocCount }
-    var bookTitle: String { webEngine.bookTitle }
-    var percentage: Double { webEngine.percentage }
-    var currentChapterIdx: Int { webEngine.currentChapterIdx }
-    var snapshotProgress: Double { webEngine.snapshotProgress }
-    var isCommitting: Bool { webEngine.isCommitting }
-
-    // MARK: - Load methods
-
-    func load(package: RenderPackage, settings: ReaderRenderSettings) {
-        webEngine.load(package: package, settings: settings)
-    }
-
-    /// Web renderer path — delegates to LiveWebReader.
-    func load(
-        publicationSession session: PublicationSession,
-        bookIdentifier: String,
-        settings: ReaderRenderSettings
-    ) {
-        webEngine.load(
-            publicationSession: session,
-            bookIdentifier: bookIdentifier,
-            settings: settings
-        )
-    }
+    // MARK: - Load
 
     /// CoreText path — creates a CoreTextPageEngine and kicks off async loading.
     /// If renderSize is zero (view not yet laid out), start is deferred until
-    /// resumeCoreTextStart(size:) is called with a valid size.
+    /// notifyViewportSize() is called with a valid size.
     func load(
         publicationSession session: PublicationSession,
         bookIdentifier: String,
@@ -116,7 +42,6 @@ final class EPUBPageRenderer: ObservableObject {
         self.engine = newEngine
         isCoreTextReady = false
 
-        // Resolve effective size: use passed-in size, fall back to last known viewport size
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
         print("[EPUBRenderer] load renderSize=\(renderSize) lastViewport=\(lastViewportSize) effective=\(effectiveSize)")
 
@@ -131,10 +56,9 @@ final class EPUBPageRenderer: ObservableObject {
         }
     }
 
-    /// Called by ReaderView whenever the viewport size changes (onPreferenceChange).
+    /// Called by ReaderView whenever the viewport size changes.
     /// Stores the size and starts the CoreText engine if load() was called before layout.
     func notifyViewportSize(_ size: CGSize) {
-        print("[EPUBRenderer] notifyViewportSize=\(size) pendingBookId=\(pendingStartBookId ?? "nil") engine=\(engine == nil ? "nil" : "有")")
         guard size.width > 0, size.height > 0 else { return }
         lastViewportSize = size
         guard let bookId = pendingStartBookId, let eng = engine else { return }
@@ -145,47 +69,9 @@ final class EPUBPageRenderer: ObservableObject {
         }
     }
 
-    func reloadWithUpdatedPackage(_ package: RenderPackage, settings: ReaderRenderSettings) {
-        webEngine.reloadWithUpdatedPackage(package, settings: settings)
-    }
-
-    // MARK: - Navigation
-
-    func goToPage(_ page: Int, completion: (() -> Void)? = nil) {
-        webEngine.goToPage(page, completion: completion)
-    }
-
-    func jumpToChapter(_ chapterIdx: Int, preferredLocalPage: Int? = nil) {
-        webEngine.jumpToChapter(chapterIdx, preferredLocalPage: preferredLocalPage)
-    }
-
-    func chapterIndex(forGlobalPage page: Int) -> Int {
-        webEngine.chapterIndex(forGlobalPage: page)
-    }
-
-    func localPage(forGlobalPage page: Int) -> Int {
-        webEngine.localPage(forGlobalPage: page)
-    }
-
-    func pageCount(forChapter index: Int) -> Int {
-        webEngine.pageCount(forChapter: index)
-    }
-
-    func firstGlobalPage(forChapter index: Int, preferredLocalPage: Int? = nil) -> Int? {
-        webEngine.firstGlobalPage(forChapter: index, preferredLocalPage: preferredLocalPage)
-    }
-
     // MARK: - Progress persistence
 
-    func syncProgressToPage(_ page: Int, flush: Bool = false) {
-        webEngine.syncProgressToPage(page, flush: flush)
-    }
-
-    func flushProgress() {
-        webEngine.flushProgress()
-    }
-
-    /// CoreText progress persistence: saves a CharOffsetRecord for the given bookId.
+    /// Saves a CharOffsetRecord for the given bookId.
     func syncProgress(bookId: String) {
         guard let eng = engine else { return }
         let (spineIndex, charOffset) = eng.charOffset(forPage: eng.currentPage)
@@ -198,7 +84,7 @@ final class EPUBPageRenderer: ObservableObject {
         eng.offsetStore.save(record)
     }
 
-    /// CoreText progress persistence: flushes pending saves synchronously.
+    /// Flushes pending saves synchronously.
     func flushProgress(bookId: String) {
         engine?.offsetStore.flushSync()
     }
@@ -207,22 +93,14 @@ final class EPUBPageRenderer: ObservableObject {
         await engine?.resolveInternalLink(href, fromSpineIndex: spineIndex)
     }
 
-    // MARK: - Viewport / layout settings
-
-    func setViewport(size: CGSize, safeAreaInsets: UIEdgeInsets) {
-        webEngine.setViewport(size: size, safeAreaInsets: safeAreaInsets)
-    }
+    // MARK: - Layout / settings
 
     func setFontSize(_ size: CGFloat) {
-        if let eng = engine {
-            Task { await eng.invalidateLayout(newSize: eng.renderSize) }
-            return
-        }
-        webEngine.setFontSize(size)
+        guard let eng = engine else { return }
+        Task { await eng.invalidateLayout(newSize: eng.renderSize) }
     }
 
     func setTheme(_ theme: String) {
-        webEngine.setTheme(theme)
         let textColor: UIColor
         let bgColor: UIColor
         switch theme {
@@ -240,125 +118,12 @@ final class EPUBPageRenderer: ObservableObject {
     }
 
     func setPageMargins(horizontal: CGFloat, vertical: CGFloat) {
-        webEngine.setPageMargins(horizontal: horizontal, vertical: vertical)
-        if let eng = engine {
-            Task { await eng.invalidateLayout(newSize: eng.renderSize) }
-        }
+        guard let eng = engine else { return }
+        Task { await eng.invalidateLayout(newSize: eng.renderSize) }
     }
 
     func invalidateCoreTextLayout() {
         guard let eng = engine else { return }
         Task { await eng.invalidateLayout(newSize: eng.renderSize) }
-    }
-
-    func setTransition(_ mode: String) {
-        webEngine.setTransition(mode)
-    }
-
-    // MARK: - Gesture / animation passthrough
-
-    func dragOffset(_ dx: CGFloat) {
-        webEngine.dragOffset(dx)
-    }
-
-    func interruptAnimation() -> CGFloat? {
-        webEngine.interruptAnimation()
-    }
-
-    func beginGestureInteraction(interruptedOffset: CGFloat? = nil) {
-        webEngine.beginGestureInteraction(interruptedOffset: interruptedOffset)
-    }
-
-    func updateGestureInteraction() {
-        webEngine.updateGestureInteraction()
-    }
-
-    func endGestureInteraction(targetPage: Int) {
-        webEngine.endGestureInteraction(targetPage: targetPage)
-    }
-
-    func resetDragBase() {
-        webEngine.resetDragBase()
-    }
-
-    // MARK: - Snapshot / display
-
-    func snapshot(forPage page: Int) -> UIImage? {
-        webEngine.snapshot(forPage: page)
-    }
-
-    func pageSnapshotState(forPage page: Int) -> PageRenderState {
-        webEngine.pageSnapshotState(forPage: page)
-    }
-
-    func prepareDisplaySnapshot(forPage page: Int, priority: Int = 0) {
-        webEngine.prepareDisplaySnapshot(forPage: page, priority: priority)
-    }
-
-    func preloadSnapshots(around page: Int, radius: Int = 2) {
-        webEngine.preloadSnapshots(around: page, radius: radius)
-    }
-
-    func willDisplayPage(_ page: Int, style: PageTurnStyle) {
-        webEngine.willDisplayPage(page, style: style)
-    }
-
-    func settleInteractionPage(_ page: Int, style: PageTurnStyle) {
-        webEngine.settleInteractionPage(page, style: style)
-    }
-
-    func cancelInteractionPage(_ page: Int, style: PageTurnStyle) {
-        webEngine.cancelInteractionPage(page, style: style)
-    }
-
-    func turnPageProgrammatically(forward: Bool) {
-        let target = currentEpubPage + (forward ? 1 : -1)
-        guard target >= 0, target < totalPages else { return }
-        webEngine.turnPageProgrammatically(forward: forward, style: .slide)
-    }
-
-    func turnPageProgrammatically(forward: Bool, style: PageTurnStyle) {
-        webEngine.turnPageProgrammatically(forward: forward, style: style)
-    }
-
-    func themeBackgroundColor() -> UIColor {
-        webEngine.themeBackgroundUIColor()
-    }
-
-    func requestSnapshot(for page: Int, completion: @escaping (UIImage?) -> Void) {
-        if let image = webEngine.snapshot(forPage: page) {
-            completion(image)
-            return
-        }
-
-        webEngine.prepareDisplaySnapshot(
-            forPage: page,
-            priority: page == webEngine.currentEpubPage ? -1 : 0
-        )
-
-        var attempts = 0
-        func poll() {
-            if let image = self.webEngine.snapshot(forPage: page) {
-                completion(image)
-                return
-            }
-            if attempts >= 20 {
-                completion(nil)
-                return
-            }
-            attempts += 1
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                poll()
-            }
-        }
-        poll()
-    }
-
-    func cancelSnapshotRequest(for page: Int) {
-        webEngine.cancelSnapshot(forPage: page)
-    }
-
-    func settleDrag(toGlobalPage page: Int, style: PageTurnStyle) {
-        webEngine.settleDrag(toGlobalPage: page, style: style)
     }
 }

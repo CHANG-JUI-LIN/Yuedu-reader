@@ -1,3 +1,5 @@
+/* DISABLED: WebView rendering path temporarily removed pending CoreText migration
+
 import Foundation
 
 struct ReadiumCSSConfiguration: Equatable {
@@ -99,7 +101,8 @@ enum ReadiumCSSLoader {
     /// 生成注入到 `<head>` 開頭的 CSS（before + default）
     @available(*, deprecated, message: "Use beforeCSS() + defaultCSS() for correct sandwich order")
     static func headCSS() -> String {
-        return beforeCSS() + "\n" + defaultCSS()
+        return beforeCSS() + "
+" + defaultCSS()
     }
 
     /// 生成注入到 `</head>` 之前的 CSS（after），覆蓋優先級最高
@@ -175,3 +178,4 @@ enum ReadiumCSSLoader {
         }
     }
 }
+*/
