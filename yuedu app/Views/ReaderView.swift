@@ -1931,7 +1931,9 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
             coverIncomingImageView.contentMode = .scaleAspectFill
             coverIncomingImageView.clipsToBounds = true
-            coverIncomingImageView.layer.cornerRadius = 10
+            // 圓角跟隨裝置螢幕圓角（iPhone 14 Pro ≈ 44pt，SE/老機型 ≈ 0 → fallback 12）
+            let screenCornerRadius = (UIScreen.main.value(forKey: "displayCornerRadius") as? CGFloat) ?? 0
+            coverIncomingImageView.layer.cornerRadius = screenCornerRadius > 0 ? screenCornerRadius : 12
             coverIncomingImageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             coverOverlayView.addSubview(coverIncomingImageView)
 
