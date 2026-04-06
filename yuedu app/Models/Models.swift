@@ -555,19 +555,9 @@ class BookStore: ObservableObject {
             )
             return placeholder.makePackage(pipelineKind: .epub, originalSourceURL: epubURL)
         case .html:
-            return try HTMLBookIngester(
-                html: content(for: book),
-                title: book.title,
-                author: book.author,
-                originalSourceURL: sourceURL
-            ).ingest()
+            fatalError("HTML rendering temporarily disabled pending CoreText migration")
         case .txt:
-            return try TXTBookIngester(
-                text: content(for: book),
-                title: book.title,
-                author: book.author,
-                originalSourceURL: sourceURL
-            ).ingest()
+            fatalError("TXT rendering temporarily disabled pending CoreText migration")
         }
     }
 

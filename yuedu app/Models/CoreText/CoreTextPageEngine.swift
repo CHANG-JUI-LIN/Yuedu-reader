@@ -897,6 +897,18 @@ final class CoreTextPageEngine: PageRenderingProvider {
             .compactMap { UIFontDescriptor(name: $0, size: 0) }
     }
 
+    /// 取得某頁的純文字內容（供 TTS / 書籤摘錄使用）
+    func plainText(forPage page: Int) -> String {
+        let (spineIndex, localPage) = localPosition(for: page)
+        guard let layout = layouts[spineIndex],
+              localPage < layout.pageRanges.count else { return "" }
+        let range = layout.pageRanges[localPage]
+        let nsRange = NSRange(location: range.location, length: range.length)
+        guard nsRange.location != NSNotFound, nsRange.length > 0,
+              nsRange.location + nsRange.length <= layout.attributedString.length else { return "" }
+        return (layout.attributedString.string as NSString).substring(with: nsRange)
+    }
+
     private func migrateFromLegacyProgressIfNeeded(bookId: String) {
         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let progressDir = docsURL.appendingPathComponent("epub_progress/\(bookId)")

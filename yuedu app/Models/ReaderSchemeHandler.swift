@@ -1,3 +1,5 @@
+/* DISABLED: WebView rendering path temporarily removed pending CoreText migration
+
 import Foundation
 import WebKit
 
@@ -126,3 +128,4 @@ final class ReaderSchemeHandler: NSObject, WKURLSchemeHandler {
         return task != nil
     }
 }
+*/

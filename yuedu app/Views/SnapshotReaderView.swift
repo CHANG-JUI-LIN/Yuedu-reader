@@ -1,3 +1,5 @@
+/* DISABLED: WebView rendering path temporarily removed pending CoreText migration
+
 import SwiftUI
 
 struct SnapshotReaderView: UIViewControllerRepresentable {
@@ -26,3 +28,4 @@ struct SnapshotReaderView: UIViewControllerRepresentable {
         controller.refreshVisiblePage()
     }
 }
+*/

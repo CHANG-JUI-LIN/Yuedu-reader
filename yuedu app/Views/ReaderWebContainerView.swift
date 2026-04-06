@@ -1,3 +1,5 @@
+/* DISABLED: WebView rendering path temporarily removed pending CoreText migration
+
 import SwiftUI
 import WebKit
 
@@ -157,3 +159,4 @@ final class ReaderWebHostView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 }
+*/

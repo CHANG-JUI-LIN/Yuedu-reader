@@ -1,5 +1,7 @@
 import Foundation
 
+/* DISABLED: WebView/TXT/HTML adapter assets temporarily removed pending CoreText migration
+
 enum ReaderAdapterAssets {
     static func css() -> String {
         """
@@ -920,7 +922,9 @@ enum ReaderAdapterAssets {
         </html>
         """
     }
+*/
 
+enum ReaderAdapterAssets {
     static func normalizedChapterHTML(
         title: String,
         paragraphs: [String],
