@@ -265,7 +265,8 @@ final class CoreTextPageEngine: PageRenderingProvider {
             contentInsets: currentContentInsets()
         )
         print("[CoreTextEngine] preloadChapter[\(spineIndex)] pageCount=\(layout.pageRanges.count)")
-        layouts[spineIndex] = layout
+        // 套用當前主題色（防止預載 Task 在主題切換前開始、切換後完成，導致舊色覆蓋新色）
+        layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
         generateSnapshot(for: spineIndex)
         rebuildPageOffsets()
     }
