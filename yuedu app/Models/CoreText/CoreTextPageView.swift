@@ -505,8 +505,10 @@ extension SnapshotPageViewController: PageIndexProviding {}
 final class PlaceholderPageViewController: UIViewController {
     private let titleLabel = UILabel()
     private let spinner = UIActivityIndicatorView(style: .medium)
+    private(set) var globalPageIndex: Int
 
-    init(chapterTitle: String = "") {
+    init(chapterTitle: String = "", globalPage: Int = 0) {
+        self.globalPageIndex = globalPage
         super.init(nibName: nil, bundle: nil)
         titleLabel.text = chapterTitle
     }
@@ -538,3 +540,5 @@ final class PlaceholderPageViewController: UIViewController {
         spinner.startAnimating()
     }
 }
+
+extension PlaceholderPageViewController: PageIndexProviding {}

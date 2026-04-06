@@ -159,7 +159,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         let title = session.chapters.indices.contains(spineIndex)
             ? session.chapters[spineIndex].title
             : ""
-        let placeholder = PlaceholderPageViewController(chapterTitle: title)
+        let placeholder = PlaceholderPageViewController(chapterTitle: title, globalPage: index)
         Task { [weak self] in
             await self?.preloadChapter(at: spineIndex)
             NotificationCenter.default.post(
@@ -427,8 +427,13 @@ final class CoreTextPageEngine: PageRenderingProvider {
         let remaining = total - localPage
         if remaining <= threshold {
             let nextSpine = spineIndex + 1
-            guard nextSpine < session.chapters.count else { return }
-            Task { [weak self] in await self?.preloadChapter(at: nextSpine) }
+            if nextSpine < session.chapters.count {
+                Task { [weak self] in await self?.preloadChapter(at: nextSpine) }
+            }
+        }
+        // 接近章節開頭時預載上一章，確保向後翻跨章能正確定位最後一頁
+        if localPage < threshold && spineIndex > 0 {
+            Task { [weak self] in await self?.preloadChapter(at: spineIndex - 1) }
         }
     }
 
@@ -518,7 +523,14 @@ final class CoreTextPageEngine: PageRenderingProvider {
         }
     }
 
-    private func localPosition(for globalPage: Int) -> (spineIndex: Int, localPage: Int) {
+    /// 回傳指定章節最後一頁的全局頁碼。章節未載入時回傳 nil。
+    func lastPageIndex(ofChapter spineIndex: Int) -> Int? {
+        guard let layout = layouts[spineIndex],
+              spinePageOffsets.indices.contains(spineIndex) else { return nil }
+        return spinePageOffsets[spineIndex] + max(0, layout.pageRanges.count - 1)
+    }
+
+    func localPosition(for globalPage: Int) -> (spineIndex: Int, localPage: Int) {
         guard !spinePageOffsets.isEmpty else { return (0, globalPage) }
         var lo = 0
         var hi = spinePageOffsets.count - 1

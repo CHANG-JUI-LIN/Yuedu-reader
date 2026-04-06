@@ -1183,6 +1183,9 @@ struct ReaderView: View {
         if let engine = epubRenderer.engine, isEPUB {
             Task { @MainActor in
                 await engine.preloadChapter(at: idx)
+                // 背景預載鄰域章節，確保前後翻頁時 layout 已就緒
+                if idx > 0 { Task { await engine.preloadChapter(at: idx - 1) } }
+                if idx < chapters.count - 1 { Task { await engine.preloadChapter(at: idx + 1) } }
                 let targetPage = engine.pageIndex(forSpine: idx, charOffset: 0)
                 currentChapterIndex = idx
                 currentPage = targetPage
@@ -1736,8 +1739,19 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
         pvc.delegate = context.coordinator
 
-        let initialVC = engine.pageViewController(at: max(0, currentPage))
+        // 優先用 engine.currentPage（已從 CharOffsetStore 恢復的絕對座標換算而來）
+        let initialPage = engine.totalPages > 0
+            ? max(0, min(engine.currentPage, engine.totalPages - 1))
+            : 0
+        let initialVC = engine.pageViewController(at: initialPage)
         pvc.setViewControllers([initialVC], direction: .forward, animated: false)
+        // 同步 binding，讓 ReaderView.currentPage 對齊 engine 恢復的位置
+        if initialPage != currentPage {
+            DispatchQueue.main.async {
+                self.currentPage = initialPage
+                self.onPageChanged(initialPage)
+            }
+        }
 
         // Tap zone recognizer: left 30% → prev, right 30% → next, center → menu
         let tap = UITapGestureRecognizer(
@@ -1800,11 +1814,13 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let shouldAnimate = pageTurnStyle != .none
             let targetVC = engine.pageViewController(at: clampedPage)
             uiViewController.setViewControllers([targetVC], direction: direction, animated: shouldAnimate)
+            context.coordinator.onPageChanged(clampedPage)
             return
         }
 
         let targetVC = engine.pageViewController(at: clampedPage)
         uiViewController.setViewControllers([targetVC], direction: .forward, animated: false)
+        context.coordinator.onPageChanged(clampedPage)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -1864,6 +1880,14 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         ) -> UIViewController? {
             guard let vc = viewController as? any PageIndexProviding & UIViewController,
                   vc.globalPageIndex > 0 else { return nil }
+            let (currentSpine, currentLocal) = currentEngine.localPosition(for: vc.globalPageIndex)
+            if currentLocal == 0 && currentSpine > 0 {
+                // 跨章邊界：直接查上一章最後一頁，避免依賴 globalPage-1 的估算
+                if let lastPage = currentEngine.lastPageIndex(ofChapter: currentSpine - 1) {
+                    return currentEngine.pageViewController(at: lastPage)
+                }
+                // 上一章未載入 → 觸發預載，返回 placeholder（帶正確 globalPageIndex）
+            }
             return currentEngine.pageViewController(at: vc.globalPageIndex - 1)
         }
 

@@ -33,6 +33,12 @@ protocol PageRenderingProvider: AnyObject {
     /// 當前章節剩餘 ≤ 20% 時自動預熱下一章
     func warmUpNext(currentGlobalPage: Int)
 
+    /// 回傳指定章節最後一頁的全局頁碼。章節未載入時回傳 nil。
+    func lastPageIndex(ofChapter spineIndex: Int) -> Int?
+
+    /// 全局頁碼 → (spineIndex, localPage)，供跨章邊界導航使用。
+    func localPosition(for globalPage: Int) -> (spineIndex: Int, localPage: Int)
+
     /// 取得第 index 頁的快照 ViewController（跨章節動畫接力用）。
     /// 只在該頁為章節第一頁且快照已就緒時才回傳非 nil；其餘情況回傳 nil。
     func snapshotViewController(at index: Int) -> UIViewController?
@@ -44,4 +50,6 @@ protocol PageRenderingProvider: AnyObject {
 extension PageRenderingProvider {
     func snapshotViewController(at index: Int) -> UIViewController? { nil }
     func renderSnapshot(forPage globalPage: Int) -> UIImage? { nil }
+    func lastPageIndex(ofChapter spineIndex: Int) -> Int? { nil }
+    func localPosition(for globalPage: Int) -> (spineIndex: Int, localPage: Int) { (0, globalPage) }
 }

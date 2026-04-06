@@ -75,7 +75,7 @@ final class EPUBPageRenderer: ObservableObject {
     /// Saves a CharOffsetRecord for the given bookId.
     func syncProgress(bookId: String) {
         guard let eng = engine else { return }
-        let (spineIndex, charOffset) = eng.charOffset(forPage: eng.currentPage)
+        let (spineIndex, charOffset) = eng.charOffset(forPage: currentEpubPage)
         let record = CharOffsetRecord(
             bookId: bookId,
             spineIndex: spineIndex,
