@@ -1828,7 +1828,6 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private let coverIncomingImageView = UIImageView()
         private var coverTargetPage: Int?
         private var coverDirection: Int = 0  // 1 = forward, -1 = backward
-        private weak var coverHostView: UIView?
         weak var coverPageViewController: UIPageViewController?
 
         init(engine: any PageRenderingProvider,
@@ -1910,8 +1909,6 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         // MARK: - Cover overlay setup
 
         func setupCoverOverlay(on view: UIView) {
-            coverHostView = view
-
             coverOverlayView.translatesAutoresizingMaskIntoConstraints = false
             coverOverlayView.isHidden = true
             coverOverlayView.isUserInteractionEnabled = false
@@ -1952,10 +1949,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             case .began:
                 coverTargetPage = nil
                 coverDirection = 0
-                coverOverlayView.frame = view.bounds
-                coverCurrentImageView.frame = view.bounds
-                coverCurrentImageView.image = currentEngine.renderSnapshot(forPage: currentPage)
-                coverOverlayView.isHidden = false
+                showCurrentSnapshot(on: view)
 
             case .changed:
                 if coverTargetPage == nil {
@@ -1963,18 +1957,12 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         coverDirection = 1
                         let target = currentPage + 1
                         coverTargetPage = target
-                        coverIncomingImageView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
-                        let incomingImage = currentEngine.renderSnapshot(forPage: target)
-                        coverIncomingImageView.image = incomingImage
-                        coverIncomingImageView.frame = CGRect(x: width, y: 0, width: width, height: view.bounds.height)
+                        setupIncomingView(direction: 1, for: target, in: view)
                     } else if translationX > 6, currentPage > 0 {
                         coverDirection = -1
                         let target = currentPage - 1
                         coverTargetPage = target
-                        coverIncomingImageView.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
-                        let incomingImage = currentEngine.renderSnapshot(forPage: target)
-                        coverIncomingImageView.image = incomingImage
-                        coverIncomingImageView.frame = CGRect(x: -width, y: 0, width: width, height: view.bounds.height)
+                        setupIncomingView(direction: -1, for: target, in: view)
                     }
                 }
                 guard coverTargetPage != nil else { return }
@@ -2028,18 +2016,8 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let width = max(view.bounds.width, 1)
             let coverDir: Int = direction == .forward ? 1 : -1
 
-            coverOverlayView.frame = view.bounds
-            coverCurrentImageView.frame = view.bounds
-            coverCurrentImageView.image = currentEngine.renderSnapshot(forPage: currentPage)
-            coverIncomingImageView.layer.maskedCorners = coverDir == 1
-                ? [.layerMinXMinYCorner, .layerMinXMaxYCorner]
-                : [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
-            coverIncomingImageView.image = currentEngine.renderSnapshot(forPage: targetPage)
-            coverIncomingImageView.frame = CGRect(
-                x: coverDir == 1 ? width : -width,
-                y: 0, width: width, height: view.bounds.height
-            )
-            coverOverlayView.isHidden = false
+            showCurrentSnapshot(on: view)
+            setupIncomingView(direction: coverDir, for: targetPage, in: view)
 
             UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseOut]) {
                 self.coverIncomingImageView.frame.origin.x = 0
@@ -2052,6 +2030,25 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 }
                 self.resetCoverOverlay()
             }
+        }
+
+        private func showCurrentSnapshot(on view: UIView) {
+            coverOverlayView.frame = view.bounds
+            coverCurrentImageView.frame = view.bounds
+            coverCurrentImageView.image = currentEngine.renderSnapshot(forPage: currentPage)
+            coverOverlayView.isHidden = false
+        }
+
+        private func setupIncomingView(direction: Int, for targetPage: Int, in view: UIView) {
+            let width = max(view.bounds.width, 1)
+            coverIncomingImageView.layer.maskedCorners = direction == 1
+                ? [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+                : [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
+            coverIncomingImageView.image = currentEngine.renderSnapshot(forPage: targetPage)
+            coverIncomingImageView.frame = CGRect(
+                x: direction == 1 ? width : -width,
+                y: 0, width: width, height: view.bounds.height
+            )
         }
 
         private func resetCoverOverlay() {

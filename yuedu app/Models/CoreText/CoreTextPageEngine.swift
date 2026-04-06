@@ -478,28 +478,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         guard let layout = layouts[spineIndex],
               localPage < layout.pageRanges.count,
               renderSize.width > 0, renderSize.height > 0 else { return nil }
-        let bgColor: UIColor
-        if layout.attributedString.length > 0,
-           let color = layout.attributedString.attribute(
-               .backgroundColor, at: 0, effectiveRange: nil
-           ) as? UIColor {
-            bgColor = color
-        } else {
-            bgColor = .systemBackground
-        }
-        let size = renderSize
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { rendererCtx in
-            let ctx = rendererCtx.cgContext
-            ctx.setFillColor(bgColor.cgColor)
-            ctx.fill(CGRect(origin: .zero, size: size))
-            CoreTextPageView.renderPage(
-                layout: layout,
-                pageIndex: localPage,
-                in: ctx,
-                bounds: CGRect(origin: .zero, size: size)
-            )
-        }
+        return renderImage(layout: layout, pageIndex: localPage)
     }
 
     // MARK: - Private helpers
@@ -511,7 +490,10 @@ final class CoreTextPageEngine: PageRenderingProvider {
               !layout.pageRanges.isEmpty,
               chapterSnapshots[spineIndex] == nil,
               renderSize.width > 0, renderSize.height > 0 else { return }
+        chapterSnapshots[spineIndex] = renderImage(layout: layout, pageIndex: 0)
+    }
 
+    private func renderImage(layout: CoreTextPaginator.ChapterLayout, pageIndex: Int) -> UIImage {
         let bgColor: UIColor
         if layout.attributedString.length > 0,
            let color = layout.attributedString.attribute(
@@ -521,21 +503,18 @@ final class CoreTextPageEngine: PageRenderingProvider {
         } else {
             bgColor = .systemBackground
         }
-
         let size = renderSize
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { rendererCtx in
-            let ctx = rendererCtx.cgContext
-            ctx.setFillColor(bgColor.cgColor)
-            ctx.fill(CGRect(origin: .zero, size: size))
+        return UIGraphicsImageRenderer(size: size).image { ctx in
+            let c = ctx.cgContext
+            c.setFillColor(bgColor.cgColor)
+            c.fill(CGRect(origin: .zero, size: size))
             CoreTextPageView.renderPage(
                 layout: layout,
-                pageIndex: 0,
-                in: ctx,
+                pageIndex: pageIndex,
+                in: c,
                 bounds: CGRect(origin: .zero, size: size)
             )
         }
-        chapterSnapshots[spineIndex] = image
     }
 
     private func localPosition(for globalPage: Int) -> (spineIndex: Int, localPage: Int) {
