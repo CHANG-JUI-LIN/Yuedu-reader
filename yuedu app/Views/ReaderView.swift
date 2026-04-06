@@ -1825,7 +1825,6 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private let coverOverlayView = UIView()
         private let coverCurrentImageView = UIImageView()
         private let coverIncomingImageView = UIImageView()
-        private let coverShadowView = UIView()
         private var coverTargetPage: Int?
         private var coverDirection: Int = 0  // 1 = forward, -1 = backward
         private weak var coverHostView: UIView?
@@ -1937,9 +1936,6 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             coverIncomingImageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             coverOverlayView.addSubview(coverIncomingImageView)
 
-            coverShadowView.backgroundColor = UIColor.black.withAlphaComponent(0.18)
-            coverShadowView.autoresizingMask = [.flexibleHeight]
-            coverIncomingImageView.addSubview(coverShadowView)
         }
 
         // MARK: - Cover pan gesture
@@ -1969,8 +1965,6 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         let incomingImage = currentEngine.renderSnapshot(forPage: target)
                         coverIncomingImageView.image = incomingImage
                         coverIncomingImageView.frame = CGRect(x: width, y: 0, width: width, height: view.bounds.height)
-                        coverShadowView.frame = CGRect(x: 0, y: 0, width: 18, height: view.bounds.height)
-                        coverShadowView.alpha = 0
                     } else if translationX > 6, currentPage > 0 {
                         coverDirection = -1
                         let target = currentPage - 1
@@ -1979,8 +1973,6 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         let incomingImage = currentEngine.renderSnapshot(forPage: target)
                         coverIncomingImageView.image = incomingImage
                         coverIncomingImageView.frame = CGRect(x: -width, y: 0, width: width, height: view.bounds.height)
-                        coverShadowView.frame = CGRect(x: width - 18, y: 0, width: 18, height: view.bounds.height)
-                        coverShadowView.alpha = 0
                     }
                 }
                 guard coverTargetPage != nil else { return }
@@ -1990,7 +1982,6 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 } else {
                     coverIncomingImageView.frame.origin.x = -width * (1 - rawProgress)
                 }
-                coverShadowView.alpha = 0.18 * rawProgress
 
             case .ended, .cancelled, .failed:
                 guard let targetPage = coverTargetPage else {
@@ -2003,7 +1994,6 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 let destinationX: CGFloat = shouldCommit ? 0 : (coverDirection == 1 ? width : -width)
                 UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut]) {
                     self.coverIncomingImageView.frame.origin.x = destinationX
-                    self.coverShadowView.alpha = shouldCommit ? 0.18 : 0
                 } completion: { _ in
                     if shouldCommit {
                         self.currentPage = targetPage
@@ -2042,16 +2032,10 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 x: coverDir == 1 ? width : -width,
                 y: 0, width: width, height: view.bounds.height
             )
-            coverShadowView.frame = CGRect(
-                x: coverDir == 1 ? 0 : width - 18,
-                y: 0, width: 18, height: view.bounds.height
-            )
-            coverShadowView.alpha = 0
             coverOverlayView.isHidden = false
 
             UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseOut]) {
                 self.coverIncomingImageView.frame.origin.x = 0
-                self.coverShadowView.alpha = 0.18
             } completion: { _ in
                 let realVC = self.currentEngine.pageViewController(at: targetPage)
                 pvc.setViewControllers([realVC], direction: direction, animated: false)
