@@ -1745,6 +1745,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         // cover 模式：加自訂 pan gesture + overlay
         if pageTurnStyle == .cover {
             context.coordinator.setupCoverOverlay(on: pvc.view)
+            context.coordinator.coverPageViewController = pvc
             let pan = UIPanGestureRecognizer(
                 target: context.coordinator,
                 action: #selector(Coordinator.handleCoverPan(_:))
@@ -1828,6 +1829,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private var coverTargetPage: Int?
         private var coverDirection: Int = 0  // 1 = forward, -1 = backward
         private weak var coverHostView: UIView?
+        private weak var coverPageViewController: UIPageViewController?
 
         init(engine: any PageRenderingProvider,
              pageTurnStyle: PageTurnStyle,
@@ -1996,6 +1998,11 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     self.coverIncomingImageView.frame.origin.x = destinationX
                 } completion: { _ in
                     if shouldCommit {
+                        // 先把真正的 VC 設上去，讓 updateUIViewController 進來時早返回，避免二次動畫
+                        if let pvc = self.coverPageViewController {
+                            let realVC = self.currentEngine.pageViewController(at: targetPage)
+                            pvc.setViewControllers([realVC], direction: .forward, animated: false)
+                        }
                         self.currentPage = targetPage
                         self.onPageChanged(targetPage)
                         Task { @MainActor in
