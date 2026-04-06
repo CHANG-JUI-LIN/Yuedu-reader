@@ -473,6 +473,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
                 )
                 self.layouts[spineIndex] = newLayout
                 self.generateSnapshot(for: spineIndex)
+                NotificationCenter.default.post(name: .coreTextEngineChapterReady, object: self)
             }
         }
     }
