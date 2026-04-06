@@ -1,3 +1,5 @@
+/* DISABLED: WebView snapshot provider temporarily removed pending CoreText migration
+
 import Combine
 import UIKit
 
@@ -159,3 +161,5 @@ final class PageSnapshotProvider: ObservableObject {
         }
     }
 }
+
+*/
