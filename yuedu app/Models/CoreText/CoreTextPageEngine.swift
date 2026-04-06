@@ -455,25 +455,19 @@ final class CoreTextPageEngine: PageRenderingProvider {
     func applyThemeChange(textColor: UIColor, backgroundColor: UIColor) {
         themeTextColor = textColor
         themeBackgroundColor = backgroundColor
-        paginator.invalidate(reason: .themeChanged)
+        // 顏色不影響換行，直接同步更新 attributedString + framesetter，保留 blockAttachments 等所有結構
+        for spineIndex in layouts.keys {
+            layouts[spineIndex] = layouts[spineIndex]?.withUpdatedColors(textColor: textColor, backgroundColor: backgroundColor)
+        }
         chapterSnapshots.removeAll()
-        for (spineIndex, layout) in layouts {
-            let updated = NSMutableAttributedString(attributedString: layout.attributedString)
-            let fullRange = NSRange(location: 0, length: updated.length)
-            updated.addAttribute(.foregroundColor, value: textColor, range: fullRange)
-            updated.addAttribute(.backgroundColor, value: backgroundColor, range: fullRange)
-            Task { [weak self] in
-                guard let self else { return }
-                let newLayout = await self.paginator.paginate(
-                    spineIndex: spineIndex,
-                    attrStr: updated,
-                    pageBackgroundImage: layout.pageBackgroundImage,
-                    renderSize: self.renderSize,
-                    fontSize: layout.fontSize
-                )
-                self.layouts[spineIndex] = newLayout
-                self.generateSnapshot(for: spineIndex)
-                NotificationCenter.default.post(name: .coreTextEngineChapterReady, object: self)
+        NotificationCenter.default.post(name: .coreTextEngineChapterReady, object: self)
+        // 在背景重建各章節的快照（用於跨章節動畫）
+        for spineIndex in layouts.keys {
+            if let layout = layouts[spineIndex] {
+                Task { [weak self] in
+                    guard let self else { return }
+                    self.chapterSnapshots[spineIndex] = self.renderImage(layout: layout, pageIndex: 0)
+                }
             }
         }
     }

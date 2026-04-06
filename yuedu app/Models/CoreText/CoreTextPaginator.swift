@@ -42,6 +42,31 @@ final class CoreTextPaginator {
         let fontSize: CGFloat
         /// 排版時使用的四邊邊距（UIEdgeInsets；CoreText path 已按此偏移）
         let contentInsets: UIEdgeInsets
+
+        /// 僅更新文字顏色，不重新分頁（顏色不影響換行）。
+        func withUpdatedColors(textColor: UIColor, backgroundColor: UIColor) -> ChapterLayout {
+            guard attributedString.length > 0 else { return self }
+            let updated = NSMutableAttributedString(attributedString: attributedString)
+            let range = NSRange(location: 0, length: updated.length)
+            updated.addAttribute(.foregroundColor, value: textColor, range: range)
+            updated.addAttribute(.backgroundColor, value: backgroundColor, range: range)
+            let newFramesetter = CTFramesetterCreateWithAttributedString(updated)
+            return ChapterLayout(
+                spineIndex: spineIndex,
+                attributedString: updated,
+                framesetter: newFramesetter,
+                pageRanges: pageRanges,
+                inlineAttachments: inlineAttachments,
+                blockAttachments: blockAttachments,
+                blockRenderables: blockRenderables,
+                pageKinds: pageKinds,
+                pageBackgroundImage: pageBackgroundImage,
+                anchorOffsets: anchorOffsets,
+                renderSize: renderSize,
+                fontSize: fontSize,
+                contentInsets: contentInsets
+            )
+        }
     }
 
     enum InvalidationReason {
