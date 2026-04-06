@@ -1931,6 +1931,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
             coverIncomingImageView.contentMode = .scaleAspectFill
             coverIncomingImageView.clipsToBounds = true
+            coverIncomingImageView.layer.cornerRadius = 10
             coverIncomingImageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             coverOverlayView.addSubview(coverIncomingImageView)
 
@@ -1962,6 +1963,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         coverDirection = 1
                         let target = currentPage + 1
                         coverTargetPage = target
+                        coverIncomingImageView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
                         let incomingImage = currentEngine.renderSnapshot(forPage: target)
                         coverIncomingImageView.image = incomingImage
                         coverIncomingImageView.frame = CGRect(x: width, y: 0, width: width, height: view.bounds.height)
@@ -1971,6 +1973,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         coverDirection = -1
                         let target = currentPage - 1
                         coverTargetPage = target
+                        coverIncomingImageView.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
                         let incomingImage = currentEngine.renderSnapshot(forPage: target)
                         coverIncomingImageView.image = incomingImage
                         coverIncomingImageView.frame = CGRect(x: -width, y: 0, width: width, height: view.bounds.height)
@@ -2029,6 +2032,9 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             coverOverlayView.frame = view.bounds
             coverCurrentImageView.frame = view.bounds
             coverCurrentImageView.image = currentEngine.renderSnapshot(forPage: currentPage)
+            coverIncomingImageView.layer.maskedCorners = coverDir == 1
+                ? [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+                : [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
             coverIncomingImageView.image = currentEngine.renderSnapshot(forPage: targetPage)
             coverIncomingImageView.frame = CGRect(
                 x: coverDir == 1 ? width : -width,
