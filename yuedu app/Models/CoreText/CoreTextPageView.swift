@@ -92,6 +92,9 @@ final class CoreTextPageView: UIView {
         )
         let path = CGPath(rect: contentPathRect, transform: nil)
         let frame = CTFramesetterCreateFrame(layout.framesetter, range, path, nil)
+        // Collect ranges that will be redrawn by drawBlockRenderableText so drawLines can skip them.
+        let suppressedRanges = (layout.blockRenderables[pageIndex] ?? [])
+            .flatMap { $0.attributedText != nil ? $0.sourceRanges : [] }
         drawLines(
             of: frame,
             contentWidth: contentPathRect.width,
@@ -99,6 +102,7 @@ final class CoreTextPageView: UIView {
             contentMinY: contentPathRect.minY,
             isLastPage: pageIndex == layout.pageRanges.count - 1,
             attrStr: layout.attributedString,
+            suppressedRanges: suppressedRanges,
             in: ctx
         )
 
@@ -177,6 +181,7 @@ final class CoreTextPageView: UIView {
         contentMinY: CGFloat,
         isLastPage: Bool,
         attrStr: NSAttributedString,
+        suppressedRanges: [NSRange] = [],
         in ctx: CGContext
     ) {
         let lines = CTFrameGetLines(frame) as! [CTLine]
@@ -231,6 +236,15 @@ final class CoreTextPageView: UIView {
             let lineRange = CTLineGetStringRange(line)
             let lineStart = lineRange.location
             let lineEnd = lineRange.location + lineRange.length
+
+            // Skip lines that belong to explicit block renderables (drawn by drawBlockRenderableText).
+            // Without this, the same text is drawn twice: once by CTFrame and once by the explicit block.
+            if !suppressedRanges.isEmpty {
+                let lineNSRange = NSRange(location: lineStart, length: max(0, lineRange.length))
+                if suppressedRanges.contains(where: { NSIntersectionRange($0, lineNSRange).length > 0 }) {
+                    continue
+                }
+            }
 
             // 1. 行首避頭尾 (Hanging Punctuation)：如果行首是開括號，向左偏移讓字形對齊
             if lineStart < stringLength {

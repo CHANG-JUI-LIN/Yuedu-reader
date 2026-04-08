@@ -109,9 +109,9 @@ struct ReaderView: View {
 
     private func restoreReaderDisplayStateAfterResume() {
         guard let engine = epubRenderer.engine, isEPUB, engine.totalPages > 0 else { return }
-        let page = max(0, min(engine.currentPage, engine.totalPages - 1))
-        currentPage = page
-        let (spineIndex, _) = engine.charOffset(forPage: page)
+        // engine.currentPage is not updated by page turns (only set during start()),
+        // so we use the already-correct currentPage @State to sync currentChapterIndex only.
+        let (spineIndex, _) = engine.charOffset(forPage: currentPage)
         currentChapterIndex = spineIndex
     }
 
@@ -1755,8 +1755,6 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         pvc.setViewControllers([initialVC], direction: .forward, animated: false)
         // 同步 binding，讓 ReaderView.currentPage 對齊 engine 恢復的位置
         if initialPage != currentPage {
-            // 抑制 makeUIViewController 之後 SwiftUI 立即呼叫的 updateUIViewController：
-            // 此時 binding 還是 0 但 VC 已顯示 initialPage，若不抑制會觸發多餘的 backward 動畫
             context.coordinator.suppressNextCoverTransition = true
             DispatchQueue.main.async {
                 self.currentPage = initialPage
@@ -1891,7 +1889,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private var coverDirection: Int = 0  // 1 = forward, -1 = backward
         /// makeUIViewController 已設定初始頁後，suppressNextCoverTransition = true
         /// 讓緊跟的 updateUIViewController 跳過多餘的 backward 動畫（binding 尚未同步）
-        var suppressNextCoverTransition = false
+        fileprivate var suppressNextCoverTransition = false
         fileprivate var currentCoreTextPosition: CoreTextReadingPosition?
         weak var coverPageViewController: UIPageViewController?
 
@@ -2108,14 +2106,14 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         // Backward cover：上一頁從左側蓋入
                         let target = currentPage - 1
                         // 若 snapshot 尚未就緒（章節未載入），不啟動動畫
-                        guard currentEngine.renderSnapshot(forPage: target) != nil else { return }
+                        guard let targetSnapshot = currentEngine.renderSnapshot(forPage: target) else { return }
                         coverDirection = -1
                         coverTargetPage = target
                         coverOverlayView.frame = view.bounds
                         coverCurrentImageView.frame = view.bounds
                         coverCurrentImageView.image = currentEngine.renderSnapshot(forPage: currentPage)
                         coverOverlayView.isHidden = false
-                        setupIncomingView(for: target, in: view)
+                        setupIncomingView(for: target, snapshot: targetSnapshot, in: view)
                     }
                 }
                 guard coverTargetPage != nil else { return }
@@ -2212,7 +2210,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             } else {
                 // Backward cover：上一頁從左滑入
                 coverCurrentImageView.image = currentEngine.renderSnapshot(forPage: oldPage)
-                setupIncomingView(for: targetPage, in: view)
+                setupIncomingView(for: targetPage, snapshot: currentEngine.renderSnapshot(forPage: targetPage), in: view)
                 UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseOut]) {
                     self.coverIncomingImageView.frame.origin.x = 0
                     self.coverShadowView.frame.origin.x = 0
@@ -2252,12 +2250,12 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // alpha 不在此設定，由呼叫方依 context 決定（pan 從 rawProgress 算，tap 由動畫起點設）
         }
 
-        private func setupIncomingView(for targetPage: Int, in view: UIView) {
+        private func setupIncomingView(for targetPage: Int, snapshot: UIImage?, in view: UIView) {
             let width = max(view.bounds.width, 1)
             let h = view.bounds.height
             // Backward cover：上一頁從左滑入，右側圓角，投影往左落在舊頁
             coverIncomingImageView.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
-            coverIncomingImageView.image = currentEngine.renderSnapshot(forPage: targetPage)
+            coverIncomingImageView.image = snapshot
             coverIncomingImageView.frame = CGRect(x: -width, y: 0, width: width, height: h)
             coverShadowView.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
             coverShadowView.layer.shadowOffset = CGSize(width: -10, height: 0)

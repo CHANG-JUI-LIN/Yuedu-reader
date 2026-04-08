@@ -13,6 +13,9 @@ final class CoreTextPaginator {
         let rect: CGRect
         let style: HTMLAttributedStringBuilder.BlockRenderStyle
         let attributedText: NSAttributedString?
+        /// String ranges whose text is drawn by drawBlockRenderableText (not by CTFrame drawLines).
+        /// Non-empty only when attributedText != nil (usesExplicitGeometry = true).
+        let sourceRanges: [NSRange]
     }
 
     enum PageKind {
@@ -605,16 +608,18 @@ final class CoreTextPaginator {
 
             let renderables = groups
                 .filter { !$0.rect.isNull }
-                .map {
-                    RenderedBlockRenderable(
-                        rect: $0.rect,
-                        style: $0.style,
-                        attributedText: explicitRenderableText(
-                            style: $0.style,
-                            ranges: $0.ranges,
-                            attrStr: attrStr,
-                            explicitRect: $0.rect
-                        )
+                .map { group -> RenderedBlockRenderable in
+                    let text = explicitRenderableText(
+                        style: group.style,
+                        ranges: group.ranges,
+                        attrStr: attrStr,
+                        explicitRect: group.rect
+                    )
+                    return RenderedBlockRenderable(
+                        rect: group.rect,
+                        style: group.style,
+                        attributedText: text,
+                        sourceRanges: text != nil ? group.ranges : []
                     )
                 }
             if !renderables.isEmpty {
