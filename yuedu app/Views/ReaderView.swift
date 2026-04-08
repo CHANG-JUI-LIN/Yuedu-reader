@@ -1788,7 +1788,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         pvc.setViewControllers([initialVC], direction: .forward, animated: false)
         // 同步 binding，讓 ReaderView.currentPage 對齊 engine 恢復的位置
         if initialPage != currentPage {
-            context.coordinator.suppressNextCoverTransition = true
+            context.coordinator.suppressNextTransition = true
             DispatchQueue.main.async {
                 self.currentPage = initialPage
                 self.onPageChanged(initialPage)
@@ -1870,12 +1870,13 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let direction: UIPageViewController.NavigationDirection =
                 clampedPage >= visible.globalPageIndex ? .forward : .reverse
 
+            // 消耗 makeUIViewController 設置的抑制 flag，跳過多餘的初始動畫
+            if context.coordinator.suppressNextTransition {
+                context.coordinator.suppressNextTransition = false
+                return
+            }
+
             if pageTurnStyle == .cover {
-                // 消耗 makeUIViewController 設置的抑制 flag，跳過多餘的初始 backward 動畫
-                if context.coordinator.suppressNextCoverTransition {
-                    context.coordinator.suppressNextCoverTransition = false
-                    return
-                }
                 context.coordinator.animateCoverTransition(
                     from: visible.globalPageIndex,
                     to: clampedPage,
@@ -1935,9 +1936,9 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private let coverIncomingImageView = UIImageView()
         private var coverTargetPage: Int?
         private var coverDirection: Int = 0  // 1 = forward, -1 = backward
-        /// makeUIViewController 已設定初始頁後，suppressNextCoverTransition = true
+        /// makeUIViewController 已設定初始頁後，suppressNextTransition = true
         /// 讓緊跟的 updateUIViewController 跳過多餘的 backward 動畫（binding 尚未同步）
-        fileprivate var suppressNextCoverTransition = false
+        fileprivate var suppressNextTransition = false
         fileprivate var currentCoreTextPosition: CoreTextReadingPosition?
         weak var coverPageViewController: UIPageViewController?
 
