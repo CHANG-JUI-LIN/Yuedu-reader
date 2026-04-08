@@ -14,7 +14,7 @@ final class TXTPageEngine: PageRenderingProvider {
 
     let offsetStore: CharOffsetStore
     private let paginator = CoreTextPaginator()
-    private let chapters: [TXTToXHTMLConverter.ParsedChapter]
+    private let chapters: [UnifiedChapter]
     let bookTitle: String
     private var currentBookId: String?
     
@@ -25,7 +25,7 @@ final class TXTPageEngine: PageRenderingProvider {
     init(text: String, title: String, offsetStore: CharOffsetStore, settings: ReaderRenderSettings) {
         self.bookTitle = title
         self.offsetStore = offsetStore
-        self.chapters = TXTToXHTMLConverter.parseChapters(text, bookTitle: title)
+        self.chapters = TXTChapterParser.parseUnifiedChapters(text, bookTitle: title)
         self.fontSize = settings.fontSize
     }
 

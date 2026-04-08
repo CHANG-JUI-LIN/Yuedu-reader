@@ -595,15 +595,15 @@ class BookStore: ObservableObject {
             return [BookChapter(index: 0, title: book.title, content: "")]
         }
 
-        // 如果是傳統 TXT，回傳佔位章節（實際渲染走 TXTToXHTMLConverter → WebRenderer）
+        // 如果是傳統 TXT，回傳純文字內容（實際渲染走 CoreText TXT 引擎）
         return [BookChapter(index: 0, title: book.title, content: content(for: book))]
     }
 
     // MARK: 匯入 TXT 檔案
     @discardableResult
     func importTxt(url: URL, title: String? = nil) throws -> ReadingBook {
-        // 使用 TXTToXHTMLConverter 的多編碼偵測（UTF-8 → BIG5 → GBK → 自動偵測）
-        let text = try TXTToXHTMLConverter.readTextFile(url: url)
+        // 多編碼偵測（UTF-8 → BIG5 → GBK → 自動偵測）
+        let text = try TXTFileReader.readTextFile(url: url)
         let bookTitle = title ?? url.deletingPathExtension().lastPathComponent
         return try saveBook(title: bookTitle, author: "未知作者", content: text, source: "local")
     }

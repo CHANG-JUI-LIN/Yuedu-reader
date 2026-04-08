@@ -1746,7 +1746,7 @@ private struct HideTabBarModifier: ViewModifier {
     }
 }
 
-// EPUBWebViewWrapper 已移除（正式路徑使用 LiveWebReader，不再直接顯示舊 wrapper）
+// 舊 WebView 閱讀橋接已移除，正式路徑統一由 CoreText 引擎負責。
 
 // MARK: - CoreText UIPageViewController 橋接
 

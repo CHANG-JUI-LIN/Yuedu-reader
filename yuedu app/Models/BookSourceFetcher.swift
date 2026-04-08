@@ -698,25 +698,13 @@ actor BookSourceFetcher {
     // MARK: - 無書源網頁抓取（瀏覽器轉碼書使用）
 
     /// 抓取任意 URL 的正文，不依賴書源規則（對齊 Legado BackstageWebView 動態提取）
-    /// 優先用 WebView 載入（通過 JS 反爬）→ Readability → 選擇器 → 整頁 strip
+    /// 優先用 App 端直接抓取 + SwiftSoup 啟發式（文本密度）→ 失敗才回退 WebView
     /// 會自動跟隨「下一頁」連結，合併多頁以補足章節內容。
     func fetchWebContent(url: String, referer: String? = nil) async throws -> String {
         guard let pageURL = URL(string: url) else { throw FetchError.invalidURL(url) }
 
-        // 策略一：WebView 載入 + JS 提取 innerText（通過 Cloudflare、JS 解密）
-        do {
-            let headers = referer != nil ? ["Referer": referer!] : [String: String]()
-            let text = try await WebViewFetcher.shared.fetchWebContentViaJS(
-                url: pageURL, headers: headers, timeout: 20, jsWait: 1.5)
-            if !text.isEmpty {
-                let cleaned = ChapterFetcher.cleanChapterContent(text)
-                return cleaned.isEmpty ? text : cleaned
-            }
-        } catch {
-        }
-
-        // 策略二：WebView 取 HTML → Readability/選擇器解析（fallback）
-        let base = referer ?? (pageURL.scheme.flatMap { "\($0)://\(pageURL.host ?? "")" } ?? "")
+        // 策略一：URLSession 直接抓取 + 本地解析（On-Device Parsing）
+        let base = referer ?? pageURL.absoluteString
         var fullContent = ""
         var currentURL = url
         var pageCount = 0
@@ -726,14 +714,16 @@ actor BookSourceFetcher {
             guard let thisURL = URL(string: currentURL) else { break }
             let html: String
             do {
-                html = try await WebViewFetcher.shared.fetchHTML(
-                    url: thisURL,
-                    headers: referer != nil ? ["Referer": referer!] : [:],
-                    timeout: 20, jsWait: 2.0)
-            } catch {
                 html = try await fetchHTML(
-                    url: thisURL, method: "GET", body: nil,
-                    headers: [:], baseURL: base)
+                    url: thisURL,
+                    method: "GET",
+                    body: nil,
+                    headers: referer != nil ? ["Referer": referer!] : [:],
+                    baseURL: base,
+                    allowInteractiveChallengeOn503: false
+                )
+            } catch {
+                break
             }
 
             let pageContent = await ChapterFetcher.extractWebContentSinglePage(
@@ -749,11 +739,34 @@ actor BookSourceFetcher {
 
             pageCount += 1
             guard pageCount < maxPages else { break }
-            currentURL = ChapterFetcher.extractNextPageURL(
-                html: html, currentURL: currentURL, baseURL: base)
+            currentURL = WebNovelParser.extractNextPageURL(
+                html: html,
+                currentURL: currentURL
+            )
         } while !currentURL.isEmpty
 
-        return fullContent.isEmpty ? "" : ChapterFetcher.cleanChapterContent(fullContent)
+        let cleanedDirect = ChapterFetcher.cleanChapterContent(fullContent)
+        if !cleanedDirect.isEmpty {
+            return cleanedDirect
+        }
+
+        // 策略二：回退 WebView（反爬/JS 站點）
+        do {
+            let headers = referer != nil ? ["Referer": referer!] : [String: String]()
+            let text = try await WebViewFetcher.shared.fetchWebContentViaJS(
+                url: pageURL,
+                headers: headers,
+                timeout: 20,
+                jsWait: 1.5
+            )
+            if !text.isEmpty {
+                let cleaned = ChapterFetcher.cleanChapterContent(text)
+                return cleaned.isEmpty ? text : cleaned
+            }
+        } catch {
+        }
+
+        throw FetchError.emptyContent
     }
 
     // MARK: - 快取

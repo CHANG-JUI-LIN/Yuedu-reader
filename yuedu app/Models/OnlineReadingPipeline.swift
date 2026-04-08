@@ -356,6 +356,13 @@ actor ChapterFetchManager {
     private static func fetchBrowserImportedChapter(urlString: String, referer: String?) async
         -> String
     {
+        if let direct = try? await BookSourceFetcher.shared.fetchWebContent(
+            url: urlString,
+            referer: referer
+        ), !direct.isEmpty {
+            return direct
+        }
+
         guard let firstURL = URL(string: urlString) else { return "" }
         let headers = referer.map { ["Referer": $0] } ?? [:]
         var allContent = ""
@@ -491,7 +498,7 @@ final class OnlineBookCoordinator {
     }
 
     private static func placeholderHTML(title: String, body: String) -> String {
-        ReaderAdapterAssets.normalizedChapterHTML(
+        ReaderHTMLUtilities.normalizedChapterHTML(
             title: title,
             paragraphs: [body]
         )
@@ -499,9 +506,9 @@ final class OnlineBookCoordinator {
 
     private static func makePlaceholderPackage(for book: ReadingBook) throws -> BookPackage {
         let title = book.title.isEmpty ? "網頁書籍" : book.title
-        let converted = try TXTToXHTMLConverter.convert(
+        let converted = try XHTMLBookBuilder.convert(
             xhtmlChapters: [
-                TXTToXHTMLConverter.XHTMLChapterInput(
+                XHTMLBookBuilder.XHTMLChapterInput(
                     title: title,
                     html: placeholderHTML(title: title, body: chapterPlaceholderBody),
                     href: "chapter_0.xhtml"
@@ -510,7 +517,7 @@ final class OnlineBookCoordinator {
             title: title,
             basePathPrefix: "online_xhtml"
         )
-        return TXTToXHTMLConverter.package(
+        return XHTMLBookBuilder.package(
             from: converted,
             title: title,
             author: book.author,
@@ -523,7 +530,7 @@ final class OnlineBookCoordinator {
         for book: ReadingBook,
         refs: [OnlineChapterRef],
         reuseBasePath: URL? = nil
-    ) throws -> TXTToXHTMLConverter.ConvertedBook {
+    ) throws -> XHTMLBookBuilder.ConvertedBook {
         let xhtmlChapters = refs.enumerated().map { idx, ref in
             let sanitizedURL = RuleEngine.sanitizeExtractedURL(ref.url)
             // 嘗試用清理後的 URL 查找快取，若找不到再嘗試原始 URL（相容舊版快取）
@@ -598,14 +605,14 @@ final class OnlineBookCoordinator {
                     body: chapterPlaceholderBody
                 )
             }
-            return TXTToXHTMLConverter.XHTMLChapterInput(
+            return XHTMLBookBuilder.XHTMLChapterInput(
                 title: displayTitle,
                 html: html,
                 href: "chapter_\(idx).xhtml"
             )
         }
 
-        return try TXTToXHTMLConverter.convert(
+        return try XHTMLBookBuilder.convert(
             xhtmlChapters: xhtmlChapters,
             title: book.title,
             basePathPrefix: "online_xhtml",
@@ -625,7 +632,7 @@ final class OnlineBookCoordinator {
         let focus = preferredChapter ?? 0
         let reusePath = stableBasePath(for: book.id)
         let converted = try Self.buildConvertedBook(for: book, refs: refs, reuseBasePath: reusePath)
-        let package = TXTToXHTMLConverter.package(
+        let package = XHTMLBookBuilder.package(
             from: converted,
             title: book.title,
             author: book.author,

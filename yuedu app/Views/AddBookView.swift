@@ -183,8 +183,8 @@ struct FileImportTab: View {
         DispatchQueue.global().async {
             let ok = url.startAccessingSecurityScopedResource()
             defer { if ok { url.stopAccessingSecurityScopedResource() } }
-            // 使用 TXTToXHTMLConverter 的多編碼偵測（UTF-8 → BIG5 → GBK → 自動偵測）
-            let text = try? TXTToXHTMLConverter.readTextFile(url: url)
+            // 多編碼偵測（UTF-8 → BIG5 → GBK → 自動偵測）
+            let text = try? TXTFileReader.readTextFile(url: url)
             let name = url.deletingPathExtension().lastPathComponent
             DispatchQueue.main.async {
                 isLoading = false
@@ -237,6 +237,7 @@ struct URLImportTab: View {
     @State private var authorInput = ""
     @State private var fetchedContent: String? = nil
     @State private var fetchedPreviewText: String? = nil
+    @State private var detectedTOCRefs: [OnlineChapterRef] = []
     @State private var isLoading = false
     @State private var errorMsg: String? = nil
     @ObservedObject private var gs = GlobalSettings.shared
@@ -285,6 +286,11 @@ struct URLImportTab: View {
                             Text(gs.t("已抓取約") + " \(preview.count) " + gs.t("字"))
                                 .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                         }
+                        if !detectedTOCRefs.isEmpty {
+                            Text(gs.t("偵測到章節目錄：") + " \(detectedTOCRefs.count) " + gs.t("章，將以線上書模式導入"))
+                                .font(DSFont.caption)
+                                .foregroundColor(DSColor.textSecondary)
+                        }
                     }
                 }
 
@@ -320,46 +326,52 @@ struct URLImportTab: View {
     }
 
     private func fetchURL() {
-        guard let url = URL(string: urlInput.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        let trimmed = urlInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed) else {
             errorMsg = gs.t("網址格式不正確")
             return
         }
         isLoading = true
         errorMsg = nil
-        var req = URLRequest(url: url)
-        req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
-        URLSession.shared.dataTask(with: req) { data, _, error in
-            DispatchQueue.main.async {
-                isLoading = false
-                if let e = error {
-                    errorMsg = gs.t("抓取失敗：") + e.localizedDescription
-                    return
+        detectedTOCRefs = []
+
+        Task {
+            do {
+                let html = try await WebFetcher.shared.fetchHTML(
+                    url: url,
+                    method: "GET",
+                    body: nil,
+                    headers: [:],
+                    baseURL: url.absoluteString,
+                    allowInteractiveChallengeOn503: false
+                )
+                let text = WebNovelParser.extractContent(html: html, pageURL: url.absoluteString)
+                let refs = WebNovelParser.parseTOCRefs(html: html, pageURL: url.absoluteString)
+
+                await MainActor.run {
+                    isLoading = false
+                    if text.count < 120 && refs.isEmpty {
+                        errorMsg = gs.t("抓取到的文字太少，網站可能不支援直接抓取")
+                        return
+                    }
+                    fetchedContent = html
+                    fetchedPreviewText = text.isEmpty ? html.strippedHTML : text
+                    detectedTOCRefs = refs
+                    if titleInput.isEmpty,
+                       let r = html.range(
+                        of: "(?<=<title>)[^<]+(?=</title>)",
+                        options: .regularExpression)
+                    {
+                        titleInput = String(html[r]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
                 }
-                guard let data = data else {
-                    errorMsg = gs.t("沒有收到資料")
-                    return
-                }
-                let gbk = String.Encoding(
-                    rawValue: CFStringConvertEncodingToNSStringEncoding(
-                        CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
-                let html =
-                    String(data: data, encoding: .utf8)
-                    ?? String(data: data, encoding: gbk) ?? ""
-                let text = html.strippedHTML
-                guard text.count >= 200 else {
-                    errorMsg = gs.t("抓取到的文字太少，網站可能不支援直接抓取")
-                    return
-                }
-                fetchedContent = html
-                fetchedPreviewText = text
-                if titleInput.isEmpty,
-                    let r = html.range(
-                        of: "(?<=<title>)[^<]+(?=</title>)", options: .regularExpression)
-                {
-                    titleInput = String(html[r]).trimmingCharacters(in: .whitespacesAndNewlines)
+            } catch {
+                await MainActor.run {
+                    isLoading = false
+                    errorMsg = gs.t("抓取失敗：") + error.localizedDescription
                 }
             }
-        }.resume()
+        }
     }
 
     private func saveWebBook() {
@@ -368,6 +380,18 @@ struct URLImportTab: View {
         let author =
             authorInput.trimmingCharacters(in: .whitespaces).isEmpty
             ? gs.t("網路書籍") : authorInput
+
+        if !detectedTOCRefs.isEmpty {
+            _ = store.addWebBrowsedBook(
+                name: title,
+                author: author,
+                sourceURL: urlInput.trimmingCharacters(in: .whitespacesAndNewlines),
+                chapters: detectedTOCRefs
+            )
+            onDismiss()
+            return
+        }
+
         _ = try? store.importWeb(
             content: content,
             title: title,

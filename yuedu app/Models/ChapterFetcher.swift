@@ -90,7 +90,7 @@ enum ChapterFetcher {
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        return ReaderAdapterAssets.normalizedChapterHTML(
+        return ReaderHTMLUtilities.normalizedChapterHTML(
             title: title,
             paragraphs: paragraphLines
         )
@@ -474,6 +474,11 @@ enum ChapterFetcher {
     }
 
     static func extractWebContentSinglePage(html: String, pageURL: String) async -> String {
+        let parserContent = WebNovelParser.extractContent(html: html, pageURL: pageURL)
+        if parserContent.count >= 120 {
+            return parserContent
+        }
+
         let articleTask = Task { @MainActor in
             try? await WebViewFetcher.shared.extractArticle(html: html, baseURL: pageURL)
         }
