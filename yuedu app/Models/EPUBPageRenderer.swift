@@ -8,7 +8,7 @@ final class EPUBPageRenderer: ObservableObject {
 
     // MARK: - CoreText engine
 
-    private(set) var engine: CoreTextPageEngine?
+    private(set) var engine: (any PageRenderingProvider)?
 
     @Published var isCoreTextReady: Bool = false
 
@@ -61,6 +61,37 @@ final class EPUBPageRenderer: ObservableObject {
         }
     }
 
+    func loadTXT(
+        text: String,
+        title: String,
+        bookIdentifier: String,
+        renderSize: CGSize,
+        settings: ReaderRenderSettings
+    ) {
+        let docsURL = FileManager.default.urls(
+            for: .documentDirectory, in: .userDomainMask
+        ).first!
+        let progressDir = docsURL.appendingPathComponent(
+            "epub_charoffsets/\(bookIdentifier)"
+        )
+        let store = CharOffsetStore(directoryURL: progressDir)
+        let newEngine = TXTPageEngine(text: text, title: title, offsetStore: store, settings: settings)
+        newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
+        self.engine = newEngine
+        isCoreTextReady = false
+
+        let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
+
+        if effectiveSize.width > 0 {
+            Task {
+                await newEngine.start(renderSize: effectiveSize, bookId: bookIdentifier)
+                self.isCoreTextReady = true
+            }
+        } else {
+            pendingStartBookId = bookIdentifier
+        }
+    }
+
     /// Called by ReaderView whenever the viewport size changes.
     /// Stores the size and starts the CoreText engine if load() was called before layout.
     func notifyViewportSize(_ size: CGSize) {
@@ -78,7 +109,7 @@ final class EPUBPageRenderer: ObservableObject {
 
     /// Called at page-turn time when the spine is guaranteed to be loaded.
     /// Caches the stable (spineIndex, charOffset) for use in syncProgress.
-    func updateCurrentPosition(globalPage: Int, engine eng: CoreTextPageEngine) {
+    func updateCurrentPosition(globalPage: Int, engine eng: any PageRenderingProvider) {
         currentEpubPage = globalPage
         let (spine, offset) = eng.charOffset(forPage: globalPage)
         savedSpineIndex = spine

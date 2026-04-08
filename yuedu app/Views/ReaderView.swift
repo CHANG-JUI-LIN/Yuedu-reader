@@ -163,19 +163,23 @@ struct ReaderView: View {
     // ── 衍生屬性 ──
     var book: ReadingBook? { store.books.first(where: { $0.id == bookId }) }
 
-    // 核心判斷：是否為 EPUB
+    // 核心判斷：是否為 EPUB / TXT
     var isEPUB: Bool {
         book?.resolvedPipelineKind == .epub
     }
 
+    var isTXT: Bool {
+        book?.resolvedPipelineKind == .txt
+    }
+
     private var usesCoreTextEPUB: Bool {
-        isEPUB && epubRenderer.engine != nil
+        (isEPUB || isTXT) && epubRenderer.engine != nil
     }
 
     private var usesPagedRenderer: Bool { usesCoreTextEPUB }
 
     private var renderedPageCount: Int {
-        if let engine = epubRenderer.engine, isEPUB { return engine.totalPages }
+        if let engine = epubRenderer.engine, (isEPUB || isTXT) { return engine.totalPages }
         return allPages.count
     }
 
@@ -239,7 +243,7 @@ struct ReaderView: View {
 
     /// 當前頁摘錄（前 30 字）
     var currentPageExcerpt: String {
-        if let engine = epubRenderer.engine, isEPUB {
+        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
             return String(engine.plainText(forPage: currentPage).prefix(30))
         }
         guard !allPages.isEmpty else { return "" }
@@ -261,7 +265,7 @@ struct ReaderView: View {
 
     /// 章節頁碼資訊
     var chapterPageInfo: String {
-        if let engine = epubRenderer.engine, isEPUB {
+        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
             let (spineIndex, charOffset) = engine.charOffset(forPage: currentPage)
             guard let layout = engine.layouts[spineIndex], !layout.pageRanges.isEmpty else {
                 return ""
@@ -277,7 +281,7 @@ struct ReaderView: View {
 
     /// 當前頁內容（給 TTS 用）
     var currentPageText: String {
-        if let engine = epubRenderer.engine, isEPUB {
+        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
             return engine.plainText(forPage: currentPage)
         }
         guard !allPages.isEmpty else { return "" }
@@ -418,7 +422,7 @@ struct ReaderView: View {
             if volumeHandler.isEnabled { volumeHandler.startListening() }
             autoReader.onNextPage = { goToNextPage() }
             tts.onPageFinished = {
-                if !isEPUB, currentPage < allPages.count - 1 {
+                if !(isEPUB || isTXT), currentPage < allPages.count - 1 {
                     currentPage += 1
                     return allPages[currentPage].content
                 }
@@ -525,7 +529,7 @@ struct ReaderView: View {
                     textColor: UIColor(readerTheme.textColor),
                     backgroundColor: UIColor(readerTheme.backgroundColor)
                 )
-            } else if isEPUB {
+            } else if (isEPUB || isTXT) {
                 rebuildPages()
             }
         }
@@ -706,7 +710,7 @@ struct ReaderView: View {
 
     /// 計算指定頁的 footer 資訊（章節頁碼 + 進度百分比）
     private func pageFooterInfo(forPage idx: Int) -> (pageInfo: String, progress: String) {
-        if let engine = epubRenderer.engine, isEPUB {
+        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
             let (spineIndex, charOffset) = engine.charOffset(forPage: idx)
             guard let layout = engine.layouts[spineIndex], !layout.pageRanges.isEmpty else {
                 return ("", "0.00%")
@@ -805,7 +809,7 @@ struct ReaderView: View {
 
     private func goToNextPage() {
         let maxPage: Int
-        if let engine = epubRenderer.engine, isEPUB {
+        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
             maxPage = engine.totalPages - 1
         } else {
             maxPage = allPages.count - 1
@@ -1059,7 +1063,7 @@ struct ReaderView: View {
     }
 
     private func applyChapterSliderProgress(_ value: Double) {
-        if isEPUB {
+        if (isEPUB || isTXT) {
             let idx = Int(value * Double(max(chapters.count - 1, 1)))
             jumpToChapter(max(0, min(idx, chapters.count - 1)))
             return
@@ -1187,7 +1191,7 @@ struct ReaderView: View {
 
     private func jumpToChapter(_ idx: Int) {
         guard chapters.indices.contains(idx) else { return }
-        if let engine = epubRenderer.engine, isEPUB {
+        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
             Task { @MainActor in
                 await engine.preloadChapter(at: idx)
                 // 背景預載鄰域章節，確保前後翻頁時 layout 已就緒
@@ -1208,7 +1212,7 @@ struct ReaderView: View {
     private func autoSaveProgress() {
         guard !isRestoringPosition else { return }
 
-        if let engine = epubRenderer.engine, isEPUB {
+        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
             let total = engine.totalPages
             guard total > 0 else { return }
             if let progressBookId = localEPUBBookIdentifier {
@@ -1480,8 +1484,37 @@ struct ReaderView: View {
             isRestoringPosition = false
             return
         }
+        
+        if b.resolvedPipelineKind == .txt {
+            let bookTitle = b.title
+            let text = store.content(for: b)
+            let settings = currentRenderSettings(marginH: marginH)
+            
+            epubRenderer.loadTXT(
+                text: text,
+                title: bookTitle,
+                bookIdentifier: b.id.uuidString,
+                renderSize: readerViewportSize,
+                settings: settings
+            )
+            
+            if let txtEngine = epubRenderer.engine as? TXTPageEngine {
+                self.chapters = txtEngine.chapterTitles.enumerated().map { i, t in
+                    BookChapter(index: i, title: t, content: "")
+                }
+            } else {
+                self.chapters = [BookChapter(index: 0, title: bookTitle, content: "")]
+            }
+            
+            self.allPages = []
+            currentPage = 0
+            isLoadingPipeline = false
+            isRestoringPosition = false
+            return
+        }
+
         guard b.resolvedPipelineKind == .epub else {
-            // TXT/HTML: temporarily disabled pending CoreText migration
+            // HTML: temporarily disabled pending CoreText migration
             isLoadingPipeline = false
             isRestoringPosition = false
             return
@@ -1808,6 +1841,21 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
             pvc.setViewControllers([freshVC], direction: direction, animated: false)
             _ = coordinator.syncStablePosition(afterShowing: freshVC, notifyFallback: false)
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .coreTextEngineNavigateToPage,
+            object: engine as AnyObject,
+            queue: .main
+        ) { [weak coordinator = context.coordinator] notification in
+            guard let coordinator,
+                  let page = notification.userInfo?["page"] as? Int
+            else {
+                return
+            }
+            let clamped = max(0, min(page, max(engine.totalPages - 1, 0)))
+            coordinator.currentPage = clamped
+            coordinator.onPageChanged(clamped)
         }
 
         return pvc

@@ -58,6 +58,16 @@ protocol PageRenderingProvider: AnyObject {
 
     /// 離屏渲染指定全局頁為 UIImage，供 cover 動畫使用。
     func renderSnapshot(forPage globalPage: Int) -> UIImage?
+    
+    var offsetStore: CharOffsetStore { get }
+    var renderSize: CGSize { get }
+    var layouts: [Int: CoreTextPaginator.ChapterLayout] { get }
+    
+    func applyThemeChange(textColor: UIColor, backgroundColor: UIColor)
+    func start(renderSize: CGSize, bookId: String) async
+    func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int?
+    func plainText(forPage page: Int) -> String
+    func totalProgress(forSpine spineIndex: Int, charOffset: Int) -> Double
 }
 
 extension PageRenderingProvider {
@@ -67,6 +77,7 @@ extension PageRenderingProvider {
     func renderSnapshot(forPage globalPage: Int) -> UIImage? { nil }
     func lastPageIndex(ofChapter spineIndex: Int) -> Int? { nil }
     func localPosition(for globalPage: Int) -> (spineIndex: Int, localPage: Int) { (0, globalPage) }
+    func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int? { nil }
     func pageViewController(for position: CoreTextReadingPosition) -> UIViewController {
         if let page = pageIndex(for: position) {
             return pageViewController(at: page)

@@ -626,6 +626,19 @@ final class CoreTextPageEngine: PageRenderingProvider {
         globalPage: Int
     ) -> UIViewController {
         let vc = CoreTextPageViewController()
+        vc.onInternalLinkTap = { [weak self] href in
+            guard let self else { return }
+            Task { @MainActor in
+                guard let targetPage = await self.resolveInternalLink(href, fromSpineIndex: spineIndex) else {
+                    return
+                }
+                NotificationCenter.default.post(
+                    name: .coreTextEngineNavigateToPage,
+                    object: self,
+                    userInfo: ["page": targetPage]
+                )
+            }
+        }
         let readingPosition = CoreTextReadingPosition(
             spineIndex: spineIndex,
             charOffset: Int(layout.pageRanges[localPage].location)
@@ -1033,4 +1046,5 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
 extension Notification.Name {
     static let coreTextEngineChapterReady = Notification.Name("CoreTextEngineChapterReady")
+    static let coreTextEngineNavigateToPage = Notification.Name("CoreTextEngineNavigateToPage")
 }

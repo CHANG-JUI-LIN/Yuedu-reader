@@ -3,14 +3,46 @@ import UIKit
 
 /// 單頁 CoreText 渲染視圖。
 /// 使用 draw(_ rect:) 逐行繪製（支援 CJK 兩端對齊），不截圖、不快取 layer。
-final class CoreTextPageView: UIView {
+final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
+    private struct InteractionContext {
+        let frame: CTFrame
+        let lines: [CTLine]
+        let origins: [CGPoint]
+        let contentPathRect: CGRect
+        let layoutSize: CGSize
+        let scaleX: CGFloat
+        let scaleY: CGFloat
+    }
+
     private var layout: CoreTextPaginator.ChapterLayout?
     private var localPageIndex: Int = 0
+    private let selectionManager = TextSelectionManager()
+    private let interactionOverlay = InteractionOverlayView()
+    private var selectedTextForCopy: String?
+    private lazy var linkTapGesture: UITapGestureRecognizer = {
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delegate = self
+        return tap
+    }()
+    private lazy var longPressGesture: UILongPressGestureRecognizer = {
+        let gesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        gesture.minimumPressDuration = 0.25
+        return gesture
+    }()
+
+    var onInternalLinkTap: ((String) -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isOpaque = true
         backgroundColor = .systemBackground
+        interactionOverlay.frame = bounds
+        interactionOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(interactionOverlay)
+
+        addGestureRecognizer(linkTapGesture)
+        addGestureRecognizer(longPressGesture)
     }
 
     required init?(coder: NSCoder) {
@@ -21,10 +53,22 @@ final class CoreTextPageView: UIView {
     func configure(layout: CoreTextPaginator.ChapterLayout, pageIndex: Int, fallbackBackgroundColor: UIColor = .systemBackground) {
         self.layout = layout
         self.localPageIndex = pageIndex
+        clearSelection()
         backgroundColor = layout.attributedString.length > 0
             ? extractBackgroundColor(from: layout.attributedString)
             : fallbackBackgroundColor
         setNeedsDisplay()
+    }
+
+    override var canBecomeFirstResponder: Bool { true }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        action == #selector(copy(_:)) && (selectedTextForCopy?.isEmpty == false)
+    }
+
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        configureTapPriority()
     }
 
     override func draw(_ rect: CGRect) {
@@ -451,6 +495,278 @@ final class CoreTextPageView: UIView {
         )
     }
 
+    @objc override func copy(_ sender: Any?) {
+        guard let text = selectedTextForCopy, !text.isEmpty else { return }
+        UIPasteboard.general.string = text
+    }
+
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended,
+              let layout,
+              localPageIndex < layout.pageRanges.count,
+              let context = makeInteractionContext(),
+              let index = stringIndex(at: gesture.location(in: self), in: context)
+        else {
+            return
+        }
+
+        if selectionManager.hasSelection {
+            clearSelection()
+            return
+        }
+
+        guard index < layout.attributedString.length,
+              let href = layout.attributedString.attribute(
+                  HTMLAttributedStringBuilder.internalLinkAttribute,
+                  at: index,
+                  effectiveRange: nil
+              ) as? String,
+              !href.isEmpty
+        else {
+            return
+        }
+
+        onInternalLinkTap?(href)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard gestureRecognizer === linkTapGesture else { return true }
+        return shouldHandleTap(at: touch.location(in: self))
+    }
+
+    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard let layout,
+              localPageIndex < layout.pageRanges.count,
+              let context = makeInteractionContext(),
+              let index = stringIndex(at: gesture.location(in: self), in: context)
+        else {
+            if gesture.state == .cancelled || gesture.state == .failed {
+                clearSelection()
+            }
+            return
+        }
+
+        switch gesture.state {
+        case .began:
+            selectionManager.beginSelection(at: index, maxLength: layout.attributedString.length)
+            updateSelectionOverlay(with: context)
+        case .changed:
+            selectionManager.updateSelection(to: index, maxLength: layout.attributedString.length)
+            updateSelectionOverlay(with: context)
+        case .ended:
+            selectionManager.updateSelection(to: index, maxLength: layout.attributedString.length)
+            updateSelectionOverlay(with: context)
+            guard selectionManager.hasSelection else { return }
+            selectedTextForCopy = selectionManager.selectedText(in: layout.attributedString)
+            becomeFirstResponder()
+            let point = gesture.location(in: self)
+            UIMenuController.shared.showMenu(from: self, rect: CGRect(x: point.x, y: point.y, width: 1, height: 1))
+        case .cancelled, .failed:
+            clearSelection()
+        default:
+            break
+        }
+    }
+
+    private func configureTapPriority() {
+        var current: UIView? = superview
+        while let view = current {
+            for recognizer in view.gestureRecognizers ?? [] {
+                guard recognizer !== linkTapGesture,
+                      recognizer is UITapGestureRecognizer
+                else { continue }
+                recognizer.require(toFail: linkTapGesture)
+            }
+            current = view.superview
+        }
+    }
+
+    private func shouldHandleTap(at point: CGPoint) -> Bool {
+        if selectionManager.hasSelection {
+            return true
+        }
+
+        guard let layout,
+              localPageIndex < layout.pageRanges.count,
+              let context = makeInteractionContext(),
+              let index = stringIndex(at: point, in: context),
+              index < layout.attributedString.length,
+              let href = layout.attributedString.attribute(
+                  HTMLAttributedStringBuilder.internalLinkAttribute,
+                  at: index,
+                  effectiveRange: nil
+              ) as? String
+        else {
+            return false
+        }
+        return !href.isEmpty
+    }
+
+    private func clearSelection() {
+        selectionManager.clear()
+        selectedTextForCopy = nil
+        interactionOverlay.clearSelection()
+    }
+
+    private func makeInteractionContext() -> InteractionContext? {
+        guard let layout,
+              localPageIndex < layout.pageRanges.count,
+              bounds.width > 0,
+              bounds.height > 0
+        else {
+            return nil
+        }
+
+        let layoutSize = CGSize(
+            width: max(1, layout.renderSize.width),
+            height: max(1, layout.renderSize.height)
+        )
+        let insets = layout.contentInsets
+        let contentPathRect = CGRect(
+            x: insets.left,
+            y: insets.bottom,
+            width: max(1, layoutSize.width - insets.left - insets.right),
+            height: max(1, layoutSize.height - insets.top - insets.bottom)
+        )
+        let range = layout.pageRanges[localPageIndex]
+        let path = CGPath(rect: contentPathRect, transform: nil)
+        let frame = CTFramesetterCreateFrame(layout.framesetter, range, path, nil)
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+
+        return InteractionContext(
+            frame: frame,
+            lines: lines,
+            origins: origins,
+            contentPathRect: contentPathRect,
+            layoutSize: layoutSize,
+            scaleX: bounds.width / layoutSize.width,
+            scaleY: bounds.height / layoutSize.height
+        )
+    }
+
+    private func stringIndex(at point: CGPoint, in context: InteractionContext) -> Int? {
+        let canonical = CGPoint(
+            x: (point.x - bounds.minX) / context.scaleX,
+            y: (point.y - bounds.minY) / context.scaleY
+        )
+        let coreY = context.layoutSize.height - canonical.y
+        guard let lineIdx = nearestLineIndex(for: coreY, in: context) else { return nil }
+
+        let line = context.lines[lineIdx]
+        let lineOrigin = context.origins[lineIdx]
+        let lineX = context.contentPathRect.minX + lineOrigin.x
+        let relativeX = canonical.x - lineX
+        let index = CTLineGetStringIndexForPosition(line, CGPoint(x: relativeX, y: 0))
+        if index != kCFNotFound {
+            return max(0, index)
+        }
+
+        let range = CTLineGetStringRange(line)
+        guard range.length > 0 else { return nil }
+        if relativeX <= 0 {
+            return max(0, range.location)
+        }
+        return max(0, range.location + range.length - 1)
+    }
+
+    private func nearestLineIndex(for coreY: CGFloat, in context: InteractionContext) -> Int? {
+        guard !context.lines.isEmpty else { return nil }
+
+        var bestIndex = 0
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+
+        for idx in context.lines.indices {
+            let line = context.lines[idx]
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+            let baselineY = context.contentPathRect.minY + context.origins[idx].y
+            let minY = baselineY - descent
+            let maxY = baselineY + ascent
+
+            if coreY >= minY && coreY <= maxY {
+                return idx
+            }
+
+            let distance: CGFloat
+            if coreY < minY {
+                distance = minY - coreY
+            } else {
+                distance = coreY - maxY
+            }
+
+            if distance < bestDistance {
+                bestDistance = distance
+                bestIndex = idx
+            }
+        }
+
+        return bestIndex
+    }
+
+    private func updateSelectionOverlay(with context: InteractionContext) {
+        guard let range = selectionManager.selectedRange,
+              range.length > 0
+        else {
+            interactionOverlay.clearSelection()
+            return
+        }
+
+        let rects = selectionRects(for: range, in: context)
+        interactionOverlay.selectionRects = rects
+        interactionOverlay.startHandlePoint = rects.first.map { CGPoint(x: $0.minX, y: $0.maxY) }
+        interactionOverlay.endHandlePoint = rects.last.map { CGPoint(x: $0.maxX, y: $0.maxY) }
+    }
+
+    private func selectionRects(for range: NSRange, in context: InteractionContext) -> [CGRect] {
+        var result: [CGRect] = []
+
+        for idx in context.lines.indices {
+            let line = context.lines[idx]
+            let lineRange = CTLineGetStringRange(line)
+            guard lineRange.length > 0 else { continue }
+
+            let lineNSRange = NSRange(location: lineRange.location, length: lineRange.length)
+            let intersection = NSIntersectionRange(lineNSRange, range)
+            guard intersection.length > 0 else { continue }
+
+            let startOffset = CGFloat(CTLineGetOffsetForStringIndex(line, intersection.location, nil))
+            let endOffset = CGFloat(
+                CTLineGetOffsetForStringIndex(
+                    line,
+                    intersection.location + intersection.length,
+                    nil
+                )
+            )
+
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+
+            let baselineY = context.contentPathRect.minY + context.origins[idx].y
+            let lineTop = baselineY + ascent
+            let lineHeight = max(1, ascent + descent)
+            let canonicalRect = CGRect(
+                x: context.contentPathRect.minX + context.origins[idx].x + min(startOffset, endOffset),
+                y: context.layoutSize.height - lineTop,
+                width: max(1, abs(endOffset - startOffset)),
+                height: lineHeight
+            )
+
+            let scaled = CGRect(
+                x: canonicalRect.minX * context.scaleX + bounds.minX,
+                y: canonicalRect.minY * context.scaleY + bounds.minY,
+                width: canonicalRect.width * context.scaleX,
+                height: canonicalRect.height * context.scaleY
+            )
+            result.append(scaled)
+        }
+
+        return result
+    }
+
     private func extractBackgroundColor(from attrStr: NSAttributedString) -> UIColor {
         guard attrStr.length > 0,
               let color = attrStr.attribute(
@@ -468,6 +784,13 @@ final class CoreTextPageViewController: UIViewController {
     private let pageView = CoreTextPageView()
     private(set) var globalPageIndex: Int = 0
     private(set) var coreTextReadingPosition: CoreTextReadingPosition?
+    var onInternalLinkTap: ((String) -> Void)? {
+        didSet {
+            if isViewLoaded {
+                pageView.onInternalLinkTap = onInternalLinkTap
+            }
+        }
+    }
 
     private var pendingLayout: CoreTextPaginator.ChapterLayout?
     private var pendingLocalPage: Int = 0
@@ -484,6 +807,7 @@ final class CoreTextPageViewController: UIViewController {
         self.coreTextReadingPosition = readingPosition
         self.pendingFallbackColor = fallbackBackgroundColor
         if isViewLoaded {
+            pageView.onInternalLinkTap = onInternalLinkTap
             pageView.configure(layout: layout, pageIndex: localPage, fallbackBackgroundColor: fallbackBackgroundColor)
         } else {
             pendingLayout = layout
@@ -495,6 +819,7 @@ final class CoreTextPageViewController: UIViewController {
         super.viewDidLoad()
         pageView.frame = view.bounds
         pageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        pageView.onInternalLinkTap = onInternalLinkTap
         view.addSubview(pageView)
         if let layout = pendingLayout {
             pageView.configure(layout: layout, pageIndex: pendingLocalPage, fallbackBackgroundColor: pendingFallbackColor)
