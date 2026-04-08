@@ -306,8 +306,9 @@ struct ReaderView: View {
                     pageTurnStyle: settings.pageTurnStyle,
                     currentPage: $currentPage,
                     onPageChanged: { newPage in
-                        currentChapterIndex = ctEngine.charOffset(forPage: newPage).spineIndex
-                        epubRenderer.currentEpubPage = newPage
+                        let (spine, _) = ctEngine.charOffset(forPage: newPage)
+                        currentChapterIndex = spine
+                        epubRenderer.updateCurrentPosition(globalPage: newPage, engine: ctEngine)
                     },
                     onTapZone: { zone in
                         switch zone {
@@ -2137,12 +2138,12 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private func setupOutgoingView(page: Int, in view: UIView) {
             let width = max(view.bounds.width, 1)
             let h = view.bounds.height
-            // Uncover backward：當前頁作為「頂層」從右邊滑出，露出底下的目標頁
-            coverIncomingImageView.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
+            // Uncover backward：outgoing page 從 x=0 滑向 x=width，可見邊界是左邊緣，故圓角在左側
+            coverIncomingImageView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
             coverIncomingImageView.image = currentEngine.renderSnapshot(forPage: page)
             coverIncomingImageView.frame = CGRect(x: 0, y: 0, width: width, height: h)
-            coverShadowView.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
-            coverShadowView.layer.shadowOffset = CGSize(width: 8, height: 0)   // 陰影往右（落在目標頁上）
+            coverShadowView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+            coverShadowView.layer.shadowOffset = CGSize(width: -8, height: 0)  // 陰影往左，落在底層目標頁上
             coverShadowView.frame = CGRect(x: 0, y: 0, width: width, height: h)
         }
 

@@ -15,6 +15,12 @@ final class EPUBPageRenderer: ObservableObject {
     /// Tracks the current global page index (kept in sync by ReaderView / CoreTextPageEngineView).
     var currentEpubPage: Int = 0
 
+    /// Stable content position captured at navigation time (when the spine IS loaded).
+    /// More reliable than converting currentEpubPage at save time, because spinePageOffsets
+    /// may shift as more chapters load and replace estimated page counts.
+    private var savedSpineIndex: Int = 0
+    private var savedCharOffset: Int = 0
+
     /// Last non-zero viewport size reported by ReaderView via notifyViewportSize().
     private var lastViewportSize: CGSize = UIScreen.main.bounds.size
     /// bookId waiting for a valid viewport size before CoreTextPageEngine.start() can run.
@@ -44,7 +50,6 @@ final class EPUBPageRenderer: ObservableObject {
         isCoreTextReady = false
 
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
-        print("[EPUBRenderer] load renderSize=\(renderSize) lastViewport=\(lastViewportSize) effective=\(effectiveSize)")
 
         if effectiveSize.width > 0 {
             Task {
@@ -52,7 +57,6 @@ final class EPUBPageRenderer: ObservableObject {
                 self.isCoreTextReady = true
             }
         } else {
-            print("[EPUBRenderer] deferring start, pendingStartBookId set")
             pendingStartBookId = bookIdentifier
         }
     }
@@ -72,14 +76,24 @@ final class EPUBPageRenderer: ObservableObject {
 
     // MARK: - Progress persistence
 
+    /// Called at page-turn time when the spine is guaranteed to be loaded.
+    /// Caches the stable (spineIndex, charOffset) for use in syncProgress.
+    func updateCurrentPosition(globalPage: Int, engine eng: CoreTextPageEngine) {
+        currentEpubPage = globalPage
+        let (spine, offset) = eng.charOffset(forPage: globalPage)
+        savedSpineIndex = spine
+        savedCharOffset = offset
+    }
+
     /// Saves a CharOffsetRecord for the given bookId.
     func syncProgress(bookId: String) {
         guard let eng = engine else { return }
-        let (spineIndex, charOffset) = eng.charOffset(forPage: currentEpubPage)
+        // Use position cached at navigation time — more reliable than converting
+        // from currentEpubPage now, because spinePageOffsets may have shifted.
         let record = CharOffsetRecord(
             bookId: bookId,
-            spineIndex: spineIndex,
-            charOffset: charOffset,
+            spineIndex: savedSpineIndex,
+            charOffset: savedCharOffset,
             timestamp: Date()
         )
         eng.offsetStore.save(record)
