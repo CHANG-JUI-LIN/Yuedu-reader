@@ -601,6 +601,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     private func rebuildPageOffsets() {
+        let oldOffsets = spinePageOffsets
         var offset = 0
         spinePageOffsets = session.chapters.indices.map { i in
             let start = offset
@@ -609,6 +610,13 @@ final class CoreTextPageEngine: PageRenderingProvider {
             return start
         }
         totalPages = offset
+        
+        if !oldOffsets.isEmpty, oldOffsets != spinePageOffsets {
+            NotificationCenter.default.post(
+                name: .coreTextEngineChapterReady,
+                object: self
+            )
+        }
     }
 
     private func configuredPageViewController(

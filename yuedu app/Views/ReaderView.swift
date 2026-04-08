@@ -2156,6 +2156,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         if let pvc = self.coverPageViewController {
                             let realVC = self.currentEngine.pageViewController(at: targetPage)
                             pvc.setViewControllers([realVC], direction: .forward, animated: false)
+                            self.captureStablePosition(from: realVC)
                         }
                         self.currentPage = targetPage
                         self.onPageChanged(targetPage)
@@ -2203,6 +2204,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 } completion: { _ in
                     let realVC = self.currentEngine.pageViewController(at: targetPage)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
+                    self.captureStablePosition(from: realVC)
                     self.onPageChanged(targetPage)
                     Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: targetPage) }
                     self.resetCoverOverlay()
@@ -2218,6 +2220,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 } completion: { _ in
                     let realVC = self.currentEngine.pageViewController(at: targetPage)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
+                    self.captureStablePosition(from: realVC)
                     self.onPageChanged(targetPage)
                     Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: targetPage) }
                     self.resetCoverOverlay()
