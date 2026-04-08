@@ -1054,7 +1054,7 @@ class BookStore: ObservableObject {
             var bookChanged = false
             for j in chapters.indices {
                 let original = chapters[j].url
-                let sanitized = RuleEngine.sanitizeExtractedURL(original)
+                let sanitized = DefaultWebNovelParserService.shared.sanitizeExtractedURL(original)
                 if sanitized != original {
                     chapters[j].url = sanitized
                     bookChanged = true

@@ -60,6 +60,16 @@ private struct RoundedCornerShape: Shape {
     }
 }
 
+private final class ReaderRuntimeState {
+    var systemBrightness: Double = 0.5
+    var isRestoringPosition = true
+    var savedPositionSnapshot: Double = 0
+    var isLoadingPipeline = false
+    var curlStartupStartedAt: CFAbsoluteTime? = nil
+    var hasLoggedCurlInteractiveReady = false
+    var hasPerformedInitialLoad = false
+}
+
 // MARK: - 閱讀器主視圖
 struct ReaderView: View {
     let bookId: UUID
@@ -85,7 +95,6 @@ struct ReaderView: View {
     @State private var lastChapterError: String = ""
 
     // 亮度
-    @State private var systemBrightness: Double = 0.5
     @State private var showBrightness = false
 
     /// 頂部 safe area（pt），傳給 EPUB 引擎讓 margin-top 至少為此值
@@ -128,9 +137,6 @@ struct ReaderView: View {
     @State private var scrollVisibleChapter = 0
 
     // 防止載入期間 TabView 重置 selection 導致進度被覆寫為 0
-    @State private var isRestoringPosition = true
-    @State private var savedPositionSnapshot: Double = 0
-    @State private var isLoadingPipeline = false
 
     // 換源
     @State private var showChangeSourceSheet = false
@@ -138,10 +144,43 @@ struct ReaderView: View {
     @State private var changeSourceLoading = false
     @State private var changeSourceError: String?
     @State private var refreshTrigger = 0
-    @State private var curlStartupStartedAt: CFAbsoluteTime? = nil
-    @State private var hasLoggedCurlInteractiveReady = false
-    @State private var hasPerformedInitialLoad = false
+    @State private var runtimeState = ReaderRuntimeState()
     @State private var chapterSliderDraft: Double? = nil
+
+    private var systemBrightness: Double {
+        get { runtimeState.systemBrightness }
+        nonmutating set { runtimeState.systemBrightness = newValue }
+    }
+
+    private var isRestoringPosition: Bool {
+        get { runtimeState.isRestoringPosition }
+        nonmutating set { runtimeState.isRestoringPosition = newValue }
+    }
+
+    private var savedPositionSnapshot: Double {
+        get { runtimeState.savedPositionSnapshot }
+        nonmutating set { runtimeState.savedPositionSnapshot = newValue }
+    }
+
+    private var isLoadingPipeline: Bool {
+        get { runtimeState.isLoadingPipeline }
+        nonmutating set { runtimeState.isLoadingPipeline = newValue }
+    }
+
+    private var curlStartupStartedAt: CFAbsoluteTime? {
+        get { runtimeState.curlStartupStartedAt }
+        nonmutating set { runtimeState.curlStartupStartedAt = newValue }
+    }
+
+    private var hasLoggedCurlInteractiveReady: Bool {
+        get { runtimeState.hasLoggedCurlInteractiveReady }
+        nonmutating set { runtimeState.hasLoggedCurlInteractiveReady = newValue }
+    }
+
+    private var hasPerformedInitialLoad: Bool {
+        get { runtimeState.hasPerformedInitialLoad }
+        nonmutating set { runtimeState.hasPerformedInitialLoad = newValue }
+    }
 
 
     private var overlayContentMaxWidth: CGFloat {
@@ -430,6 +469,7 @@ struct ReaderView: View {
             }
         }
         .onDisappear {
+            epubRenderer.engine?.cancelPendingWork()
             if !settings.followSystemBrightness {
                 UIScreen.main.brightness = CGFloat(systemBrightness)
             }
@@ -445,6 +485,7 @@ struct ReaderView: View {
         }
         .onChange(of: scenePhase) { phase in
             if phase == .background || phase == .inactive {
+                epubRenderer.engine?.cancelPendingWork()
                 saveProgress()
                 if let bookId = localEPUBBookIdentifier {
                     epubRenderer.flushProgress(bookId: bookId)
@@ -456,6 +497,7 @@ struct ReaderView: View {
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
         ) { _ in
+            epubRenderer.engine?.cancelPendingWork()
             saveProgress()
             if let bookId = localEPUBBookIdentifier {
                 epubRenderer.flushProgress(bookId: bookId)
@@ -478,11 +520,6 @@ struct ReaderView: View {
                 syncReaderBrightnessFromSystem()
             } else {
                 UIScreen.main.brightness = CGFloat(settings.readerBrightness)
-            }
-        }
-        .onChange(of: showBrightness) { isVisible in
-            if isVisible && settings.followSystemBrightness {
-                syncReaderBrightnessFromSystem()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification))
@@ -880,39 +917,28 @@ struct ReaderView: View {
 
     // MARK: - 底部欄
     private var bottomBar: some View {
-        VStack(spacing: 0) {
-            Spacer()
-
-            // 四個懸浮按鈕
-            HStack(spacing: 12) {
-                Spacer()
-                circleBtn(icon: "arrow.clockwise") { refreshCurrentChapter() }
-                if book?.isOnline == true && book?.bookSourceId != nil {
-                    circleBtn(icon: "arrow.left.and.right") { showChangeSourceSheet = true }
-                }
-                if book?.isOnline == true {
-                    circleBtn(icon: downloadButtonIcon) { handleDownloadAction() }
-                }
-                circleBtn(icon: "headphones") { showTTSPanel = true }
-            }
-            .padding(.trailing, 20)
-            .padding(.bottom, 20)
-
-            VStack {
-                VStack(spacing: 0) {
-                    Divider().opacity(0.18)
-                    progressSliderRow
-                    Divider().opacity(0.1)
-                    if showBrightness {
-                        brightnessRow
-                        Divider().opacity(0.1)
-                    }
-                    toolRow
-                }
-                .frame(maxWidth: overlayContentMaxWidth)
-            }
-            .background(readerTheme.barColor)
-        }
+        ReaderBottomControlBar(
+            readerTheme: $readerTheme,
+            overlayContentMaxWidth: overlayContentMaxWidth,
+            showChangeSourceButton: book?.isOnline == true && book?.bookSourceId != nil,
+            showDownloadButton: book?.isOnline == true,
+            downloadButtonIcon: downloadButtonIcon,
+            canGoPrevChapter: canGoPrevChapter,
+            canGoNextChapter: canGoNextChapter,
+            chapterPageInfo: chapterPageInfo,
+            totalProgressPercent: totalProgressPercent,
+            chapterSliderProgressValue: { chapterSliderProgressValue() },
+            applyChapterSliderProgress: { applyChapterSliderProgress($0) },
+            onPrevChapter: { jumpToChapter(currentChapterIndex - 1) },
+            onNextChapter: { jumpToChapter(currentChapterIndex + 1) },
+            onRefresh: { refreshCurrentChapter() },
+            onOpenChangeSource: { showChangeSourceSheet = true },
+            onDownloadAction: { handleDownloadAction() },
+            onOpenTTS: { showTTSPanel = true },
+            onOpenTOC: { showTOC = true },
+            onOpenSettings: { showSettings = true },
+            onSyncSystemBrightness: { syncReaderBrightnessFromSystem() }
+        )
     }
 
     // MARK: 亮度列（滑桿 + 跟隨系統）
@@ -1193,6 +1219,7 @@ struct ReaderView: View {
         guard chapters.indices.contains(idx) else { return }
         if let engine = epubRenderer.engine, (isEPUB || isTXT) {
             Task { @MainActor in
+                engine.cancelPendingWork()
                 await engine.preloadChapter(at: idx)
                 // 背景預載鄰域章節，確保前後翻頁時 layout 已就緒
                 if idx > 0 { Task { await engine.preloadChapter(at: idx - 1) } }
@@ -1532,6 +1559,246 @@ struct ReaderView: View {
     }
 }
 
+private struct ReaderBottomControlBar: View {
+    @ObservedObject private var settings = GlobalSettings.shared
+
+    @Binding var readerTheme: ReaderTheme
+    let overlayContentMaxWidth: CGFloat
+    let showChangeSourceButton: Bool
+    let showDownloadButton: Bool
+    let downloadButtonIcon: String
+    let canGoPrevChapter: Bool
+    let canGoNextChapter: Bool
+    let chapterPageInfo: String
+    let totalProgressPercent: String
+    let chapterSliderProgressValue: () -> Double
+    let applyChapterSliderProgress: (Double) -> Void
+    let onPrevChapter: () -> Void
+    let onNextChapter: () -> Void
+    let onRefresh: () -> Void
+    let onOpenChangeSource: () -> Void
+    let onDownloadAction: () -> Void
+    let onOpenTTS: () -> Void
+    let onOpenTOC: () -> Void
+    let onOpenSettings: () -> Void
+    let onSyncSystemBrightness: () -> Void
+
+    @State private var showBrightness = false
+    @State private var chapterSliderDraft: Double? = nil
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            HStack(spacing: 12) {
+                Spacer()
+                circleBtn(icon: "arrow.clockwise") { onRefresh() }
+                if showChangeSourceButton {
+                    circleBtn(icon: "arrow.left.and.right") { onOpenChangeSource() }
+                }
+                if showDownloadButton {
+                    circleBtn(icon: downloadButtonIcon) { onDownloadAction() }
+                }
+                circleBtn(icon: "headphones") { onOpenTTS() }
+            }
+            .padding(.trailing, 20)
+            .padding(.bottom, 20)
+
+            VStack {
+                VStack(spacing: 0) {
+                    Divider().opacity(0.18)
+                    progressSliderRow
+                    Divider().opacity(0.1)
+                    if showBrightness {
+                        brightnessRow
+                        Divider().opacity(0.1)
+                    }
+                    toolRow
+                }
+                .frame(maxWidth: overlayContentMaxWidth)
+            }
+            .background(readerTheme.barColor)
+        }
+        .onChange(of: showBrightness) { isVisible in
+            if isVisible && settings.followSystemBrightness {
+                onSyncSystemBrightness()
+            }
+        }
+    }
+
+    private var brightnessRow: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Text(settings.t("亮度")).font(.system(size: 11)).foregroundColor(
+                    readerTheme.textColor.opacity(0.7))
+                Slider(value: $settings.readerBrightness, in: 0.05...1.0, step: 0.05)
+                    .accentColor(readerTheme.textColor.opacity(0.5))
+                    .disabled(settings.followSystemBrightness)
+                Text("\(Int(settings.readerBrightness * 100))%").font(
+                    .system(size: 10).monospacedDigit()
+                ).foregroundColor(readerTheme.textColor.opacity(0.5))
+                    .frame(width: 28, alignment: .trailing)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            HStack(spacing: 10) {
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        settings.followSystemBrightness.toggle()
+                    }
+                    if settings.followSystemBrightness {
+                        onSyncSystemBrightness()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(
+                            systemName: settings.followSystemBrightness
+                                ? "checkmark.circle.fill" : "circle"
+                        )
+                        .font(.system(size: 14))
+                        Text(settings.t("跟隨系統亮度"))
+                            .font(.system(size: 12))
+                    }
+                    .foregroundColor(
+                        settings.followSystemBrightness
+                            ? Color.blue : readerTheme.textColor.opacity(0.8))
+                }
+
+                Spacer()
+
+                Button {
+                    onSyncSystemBrightness()
+                } label: {
+                    Text(settings.t("同步系統"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color.blue)
+                }
+                .opacity(settings.followSystemBrightness ? 1.0 : 0.7)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 6)
+        }
+        .background(readerTheme.barColor)
+    }
+
+    @ViewBuilder
+    private func circleBtn(icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .light))
+                .foregroundColor(readerTheme.textColor.opacity(0.8))
+                .frame(width: 40, height: 40)
+                .background(Color.clear)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(readerTheme.textColor.opacity(0.3), lineWidth: 1))
+        }
+    }
+
+    private var progressSliderRow: some View {
+        HStack(spacing: 4) {
+            Button {
+                onPrevChapter()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "chevron.left").font(.system(size: 12))
+                    Text(settings.t("上一章")).font(.system(size: 14))
+                }
+                .foregroundColor(
+                    canGoPrevChapter ? readerTheme.textColor : readerTheme.textColor.opacity(0.22)
+                )
+                .padding(.leading, 14).padding(.vertical, 18)
+            }.disabled(!canGoPrevChapter)
+
+            VStack(spacing: 2) {
+                Slider(
+                    value: Binding<Double>(
+                        get: { chapterSliderDraft ?? chapterSliderProgressValue() },
+                        set: { chapterSliderDraft = $0 }
+                    ),
+                    in: 0...1,
+                    onEditingChanged: { editing in
+                        if editing {
+                            chapterSliderDraft = chapterSliderProgressValue()
+                        } else if let draft = chapterSliderDraft {
+                            applyChapterSliderProgress(draft)
+                            chapterSliderDraft = nil
+                        }
+                    }
+                ).accentColor(readerTheme.textColor.opacity(0.4))
+
+                Text("\(chapterPageInfo)  ·  \(totalProgressPercent)")
+                    .font(.system(size: 10).monospacedDigit())
+                    .foregroundColor(readerTheme.textColor.opacity(0.4))
+            }.padding(.horizontal, 6)
+
+            Button {
+                onNextChapter()
+            } label: {
+                HStack(spacing: 3) {
+                    Text(settings.t(canGoNextChapter ? "下一章" : "書末頁")).font(.system(size: 14))
+                    Image(systemName: "chevron.right").font(.system(size: 12))
+                }
+                .foregroundColor(
+                    canGoNextChapter ? readerTheme.textColor : readerTheme.textColor.opacity(0.22)
+                )
+                .padding(.trailing, 14).padding(.vertical, 18)
+            }.disabled(!canGoNextChapter)
+        }
+        .background(readerTheme.barColor)
+    }
+
+    private var toolRow: some View {
+        HStack(spacing: 0) {
+            toolBtn(icon: "list.bullet", label: settings.t("目錄")) { onOpenTOC() }
+            toolBtn(icon: "sun.max", label: settings.t("亮度"), active: showBrightness) {
+                withAnimation(.easeOut(duration: 0.2)) { showBrightness.toggle() }
+            }
+            toolBtn(
+                icon: readerTheme == .night ? "sun.min" : "moon",
+                label: settings.t(readerTheme == .night ? "白天" : "深色"),
+                active: readerTheme == .night
+            ) {
+                withAnimation(.easeInOut(duration: uiFeedbackDuration)) {
+                    if readerTheme == .night {
+                        let saved = UserDefaults.standard.string(forKey: "lastLightTheme") ?? ReaderTheme.white.rawValue
+                        readerTheme = ReaderTheme(rawValue: saved) ?? .white
+                    } else {
+                        UserDefaults.standard.set(readerTheme.rawValue, forKey: "lastLightTheme")
+                        readerTheme = .night
+                    }
+                }
+            }
+            toolBtn(icon: "gearshape", label: settings.t("設置")) { onOpenSettings() }
+        }
+        .padding(.top, 4).padding(.bottom, 20)
+        .background(readerTheme.barColor)
+    }
+
+    @ViewBuilder
+    private func toolBtn(
+        icon: String, label: String, active: Bool = false, badge: Int? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: icon).font(.system(size: 22))
+                    if let count = badge, count > 0 {
+                        Text("\(count)")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.white).padding(.horizontal, 3).padding(.vertical, 1)
+                            .background(Capsule().fill(Color.orange.opacity(0.85)))
+                            .offset(x: 10, y: -4)
+                    }
+                }
+                Text(label).font(.system(size: 10))
+            }
+            .foregroundColor(active ? Color.blue : readerTheme.textColor.opacity(0.85))
+            .frame(maxWidth: .infinity)
+        }
+    }
+}
+
 // MARK: - 安全色碼轉換
 extension Color {
     func toHexSafe() -> String {
@@ -1814,55 +2081,14 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             pan.maximumNumberOfTouches = 1
             pvc.view.addGestureRecognizer(pan)
         }
-
-        NotificationCenter.default.addObserver(
-            forName: .coreTextEngineChapterReady,
-            object: engine as AnyObject,
-            queue: .main
-        ) { [weak pvc, weak coordinator = context.coordinator] _ in
-            guard let pvc, let coordinator else { return }
-            let fallbackPage = max(0, min(coordinator.currentPage, max(engine.totalPages - 1, 0)))
-            let freshVC: UIViewController
-            let targetPage: Int
-            if let position = coordinator.currentCoreTextPosition {
-                freshVC = engine.pageViewController(for: position)
-                targetPage = engine.pageIndex(for: position)
-                    ?? (freshVC as? any PageIndexProviding)?.globalPageIndex
-                    ?? fallbackPage
-            } else {
-                targetPage = fallbackPage
-                freshVC = engine.pageViewController(at: targetPage)
-            }
-            let direction: UIPageViewController.NavigationDirection
-            if let first = pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController) {
-                direction = targetPage >= first.globalPageIndex ? .forward : .reverse
-            } else {
-                direction = .forward
-            }
-            pvc.setViewControllers([freshVC], direction: direction, animated: false)
-            _ = coordinator.syncStablePosition(afterShowing: freshVC, notifyFallback: false)
-        }
-
-        NotificationCenter.default.addObserver(
-            forName: .coreTextEngineNavigateToPage,
-            object: engine as AnyObject,
-            queue: .main
-        ) { [weak coordinator = context.coordinator] notification in
-            guard let coordinator,
-                  let page = notification.userInfo?["page"] as? Int
-            else {
-                return
-            }
-            let clamped = max(0, min(page, max(engine.totalPages - 1, 0)))
-            coordinator.currentPage = clamped
-            coordinator.onPageChanged(clamped)
-        }
+        context.coordinator.bindEngineCallbacks(to: engine, pageViewController: pvc)
 
         return pvc
     }
 
     func updateUIViewController(_ uiViewController: UIPageViewController, context: Context) {
         context.coordinator.currentEngine = engine
+        context.coordinator.bindEngineCallbacks(to: engine, pageViewController: uiViewController)
         let clampedPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
 
         if let visible = uiViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController) {
@@ -1941,6 +2167,8 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         fileprivate var suppressNextTransition = false
         fileprivate var currentCoreTextPosition: CoreTextReadingPosition?
         weak var coverPageViewController: UIPageViewController?
+        private weak var callbackEngineObject: AnyObject?
+        private var callbackEngineIdentifier: ObjectIdentifier?
 
         init(engine: any PageRenderingProvider,
              pageTurnStyle: PageTurnStyle,
@@ -1952,6 +2180,79 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             self._currentPage = currentPage
             self.onPageChanged = onPageChanged
             self.onTapZone = onTapZone
+        }
+
+        deinit {
+            clearEngineCallbacks()
+        }
+
+        func bindEngineCallbacks(to engine: any PageRenderingProvider, pageViewController: UIPageViewController) {
+            let identifier = ObjectIdentifier(engine as AnyObject)
+            if callbackEngineIdentifier == identifier {
+                return
+            }
+
+            clearEngineCallbacks()
+            callbackEngineObject = engine as AnyObject
+            callbackEngineIdentifier = identifier
+
+            engine.onChapterReady = { [weak self, weak pageViewController] _ in
+                DispatchQueue.main.async {
+                    guard let self, let pageViewController else { return }
+                    guard self.callbackEngineIdentifier == identifier else { return }
+                    self.handleChapterReady(on: pageViewController)
+                }
+            }
+
+            engine.onNavigateToPage = { [weak self] page in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    guard self.callbackEngineIdentifier == identifier else { return }
+                    self.handleNavigate(to: page)
+                }
+            }
+        }
+
+        private func clearEngineCallbacks() {
+            if let engine = callbackEngineObject as? any PageRenderingProvider {
+                engine.onChapterReady = nil
+                engine.onNavigateToPage = nil
+            }
+            callbackEngineObject = nil
+            callbackEngineIdentifier = nil
+        }
+
+        private func handleChapterReady(on pageViewController: UIPageViewController) {
+            let engine = currentEngine
+            let fallbackPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
+            let freshVC: UIViewController
+            let targetPage: Int
+
+            if let position = currentCoreTextPosition {
+                freshVC = engine.pageViewController(for: position)
+                targetPage = engine.pageIndex(for: position)
+                    ?? (freshVC as? any PageIndexProviding)?.globalPageIndex
+                    ?? fallbackPage
+            } else {
+                targetPage = fallbackPage
+                freshVC = engine.pageViewController(at: targetPage)
+            }
+
+            let direction: UIPageViewController.NavigationDirection
+            if let first = pageViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController) {
+                direction = targetPage >= first.globalPageIndex ? .forward : .reverse
+            } else {
+                direction = .forward
+            }
+
+            pageViewController.setViewControllers([freshVC], direction: direction, animated: false)
+            _ = syncStablePosition(afterShowing: freshVC, notifyFallback: false)
+        }
+
+        private func handleNavigate(to page: Int) {
+            let clamped = max(0, min(page, max(currentEngine.totalPages - 1, 0)))
+            currentPage = clamped
+            onPageChanged(clamped)
         }
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {

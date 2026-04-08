@@ -331,7 +331,7 @@ enum ChapterFetcher {
                 .components(separatedBy: .newlines)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .joined(separator: "\n")
-            content = RuleEngine.applyReplaceRegex(content, rules: replaceRules)
+            content = DefaultWebNovelParserService.shared.applyReplaceRegex(content, rules: replaceRules)
             content = content
                 .components(separatedBy: .newlines)
                 .map { line in
@@ -501,7 +501,7 @@ enum ChapterFetcher {
 
         var bestSelector = ""
         for selector in knownSelectors {
-            let text = RuleEngine.extractValue(
+            let text = DefaultWebNovelParserService.shared.extractValue(
                 fromHTML: html, rule: selector + "@text", baseURL: pageURL
             )
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -529,7 +529,10 @@ enum ChapterFetcher {
             {
                 let href = String(html[range]).trimmingCharacters(in: .whitespaces)
                 if !href.isEmpty, !href.hasPrefix("javascript:") {
-                    return RuleEngine.resolveURL(href, base: baseUrlObj.absoluteString)
+                    return DefaultWebNovelParserService.shared.resolveURL(
+                        href,
+                        base: baseUrlObj.absoluteString
+                    )
                 }
             }
         }
@@ -543,7 +546,10 @@ enum ChapterFetcher {
         {
             let href = String(html[range]).trimmingCharacters(in: .whitespaces)
             if !href.isEmpty, !href.hasPrefix("javascript:") {
-                return RuleEngine.resolveURL(href, base: baseUrlObj.absoluteString)
+                return DefaultWebNovelParserService.shared.resolveURL(
+                    href,
+                    base: baseUrlObj.absoluteString
+                )
             }
         }
 
@@ -564,7 +570,10 @@ enum ChapterFetcher {
                 {
                     let href = String(html[range]).trimmingCharacters(in: .whitespaces)
                     if !href.isEmpty {
-                        return RuleEngine.resolveURL(href, base: baseUrlObj.absoluteString)
+                        return DefaultWebNovelParserService.shared.resolveURL(
+                            href,
+                            base: baseUrlObj.absoluteString
+                        )
                     }
                 }
             }

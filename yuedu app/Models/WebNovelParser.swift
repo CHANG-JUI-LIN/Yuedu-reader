@@ -258,7 +258,7 @@ enum WebNovelParser {
         if let absHref, !absHref.isEmpty {
             return absHref
         }
-        return RuleEngine.resolveURL(hrefRaw, base: baseURL)
+        return DefaultWebNovelParserService.shared.resolveURL(hrefRaw, base: baseURL)
     }
 
     private static func reorderByChapterNumberIfNeeded(_ items: [WebChapterModel]) -> [WebChapterModel] {

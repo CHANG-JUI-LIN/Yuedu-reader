@@ -39,6 +39,107 @@ final class HTMLAttributedStringBuilder {
         let anchorOffsets: [String: Int]
     }
 
+    private struct ParsedHTML {
+        let body: Element
+        let rules: [CSSRule]
+    }
+
+    private struct RenderedContent {
+        let attributedString: NSAttributedString
+        let pageBackgroundImage: UIImage?
+        let pageBackgroundImageSource: String?
+        let anchorOffsets: [String: Int]
+    }
+
+    private final class DOMParser {
+        func parse(
+            html: String,
+            collectStyles: @escaping (Document) async -> [String]
+        ) async -> ParsedHTML? {
+            guard let document = try? SwiftSoup.parse(html),
+                  let body = document.body() else {
+                return nil
+            }
+
+            let stylesheetTexts = await collectStyles(document)
+            let rules = stylesheetTexts.enumerated().flatMap { index, css in
+                CSSParser.parse(css: css, orderOffset: index * 10_000)
+            }
+            return ParsedHTML(body: body, rules: rules)
+        }
+    }
+
+    private final class StyleResolver {
+        func buildAST(
+            from parsed: ParsedHTML,
+            config: Config,
+            makeRootStyle: (Config) -> ResolvedStyle,
+            resolveStyle: (Element, ResolvedStyle, [CSSRule], CGFloat, Element?) -> ResolvedStyle,
+            buildChildren: ([Node], ResolvedStyle, [CSSRule], CGFloat, Element?) async -> [ASTNode],
+            makeAttributeMap: (Element) -> [String: String]
+        ) async -> ElementNode {
+            let bodyStyle = resolveStyle(
+                parsed.body,
+                makeRootStyle(config),
+                parsed.rules,
+                config.fontSize,
+                nil
+            )
+            let astChildren = await buildChildren(
+                parsed.body.getChildNodes(),
+                bodyStyle,
+                parsed.rules,
+                config.fontSize,
+                parsed.body
+            )
+            return ElementNode(
+                tag: "body",
+                id: parsed.body.id(),
+                classes: Array((try? parsed.body.classNames()) ?? []),
+                attributes: makeAttributeMap(parsed.body),
+                resolvedStyle: bodyStyle,
+                children: astChildren
+            )
+        }
+    }
+
+    private final class CoreTextRenderer {
+        func render(
+            ast: ElementNode,
+            config: Config,
+            renderBlockChildren: ([ASTNode], ResolvedStyle, Config) async -> NSAttributedString,
+            collectAnchorOffsets: (NSAttributedString) -> [String: Int],
+            backgroundImageSource: (ElementNode) -> String?,
+            loadBackgroundImage: (ElementNode) async -> UIImage?,
+            debugLog: (NSAttributedString) -> Void
+        ) async -> RenderedContent {
+            let rendered = await renderBlockChildren(ast.children, ast.resolvedStyle, config)
+            let mutable = NSMutableAttributedString(attributedString: rendered)
+            if mutable.length > 0 {
+                mutable.addAttribute(
+                    .backgroundColor,
+                    value: config.backgroundColor,
+                    range: NSRange(location: 0, length: mutable.length)
+                )
+            }
+
+            let anchorOffsets = collectAnchorOffsets(mutable)
+            let pageBackgroundImageSource = backgroundImageSource(ast)
+            let pageBackgroundImage = await loadBackgroundImage(ast)
+            if pageBackgroundImage != nil, mutable.length > 0 {
+                mutable.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: mutable.length))
+            }
+            debugLog(mutable)
+
+            return RenderedContent(
+                attributedString: CJKTypographyProcessor.apply(to: mutable),
+                pageBackgroundImage: pageBackgroundImage,
+                pageBackgroundImageSource: pageBackgroundImageSource,
+                anchorOffsets: anchorOffsets
+            )
+        }
+    }
+
     enum VerticalAlign {
         case baseline
         case `super`
@@ -139,10 +240,17 @@ final class HTMLAttributedStringBuilder {
     var resolvedFontFamily: ((String) -> String?)?
     var resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)?
 
+    private let domParser = DOMParser()
+    private let styleResolver = StyleResolver()
+    private let coreTextRenderer = CoreTextRenderer()
+
     func build(html: String, config: Config) async -> BuildResult {
-        guard let document = try? SwiftSoup.parse(html),
-              let body = document.body()
-        else {
+        guard let parsed = await domParser.parse(
+            html: html,
+            collectStyles: { document in
+                await self.collectStyles(from: document)
+            }
+        ) else {
             return BuildResult(
                 attributedString: NSAttributedString(),
                 imagePage: nil,
@@ -152,38 +260,38 @@ final class HTMLAttributedStringBuilder {
             )
         }
 
-        let stylesheetTexts = await collectStyles(from: document)
-        let rules = stylesheetTexts.enumerated().flatMap { index, css in
-            CSSParser.parse(css: css, orderOffset: index * 10_000)
-        }
-
-        let bodyStyle = resolvedStyle(
-            for: body,
-            parent: makeRootStyle(config: config),
-            rules: rules,
-            rootFontSize: config.fontSize,
-            parentElement: nil
-        )
-        let astChildren = await buildChildren(
-            from: body.getChildNodes(),
-            parentStyle: bodyStyle,
-            rules: rules,
-            rootFontSize: config.fontSize,
-            parentElement: body
-        )
-
-        let ast = ElementNode(
-            tag: "body",
-            id: body.id(),
-            classes: Array((try? body.classNames()) ?? []),
-            attributes: makeAttributeMap(for: body),
-            resolvedStyle: bodyStyle,
-            children: astChildren
+        let ast = await styleResolver.buildAST(
+            from: parsed,
+            config: config,
+            makeRootStyle: { config in
+                self.makeRootStyle(config: config)
+            },
+            resolveStyle: { element, parent, rules, rootFontSize, parentElement in
+                self.resolvedStyle(
+                    for: element,
+                    parent: parent,
+                    rules: rules,
+                    rootFontSize: rootFontSize,
+                    parentElement: parentElement
+                )
+            },
+            buildChildren: { nodes, parentStyle, rules, rootFontSize, parentElement in
+                return await self.buildChildren(
+                    from: nodes,
+                    parentStyle: parentStyle,
+                    rules: rules,
+                    rootFontSize: rootFontSize,
+                    parentElement: parentElement
+                )
+            },
+            makeAttributeMap: { element in
+                self.makeAttributeMap(for: element)
+            }
         )
 
         if let imagePage = await extractImagePage(from: ast) {
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: makeFont(from: bodyStyle, config: config),
+                .font: makeFont(from: ast.resolvedStyle, config: config),
                 .foregroundColor: config.textColor,
                 .backgroundColor: config.backgroundColor,
             ]
@@ -196,31 +304,32 @@ final class HTMLAttributedStringBuilder {
             )
         }
 
-        let rendered = await renderBlockChildren(ast.children, parentStyle: ast.resolvedStyle, config: config)
-        let mutable = NSMutableAttributedString(attributedString: rendered)
-        if mutable.length > 0 {
-            mutable.addAttribute(
-                .backgroundColor,
-                value: config.backgroundColor,
-                range: NSRange(location: 0, length: mutable.length)
-            )
-        }
-        let anchorOffsets = collectAnchorOffsets(in: mutable)
-        let pageBackgroundImageSource = backgroundImageSource(from: ast)
-        let pageBackgroundImage = await loadBackgroundImage(from: ast)
-        // 有頁面背景圖時，移除文字的白色 backgroundColor，讓背景圖透出
-        if pageBackgroundImage != nil, mutable.length > 0 {
-            mutable.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: mutable.length))
-        }
-        debugLog(result: mutable)
-        // CJK 標點擠壓（相鄰全形標點施加負 kern）
-        let processed = CJKTypographyProcessor.apply(to: mutable)
+        let rendered = await coreTextRenderer.render(
+            ast: ast,
+            config: config,
+            renderBlockChildren: { nodes, parentStyle, config in
+                return await self.renderBlockChildren(nodes, parentStyle: parentStyle, config: config)
+            },
+            collectAnchorOffsets: { attributedString in
+                self.collectAnchorOffsets(in: attributedString)
+            },
+            backgroundImageSource: { ast in
+                self.backgroundImageSource(from: ast)
+            },
+            loadBackgroundImage: { ast in
+                return await self.loadBackgroundImage(from: ast)
+            },
+            debugLog: { result in
+                self.debugLog(result: result)
+            }
+        )
+
         return BuildResult(
-            attributedString: processed,
+            attributedString: rendered.attributedString,
             imagePage: nil,
-            pageBackgroundImage: pageBackgroundImage,
-            pageBackgroundImageSource: pageBackgroundImageSource,
-            anchorOffsets: anchorOffsets
+            pageBackgroundImage: rendered.pageBackgroundImage,
+            pageBackgroundImageSource: rendered.pageBackgroundImageSource,
+            anchorOffsets: rendered.anchorOffsets
         )
     }
 

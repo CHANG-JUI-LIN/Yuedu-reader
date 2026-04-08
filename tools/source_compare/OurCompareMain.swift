@@ -21,16 +21,18 @@ struct OurCompareMain {
             exit(3)
         }
 
-        let payload = try NativeRuleEngineRunner.shared.parseChapterPayload(
+        let payload = try DefaultWebNovelParserService.shared.parseChapterPayload(
             html: html,
             baseURL: source.bookSourceUrl,
-            source: source
+            source: source,
+            runtimeVariables: nil
         )
-        let nextList = try NativeRuleEngineRunner.shared.extractStringList(
+        let nextList = try DefaultWebNovelParserService.shared.extractStringList(
             html: html,
             baseURL: source.bookSourceUrl,
             rule: source.ruleContent.nextContentUrl,
             source: source,
+            runtimeVariables: nil,
             isURL: true
         )
 

@@ -18,6 +18,74 @@ struct PublicationResourceResponse {
     let textEncodingName: String?
 }
 
+struct BookResourceChapterDescriptor: Equatable {
+    let index: Int
+    let href: String
+    let title: String
+    let mediaType: String
+}
+
+protocol BookResourceProvider: AnyObject {
+    var customScheme: String { get }
+    var chapters: [BookResourceChapterDescriptor] { get }
+    func cssResourceHrefs() -> [String]
+    func resourceURL(for href: String) -> URL
+    func chapterDataSize(at index: Int) async throws -> Int
+    func chapterIndex(for href: String) -> Int?
+    func chapterHTML(at index: Int) async throws -> String
+    func response(for requestURL: URL) async throws -> PublicationResourceResponse
+}
+
+final class ReadiumBookResourceAdapter: BookResourceProvider {
+    private let session: PublicationSession
+
+    init(session: PublicationSession) {
+        self.session = session
+    }
+
+    var customScheme: String { PublicationSession.scheme }
+
+    var chapters: [BookResourceChapterDescriptor] {
+        session.chapters.map {
+            BookResourceChapterDescriptor(
+                index: $0.index,
+                href: $0.href,
+                title: $0.title,
+                mediaType: $0.mediaType
+            )
+        }
+    }
+
+    func cssResourceHrefs() -> [String] {
+        session.publication.readingOrder.compactMap { link -> String? in
+            let mimeType = link.mediaType?.string.lowercased()
+            guard mimeType == "text/css" else { return nil }
+            let href = link.href.trimmingCharacters(in: .whitespacesAndNewlines)
+            return href.isEmpty ? nil : href
+        }
+    }
+
+    func resourceURL(for href: String) -> URL {
+        session.resourceURL(for: href)
+    }
+
+    func chapterDataSize(at index: Int) async throws -> Int {
+        try await session.chapterDataSize(at: index)
+    }
+
+    func chapterIndex(for href: String) -> Int? {
+        session.chapterIndex(for: href)
+    }
+
+    func chapterHTML(at index: Int) async throws -> String {
+        try await session.chapterHTML(at: index)
+    }
+
+    func response(for requestURL: URL) async throws -> PublicationResourceResponse {
+        try await session.response(for: requestURL)
+    }
+}
+
 enum PublicationSessionError: LocalizedError {
     case fileNotFound
     case parsingFailed(String)

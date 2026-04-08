@@ -72,7 +72,10 @@ actor BookSourceFetcher {
         guard !source.searchUrl.isEmpty else { throw FetchError.noSearchURL }
 
         let requestSpec = source.renderSearchRequest(query: query)
-        let resolvedUrlStr = RuleEngine.resolveURL(requestSpec.url, base: source.bookSourceUrl)
+        let resolvedUrlStr = DefaultWebNovelParserService.shared.resolveURL(
+            requestSpec.url,
+            base: source.bookSourceUrl
+        )
         guard let url = safeURL(string: resolvedUrlStr) else {
             throw FetchError.invalidURL(resolvedUrlStr)
         }
@@ -505,10 +508,13 @@ actor BookSourceFetcher {
             return cached
         }
         // 安全清理：舊的目錄快取可能包含 HTML 片段（如 <a href="...">），先清理再解析
-        var sanitizedRefUrl = RuleEngine.sanitizeExtractedURL(ref.url)
+        var sanitizedRefUrl = DefaultWebNovelParserService.shared.sanitizeExtractedURL(ref.url)
         // 若清理後為相對路徑（如 /2280/1091923.html），需要重新解析為絕對 URL
         if !sanitizedRefUrl.hasPrefix("http://") && !sanitizedRefUrl.hasPrefix("https://") {
-            sanitizedRefUrl = RuleEngine.resolveURL(sanitizedRefUrl, base: chapterReferer ?? source.bookSourceUrl)
+            sanitizedRefUrl = DefaultWebNovelParserService.shared.resolveURL(
+                sanitizedRefUrl,
+                base: chapterReferer ?? source.bookSourceUrl
+            )
         }
         let requestSpec = ChapterFetcher.parseChapterRequest(sanitizedRefUrl)
         let cleanUrl = requestSpec.url
@@ -1291,10 +1297,11 @@ actor BookSourceFetcher {
     private func parseSearchResultsWithEngine(html: String, baseURL: String, source: BookSource)
         async throws -> [OnlineBook]
     {
-        return try NativeRuleEngineRunner.shared.parseSearchResults(
+        return try DefaultWebNovelParserService.shared.parseSearchResults(
             html: html,
             baseURL: baseURL,
-            source: source
+            source: source,
+            runtimeVariables: nil
         )
     }
 
@@ -1307,7 +1314,7 @@ actor BookSourceFetcher {
         runtimeVariables: [String: String]? = nil
     ) async throws -> OnlineBook {
         do {
-            return try NativeRuleEngineRunner.shared.parseBookInfo(
+            return try DefaultWebNovelParserService.shared.parseBookInfo(
                 html: html,
                 bookUrl: bookUrl,
                 baseURL: baseURL,
@@ -1329,7 +1336,7 @@ actor BookSourceFetcher {
         -> [OnlineChapterRef]
     {
         do {
-            return try NativeRuleEngineRunner.shared.parseTOC(
+            return try DefaultWebNovelParserService.shared.parseTOC(
                 html: html,
                 baseURL: baseURL,
                 source: source,
@@ -1345,10 +1352,11 @@ actor BookSourceFetcher {
         async throws -> String
     {
         do {
-            return try NativeRuleEngineRunner.shared.parseChapterPayload(
+            return try DefaultWebNovelParserService.shared.parseChapterPayload(
                 html: html,
                 baseURL: baseURL,
-                source: source
+                source: source,
+                runtimeVariables: nil
             ).content
         } catch {
             throw error
@@ -1364,7 +1372,7 @@ actor BookSourceFetcher {
         async throws -> ChapterParsePayload
     {
         do {
-            let payload = try NativeRuleEngineRunner.shared.parseChapterPayload(
+            let payload = try DefaultWebNovelParserService.shared.parseChapterPayload(
                 html: html,
                 baseURL: baseURL,
                 source: source,
@@ -1395,7 +1403,7 @@ actor BookSourceFetcher {
         let rule = source.ruleToc.nextTocUrl
         guard !rule.isEmpty else { return "" }
         do {
-            return try NativeRuleEngineRunner.shared.extractSingleValue(
+            return try DefaultWebNovelParserService.shared.extractSingleValue(
                 html: html,
                 baseURL: baseURL,
                 rule: rule,
@@ -1418,7 +1426,7 @@ actor BookSourceFetcher {
         let rule = source.ruleContent.nextContentUrl
         guard !rule.isEmpty else { return [] }
         do {
-            return try NativeRuleEngineRunner.shared.extractStringList(
+            return try DefaultWebNovelParserService.shared.extractStringList(
                 html: html,
                 baseURL: baseURL,
                 rule: rule,

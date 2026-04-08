@@ -15,11 +15,17 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private(set) var currentPage: Int = 0
 
     private(set) var layouts: [Int: CoreTextPaginator.ChapterLayout] = [:]
-    private var chapterSnapshots: [Int: UIImage] = [:]
+    private let chapterSnapshots: NSCache<NSNumber, UIImage> = {
+        let cache = NSCache<NSNumber, UIImage>()
+        cache.countLimit = 5
+        return cache
+    }()
     private var spinePageOffsets: [Int] = []
     private(set) var renderSize: CGSize = .zero
+    private var preloadTasks: [Int: Task<Void, Never>] = [:]
+    private var layoutGeneration: Int = 0
 
-    private let session: PublicationSession
+    private let resourceProvider: any BookResourceProvider
     private let builder: HTMLAttributedStringBuilder
     let paginator: CoreTextPaginator
     let offsetStore: CharOffsetStore
@@ -34,6 +40,8 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     private var themeTextColor: UIColor = .label
     private var themeBackgroundColor: UIColor = .systemBackground
+    var onChapterReady: ((Int?) -> Void)?
+    var onNavigateToPage: ((Int) -> Void)?
 
     deinit {
         for url in registeredFontFileURLs.values {
@@ -42,40 +50,55 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     init(
-        session: PublicationSession,
+        resourceProvider: any BookResourceProvider,
         builder: HTMLAttributedStringBuilder = HTMLAttributedStringBuilder(),
         paginator: CoreTextPaginator = CoreTextPaginator(),
         offsetStore: CharOffsetStore
     ) {
-        self.session = session
+        self.resourceProvider = resourceProvider
         self.builder = builder
         self.paginator = paginator
         self.offsetStore = offsetStore
 
-        self.builder.imageLoader = { [weak session] href in
-            guard let session else { return nil }
+        self.builder.imageLoader = { [weak resourceProvider] href in
+            guard let resourceProvider else { return nil }
             if let absolute = URL(string: href), absolute.scheme != nil {
-                if let response = try? await session.response(for: absolute) {
+                if let response = try? await resourceProvider.response(for: absolute) {
                     return UIImage(data: response.data)
                 }
-                if absolute.scheme == PublicationSession.scheme {
+                if absolute.scheme == resourceProvider.customScheme {
                     let fallbackHref = absolute.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                    if let response = try? await session.response(for: session.resourceURL(for: fallbackHref)) {
+                    let fallbackURL = resourceProvider.resourceURL(for: fallbackHref)
+                    if let response = try? await resourceProvider.response(for: fallbackURL) {
                         return UIImage(data: response.data)
                     }
                 }
                 return nil
             }
-            let url = session.resourceURL(for: href)
-            guard let response = try? await session.response(for: url) else { return nil }
+            let url = resourceProvider.resourceURL(for: href)
+            guard let response = try? await resourceProvider.response(for: url) else { return nil }
             return UIImage(data: response.data)
         }
+    }
+
+    convenience init(
+        session: PublicationSession,
+        builder: HTMLAttributedStringBuilder = HTMLAttributedStringBuilder(),
+        paginator: CoreTextPaginator = CoreTextPaginator(),
+        offsetStore: CharOffsetStore
+    ) {
+        self.init(
+            resourceProvider: ReadiumBookResourceAdapter(session: session),
+            builder: builder,
+            paginator: paginator,
+            offsetStore: offsetStore
+        )
     }
 
     func start(renderSize: CGSize, bookId: String) async {
         self.renderSize = renderSize
         self.currentBookId = bookId
-        print("[CoreTextEngine] start renderSize=\(renderSize) chapters=\(session.chapters.count)")
+        print("[CoreTextEngine] start renderSize=\(renderSize) chapters=\(resourceProvider.chapters.count)")
 
         // 1. 掃描全書章節 Data 大小（秒完，用於 Bytes 進度估算）
         await scanChapterByteSizes()
@@ -87,7 +110,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         // 3. 載入存檔鄰域 [n-1, n, n+1]（+ 第 0 章如果不在範圍內）
         var priority = Set<Int>()
         priority.insert(0) // 封面/目錄始終需要
-        for i in max(0, savedSpine - 1)...min(savedSpine + 1, session.chapters.count - 1) {
+        for i in max(0, savedSpine - 1)...min(savedSpine + 1, resourceProvider.chapters.count - 1) {
             priority.insert(i)
         }
 
@@ -108,13 +131,13 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     private func scanChapterByteSizes() async {
         chapterByteSizes = await withTaskGroup(of: (Int, Int).self) { group in
-            for i in session.chapters.indices {
+            for i in resourceProvider.chapters.indices {
                 group.addTask {
-                    let size = (try? await self.session.chapterDataSize(at: i)) ?? 0
+                    let size = (try? await self.resourceProvider.chapterDataSize(at: i)) ?? 0
                     return (i, size)
                 }
             }
-            var sizes = [Int](repeating: 0, count: session.chapters.count)
+            var sizes = [Int](repeating: 0, count: resourceProvider.chapters.count)
             for await (idx, size) in group { sizes[idx] = size }
             return sizes
         }
@@ -141,12 +164,53 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     /// 釋放距離當前章超過 1 的 layout，記憶體只保留 [n-1, n, n+1]
     private func evictDistantChapters(currentSpine: Int) {
-        let keep = Set(max(0, currentSpine - 1)...min(currentSpine + 1, session.chapters.count - 1))
+        let keep = Set(max(0, currentSpine - 1)...min(currentSpine + 1, resourceProvider.chapters.count - 1))
         for key in layouts.keys where !keep.contains(key) {
             layouts.removeValue(forKey: key)
-            chapterSnapshots.removeValue(forKey: key)
+            chapterSnapshots.removeObject(forKey: NSNumber(value: key))
         }
         rebuildPageOffsets()
+    }
+
+    private func cancelPreloadTasks() {
+        for task in preloadTasks.values {
+            task.cancel()
+        }
+        preloadTasks.removeAll()
+    }
+
+    private func shouldAbortPreload(generation: Int) -> Bool {
+        if generation != layoutGeneration {
+            return true
+        }
+        do {
+            try Task.checkCancellation()
+            return false
+        } catch {
+            return true
+        }
+    }
+
+    private func makePreloadTask(spineIndex: Int, generation: Int) -> Task<Void, Never> {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.preloadTasks.removeValue(forKey: spineIndex) }
+            await self.preloadChapterInternal(at: spineIndex, generation: generation)
+        }
+    }
+
+    private func schedulePreloadChapter(at spineIndex: Int) {
+        guard resourceProvider.chapters.indices.contains(spineIndex),
+              layouts[spineIndex] == nil,
+              preloadTasks[spineIndex] == nil else { return }
+
+        let generation = layoutGeneration
+        preloadTasks[spineIndex] = makePreloadTask(spineIndex: spineIndex, generation: generation)
+    }
+
+    func cancelPendingWork() {
+        layoutGeneration += 1
+        cancelPreloadTasks()
     }
 
     func pageViewController(at index: Int) -> UIViewController {
@@ -159,8 +223,8 @@ final class CoreTextPageEngine: PageRenderingProvider {
                 globalPage: index
             )
         }
-        let title = session.chapters.indices.contains(spineIndex)
-            ? session.chapters[spineIndex].title
+        let title = resourceProvider.chapters.indices.contains(spineIndex)
+            ? resourceProvider.chapters[spineIndex].title
             : ""
         let readingPosition: CoreTextReadingPosition? = localPage == 0
             ? .chapterStart(spineIndex)
@@ -171,12 +235,10 @@ final class CoreTextPageEngine: PageRenderingProvider {
             readingPosition: readingPosition
         )
         Task { [weak self] in
-            await self?.preloadChapter(at: spineIndex)
-            NotificationCenter.default.post(
-                name: .coreTextEngineChapterReady,
-                object: self,
-                userInfo: ["spineIndex": spineIndex]
-            )
+            guard let self else { return }
+            await self.preloadChapter(at: spineIndex)
+            guard self.layouts[spineIndex] != nil else { return }
+            self.onChapterReady?(spineIndex)
         }
         return placeholder
     }
@@ -218,7 +280,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     func pageViewController(for position: CoreTextReadingPosition) -> UIViewController {
-        guard session.chapters.indices.contains(position.spineIndex) else {
+        guard resourceProvider.chapters.indices.contains(position.spineIndex) else {
             return pageViewController(at: 0)
         }
 
@@ -226,7 +288,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             return pageViewController(at: globalPage)
         }
 
-        let title = session.chapters[position.spineIndex].title
+        let title = resourceProvider.chapters[position.spineIndex].title
         let estimatedGlobalPage = estimatedGlobalPage(for: position)
         let placeholder = PlaceholderPageViewController(
             chapterTitle: title,
@@ -234,35 +296,45 @@ final class CoreTextPageEngine: PageRenderingProvider {
             readingPosition: position
         )
         Task { [weak self] in
-            await self?.preloadChapter(at: position.spineIndex)
-            NotificationCenter.default.post(
-                name: .coreTextEngineChapterReady,
-                object: self,
-                userInfo: ["spineIndex": position.spineIndex]
-            )
+            guard let self else { return }
+            await self.preloadChapter(at: position.spineIndex)
+            guard self.layouts[position.spineIndex] != nil else { return }
+            self.onChapterReady?(position.spineIndex)
         }
         return placeholder
     }
 
     func preloadChapter(at spineIndex: Int) async {
-        guard session.chapters.indices.contains(spineIndex),
-              layouts[spineIndex] == nil else { return }
-        if spineIndex == 0 {
-            let cssHrefs = session.publication.readingOrder.compactMap { link -> String? in
-                let mimeType = link.mediaType?.string.lowercased()
-                let isCSS =
-                    mimeType?.contains("css") == true
-                    || URL(fileURLWithPath: link.href).pathExtension.lowercased() == "css"
-                return isCSS ? link.href : nil
-            }
-            print("[CoreTextEngine] Publication CSS hrefs: \(cssHrefs)")
-        }
-        guard let html = try? await session.chapterHTML(at: spineIndex) else {
-            print("[CoreTextEngine] preloadChapter[\(spineIndex)] FAILED to get HTML")
+        guard resourceProvider.chapters.indices.contains(spineIndex) else { return }
+        if layouts[spineIndex] != nil { return }
+        if let existing = preloadTasks[spineIndex] {
+            await existing.value
             return
         }
 
-        let chapterHref = session.chapters[spineIndex].href
+        let generation = layoutGeneration
+        let task = makePreloadTask(spineIndex: spineIndex, generation: generation)
+        preloadTasks[spineIndex] = task
+        await task.value
+    }
+
+    private func preloadChapterInternal(at spineIndex: Int, generation: Int) async {
+        guard resourceProvider.chapters.indices.contains(spineIndex),
+              layouts[spineIndex] == nil else { return }
+        guard !shouldAbortPreload(generation: generation) else { return }
+
+        if spineIndex == 0 {
+            let cssHrefs = resourceProvider.cssResourceHrefs()
+            print("[CoreTextEngine] Publication CSS hrefs: \(cssHrefs)")
+        }
+
+        guard let html = try? await resourceProvider.chapterHTML(at: spineIndex) else {
+            print("[CoreTextEngine] preloadChapter[\(spineIndex)] FAILED to get HTML")
+            return
+        }
+        guard !shouldAbortPreload(generation: generation) else { return }
+
+        let chapterHref = resourceProvider.chapters[spineIndex].href
         let localBuilder = HTMLAttributedStringBuilder()
         localBuilder.resolvedFont = { [weak self] families, weight, italic, size in
             self?.resolveRegisteredFont(
@@ -285,13 +357,13 @@ final class CoreTextPageEngine: PageRenderingProvider {
             guard let self else { return nil }
             return await self.loadImageResource(from: src, chapterHref: chapterHref)
         }
-        localBuilder.cssLoader = { [weak session] href in
-            guard let session else { return nil }
+        localBuilder.cssLoader = { [weak resourceProvider] href in
+            guard let resourceProvider else { return nil }
             let resolved = Self.resolveImageHref(href, chapterHref: chapterHref)
-            let url = session.resourceURL(for: resolved)
+            let url = resourceProvider.resourceURL(for: resolved)
             print("[CoreTextEngine] cssLoader href=\(href) → resolved=\(resolved) → url=\(url)")
             do {
-                let response = try await session.response(for: url)
+                let response = try await resourceProvider.response(for: url)
                 let cssText = String(data: response.data, encoding: .utf8) ?? ""
                 let processed = await self.processStylesheet(cssText, cssHref: resolved, chapterHref: chapterHref)
                 print("[CoreTextEngine] cssLoader OK len=\(processed.count)")
@@ -304,12 +376,14 @@ final class CoreTextPageEngine: PageRenderingProvider {
         let config = currentBuilderConfig()
         print("[CoreTextEngine] preloadChapter[\(spineIndex)] htmlLen=\(html.count) fontSize=\(config.fontSize) renderSize=\(renderSize)")
         let buildResult = await localBuilder.build(html: html, config: config)
+        guard !shouldAbortPreload(generation: generation) else { return }
         let attrStr = buildResult.attributedString
         let pageBackgroundImage = await resolvedPageBackgroundImage(
             initial: buildResult.pageBackgroundImage,
             source: buildResult.pageBackgroundImageSource,
             chapterHref: chapterHref
         )
+        guard !shouldAbortPreload(generation: generation) else { return }
         print("[CoreTextEngine] preloadChapter[\(spineIndex)] attrStrLen=\(attrStr.length)")
         let layout = await paginator.paginate(
             spineIndex: spineIndex,
@@ -321,6 +395,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             fontSize: config.fontSize,
             contentInsets: currentContentInsets()
         )
+        guard !shouldAbortPreload(generation: generation) else { return }
         print("[CoreTextEngine] preloadChapter[\(spineIndex)] pageCount=\(layout.pageRanges.count)")
         // 套用當前主題色（防止預載 Task 在主題切換前開始、切換後完成，導致舊色覆蓋新色）
         layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
@@ -349,14 +424,15 @@ final class CoreTextPageEngine: PageRenderingProvider {
         print("[ImageLoader] src=\(source) chapter=\(chapterHref) candidates=\(candidates)")
         for candidate in candidates {
             if let absolute = URL(string: candidate), absolute.scheme != nil {
-                if let response = try? await session.response(for: absolute),
+                if let response = try? await resourceProvider.response(for: absolute),
                    let image = UIImage(data: response.data) {
                     print("[ImageLoader] ✅ loaded via absolute URL: \(candidate)")
                     return image
                 }
-                if absolute.scheme == PublicationSession.scheme {
+                if absolute.scheme == resourceProvider.customScheme {
                     let fallbackHref = absolute.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                    if let response = try? await session.response(for: session.resourceURL(for: fallbackHref)),
+                    let fallbackURL = resourceProvider.resourceURL(for: fallbackHref)
+                    if let response = try? await resourceProvider.response(for: fallbackURL),
                        let image = UIImage(data: response.data) {
                         print("[ImageLoader] ✅ loaded via scheme fallback: \(fallbackHref)")
                         return image
@@ -365,13 +441,13 @@ final class CoreTextPageEngine: PageRenderingProvider {
                 } else {
                     print("[ImageLoader] ❌ absolute URL failed: \(candidate)")
                 }
-            } else if let response = try? await session.response(for: session.resourceURL(for: candidate)),
+            } else if let response = try? await resourceProvider.response(for: resourceProvider.resourceURL(for: candidate)),
                       let image = UIImage(data: response.data) {
                 print("[ImageLoader] ✅ loaded via relative path: \(candidate)")
                 return image
             } else {
-                let url = session.resourceURL(for: candidate)
-                if let response = try? await session.response(for: url) {
+                let url = resourceProvider.resourceURL(for: candidate)
+                if let response = try? await resourceProvider.response(for: url) {
                     print("[ImageLoader] ❌ UIImage decode failed for: \(candidate) dataLen=\(response.data.count) url=\(url)")
                 } else {
                     print("[ImageLoader] ❌ session.response failed for: \(candidate) url=\(url)")
@@ -386,9 +462,9 @@ final class CoreTextPageEngine: PageRenderingProvider {
         guard !source.isEmpty else { return [] }
         var candidates: [String] = []
 
-        if source.hasPrefix(PublicationSession.scheme + "://") || source.hasPrefix("http://") || source.hasPrefix("https://") {
+        if source.hasPrefix(resourceProvider.customScheme + "://") || source.hasPrefix("http://") || source.hasPrefix("https://") {
             candidates.append(source)
-            if let absolute = URL(string: source), absolute.scheme == PublicationSession.scheme {
+            if let absolute = URL(string: source), absolute.scheme == resourceProvider.customScheme {
                 let fallbackHref = absolute.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                 if !fallbackHref.isEmpty {
                     candidates.append(fallbackHref)
@@ -417,6 +493,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     func invalidateLayout(newSize: CGSize) async {
+        cancelPendingWork()
         isRelaying = true
         renderSize = newSize
         paginator.invalidate(reason: .viewSizeChanged)
@@ -424,7 +501,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         // 只重排目前記憶體中有的章節
         let loadedSpines = Array(layouts.keys.sorted())
         layouts.removeAll()
-        chapterSnapshots.removeAll()
+        chapterSnapshots.removeAllObjects()
 
         await withTaskGroup(of: Void.self) { group in
             for i in loadedSpines {
@@ -438,10 +515,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             currentPage = pageIndex(forSpine: record.spineIndex, charOffset: record.charOffset)
         }
         isRelaying = false
-        NotificationCenter.default.post(
-            name: .coreTextEngineChapterReady,
-            object: self
-        )
+        onChapterReady?(nil)
     }
 
     func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int? {
@@ -453,8 +527,8 @@ final class CoreTextPageEngine: PageRenderingProvider {
         if rawPath.isEmpty {
             targetSpine = spineIndex
         } else {
-            let resolvedHref = Self.resolveImageHref(rawPath, chapterHref: session.chapters[spineIndex].href)
-            guard let matchedIndex = session.chapterIndex(for: resolvedHref) else {
+            let resolvedHref = Self.resolveImageHref(rawPath, chapterHref: resourceProvider.chapters[spineIndex].href)
+            guard let matchedIndex = resourceProvider.chapterIndex(for: resolvedHref) else {
                 return nil
             }
             targetSpine = matchedIndex
@@ -484,20 +558,20 @@ final class CoreTextPageEngine: PageRenderingProvider {
         let remaining = total - localPage
         if remaining <= threshold {
             let nextSpine = spineIndex + 1
-            if nextSpine < session.chapters.count {
-                Task { [weak self] in await self?.preloadChapter(at: nextSpine) }
+            if nextSpine < resourceProvider.chapters.count {
+                schedulePreloadChapter(at: nextSpine)
             }
         }
         // 接近章節開頭時預載上一章，確保向後翻跨章能正確定位最後一頁
         if localPage < threshold && spineIndex > 0 && layouts[spineIndex - 1] == nil {
-            Task { [weak self] in await self?.preloadChapter(at: spineIndex - 1) }
+            schedulePreloadChapter(at: spineIndex - 1)
         }
     }
 
     func snapshotViewController(at index: Int) -> UIViewController? {
         let (spineIndex, localPage) = localPosition(for: index)
         guard localPage == 0,
-              let snapshot = chapterSnapshots[spineIndex] else { return nil }
+              let snapshot = chapterSnapshots.object(forKey: NSNumber(value: spineIndex)) else { return nil }
         let bgColor: UIColor
         if let layout = layouts[spineIndex],
            layout.attributedString.length > 0,
@@ -523,14 +597,14 @@ final class CoreTextPageEngine: PageRenderingProvider {
         for spineIndex in layouts.keys {
             layouts[spineIndex] = layouts[spineIndex]?.withUpdatedColors(textColor: textColor, backgroundColor: backgroundColor)
         }
-        chapterSnapshots.removeAll()
-        NotificationCenter.default.post(name: .coreTextEngineChapterReady, object: self)
+        chapterSnapshots.removeAllObjects()
+        onChapterReady?(nil)
         // 在背景重建各章節的快照（用於跨章節動畫）
         for spineIndex in layouts.keys {
             if let layout = layouts[spineIndex] {
                 Task { [weak self] in
                     guard let self else { return }
-                    self.chapterSnapshots[spineIndex] = self.renderImage(layout: layout, pageIndex: 0)
+                    self.chapterSnapshots.setObject(self.renderImage(layout: layout, pageIndex: 0), forKey: NSNumber(value: spineIndex))
                 }
             }
         }
@@ -552,9 +626,9 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private func generateSnapshot(for spineIndex: Int) {
         guard let layout = layouts[spineIndex],
               !layout.pageRanges.isEmpty,
-              chapterSnapshots[spineIndex] == nil,
+              chapterSnapshots.object(forKey: NSNumber(value: spineIndex)) == nil,
               renderSize.width > 0, renderSize.height > 0 else { return }
-        chapterSnapshots[spineIndex] = renderImage(layout: layout, pageIndex: 0)
+        chapterSnapshots.setObject(renderImage(layout: layout, pageIndex: 0), forKey: NSNumber(value: spineIndex))
     }
 
     private func renderImage(layout: CoreTextPaginator.ChapterLayout, pageIndex: Int) -> UIImage {
@@ -603,7 +677,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private func rebuildPageOffsets() {
         let oldOffsets = spinePageOffsets
         var offset = 0
-        spinePageOffsets = session.chapters.indices.map { i in
+        spinePageOffsets = resourceProvider.chapters.indices.map { i in
             let start = offset
             // 未載入章節估 1 頁，確保 spinePageOffsets 和 totalPages 不崩壞
             offset += layouts[i]?.pageRanges.count ?? 1
@@ -612,10 +686,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         totalPages = offset
         
         if !oldOffsets.isEmpty, oldOffsets != spinePageOffsets {
-            NotificationCenter.default.post(
-                name: .coreTextEngineChapterReady,
-                object: self
-            )
+            onChapterReady?(nil)
         }
     }
 
@@ -632,11 +703,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
                 guard let targetPage = await self.resolveInternalLink(href, fromSpineIndex: spineIndex) else {
                     return
                 }
-                NotificationCenter.default.post(
-                    name: .coreTextEngineNavigateToPage,
-                    object: self,
-                    userInfo: ["page": targetPage]
-                )
+                self.onNavigateToPage?(targetPage)
             }
         }
         let readingPosition = CoreTextReadingPosition(
@@ -706,7 +773,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             if registeredFontFaces[fontFace.alias] != nil { continue }
             guard
                 let fontURL = URL(string: fontFace.resolvedURL),
-                let response = try? await session.response(for: fontURL),
+                let response = try? await resourceProvider.response(for: fontURL),
                 let registeredFont = registerFont(data: response.data, alias: fontFace.alias)
             else {
                 print("[CoreTextEngine] font registration FAILED alias=\(fontFace.alias)")
@@ -752,7 +819,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             }
 
             guard
-                let response = try? await session.response(for: session.resourceURL(for: resolved)),
+                let response = try? await resourceProvider.response(for: resourceProvider.resourceURL(for: resolved)),
                 let imported = String(data: response.data, encoding: .utf8)
             else {
                 print("[CoreTextEngine] local @import FAILED \(resolved)")
@@ -784,7 +851,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
                 continue
             }
             let resolved = Self.resolveCSSRelativePath(rawHref, cssHref: cssHref)
-            let absolute = session.resourceURL(for: resolved).absoluteString
+            let absolute = resourceProvider.resourceURL(for: resolved).absoluteString
             result = (result as NSString).replacingCharacters(in: match.range(at: 1), with: absolute)
         }
         return result
@@ -813,7 +880,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             let alias = Self.normalizeFontName(nsBlock.substring(with: familyMatch.range(at: 1)))
             let rawURL = nsBlock.substring(with: srcMatch.range(at: 1))
             let resolvedHref = Self.resolveCSSHref(rawURL, cssHref: cssHref, chapterHref: chapterHref)
-            let resolvedURL = session.resourceURL(for: resolvedHref).absoluteString
+            let resolvedURL = resourceProvider.resourceURL(for: resolvedHref).absoluteString
             return alias.isEmpty ? nil : (alias, resolvedURL)
         }
     }
@@ -1042,9 +1109,4 @@ final class CoreTextPageEngine: PageRenderingProvider {
         let charOffset = Int(progression * Double(layout.attributedString.length))
         currentPage = pageIndex(forSpine: spineIndex, charOffset: charOffset)
     }
-}
-
-extension Notification.Name {
-    static let coreTextEngineChapterReady = Notification.Name("CoreTextEngineChapterReady")
-    static let coreTextEngineNavigateToPage = Notification.Name("CoreTextEngineNavigateToPage")
 }

@@ -11,6 +11,8 @@ final class TXTPageEngine: PageRenderingProvider {
     private var chapterSnapshots: [Int: UIImage] = [:]
     private var spinePageOffsets: [Int] = []
     private(set) var renderSize: CGSize = .zero
+    private var preloadTasks: [Int: Task<Void, Never>] = [:]
+    private var layoutGeneration: Int = 0
 
     let offsetStore: CharOffsetStore
     private let paginator = CoreTextPaginator()
@@ -21,6 +23,8 @@ final class TXTPageEngine: PageRenderingProvider {
     private var themeTextColor: UIColor = .label
     private var themeBackgroundColor: UIColor = .systemBackground
     private var fontSize: CGFloat
+    var onChapterReady: ((Int?) -> Void)?
+    var onNavigateToPage: ((Int) -> Void)?
 
     init(text: String, title: String, offsetStore: CharOffsetStore, settings: ReaderRenderSettings) {
         self.bookTitle = title
@@ -33,6 +37,46 @@ final class TXTPageEngine: PageRenderingProvider {
         chapters.map { $0.title }
     }
 
+    private func cancelPreloadTasks() {
+        for task in preloadTasks.values {
+            task.cancel()
+        }
+        preloadTasks.removeAll()
+    }
+
+    private func shouldAbortPreload(generation: Int) -> Bool {
+        if generation != layoutGeneration {
+            return true
+        }
+        do {
+            try Task.checkCancellation()
+            return false
+        } catch {
+            return true
+        }
+    }
+
+    private func makePreloadTask(spineIndex: Int, generation: Int) -> Task<Void, Never> {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.preloadTasks.removeValue(forKey: spineIndex) }
+            await self.preloadChapterInternal(at: spineIndex, generation: generation)
+        }
+    }
+
+    private func schedulePreloadChapter(at spineIndex: Int) {
+        guard chapters.indices.contains(spineIndex),
+              layouts[spineIndex] == nil,
+              preloadTasks[spineIndex] == nil else { return }
+        let generation = layoutGeneration
+        preloadTasks[spineIndex] = makePreloadTask(spineIndex: spineIndex, generation: generation)
+    }
+
+    func cancelPendingWork() {
+        layoutGeneration += 1
+        cancelPreloadTasks()
+    }
+
     func applyThemeChange(textColor: UIColor, backgroundColor: UIColor) {
         self.themeTextColor = textColor
         self.themeBackgroundColor = backgroundColor
@@ -40,7 +84,7 @@ final class TXTPageEngine: PageRenderingProvider {
             layouts[spineIndex] = layouts[spineIndex]?.withUpdatedColors(textColor: textColor, backgroundColor: backgroundColor)
         }
         chapterSnapshots.removeAll()
-        NotificationCenter.default.post(name: .coreTextEngineChapterReady, object: self)
+        onChapterReady?(nil)
         for spineIndex in layouts.keys {
             if let layout = layouts[spineIndex] {
                 Task { [weak self] in
@@ -63,11 +107,11 @@ final class TXTPageEngine: PageRenderingProvider {
         }
         
         await preloadChapter(at: startSpine)
-        if startSpine > 0 { Task { await preloadChapter(at: startSpine - 1) } }
-        if startSpine < chapters.count - 1 { Task { await preloadChapter(at: startSpine + 1) } }
+        if startSpine > 0 { schedulePreloadChapter(at: startSpine - 1) }
+        if startSpine < chapters.count - 1 { schedulePreloadChapter(at: startSpine + 1) }
         
         self.currentPage = pageIndex(forSpine: startSpine, charOffset: startCharOffset)
-        NotificationCenter.default.post(name: .coreTextEngineChapterReady, object: self)
+        onChapterReady?(startSpine)
     }
 
     func pageViewController(at index: Int) -> UIViewController {
@@ -95,8 +139,10 @@ final class TXTPageEngine: PageRenderingProvider {
         )
         
         Task { [weak self] in
-            await self?.preloadChapter(at: spineIndex)
-            NotificationCenter.default.post(name: .coreTextEngineChapterReady, object: self)
+            guard let self else { return }
+            await self.preloadChapter(at: spineIndex)
+            guard self.layouts[spineIndex] != nil else { return }
+            self.onChapterReady?(spineIndex)
         }
         return placeholder
     }
@@ -115,7 +161,22 @@ final class TXTPageEngine: PageRenderingProvider {
     }
 
     func preloadChapter(at spineIndex: Int) async {
+        guard chapters.indices.contains(spineIndex) else { return }
+        if layouts[spineIndex] != nil { return }
+        if let existing = preloadTasks[spineIndex] {
+            await existing.value
+            return
+        }
+
+        let generation = layoutGeneration
+        let task = makePreloadTask(spineIndex: spineIndex, generation: generation)
+        preloadTasks[spineIndex] = task
+        await task.value
+    }
+
+    private func preloadChapterInternal(at spineIndex: Int, generation: Int) async {
         guard chapters.indices.contains(spineIndex), layouts[spineIndex] == nil else { return }
+        guard !shouldAbortPreload(generation: generation) else { return }
         
         let chapter = chapters[spineIndex]
         let gs = GlobalSettings.shared
@@ -145,6 +206,7 @@ final class TXTPageEngine: PageRenderingProvider {
                 .paragraphStyle: bodyParaStyle
             ]))
         }
+        guard !shouldAbortPreload(generation: generation) else { return }
         
         let layout = await paginator.paginate(
             spineIndex: spineIndex,
@@ -153,6 +215,7 @@ final class TXTPageEngine: PageRenderingProvider {
             fontSize: self.fontSize,
             contentInsets: UIEdgeInsets(top: 60, left: 24, bottom: 60, right: 24)
         )
+        guard !shouldAbortPreload(generation: generation) else { return }
         
         layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
         if let l = layouts[spineIndex], !l.pageRanges.isEmpty {
@@ -163,6 +226,7 @@ final class TXTPageEngine: PageRenderingProvider {
 
     func invalidateLayout(newSize: CGSize) async {
         guard renderSize != newSize else { return }
+        cancelPendingWork()
         renderSize = newSize
         let currentRecord = CharOffsetRecord(bookId: currentBookId ?? "", spineIndex: charOffset(forPage: currentPage).spineIndex, charOffset: charOffset(forPage: currentPage).charOffset, timestamp: Date())
         
@@ -172,7 +236,7 @@ final class TXTPageEngine: PageRenderingProvider {
         
         await preloadChapter(at: currentRecord.spineIndex)
         currentPage = pageIndex(forSpine: currentRecord.spineIndex, charOffset: currentRecord.charOffset)
-        NotificationCenter.default.post(name: .coreTextEngineChapterReady, object: self)
+        onChapterReady?(currentRecord.spineIndex)
     }
 
     func warmUpNext(currentGlobalPage: Int) {
@@ -180,7 +244,7 @@ final class TXTPageEngine: PageRenderingProvider {
         guard let layout = layouts[spine] else { return }
         let remain = layout.pageRanges.count - local
         if remain <= 2, spine + 1 < chapters.count, layouts[spine + 1] == nil {
-            Task { await preloadChapter(at: spine + 1) }
+            schedulePreloadChapter(at: spine + 1)
         }
         let keep = Set(max(0, spine - 1)...min(spine + 1, chapters.count - 1))
         for key in layouts.keys where !keep.contains(key) {
@@ -260,7 +324,7 @@ final class TXTPageEngine: PageRenderingProvider {
         }
         totalPages = offset
         if !oldOffsets.isEmpty, oldOffsets != spinePageOffsets {
-            NotificationCenter.default.post(name: .coreTextEngineChapterReady, object: self)
+            onChapterReady?(nil)
         }
     }
 }

@@ -3755,3 +3755,174 @@ final class NativeRuleEngineRunner {
         ).getStringList(rule, isUrl: isURL) ?? []
     }
 }
+
+protocol WebNovelParserService: AnyObject {
+    func resolveURL(_ raw: String, base: String) -> String
+    func sanitizeExtractedURL(_ raw: String) -> String
+    func applyReplaceRegex(_ text: String, rules: String) -> String
+    func extractValue(fromHTML html: String, rule: String, baseURL: String) -> String
+
+    func parseSearchResults(
+        html: String,
+        baseURL: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) throws -> [OnlineBook]
+
+    func parseBookInfo(
+        html: String,
+        bookUrl: String,
+        baseURL: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) throws -> OnlineBook
+
+    func parseTOC(
+        html: String,
+        baseURL: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) throws -> [OnlineChapterRef]
+
+    func parseChapterPayload(
+        html: String,
+        baseURL: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) throws -> ChapterParsePayload
+
+    func extractSingleValue(
+        html: String,
+        baseURL: String,
+        rule: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) throws -> String
+
+    func extractStringList(
+        html: String,
+        baseURL: String,
+        rule: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        isURL: Bool
+    ) throws -> [String]
+}
+
+final class DefaultWebNovelParserService: WebNovelParserService {
+    static let shared = DefaultWebNovelParserService()
+
+    private let nativeRunner: NativeRuleEngineRunner
+
+    init(nativeRunner: NativeRuleEngineRunner = .shared) {
+        self.nativeRunner = nativeRunner
+    }
+
+    func resolveURL(_ raw: String, base: String) -> String {
+        RuleEngine.resolveURL(raw, base: base)
+    }
+
+    func sanitizeExtractedURL(_ raw: String) -> String {
+        RuleEngine.sanitizeExtractedURL(raw)
+    }
+
+    func applyReplaceRegex(_ text: String, rules: String) -> String {
+        RuleEngine.applyReplaceRegex(text, rules: rules)
+    }
+
+    func extractValue(fromHTML html: String, rule: String, baseURL: String) -> String {
+        RuleEngine.extractValue(fromHTML: html, rule: rule, baseURL: baseURL)
+    }
+
+    func parseSearchResults(
+        html: String,
+        baseURL: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) throws -> [OnlineBook] {
+        try nativeRunner.parseSearchResults(
+            html: html,
+            baseURL: baseURL,
+            source: source,
+            runtimeVariables: runtimeVariables
+        )
+    }
+
+    func parseBookInfo(
+        html: String,
+        bookUrl: String,
+        baseURL: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) throws -> OnlineBook {
+        try nativeRunner.parseBookInfo(
+            html: html,
+            bookUrl: bookUrl,
+            baseURL: baseURL,
+            source: source,
+            runtimeVariables: runtimeVariables
+        )
+    }
+
+    func parseTOC(
+        html: String,
+        baseURL: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) throws -> [OnlineChapterRef] {
+        try nativeRunner.parseTOC(
+            html: html,
+            baseURL: baseURL,
+            source: source,
+            runtimeVariables: runtimeVariables
+        )
+    }
+
+    func parseChapterPayload(
+        html: String,
+        baseURL: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) throws -> ChapterParsePayload {
+        try nativeRunner.parseChapterPayload(
+            html: html,
+            baseURL: baseURL,
+            source: source,
+            runtimeVariables: runtimeVariables
+        )
+    }
+
+    func extractSingleValue(
+        html: String,
+        baseURL: String,
+        rule: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) throws -> String {
+        try nativeRunner.extractSingleValue(
+            html: html,
+            baseURL: baseURL,
+            rule: rule,
+            source: source,
+            runtimeVariables: runtimeVariables
+        )
+    }
+
+    func extractStringList(
+        html: String,
+        baseURL: String,
+        rule: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        isURL: Bool
+    ) throws -> [String] {
+        try nativeRunner.extractStringList(
+            html: html,
+            baseURL: baseURL,
+            rule: rule,
+            source: source,
+            runtimeVariables: runtimeVariables,
+            isURL: isURL
+        )
+    }
+}

@@ -58,6 +58,11 @@ protocol PageRenderingProvider: AnyObject {
 
     /// 離屏渲染指定全局頁為 UIImage，供 cover 動畫使用。
     func renderSnapshot(forPage globalPage: Int) -> UIImage?
+
+    /// 章節就緒回呼（取代 Notification 廣播）
+    var onChapterReady: ((Int?) -> Void)? { get set }
+    /// 引擎請求跳頁回呼（取代 Notification 廣播）
+    var onNavigateToPage: ((Int) -> Void)? { get set }
     
     var offsetStore: CharOffsetStore { get }
     var renderSize: CGSize { get }
@@ -68,6 +73,7 @@ protocol PageRenderingProvider: AnyObject {
     func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int?
     func plainText(forPage page: Int) -> String
     func totalProgress(forSpine spineIndex: Int, charOffset: Int) -> Double
+    func cancelPendingWork()
 }
 
 extension PageRenderingProvider {
@@ -78,6 +84,15 @@ extension PageRenderingProvider {
     func lastPageIndex(ofChapter spineIndex: Int) -> Int? { nil }
     func localPosition(for globalPage: Int) -> (spineIndex: Int, localPage: Int) { (0, globalPage) }
     func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int? { nil }
+    var onChapterReady: ((Int?) -> Void)? {
+        get { nil }
+        set {}
+    }
+    var onNavigateToPage: ((Int) -> Void)? {
+        get { nil }
+        set {}
+    }
+    func cancelPendingWork() {}
     func pageViewController(for position: CoreTextReadingPosition) -> UIViewController {
         if let page = pageIndex(for: position) {
             return pageViewController(at: page)
