@@ -159,16 +159,20 @@ struct OnlineHTMLContentProviderAdapter: BookContentProvider {
 enum BookContentProviderFactory {
     @MainActor
     static func makeLocalTXTProvider(book: ReadingBook, store: BookStore) -> any BookContentProvider {
-        TXTContentProviderAdapter(book: book, store: store)
+        let document = BookDocumentFactory.makeTXTDocument(book: book, store: store)
+        return BookDocumentContentProviderAdapter(document: document)
     }
 
-    static func makeEPUBProvider(session: PublicationSession) -> any BookContentProvider {
-        EPUBContentProviderAdapter(session: session)
+    static func makeEPUBProvider(book: ReadingBook, session: PublicationSession) -> any BookContentProvider {
+        let document = BookDocumentFactory.makeEPUBDocument(book: book, session: session)
+        return BookDocumentContentProviderAdapter(document: document)
     }
 
     @MainActor
     static func makeOnlineProvider(book: ReadingBook, store: BookStore?) -> (any BookContentProvider)? {
-        guard book.isOnline, (book.onlineChapters?.isEmpty == false) else { return nil }
-        return OnlineHTMLContentProviderAdapter(book: book, store: store)
+        guard let document = BookDocumentFactory.makeOnlineDocument(book: book, store: store) else {
+            return nil
+        }
+        return BookDocumentContentProviderAdapter(document: document)
     }
 }

@@ -15,11 +15,14 @@ protocol BookContentProvider {
 
 enum BookContentProviderError: LocalizedError {
     case chapterIndexOutOfRange(Int)
+    case unsupportedChapterContent(String)
 
     var errorDescription: String? {
         switch self {
         case .chapterIndexOutOfRange(let index):
             return "章節索引超出範圍：\(index)"
+        case .unsupportedChapterContent(let type):
+            return "不支援的章節內容：\(type)"
         }
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 struct FontSettingsView: View {
     @Binding var fontSize: CGFloat
     @Binding var theme: ReaderTheme
+    var capabilities: ReaderCapabilities = .reflowableText
     @StateObject private var readerConfig = ReaderConfig.shared
     @ObservedObject private var settings = GlobalSettings.shared
     @ObservedObject private var gs = GlobalSettings.shared
@@ -12,72 +13,88 @@ struct FontSettingsView: View {
         settings.readerBrightness = Double(UIScreen.main.brightness)
     }
 
+    private var supportsFontSize: Bool { capabilities.contains(.fontSize) }
+    private var supportsLineHeight: Bool { capabilities.contains(.lineHeight) }
+    private var supportsBackground: Bool {
+        capabilities.contains(.background) || capabilities.contains(.darkMode)
+    }
+
     var body: some View {
         NavigationView {
             Form {
                 // 字體大小
-                Section(header: Text(gs.t("字體大小"))) {
-                    HStack {
-                        Text("A").font(DSFont.caption)
-                        Slider(value: $fontSize, in: 12...30, step: 1)
-                        Text("A").font(.title2)
+                if supportsFontSize {
+                    Section(header: Text(gs.t("字體大小"))) {
+                        HStack {
+                            Text("A").font(DSFont.caption)
+                            Slider(value: $fontSize, in: 12...30, step: 1)
+                            Text("A").font(.title2)
+                        }
+                        Text("\(gs.t("目前"))：\(Int(fontSize)) pt")
+                            .font(DSFont.caption)
+                            .foregroundColor(DSColor.textSecondary)
                     }
-                    Text("\(gs.t("目前"))：\(Int(fontSize)) pt")
-                        .font(DSFont.caption)
-                        .foregroundColor(DSColor.textSecondary)
                 }
 
                 // 行距
-                Section(header: Text(gs.t("行距"))) {
-                    HStack {
-                        Image(systemName: "text.alignleft").foregroundColor(DSColor.textSecondary)
-                        Slider(value: $readerConfig.lineSpacing, in: 0...50, step: 2)
-                        Image(systemName: "text.alignleft").foregroundColor(DSColor.textSecondary)
-                            .scaleEffect(1.4)
+                if supportsLineHeight {
+                    Section(header: Text(gs.t("行距"))) {
+                        HStack {
+                            Image(systemName: "text.alignleft").foregroundColor(DSColor.textSecondary)
+                            Slider(value: $readerConfig.lineSpacing, in: 0...50, step: 2)
+                            Image(systemName: "text.alignleft").foregroundColor(DSColor.textSecondary)
+                                .scaleEffect(1.4)
+                        }
+                        Text("\(gs.t("目前"))：\(Int(readerConfig.lineSpacing)) pt")
+                            .font(DSFont.caption)
+                            .foregroundColor(DSColor.textSecondary)
                     }
-                    Text("\(gs.t("目前"))：\(Int(readerConfig.lineSpacing)) pt")
-                        .font(DSFont.caption)
-                        .foregroundColor(DSColor.textSecondary)
                 }
 
                 // 字距
-                Section(header: Text(gs.t("字距"))) {
-                    HStack {
-                        Image(systemName: "character").foregroundColor(DSColor.textSecondary)
-                        Slider(value: $readerConfig.letterSpacing, in: 0...12, step: 0.5)
-                        Image(systemName: "character").foregroundColor(DSColor.textSecondary)
-                            .scaleEffect(1.4)
+                if supportsLineHeight {
+                    Section(header: Text(gs.t("字距"))) {
+                        HStack {
+                            Image(systemName: "character").foregroundColor(DSColor.textSecondary)
+                            Slider(value: $readerConfig.letterSpacing, in: 0...12, step: 0.5)
+                            Image(systemName: "character").foregroundColor(DSColor.textSecondary)
+                                .scaleEffect(1.4)
+                        }
+                        Text("\(gs.t("目前"))：\(String(format: "%.1f", readerConfig.letterSpacing)) pt")
+                            .font(DSFont.caption)
+                            .foregroundColor(DSColor.textSecondary)
                     }
-                    Text("\(gs.t("目前"))：\(String(format: "%.1f", readerConfig.letterSpacing)) pt")
-                        .font(DSFont.caption)
-                        .foregroundColor(DSColor.textSecondary)
                 }
 
                 // 段距
-                Section(header: Text(gs.t("段落間距"))) {
-                    HStack {
-                        Image(systemName: "text.justify").foregroundColor(DSColor.textSecondary)
-                        Slider(value: $readerConfig.paragraphSpacing, in: 0...40, step: 2)
-                        Image(systemName: "text.justify").foregroundColor(DSColor.textSecondary)
-                            .scaleEffect(1.2)
+                if supportsLineHeight {
+                    Section(header: Text(gs.t("段落間距"))) {
+                        HStack {
+                            Image(systemName: "text.justify").foregroundColor(DSColor.textSecondary)
+                            Slider(value: $readerConfig.paragraphSpacing, in: 0...40, step: 2)
+                            Image(systemName: "text.justify").foregroundColor(DSColor.textSecondary)
+                                .scaleEffect(1.2)
+                        }
+                        Text("\(gs.t("目前"))：\(Int(readerConfig.paragraphSpacing)) pt")
+                            .font(DSFont.caption)
+                            .foregroundColor(DSColor.textSecondary)
                     }
-                    Text("\(gs.t("目前"))：\(Int(readerConfig.paragraphSpacing)) pt")
-                        .font(DSFont.caption)
-                        .foregroundColor(DSColor.textSecondary)
                 }
 
                 // 頁面留白
-                Section(header: Text(gs.t("頁面留白"))) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text(gs.t("左右")).font(DSFont.caption).foregroundColor(DSColor.textSecondary).frame(width: 30)
-                            Slider(value: $readerConfig.pageMarginH, in: 8...48, step: 2)
-                            Text("\(Int(readerConfig.pageMarginH))").font(DSFont.caption).foregroundColor(DSColor.textSecondary).frame(width: 24)
+                if supportsLineHeight {
+                    Section(header: Text(gs.t("頁面留白"))) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text(gs.t("左右")).font(DSFont.caption).foregroundColor(DSColor.textSecondary).frame(width: 30)
+                                Slider(value: $readerConfig.pageMarginH, in: 8...48, step: 2)
+                                Text("\(Int(readerConfig.pageMarginH))").font(DSFont.caption).foregroundColor(DSColor.textSecondary).frame(width: 24)
+                            }
                         }
+                        Text(gs.t("上下留白與 footer 距離由系統自動控制"))
+                            .font(DSFont.caption)
+                            .foregroundColor(DSColor.textSecondary)
                     }
-                    Text(gs.t("上下留白與 footer 距離由系統自動控制"))
-                        .font(DSFont.caption)
-                        .foregroundColor(DSColor.textSecondary)
                 }
 
                 // 閱讀亮度
@@ -125,19 +142,21 @@ struct FontSettingsView: View {
                 }
 
                 // 滾動模式
-                Section(
-                    header: Text(gs.t("閱讀模式")),
-                    footer: Text(gs.t(settings.scrollMode ? "上下滾動，連續閱讀" : "左右翻頁，按頁左右切換"))
-                ) {
-                    Picker(gs.t("閱讀模式"), selection: $settings.scrollMode) {
-                        Text(gs.t("左右翻頁")).tag(false)
-                        Text(gs.t("上下滾動")).tag(true)
+                if supportsLineHeight {
+                    Section(
+                        header: Text(gs.t("閱讀模式")),
+                        footer: Text(gs.t(settings.scrollMode ? "上下滾動，連續閱讀" : "左右翻頁，按頁左右切換"))
+                    ) {
+                        Picker(gs.t("閱讀模式"), selection: $settings.scrollMode) {
+                            Text(gs.t("左右翻頁")).tag(false)
+                            Text(gs.t("上下滾動")).tag(true)
+                        }
+                        .pickerStyle(.menu)
                     }
-                    .pickerStyle(.menu)
                 }
 
                 // 翻頁動畫（僅左右翻頁時有效）
-                if !settings.scrollMode {
+                if !settings.scrollMode && supportsLineHeight {
                     Section(
                         header: Text(gs.t("翻頁動畫")),
                         footer: Text(gs.t("滑動：左右平移；覆蓋翻頁：新頁滑入蓋住舊頁（Legado）；仿真翻書：捲曲效果；無動畫：立即切換"))
@@ -164,24 +183,26 @@ struct FontSettingsView: View {
                 }
 
                 // 背景主題
-                Section(header: Text(gs.t("背景主題"))) {
-                    ForEach(ReaderTheme.allCases, id: \.self) { t in
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.22)) { theme = t }
-                        } label: {
-                            HStack {
-                                Circle()
-                                    .fill(t.backgroundColor)
-                                    .frame(width: 28, height: 28)
-                                    .overlay(
-                                        Circle().strokeBorder(Color.gray.opacity(0.3), lineWidth: 1)
-                                    )
-                                Text(gs.t(t.rawValue))
-                                    .foregroundColor(DSColor.textPrimary)
-                                Spacer()
-                                if theme == t {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(DSColor.accent)
+                if supportsBackground {
+                    Section(header: Text(gs.t("背景主題"))) {
+                        ForEach(ReaderTheme.allCases, id: \.self) { t in
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.22)) { theme = t }
+                            } label: {
+                                HStack {
+                                    Circle()
+                                        .fill(t.backgroundColor)
+                                        .frame(width: 28, height: 28)
+                                        .overlay(
+                                            Circle().strokeBorder(Color.gray.opacity(0.3), lineWidth: 1)
+                                        )
+                                    Text(gs.t(t.rawValue))
+                                        .foregroundColor(DSColor.textPrimary)
+                                    Spacer()
+                                    if theme == t {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(DSColor.accent)
+                                    }
                                 }
                             }
                         }

@@ -134,7 +134,9 @@ struct ReaderView: View {
     @State private var changeSourceError: String?
     @State private var runtimeState = ReaderRuntimeState()
     @State private var chapterSliderDraft: Double? = nil
+    @State private var bookDocument: (any BookDocument)? = nil
     @State private var contentProvider: (any BookContentProvider)? = nil
+    @State private var readerCapabilities: ReaderCapabilities = .reflowableText
     private let progressManager = ReaderProgressManager.shared
 
     private var systemBrightness: Double {
@@ -550,7 +552,8 @@ struct ReaderView: View {
                     theme: Binding(
                         get: { readerConfig.theme },
                         set: { readerConfig.theme = $0 }
-                    )
+                    ),
+                    capabilities: readerCapabilities
                 )
             }
         }
@@ -1468,7 +1471,8 @@ struct ReaderView: View {
         book: ReadingBook,
         settings: ReaderRenderSettings
     ) {
-        contentProvider = BookContentProviderFactory.makeEPUBProvider(session: session)
+        let document = BookDocumentFactory.makeEPUBDocument(book: book, session: session)
+        applyDocument(document)
 
         let tocLevelMap: [String: Int] = Dictionary(
             session.tocEntries.map { ($0.href, $0.level) },
@@ -1526,7 +1530,7 @@ struct ReaderView: View {
             } catch {
                 await MainActor.run {
                     print("Readium 解析失敗：\(error)")
-                    self.contentProvider = nil
+                    self.applyDocument(nil)
                     self.isLoadingPipeline = false
                     self.isRestoringPosition = false
                 }
@@ -1542,14 +1546,15 @@ struct ReaderView: View {
 
         let marginH = effectivePageMarginH
         guard let b = book else {
-            contentProvider = nil
+            applyDocument(nil)
             isRestoringPosition = false
             isLoadingPipeline = false
             return
         }
         // Online books: temporarily disabled
         if b.isOnline {
-            contentProvider = BookContentProviderFactory.makeOnlineProvider(book: b, store: store)
+            let document = BookDocumentFactory.makeOnlineDocument(book: b, store: store)
+            applyDocument(document)
             isLoadingPipeline = false
             isRestoringPosition = false
             return
@@ -1559,8 +1564,8 @@ struct ReaderView: View {
             let bookTitle = b.title
             let text = store.content(for: b)
             let settings = currentRenderSettings(marginH: marginH)
-            let txtProvider = BookContentProviderFactory.makeLocalTXTProvider(book: b, store: store)
-            contentProvider = txtProvider
+            let document = BookDocumentFactory.makeTXTDocument(book: b, store: store)
+            applyDocument(document)
             
             epubRenderer.loadTXT(
                 text: text,
@@ -1570,9 +1575,9 @@ struct ReaderView: View {
                 settings: settings
             )
             
-            if txtProvider.totalChapters > 0 {
-                self.chapters = (0..<txtProvider.totalChapters).map { i in
-                    BookChapter(index: i, title: txtProvider.chapterTitle(at: i), content: "")
+            if document.tableOfContents.count > 0 {
+                self.chapters = document.tableOfContents.enumerated().map { i, chapter in
+                    BookChapter(index: i, title: chapter.title, content: "")
                 }
             } else if let txtEngine = epubRenderer.engine as? TXTPageEngine {
                 self.chapters = txtEngine.chapterTitles.enumerated().map { i, t in
@@ -1591,7 +1596,7 @@ struct ReaderView: View {
 
         guard b.resolvedPipelineKind == .epub else {
             // HTML: temporarily disabled pending CoreText migration
-            contentProvider = nil
+            applyDocument(nil)
             isLoadingPipeline = false
             isRestoringPosition = false
             return
@@ -1606,6 +1611,17 @@ struct ReaderView: View {
     private func rebuildPages() {
         isLoadingPipeline = false
         loadContent()
+    }
+
+    private func applyDocument(_ document: (any BookDocument)?) {
+        bookDocument = document
+        if let document {
+            contentProvider = BookDocumentContentProviderAdapter(document: document)
+            readerCapabilities = document.capabilities
+        } else {
+            contentProvider = nil
+            readerCapabilities = .reflowableText
+        }
     }
 
     private func handleReaderConfigRefresh(_ kind: ReaderConfigRefreshKind) {

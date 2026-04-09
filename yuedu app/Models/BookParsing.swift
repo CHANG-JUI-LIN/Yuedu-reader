@@ -53,7 +53,9 @@ enum BookParserRegistryError: LocalizedError {
 enum BookParserRegistry {
     private static let parsers: [String: any BookParser] = [
         "txt": TXTBookParser(),
-        "epub": EPUBBookParser()
+        "epub": EPUBBookParser(),
+        "md": MarkdownBookParser(),
+        "markdown": MarkdownBookParser()
     ]
 
     static func parser(for fileURL: URL) async -> (any BookParser)? {
