@@ -39,3 +39,18 @@ extension AttributedStringBuilding {
     func chapterIndex(for href: String) -> Int? { nil }
     func cssResourceHrefs() -> [String] { [] }
 }
+
+enum ReaderTypographyCorrection {
+    static func targetLineHeight(font: UIFont, fontSize: CGFloat, lineHeightMultiple: CGFloat) -> CGFloat {
+        let requested = fontSize * max(1.0, lineHeightMultiple)
+        let glyphBoxHeight = ceil(font.ascender + abs(font.descender))
+        // Keep at least glyph bounds to reduce clipping for fonts with unusual metrics.
+        return max(requested, glyphBoxHeight + 1)
+    }
+
+    static func baselineOffset(font: UIFont, targetLineHeight: CGFloat) -> CGFloat {
+        let naturalLineHeight = font.ascender + abs(font.descender) + max(0, font.leading)
+        guard targetLineHeight > naturalLineHeight else { return 0 }
+        return (targetLineHeight - naturalLineHeight) / 2 - max(0, font.leading) / 2
+    }
+}

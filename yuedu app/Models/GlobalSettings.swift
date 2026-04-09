@@ -84,12 +84,20 @@ final class ReaderConfig: ObservableObject {
     static let shared = ReaderConfig()
 
     @Published var fontSize: CGFloat
-    @Published var lineSpacing: CGFloat
+    @Published var lineHeightMultiple: CGFloat
     @Published var letterSpacing: CGFloat
-    @Published var paragraphSpacing: CGFloat
+    @Published var paragraphSpacingMultiplier: CGFloat
     @Published var pageMarginH: CGFloat
     @Published var pageMarginV: CGFloat
     @Published var theme: ReaderTheme
+
+    var lineSpacing: CGFloat {
+        max(0, (lineHeightMultiple - 1.0) * fontSize)
+    }
+
+    var paragraphSpacing: CGFloat {
+        max(0, fontSize * paragraphSpacingMultiplier)
+    }
 
     let refresh = PassthroughSubject<ReaderConfigRefreshKind, Never>()
 
@@ -99,9 +107,9 @@ final class ReaderConfig: ObservableObject {
     private init() {
         let gs = GlobalSettings.shared
         fontSize = CGFloat(gs.readerFontSize)
-        lineSpacing = CGFloat(gs.lineSpacing)
+        lineHeightMultiple = CGFloat(gs.lineHeightMultiple)
         letterSpacing = CGFloat(gs.letterSpacing)
-        paragraphSpacing = CGFloat(gs.paragraphSpacing)
+        paragraphSpacingMultiplier = CGFloat(gs.paragraphSpacingMultiplier)
         pageMarginH = CGFloat(gs.pageMarginH)
         pageMarginV = CGFloat(gs.pageMarginV)
         theme = ReaderTheme.loadPersisted()
@@ -112,9 +120,9 @@ final class ReaderConfig: ObservableObject {
         let gs = GlobalSettings.shared
         suppressRefresh = true
         fontSize = CGFloat(gs.readerFontSize)
-        lineSpacing = CGFloat(gs.lineSpacing)
+        lineHeightMultiple = CGFloat(gs.lineHeightMultiple)
         letterSpacing = CGFloat(gs.letterSpacing)
-        paragraphSpacing = CGFloat(gs.paragraphSpacing)
+        paragraphSpacingMultiplier = CGFloat(gs.paragraphSpacingMultiplier)
         pageMarginH = CGFloat(gs.pageMarginH)
         pageMarginV = CGFloat(gs.pageMarginV)
         theme = ReaderTheme.loadPersisted()
@@ -122,7 +130,7 @@ final class ReaderConfig: ObservableObject {
     }
 
     private func setupBindings() {
-        let layoutPublisher = Publishers.CombineLatest4($fontSize, $lineSpacing, $letterSpacing, $paragraphSpacing)
+        let layoutPublisher = Publishers.CombineLatest4($fontSize, $lineHeightMultiple, $letterSpacing, $paragraphSpacingMultiplier)
             .combineLatest($pageMarginH, $pageMarginV)
             .debounce(for: .milliseconds(120), scheduler: RunLoop.main)
 
@@ -130,12 +138,12 @@ final class ReaderConfig: ObservableObject {
             .dropFirst()
             .sink { [weak self] combined, marginH, marginV in
                 guard let self else { return }
-                let (fontSize, lineSpacing, letterSpacing, paragraphSpacing) = combined
+                let (fontSize, lineHeightMultiple, letterSpacing, paragraphSpacingMultiplier) = combined
                 let gs = GlobalSettings.shared
                 gs.readerFontSize = Double(fontSize)
-                gs.lineSpacing = Double(lineSpacing)
+                gs.lineHeightMultiple = Double(lineHeightMultiple)
                 gs.letterSpacing = Double(letterSpacing)
-                gs.paragraphSpacing = Double(paragraphSpacing)
+                gs.paragraphSpacingMultiplier = Double(paragraphSpacingMultiplier)
                 gs.pageMarginH = Double(marginH)
                 gs.pageMarginV = Double(marginV)
                 guard !self.suppressRefresh else { return }
@@ -179,8 +187,8 @@ class GlobalSettings: ObservableObject {
     @Published var textConversion: TextConversion {
         didSet { UserDefaults.standard.set(textConversion.rawValue, forKey: "yd_text_conv") }
     }
-    @Published var lineSpacing: Double {
-        didSet { UserDefaults.standard.set(lineSpacing, forKey: "yd_line_spacing") }
+    @Published var lineHeightMultiple: Double {
+        didSet { UserDefaults.standard.set(lineHeightMultiple, forKey: "yd_line_height_multiple") }
     }
     @Published var scrollMode: Bool {
         didSet { UserDefaults.standard.set(scrollMode, forKey: "yd_scroll_mode") }
@@ -196,8 +204,8 @@ class GlobalSettings: ObservableObject {
     @Published var letterSpacing: Double {
         didSet { UserDefaults.standard.set(letterSpacing, forKey: "yd_letter_spacing") }
     }
-    @Published var paragraphSpacing: Double {
-        didSet { UserDefaults.standard.set(paragraphSpacing, forKey: "yd_paragraph_spacing") }
+    @Published var paragraphSpacingMultiplier: Double {
+        didSet { UserDefaults.standard.set(paragraphSpacingMultiplier, forKey: "yd_paragraph_spacing_mult") }
     }
     @Published var pageMarginH: Double {
         didSet { UserDefaults.standard.set(pageMarginH, forKey: "yd_page_margin_h") }
@@ -212,6 +220,16 @@ class GlobalSettings: ObservableObject {
     // MARK: - 閱讀器字體（跨 session 持久化）
     @Published var readerFontSize: Double {
         didSet { UserDefaults.standard.set(readerFontSize, forKey: "yd_reader_font_size") }
+    }
+
+    /// 由倍率換算出的行與行額外距離（pt）
+    var lineSpacing: Double {
+        max(0, (lineHeightMultiple - 1.0) * readerFontSize)
+    }
+
+    /// 由倍率換算出的段距（pt）
+    var paragraphSpacing: Double {
+        max(0, readerFontSize * paragraphSpacingMultiplier)
     }
 
     // MARK: - 網路設定
@@ -232,7 +250,18 @@ class GlobalSettings: ObservableObject {
         appLanguage = AppLanguage(rawValue: rawLang) ?? .traditionalChinese
         let rawConv = UserDefaults.standard.string(forKey: "yd_text_conv") ?? ""
         textConversion = TextConversion(rawValue: rawConv) ?? .original
-        lineSpacing = (UserDefaults.standard.object(forKey: "yd_line_spacing") as? Double) ?? 6.0
+        let persistedFontSize =
+            (UserDefaults.standard.object(forKey: "yd_reader_font_size") as? Double) ?? 18.0
+        readerFontSize = persistedFontSize
+
+        if let savedLineHeightMultiple = UserDefaults.standard.object(forKey: "yd_line_height_multiple") as? Double {
+            lineHeightMultiple = savedLineHeightMultiple
+        } else if let legacyLineSpacing = UserDefaults.standard.object(forKey: "yd_line_spacing") as? Double {
+            lineHeightMultiple = max(1.0, 1.0 + legacyLineSpacing / max(persistedFontSize, 1.0))
+        } else {
+            lineHeightMultiple = 1.65
+        }
+
         scrollMode = UserDefaults.standard.bool(forKey: "yd_scroll_mode")
         readerBrightness =
             (UserDefaults.standard.object(forKey: "yd_reader_brightness") as? Double) ?? 0.8
@@ -244,8 +273,15 @@ class GlobalSettings: ObservableObject {
         }
         letterSpacing =
             (UserDefaults.standard.object(forKey: "yd_letter_spacing") as? Double) ?? 0.0
-        paragraphSpacing =
-            (UserDefaults.standard.object(forKey: "yd_paragraph_spacing") as? Double) ?? 6.0
+
+        if let savedParagraphSpacingMultiplier = UserDefaults.standard.object(forKey: "yd_paragraph_spacing_mult") as? Double {
+            paragraphSpacingMultiplier = savedParagraphSpacingMultiplier
+        } else if let legacyParagraphSpacing = UserDefaults.standard.object(forKey: "yd_paragraph_spacing") as? Double {
+            paragraphSpacingMultiplier = max(0, legacyParagraphSpacing / max(persistedFontSize, 1.0))
+        } else {
+            paragraphSpacingMultiplier = 0.8
+        }
+
         pageMarginH =
             (UserDefaults.standard.object(forKey: "yd_page_margin_h") as? Double) ?? 24.0
         pageMarginV =
@@ -259,8 +295,6 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_search_auto_pause_count") as? Int) ?? 0
         searchCacheDays =
             (UserDefaults.standard.object(forKey: "yd_search_cache_days") as? Int) ?? 5
-        readerFontSize =
-            (UserDefaults.standard.object(forKey: "yd_reader_font_size") as? Double) ?? 18.0
     }
 
     /// App UI 字串本地化（繁→簡 用 ICU，繁→英 用字典）

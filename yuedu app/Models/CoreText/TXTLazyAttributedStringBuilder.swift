@@ -79,13 +79,24 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
 
         let titleFont = UIFont.systemFont(ofSize: settings.fontSize + 8, weight: .bold)
         let bodyFont = UIFont.systemFont(ofSize: settings.fontSize)
+        let bodyTargetLineHeight = ReaderTypographyCorrection.targetLineHeight(
+            font: bodyFont,
+            fontSize: settings.fontSize,
+            lineHeightMultiple: settings.lineHeightMultiple
+        )
+        let bodyBaselineOffset = ReaderTypographyCorrection.baselineOffset(
+            font: bodyFont,
+            targetLineHeight: bodyTargetLineHeight
+        )
 
         let titleParaStyle = NSMutableParagraphStyle()
         titleParaStyle.alignment = .center
         titleParaStyle.paragraphSpacing = 24
 
         let bodyParaStyle = NSMutableParagraphStyle()
-        bodyParaStyle.lineSpacing = settings.lineSpacing
+        bodyParaStyle.alignment = .justified
+        bodyParaStyle.minimumLineHeight = bodyTargetLineHeight
+        bodyParaStyle.maximumLineHeight = bodyTargetLineHeight
         bodyParaStyle.paragraphSpacing = settings.paragraphSpacing
 
         let attrStr = NSMutableAttributedString()
@@ -109,6 +120,7 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
                     attributes: [
                         .font: bodyFont,
                         .foregroundColor: themeTextColor,
+                        .baselineOffset: bodyBaselineOffset,
                         .paragraphStyle: bodyParaStyle,
                         .kern: settings.letterSpacing as NSNumber,
                     ]

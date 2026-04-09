@@ -1472,13 +1472,15 @@ struct ReaderView: View {
     private func currentRenderSettings(marginH: CGFloat) -> ReaderRenderSettings {
         let topInset = ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
         let bottomInset = max(20, ReaderLayoutMetrics.bottomInset(safeBottom: windowSafeBottom))
+        let lineHeightMultiple = max(1.0, readerConfig.lineHeightMultiple)
         return ReaderRenderSettings(
             theme: readerTheme.epubJSName,
             textColor: UIColor(readerTheme.textColor),
             backgroundColor: UIColor(readerTheme.backgroundColor),
             fontSize: fontSize,
-            lineSpacing: CGFloat(settings.lineSpacing),
-            paragraphSpacing: CGFloat(settings.paragraphSpacing),
+            lineHeightMultiple: lineHeightMultiple,
+            lineSpacing: readerConfig.lineSpacing,
+            paragraphSpacing: readerConfig.paragraphSpacing,
             letterSpacing: readerConfig.letterSpacing,
             marginH: marginH,
             marginV: systemVerticalPadding,

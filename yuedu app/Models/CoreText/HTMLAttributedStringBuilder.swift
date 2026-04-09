@@ -17,6 +17,7 @@ final class HTMLAttributedStringBuilder {
 
     struct Config {
         var fontSize: CGFloat
+        var lineHeightMultiple: CGFloat
         var lineSpacing: CGFloat
         var paragraphSpacing: CGFloat
         var firstLineIndent: CGFloat
@@ -861,11 +862,15 @@ final class HTMLAttributedStringBuilder {
     }
 
     private func baseTextAttributes(style: ResolvedStyle, config: Config) -> [NSAttributedString.Key: Any] {
+        let font = makeFont(from: style, config: config)
         let lineHeight = style.lineHeightExplicit
             ? max(style.fontSize, style.lineHeight)
             : clampLineHeight(absolute: style.lineHeight, fontSize: style.fontSize)
-        // 讓文字在行高內垂直置中（CoreText 預設貼底部）
-        var baselineOffset = (lineHeight - style.fontSize) / 4
+        // 讓文字在鎖定行高中垂直居中，減少不同字體內建 leading 造成的視覺偏移。
+        var baselineOffset = ReaderTypographyCorrection.baselineOffset(
+            font: font,
+            targetLineHeight: lineHeight
+        )
         // sup / sub 的額外基線偏移
         switch style.verticalAlign {
         case .super: baselineOffset += style.fontSize * 0.4
@@ -873,7 +878,7 @@ final class HTMLAttributedStringBuilder {
         case .baseline: break
         }
         return [
-            .font: makeFont(from: style, config: config),
+            .font: font,
             .foregroundColor: style.textColor,
             .baselineOffset: baselineOffset,
         ]
@@ -1187,7 +1192,7 @@ final class HTMLAttributedStringBuilder {
 
     private func makeRootStyle(config: Config) -> ResolvedStyle {
         let defaultLineHeight = clampLineHeight(
-            absolute: config.fontSize + config.lineSpacing,
+            absolute: config.fontSize * max(1.0, config.lineHeightMultiple),
             fontSize: config.fontSize
         )
         return ResolvedStyle(

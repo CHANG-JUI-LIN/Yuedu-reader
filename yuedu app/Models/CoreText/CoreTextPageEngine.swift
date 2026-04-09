@@ -920,6 +920,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         let horizontalInsets = renderSettings.contentInsets.left + renderSettings.contentInsets.right
         return HTMLAttributedStringBuilder.Config(
             fontSize: fontSize,
+            lineHeightMultiple: renderSettings.lineHeightMultiple,
             lineSpacing: renderSettings.lineSpacing,
             paragraphSpacing: renderSettings.paragraphSpacing,
             firstLineIndent: fontSize * 2,

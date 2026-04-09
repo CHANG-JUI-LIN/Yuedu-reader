@@ -42,11 +42,13 @@ struct FontSettingsView: View {
                     Section(header: Text(gs.t("行距"))) {
                         HStack {
                             Image(systemName: "text.alignleft").foregroundColor(DSColor.textSecondary)
-                            Slider(value: $readerConfig.lineSpacing, in: 0...50, step: 2)
+                            Slider(value: $readerConfig.lineHeightMultiple, in: 1.0...2.4, step: 0.05)
                             Image(systemName: "text.alignleft").foregroundColor(DSColor.textSecondary)
                                 .scaleEffect(1.4)
                         }
-                        Text("\(gs.t("目前"))：\(Int(readerConfig.lineSpacing)) pt")
+                        Text(
+                            "\(gs.t("目前"))：\(String(format: "%.2f", readerConfig.lineHeightMultiple))x · \(Int(readerConfig.lineSpacing)) pt"
+                        )
                             .font(DSFont.caption)
                             .foregroundColor(DSColor.textSecondary)
                     }
@@ -72,11 +74,13 @@ struct FontSettingsView: View {
                     Section(header: Text(gs.t("段落間距"))) {
                         HStack {
                             Image(systemName: "text.justify").foregroundColor(DSColor.textSecondary)
-                            Slider(value: $readerConfig.paragraphSpacing, in: 0...40, step: 2)
+                            Slider(value: $readerConfig.paragraphSpacingMultiplier, in: 0.3...1.2, step: 0.05)
                             Image(systemName: "text.justify").foregroundColor(DSColor.textSecondary)
                                 .scaleEffect(1.2)
                         }
-                        Text("\(gs.t("目前"))：\(Int(readerConfig.paragraphSpacing)) pt")
+                        Text(
+                            "\(gs.t("目前"))：\(String(format: "%.2f", readerConfig.paragraphSpacingMultiplier))x · \(Int(readerConfig.paragraphSpacing)) pt"
+                        )
                             .font(DSFont.caption)
                             .foregroundColor(DSColor.textSecondary)
                     }
