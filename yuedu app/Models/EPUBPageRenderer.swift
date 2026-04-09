@@ -70,6 +70,23 @@ final class EPUBPageRenderer: ObservableObject {
         title: String,
         bookIdentifier: String,
         renderSize: CGSize,
+        settings: ReaderRenderSettings,
+        preparedChapters: [UnifiedChapter]? = nil
+    ) {
+        let chapters = preparedChapters ?? TXTChapterParser.parseUnifiedChapters(text, bookTitle: title)
+        let builder = TXTAttributedStringBuilder(chapters: chapters)
+        loadTXT(
+            attributedBuilder: builder,
+            bookIdentifier: bookIdentifier,
+            renderSize: renderSize,
+            settings: settings
+        )
+    }
+
+    func loadTXT(
+        attributedBuilder: any AttributedStringBuilding,
+        bookIdentifier: String,
+        renderSize: CGSize,
         settings: ReaderRenderSettings
     ) {
         let docsURL = FileManager.default.urls(
@@ -79,10 +96,8 @@ final class EPUBPageRenderer: ObservableObject {
             "epub_charoffsets/\(bookIdentifier)"
         )
         let store = CharOffsetStore(directoryURL: progressDir)
-        let chapters = TXTChapterParser.parseUnifiedChapters(text, bookTitle: title)
-        let builder = TXTAttributedStringBuilder(chapters: chapters)
         let newEngine = CoreTextPageEngine(
-            attributedBuilder: builder,
+            attributedBuilder: attributedBuilder,
             renderSettings: settings,
             offsetStore: store
         )

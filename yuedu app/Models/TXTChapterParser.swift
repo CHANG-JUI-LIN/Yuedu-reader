@@ -1,5 +1,13 @@
 import Foundation
 
+struct TXTChapterIndex: Equatable {
+    let index: Int
+    let title: String
+    let contentRange: NSRange
+
+    var sourceHref: String { String(index) }
+}
+
 enum TXTChapterParser {
     struct ParsedChapter {
         let title: String
@@ -17,6 +25,57 @@ enum TXTChapterParser {
                     sourceHref: nil
                 )
             }
+    }
+
+    static func parseChapterIndexes(_ text: String, bookTitle: String) -> [TXTChapterIndex] {
+        let nsText = text as NSString
+        let totalLength = nsText.length
+        guard totalLength > 0 else {
+            return [TXTChapterIndex(index: 0, title: bookTitle, contentRange: NSRange(location: 0, length: 0))]
+        }
+
+        let titleMatches = detectTitleMatches(in: text)
+        if !titleMatches.isEmpty {
+            var indexes: [TXTChapterIndex] = []
+
+            let firstTitleStart = titleMatches[0].range.location
+            if firstTitleStart > 0 {
+                let prefaceRange = NSRange(location: 0, length: firstTitleStart)
+                if hasReadableContent(in: nsText, range: prefaceRange) {
+                    indexes.append(
+                        TXTChapterIndex(
+                            index: indexes.count,
+                            title: "前言",
+                            contentRange: prefaceRange
+                        )
+                    )
+                }
+            }
+
+            for (i, match) in titleMatches.enumerated() {
+                let end = i + 1 < titleMatches.count
+                    ? titleMatches[i + 1].range.location
+                    : totalLength
+                let rawStart = match.range.location + match.range.length
+                let start = skipLeadingWhitespace(in: nsText, from: rawStart, upperBound: end)
+                guard end >= start else { continue }
+                let chapterRange = NSRange(location: start, length: end - start)
+                indexes.append(
+                    TXTChapterIndex(
+                        index: indexes.count,
+                        title: match.title,
+                        contentRange: chapterRange
+                    )
+                )
+            }
+
+            if indexes.isEmpty {
+                return [TXTChapterIndex(index: 0, title: bookTitle, contentRange: NSRange(location: 0, length: totalLength))]
+            }
+            return indexes
+        }
+
+        return splitIntoBlockIndexes(text, blockSize: 3000, bookTitle: bookTitle)
     }
 
     private static let chapterPatterns: [NSRegularExpression] = {
@@ -48,66 +107,25 @@ enum TXTChapterParser {
     }()
 
     static func parseChapters(_ text: String, bookTitle: String) -> [ParsedChapter] {
-        var bestMatches: [(Range<String.Index>, String)] = []
-
-        for regex in chapterPatterns {
-            let nsText = text as NSString
-            let results = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
-            if results.count >= 2 {
-                bestMatches = results.compactMap { match in
-                    guard let range = Range(match.range, in: text) else { return nil }
-                    return (range, String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines))
-                }
-                break
-            }
+        let indexes = parseChapterIndexes(text, bookTitle: bookTitle)
+        return indexes.map { idx in
+            let body = chapterText(text, range: idx.contentRange)
+            return ParsedChapter(
+                title: idx.title,
+                paragraphs: splitIntoParagraphs(body)
+            )
         }
+    }
 
-        if let specialRegex = specialTitlePattern {
-            let nsText = text as NSString
-            let specialResults = specialRegex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
-            let specialRanges: [(Range<String.Index>, String)] = specialResults.compactMap { match in
-                guard let range = Range(match.range, in: text) else { return nil }
-                return (range, String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines))
-            }
-            if !specialRanges.isEmpty {
-                bestMatches.append(contentsOf: specialRanges)
-                bestMatches.sort { $0.0.lowerBound < $1.0.lowerBound }
-            }
-        }
+    static func chapterText(_ text: String, range: NSRange) -> String {
+        let nsText = text as NSString
+        let safe = safeRange(range, in: nsText)
+        guard safe.length > 0 else { return "" }
+        return nsText.substring(with: safe)
+    }
 
-        if !bestMatches.isEmpty {
-            var chapters: [ParsedChapter] = []
-
-            let firstTitleStart = bestMatches[0].0.lowerBound
-            if firstTitleStart > text.startIndex {
-                let preface = String(text[text.startIndex..<firstTitleStart])
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let prefaceParagraphs = splitIntoParagraphs(preface)
-                if !prefaceParagraphs.isEmpty {
-                    chapters.append(ParsedChapter(title: "前言", paragraphs: prefaceParagraphs))
-                }
-            }
-
-            for (index, (range, title)) in bestMatches.enumerated() {
-                let contentStart: String.Index
-                if range.upperBound < text.endIndex {
-                    let nextIndex = text.index(after: range.upperBound)
-                    contentStart = nextIndex <= text.endIndex ? nextIndex : range.upperBound
-                } else {
-                    contentStart = range.upperBound
-                }
-
-                let contentEnd = index + 1 < bestMatches.count ? bestMatches[index + 1].0.lowerBound : text.endIndex
-                let safeStart = min(contentStart, text.endIndex)
-                let safeEnd = max(safeStart, contentEnd)
-                let body = String(text[safeStart..<safeEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
-                chapters.append(ParsedChapter(title: title, paragraphs: splitIntoParagraphs(body)))
-            }
-
-            return chapters.isEmpty ? [ParsedChapter(title: bookTitle, paragraphs: splitIntoParagraphs(text))] : chapters
-        }
-
-        return splitIntoBlocks(text, blockSize: 3000, bookTitle: bookTitle)
+    static func paragraphsForChapterContent(_ text: String) -> [String] {
+        splitIntoParagraphs(text)
     }
 
     private static func splitIntoBlocks(_ text: String, blockSize: Int, bookTitle: String) -> [ParsedChapter] {
@@ -139,6 +157,114 @@ enum TXTChapterParser {
         }
 
         return chapters
+    }
+
+    private static func splitIntoBlockIndexes(_ text: String, blockSize: Int, bookTitle: String) -> [TXTChapterIndex] {
+        let nsText = text as NSString
+        let totalLength = nsText.length
+        guard totalLength > 0 else {
+            return [TXTChapterIndex(index: 0, title: bookTitle, contentRange: NSRange(location: 0, length: 0))]
+        }
+
+        var result: [TXTChapterIndex] = []
+        var cursor = 0
+        while cursor < totalLength {
+            var end = min(cursor + blockSize, totalLength)
+            if end < totalLength {
+                let tailLen = min(256, totalLength - end)
+                let tail = nsText.substring(with: NSRange(location: end, length: tailLen))
+                if let lineBreak = tail.firstIndex(where: { $0 == "\n" || $0 == "\r" }) {
+                    let distance = tail.distance(from: tail.startIndex, to: lineBreak)
+                    end += distance
+                }
+            }
+            let range = NSRange(location: cursor, length: max(0, end - cursor))
+            let title = result.isEmpty ? bookTitle : "第 \(result.count + 1) 節"
+            result.append(TXTChapterIndex(index: result.count, title: title, contentRange: range))
+            cursor = max(end, cursor + 1)
+        }
+        return result
+    }
+
+    private struct TitleMatch {
+        let range: NSRange
+        let title: String
+    }
+
+    private static func detectTitleMatches(in text: String) -> [TitleMatch] {
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        var selected: [TitleMatch] = []
+
+        for regex in chapterPatterns {
+            let results = regex.matches(in: text, range: fullRange)
+            if results.count >= 2 {
+                selected = results.compactMap { match in
+                    let raw = nsText.substring(with: match.range)
+                    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return nil }
+                    return TitleMatch(range: match.range, title: trimmed)
+                }
+                break
+            }
+        }
+
+        if let specialRegex = specialTitlePattern {
+            let special = specialRegex.matches(in: text, range: fullRange).compactMap { match -> TitleMatch? in
+                let raw = nsText.substring(with: match.range)
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+                return TitleMatch(range: match.range, title: trimmed)
+            }
+            selected.append(contentsOf: special)
+        }
+
+        if selected.isEmpty { return [] }
+
+        selected.sort {
+            if $0.range.location == $1.range.location {
+                return $0.range.length < $1.range.length
+            }
+            return $0.range.location < $1.range.location
+        }
+
+        var deduped: [TitleMatch] = []
+        var seenLocations = Set<Int>()
+        for item in selected where !seenLocations.contains(item.range.location) {
+            deduped.append(item)
+            seenLocations.insert(item.range.location)
+        }
+        return deduped
+    }
+
+    private static func skipLeadingWhitespace(in text: NSString, from start: Int, upperBound: Int) -> Int {
+        guard start < upperBound else { return min(start, upperBound) }
+        var cursor = max(0, start)
+        let limit = max(cursor, upperBound)
+        while cursor < limit {
+            let scalar = UnicodeScalar(text.character(at: cursor))
+            if scalar == "\n" || scalar == "\r" || scalar == "\t" || scalar == " " || scalar == "\u{3000}" {
+                cursor += 1
+                continue
+            }
+            break
+        }
+        return cursor
+    }
+
+    private static func hasReadableContent(in text: NSString, range: NSRange) -> Bool {
+        let safe = safeRange(range, in: text)
+        guard safe.length > 0 else { return false }
+        let raw = text.substring(with: safe)
+        return !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private static func safeRange(_ range: NSRange, in text: NSString) -> NSRange {
+        let cappedStart = max(0, min(range.location, text.length))
+        let cappedEnd = max(cappedStart, min(range.location + range.length, text.length))
+        let normalized = NSRange(location: cappedStart, length: cappedEnd - cappedStart)
+        guard normalized.length > 0 else { return normalized }
+        return text.rangeOfComposedCharacterSequences(for: normalized)
     }
 
     private static func splitIntoParagraphs(_ text: String) -> [String] {

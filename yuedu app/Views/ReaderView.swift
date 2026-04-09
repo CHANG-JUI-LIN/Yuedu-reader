@@ -1608,31 +1608,52 @@ struct ReaderView: View {
         
         if b.resolvedPipelineKind == .txt {
             let bookTitle = b.title
-            let text = store.content(for: b)
             let settings = currentRenderSettings(marginH: marginH)
-            let document = BookDocumentFactory.makeTXTDocument(book: b, store: store)
-            applyDocument(document)
-            
-            epubRenderer.loadTXT(
-                text: text,
-                title: bookTitle,
-                bookIdentifier: b.id.uuidString,
-                renderSize: readerViewportSize,
-                settings: settings
-            )
-            
-            if document.tableOfContents.count > 0 {
-                self.chapters = document.tableOfContents.enumerated().map { i, chapter in
-                    BookChapter(index: i, title: chapter.title, content: "")
+            let targetBook = b
+
+            DispatchQueue.global(qos: .userInitiated).async {
+                let text = store.content(for: targetBook)
+                let chapterIndexes = TXTChapterParser.parseChapterIndexes(text, bookTitle: bookTitle)
+                let lazyBuilder = TXTLazyAttributedStringBuilder(
+                    text: text,
+                    chapterIndexes: chapterIndexes
+                )
+
+                Task { @MainActor in
+                    guard self.book?.id == targetBook.id else {
+                        self.isLoadingPipeline = false
+                        self.isRestoringPosition = false
+                        return
+                    }
+
+                    let document = BookDocumentFactory.makeTXTDocument(
+                        book: targetBook,
+                        chapterIndexes: chapterIndexes,
+                        text: text
+                    )
+                    self.applyDocument(document)
+
+                    self.epubRenderer.loadTXT(
+                        attributedBuilder: lazyBuilder,
+                        bookIdentifier: targetBook.id.uuidString,
+                        renderSize: self.readerViewportSize,
+                        settings: settings
+                    )
+
+                    if document.tableOfContents.count > 0 {
+                        self.chapters = document.tableOfContents.enumerated().map { i, chapter in
+                            BookChapter(index: i, title: chapter.title, content: "")
+                        }
+                    } else {
+                        self.chapters = [BookChapter(index: 0, title: bookTitle, content: "")]
+                    }
+
+                    self.allPages = []
+                    self.currentPage = 0
+                    self.isLoadingPipeline = false
+                    self.isRestoringPosition = false
                 }
-            } else {
-                self.chapters = [BookChapter(index: 0, title: bookTitle, content: "")]
             }
-            
-            self.allPages = []
-            currentPage = 0
-            isLoadingPipeline = false
-            isRestoringPosition = false
             return
         }
 

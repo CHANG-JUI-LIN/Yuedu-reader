@@ -116,6 +116,10 @@ struct TXTBookDocument: BookDocument {
     let tableOfContents: [UniversalChapter]
     let capabilities: ReaderCapabilities = .reflowableText
 
+    private let chapterTextByID: [String: String]
+    private let indexedRangesByID: [String: NSRange]
+    private let indexedText: String?
+
     init(book: ReadingBook, store: BookStore) {
         self.metadata = BookMetadata(
             id: book.id,
@@ -124,7 +128,46 @@ struct TXTBookDocument: BookDocument {
             coverImagePath: book.coverImagePath
         )
         let chapters = TXTChapterParser.parseUnifiedChapters(store.content(for: book), bookTitle: book.title)
-        self.tableOfContents = chapters.map {
+        self.tableOfContents = Self.makeTableOfContents(from: chapters)
+        self.chapterTextByID = Dictionary(uniqueKeysWithValues: chapters.map { (String($0.index), $0.plainText) })
+        self.indexedRangesByID = [:]
+        self.indexedText = nil
+    }
+
+    init(book: ReadingBook, chapters: [UnifiedChapter]) {
+        self.metadata = BookMetadata(
+            id: book.id,
+            title: book.title,
+            author: book.author,
+            coverImagePath: book.coverImagePath
+        )
+        self.tableOfContents = Self.makeTableOfContents(from: chapters)
+        self.chapterTextByID = Dictionary(uniqueKeysWithValues: chapters.map { (String($0.index), $0.plainText) })
+        self.indexedRangesByID = [:]
+        self.indexedText = nil
+    }
+
+    init(book: ReadingBook, chapterIndexes: [TXTChapterIndex], text: String) {
+        self.metadata = BookMetadata(
+            id: book.id,
+            title: book.title,
+            author: book.author,
+            coverImagePath: book.coverImagePath
+        )
+        self.tableOfContents = chapterIndexes.map { idx in
+            UniversalChapter(
+                id: String(idx.index),
+                title: idx.title,
+                content: .text("")
+            )
+        }
+        self.chapterTextByID = [:]
+        self.indexedRangesByID = Dictionary(uniqueKeysWithValues: chapterIndexes.map { (String($0.index), $0.contentRange) })
+        self.indexedText = text
+    }
+
+    private static func makeTableOfContents(from chapters: [UnifiedChapter]) -> [UniversalChapter] {
+        chapters.map {
             UniversalChapter(
                 id: String($0.index),
                 title: $0.title,
@@ -134,6 +177,14 @@ struct TXTBookDocument: BookDocument {
     }
 
     func loadContent(for chapterId: String) async throws -> ChapterContent {
+        if let chapterText = chapterTextByID[chapterId] {
+            return .text(chapterText)
+        }
+
+        if let text = indexedText, let range = indexedRangesByID[chapterId] {
+            return .text(TXTChapterParser.chapterText(text, range: range))
+        }
+
         guard let chapter = tableOfContents.first(where: { $0.id == chapterId }) else {
             throw BookDocumentError.chapterNotFound(chapterId)
         }
@@ -284,6 +335,16 @@ enum BookDocumentFactory {
     @MainActor
     static func makeTXTDocument(book: ReadingBook, store: BookStore) -> any BookDocument {
         TXTBookDocument(book: book, store: store)
+    }
+
+    @MainActor
+    static func makeTXTDocument(book: ReadingBook, chapters: [UnifiedChapter]) -> any BookDocument {
+        TXTBookDocument(book: book, chapters: chapters)
+    }
+
+    @MainActor
+    static func makeTXTDocument(book: ReadingBook, chapterIndexes: [TXTChapterIndex], text: String) -> any BookDocument {
+        TXTBookDocument(book: book, chapterIndexes: chapterIndexes, text: text)
     }
 
     static func makeEPUBDocument(book: ReadingBook, session: PublicationSession) -> any BookDocument {
