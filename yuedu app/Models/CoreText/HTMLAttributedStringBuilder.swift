@@ -39,105 +39,16 @@ final class HTMLAttributedStringBuilder {
         let anchorOffsets: [String: Int]
     }
 
-    private struct ParsedHTML {
+    struct ParsedHTML {
         let body: Element
         let rules: [CSSRule]
     }
 
-    private struct RenderedContent {
+    struct RenderedContent {
         let attributedString: NSAttributedString
         let pageBackgroundImage: UIImage?
         let pageBackgroundImageSource: String?
         let anchorOffsets: [String: Int]
-    }
-
-    private final class DOMParser {
-        func parse(
-            html: String,
-            collectStyles: @escaping (Document) async -> [String]
-        ) async -> ParsedHTML? {
-            guard let document = try? SwiftSoup.parse(html),
-                  let body = document.body() else {
-                return nil
-            }
-
-            let stylesheetTexts = await collectStyles(document)
-            let rules = stylesheetTexts.enumerated().flatMap { index, css in
-                CSSParser.parse(css: css, orderOffset: index * 10_000)
-            }
-            return ParsedHTML(body: body, rules: rules)
-        }
-    }
-
-    private final class StyleResolver {
-        func buildAST(
-            from parsed: ParsedHTML,
-            config: Config,
-            makeRootStyle: (Config) -> ResolvedStyle,
-            resolveStyle: (Element, ResolvedStyle, [CSSRule], CGFloat, Element?) -> ResolvedStyle,
-            buildChildren: ([Node], ResolvedStyle, [CSSRule], CGFloat, Element?) async -> [ASTNode],
-            makeAttributeMap: (Element) -> [String: String]
-        ) async -> ElementNode {
-            let bodyStyle = resolveStyle(
-                parsed.body,
-                makeRootStyle(config),
-                parsed.rules,
-                config.fontSize,
-                nil
-            )
-            let astChildren = await buildChildren(
-                parsed.body.getChildNodes(),
-                bodyStyle,
-                parsed.rules,
-                config.fontSize,
-                parsed.body
-            )
-            return ElementNode(
-                tag: "body",
-                id: parsed.body.id(),
-                classes: Array((try? parsed.body.classNames()) ?? []),
-                attributes: makeAttributeMap(parsed.body),
-                resolvedStyle: bodyStyle,
-                children: astChildren
-            )
-        }
-    }
-
-    private final class CoreTextRenderer {
-        func render(
-            ast: ElementNode,
-            config: Config,
-            renderBlockChildren: ([ASTNode], ResolvedStyle, Config) async -> NSAttributedString,
-            collectAnchorOffsets: (NSAttributedString) -> [String: Int],
-            backgroundImageSource: (ElementNode) -> String?,
-            loadBackgroundImage: (ElementNode) async -> UIImage?,
-            debugLog: (NSAttributedString) -> Void
-        ) async -> RenderedContent {
-            let rendered = await renderBlockChildren(ast.children, ast.resolvedStyle, config)
-            let mutable = NSMutableAttributedString(attributedString: rendered)
-            if mutable.length > 0 {
-                mutable.addAttribute(
-                    .backgroundColor,
-                    value: config.backgroundColor,
-                    range: NSRange(location: 0, length: mutable.length)
-                )
-            }
-
-            let anchorOffsets = collectAnchorOffsets(mutable)
-            let pageBackgroundImageSource = backgroundImageSource(ast)
-            let pageBackgroundImage = await loadBackgroundImage(ast)
-            if pageBackgroundImage != nil, mutable.length > 0 {
-                mutable.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: mutable.length))
-            }
-            debugLog(mutable)
-
-            return RenderedContent(
-                attributedString: CJKTypographyProcessor.apply(to: mutable),
-                pageBackgroundImage: pageBackgroundImage,
-                pageBackgroundImageSource: pageBackgroundImageSource,
-                anchorOffsets: anchorOffsets
-            )
-        }
     }
 
     enum VerticalAlign {
@@ -240,9 +151,10 @@ final class HTMLAttributedStringBuilder {
     var resolvedFontFamily: ((String) -> String?)?
     var resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)?
 
-    private let domParser = DOMParser()
-    private let styleResolver = StyleResolver()
-    private let coreTextRenderer = CoreTextRenderer()
+    private let domParser = HTMLBuilderDOMParser()
+    private let styleResolver = HTMLBuilderStyleResolver()
+    private let coreTextRenderer = HTMLBuilderCoreTextRenderer()
+    private let cssPropertyRegistry = HTMLCSSPropertyApplierRegistry.defaultRegistry
 
     func build(html: String, config: Config) async -> BuildResult {
         guard let parsed = await domParser.parse(
@@ -1361,7 +1273,34 @@ final class HTMLAttributedStringBuilder {
         parentStyle: ResolvedStyle,
         rootFontSize: CGFloat
     ) {
-        if let fontSize = declarations["font-size"] {
+        let applyContext = HTMLCSSApplyContext(
+            parentStyle: parentStyle,
+            rootFontSize: rootFontSize,
+            resolveLength: { raw, currentFontSize, rootFontSize, relativeBase in
+                self.resolveLength(
+                    raw,
+                    currentFontSize: currentFontSize,
+                    rootFontSize: rootFontSize,
+                    relativeBase: relativeBase
+                )
+            },
+            parseColor: { self.parseColor($0) },
+            cssFontWeight: { self.cssFontWeight($0, current: $1) },
+            cssAlignment: { self.cssAlignment($0) },
+            cssDisplayIsBlock: { self.cssDisplayIsBlock($0) },
+            resolveLineHeight: { raw, fontSize, rootFontSize in
+                self.resolveLineHeight(raw, fontSize: fontSize, rootFontSize: rootFontSize)
+            },
+            extractURL: { self.extractURL(from: $0) },
+            parseEmbeddedColor: { self.parseEmbeddedColor(in: $0) }
+        )
+        let handledProperties = cssPropertyRegistry.apply(
+            declarations: declarations,
+            style: &style,
+            context: applyContext
+        )
+
+        if !handledProperties.contains("font-size"), let fontSize = declarations["font-size"] {
             style.fontSize = resolveLength(
                 fontSize,
                 currentFontSize: parentStyle.fontSize,
@@ -1370,30 +1309,30 @@ final class HTMLAttributedStringBuilder {
             ) ?? style.fontSize
         }
 
-        if let fontFamily = declarations["font-family"] {
+        if !handledProperties.contains("font-family"), let fontFamily = declarations["font-family"] {
             style.fontFamilies = fontFamily
                 .split(separator: ",")
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'"))) }
         }
-        if let weight = declarations["font-weight"] {
+        if !handledProperties.contains("font-weight"), let weight = declarations["font-weight"] {
             style.fontWeight = cssFontWeight(weight, current: style.fontWeight)
         }
-        if let fontStyle = declarations["font-style"] {
+        if !handledProperties.contains("font-style"), let fontStyle = declarations["font-style"] {
             style.isItalic = fontStyle.lowercased().contains("italic")
         }
-        if let textAlign = declarations["text-align"] {
+        if !handledProperties.contains("text-align"), let textAlign = declarations["text-align"] {
             style.textAlign = cssAlignment(textAlign)
         }
-        if let display = declarations["display"] {
+        if !handledProperties.contains("display"), let display = declarations["display"] {
             style.isBlock = cssDisplayIsBlock(display)
         }
-        if let color = declarations["color"], let resolved = parseColor(color) {
+        if !handledProperties.contains("color"), let color = declarations["color"], let resolved = parseColor(color) {
             style.textColor = resolved
         }
         if let opacity = declarations["opacity"], let value = Double(opacity.trimmingCharacters(in: .whitespacesAndNewlines)) {
             style.opacity = max(0, min(1, CGFloat(value)))
         }
-        if let backgroundImage = declarations["background-image"] {
+        if !handledProperties.contains("background-image"), let backgroundImage = declarations["background-image"] {
             style.backgroundImage = extractURL(from: backgroundImage)
         }
         if let background = declarations["background"] {
@@ -1404,7 +1343,7 @@ final class HTMLAttributedStringBuilder {
                 style.backgroundFillColor = parseEmbeddedColor(in: background)
             }
         }
-        if let backgroundColor = declarations["background-color"],
+        if !handledProperties.contains("background-color"), let backgroundColor = declarations["background-color"],
            let resolved = parseColor(backgroundColor) {
             style.backgroundFillColor = resolved
         }
@@ -1435,7 +1374,7 @@ final class HTMLAttributedStringBuilder {
            ) {
             style.textIndent = value
         }
-        if let lineHeight = declarations["line-height"] {
+        if !handledProperties.contains("line-height"), let lineHeight = declarations["line-height"] {
             if let resolved = resolveLineHeight(lineHeight, fontSize: style.fontSize, rootFontSize: rootFontSize) {
                 // CSS 明確指定時不做 clamp，尊重 EPUB 排版意圖
                 style.lineHeight = resolved
@@ -1959,14 +1898,14 @@ final class HTMLAttributedStringBuilder {
     }
 }
 
-private struct CSSRule {
+struct CSSRule {
     let selector: CSSSelector
     let declarations: [String: String]
     let specificity: Int
     let order: Int
 }
 
-private struct CSSSelector {
+struct CSSSelector {
     struct Component {
         let tag: String?
         let id: String?
@@ -2020,7 +1959,7 @@ private struct CSSSelector {
     }
 }
 
-private enum CSSParser {
+enum CSSParser {
     static func parse(css: String, orderOffset: Int = 0) -> [CSSRule] {
         let stripped = css.replacingOccurrences(of: #"/\*.*?\*/"#, with: "", options: .regularExpression)
         guard let regex = try? NSRegularExpression(

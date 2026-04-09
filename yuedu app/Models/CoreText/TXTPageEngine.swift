@@ -241,7 +241,6 @@ final class TXTPageEngine: PageRenderingProvider {
     }
 
     func invalidateLayout(newSize: CGSize) async {
-        guard renderSize != newSize else { return }
         cancelPendingWork()
         renderSize = newSize
         let currentRecord = CharOffsetRecord(bookId: currentBookId ?? "", spineIndex: charOffset(forPage: currentPage).spineIndex, charOffset: charOffset(forPage: currentPage).charOffset, timestamp: Date())

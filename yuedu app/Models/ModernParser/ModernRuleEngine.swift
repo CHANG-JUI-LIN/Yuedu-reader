@@ -18,7 +18,7 @@ final class ModernRuleEngine {
     func extractList(from content: String, rule: String, baseURL: String) throws -> [String] {
         let (cleanedRule, shouldReverse) = preprocessListRule(rule)
         let (mainRule, regexParts) = splitRuleAndRegex(cleanedRule)
-        let (opType, opParts) = RuleEngine.splitRuleByOperators(mainRule)
+        let (opType, opParts) = RuleSyntaxParser.splitRuleByOperators(mainRule)
         if opParts.count > 1 {
             switch opType {
             case "||":
@@ -52,7 +52,7 @@ final class ModernRuleEngine {
     func extractValue(from content: String, rule: String, baseURL: String) throws -> String {
         let cleanedRule = preprocess(rule)
         let (mainRule, regexParts) = splitRuleAndRegex(cleanedRule)
-        let (opType, opParts) = RuleEngine.splitRuleByOperators(mainRule)
+        let (opType, opParts) = RuleSyntaxParser.splitRuleByOperators(mainRule)
         if opParts.count > 1 {
             switch opType {
             case "&&":
