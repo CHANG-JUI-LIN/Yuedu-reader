@@ -10,6 +10,7 @@ final class UniversalPDFPage {}
 
 enum ChapterContent {
     case text(String)
+    case html(String)
     case image(URL)
     case pdfPage(UniversalPDFPage)
 }
@@ -32,11 +33,12 @@ struct ReaderCapabilities: OptionSet {
     let rawValue: Int
 
     static let fontSize = ReaderCapabilities(rawValue: 1 << 0)
-    static let lineHeight = ReaderCapabilities(rawValue: 1 << 1)
+    static let lineHeight = ReaderCapabilities(rawValue: 1 << 1)  // scroll mode / 翻頁動畫 / 頁面留白
     static let background = ReaderCapabilities(rawValue: 1 << 2)
     static let darkMode = ReaderCapabilities(rawValue: 1 << 3)
+    static let spacing = ReaderCapabilities(rawValue: 1 << 4)     // 行距 / 字距 / 段距
 
-    static let reflowableText: ReaderCapabilities = [.fontSize, .lineHeight, .background, .darkMode]
+    static let reflowableText: ReaderCapabilities = [.fontSize, .lineHeight, .spacing, .background, .darkMode]
     static let fixedLayout: ReaderCapabilities = [.background, .darkMode]
 }
 
@@ -142,7 +144,9 @@ struct TXTBookDocument: BookDocument {
 struct EPUBBookDocument: BookDocument {
     let metadata: BookMetadata
     let tableOfContents: [UniversalChapter]
-    let capabilities: ReaderCapabilities = .reflowableText
+    // .spacing 暫時關閉：行距/段距/字距對 EPUB 尚未完整支援（CSS 優先權問題）
+    // 待 HTMLAttributedStringBuilder 套用 user override 後加回 .spacing
+    let capabilities: ReaderCapabilities = [.fontSize, .lineHeight, .background, .darkMode]
 
     private let session: PublicationSession
 
@@ -215,7 +219,25 @@ struct OnlineHTMLBookDocument: BookDocument {
             expectedSourceURL: sanitizedURL,
             expectedTOCTitle: ref.title
         ), cached.state == .cached, !cached.content.isEmpty {
-            return .text(cached.content)
+            let normalizedHTML = BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+                bookId: book.id,
+                chapterIndex: index,
+                expectedSourceURL: sanitizedURL,
+                expectedTOCTitle: ref.title
+            )
+            ?? (sanitizedURL != ref.url
+                ? BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+                    bookId: book.id,
+                    chapterIndex: index,
+                    expectedSourceURL: ref.url,
+                    expectedTOCTitle: ref.title
+                )
+                : nil)
+            ?? ChapterFetcher.buildNormalizedHTML(
+                title: ref.title,
+                content: cached.content
+            )
+            return .html(normalizedHTML)
         }
 
         let pkg = try await ChapterFetchManager.shared.fetchChapter(
@@ -224,7 +246,25 @@ struct OnlineHTMLBookDocument: BookDocument {
             priority: .immediate,
             store: store
         )
-        return .text(pkg.content)
+        let normalizedHTML = BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+            bookId: book.id,
+            chapterIndex: index,
+            expectedSourceURL: sanitizedURL,
+            expectedTOCTitle: ref.title
+        )
+        ?? (sanitizedURL != ref.url
+            ? BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+                bookId: book.id,
+                chapterIndex: index,
+                expectedSourceURL: ref.url,
+                expectedTOCTitle: ref.title
+            )
+            : nil)
+        ?? ChapterFetcher.buildNormalizedHTML(
+            title: ref.title,
+            content: pkg.content
+        )
+        return .html(normalizedHTML)
     }
 }
 

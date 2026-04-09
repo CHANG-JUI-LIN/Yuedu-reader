@@ -430,6 +430,7 @@ struct ReaderRenderSettings: Equatable {
     let fontSize: CGFloat
     let lineSpacing: CGFloat
     let paragraphSpacing: CGFloat
+    let letterSpacing: CGFloat
     let marginH: CGFloat
     let marginV: CGFloat
     let footerHeight: CGFloat

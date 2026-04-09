@@ -8,6 +8,9 @@ struct PaginationRequest {
     let anchorOffsets: [String: Int]
     let renderSize: CGSize
     let fontSize: CGFloat
+    let lineSpacing: CGFloat
+    let paragraphSpacing: CGFloat
+    let letterSpacing: CGFloat
     let contentInsets: UIEdgeInsets
 }
 
@@ -32,6 +35,9 @@ final class PaginationManager {
             anchorOffsets: request.anchorOffsets,
             renderSize: request.renderSize,
             fontSize: request.fontSize,
+            lineSpacing: request.lineSpacing,
+            paragraphSpacing: request.paragraphSpacing,
+            letterSpacing: request.letterSpacing,
             contentInsets: request.contentInsets
         )
         return PaginationResult(layout: layout)

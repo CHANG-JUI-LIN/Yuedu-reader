@@ -1464,6 +1464,7 @@ struct ReaderView: View {
             fontSize: fontSize,
             lineSpacing: CGFloat(settings.lineSpacing),
             paragraphSpacing: CGFloat(settings.paragraphSpacing),
+            letterSpacing: readerConfig.letterSpacing,
             marginH: marginH,
             marginV: systemVerticalPadding,
             footerHeight: footerOverlayHeight,

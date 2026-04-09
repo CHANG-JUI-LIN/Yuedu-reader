@@ -15,6 +15,7 @@ struct FontSettingsView: View {
 
     private var supportsFontSize: Bool { capabilities.contains(.fontSize) }
     private var supportsLineHeight: Bool { capabilities.contains(.lineHeight) }
+    private var supportsSpacing: Bool { capabilities.contains(.spacing) }
     private var supportsBackground: Bool {
         capabilities.contains(.background) || capabilities.contains(.darkMode)
     }
@@ -37,7 +38,7 @@ struct FontSettingsView: View {
                 }
 
                 // 行距
-                if supportsLineHeight {
+                if supportsSpacing {
                     Section(header: Text(gs.t("行距"))) {
                         HStack {
                             Image(systemName: "text.alignleft").foregroundColor(DSColor.textSecondary)
@@ -52,7 +53,7 @@ struct FontSettingsView: View {
                 }
 
                 // 字距
-                if supportsLineHeight {
+                if supportsSpacing {
                     Section(header: Text(gs.t("字距"))) {
                         HStack {
                             Image(systemName: "character").foregroundColor(DSColor.textSecondary)
@@ -67,7 +68,7 @@ struct FontSettingsView: View {
                 }
 
                 // 段距
-                if supportsLineHeight {
+                if supportsSpacing {
                     Section(header: Text(gs.t("段落間距"))) {
                         HStack {
                             Image(systemName: "text.justify").foregroundColor(DSColor.textSecondary)

@@ -86,6 +86,9 @@ final class CoreTextPaginator {
         let fontSize: CGFloat
         let marginH: CGFloat
         let marginV: CGFloat
+        let lineSpacing: CGFloat
+        let paragraphSpacing: CGFloat
+        let letterSpacing: CGFloat
     }
 
     // MARK: - 公開 API
@@ -98,6 +101,9 @@ final class CoreTextPaginator {
         anchorOffsets: [String: Int] = [:],
         renderSize: CGSize,
         fontSize: CGFloat,
+        lineSpacing: CGFloat = 0,
+        paragraphSpacing: CGFloat = 0,
+        letterSpacing: CGFloat = 0,
         contentInsets: UIEdgeInsets = .zero
     ) async -> ChapterLayout {
         let key = CacheKey(spineIndex: spineIndex,
@@ -105,7 +111,10 @@ final class CoreTextPaginator {
                            height: renderSize.height,
                            fontSize: fontSize,
                            marginH: contentInsets.left,
-                           marginV: contentInsets.top)
+                           marginV: contentInsets.top,
+                           lineSpacing: lineSpacing,
+                           paragraphSpacing: paragraphSpacing,
+                           letterSpacing: letterSpacing)
         if let cached = cache[key] { return cached }
 
         let layout = await Task.detached(priority: .userInitiated) {

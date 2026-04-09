@@ -459,6 +459,9 @@ final class CoreTextPageEngine: PageRenderingProvider {
             anchorOffsets: buildResult.anchorOffsets,
             renderSize: renderSize,
             fontSize: config.fontSize,
+            lineSpacing: renderSettings.lineSpacing,
+            paragraphSpacing: renderSettings.paragraphSpacing,
+            letterSpacing: renderSettings.letterSpacing,
             contentInsets: currentContentInsets()
         )
         let layout = await paginationManager.paginate(request).layout
