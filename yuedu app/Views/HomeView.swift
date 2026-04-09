@@ -367,18 +367,12 @@ struct BookRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .shadow(color: .black.opacity(0.2), radius: 4, x: 1, y: 2)
         } else {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(
-                    LinearGradient(
-                        colors: coverColors(for: book.id),
-                        startPoint: .topLeading, endPoint: .bottomTrailing)
-                )
-                .frame(width: 56, height: 76)
-                .overlay(
-                    Text(String(book.title.prefix(2)))
-                        .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                )
-                .shadow(color: .black.opacity(0.2), radius: 4, x: 1, y: 2)
+            Text(book.title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(DSColor.textSecondary)
+                .multilineTextAlignment(.leading)
+                .lineLimit(4)
+                .frame(width: 56, height: 76, alignment: .topLeading)
         }
     }
 
@@ -389,7 +383,4 @@ struct BookRow: View {
         return UIImage(data: data)
     }
 
-    func coverColors(for id: UUID) -> [Color] {
-        DSColor.coverGradients[abs(id.hashValue) % DSColor.coverGradients.count]
-    }
 }

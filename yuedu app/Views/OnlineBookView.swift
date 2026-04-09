@@ -415,20 +415,11 @@ struct OnlineBookView: View {
 
     // MARK: 封面佔位
     private func placeholderCover(size: CGSize) -> some View {
-        let palettes: [[Color]] = [
-            [.blue, Color(red: 0.1, green: 0.6, blue: 0.8)],
-            [Color(red: 0.6, green: 0.1, blue: 0.1), .orange],
-            [Color(red: 0.1, green: 0.4, blue: 0.2), .green],
-            [.purple, Color(red: 0.7, green: 0.2, blue: 0.6)],
-        ]
-        let colors = palettes[abs(displayName.hashValue) % palettes.count]
-        return RoundedRectangle(cornerRadius: 8)
-            .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-            .frame(width: size.width, height: size.height)
-            .overlay(
-                Text(String(displayName.prefix(2)))
-                    .font(.system(size: 16, weight: .bold)).foregroundColor(.white)
-            )
-            .shadow(radius: 4)
+        Text(displayName)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundColor(DSColor.textSecondary)
+            .multilineTextAlignment(.leading)
+            .lineLimit(6)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 }

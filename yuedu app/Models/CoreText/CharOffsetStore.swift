@@ -11,21 +11,30 @@ struct CharOffsetRecord: Codable, Equatable {
 
 final class CharOffsetStore {
     private let queue = DispatchQueue(label: "com.yuedu.charoffset", qos: .utility)
+    private let queueKey = DispatchSpecificKey<Void>()
     private let directoryURL: URL
     private var pending: CharOffsetRecord?
     private var debounceWork: DispatchWorkItem?
     private let debounceInterval: TimeInterval
 
+    private func log(_ message: String) {
+        print("[ProgressTrace][CharOffsetStore] \(message)")
+    }
+
     init(directoryURL: URL, debounceInterval: TimeInterval = 1.0) {
         self.directoryURL = directoryURL
         self.debounceInterval = debounceInterval
+        queue.setSpecific(key: queueKey, value: ())
         try? FileManager.default.createDirectory(
             at: directoryURL, withIntermediateDirectories: true)
     }
 
+    deinit {
+        flushSync()
+    }
+
     func save(_ record: CharOffsetRecord) {
-        queue.async { [weak self] in
-            guard let self else { return }
+        queue.async { [self] in
             self.pending = record
             self.debounceWork?.cancel()
             let work = DispatchWorkItem { [weak self] in
@@ -35,18 +44,33 @@ final class CharOffsetStore {
             }
             self.debounceWork = work
             self.queue.asyncAfter(deadline: .now() + self.debounceInterval, execute: work)
+            self.log("saveQueued bookId=\(record.bookId) spine=\(record.spineIndex) charOffset=\(record.charOffset) debounce=\(self.debounceInterval)")
         }
     }
 
     func flushSync() {
-        dispatchPrecondition(condition: .notOnQueue(queue))
-        queue.sync { [weak self] in
-            guard let self else { return }
+        if DispatchQueue.getSpecific(key: queueKey) != nil {
+            debounceWork?.cancel()
+            debounceWork = nil
+            if let r = pending {
+                pending = nil
+                write(r)
+                log("flushSync(inQueue) wrotePending bookId=\(r.bookId) spine=\(r.spineIndex) charOffset=\(r.charOffset)")
+            } else {
+                log("flushSync(inQueue) noPending")
+            }
+            return
+        }
+
+        queue.sync {
             self.debounceWork?.cancel()
             self.debounceWork = nil
             if let r = self.pending {
                 self.pending = nil
                 self.write(r)
+                self.log("flushSync wrotePending bookId=\(r.bookId) spine=\(r.spineIndex) charOffset=\(r.charOffset)")
+            } else {
+                self.log("flushSync noPending")
             }
         }
     }
@@ -58,10 +82,18 @@ final class CharOffsetStore {
         queue.sync {
             let url = self.fileURL(for: bookId)
             guard FileManager.default.fileExists(atPath: url.path),
-                  let data = try? Data(contentsOf: url) else { return }
+                  let data = try? Data(contentsOf: url) else {
+                self.log("load miss bookId=\(bookId)")
+                return
+            }
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            result = try? decoder.decode(CharOffsetRecord.self, from: data)
+            if let decoded = try? decoder.decode(CharOffsetRecord.self, from: data) {
+                result = decoded
+                self.log("load hit bookId=\(bookId) spine=\(decoded.spineIndex) charOffset=\(decoded.charOffset)")
+            } else {
+                self.log("load decodeFailed bookId=\(bookId)")
+            }
         }
         return result
     }
@@ -73,6 +105,7 @@ final class CharOffsetStore {
         do {
             try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
             try data.write(to: fileURL(for: record.bookId), options: .atomic)
+            log("write success bookId=\(record.bookId) spine=\(record.spineIndex) charOffset=\(record.charOffset)")
         } catch {
             // Silent failure is hard to diagnose; log for production debugging.
             print("[CharOffsetStore] write failed for bookId \(record.bookId): \(error)")

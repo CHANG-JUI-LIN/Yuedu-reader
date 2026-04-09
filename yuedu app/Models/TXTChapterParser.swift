@@ -261,18 +261,27 @@ enum TXTChapterParser {
         let nsText = text as NSString
         let fullRange = NSRange(location: 0, length: nsText.length)
         var selected: [TitleMatch] = []
+        var singleMatchFallback: [TitleMatch] = []
 
         for regex in chapterPatterns {
             let results = regex.matches(in: text, range: fullRange)
+            let mapped = results.compactMap { match -> TitleMatch? in
+                let raw = nsText.substring(with: match.range)
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+                return TitleMatch(range: match.range, title: trimmed)
+            }
+            if mapped.count == 1, singleMatchFallback.isEmpty {
+                singleMatchFallback = mapped
+            }
             if results.count >= 2 {
-                selected = results.compactMap { match in
-                    let raw = nsText.substring(with: match.range)
-                    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return nil }
-                    return TitleMatch(range: match.range, title: trimmed)
-                }
+                selected = mapped
                 break
             }
+        }
+
+        if selected.isEmpty, !singleMatchFallback.isEmpty {
+            selected = singleMatchFallback
         }
 
         if let specialRegex = specialTitlePattern {
@@ -305,6 +314,7 @@ enum TXTChapterParser {
 
     private static func detectMappedTitleMatches(in mappedTextFile: TXTMappedTextFile) -> [MappedTitleMatch] {
         var selected: [MappedTitleMatch] = []
+        var singleMatchFallback: [MappedTitleMatch] = []
 
         for regex in chapterPatterns {
             var matches: [MappedTitleMatch] = []
@@ -318,10 +328,17 @@ enum TXTChapterParser {
                 guard !title.isEmpty else { return }
                 matches.append(MappedTitleMatch(lineByteRange: lineByteRange, title: title))
             }
+            if matches.count == 1, singleMatchFallback.isEmpty {
+                singleMatchFallback = matches
+            }
             if matches.count >= 2 {
                 selected = matches
                 break
             }
+        }
+
+        if selected.isEmpty, !singleMatchFallback.isEmpty {
+            selected = singleMatchFallback
         }
 
         if let specialRegex = specialTitlePattern {

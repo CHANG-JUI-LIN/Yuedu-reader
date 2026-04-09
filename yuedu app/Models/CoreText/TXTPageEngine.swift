@@ -368,6 +368,7 @@ final class TXTPageEngine: PageRenderingProvider {
     }
 
     private func rebuildPageOffsets() {
+        let anchoredPosition = readingPosition(forPage: currentPage) ?? .chapterStart(0)
         let oldOffsets = spinePageOffsets
         var offset = 0
         spinePageOffsets = (0..<chapterCount).map { i in
@@ -376,6 +377,9 @@ final class TXTPageEngine: PageRenderingProvider {
             return start
         }
         totalPages = offset
+        if let correctedPage = pageIndex(for: anchoredPosition) {
+            currentPage = max(0, min(correctedPage, max(totalPages - 1, 0)))
+        }
         if !oldOffsets.isEmpty, oldOffsets != spinePageOffsets {
             onChapterReady?(nil)
         }

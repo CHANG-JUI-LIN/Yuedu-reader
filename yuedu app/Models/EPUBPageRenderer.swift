@@ -26,6 +26,10 @@ final class EPUBPageRenderer: ObservableObject {
     /// bookId waiting for a valid viewport size before CoreTextPageEngine.start() can run.
     private var pendingStartBookId: String?
 
+    private func logProgress(_ message: String) {
+        print("[ProgressTrace][EPUBPageRenderer] \(message)")
+    }
+
     // MARK: - Load
 
     /// CoreText path — creates a CoreTextPageEngine and kicks off async loading.
@@ -180,6 +184,7 @@ final class EPUBPageRenderer: ObservableObject {
         let (spine, offset) = eng.charOffset(forPage: globalPage)
         savedSpineIndex = spine
         savedCharOffset = offset
+        logProgress("updateCurrentPosition globalPage=\(globalPage) spine=\(spine) charOffset=\(offset)")
     }
 
     /// Saves a CharOffsetRecord for the given bookId.
@@ -194,11 +199,13 @@ final class EPUBPageRenderer: ObservableObject {
             timestamp: Date()
         )
         eng.offsetStore.save(record)
+        logProgress("syncProgress bookId=\(bookId) globalPage=\(currentEpubPage) spine=\(savedSpineIndex) charOffset=\(savedCharOffset)")
     }
 
     /// Flushes pending saves synchronously.
     func flushProgress(bookId: String) {
         engine?.offsetStore.flushSync()
+        logProgress("flushProgress bookId=\(bookId)")
     }
 
     func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int? {

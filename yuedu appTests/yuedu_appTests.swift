@@ -760,6 +760,56 @@ struct yuedu_appTests {
         #expect(charOffset < range24.location + range24.length)
     }
 
+    @Test func readerRestoreResolverReturnsNilWhenPositionUnavailable() {
+        let resolvedPage = ReaderProgressRestoreResolver.resolvePage(
+            chapterIndex: 0,
+            charOffset: 14_000_000
+        ) { _ in
+            nil
+        }
+
+        #expect(resolvedPage == nil)
+    }
+
+    @Test func readerRestoreResolverAcceptsResolvedFirstPage() {
+        let resolvedPage = ReaderProgressRestoreResolver.resolvePage(
+            chapterIndex: 0,
+            charOffset: 120
+        ) { _ in
+            0
+        }
+
+        #expect(resolvedPage == 0)
+    }
+
+    @Test func readerProgressSyncPolicySkipsStartupOverwriteWhenEngineNotReady() {
+        let shouldPersist = ReaderProgressSyncPolicy.shouldPersistOnPageChanged(
+            isCoreTextReady: true,
+            totalPages: 0,
+            isRestoringPosition: false
+        )
+        #expect(shouldPersist == false)
+    }
+
+    @Test func readerProgressSyncPolicyAllowsPersistAfterReady() {
+        let shouldPersist = ReaderProgressSyncPolicy.shouldPersistOnPageChanged(
+            isCoreTextReady: true,
+            totalPages: 4206,
+            isRestoringPosition: false
+        )
+        #expect(shouldPersist == true)
+    }
+
+    @Test func readerProgressSyncPolicyDoesNotUseZeroEnginePageBeforePaginationReady() {
+        let shouldUseDirectly = ReaderProgressSyncPolicy.shouldUseEnginePageDirectly(
+            enginePage: 0,
+            totalPages: 0,
+            savedPositionSnapshot: 0,
+            hasRestoreTarget: false
+        )
+        #expect(shouldUseDirectly == false)
+    }
+
     @Test func refreshOnlineBookMetadataRepairsLegacyShelfEntry() async throws {
         let source = try loadSource(named: "速读谷")
         let previousSources = BookSourceStore.shared.sources

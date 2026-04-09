@@ -136,6 +136,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private var renderSettings: ReaderRenderSettings
 
     private var currentBookId: String?
+    private var pendingRestoreTarget: (spineIndex: Int, charOffset: Int)?
     /// 各章節的原始 Data 大小（bytes），用於全書進度估算
     private var chapterByteSizes: [Int] = []
 
@@ -245,7 +246,16 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
         // 2. 讀存檔 → 決定優先載入哪些章節
         let record = offsetStore.load(bookId: bookId)
-        let savedSpine = record?.spineIndex ?? 0
+        let maxSpineIndex = max(0, totalChapters - 1)
+        let savedSpine = max(0, min(record?.spineIndex ?? 0, maxSpineIndex))
+        if let record {
+            print("[ProgressTrace][CoreTextPageEngine] start loadRecord bookId=\(bookId) rawSpine=\(record.spineIndex) clampedSpine=\(savedSpine) charOffset=\(record.charOffset)")
+        } else {
+            print("[ProgressTrace][CoreTextPageEngine] start loadRecord bookId=\(bookId) none")
+        }
+        pendingRestoreTarget = record.map { _ in
+            (savedSpine, max(0, record?.charOffset ?? 0))
+        }
 
         // 3. 載入存檔鄰域 [n-1, n, n+1]（+ 第 0 章如果不在範圍內）
         var priority = Set<Int>()
@@ -262,8 +272,8 @@ final class CoreTextPageEngine: PageRenderingProvider {
         print("[CoreTextEngine] start done totalPages=\(totalPages)")
 
         // 4. 恢復位置（存檔章節已載入，不會 fallback 到 0）
-        if let record {
-            currentPage = pageIndex(forSpine: record.spineIndex, charOffset: record.charOffset)
+        if pendingRestoreTarget != nil {
+            applyPendingRestoreIfPossible()
         } else {
             migrateFromLegacyProgressIfNeeded(bookId: bookId)
         }
@@ -502,6 +512,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
             generateSnapshot(for: spineIndex)
             rebuildPageOffsets()
+            applyPendingRestoreIfPossible()
             return
         }
 
@@ -587,6 +598,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
         generateSnapshot(for: spineIndex)
         rebuildPageOffsets()
+        applyPendingRestoreIfPossible()
     }
 
     private func resolvedPageBackgroundImage(
@@ -698,7 +710,12 @@ final class CoreTextPageEngine: PageRenderingProvider {
         // 重新掃描 byte sizes 不需要（不隨字號變化）
         // 恢復 currentPage（charOffset 不變，但頁碼可能不同）
         if let bookId = currentBookId, let record = offsetStore.load(bookId: bookId) {
-            currentPage = pageIndex(forSpine: record.spineIndex, charOffset: record.charOffset)
+            let maxSpineIndex = max(0, chapterCount - 1)
+            pendingRestoreTarget = (
+                max(0, min(record.spineIndex, maxSpineIndex)),
+                max(0, record.charOffset)
+            )
+            applyPendingRestoreIfPossible()
         }
         isRelaying = false
         onChapterReady?(nil)
@@ -861,6 +878,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     private func rebuildPageOffsets() {
+        let anchoredPosition = readingPosition(forPage: currentPage) ?? .chapterStart(0)
         let oldOffsets = spinePageOffsets
         var offset = 0
         spinePageOffsets = (0..<chapterCount).map { i in
@@ -870,6 +888,10 @@ final class CoreTextPageEngine: PageRenderingProvider {
             return start
         }
         totalPages = offset
+
+        if let correctedPage = pageIndex(for: anchoredPosition) {
+            currentPage = max(0, min(correctedPage, max(totalPages - 1, 0)))
+        }
         
         if !oldOffsets.isEmpty, oldOffsets != spinePageOffsets {
             onChapterReady?(nil)
@@ -909,6 +931,28 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private func estimatedGlobalPage(for position: CoreTextReadingPosition) -> Int {
         guard spinePageOffsets.indices.contains(position.spineIndex) else { return 0 }
         return spinePageOffsets[position.spineIndex]
+    }
+
+    private func resolvedPageIndex(forSpine spineIndex: Int, charOffset: Int) -> Int? {
+        guard spinePageOffsets.indices.contains(spineIndex),
+              let layout = layouts[spineIndex] else { return nil }
+        let localPage = layout.pageIndex(for: charOffset)
+        return spinePageOffsets[spineIndex] + localPage
+    }
+
+    private func applyPendingRestoreIfPossible() {
+        guard let target = pendingRestoreTarget else { return }
+        guard let resolved = resolvedPageIndex(forSpine: target.spineIndex, charOffset: target.charOffset) else {
+            print("[ProgressTrace][CoreTextPageEngine] pendingRestore waiting spine=\(target.spineIndex) charOffset=\(target.charOffset) layoutsReady=\(layouts[target.spineIndex] != nil)")
+            return
+        }
+        print("[ProgressTrace][CoreTextPageEngine] pendingRestore applied spine=\(target.spineIndex) charOffset=\(target.charOffset) resolvedPage=\(resolved)")
+        let previousPage = currentPage
+        currentPage = resolved
+        if previousPage != resolved {
+            onNavigateToPage?(resolved)
+        }
+        pendingRestoreTarget = nil
     }
 
     private func currentContentInsets() -> UIEdgeInsets {
@@ -1227,9 +1271,13 @@ final class CoreTextPageEngine: PageRenderingProvider {
         guard let locator = legacyStore.loadLastRecord() else { return }
 
         let spineIndex = locator.chapterIndex
-        guard let layout = layouts[spineIndex] else { return }
+        guard let layout = layouts[spineIndex] else {
+            pendingRestoreTarget = (spineIndex, 0)
+            return
+        }
         let progression = locator.chapterProgression ?? locator.progression
         let charOffset = Int(progression * Double(layout.attributedString.length))
-        currentPage = pageIndex(forSpine: spineIndex, charOffset: charOffset)
+        pendingRestoreTarget = (spineIndex, charOffset)
+        applyPendingRestoreIfPossible()
     }
 }

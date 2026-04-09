@@ -14,6 +14,8 @@
 - [x] Phase 8: Cover 跳章連環 reverse 動畫修補（已完成）
 - [x] Phase 9: 翻頁樣式重建/`curl` 手勢/TXT 進度回捲修補（已完成）
 - [x] Phase 10: Slide reverse dataSource 競態與 TXT ID 對齊修補（已完成）
+- [x] Phase 11: 大檔 TXT 恢復競態與存檔釋放邊界修補（已完成）
+- [x] Phase 12: 全局頁碼偏移錨定修補（已完成）
 
 ## Errors Encountered
 | Error | Attempts | Resolution |
@@ -32,3 +34,7 @@
 - `applyInitialProgressIfNeeded` 加入引擎精準進度保護（`engine.currentPage > 0` 時不覆蓋），避免 TXT 進度被粗略百分比回捲。
 - `updateUIViewController` 的 reverse hack 不再回填暫存 `savedDS`，改為動畫後在 slide 模式強制掛回 `context.coordinator`，避免快速連點造成 dataSource 永久掉線。
 - `localEPUBBookIdentifier` 對 TXT 改回傳 `book.id.uuidString`，與 `loadTXT` 使用的進度 key 對齊，避免「存讀不同抽屜」導致每次開書回到章首附近。
+- `CoreTextPageEngine` 新增 `pendingRestoreTarget` 與 `applyPendingRestoreIfPossible`，恢復位置改為「可延後套用」，避免大檔排版被 cancel 時直接 fallback 到第 0 頁。
+- `CharOffsetStore` 補上 `deinit -> flushSync()`，並修正 `save` 外層 weak capture，降低快速退出/釋放邊界導致存檔掉失的機率。
+- `CoreTextPageEngine.rebuildPageOffsets()` 新增「重算前記住閱讀位置、重算後回寫校正頁碼」邏輯，修補背景預載造成的 `currentPage` 漂移。
+- legacy `TXTPageEngine.rebuildPageOffsets()` 同步加上相同錨定修補，避免舊路徑再出現同型問題。

@@ -45,3 +45,21 @@
 - 修正 `localEPUBBookIdentifier`：TXT 分支改回傳 `currentBook.id.uuidString`，與 `loadTXT` / `CharOffsetStore` key 保持一致。
 - 影響：解決 slide 模式快速左點後上一頁永久失效，與 TXT 每次開書進度丟失回捲。
 - 執行 `xcodebuild` 全量編譯：`BUILD SUCCEEDED`。
+
+## 2026-04-09 Session (Large TXT Restore Race + Flush Reliability)
+- 修正 `ReaderView.applyInitialProgressIfNeeded`：採用引擎恢復頁後立即同步 `epubRenderer.updateCurrentPosition(...)`，避免未翻頁即退出時把舊 `(0,0)` 回寫。
+- 修正 `ReaderView.loadContent` TXT 分支：移除無條件 `currentPage = 0`，改為僅在 `savedPositionSnapshot == 0` 時重置。
+- 修正 `CoreTextPageEngine`：新增 `pendingRestoreTarget` 延後恢復機制，`start/invalidateLayout/preloadChapterInternal` 都會嘗試在可用時再套用恢復頁，避免 cancel 競態導致回首頁。
+- 修正 `CharOffsetStore`：`save` 外層改強引用排程，新增 queue-specific flush 邏輯與 `deinit` 強制 `flushSync()`，降低延遲寫入在釋放邊界被丟失。
+- 執行 `xcodebuild` 全量編譯：`BUILD SUCCEEDED`。
+
+## 2026-04-09 Session (CoreText Precise Snapshot Fallback)
+- `ReaderView` 新增 CoreText 精準恢復目標（chapterIndex + charOffset）狀態；在初始恢復時優先 preload 目標章節再定位頁碼，避免只靠百分比估算。
+- `ReaderView` 在 `onPageChanged` 即觸發 debounce `syncProgress`，並在 `autoSaveProgress` 前先強制 `updateCurrentPosition(currentPage)`，避免快取座標過舊。
+- `CoreTextPageEngine` 對讀取到的 `spineIndex` 加入 clamp 邊界保護（start/invalidateLayout），避免索引越界導致恢復鏈直接失敗。
+- 執行 `xcodebuild` 全量編譯：`BUILD SUCCEEDED`。
+
+## 2026-04-09 Session (Global Page Index Shift Anchor Fix)
+- 修正 `CoreTextPageEngine.rebuildPageOffsets`：重算前先抓 `readingPosition(forPage: currentPage)`，重算後用 `pageIndex(for:)` 回推校正 `currentPage`，避免背景預載完成後 global page 偏移造成章節錯存。
+- 同步修正 `TXTPageEngine.rebuildPageOffsets` 的相同錨定流程，補齊 legacy 路徑安全性。
+- 執行 `xcodebuild` 全量編譯：`BUILD SUCCEEDED`。

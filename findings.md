@@ -18,3 +18,9 @@
 - TXT 進度回捲根因是精準 CharOffset 恢復被粗糙 percentage 二次覆蓋；需在 `applyInitialProgressIfNeeded` 優先保護 `engine.currentPage > 0` 的精準狀態。
 - slide 模式快速連點回上一頁時，若 reverse hack 依賴暫存 `savedDS`，可能捕獲到 `nil` 並永久回填 `nil`，導致 dataSource 失效；應直接回填 coordinator。
 - TXT 進度遺失根因之一是 key 不一致：`loadTXT` 使用 `book.id.uuidString`，但 auto-save 使用 `coretext-<uuid>`；需統一為同一 key。
+- 大檔 TXT 在啟動期易遇到排版取消競態：恢復頁位需要可延後套用（等待目標章節 layout 就緒），否則 `pageIndex` fallback 會把頁碼打回 0。
+- 進度恢復後若未同步 `updateCurrentPosition`，使用者在未翻頁即退出時，`syncProgress` 可能把舊快取值覆蓋真實進度。
+- `CharOffsetStore.save` 外層若用 weak capture，物件釋放邊界下排程可能直接失效；需確保排程成功並在 `deinit` 前強制 flush pending。
+- 對超大 TXT，percentage-based fallback 容易受「未完整預載章節」的臨時總頁估算影響；應優先使用 `ReaderProgressManager` 內的 `(chapterIndex,charOffset)` 精準快照。
+- 進度保存不應只依賴退出時單次寫入；翻頁事件可提早排入 debounce 存檔，能提高非正常退出場景的存活率。
+- 全局頁碼映射在背景預載後會變動；若 `rebuildPageOffsets` 不重算 `currentPage`，同一數值會對應到不同章節，導致退出時把進度覆蓋到錯章節。

@@ -778,19 +778,9 @@ struct BrowserView: View {
 
             Spacer()
 
-            VStack(spacing: 10) {
-                Image(systemName: "books.vertical.fill")
-                    .font(.system(size: 56))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.blue, Color(red: 0.45, green: 0.0, blue: 0.85)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                    )
-                Text(gs.t("閱讀瀏覽器"))
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundColor(.primary)
-            }
+            Text(gs.t("閱讀瀏覽器"))
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(.primary)
 
             Spacer().frame(height: browserHeroSpacing)
 
