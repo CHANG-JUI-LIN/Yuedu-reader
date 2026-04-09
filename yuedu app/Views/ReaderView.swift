@@ -78,6 +78,7 @@ struct ReaderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject private var settings = GlobalSettings.shared
+    @StateObject private var readerConfig = ReaderConfig.shared
 
     @State private var chapters: [BookChapter] = []
     @State private var allPages: [PageContent] = []
@@ -86,8 +87,6 @@ struct ReaderView: View {
     @State private var showSettings = false
     @State private var showTOC = false
     @State private var showBookmarkList = false
-    @State private var fontSize: CGFloat = CGFloat(GlobalSettings.shared.readerFontSize)
-    @State private var readerTheme: ReaderTheme = ReaderTheme.loadPersisted()
 
     // 線上章節懶加載
     @State private var fetchingChapters: Set<Int> = []
@@ -182,6 +181,16 @@ struct ReaderView: View {
         nonmutating set { runtimeState.hasPerformedInitialLoad = newValue }
     }
 
+    private var fontSize: CGFloat {
+        get { readerConfig.fontSize }
+        nonmutating set { readerConfig.fontSize = newValue }
+    }
+
+    private var readerTheme: ReaderTheme {
+        get { readerConfig.theme }
+        nonmutating set { readerConfig.theme = newValue }
+    }
+
 
     private var overlayContentMaxWidth: CGFloat {
         (horizontalSizeClass == .regular || UIDevice.current.userInterfaceIdiom == .pad) ? 960 : .infinity
@@ -192,7 +201,7 @@ struct ReaderView: View {
     }
 
     private var effectivePageMarginH: CGFloat {
-        CGFloat(settings.pageMarginH) + extraReaderHorizontalInset
+        readerConfig.pageMarginH + extraReaderHorizontalInset
     }
 
     private var systemVerticalPadding: CGFloat {
@@ -436,9 +445,7 @@ struct ReaderView: View {
                     "scrollMode": settings.scrollMode ? "1" : "0",
                 ]
             )
-            // 先同步字體大小（必須在 loadContent 之前）
-            fontSize = CGFloat(settings.readerFontSize)
-            readerTheme = ReaderTheme.loadPersisted()
+            readerConfig.syncFromGlobalSettings()
             if !hasPerformedInitialLoad {
                 hasPerformedInitialLoad = true
                 performInitialLoad()
@@ -530,44 +537,23 @@ struct ReaderView: View {
                 settings.readerBrightness = current
             }
         }
-        .onChange(of: fontSize) { val in
-            settings.readerFontSize = Double(val)
-            if usesPagedRenderer {
-                epubRenderer.setFontSize(val)
-            } else {
-                rebuildPages()
-            }
-        }
-        .onChange(of: settings.pageMarginH) { _ in
-            if usesPagedRenderer {
-                epubRenderer.setPageMargins(horizontal: effectivePageMarginH, vertical: systemVerticalPadding)
-            } else {
-                rebuildPages()
-            }
-        }
-        .onChange(of: settings.lineSpacing) { _ in
-            if usesCoreTextEPUB {
-                epubRenderer.invalidateCoreTextLayout()
-            } else {
-                rebuildPages()
-            }
-        }
-        .onChange(of: settings.letterSpacing) { _ in
-            if usesCoreTextEPUB {
-                epubRenderer.invalidateCoreTextLayout()
-            } else if !usesPagedRenderer {
-                rebuildPages()
-            }
-        }
-        .onChange(of: readerTheme) { _ in
-            readerTheme.persist()
-            if usesCoreTextEPUB {
-                epubRenderer.engine?.applyThemeChange(
-                    textColor: UIColor(readerTheme.textColor),
-                    backgroundColor: UIColor(readerTheme.backgroundColor)
-                )
-            } else if (isEPUB || isTXT) {
-                rebuildPages()
+        .onReceive(readerConfig.refresh) { kind in
+            switch kind {
+            case .layout:
+                if usesPagedRenderer {
+                    epubRenderer.invalidateCoreTextLayout()
+                } else {
+                    rebuildPages()
+                }
+            case .appearance:
+                if usesCoreTextEPUB {
+                    epubRenderer.engine?.applyThemeChange(
+                        textColor: UIColor(readerTheme.textColor),
+                        backgroundColor: UIColor(readerTheme.backgroundColor)
+                    )
+                } else if (isEPUB || isTXT) {
+                    rebuildPages()
+                }
             }
         }
         .onChange(of: settings.pageTurnStyle) { _ in
@@ -584,7 +570,16 @@ struct ReaderView: View {
         }
         .sheet(isPresented: $showSettings) {
             AdaptiveSheetContainer(maxWidth: 760) {
-                FontSettingsView(fontSize: $fontSize, theme: $readerTheme)
+                FontSettingsView(
+                    fontSize: Binding(
+                        get: { readerConfig.fontSize },
+                        set: { readerConfig.fontSize = $0 }
+                    ),
+                    theme: Binding(
+                        get: { readerConfig.theme },
+                        set: { readerConfig.theme = $0 }
+                    )
+                )
             }
         }
         .sheet(isPresented: $showTOC) {
@@ -797,13 +792,13 @@ struct ReaderView: View {
                                 Text(para)
                                     .font(.system(size: fontSize, design: .serif))
                                     .foregroundColor(readerTheme.textColor)
-                                    .kerning(settings.letterSpacing)
-                                    .lineSpacing(settings.lineSpacing)
+                                    .kerning(readerConfig.letterSpacing)
+                                    .lineSpacing(readerConfig.lineSpacing)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.horizontal, 24)
-                                    .padding(.bottom, settings.paragraphSpacing)
+                                    .padding(.bottom, readerConfig.paragraphSpacing)
                             }
-                            Color.clear.frame(height: 48 - settings.paragraphSpacing).clipped()
+                            Color.clear.frame(height: max(0, 48 - readerConfig.paragraphSpacing)).clipped()
                         }
 
                         Divider()
@@ -918,7 +913,10 @@ struct ReaderView: View {
     // MARK: - 底部欄
     private var bottomBar: some View {
         ReaderBottomControlBar(
-            readerTheme: $readerTheme,
+            readerTheme: Binding(
+                get: { readerTheme },
+                set: { readerTheme = $0 }
+            ),
             overlayContentMaxWidth: overlayContentMaxWidth,
             showChangeSourceButton: book?.isOnline == true && book?.bookSourceId != nil,
             showDownloadButton: book?.isOnline == true,
@@ -1936,55 +1934,6 @@ struct TOCView: View {
                 }
             }
         }.navigationViewStyle(.stack)
-    }
-}
-
-// MARK: - 閱讀主題
-
-enum ReaderTheme: String, CaseIterable {
-    case white = "白天"
-    case sepia = "護眼"
-    case night = "夜間"
-
-    private static let userDefaultsKey = "yd_reader_theme"
-
-    static func loadPersisted() -> ReaderTheme {
-        let raw = UserDefaults.standard.string(forKey: userDefaultsKey) ?? ""
-        return ReaderTheme(rawValue: raw) ?? .sepia
-    }
-
-    func persist() {
-        UserDefaults.standard.set(rawValue, forKey: Self.userDefaultsKey)
-    }
-
-    var backgroundColor: Color {
-        switch self {
-        case .white: return .white
-        case .sepia: return Color(red: 244 / 255, green: 236 / 255, blue: 216 / 255)  // #f4ecd8
-        case .night: return Color(red: 26 / 255, green: 26 / 255, blue: 26 / 255)  // #1a1a1a
-        }
-    }
-    var textColor: Color {
-        switch self {
-        case .white: return Color(red: 51 / 255, green: 51 / 255, blue: 51 / 255)  // #333333
-        case .sepia: return Color(red: 91 / 255, green: 70 / 255, blue: 54 / 255)  // #5b4636
-        case .night: return Color(red: 217 / 255, green: 217 / 255, blue: 217 / 255)  // #d9d9d9
-        }
-    }
-    var barColor: Color {
-        switch self {
-        case .white: return Color(UIColor.systemBackground)
-        case .sepia: return Color(red: 0.93, green: 0.91, blue: 0.83)
-        case .night: return Color(red: 0.12, green: 0.12, blue: 0.12)
-        }
-    }
-    /// epub.js theme name registered in index.html
-    var epubJSName: String {
-        switch self {
-        case .white: return "white"
-        case .sepia: return "sepia"
-        case .night: return "night"
-        }
     }
 }
 

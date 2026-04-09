@@ -3,6 +3,7 @@ import SwiftUI
 struct FontSettingsView: View {
     @Binding var fontSize: CGFloat
     @Binding var theme: ReaderTheme
+    @StateObject private var readerConfig = ReaderConfig.shared
     @ObservedObject private var settings = GlobalSettings.shared
     @ObservedObject private var gs = GlobalSettings.shared
     @Environment(\.presentationMode) var presentationMode
@@ -30,11 +31,11 @@ struct FontSettingsView: View {
                 Section(header: Text(gs.t("行距"))) {
                     HStack {
                         Image(systemName: "text.alignleft").foregroundColor(DSColor.textSecondary)
-                        Slider(value: $settings.lineSpacing, in: 0...50, step: 2)
+                        Slider(value: $readerConfig.lineSpacing, in: 0...50, step: 2)
                         Image(systemName: "text.alignleft").foregroundColor(DSColor.textSecondary)
                             .scaleEffect(1.4)
                     }
-                    Text("\(gs.t("目前"))：\(Int(settings.lineSpacing)) pt")
+                    Text("\(gs.t("目前"))：\(Int(readerConfig.lineSpacing)) pt")
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                 }
@@ -43,11 +44,11 @@ struct FontSettingsView: View {
                 Section(header: Text(gs.t("字距"))) {
                     HStack {
                         Image(systemName: "character").foregroundColor(DSColor.textSecondary)
-                        Slider(value: $settings.letterSpacing, in: 0...12, step: 0.5)
+                        Slider(value: $readerConfig.letterSpacing, in: 0...12, step: 0.5)
                         Image(systemName: "character").foregroundColor(DSColor.textSecondary)
                             .scaleEffect(1.4)
                     }
-                    Text("\(gs.t("目前"))：\(String(format: "%.1f", settings.letterSpacing)) pt")
+                    Text("\(gs.t("目前"))：\(String(format: "%.1f", readerConfig.letterSpacing)) pt")
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                 }
@@ -56,11 +57,11 @@ struct FontSettingsView: View {
                 Section(header: Text(gs.t("段落間距"))) {
                     HStack {
                         Image(systemName: "text.justify").foregroundColor(DSColor.textSecondary)
-                        Slider(value: $settings.paragraphSpacing, in: 0...40, step: 2)
+                        Slider(value: $readerConfig.paragraphSpacing, in: 0...40, step: 2)
                         Image(systemName: "text.justify").foregroundColor(DSColor.textSecondary)
                             .scaleEffect(1.2)
                     }
-                    Text("\(gs.t("目前"))：\(Int(settings.paragraphSpacing)) pt")
+                    Text("\(gs.t("目前"))：\(Int(readerConfig.paragraphSpacing)) pt")
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                 }
@@ -70,8 +71,8 @@ struct FontSettingsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text(gs.t("左右")).font(DSFont.caption).foregroundColor(DSColor.textSecondary).frame(width: 30)
-                            Slider(value: $settings.pageMarginH, in: 8...48, step: 2)
-                            Text("\(Int(settings.pageMarginH))").font(DSFont.caption).foregroundColor(DSColor.textSecondary).frame(width: 24)
+                            Slider(value: $readerConfig.pageMarginH, in: 8...48, step: 2)
+                            Text("\(Int(readerConfig.pageMarginH))").font(DSFont.caption).foregroundColor(DSColor.textSecondary).frame(width: 24)
                         }
                     }
                     Text(gs.t("上下留白與 footer 距離由系統自動控制"))

@@ -24,6 +24,136 @@ enum PageTurnStyle: String, CaseIterable {
     case none = "無動畫"     // 立即切換
 }
 
+// MARK: - 閱讀主題
+enum ReaderTheme: String, CaseIterable {
+    case white = "白天"
+    case sepia = "護眼"
+    case night = "夜間"
+
+    private static let userDefaultsKey = "yd_reader_theme"
+
+    static func loadPersisted() -> ReaderTheme {
+        let raw = UserDefaults.standard.string(forKey: userDefaultsKey) ?? ""
+        return ReaderTheme(rawValue: raw) ?? .sepia
+    }
+
+    func persist() {
+        UserDefaults.standard.set(rawValue, forKey: Self.userDefaultsKey)
+    }
+
+    var backgroundColor: Color {
+        switch self {
+        case .white: return .white
+        case .sepia: return Color(red: 244 / 255, green: 236 / 255, blue: 216 / 255)
+        case .night: return Color(red: 26 / 255, green: 26 / 255, blue: 26 / 255)
+        }
+    }
+
+    var textColor: Color {
+        switch self {
+        case .white: return Color(red: 51 / 255, green: 51 / 255, blue: 51 / 255)
+        case .sepia: return Color(red: 91 / 255, green: 70 / 255, blue: 54 / 255)
+        case .night: return Color(red: 217 / 255, green: 217 / 255, blue: 217 / 255)
+        }
+    }
+
+    var barColor: Color {
+        switch self {
+        case .white: return Color(UIColor.systemBackground)
+        case .sepia: return Color(red: 0.93, green: 0.91, blue: 0.83)
+        case .night: return Color(red: 0.12, green: 0.12, blue: 0.12)
+        }
+    }
+
+    var epubJSName: String {
+        switch self {
+        case .white: return "white"
+        case .sepia: return "sepia"
+        case .night: return "night"
+        }
+    }
+}
+
+enum ReaderConfigRefreshKind {
+    case layout
+    case appearance
+}
+
+@MainActor
+final class ReaderConfig: ObservableObject {
+    static let shared = ReaderConfig()
+
+    @Published var fontSize: CGFloat
+    @Published var lineSpacing: CGFloat
+    @Published var letterSpacing: CGFloat
+    @Published var paragraphSpacing: CGFloat
+    @Published var pageMarginH: CGFloat
+    @Published var pageMarginV: CGFloat
+    @Published var theme: ReaderTheme
+
+    let refresh = PassthroughSubject<ReaderConfigRefreshKind, Never>()
+
+    private var cancellables = Set<AnyCancellable>()
+    private var suppressRefresh = false
+
+    private init() {
+        let gs = GlobalSettings.shared
+        fontSize = CGFloat(gs.readerFontSize)
+        lineSpacing = CGFloat(gs.lineSpacing)
+        letterSpacing = CGFloat(gs.letterSpacing)
+        paragraphSpacing = CGFloat(gs.paragraphSpacing)
+        pageMarginH = CGFloat(gs.pageMarginH)
+        pageMarginV = CGFloat(gs.pageMarginV)
+        theme = ReaderTheme.loadPersisted()
+        setupBindings()
+    }
+
+    func syncFromGlobalSettings() {
+        let gs = GlobalSettings.shared
+        suppressRefresh = true
+        fontSize = CGFloat(gs.readerFontSize)
+        lineSpacing = CGFloat(gs.lineSpacing)
+        letterSpacing = CGFloat(gs.letterSpacing)
+        paragraphSpacing = CGFloat(gs.paragraphSpacing)
+        pageMarginH = CGFloat(gs.pageMarginH)
+        pageMarginV = CGFloat(gs.pageMarginV)
+        theme = ReaderTheme.loadPersisted()
+        suppressRefresh = false
+    }
+
+    private func setupBindings() {
+        let layoutPublisher = Publishers.CombineLatest4($fontSize, $lineSpacing, $letterSpacing, $paragraphSpacing)
+            .combineLatest($pageMarginH, $pageMarginV)
+            .debounce(for: .milliseconds(120), scheduler: RunLoop.main)
+
+        layoutPublisher
+            .dropFirst()
+            .sink { [weak self] combined, marginH, marginV in
+                guard let self else { return }
+                let (fontSize, lineSpacing, letterSpacing, paragraphSpacing) = combined
+                let gs = GlobalSettings.shared
+                gs.readerFontSize = Double(fontSize)
+                gs.lineSpacing = Double(lineSpacing)
+                gs.letterSpacing = Double(letterSpacing)
+                gs.paragraphSpacing = Double(paragraphSpacing)
+                gs.pageMarginH = Double(marginH)
+                gs.pageMarginV = Double(marginV)
+                guard !self.suppressRefresh else { return }
+                self.refresh.send(.layout)
+            }
+            .store(in: &cancellables)
+
+        $theme
+            .dropFirst()
+            .sink { [weak self] theme in
+                theme.persist()
+                guard let self, !self.suppressRefresh else { return }
+                self.refresh.send(.appearance)
+            }
+            .store(in: &cancellables)
+    }
+}
+
 extension String {
     /// 書本文字 ICU 離線轉換
     func converted(to mode: TextConversion) -> String {
