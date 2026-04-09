@@ -594,12 +594,6 @@ final class HTMLAttributedStringBuilder {
             default:
                 let childString = await renderNode(child, inheritedStyle: element.resolvedStyle, config: config)
                 if childString.length == 0 { continue }
-                // 跳過 block 內僅由縮排/換行形成的純空白 text node，
-                // 避免被誤當成內容段落而放大段距。
-                if childString.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                   !containsRenderableMetadata(childString) {
-                    continue
-                }
                 appendNode(childString, to: segment)
             }
         }
