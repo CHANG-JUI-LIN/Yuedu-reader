@@ -23,7 +23,7 @@ final class HTMLAttributedStringBuilder {
         var textColor: UIColor
         var backgroundColor: UIColor
         var fontFamilyName: String?
-        var renderWidth: CGFloat = UIScreen.main.bounds.width - 32
+        var renderWidth: CGFloat
     }
 
     struct ImagePage {

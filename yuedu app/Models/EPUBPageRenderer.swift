@@ -46,6 +46,7 @@ final class EPUBPageRenderer: ObservableObject {
         let store = CharOffsetStore(directoryURL: progressDir)
         let newEngine = CoreTextPageEngine(
             resourceProvider: ReadiumBookResourceAdapter(session: session),
+            renderSettings: settings,
             offsetStore: store
         )
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
@@ -174,5 +175,9 @@ final class EPUBPageRenderer: ObservableObject {
     func invalidateCoreTextLayout() {
         guard let eng = engine else { return }
         Task { await eng.invalidateLayout(newSize: eng.renderSize) }
+    }
+
+    func updateRenderSettings(_ settings: ReaderRenderSettings) {
+        engine?.updateRenderSettings(settings)
     }
 }

@@ -69,6 +69,7 @@ protocol PageRenderingProvider: AnyObject {
     var layouts: [Int: CoreTextPaginator.ChapterLayout] { get }
     
     func applyThemeChange(textColor: UIColor, backgroundColor: UIColor)
+    func updateRenderSettings(_ settings: ReaderRenderSettings)
     func start(renderSize: CGSize, bookId: String) async
     func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int?
     func plainText(forPage page: Int) -> String
@@ -99,4 +100,5 @@ extension PageRenderingProvider {
         }
         return pageViewController(at: 0)
     }
+    func updateRenderSettings(_ settings: ReaderRenderSettings) {}
 }

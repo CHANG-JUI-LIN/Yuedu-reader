@@ -3,6 +3,83 @@ import CoreGraphics
 import UIKit
 import ReadiumShared
 
+struct FontRegistrationResult {
+    let familyName: String
+    let postScriptName: String
+    let tempFileURL: URL?
+}
+
+protocol FontRegistrationServicing {
+    func registerFont(data: Data, alias: String, existingTempURL: URL?) -> FontRegistrationResult?
+    func cleanupTemporaryFile(at url: URL)
+}
+
+final class CoreTextFontRegistrationService: FontRegistrationServicing {
+    func registerFont(data: Data, alias: String, existingTempURL: URL?) -> FontRegistrationResult? {
+        let tempURL = existingTempURL
+            ?? FileManager.default.temporaryDirectory
+                .appendingPathComponent("reader-font-\(alias)-\(UUID().uuidString)")
+                .appendingPathExtension("ttf")
+
+        var writableTempURL: URL? = tempURL
+
+        do {
+            try data.write(to: tempURL, options: .atomic)
+
+            var registrationError: Unmanaged<CFError>?
+            let registered = CTFontManagerRegisterFontsForURL(tempURL as CFURL, .process, &registrationError)
+            if !registered, let error = registrationError?.takeRetainedValue() {
+                print("[CoreTextEngine] registerFont URL register warning: \(error)")
+            }
+
+            if let descriptors = CTFontManagerCreateFontDescriptorsFromURL(tempURL as CFURL) as? [[CFString: Any]],
+               let descriptor = descriptors.first {
+                let postScriptName = descriptor[kCTFontNameAttribute] as? String ?? ""
+                let familyName = descriptor[kCTFontFamilyNameAttribute] as? String ?? ""
+                if !familyName.isEmpty || !postScriptName.isEmpty {
+                    return FontRegistrationResult(
+                        familyName: familyName.isEmpty ? postScriptName : familyName,
+                        postScriptName: postScriptName.isEmpty ? familyName : postScriptName,
+                        tempFileURL: tempURL
+                    )
+                }
+            }
+        } catch {
+            writableTempURL = nil
+            print("[CoreTextEngine] registerFont temp write failed: \(error)")
+        }
+
+        guard
+            let provider = CGDataProvider(data: data as CFData),
+            let cgFont = CGFont(provider)
+        else {
+            print("[CoreTextEngine] registerFont CGFont provider failed header=\(data.prefix(8).map { String(format: "%02x", $0) }.joined())")
+            return nil
+        }
+
+        var registrationError: Unmanaged<CFError>?
+        let registered = CTFontManagerRegisterGraphicsFont(cgFont, &registrationError)
+        if !registered, let error = registrationError?.takeRetainedValue() {
+            print("[CoreTextEngine] registerFont graphics warning: \(error)")
+        }
+
+        let postScriptName = cgFont.postScriptName as String? ?? ""
+        let font = CTFontCreateWithGraphicsFont(cgFont, 12, nil, nil)
+        let familyName = CTFontCopyFamilyName(font) as String
+        guard !familyName.isEmpty || !postScriptName.isEmpty else { return nil }
+
+        return FontRegistrationResult(
+            familyName: familyName.isEmpty ? postScriptName : familyName,
+            postScriptName: postScriptName.isEmpty ? familyName : postScriptName,
+            tempFileURL: writableTempURL
+        )
+    }
+
+    func cleanupTemporaryFile(at url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+}
+
 @MainActor
 final class CoreTextPageEngine: PageRenderingProvider {
     private struct RegisteredFontFace {
@@ -26,11 +103,12 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private var layoutGeneration: Int = 0
 
     private let resourceProvider: any BookResourceProvider
-    private let builder: HTMLAttributedStringBuilder
     private let paginationManager: PaginationManager
+    private let fontRegistrationService: any FontRegistrationServicing
     let offsetStore: CharOffsetStore
     private var registeredFontFaces: [String: RegisteredFontFace] = [:]
     private var registeredFontFileURLs: [String: URL] = [:]
+    private var renderSettings: ReaderRenderSettings
 
     private var currentBookId: String?
     /// 各章節的原始 Data 大小（bytes），用於全書進度估算
@@ -45,54 +123,42 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     deinit {
         for url in registeredFontFileURLs.values {
-            try? FileManager.default.removeItem(at: url)
+            fontRegistrationService.cleanupTemporaryFile(at: url)
         }
     }
 
     init(
         resourceProvider: any BookResourceProvider,
-        builder: HTMLAttributedStringBuilder = HTMLAttributedStringBuilder(),
+        renderSettings: ReaderRenderSettings,
+        fontRegistrationService: any FontRegistrationServicing = CoreTextFontRegistrationService(),
         paginationManager: PaginationManager? = nil,
         offsetStore: CharOffsetStore
     ) {
         self.resourceProvider = resourceProvider
-        self.builder = builder
+        self.renderSettings = renderSettings
+        self.fontRegistrationService = fontRegistrationService
         self.paginationManager = paginationManager ?? PaginationManager()
         self.offsetStore = offsetStore
-
-        self.builder.imageLoader = { [weak resourceProvider] href in
-            guard let resourceProvider else { return nil }
-            if let absolute = URL(string: href), absolute.scheme != nil {
-                if let response = try? await resourceProvider.response(for: absolute) {
-                    return UIImage(data: response.data)
-                }
-                if absolute.scheme == resourceProvider.customScheme {
-                    let fallbackHref = absolute.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                    let fallbackURL = resourceProvider.resourceURL(for: fallbackHref)
-                    if let response = try? await resourceProvider.response(for: fallbackURL) {
-                        return UIImage(data: response.data)
-                    }
-                }
-                return nil
-            }
-            let url = resourceProvider.resourceURL(for: href)
-            guard let response = try? await resourceProvider.response(for: url) else { return nil }
-            return UIImage(data: response.data)
-        }
     }
 
     convenience init(
         session: PublicationSession,
-        builder: HTMLAttributedStringBuilder = HTMLAttributedStringBuilder(),
+        renderSettings: ReaderRenderSettings,
+        fontRegistrationService: any FontRegistrationServicing = CoreTextFontRegistrationService(),
         paginationManager: PaginationManager? = nil,
         offsetStore: CharOffsetStore
     ) {
         self.init(
             resourceProvider: ReadiumBookResourceAdapter(session: session),
-            builder: builder,
+            renderSettings: renderSettings,
+            fontRegistrationService: fontRegistrationService,
             paginationManager: paginationManager,
             offsetStore: offsetStore
         )
+    }
+
+    func updateRenderSettings(_ settings: ReaderRenderSettings) {
+        renderSettings = settings
     }
 
     func start(renderSize: CGSize, bookId: String) async {
@@ -727,34 +793,21 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     private func currentContentInsets() -> UIEdgeInsets {
-        let gs = GlobalSettings.shared
-        let h = CGFloat(gs.pageMarginH)
-        
-        // 動態獲取當前裝置的安全區域（瀏海、動態島、底部橫條）
-        let safeArea = (UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }?
-            .safeAreaInsets) ?? .zero
-        
-        let top = ReaderLayoutMetrics.topInset(safeTop: safeArea.top)
-        let bottom = max(20, ReaderLayoutMetrics.bottomInset(safeBottom: safeArea.bottom))
-        
-        return UIEdgeInsets(top: top, left: h, bottom: bottom, right: h)
+        renderSettings.contentInsets
     }
 
     private func currentBuilderConfig() -> HTMLAttributedStringBuilder.Config {
-        let gs = GlobalSettings.shared
-        let fontSize = CGFloat(gs.readerFontSize)
+        let fontSize = renderSettings.fontSize
+        let horizontalInsets = renderSettings.contentInsets.left + renderSettings.contentInsets.right
         return HTMLAttributedStringBuilder.Config(
             fontSize: fontSize,
-            lineSpacing: CGFloat(gs.lineSpacing),
-            paragraphSpacing: CGFloat(gs.paragraphSpacing),
+            lineSpacing: renderSettings.lineSpacing,
+            paragraphSpacing: renderSettings.paragraphSpacing,
             firstLineIndent: fontSize * 2,
             textColor: currentTextColor(),
             backgroundColor: currentBackgroundColor(),
             fontFamilyName: nil,
-            renderWidth: renderSize.width - CGFloat(gs.pageMarginH) * 2
+            renderWidth: max(1, renderSize.width - horizontalInsets)
         )
     }
 
@@ -775,10 +828,17 @@ final class CoreTextPageEngine: PageRenderingProvider {
             guard
                 let fontURL = URL(string: fontFace.resolvedURL),
                 let response = try? await resourceProvider.response(for: fontURL),
-                let registeredFont = registerFont(data: response.data, alias: fontFace.alias)
+                let registeredFont = fontRegistrationService.registerFont(
+                    data: response.data,
+                    alias: fontFace.alias,
+                    existingTempURL: registeredFontFileURLs[fontFace.alias]
+                )
             else {
                 print("[CoreTextEngine] font registration FAILED alias=\(fontFace.alias)")
                 continue
+            }
+            if let tempFileURL = registeredFont.tempFileURL {
+                registeredFontFileURLs[fontFace.alias] = tempFileURL
             }
             registeredFontFaces[fontFace.alias] = RegisteredFontFace(
                 alias: fontFace.alias,
@@ -916,64 +976,6 @@ final class CoreTextPageEngine: PageRenderingProvider {
             result = (result as NSString).replacingCharacters(in: match.range(at: 1), with: rewritten)
         }
         return result
-    }
-
-    private func registerFont(data: Data, alias: String) -> (familyName: String, postScriptName: String)? {
-        let tempURL: URL
-        if let existing = registeredFontFileURLs[alias] {
-            tempURL = existing
-        } else {
-            tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("reader-font-\(alias)-\(UUID().uuidString)")
-                .appendingPathExtension("ttf")
-            registeredFontFileURLs[alias] = tempURL
-        }
-        do {
-            try data.write(to: tempURL, options: .atomic)
-
-            var registrationError: Unmanaged<CFError>?
-            let registered = CTFontManagerRegisterFontsForURL(tempURL as CFURL, .process, &registrationError)
-            if !registered, let error = registrationError?.takeRetainedValue() {
-                print("[CoreTextEngine] registerFont URL register warning: \(error)")
-            }
-
-            if let descriptors = CTFontManagerCreateFontDescriptorsFromURL(tempURL as CFURL) as? [[CFString: Any]],
-               let descriptor = descriptors.first {
-                let postScriptName = descriptor[kCTFontNameAttribute] as? String ?? ""
-                let familyName = descriptor[kCTFontFamilyNameAttribute] as? String ?? ""
-                if !familyName.isEmpty || !postScriptName.isEmpty {
-                    return (
-                        familyName.isEmpty ? postScriptName : familyName,
-                        postScriptName.isEmpty ? familyName : postScriptName
-                    )
-                }
-            }
-        } catch {
-            print("[CoreTextEngine] registerFont temp write failed: \(error)")
-        }
-
-        guard
-            let provider = CGDataProvider(data: data as CFData),
-            let cgFont = CGFont(provider)
-        else {
-            print("[CoreTextEngine] registerFont CGFont provider failed header=\(data.prefix(8).map { String(format: "%02x", $0) }.joined())")
-            return nil
-        }
-
-        var error: Unmanaged<CFError>?
-        let registered = CTFontManagerRegisterGraphicsFont(cgFont, &error)
-        if !registered, let err = error?.takeRetainedValue() {
-            print("[CoreTextEngine] registerFont graphics warning: \(err)")
-        }
-
-        let postScriptName = cgFont.postScriptName as String? ?? ""
-        let font = CTFontCreateWithGraphicsFont(cgFont, 12, nil, nil)
-        let familyName = CTFontCopyFamilyName(font) as String
-        guard !familyName.isEmpty || !postScriptName.isEmpty else { return nil }
-        return (
-            familyName.isEmpty ? postScriptName : familyName,
-            postScriptName.isEmpty ? familyName : postScriptName
-        )
     }
 
     /// 將 HTML img src（可能是相對路徑）解析成相對於章節 href 的絕對 EPUB 路徑。

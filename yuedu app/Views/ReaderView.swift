@@ -1455,14 +1455,19 @@ struct ReaderView: View {
 
     // MARK: - 載入 & 建頁
     private func currentRenderSettings(marginH: CGFloat) -> ReaderRenderSettings {
-        ReaderRenderSettings(
+        let topInset = ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
+        let bottomInset = max(20, ReaderLayoutMetrics.bottomInset(safeBottom: windowSafeBottom))
+        return ReaderRenderSettings(
             theme: readerTheme.epubJSName,
             textColor: UIColor(readerTheme.textColor),
             backgroundColor: UIColor(readerTheme.backgroundColor),
             fontSize: fontSize,
+            lineSpacing: CGFloat(settings.lineSpacing),
+            paragraphSpacing: CGFloat(settings.paragraphSpacing),
             marginH: marginH,
             marginV: systemVerticalPadding,
-            footerHeight: footerOverlayHeight
+            footerHeight: footerOverlayHeight,
+            contentInsets: UIEdgeInsets(top: topInset, left: marginH, bottom: bottomInset, right: marginH)
         )
     }
 
@@ -1638,12 +1643,14 @@ struct ReaderView: View {
             rebuildPages()
             return
         }
+        epubRenderer.updateRenderSettings(currentRenderSettings(marginH: effectivePageMarginH))
         let size = targetSize ?? engine.renderSize
         Task { await engine.invalidateLayout(newSize: size) }
     }
 
     private func applyUnifiedAppearanceUpdate() {
         guard let engine = epubRenderer.engine else { return }
+        epubRenderer.updateRenderSettings(currentRenderSettings(marginH: effectivePageMarginH))
         engine.applyThemeChange(
             textColor: UIColor(readerTheme.textColor),
             backgroundColor: UIColor(readerTheme.backgroundColor)

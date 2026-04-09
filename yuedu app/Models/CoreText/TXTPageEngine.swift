@@ -23,6 +23,9 @@ final class TXTPageEngine: PageRenderingProvider {
     private var themeTextColor: UIColor = .label
     private var themeBackgroundColor: UIColor = .systemBackground
     private var fontSize: CGFloat
+    private var lineSpacing: CGFloat
+    private var paragraphSpacing: CGFloat
+    private var contentInsets: UIEdgeInsets
     var onChapterReady: ((Int?) -> Void)?
     var onNavigateToPage: ((Int) -> Void)?
 
@@ -31,6 +34,16 @@ final class TXTPageEngine: PageRenderingProvider {
         self.offsetStore = offsetStore
         self.chapters = TXTChapterParser.parseUnifiedChapters(text, bookTitle: title)
         self.fontSize = settings.fontSize
+        self.lineSpacing = settings.lineSpacing
+        self.paragraphSpacing = settings.paragraphSpacing
+        self.contentInsets = settings.contentInsets
+    }
+
+    func updateRenderSettings(_ settings: ReaderRenderSettings) {
+        self.fontSize = settings.fontSize
+        self.lineSpacing = settings.lineSpacing
+        self.paragraphSpacing = settings.paragraphSpacing
+        self.contentInsets = settings.contentInsets
     }
 
     var chapterTitles: [String] {
@@ -179,7 +192,6 @@ final class TXTPageEngine: PageRenderingProvider {
         guard !shouldAbortPreload(generation: generation) else { return }
         
         let chapter = chapters[spineIndex]
-        let gs = GlobalSettings.shared
         let titleFont = UIFont.systemFont(ofSize: fontSize + 8, weight: .bold)
         let bodyFont = UIFont.systemFont(ofSize: fontSize)
         
@@ -188,8 +200,8 @@ final class TXTPageEngine: PageRenderingProvider {
         titleParaStyle.paragraphSpacing = 24
         
         let bodyParaStyle = NSMutableParagraphStyle()
-        bodyParaStyle.lineSpacing = CGFloat(gs.lineSpacing)
-        bodyParaStyle.paragraphSpacing = CGFloat(gs.paragraphSpacing)
+        bodyParaStyle.lineSpacing = lineSpacing
+        bodyParaStyle.paragraphSpacing = paragraphSpacing
         
         let attrStr = NSMutableAttributedString()
         attrStr.append(NSAttributedString(string: chapter.title + "\n", attributes: [
@@ -216,7 +228,7 @@ final class TXTPageEngine: PageRenderingProvider {
             anchorOffsets: [:],
             renderSize: renderSize,
             fontSize: self.fontSize,
-            contentInsets: UIEdgeInsets(top: 60, left: 24, bottom: 60, right: 24)
+            contentInsets: contentInsets
         )
         let layout = await paginationManager.paginate(request).layout
         guard !shouldAbortPreload(generation: generation) else { return }

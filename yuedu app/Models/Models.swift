@@ -428,9 +428,12 @@ struct ReaderRenderSettings: Equatable {
     let textColor: UIColor
     let backgroundColor: UIColor
     let fontSize: CGFloat
+    let lineSpacing: CGFloat
+    let paragraphSpacing: CGFloat
     let marginH: CGFloat
     let marginV: CGFloat
     let footerHeight: CGFloat
+    let contentInsets: UIEdgeInsets
 }
 
 enum ReaderLayoutMetrics {

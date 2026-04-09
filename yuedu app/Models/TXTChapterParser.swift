@@ -82,8 +82,9 @@ enum TXTChapterParser {
             if firstTitleStart > text.startIndex {
                 let preface = String(text[text.startIndex..<firstTitleStart])
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                if preface.count > 50 {
-                    chapters.append(ParsedChapter(title: "前言", paragraphs: splitIntoParagraphs(preface)))
+                let prefaceParagraphs = splitIntoParagraphs(preface)
+                if !prefaceParagraphs.isEmpty {
+                    chapters.append(ParsedChapter(title: "前言", paragraphs: prefaceParagraphs))
                 }
             }
 
