@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		3021769152B9F41FC1F2CBA5 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 489E6E08B47AA3AC9F140CAD /* SwiftSoup */; };
+		8A11B0E32F9A1C7300A1B001 /* ReadiumFuzi in Frameworks */ = {isa = PBXBuildFile; productRef = 8A11B0E22F9A1C7300A1B001 /* ReadiumFuzi */; };
 		460274832F710D7500486947 /* ReadiumAdapterGCDWebServer in Frameworks */ = {isa = PBXBuildFile; productRef = 460274822F710D7500486947 /* ReadiumAdapterGCDWebServer */; };
 		460274852F710D7500486947 /* ReadiumAdapterLCPSQLite in Frameworks */ = {isa = PBXBuildFile; productRef = 460274842F710D7500486947 /* ReadiumAdapterLCPSQLite */; };
 		4675984E2F7A8D760073996D /* DTCoreText in Frameworks */ = {isa = PBXBuildFile; productRef = 4675984D2F7A8D760073996D /* DTCoreText */; };
@@ -62,6 +63,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8A11B0E32F9A1C7300A1B001 /* ReadiumFuzi in Frameworks */,
 				460274852F710D7500486947 /* ReadiumAdapterLCPSQLite in Frameworks */,
 				4675984E2F7A8D760073996D /* DTCoreText in Frameworks */,
 				54FF42D1FA99075B5C91D59B /* ReadiumShared in Frameworks */,
@@ -129,6 +131,7 @@
 			);
 			name = "yuedu app";
 			packageProductDependencies = (
+				8A11B0E22F9A1C7300A1B001 /* ReadiumFuzi */,
 				7F41A49C749809CDAB632913 /* ReadiumZIPFoundation */,
 				489E6E08B47AA3AC9F140CAD /* SwiftSoup */,
 				460274822F710D7500486947 /* ReadiumAdapterGCDWebServer */,
@@ -218,6 +221,7 @@
 			packageReferences = (
 				46935AA62F52E48600662F9D /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 				46935AA72F52E49B00662F9D /* XCRemoteSwiftPackageReference "SwiftSoup" */,
+				8A11B0E12F9A1C7300A1B001 /* XCRemoteSwiftPackageReference "Fuzi" */,
 				460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */,
 				4675984C2F7A8D760073996D /* XCRemoteSwiftPackageReference "DTCoreText" */,
 			);
@@ -642,6 +646,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		8A11B0E12F9A1C7300A1B001 /* XCRemoteSwiftPackageReference "Fuzi" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/readium/Fuzi.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.0.0;
+			};
+		};
 		460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/readium/swift-toolkit.git";
@@ -677,6 +689,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		8A11B0E22F9A1C7300A1B001 /* ReadiumFuzi */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8A11B0E12F9A1C7300A1B001 /* XCRemoteSwiftPackageReference "Fuzi" */;
+			productName = ReadiumFuzi;
+		};
 		460274822F710D7500486947 /* ReadiumAdapterGCDWebServer */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */;

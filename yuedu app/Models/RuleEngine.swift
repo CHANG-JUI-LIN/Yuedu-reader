@@ -3809,13 +3809,24 @@ protocol WebNovelParserService: AnyObject {
     ) throws -> [String]
 }
 
+enum ParserExtractionMode {
+    case native
+    case modern
+}
+
 final class DefaultWebNovelParserService: WebNovelParserService {
     static let shared = DefaultWebNovelParserService()
+    static var extractionMode: ParserExtractionMode = .native
 
     private let nativeRunner: NativeRuleEngineRunner
+    private let modernRuleEngine: ModernRuleEngine
 
-    init(nativeRunner: NativeRuleEngineRunner = .shared) {
+    init(
+        nativeRunner: NativeRuleEngineRunner = .shared,
+        modernRuleEngine: ModernRuleEngine = ModernRuleEngine()
+    ) {
         self.nativeRunner = nativeRunner
+        self.modernRuleEngine = modernRuleEngine
     }
 
     func resolveURL(_ raw: String, base: String) -> String {
@@ -3831,7 +3842,15 @@ final class DefaultWebNovelParserService: WebNovelParserService {
     }
 
     func extractValue(fromHTML html: String, rule: String, baseURL: String) -> String {
-        RuleEngine.extractValue(fromHTML: html, rule: rule, baseURL: baseURL)
+        switch Self.extractionMode {
+        case .native:
+            return RuleEngine.extractValue(fromHTML: html, rule: rule, baseURL: baseURL)
+        case .modern:
+            if let value = try? modernRuleEngine.extractValue(from: html, rule: rule, baseURL: baseURL) {
+                return value
+            }
+            return RuleEngine.extractValue(fromHTML: html, rule: rule, baseURL: baseURL)
+        }
     }
 
     func parseSearchResults(
@@ -3899,13 +3918,27 @@ final class DefaultWebNovelParserService: WebNovelParserService {
         source: BookSource,
         runtimeVariables: [String: String]?
     ) throws -> String {
-        try nativeRunner.extractSingleValue(
-            html: html,
-            baseURL: baseURL,
-            rule: rule,
-            source: source,
-            runtimeVariables: runtimeVariables
-        )
+        switch Self.extractionMode {
+        case .native:
+            return try nativeRunner.extractSingleValue(
+                html: html,
+                baseURL: baseURL,
+                rule: rule,
+                source: source,
+                runtimeVariables: runtimeVariables
+            )
+        case .modern:
+            if let value = try? modernRuleEngine.extractValue(from: html, rule: rule, baseURL: baseURL), !value.isEmpty {
+                return value
+            }
+            return try nativeRunner.extractSingleValue(
+                html: html,
+                baseURL: baseURL,
+                rule: rule,
+                source: source,
+                runtimeVariables: runtimeVariables
+            )
+        }
     }
 
     func extractStringList(
@@ -3916,13 +3949,31 @@ final class DefaultWebNovelParserService: WebNovelParserService {
         runtimeVariables: [String: String]?,
         isURL: Bool
     ) throws -> [String] {
-        try nativeRunner.extractStringList(
-            html: html,
-            baseURL: baseURL,
-            rule: rule,
-            source: source,
-            runtimeVariables: runtimeVariables,
-            isURL: isURL
-        )
+        switch Self.extractionMode {
+        case .native:
+            return try nativeRunner.extractStringList(
+                html: html,
+                baseURL: baseURL,
+                rule: rule,
+                source: source,
+                runtimeVariables: runtimeVariables,
+                isURL: isURL
+            )
+        case .modern:
+            if let values = try? modernRuleEngine.extractList(from: html, rule: rule, baseURL: baseURL), !values.isEmpty {
+                if isURL {
+                    return values.map { RuleEngine.resolveURL($0, base: baseURL) }
+                }
+                return values
+            }
+            return try nativeRunner.extractStringList(
+                html: html,
+                baseURL: baseURL,
+                rule: rule,
+                source: source,
+                runtimeVariables: runtimeVariables,
+                isURL: isURL
+            )
+        }
     }
 }
