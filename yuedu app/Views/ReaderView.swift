@@ -214,19 +214,22 @@ struct ReaderView: View {
     }
 
     private var usesCoreTextEPUB: Bool {
-        (isEPUB || isTXT) && epubRenderer.engine != nil
+        epubRenderer.engine != nil
     }
 
     private var usesPagedRenderer: Bool { usesCoreTextEPUB }
 
     private var renderedPageCount: Int {
-        if let engine = epubRenderer.engine, (isEPUB || isTXT) { return engine.totalPages }
+        if let engine = epubRenderer.engine, usesCoreTextEPUB { return engine.totalPages }
         return allPages.count
     }
 
     private var localEPUBBookIdentifier: String? {
-        guard let currentBook = book, isEPUB else { return nil }
-        return store.localEPUBURL(for: currentBook).standardizedFileURL.path
+        guard let currentBook = book, usesCoreTextEPUB else { return nil }
+        if currentBook.resolvedPipelineKind == .epub {
+            return store.localEPUBURL(for: currentBook).standardizedFileURL.path
+        }
+        return "coretext-\(currentBook.id.uuidString)"
     }
 
     private var telemetryPipelineKind: String {
@@ -284,7 +287,7 @@ struct ReaderView: View {
 
     /// 當前頁摘錄（前 30 字）
     var currentPageExcerpt: String {
-        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
             return String(engine.plainText(forPage: currentPage).prefix(30))
         }
         guard !allPages.isEmpty else { return "" }
@@ -306,7 +309,7 @@ struct ReaderView: View {
 
     /// 章節頁碼資訊
     var chapterPageInfo: String {
-        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let (spineIndex, charOffset) = engine.charOffset(forPage: currentPage)
             guard let layout = engine.layouts[spineIndex], !layout.pageRanges.isEmpty else {
                 return ""
@@ -322,7 +325,7 @@ struct ReaderView: View {
 
     /// 當前頁內容（給 TTS 用）
     var currentPageText: String {
-        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
             return engine.plainText(forPage: currentPage)
         }
         guard !allPages.isEmpty else { return "" }
@@ -461,7 +464,7 @@ struct ReaderView: View {
             if volumeHandler.isEnabled { volumeHandler.startListening() }
             autoReader.onNextPage = { goToNextPage() }
             tts.onPageFinished = {
-                if !(isEPUB || isTXT), currentPage < allPages.count - 1 {
+                if !usesCoreTextEPUB, currentPage < allPages.count - 1 {
                     currentPage += 1
                     return allPages[currentPage].content
                 }
@@ -772,7 +775,7 @@ struct ReaderView: View {
 
     /// 計算指定頁的 footer 資訊（章節頁碼 + 進度百分比）
     private func pageFooterInfo(forPage idx: Int) -> (pageInfo: String, progress: String) {
-        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let (spineIndex, charOffset) = engine.charOffset(forPage: idx)
             guard let layout = engine.layouts[spineIndex], !layout.pageRanges.isEmpty else {
                 return ("", "0.00%")
@@ -871,7 +874,7 @@ struct ReaderView: View {
 
     private func goToNextPage() {
         let maxPage: Int
-        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
             maxPage = engine.totalPages - 1
         } else {
             maxPage = allPages.count - 1
@@ -1108,7 +1111,7 @@ struct ReaderView: View {
     }
 
     private func chapterSliderProgressValue() -> Double {
-        if isEPUB {
+        if usesCoreTextEPUB {
             guard chapters.count > 1 else { return 0 }
             return Double(currentChapterIndex) / Double(chapters.count - 1)
         }
@@ -1117,7 +1120,7 @@ struct ReaderView: View {
     }
 
     private func applyChapterSliderProgress(_ value: Double) {
-        if (isEPUB || isTXT) {
+        if usesCoreTextEPUB {
             let idx = Int(value * Double(max(chapters.count - 1, 1)))
             jumpToChapter(max(0, min(idx, chapters.count - 1)))
             return
@@ -1245,7 +1248,7 @@ struct ReaderView: View {
 
     private func jumpToChapter(_ idx: Int) {
         guard chapters.indices.contains(idx) else { return }
-        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
             Task { @MainActor in
                 engine.cancelPendingWork()
                 await engine.preloadChapter(at: idx)
@@ -1267,7 +1270,7 @@ struct ReaderView: View {
     private func autoSaveProgress() {
         guard !isRestoringPosition else { return }
 
-        if let engine = epubRenderer.engine, (isEPUB || isTXT) {
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let total = engine.totalPages
             guard total > 0 else { return }
             if let progressBookId = localEPUBBookIdentifier {
@@ -1544,6 +1547,46 @@ struct ReaderView: View {
         }
     }
 
+    private func loadOnlineCoreText(_ book: ReadingBook, marginH: CGFloat) {
+        guard let document = BookDocumentFactory.makeOnlineDocument(book: book, store: store),
+              let provider = BookContentProviderFactory.makeOnlineProvider(book: book, store: store) else {
+            applyDocument(nil)
+            isLoadingPipeline = false
+            isRestoringPosition = false
+            return
+        }
+
+        applyDocument(document)
+
+        let refs = book.onlineChapters ?? []
+        chapters = refs.enumerated().map { idx, ref in
+            let href = DefaultWebNovelParserService.shared.sanitizeExtractedURL(ref.url)
+            return BookChapter(index: idx, title: ref.title, content: "", href: href)
+        }
+        if chapters.isEmpty {
+            chapters = [BookChapter(index: 0, title: book.title, content: "")]
+        }
+        allPages = []
+
+        let settings = currentRenderSettings(marginH: marginH)
+        let chapterSourceHrefs = refs.map {
+            DefaultWebNovelParserService.shared.sanitizeExtractedURL($0.url)
+        }
+        let scheme = "reader-online-\(book.id.uuidString.lowercased())"
+        epubRenderer.loadWithProvider(
+            contentProvider: provider,
+            chapterSourceHrefs: chapterSourceHrefs,
+            bookIdentifier: "coretext-\(book.id.uuidString)",
+            renderSize: readerViewportSize,
+            settings: settings,
+            customScheme: scheme
+        )
+
+        currentPage = 0
+        isLoadingPipeline = false
+        isRestoringPosition = false
+    }
+
     private func loadContent() {
         guard !isLoadingPipeline else { return }
         isLoadingPipeline = true
@@ -1557,12 +1600,9 @@ struct ReaderView: View {
             isLoadingPipeline = false
             return
         }
-        // Online books: temporarily disabled
+
         if b.isOnline {
-            let document = BookDocumentFactory.makeOnlineDocument(book: b, store: store)
-            applyDocument(document)
-            isLoadingPipeline = false
-            isRestoringPosition = false
+            loadOnlineCoreText(b, marginH: marginH)
             return
         }
         
@@ -1584,10 +1624,6 @@ struct ReaderView: View {
             if document.tableOfContents.count > 0 {
                 self.chapters = document.tableOfContents.enumerated().map { i, chapter in
                     BookChapter(index: i, title: chapter.title, content: "")
-                }
-            } else if let txtEngine = epubRenderer.engine as? TXTPageEngine {
-                self.chapters = txtEngine.chapterTitles.enumerated().map { i, t in
-                    BookChapter(index: i, title: t, content: "")
                 }
             } else {
                 self.chapters = [BookChapter(index: 0, title: bookTitle, content: "")]

@@ -16,41 +16,32 @@ final class TXTPageEngine: PageRenderingProvider {
 
     let offsetStore: CharOffsetStore
     private let paginationManager = PaginationManager()
-    private let chapters: [UnifiedChapter]
+    private let attributedBuilder: any AttributedStringBuilding
     let bookTitle: String
     private var currentBookId: String?
     
     private var themeTextColor: UIColor = .label
     private var themeBackgroundColor: UIColor = .systemBackground
-    private var fontSize: CGFloat
-    private var lineSpacing: CGFloat
-    private var paragraphSpacing: CGFloat
-    private var letterSpacing: CGFloat
-    private var contentInsets: UIEdgeInsets
+    private var renderSettings: ReaderRenderSettings
     var onChapterReady: ((Int?) -> Void)?
     var onNavigateToPage: ((Int) -> Void)?
 
     init(text: String, title: String, offsetStore: CharOffsetStore, settings: ReaderRenderSettings) {
         self.bookTitle = title
         self.offsetStore = offsetStore
-        self.chapters = TXTChapterParser.parseUnifiedChapters(text, bookTitle: title)
-        self.fontSize = settings.fontSize
-        self.lineSpacing = settings.lineSpacing
-        self.paragraphSpacing = settings.paragraphSpacing
-        self.letterSpacing = settings.letterSpacing
-        self.contentInsets = settings.contentInsets
+        let chapters = TXTChapterParser.parseUnifiedChapters(text, bookTitle: title)
+        self.attributedBuilder = TXTAttributedStringBuilder(chapters: chapters)
+        self.renderSettings = settings
     }
 
     func updateRenderSettings(_ settings: ReaderRenderSettings) {
-        self.fontSize = settings.fontSize
-        self.lineSpacing = settings.lineSpacing
-        self.paragraphSpacing = settings.paragraphSpacing
-        self.letterSpacing = settings.letterSpacing
-        self.contentInsets = settings.contentInsets
+        self.renderSettings = settings
     }
 
+    private var chapterCount: Int { attributedBuilder.chapterCount }
+
     var chapterTitles: [String] {
-        chapters.map { $0.title }
+        (0..<chapterCount).map { attributedBuilder.chapterTitle(at: $0) }
     }
 
     private func cancelPreloadTasks() {
@@ -81,7 +72,7 @@ final class TXTPageEngine: PageRenderingProvider {
     }
 
     private func schedulePreloadChapter(at spineIndex: Int) {
-        guard chapters.indices.contains(spineIndex),
+        guard (0..<chapterCount).contains(spineIndex),
               layouts[spineIndex] == nil,
               preloadTasks[spineIndex] == nil else { return }
         let generation = layoutGeneration
@@ -124,7 +115,7 @@ final class TXTPageEngine: PageRenderingProvider {
         
         await preloadChapter(at: startSpine)
         if startSpine > 0 { schedulePreloadChapter(at: startSpine - 1) }
-        if startSpine < chapters.count - 1 { schedulePreloadChapter(at: startSpine + 1) }
+        if startSpine < chapterCount - 1 { schedulePreloadChapter(at: startSpine + 1) }
         
         self.currentPage = pageIndex(forSpine: startSpine, charOffset: startCharOffset)
         onChapterReady?(startSpine)
@@ -145,7 +136,9 @@ final class TXTPageEngine: PageRenderingProvider {
             return vc
         }
         
-        let title = chapters.indices.contains(spineIndex) ? chapters[spineIndex].title : ""
+        let title = (0..<chapterCount).contains(spineIndex)
+            ? attributedBuilder.chapterTitle(at: spineIndex)
+            : ""
         let estimatedGlobalPage = (spinePageOffsets.indices.contains(spineIndex) ? spinePageOffsets[spineIndex] : 0) + localPage
         let position = CoreTextReadingPosition(spineIndex: spineIndex, charOffset: 0)
         let placeholder = PlaceholderPageViewController(
@@ -197,13 +190,13 @@ final class TXTPageEngine: PageRenderingProvider {
     }
 
     func pageViewController(for position: CoreTextReadingPosition) -> UIViewController {
-        guard chapters.indices.contains(position.spineIndex) else {
+        guard (0..<chapterCount).contains(position.spineIndex) else {
             return pageViewController(at: 0)
         }
         if let globalPage = pageIndex(for: position) {
             return pageViewController(at: globalPage)
         }
-        let title = chapters[position.spineIndex].title
+        let title = attributedBuilder.chapterTitle(at: position.spineIndex)
         let estimatedGlobalPage = spinePageOffsets.indices.contains(position.spineIndex)
             ? spinePageOffsets[position.spineIndex] : 0
         let placeholder = PlaceholderPageViewController(
@@ -221,7 +214,7 @@ final class TXTPageEngine: PageRenderingProvider {
     }
 
     func preloadChapter(at spineIndex: Int) async {
-        guard chapters.indices.contains(spineIndex) else { return }
+        guard (0..<chapterCount).contains(spineIndex) else { return }
         if layouts[spineIndex] != nil { return }
         if let existing = preloadTasks[spineIndex] {
             await existing.value
@@ -235,52 +228,29 @@ final class TXTPageEngine: PageRenderingProvider {
     }
 
     private func preloadChapterInternal(at spineIndex: Int, generation: Int) async {
-        guard chapters.indices.contains(spineIndex), layouts[spineIndex] == nil else { return }
+        guard (0..<chapterCount).contains(spineIndex), layouts[spineIndex] == nil else { return }
         guard !shouldAbortPreload(generation: generation) else { return }
-        
-        let chapter = chapters[spineIndex]
-        let titleFont = UIFont.systemFont(ofSize: fontSize + 8, weight: .bold)
-        let bodyFont = UIFont.systemFont(ofSize: fontSize)
-        
-        let titleParaStyle = NSMutableParagraphStyle()
-        titleParaStyle.alignment = .center
-        titleParaStyle.paragraphSpacing = 24
-        
-        let bodyParaStyle = NSMutableParagraphStyle()
-        bodyParaStyle.lineSpacing = lineSpacing
-        bodyParaStyle.paragraphSpacing = paragraphSpacing
-        
-        let attrStr = NSMutableAttributedString()
-        attrStr.append(NSAttributedString(string: chapter.title + "\n", attributes: [
-            .font: titleFont,
-            .foregroundColor: themeTextColor,
-            .paragraphStyle: titleParaStyle,
-            .kern: letterSpacing as NSNumber
-        ]))
 
-        for para in chapter.paragraphs {
-            let indentedPara = "\u{3000}\u{3000}" + para.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
-            attrStr.append(NSAttributedString(string: indentedPara, attributes: [
-                .font: bodyFont,
-                .foregroundColor: themeTextColor,
-                .paragraphStyle: bodyParaStyle,
-                .kern: letterSpacing as NSNumber
-            ]))
-        }
+        guard let buildResult = try? await attributedBuilder.buildChapter(
+            at: spineIndex,
+            settings: renderSettings,
+            themeTextColor: themeTextColor,
+            themeBackgroundColor: themeBackgroundColor
+        ) else { return }
         guard !shouldAbortPreload(generation: generation) else { return }
         
         let request = PaginationRequest(
             spineIndex: spineIndex,
-            attributedString: attrStr,
-            imagePage: nil,
-            pageBackgroundImage: nil,
-            anchorOffsets: [:],
+            attributedString: buildResult.attributedString,
+            imagePage: buildResult.imagePage,
+            pageBackgroundImage: buildResult.pageBackgroundImage,
+            anchorOffsets: buildResult.anchorOffsets,
             renderSize: renderSize,
-            fontSize: self.fontSize,
-            lineSpacing: self.lineSpacing,
-            paragraphSpacing: self.paragraphSpacing,
-            letterSpacing: self.letterSpacing,
-            contentInsets: contentInsets
+            fontSize: renderSettings.fontSize,
+            lineSpacing: renderSettings.lineSpacing,
+            paragraphSpacing: renderSettings.paragraphSpacing,
+            letterSpacing: renderSettings.letterSpacing,
+            contentInsets: renderSettings.contentInsets
         )
         let layout = await paginationManager.paginate(request).layout
         guard !shouldAbortPreload(generation: generation) else { return }
@@ -309,7 +279,8 @@ final class TXTPageEngine: PageRenderingProvider {
     func warmUpNext(currentGlobalPage: Int) {
         let (spine, local) = localPosition(for: currentGlobalPage)
 
-        let keep = Set(max(0, spine - 1)...min(spine + 1, chapters.count - 1))
+        guard chapterCount > 0 else { return }
+        let keep = Set(max(0, spine - 1)...min(spine + 1, chapterCount - 1))
         for key in layouts.keys where !keep.contains(key) {
             layouts.removeValue(forKey: key)
             chapterSnapshots.removeValue(forKey: key)
@@ -320,7 +291,7 @@ final class TXTPageEngine: PageRenderingProvider {
         let total = layout.pageRanges.count
         let threshold = max(3, Int(Double(total) * 0.20))
 
-        if total - local <= threshold, spine + 1 < chapters.count, layouts[spine + 1] == nil {
+        if total - local <= threshold, spine + 1 < chapterCount, layouts[spine + 1] == nil {
             schedulePreloadChapter(at: spine + 1)
         }
         if local < threshold, spine > 0, layouts[spine - 1] == nil {
@@ -367,8 +338,9 @@ final class TXTPageEngine: PageRenderingProvider {
     }
 
     func totalProgress(forSpine spineIndex: Int, charOffset: Int) -> Double {
-        guard !chapters.isEmpty else { return 0 }
-        return Double(spineIndex) / Double(chapters.count)
+        _ = charOffset
+        guard chapterCount > 0 else { return 0 }
+        return Double(spineIndex) / Double(chapterCount)
     }
 
     func renderSnapshot(forPage globalPage: Int) -> UIImage? {
@@ -391,7 +363,7 @@ final class TXTPageEngine: PageRenderingProvider {
     private func rebuildPageOffsets() {
         let oldOffsets = spinePageOffsets
         var offset = 0
-        spinePageOffsets = chapters.indices.map { i in
+        spinePageOffsets = (0..<chapterCount).map { i in
             let start = offset
             offset += layouts[i]?.pageRanges.count ?? 1
             return start

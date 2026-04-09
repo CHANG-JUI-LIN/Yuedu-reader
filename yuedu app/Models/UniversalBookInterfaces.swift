@@ -202,12 +202,24 @@ struct OnlineHTMLBookDocument: BookDocument {
             coverImagePath: book.coverImagePath
         )
         self.tableOfContents = refs.map {
-            UniversalChapter(id: String($0.index), title: $0.title, content: .text(""))
+            let sanitizedURL = DefaultWebNovelParserService.shared.sanitizeExtractedURL($0.url)
+            return UniversalChapter(id: sanitizedURL, title: $0.title, content: .text(""))
         }
     }
 
     func loadContent(for chapterId: String) async throws -> ChapterContent {
-        guard let index = Int(chapterId), refs.indices.contains(index) else {
+        let index: Int?
+        if let direct = refs.firstIndex(where: {
+            DefaultWebNovelParserService.shared.sanitizeExtractedURL($0.url) == chapterId
+        }) {
+            index = direct
+        } else if let parsed = Int(chapterId), refs.indices.contains(parsed) {
+            index = parsed
+        } else {
+            index = nil
+        }
+
+        guard let index, refs.indices.contains(index) else {
             throw BookDocumentError.chapterNotFound(chapterId)
         }
 
@@ -310,7 +322,21 @@ struct BookDocumentContentProviderAdapter: BookContentProvider {
         let content = try await document.loadContent(for: chapter.id)
         switch content {
         case .text(let text):
-            return ChapterContentPayload(index: index, title: chapter.title, content: text, sourceHref: chapter.id)
+            return ChapterContentPayload(
+                index: index,
+                title: chapter.title,
+                content: text,
+                renderHTML: nil,
+                sourceHref: chapter.id
+            )
+        case .html(let html):
+            return ChapterContentPayload(
+                index: index,
+                title: chapter.title,
+                content: UniversalBookHelpers.normalizedText(fromHTML: html),
+                renderHTML: html,
+                sourceHref: chapter.id
+            )
         case .image(let url):
             throw BookContentProviderError.unsupportedChapterContent("image:\(url.absoluteString)")
         case .pdfPage:

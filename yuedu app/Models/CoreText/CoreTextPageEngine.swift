@@ -80,6 +80,30 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
     }
 }
 
+private final class EmptyBookResourceProvider: BookResourceProvider {
+    static let shared = EmptyBookResourceProvider()
+
+    var customScheme: String { "reader-empty" }
+    var chapters: [BookResourceChapterDescriptor] { [] }
+
+    func cssResourceHrefs() -> [String] { [] }
+    func resourceURL(for href: String) -> URL {
+        URL(string: "reader-empty://book/\(href)")!
+    }
+    func chapterDataSize(at index: Int) async throws -> Int { 0 }
+    func chapterIndex(for href: String) -> Int? {
+        _ = href
+        return nil
+    }
+    func chapterHTML(at index: Int) async throws -> String {
+        _ = index
+        throw PublicationSessionError.resourceNotFound("empty")
+    }
+    func response(for requestURL: URL) async throws -> PublicationResourceResponse {
+        throw PublicationSessionError.resourceNotFound(requestURL.absoluteString)
+    }
+}
+
 @MainActor
 final class CoreTextPageEngine: PageRenderingProvider {
     private struct RegisteredFontFace {
@@ -103,6 +127,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private var layoutGeneration: Int = 0
 
     private let resourceProvider: any BookResourceProvider
+    private let attributedBuilder: (any AttributedStringBuilding)?
     private let paginationManager: PaginationManager
     private let fontRegistrationService: any FontRegistrationServicing
     let offsetStore: CharOffsetStore
@@ -135,6 +160,22 @@ final class CoreTextPageEngine: PageRenderingProvider {
         offsetStore: CharOffsetStore
     ) {
         self.resourceProvider = resourceProvider
+        self.attributedBuilder = nil
+        self.renderSettings = renderSettings
+        self.fontRegistrationService = fontRegistrationService
+        self.paginationManager = paginationManager ?? PaginationManager()
+        self.offsetStore = offsetStore
+    }
+
+    init(
+        attributedBuilder: any AttributedStringBuilding,
+        renderSettings: ReaderRenderSettings,
+        fontRegistrationService: any FontRegistrationServicing = CoreTextFontRegistrationService(),
+        paginationManager: PaginationManager? = nil,
+        offsetStore: CharOffsetStore
+    ) {
+        self.resourceProvider = EmptyBookResourceProvider.shared
+        self.attributedBuilder = attributedBuilder
         self.renderSettings = renderSettings
         self.fontRegistrationService = fontRegistrationService
         self.paginationManager = paginationManager ?? PaginationManager()
@@ -161,10 +202,43 @@ final class CoreTextPageEngine: PageRenderingProvider {
         renderSettings = settings
     }
 
+    private var chapterCount: Int {
+        attributedBuilder?.chapterCount ?? resourceProvider.chapters.count
+    }
+
+    private func chapterTitle(at index: Int) -> String {
+        if let attributedBuilder {
+            return attributedBuilder.chapterTitle(at: index)
+        }
+        guard resourceProvider.chapters.indices.contains(index) else { return "" }
+        return resourceProvider.chapters[index].title
+    }
+
+    private func chapterSourceHref(at index: Int) -> String {
+        if let attributedBuilder {
+            return attributedBuilder.chapterSourceHref(at: index) ?? ""
+        }
+        guard resourceProvider.chapters.indices.contains(index) else { return "" }
+        return resourceProvider.chapters[index].href
+    }
+
+    private func chapterIndex(for href: String) -> Int? {
+        if let attributedBuilder {
+            return attributedBuilder.chapterIndex(for: href)
+        }
+        return resourceProvider.chapterIndex(for: href)
+    }
+
     func start(renderSize: CGSize, bookId: String) async {
         self.renderSize = renderSize
         self.currentBookId = bookId
-        print("[CoreTextEngine] start renderSize=\(renderSize) chapters=\(resourceProvider.chapters.count)")
+        let totalChapters = chapterCount
+        print("[CoreTextEngine] start renderSize=\(renderSize) chapters=\(totalChapters)")
+        guard totalChapters > 0 else {
+            totalPages = 0
+            currentPage = 0
+            return
+        }
 
         // 1. 掃描全書章節 Data 大小（秒完，用於 Bytes 進度估算）
         await scanChapterByteSizes()
@@ -176,7 +250,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         // 3. 載入存檔鄰域 [n-1, n, n+1]（+ 第 0 章如果不在範圍內）
         var priority = Set<Int>()
         priority.insert(0) // 封面/目錄始終需要
-        for i in max(0, savedSpine - 1)...min(savedSpine + 1, resourceProvider.chapters.count - 1) {
+        for i in max(0, savedSpine - 1)...min(savedSpine + 1, totalChapters - 1) {
             priority.insert(i)
         }
 
@@ -196,6 +270,15 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     private func scanChapterByteSizes() async {
+        if let attributedBuilder {
+            var sizes = [Int](repeating: 0, count: attributedBuilder.chapterCount)
+            for i in 0..<attributedBuilder.chapterCount {
+                sizes[i] = await attributedBuilder.chapterDataSize(at: i)
+            }
+            chapterByteSizes = sizes
+            return
+        }
+
         chapterByteSizes = await withTaskGroup(of: (Int, Int).self) { group in
             for i in resourceProvider.chapters.indices {
                 group.addTask {
@@ -230,7 +313,8 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     /// 釋放距離當前章超過 1 的 layout，記憶體只保留 [n-1, n, n+1]
     private func evictDistantChapters(currentSpine: Int) {
-        let keep = Set(max(0, currentSpine - 1)...min(currentSpine + 1, resourceProvider.chapters.count - 1))
+        guard chapterCount > 0 else { return }
+        let keep = Set(max(0, currentSpine - 1)...min(currentSpine + 1, chapterCount - 1))
         for key in layouts.keys where !keep.contains(key) {
             layouts.removeValue(forKey: key)
             chapterSnapshots.removeObject(forKey: NSNumber(value: key))
@@ -266,7 +350,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     private func schedulePreloadChapter(at spineIndex: Int) {
-        guard resourceProvider.chapters.indices.contains(spineIndex),
+        guard (0..<chapterCount).contains(spineIndex),
               layouts[spineIndex] == nil,
               preloadTasks[spineIndex] == nil else { return }
 
@@ -289,9 +373,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
                 globalPage: index
             )
         }
-        let title = resourceProvider.chapters.indices.contains(spineIndex)
-            ? resourceProvider.chapters[spineIndex].title
-            : ""
+        let title = chapterTitle(at: spineIndex)
         let readingPosition: CoreTextReadingPosition? = localPage == 0
             ? .chapterStart(spineIndex)
             : nil
@@ -346,7 +428,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     func pageViewController(for position: CoreTextReadingPosition) -> UIViewController {
-        guard resourceProvider.chapters.indices.contains(position.spineIndex) else {
+        guard (0..<chapterCount).contains(position.spineIndex) else {
             return pageViewController(at: 0)
         }
 
@@ -354,7 +436,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             return pageViewController(at: globalPage)
         }
 
-        let title = resourceProvider.chapters[position.spineIndex].title
+        let title = chapterTitle(at: position.spineIndex)
         let estimatedGlobalPage = estimatedGlobalPage(for: position)
         let placeholder = PlaceholderPageViewController(
             chapterTitle: title,
@@ -371,7 +453,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     func preloadChapter(at spineIndex: Int) async {
-        guard resourceProvider.chapters.indices.contains(spineIndex) else { return }
+        guard (0..<chapterCount).contains(spineIndex) else { return }
         if layouts[spineIndex] != nil { return }
         if let existing = preloadTasks[spineIndex] {
             await existing.value
@@ -385,9 +467,43 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     private func preloadChapterInternal(at spineIndex: Int, generation: Int) async {
-        guard resourceProvider.chapters.indices.contains(spineIndex),
+        guard (0..<chapterCount).contains(spineIndex),
               layouts[spineIndex] == nil else { return }
         guard !shouldAbortPreload(generation: generation) else { return }
+
+        if let attributedBuilder {
+            guard let buildResult = try? await attributedBuilder.buildChapter(
+                at: spineIndex,
+                settings: renderSettings,
+                themeTextColor: themeTextColor,
+                themeBackgroundColor: themeBackgroundColor
+            ) else {
+                print("[CoreTextEngine] preloadChapter[\(spineIndex)] FAILED to build attributed string")
+                return
+            }
+            guard !shouldAbortPreload(generation: generation) else { return }
+
+            let request = PaginationRequest(
+                spineIndex: spineIndex,
+                attributedString: buildResult.attributedString,
+                imagePage: buildResult.imagePage,
+                pageBackgroundImage: buildResult.pageBackgroundImage,
+                anchorOffsets: buildResult.anchorOffsets,
+                renderSize: renderSize,
+                fontSize: renderSettings.fontSize,
+                lineSpacing: renderSettings.lineSpacing,
+                paragraphSpacing: renderSettings.paragraphSpacing,
+                letterSpacing: renderSettings.letterSpacing,
+                contentInsets: currentContentInsets()
+            )
+            let layout = await paginationManager.paginate(request).layout
+            guard !shouldAbortPreload(generation: generation) else { return }
+
+            layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
+            generateSnapshot(for: spineIndex)
+            rebuildPageOffsets()
+            return
+        }
 
         if spineIndex == 0 {
             let cssHrefs = resourceProvider.cssResourceHrefs()
@@ -400,7 +516,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         }
         guard !shouldAbortPreload(generation: generation) else { return }
 
-        let chapterHref = resourceProvider.chapters[spineIndex].href
+        let chapterHref = chapterSourceHref(at: spineIndex)
         let localBuilder = HTMLAttributedStringBuilder()
         localBuilder.resolvedFont = { [weak self] families, weight, italic, size in
             self?.resolveRegisteredFont(
@@ -597,8 +713,8 @@ final class CoreTextPageEngine: PageRenderingProvider {
         if rawPath.isEmpty {
             targetSpine = spineIndex
         } else {
-            let resolvedHref = Self.resolveImageHref(rawPath, chapterHref: resourceProvider.chapters[spineIndex].href)
-            guard let matchedIndex = resourceProvider.chapterIndex(for: resolvedHref) else {
+            let resolvedHref = Self.resolveImageHref(rawPath, chapterHref: chapterSourceHref(at: spineIndex))
+            guard let matchedIndex = chapterIndex(for: resolvedHref) ?? chapterIndex(for: rawPath) else {
                 return nil
             }
             targetSpine = matchedIndex
@@ -628,7 +744,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         let remaining = total - localPage
         if remaining <= threshold {
             let nextSpine = spineIndex + 1
-            if nextSpine < resourceProvider.chapters.count {
+            if nextSpine < chapterCount {
                 schedulePreloadChapter(at: nextSpine)
             }
         }
@@ -747,7 +863,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private func rebuildPageOffsets() {
         let oldOffsets = spinePageOffsets
         var offset = 0
-        spinePageOffsets = resourceProvider.chapters.indices.map { i in
+        spinePageOffsets = (0..<chapterCount).map { i in
             let start = offset
             // 未載入章節估 1 頁，確保 spinePageOffsets 和 totalPages 不崩壞
             offset += layouts[i]?.pageRanges.count ?? 1

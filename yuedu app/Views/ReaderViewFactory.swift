@@ -12,6 +12,11 @@ final class ReaderViewFactory {
             view.render(text: string, config: config)
             return view
 
+        case .html(let html):
+            let view = CoreTextReaderView()
+            view.render(text: html.strippedHTML, config: config)
+            return view
+
         case .image(let url):
             let view = ComicReaderView()
             view.loadImage(from: url)

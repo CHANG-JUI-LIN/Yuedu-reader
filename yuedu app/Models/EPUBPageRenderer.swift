@@ -79,7 +79,54 @@ final class EPUBPageRenderer: ObservableObject {
             "epub_charoffsets/\(bookIdentifier)"
         )
         let store = CharOffsetStore(directoryURL: progressDir)
-        let newEngine = TXTPageEngine(text: text, title: title, offsetStore: store, settings: settings)
+        let chapters = TXTChapterParser.parseUnifiedChapters(text, bookTitle: title)
+        let builder = TXTAttributedStringBuilder(chapters: chapters)
+        let newEngine = CoreTextPageEngine(
+            attributedBuilder: builder,
+            renderSettings: settings,
+            offsetStore: store
+        )
+        newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
+        self.engine = newEngine
+        isCoreTextReady = false
+
+        let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
+
+        if effectiveSize.width > 0 {
+            Task {
+                await newEngine.start(renderSize: effectiveSize, bookId: bookIdentifier)
+                self.isCoreTextReady = true
+            }
+        } else {
+            pendingStartBookId = bookIdentifier
+        }
+    }
+
+    func loadWithProvider(
+        contentProvider: any BookContentProvider,
+        chapterSourceHrefs: [String?],
+        bookIdentifier: String,
+        renderSize: CGSize,
+        settings: ReaderRenderSettings,
+        customScheme: String = "reader-online"
+    ) {
+        let docsURL = FileManager.default.urls(
+            for: .documentDirectory, in: .userDomainMask
+        ).first!
+        let progressDir = docsURL.appendingPathComponent(
+            "epub_charoffsets/\(bookIdentifier)"
+        )
+        let store = CharOffsetStore(directoryURL: progressDir)
+        let resourceAdapter = UniversalBookResourceAdapter(
+            contentProvider: contentProvider,
+            chapterSourceHrefs: chapterSourceHrefs,
+            customScheme: customScheme
+        )
+        let newEngine = CoreTextPageEngine(
+            resourceProvider: resourceAdapter,
+            renderSettings: settings,
+            offsetStore: store
+        )
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         self.engine = newEngine
         isCoreTextReady = false

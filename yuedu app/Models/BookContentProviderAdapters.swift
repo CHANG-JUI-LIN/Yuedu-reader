@@ -25,6 +25,7 @@ struct TXTContentProviderAdapter: BookContentProvider {
             index: chapter.index,
             title: chapter.title,
             content: chapter.plainText,
+            renderHTML: nil,
             sourceHref: chapter.sourceHref
         )
     }
@@ -57,6 +58,7 @@ struct EPUBContentProviderAdapter: BookContentProvider {
             index: descriptor.index,
             title: descriptor.title,
             content: content,
+            renderHTML: html,
             sourceHref: descriptor.href
         )
     }
@@ -136,6 +138,14 @@ struct OnlineHTMLContentProviderAdapter: BookContentProvider {
                 index: index,
                 title: ref.title,
                 content: cached.content,
+                renderHTML: resolveNormalizedHTML(
+                    for: book.id,
+                    chapterIndex: index,
+                    tocTitle: ref.title,
+                    primarySourceURL: sanitizedURL,
+                    secondarySourceURL: ref.url,
+                    fallbackContent: cached.content
+                ),
                 sourceHref: sanitizedURL
             )
         }
@@ -151,8 +161,44 @@ struct OnlineHTMLContentProviderAdapter: BookContentProvider {
             index: index,
             title: ref.title,
             content: pkg.content,
+            renderHTML: resolveNormalizedHTML(
+                for: book.id,
+                chapterIndex: index,
+                tocTitle: ref.title,
+                primarySourceURL: sanitizedURL,
+                secondarySourceURL: ref.url,
+                fallbackContent: pkg.content
+            ),
             sourceHref: sanitizedURL
         )
+    }
+
+    private func resolveNormalizedHTML(
+        for bookId: UUID,
+        chapterIndex: Int,
+        tocTitle: String,
+        primarySourceURL: String,
+        secondarySourceURL: String,
+        fallbackContent: String
+    ) -> String {
+        BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+            bookId: bookId,
+            chapterIndex: chapterIndex,
+            expectedSourceURL: primarySourceURL,
+            expectedTOCTitle: tocTitle
+        )
+            ?? (primarySourceURL != secondarySourceURL
+                ? BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+                    bookId: bookId,
+                    chapterIndex: chapterIndex,
+                    expectedSourceURL: secondarySourceURL,
+                    expectedTOCTitle: tocTitle
+                )
+                : nil)
+            ?? ChapterFetcher.buildNormalizedHTML(
+                title: tocTitle,
+                content: fallbackContent
+            )
     }
 }
 

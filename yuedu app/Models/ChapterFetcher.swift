@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SwiftSoup
 
 struct ChapterRequestSpec {
     var url: String
@@ -41,6 +42,61 @@ enum ChapterFetcher {
             title: title,
             paragraphs: paragraphLines
         )
+    }
+
+    static func buildRenderableNormalizedHTML(
+        title: String,
+        plainTextContent: String,
+        rawHTMLContent: String?
+    ) -> String {
+        guard
+            let rawHTMLContent,
+            !rawHTMLContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            containsLikelyHTMLTags(rawHTMLContent),
+            let document = try? SwiftSoup.parse(rawHTMLContent),
+            let body = document.body()
+        else {
+            return buildNormalizedHTML(title: title, content: plainTextContent)
+        }
+
+        _ = try? body.select("script,noscript,iframe,object,embed").remove()
+        let bodyHTML = ((try? body.html()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !bodyHTML.isEmpty else {
+            return buildNormalizedHTML(title: title, content: plainTextContent)
+        }
+
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let escapedTitle = ReaderHTMLUtilities.escapeHTML(trimmedTitle.isEmpty ? "Untitled" : trimmedTitle)
+        let heading = trimmedTitle.isEmpty
+            ? ""
+            : "<h1>\(ReaderHTMLUtilities.escapeHTML(trimmedTitle))</h1>\n"
+
+        return """
+        <!DOCTYPE html>
+        <html lang="zh-Hant">
+        <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>\(escapedTitle)</title>
+        </head>
+        <body>
+        <article id="reader-content">
+        \(heading)\(bodyHTML)
+        </article>
+        </body>
+        </html>
+        """
+    }
+
+    private static func containsLikelyHTMLTags(_ text: String) -> Bool {
+        if text.contains("<img") || text.contains("<p") || text.contains("<div") || text.contains("<span") {
+            return true
+        }
+        guard let regex = try? NSRegularExpression(pattern: "<[a-zA-Z][^>]*>") else {
+            return false
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.firstMatch(in: text, range: range) != nil
     }
 
     static func parseChapterRequest(_ raw: String) -> ChapterRequestSpec {
@@ -139,9 +195,11 @@ enum ChapterFetcher {
             throw FetchError.emptyContent
         }
         let canonicalTitle = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedHTML = buildNormalizedHTML(
-            title: canonicalTitle.isEmpty ? tocTitle : canonicalTitle,
-            content: content
+        let effectiveTitle = canonicalTitle.isEmpty ? tocTitle : canonicalTitle
+        let normalizedHTML = buildRenderableNormalizedHTML(
+            title: effectiveTitle,
+            plainTextContent: content,
+            rawHTMLContent: parsed.content
         )
         let rawHTML = paginated.rawHTMLPages.joined(separator: "\n<!-- staged-page-break -->\n")
         let checksum = SHA256.hash(data: Data(content.utf8)).compactMap {

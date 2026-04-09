@@ -4,6 +4,7 @@ struct ChapterContentPayload: Equatable {
     let index: Int
     let title: String
     let content: String
+    let renderHTML: String?
     let sourceHref: String?
 }
 
@@ -50,6 +51,7 @@ struct UnifiedChapterContentProvider: BookContentProvider {
             index: chapter.index,
             title: chapter.title,
             content: chapter.plainText,
+            renderHTML: nil,
             sourceHref: chapter.sourceHref
         )
     }
