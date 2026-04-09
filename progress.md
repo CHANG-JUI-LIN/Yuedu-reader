@@ -39,3 +39,9 @@
 - 修正 `applyInitialProgressIfNeeded`：若引擎已透過 CharOffsetStore 精準恢復到非零頁，直接採用該頁並中止 percentage 覆蓋。
 - 修正 `TXTPageEngine.totalProgress(...)`：加入章節內字元比例，避免僅以章節序號估算造成粗糙進度。
 - 執行 `xcodebuild` 全量編譯：`BUILD SUCCEEDED`。
+
+## 2026-04-09 Session (Slide DS Race + TXT ID Alignment)
+- 修正 `updateUIViewController` 的 reverse 動畫 dataSource 回復策略：移除 `savedDS` 回填，改為動畫完成後在 `.slide` 模式強制 `uiViewController.dataSource = context.coordinator`。
+- 修正 `localEPUBBookIdentifier`：TXT 分支改回傳 `currentBook.id.uuidString`，與 `loadTXT` / `CharOffsetStore` key 保持一致。
+- 影響：解決 slide 模式快速左點後上一頁永久失效，與 TXT 每次開書進度丟失回捲。
+- 執行 `xcodebuild` 全量編譯：`BUILD SUCCEEDED`。

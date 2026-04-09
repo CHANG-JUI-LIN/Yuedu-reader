@@ -16,3 +16,5 @@
 - 翻頁樣式切換重建問題：`makeUIViewController` 若採 `engine.currentPage` 作初始頁，在 binding 與引擎座標不同步時會回退到過時頁碼；改用 SwiftUI `currentPage` 可避免重建跳頁錯位。
 - `curl` 模式手勢依賴 `dataSource`，reverse hack 僅適用 `.scroll`；在 `curl` 套用同 hack 會導致跳章後只能點擊、無法滑動。
 - TXT 進度回捲根因是精準 CharOffset 恢復被粗糙 percentage 二次覆蓋；需在 `applyInitialProgressIfNeeded` 優先保護 `engine.currentPage > 0` 的精準狀態。
+- slide 模式快速連點回上一頁時，若 reverse hack 依賴暫存 `savedDS`，可能捕獲到 `nil` 並永久回填 `nil`，導致 dataSource 失效；應直接回填 coordinator。
+- TXT 進度遺失根因之一是 key 不一致：`loadTXT` 使用 `book.id.uuidString`，但 auto-save 使用 `coretext-<uuid>`；需統一為同一 key。

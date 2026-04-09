@@ -2,39 +2,63 @@ import Foundation
 import UIKit
 
 struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
-    private let text: String
+    private let text: String?
     private let chapterIndexes: [TXTChapterIndex]
+    private let mappedTextFile: TXTMappedTextFile?
+    private let mappedChapterIndexes: [TXTMappedChapterIndex]
 
     init(text: String, chapterIndexes: [TXTChapterIndex]) {
         self.text = text
         self.chapterIndexes = chapterIndexes
+        self.mappedTextFile = nil
+        self.mappedChapterIndexes = []
     }
 
-    var chapterCount: Int { chapterIndexes.count }
+    init(mappedTextFile: TXTMappedTextFile, chapterIndexes: [TXTMappedChapterIndex]) {
+        self.text = nil
+        self.chapterIndexes = []
+        self.mappedTextFile = mappedTextFile
+        self.mappedChapterIndexes = chapterIndexes
+    }
+
+    var chapterCount: Int {
+        if !mappedChapterIndexes.isEmpty {
+            return mappedChapterIndexes.count
+        }
+        return chapterIndexes.count
+    }
 
     func chapterTitle(at index: Int) -> String {
+        if mappedChapterIndexes.indices.contains(index) {
+            return mappedChapterIndexes[index].title
+        }
         guard chapterIndexes.indices.contains(index) else { return "" }
         return chapterIndexes[index].title
     }
 
     func chapterSourceHref(at index: Int) -> String? {
+        if mappedChapterIndexes.indices.contains(index) {
+            return mappedChapterIndexes[index].sourceHref
+        }
         guard chapterIndexes.indices.contains(index) else { return nil }
         return chapterIndexes[index].sourceHref
     }
 
     func chapterDataSize(at index: Int) async -> Int {
-        guard chapterIndexes.indices.contains(index) else { return 0 }
-        let content = TXTChapterParser.chapterText(text, range: chapterIndexes[index].contentRange)
-        return content.lengthOfBytes(using: .utf8)
+        guard let chapterText = chapterText(at: index) else { return 0 }
+        return chapterText.lengthOfBytes(using: .utf8)
     }
 
     func chapterIndex(for href: String) -> Int? {
-        if let numericIndex = Int(href), chapterIndexes.indices.contains(numericIndex) {
+        if let numericIndex = Int(href), numericIndex >= 0, numericIndex < chapterCount {
             return numericIndex
         }
         let normalized = href.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let parsed = Int(normalized), chapterIndexes.indices.contains(parsed) {
+        if let parsed = Int(normalized), parsed >= 0, parsed < chapterCount {
             return parsed
+        }
+        if !mappedChapterIndexes.isEmpty {
+            return mappedChapterIndexes.firstIndex { $0.sourceHref == normalized }
         }
         return chapterIndexes.firstIndex { $0.sourceHref == normalized }
     }
@@ -46,12 +70,11 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         themeBackgroundColor: UIColor
     ) async throws -> AttributedChapterBuildResult {
         _ = themeBackgroundColor
-        guard chapterIndexes.indices.contains(index) else {
+        guard let chapterText = chapterText(at: index) else {
             throw AttributedStringBuildingError.chapterOutOfRange(index)
         }
 
-        let chapter = chapterIndexes[index]
-        let chapterText = TXTChapterParser.chapterText(text, range: chapter.contentRange)
+        let chapterTitle = chapterTitle(at: index)
         let paragraphs = TXTChapterParser.paragraphsForChapterContent(chapterText)
 
         let titleFont = UIFont.systemFont(ofSize: settings.fontSize + 8, weight: .bold)
@@ -68,7 +91,7 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         let attrStr = NSMutableAttributedString()
         attrStr.append(
             NSAttributedString(
-                string: chapter.title + "\n",
+                string: chapterTitle + "\n",
                 attributes: [
                     .font: titleFont,
                     .foregroundColor: themeTextColor,
@@ -99,5 +122,14 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
             pageBackgroundImage: nil,
             anchorOffsets: [:]
         )
+    }
+
+    private func chapterText(at index: Int) -> String? {
+        if mappedChapterIndexes.indices.contains(index), let mappedTextFile {
+            return TXTChapterParser.chapterText(mappedTextFile, byteRange: mappedChapterIndexes[index].byteRange)
+        }
+
+        guard chapterIndexes.indices.contains(index), let text else { return nil }
+        return TXTChapterParser.chapterText(text, range: chapterIndexes[index].contentRange)
     }
 }

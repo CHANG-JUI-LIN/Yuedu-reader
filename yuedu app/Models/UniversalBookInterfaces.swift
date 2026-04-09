@@ -119,6 +119,8 @@ struct TXTBookDocument: BookDocument {
     private let chapterTextByID: [String: String]
     private let indexedRangesByID: [String: NSRange]
     private let indexedText: String?
+    private let mappedRangesByID: [String: Range<Int>]
+    private let mappedTextFile: TXTMappedTextFile?
 
     init(book: ReadingBook, store: BookStore) {
         self.metadata = BookMetadata(
@@ -132,6 +134,8 @@ struct TXTBookDocument: BookDocument {
         self.chapterTextByID = Dictionary(uniqueKeysWithValues: chapters.map { (String($0.index), $0.plainText) })
         self.indexedRangesByID = [:]
         self.indexedText = nil
+        self.mappedRangesByID = [:]
+        self.mappedTextFile = nil
     }
 
     init(book: ReadingBook, chapters: [UnifiedChapter]) {
@@ -145,6 +149,8 @@ struct TXTBookDocument: BookDocument {
         self.chapterTextByID = Dictionary(uniqueKeysWithValues: chapters.map { (String($0.index), $0.plainText) })
         self.indexedRangesByID = [:]
         self.indexedText = nil
+        self.mappedRangesByID = [:]
+        self.mappedTextFile = nil
     }
 
     init(book: ReadingBook, chapterIndexes: [TXTChapterIndex], text: String) {
@@ -164,6 +170,29 @@ struct TXTBookDocument: BookDocument {
         self.chapterTextByID = [:]
         self.indexedRangesByID = Dictionary(uniqueKeysWithValues: chapterIndexes.map { (String($0.index), $0.contentRange) })
         self.indexedText = text
+        self.mappedRangesByID = [:]
+        self.mappedTextFile = nil
+    }
+
+    init(book: ReadingBook, mappedChapterIndexes: [TXTMappedChapterIndex], mappedTextFile: TXTMappedTextFile) {
+        self.metadata = BookMetadata(
+            id: book.id,
+            title: book.title,
+            author: book.author,
+            coverImagePath: book.coverImagePath
+        )
+        self.tableOfContents = mappedChapterIndexes.map { idx in
+            UniversalChapter(
+                id: String(idx.index),
+                title: idx.title,
+                content: .text("")
+            )
+        }
+        self.chapterTextByID = [:]
+        self.indexedRangesByID = [:]
+        self.indexedText = nil
+        self.mappedRangesByID = Dictionary(uniqueKeysWithValues: mappedChapterIndexes.map { (String($0.index), $0.byteRange) })
+        self.mappedTextFile = mappedTextFile
     }
 
     private static func makeTableOfContents(from chapters: [UnifiedChapter]) -> [UniversalChapter] {
@@ -183,6 +212,10 @@ struct TXTBookDocument: BookDocument {
 
         if let text = indexedText, let range = indexedRangesByID[chapterId] {
             return .text(TXTChapterParser.chapterText(text, range: range))
+        }
+
+        if let mappedTextFile, let byteRange = mappedRangesByID[chapterId] {
+            return .text(TXTChapterParser.chapterText(mappedTextFile, byteRange: byteRange))
         }
 
         guard let chapter = tableOfContents.first(where: { $0.id == chapterId }) else {
@@ -345,6 +378,11 @@ enum BookDocumentFactory {
     @MainActor
     static func makeTXTDocument(book: ReadingBook, chapterIndexes: [TXTChapterIndex], text: String) -> any BookDocument {
         TXTBookDocument(book: book, chapterIndexes: chapterIndexes, text: text)
+    }
+
+    @MainActor
+    static func makeTXTDocument(book: ReadingBook, mappedChapterIndexes: [TXTMappedChapterIndex], mappedTextFile: TXTMappedTextFile) -> any BookDocument {
+        TXTBookDocument(book: book, mappedChapterIndexes: mappedChapterIndexes, mappedTextFile: mappedTextFile)
     }
 
     static func makeEPUBDocument(book: ReadingBook, session: PublicationSession) -> any BookDocument {

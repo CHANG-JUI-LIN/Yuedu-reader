@@ -8,6 +8,14 @@ struct TXTChapterIndex: Equatable {
     var sourceHref: String { String(index) }
 }
 
+struct TXTMappedChapterIndex: Equatable {
+    let index: Int
+    let title: String
+    let byteRange: Range<Int>
+
+    var sourceHref: String { String(index) }
+}
+
 enum TXTChapterParser {
     struct ParsedChapter {
         let title: String
@@ -78,6 +86,55 @@ enum TXTChapterParser {
         return splitIntoBlockIndexes(text, blockSize: 3000, bookTitle: bookTitle)
     }
 
+    static func parseMappedChapterIndexes(_ mappedTextFile: TXTMappedTextFile, bookTitle: String) -> [TXTMappedChapterIndex] {
+        let totalBytes = mappedTextFile.byteCount
+        guard totalBytes > 0 else {
+            return [TXTMappedChapterIndex(index: 0, title: bookTitle, byteRange: 0..<0)]
+        }
+
+        let titleMatches = detectMappedTitleMatches(in: mappedTextFile)
+        if !titleMatches.isEmpty {
+            var indexes: [TXTMappedChapterIndex] = []
+
+            let firstTitleStart = titleMatches[0].lineByteRange.lowerBound
+            if firstTitleStart > 0 {
+                let prefaceRange = 0..<firstTitleStart
+                if hasReadableBytes(in: mappedTextFile.data, range: prefaceRange) {
+                    indexes.append(
+                        TXTMappedChapterIndex(
+                            index: indexes.count,
+                            title: "前言",
+                            byteRange: prefaceRange
+                        )
+                    )
+                }
+            }
+
+            for i in titleMatches.indices {
+                let end = i + 1 < titleMatches.count
+                    ? titleMatches[i + 1].lineByteRange.lowerBound
+                    : totalBytes
+                let rawStart = titleMatches[i].lineByteRange.upperBound
+                let start = skipLeadingWhitespaceBytes(in: mappedTextFile.data, from: rawStart, upperBound: end)
+                guard start <= end else { continue }
+                indexes.append(
+                    TXTMappedChapterIndex(
+                        index: indexes.count,
+                        title: titleMatches[i].title,
+                        byteRange: start..<end
+                    )
+                )
+            }
+
+            if indexes.isEmpty {
+                return [TXTMappedChapterIndex(index: 0, title: bookTitle, byteRange: 0..<totalBytes)]
+            }
+            return indexes
+        }
+
+        return splitIntoMappedBlockIndexes(mappedTextFile, blockBytes: 12 * 1024, bookTitle: bookTitle)
+    }
+
     private static let chapterPatterns: [NSRegularExpression] = {
         let patterns: [String] = [
             "^\\s*第[零一二三四五六七八九十百千萬万\\d]+章[^\\n]*",
@@ -122,6 +179,10 @@ enum TXTChapterParser {
         let safe = safeRange(range, in: nsText)
         guard safe.length > 0 else { return "" }
         return nsText.substring(with: safe)
+    }
+
+    static func chapterText(_ mappedTextFile: TXTMappedTextFile, byteRange: Range<Int>) -> String {
+        mappedTextFile.string(in: byteRange)
     }
 
     static func paragraphsForChapterContent(_ text: String) -> [String] {
@@ -191,6 +252,11 @@ enum TXTChapterParser {
         let title: String
     }
 
+    private struct MappedTitleMatch {
+        let lineByteRange: Range<Int>
+        let title: String
+    }
+
     private static func detectTitleMatches(in text: String) -> [TitleMatch] {
         let nsText = text as NSString
         let fullRange = NSRange(location: 0, length: nsText.length)
@@ -237,6 +303,58 @@ enum TXTChapterParser {
         return deduped
     }
 
+    private static func detectMappedTitleMatches(in mappedTextFile: TXTMappedTextFile) -> [MappedTitleMatch] {
+        var selected: [MappedTitleMatch] = []
+
+        for regex in chapterPatterns {
+            var matches: [MappedTitleMatch] = []
+            enumerateMappedLines(in: mappedTextFile) { lineByteRange, lineText in
+                let nsLine = lineText as NSString
+                let fullRange = NSRange(location: 0, length: nsLine.length)
+                guard let match = regex.firstMatch(in: lineText, range: fullRange),
+                      let range = Range(match.range, in: lineText)
+                else { return }
+                let title = String(lineText[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty else { return }
+                matches.append(MappedTitleMatch(lineByteRange: lineByteRange, title: title))
+            }
+            if matches.count >= 2 {
+                selected = matches
+                break
+            }
+        }
+
+        if let specialRegex = specialTitlePattern {
+            enumerateMappedLines(in: mappedTextFile) { lineByteRange, lineText in
+                let nsLine = lineText as NSString
+                let fullRange = NSRange(location: 0, length: nsLine.length)
+                guard let match = specialRegex.firstMatch(in: lineText, range: fullRange),
+                      let range = Range(match.range, in: lineText)
+                else { return }
+                let title = String(lineText[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty else { return }
+                selected.append(MappedTitleMatch(lineByteRange: lineByteRange, title: title))
+            }
+        }
+
+        if selected.isEmpty { return [] }
+
+        selected.sort {
+            if $0.lineByteRange.lowerBound == $1.lineByteRange.lowerBound {
+                return $0.lineByteRange.count < $1.lineByteRange.count
+            }
+            return $0.lineByteRange.lowerBound < $1.lineByteRange.lowerBound
+        }
+
+        var deduped: [MappedTitleMatch] = []
+        var seenStart = Set<Int>()
+        for item in selected where !seenStart.contains(item.lineByteRange.lowerBound) {
+            deduped.append(item)
+            seenStart.insert(item.lineByteRange.lowerBound)
+        }
+        return deduped
+    }
+
     private static func skipLeadingWhitespace(in text: NSString, from start: Int, upperBound: Int) -> Int {
         guard start < upperBound else { return min(start, upperBound) }
         var cursor = max(0, start)
@@ -252,11 +370,123 @@ enum TXTChapterParser {
         return cursor
     }
 
+    private static func skipLeadingWhitespaceBytes(in data: Data, from start: Int, upperBound: Int) -> Int {
+        guard start < upperBound else { return min(start, upperBound) }
+        var cursor = max(0, start)
+        let limit = max(cursor, upperBound)
+        while cursor < limit {
+            let byte = data[cursor]
+            if byte == 0x20 || byte == 0x09 || byte == 0x0A || byte == 0x0D {
+                cursor += 1
+                continue
+            }
+            if cursor + 2 < limit,
+               data[cursor] == 0xE3,
+               data[cursor + 1] == 0x80,
+               data[cursor + 2] == 0x80 {
+                cursor += 3
+                continue
+            }
+            break
+        }
+        return cursor
+    }
+
     private static func hasReadableContent(in text: NSString, range: NSRange) -> Bool {
         let safe = safeRange(range, in: text)
         guard safe.length > 0 else { return false }
         let raw = text.substring(with: safe)
         return !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private static func hasReadableBytes(in data: Data, range: Range<Int>) -> Bool {
+        let lower = max(0, min(range.lowerBound, data.count))
+        let upper = max(lower, min(range.upperBound, data.count))
+        guard lower < upper else { return false }
+
+        var i = lower
+        while i < upper {
+            let byte = data[i]
+            if byte != 0x20 && byte != 0x09 && byte != 0x0A && byte != 0x0D {
+                return true
+            }
+            i += 1
+        }
+        return false
+    }
+
+    private static func splitIntoMappedBlockIndexes(_ mappedTextFile: TXTMappedTextFile, blockBytes: Int, bookTitle: String) -> [TXTMappedChapterIndex] {
+        let data = mappedTextFile.data
+        let total = data.count
+        guard total > 0 else {
+            return [TXTMappedChapterIndex(index: 0, title: bookTitle, byteRange: 0..<0)]
+        }
+
+        var result: [TXTMappedChapterIndex] = []
+        var cursor = 0
+        while cursor < total {
+            var end = min(cursor + blockBytes, total)
+            if end < total {
+                let lookaheadLimit = min(total, end + 1024)
+                var look = end
+                while look < lookaheadLimit, data[look] != 0x0A, data[look] != 0x0D {
+                    look += 1
+                }
+                if look < total {
+                    end = look
+                }
+            }
+
+            if end <= cursor {
+                end = min(cursor + 1, total)
+            }
+
+            let title = result.isEmpty ? bookTitle : "第 \(result.count + 1) 節"
+            result.append(
+                TXTMappedChapterIndex(
+                    index: result.count,
+                    title: title,
+                    byteRange: cursor..<end
+                )
+            )
+
+            cursor = end
+            while cursor < total, data[cursor] == 0x0A || data[cursor] == 0x0D {
+                cursor += 1
+            }
+        }
+
+        return result
+    }
+
+    private static func enumerateMappedLines(in mappedTextFile: TXTMappedTextFile, _ body: (Range<Int>, String) -> Void) {
+        let data = mappedTextFile.data
+        let count = data.count
+        guard count > 0 else { return }
+
+        var lineStart = 0
+        var cursor = 0
+
+        while cursor < count {
+            let byte = data[cursor]
+            if byte == 0x0A || byte == 0x0D {
+                let range = lineStart..<cursor
+                body(range, mappedTextFile.string(in: range))
+
+                if byte == 0x0D, cursor + 1 < count, data[cursor + 1] == 0x0A {
+                    cursor += 1
+                }
+                cursor += 1
+                lineStart = cursor
+                continue
+            }
+            cursor += 1
+        }
+
+        if lineStart < count {
+            let range = lineStart..<count
+            body(range, mappedTextFile.string(in: range))
+        }
     }
 
     private static func safeRange(_ range: NSRange, in text: NSString) -> NSRange {

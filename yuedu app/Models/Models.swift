@@ -568,7 +568,7 @@ class BookStore: ObservableObject {
         }
     }
 
-    // MARK: 🟢修改2：章節解析 (獨立區分 EPUB 與 TXT)
+    // MARK: 章節解析 (獨立區分 EPUB 與 TXT)
     func chapters(for book: ReadingBook) -> [BookChapter] {
         if book.isOnline, let refs = book.onlineChapters {
             // 線上書：從章節引用轉換，content 從快取讀取（空 = 尚未載入）

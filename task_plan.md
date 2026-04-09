@@ -13,6 +13,7 @@
 - [x] Phase 7: TXT Lazy 索引/建構路徑（已完成）
 - [x] Phase 8: Cover 跳章連環 reverse 動畫修補（已完成）
 - [x] Phase 9: 翻頁樣式重建/`curl` 手勢/TXT 進度回捲修補（已完成）
+- [x] Phase 10: Slide reverse dataSource 競態與 TXT ID 對齊修補（已完成）
 
 ## Errors Encountered
 | Error | Attempts | Resolution |
@@ -29,3 +30,5 @@
 - `CoreTextPageEngineView.makeUIViewController` 初始頁改用 SwiftUI `currentPage`（非 `engine.currentPage`），修復切換翻頁樣式後跳回第一頁。
 - `updateUIViewController` 的 reverse dataSource hack 加上 `pageTurnStyle != .curl` 保護，修復 `curl` 跳章後無法滑動。
 - `applyInitialProgressIfNeeded` 加入引擎精準進度保護（`engine.currentPage > 0` 時不覆蓋），避免 TXT 進度被粗略百分比回捲。
+- `updateUIViewController` 的 reverse hack 不再回填暫存 `savedDS`，改為動畫後在 slide 模式強制掛回 `context.coordinator`，避免快速連點造成 dataSource 永久掉線。
+- `localEPUBBookIdentifier` 對 TXT 改回傳 `book.id.uuidString`，與 `loadTXT` 使用的進度 key 對齊，避免「存讀不同抽屜」導致每次開書回到章首附近。

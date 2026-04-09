@@ -229,6 +229,9 @@ struct ReaderView: View {
         if currentBook.resolvedPipelineKind == .epub {
             return store.localEPUBURL(for: currentBook).standardizedFileURL.path
         }
+        if currentBook.resolvedPipelineKind == .txt {
+            return currentBook.id.uuidString
+        }
         return "coretext-\(currentBook.id.uuidString)"
     }
 
@@ -1621,11 +1624,26 @@ struct ReaderView: View {
             let targetBook = b
 
             DispatchQueue.global(qos: .userInitiated).async {
-                let text = store.content(for: targetBook)
-                let chapterIndexes = TXTChapterParser.parseChapterIndexes(text, bookTitle: bookTitle)
+                let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let txtURL = docsURL.appendingPathComponent(targetBook.contentFilename)
+
+                let mappedTextFile: TXTMappedTextFile
+                do {
+                    mappedTextFile = try TXTFileReader.readMappedTextFile(url: txtURL)
+                } catch {
+                    Task { @MainActor in
+                        guard self.book?.id == targetBook.id else { return }
+                        self.applyDocument(nil)
+                        self.isLoadingPipeline = false
+                        self.isRestoringPosition = false
+                    }
+                    return
+                }
+
+                let mappedChapterIndexes = TXTChapterParser.parseMappedChapterIndexes(mappedTextFile, bookTitle: bookTitle)
                 let lazyBuilder = TXTLazyAttributedStringBuilder(
-                    text: text,
-                    chapterIndexes: chapterIndexes
+                    mappedTextFile: mappedTextFile,
+                    chapterIndexes: mappedChapterIndexes
                 )
 
                 Task { @MainActor in
@@ -1637,8 +1655,8 @@ struct ReaderView: View {
 
                     let document = BookDocumentFactory.makeTXTDocument(
                         book: targetBook,
-                        chapterIndexes: chapterIndexes,
-                        text: text
+                        mappedChapterIndexes: mappedChapterIndexes,
+                        mappedTextFile: mappedTextFile
                     )
                     self.applyDocument(document)
 
@@ -2245,11 +2263,12 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let targetVC = engine.pageViewController(at: clampedPage)
             if shouldAnimate && direction == .reverse && pageTurnStyle != .curl {
                 // UIPageViewController .scroll 的已知 bug：programmatic reverse 動畫方向錯誤。
-                // 暫時移除 dataSource 讓 UIKit 走正確的反向動畫路徑，完成後恢復。
-                let savedDS = uiViewController.dataSource
+                // 暫時移除 dataSource 讓 UIKit 走正確的反向動畫路徑，完成後明確掛回 coordinator。
                 uiViewController.dataSource = nil
                 uiViewController.setViewControllers([targetVC], direction: .reverse, animated: true) { _ in
-                    uiViewController.dataSource = savedDS
+                    if pageTurnStyle == .slide {
+                        uiViewController.dataSource = context.coordinator
+                    }
                 }
             } else {
                 uiViewController.setViewControllers([targetVC], direction: direction, animated: shouldAnimate)
