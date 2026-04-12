@@ -108,7 +108,6 @@ enum TXTChapterParser {
         }
 
         let titleMatches = detectMappedTitleMatches(in: mappedTextFile)
-        print("[TXTChapterParser] titleMatches count=\(titleMatches.count), titles=\(titleMatches.prefix(5).map(\.title))")
         if !titleMatches.isEmpty {
             var indexes: [TXTMappedChapterIndex] = []
 
