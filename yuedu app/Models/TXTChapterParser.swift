@@ -17,6 +17,21 @@ struct TXTMappedChapterIndex: Equatable {
 }
 
 enum TXTChapterParser {
+    private struct TXTChapterIndexCache: Codable {
+        let version: Int
+        let fileSize: Int
+        let fingerprint: String
+        let encodingRawValue: UInt
+        let indexes: [CodableChapterIndex]
+    }
+
+    private struct CodableChapterIndex: Codable {
+        let index: Int
+        let title: String
+        let lower: Int
+        let upper: Int
+    }
+
     struct ParsedChapter {
         let title: String
         let paragraphs: [String]
@@ -133,6 +148,42 @@ enum TXTChapterParser {
         }
 
         return splitIntoMappedBlockIndexes(mappedTextFile, blockBytes: 12 * 1024, bookTitle: bookTitle)
+    }
+
+    static func loadCachedIndexes(bookId: UUID, fileSize: Int, fingerprint: String, encoding: String.Encoding) -> [TXTMappedChapterIndex]? {
+        let cacheURL = Self.cacheURL(for: bookId)
+        guard let data = try? Data(contentsOf: cacheURL),
+              let cache = try? JSONDecoder().decode(TXTChapterIndexCache.self, from: data),
+              cache.version == 1,
+              cache.fileSize == fileSize,
+              cache.fingerprint == fingerprint,
+              cache.encodingRawValue == encoding.rawValue
+        else { return nil }
+        return cache.indexes.map {
+            TXTMappedChapterIndex(index: $0.index, title: $0.title, byteRange: $0.lower..<$0.upper)
+        }
+    }
+
+    static func saveCachedIndexes(_ indexes: [TXTMappedChapterIndex], bookId: UUID, fileSize: Int, fingerprint: String, encoding: String.Encoding) {
+        let cacheDir = cacheDirectoryURL()
+        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        let codable = indexes.map { CodableChapterIndex(index: $0.index, title: $0.title, lower: $0.byteRange.lowerBound, upper: $0.byteRange.upperBound) }
+        let cache = TXTChapterIndexCache(version: 1, fileSize: fileSize, fingerprint: fingerprint, encodingRawValue: encoding.rawValue, indexes: codable)
+        guard let data = try? JSONEncoder().encode(cache) else { return }
+        try? data.write(to: Self.cacheURL(for: bookId))
+    }
+
+    static func deleteCachedIndexes(bookId: UUID) {
+        try? FileManager.default.removeItem(at: Self.cacheURL(for: bookId))
+    }
+
+    private static func cacheDirectoryURL() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("txt_chapter_cache", isDirectory: true)
+    }
+
+    private static func cacheURL(for bookId: UUID) -> URL {
+        cacheDirectoryURL().appendingPathComponent("\(bookId.uuidString).json")
     }
 
     private static let chapterPatterns: [NSRegularExpression] = {

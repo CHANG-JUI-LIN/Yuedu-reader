@@ -833,6 +833,7 @@ class BookStore: ObservableObject {
                 try? FileManager.default.removeItem(at: cacheDir)
             } else {
                 try? FileManager.default.removeItem(at: documentsURL(for: book.contentFilename))
+                TXTChapterParser.deleteCachedIndexes(bookId: bookId)
                 // 同步刪除 EPUB 字型資源目錄
                 if book.isLegacyParsedEPUB {
                     let assetsDir = book.contentFilename.replacingOccurrences(

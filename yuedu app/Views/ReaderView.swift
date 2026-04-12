@@ -1791,7 +1791,19 @@ struct ReaderView: View {
                     return
                 }
 
-                let mappedChapterIndexes = TXTChapterParser.parseMappedChapterIndexes(mappedTextFile, bookTitle: bookTitle)
+                let bookId = targetBook.id
+                let fingerprint = TXTFileReader.fileFingerprint(data: mappedTextFile.data)
+                let fileSize = mappedTextFile.byteCount
+                let encoding = mappedTextFile.encoding
+
+                let mappedChapterIndexes: [TXTMappedChapterIndex]
+                if let cached = TXTChapterParser.loadCachedIndexes(bookId: bookId, fileSize: fileSize, fingerprint: fingerprint, encoding: encoding) {
+                    mappedChapterIndexes = cached
+                } else {
+                    let fresh = TXTChapterParser.parseMappedChapterIndexes(mappedTextFile, bookTitle: bookTitle)
+                    TXTChapterParser.saveCachedIndexes(fresh, bookId: bookId, fileSize: fileSize, fingerprint: fingerprint, encoding: encoding)
+                    mappedChapterIndexes = fresh
+                }
                 let lazyBuilder = TXTLazyAttributedStringBuilder(
                     mappedTextFile: mappedTextFile,
                     chapterIndexes: mappedChapterIndexes

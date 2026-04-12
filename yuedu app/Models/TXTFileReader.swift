@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct TXTMappedTextFile {
@@ -26,6 +27,19 @@ enum TXTFileReader {
     private static let gbkEncoding = String.Encoding(
         rawValue: CFStringConvertEncodingToNSStringEncoding(
             CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
+
+    static func fileFingerprint(data: Data) -> String {
+        // Take first 64KB + last 64KB, hash with MD5
+        let prefixSize = min(65536, data.count)
+        let suffixSize = min(65536, max(0, data.count - prefixSize))
+        var hasher = CryptoKit.Insecure.MD5()
+        data.prefix(prefixSize).withUnsafeBytes { hasher.update(bufferPointer: $0) }
+        if suffixSize > 0 {
+            data.suffix(suffixSize).withUnsafeBytes { hasher.update(bufferPointer: $0) }
+        }
+        let digest = hasher.finalize()
+        return digest.map { String(format: "%02x", $0) }.joined() + "_\(data.count)"
+    }
 
     static func readMappedTextFile(url: URL) throws -> TXTMappedTextFile {
         let data = try Data(contentsOf: url, options: .alwaysMapped)
