@@ -368,43 +368,11 @@ enum TXTChapterParser {
         var buckets: [[MappedTitleMatch]] = Array(repeating: [], count: chapterPatterns.count)
         var specialMatches: [MappedTitleMatch] = []
 
-        let data = mappedTextFile.data
-
         enumerateMappedLines(in: mappedTextFile) { lineByteRange, lineText in
-            // Pre-filter 1: skip lines longer than 200 bytes (chapter titles are never that long)
+            // Skip lines longer than 200 bytes (chapter titles are never that long)
             guard lineByteRange.count <= 200 else { return }
 
-            // Pre-filter 2: check leading byte against known title prefixes
-            // Must find the first non-whitespace byte
-            var firstNonWS = lineByteRange.lowerBound
-            while firstNonWS < lineByteRange.upperBound {
-                let b = data[firstNonWS]
-                if b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D { firstNonWS += 1; continue }
-                // Also skip UTF-8 ideographic space E3 80 80
-                if b == 0xE3, firstNonWS + 2 < lineByteRange.upperBound,
-                   data[firstNonWS + 1] == 0x80, data[firstNonWS + 2] == 0x80 {
-                    firstNonWS += 3; continue
-                }
-                break
-            }
-            guard firstNonWS < lineByteRange.upperBound else { return }
-
-            let leadByte = data[firstNonWS]
-            // Known title starters:
-            // 0xE7 = 第(UTF-8 E7 AC AC), 0xE5 = 卷/序/終/楔/等(E5...), 0xE5 also covers many CJK
-            // 0xE5, 0xE7, 0xE8, 0xE9 cover most common CJK first bytes
-            // 0x43/0x63 = C/c (Chapter/CHAPTER), 0x50/0x70 = P/p (Part/PART/Prologue/Preface)
-            // 0x49/0x69 = I/i (Introduction), 0x45/0x65 = E/e (Epilogue)
-            let isChineseLead = leadByte >= 0xE4 && leadByte <= 0xEF
-            let isLatinLead: Bool = {
-                switch leadByte {
-                case 0x43, 0x63, 0x50, 0x70, 0x49, 0x69, 0x45, 0x65: return true
-                default: return false
-                }
-            }()
-            guard isChineseLead || isLatinLead else { return }
-
-            // Now decode the line and test patterns
+            // Decode the line and test patterns
             let nsLine = lineText as NSString
             let fullRange = NSRange(location: 0, length: nsLine.length)
 
