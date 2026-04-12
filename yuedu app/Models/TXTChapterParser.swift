@@ -154,7 +154,7 @@ enum TXTChapterParser {
         let cacheURL = Self.cacheURL(for: bookId)
         guard let data = try? Data(contentsOf: cacheURL),
               let cache = try? JSONDecoder().decode(TXTChapterIndexCache.self, from: data),
-              cache.version == 2,
+              cache.version == 3,
               cache.fileSize == fileSize,
               cache.fingerprint == fingerprint,
               cache.encodingRawValue == encoding.rawValue
@@ -168,7 +168,7 @@ enum TXTChapterParser {
         let cacheDir = cacheDirectoryURL()
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         let codable = indexes.map { CodableChapterIndex(index: $0.index, title: $0.title, lower: $0.byteRange.lowerBound, upper: $0.byteRange.upperBound) }
-        let cache = TXTChapterIndexCache(version: 2, fileSize: fileSize, fingerprint: fingerprint, encodingRawValue: encoding.rawValue, indexes: codable)
+        let cache = TXTChapterIndexCache(version: 3, fileSize: fileSize, fingerprint: fingerprint, encodingRawValue: encoding.rawValue, indexes: codable)
         guard let data = try? JSONEncoder().encode(cache) else { return }
         try? data.write(to: Self.cacheURL(for: bookId))
     }
@@ -393,22 +393,39 @@ enum TXTChapterParser {
             }
         }
 
-        // Apply same selection logic as before: first pattern with >=2 matches wins
+        // First pattern with >=2 matches wins; track which bucket index won
         var selected: [MappedTitleMatch] = []
         var singleMatchFallback: [MappedTitleMatch] = []
+        var selectedBucketIndex: Int? = nil
+        var fallbackBucketIndex: Int? = nil
 
-        for bucket in buckets {
+        for (i, bucket) in buckets.enumerated() {
             if bucket.count == 1, singleMatchFallback.isEmpty {
                 singleMatchFallback = bucket
+                fallbackBucketIndex = i
             }
             if bucket.count >= 2 {
                 selected = bucket
+                selectedBucketIndex = i
                 break
             }
         }
 
         if selected.isEmpty, !singleMatchFallback.isEmpty {
             selected = singleMatchFallback
+            selectedBucketIndex = fallbackBucketIndex
+        }
+
+        // chapterPatterns index mapping:
+        //   0=第X章  1=第X節  2=第X卷  3=第X回  4=第X篇  5=第X部  6=卷X
+        // If the winning pattern is chapter-level (章/節/回),
+        // also include volume-level matches (卷/篇/部) as structural markers.
+        let chapterLevelIndexes: Set<Int> = [0, 1, 3]
+        let volumeLevelIndexes: Set<Int> = [2, 4, 5, 6]
+        if let idx = selectedBucketIndex, chapterLevelIndexes.contains(idx) {
+            for vi in volumeLevelIndexes {
+                selected.append(contentsOf: buckets[vi])
+            }
         }
 
         selected.append(contentsOf: specialMatches)
