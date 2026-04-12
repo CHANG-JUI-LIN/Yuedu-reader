@@ -1,0 +1,204 @@
+109-        title = try c.decode(String.self, forKey: .title)
+110-        author = try c.decode(String.self, forKey: .author)
+111-        source = try c.decode(String.self, forKey: .source)
+112-        contentFilename = try c.decode(String.self, forKey: .contentFilename)
+113-        contentPipelineKind =
+114:            (try? c.decode(BookPipelineKind.self, forKey: .contentPipelineKind))
+115-            ?? Self.inferPipelineKind(
+116-                source: source,
+117-                contentFilename: contentFilename,
+118:                isOnline: (try? c.decode(Bool.self, forKey: .isOnline)) ?? false
+119-            )
+120-        currentPosition = try c.decode(Double.self, forKey: .currentPosition)
+121-        addedDate = try c.decode(Date.self, forKey: .addedDate)
+122:        isOnline = (try? c.decode(Bool.self, forKey: .isOnline)) ?? false
+123:        bookSourceId = try? c.decode(UUID.self, forKey: .bookSourceId)
+124:        bookInfoURL = try? c.decode(String.self, forKey: .bookInfoURL)
+125:        tocURL = try? c.decode(String.self, forKey: .tocURL)
+126:        runtimeVariables = try? c.decode([String: String].self, forKey: .runtimeVariables)
+127:        onlineChapters = try? c.decode([OnlineChapterRef].self, forKey: .onlineChapters)
+128:        bookmarks = (try? c.decode([Bookmark].self, forKey: .bookmarks)) ?? []
+129:        coverImagePath = try? c.decode(String.self, forKey: .coverImagePath)
+130-        rendererPreference =
+131:            (try? c.decode(BookRendererPreference.self, forKey: .rendererPreference))
+132-            ?? .defaultWeb
+133-        compatibilityState =
+134:            (try? c.decode(BookCompatibilityState.self, forKey: .compatibilityState))
+135-            ?? .defaultWeb
+136-        offlineDownloadState =
+137:            (try? c.decode(BookOfflineDownloadState.self, forKey: .offlineDownloadState))
+138-            ?? .none
+139:        downloadedChapterCount = (try? c.decode(Int.self, forKey: .downloadedChapterCount)) ?? 0
+140-    }
+141-
+142-    enum CodingKeys: String, CodingKey {
+143-        case id, title, author, source, contentFilename, contentPipelineKind, currentPosition, addedDate
+144-        case isOnline, bookSourceId, bookInfoURL, tocURL, runtimeVariables, onlineChapters, bookmarks
+--
+544-    init() { loadMeta() }
+545-
+546-    // MARK: 讀取書籍正文
+547-    func content(for book: ReadingBook) -> String {
+548-        let url = documentsURL(for: book.contentFilename)
+549:        return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+550-    }
+551-
+552-    func package(forLocalBook book: ReadingBook) throws -> BookPackage {
+553-        let sourceURL = URL(string: book.source)
+554-        switch book.resolvedPipelineKind {
+--
+585-        // 新格式（epub.js 方案）：contentFilename 直接是 .epub，由閱讀器的 JS 引擎解析 TOC
+586-        if book.resolvedPipelineKind == .epub {
+587-            // 舊格式：曾解析為 _epub.json
+588-            if book.isLegacyParsedEPUB {
+589-                let url = documentsURL(for: book.contentFilename)
+590:                if let data = try? Data(contentsOf: url),
+591:                    let decoded = try? JSONDecoder().decode([BookChapter].self, from: data)
+592-                {
+593-                    return decoded
+594-                }
+595-            }
+596-            // 新格式 / 舊格式解析失敗：回傳佔位章節，epub.js 的 onTOC 回調會在閱讀器啟動後更新
+--
+612-        let filename = "\(UUID().uuidString).txt"
+613-        let destURL = documentsURL(for: filename)
+614-
+615-        // Probe encoding using first 4KB
+616-        let probeData: Data
+617:        if let handle = try? FileHandle(forReadingFrom: url) {
+618-            probeData = handle.readData(ofLength: 4096)
+619:            try? handle.close()
+620-        } else {
+621-            probeData = Data()
+622-        }
+623-
+624-        if probeData.isEmpty || String(data: probeData, encoding: .utf8) != nil {
+--
+628-            // Slow path: non-UTF-8 (Big5/GBK) — stream-transcode to UTF-8
+629-            try streamTranscodeToUTF8(source: url, destination: destURL)
+630-        }
+631-
+632-        // Validate the copied file is readable
+633:        guard let mapped = try? TXTFileReader.readMappedTextFile(url: destURL),
+634-              !mapped.string(in: 0..<min(128, mapped.byteCount)).isEmpty || mapped.byteCount == 0
+635-        else {
+636:            try? FileManager.default.removeItem(at: destURL)
+637-            throw TXTFileReaderError.encodingNotSupported
+638-        }
+639-
+640-        var book = ReadingBook(title: bookTitle, author: "未知作者", source: "local", contentFilename: filename)
+641-        book.contentPipelineKind = .txt
+--
+738-        // 0. 產生 UUID 作為新檔名
+739-        let uuid = UUID().uuidString
+740-        let filename = "\(uuid).epub"
+741-        let destURL = documentsURL(for: filename)
+742-        var coverFilename: String? = nil
+743:        let sourceSizeBytes = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+744-        importTrace(
+745-            "begin source=\(url.lastPathComponent) sourceSizeBytes=\(sourceSizeBytes) dest=\(filename)"
+746-        )
+747-
+748-        func cleanupImportedFiles() {
+749-            if FileManager.default.fileExists(atPath: destURL.path) {
+750:                try? FileManager.default.removeItem(at: destURL)
+751-            }
+752-            if let coverFilename {
+753-                let coverURL = documentsURL(for: coverFilename)
+754-                if FileManager.default.fileExists(atPath: coverURL.path) {
+755:                    try? FileManager.default.removeItem(at: coverURL)
+756-                }
+757-            }
+758-        }
+759-
+760-        do {
+--
+776-            if let coverImage = await EPUBBookService.shared.extractCoverImage(from: destURL) {
+777-                let coverName = "\(uuid)_cover.jpg"
+778-                let coverURL = documentsURL(for: coverName)
+779-                // 將封面轉為 JPEG 儲存（壓縮節省空間）
+780-                if let jpegData = coverImage.jpegData(compressionQuality: 0.85) {
+781:                    try? jpegData.write(to: coverURL)
+782-                    coverFilename = coverName
+783-                }
+784-            }
+785-            importTrace(
+786-                "stage=coverExtract done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - coverStart) * 1000)) hasCover=\(coverFilename != nil)"
+787-            )
+788-            try Task.checkCancellation()
+789-
+790-            let metadataStart = ProcessInfo.processInfo.systemUptime
+791:            let session = try? await PublicationSession.open(sourceURL: destURL)
+792-            importTrace(
+793-                "stage=metadataOpen done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - metadataStart) * 1000)) chapters=\(session?.chapters.count ?? 0)"
+794-            )
+795-            try Task.checkCancellation()
+796-
+--
+921-    // MARK: 增量更新書籍正文（下載中斷保護用）
+922-    func updateBookContent(bookId: UUID, rawText: String) {
+923-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+924-        let filename = books[idx].contentFilename
+925-        let fileURL = documentsURL(for: filename)
+926:        try? rawText.write(to: fileURL, atomically: true, encoding: .utf8)
+927-    }
+928-
+929-    // MARK: 編輯書籍資訊
+930-    func updateBook(bookId: UUID, title: String, author: String) {
+931-        if let idx = books.firstIndex(where: { $0.id == bookId }) {
+--
+940-        if let idx = books.firstIndex(where: { $0.id == bookId }) {
+941-            let book = books[idx]
+942-            if book.isOnline {
+943-                // 刪除快取目錄
+944-                let cacheDir = documentsURL(for: "online_cache/\(bookId.uuidString)")
+945:                try? FileManager.default.removeItem(at: cacheDir)
+946-            } else {
+947:                try? FileManager.default.removeItem(at: documentsURL(for: book.contentFilename))
+948-                TXTChapterParser.deleteCachedIndexes(bookId: bookId)
+949-                // 同步刪除 EPUB 字型資源目錄
+950-                if book.isLegacyParsedEPUB {
+951-                    let assetsDir = book.contentFilename.replacingOccurrences(
+952-                        of: "_epub.json", with: "_epub_assets")
+953:                    try? FileManager.default.removeItem(at: documentsURL(for: assetsDir))
+954-                }
+955-            }
+956-            books.remove(at: idx)
+957-            saveMeta()
+958-        }
+--
+1022-    }
+1023-
+1024-    func clearOnlineDownload(bookId: UUID) {
+1025-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+1026-        let cacheDir = documentsURL(for: "online_cache/\(bookId.uuidString)")
+1027:        try? FileManager.default.removeItem(at: cacheDir)
+1028-        if var chapters = books[idx].onlineChapters {
+1029-            for chapterIndex in chapters.indices {
+1030-                chapters[chapterIndex].cachedFilename = nil
+1031-            }
+1032-            books[idx].onlineChapters = chapters
+--
+1202-    private func saveMeta() {
+1203-        saveWorkItem?.cancel()
+1204-        
+1205-        let workItem = DispatchWorkItem { [weak self] in
+1206-            guard let self = self else { return }
+1207:            if let data = try? JSONEncoder().encode(self.books) {
+1208-                UserDefaults.standard.set(data, forKey: self.metaKey)
+1209-            }
+1210-        }
+1211-        
+1212-        saveWorkItem = workItem
+--
+1214-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
+1215-    }
+1216-
+1217-    private func loadMeta() {
+1218-        if let data = UserDefaults.standard.data(forKey: metaKey),
+1219:            let decoded = try? JSONDecoder().decode([ReadingBook].self, from: data)
+1220-        {
+1221-            books = decoded
+1222-            // 修復舊版殘留的 HTML 片段 URL（如 <a href="...">第1章</a>）
+1223-            sanitizePersistedChapterURLs()
+1224-        }

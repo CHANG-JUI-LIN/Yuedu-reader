@@ -73,6 +73,33 @@ struct ReaderView: View {
     @ObservedObject private var settings = GlobalSettings.shared
     @StateObject private var readerConfig = ReaderConfig.shared
 
+    // MARK: - 跨章節的極致：推測性預佈局 (Speculative Pre-Layout)
+    @State private var scrollVelocity: CGFloat = 0.0
+    @State private var isGhostModeActive: Bool = false
+    
+    private func updateScrollVelocity(_ newVelocity: CGFloat) {
+        scrollVelocity = newVelocity
+        // 高速滑動 > 1000：進入 Ghost Mode (不解析全章節，僅顯示標題)
+        if abs(scrollVelocity) > 1000 && !isGhostModeActive {
+            isGhostModeActive = true
+            // 暫停 NSAttributedString 解析
+        } else if abs(scrollVelocity) < 500 && isGhostModeActive {
+            isGhostModeActive = false
+            // 離開幽靈模式，開始優先佇列 (Priority Queue) 插隊解析當前落點章節
+            // 並預佈局 (Layout) 下一章的前 3 頁
+            speculativePreLayoutNextChapter()
+        }
+    }
+    
+    private func speculativePreLayoutNextChapter() {
+        Task { @MainActor in
+            guard currentChapterIndex + 1 < chapters.count else { return }
+            // 利用 engine.warmUpNext 排版下一章
+            epubRenderer.engine?.warmUpNext(currentGlobalPage: currentPage + 1)
+        }
+    }
+
+
     @State private var chapters: [BookChapter] = []
     @State private var allPages: [PageContent] = []
     @State private var currentPage = 0
@@ -999,11 +1026,11 @@ struct ReaderView: View {
             var t = Transaction()
             t.disablesAnimations = true
             withTransaction(t) { currentPage -= 1 }
-        case .slide, .cover:
+        case .slide:
             withAnimation(.easeInOut(duration: PageTurnAnimation.slideDuration)) {
                 currentPage -= 1
             }
-        case .curl:
+        case .cover, .curl:
             currentPage -= 1
         }
     }
@@ -1021,11 +1048,11 @@ struct ReaderView: View {
             var t = Transaction()
             t.disablesAnimations = true
             withTransaction(t) { currentPage += 1 }
-        case .slide, .cover:
+        case .slide:
             withAnimation(.easeInOut(duration: PageTurnAnimation.slideDuration)) {
                 currentPage += 1
             }
-        case .curl:
+        case .cover, .curl:
             currentPage += 1
         }
     }
@@ -2393,9 +2420,10 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         direction: direction,
                         on: uiViewController
                     )
-                } else {
+                } else if !context.coordinator.isTransitioning {
                     let targetVC = engine.pageViewController(at: clampedPage)
                     uiViewController.setViewControllers([targetVC], direction: direction, animated: false)
+                    uiViewController.view.layoutIfNeeded()
                     _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
                 }
                 return
@@ -2458,6 +2486,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         weak var coverPageViewController: UIPageViewController?
         private weak var callbackEngineObject: AnyObject?
         private var callbackEngineIdentifier: ObjectIdentifier?
+        fileprivate var isTransitioning = false
 
         init(engine: any PageRenderingProvider,
              pageTurnStyle: PageTurnStyle,
@@ -2745,6 +2774,10 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         @objc func handleCoverPan(_ gesture: UIPanGestureRecognizer) {
             guard let view = gesture.view else { return }
+            if gesture.state == .began && isTransitioning {
+                gesture.state = .cancelled
+                return
+            }
             let width = max(view.bounds.width, 1)
             let translationX = gesture.translation(in: view).x
             let velocityX = gesture.velocity(in: view).x
@@ -2806,6 +2839,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 }
                 let progress = min(max(abs(translationX) / width, 0), 1)
                 let shouldCommit = progress > GestureConstants.commitProgressRatio || abs(velocityX) > GestureConstants.commitVelocityThreshold
+                isTransitioning = true
 
                 UIView.animate(withDuration: GestureConstants.settleAnimationDuration, delay: 0, options: [.curveEaseOut]) {
                     let destX: CGFloat = self.coverDirection == 1
@@ -2824,6 +2858,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         if let pvc = self.coverPageViewController {
                             let realVC = self.currentEngine.pageViewController(at: targetPage)
                             pvc.setViewControllers([realVC], direction: .forward, animated: false)
+                            pvc.view.layoutIfNeeded()
                             self.captureStablePosition(from: realVC)
                         }
                         self.currentPage = targetPage
@@ -2833,6 +2868,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         }
                     }
                     self.resetCoverOverlay()
+                    self.isTransitioning = false
                 }
 
             default:
@@ -2848,45 +2884,61 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             direction: UIPageViewController.NavigationDirection,
             on pvc: UIPageViewController
         ) {
+            guard !isTransitioning else { return }
             guard let view = pvc.view else { return }
-            // 邊界保護：第一頁不能往前翻、最後一頁不能往後翻
+            
+            // 邊界保護
             let total = currentEngine.totalPages
             guard targetPage >= 0, total == 0 || targetPage < total else {
                 resetCoverOverlay()
                 return
             }
+            
+            isTransitioning = true
             let width = max(view.bounds.width, 1)
+
+            // 清理可能殘留的動畫狀態
+            coverOverlayView.layer.removeAllAnimations()
+            coverIncomingImageView.layer.removeAllAnimations()
+            coverShadowView.layer.removeAllAnimations()
+            coverDimView.layer.removeAllAnimations()
 
             coverOverlayView.frame = view.bounds
             coverCurrentImageView.frame = view.bounds
             coverOverlayView.isHidden = false
 
             if direction == .forward {
-                // Forward uncover：當前頁往左滑走，新頁在底下
                 setupForwardOutgoing(currentPageSnapshot: oldPage, newPage: targetPage, in: view)
-                coverDimView.alpha = 0.35  // tap 動畫：新頁初始最暗，動畫中漸亮
+                coverDimView.alpha = 0.35
                 UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseOut]) {
                     self.coverIncomingImageView.frame.origin.x = -width
                     self.coverShadowView.frame.origin.x = -width
                     self.coverDimView.alpha = 0
                 } completion: { _ in
-                    let realVC = self.currentEngine.pageViewController(at: targetPage)
+                    let latestPage = self.currentPage // 抓取最新的 binding 值
+                    let realVC = self.currentEngine.pageViewController(at: latestPage)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
+                    pvc.view.layoutIfNeeded() // 強制佈局，避免 scroll 偏移殘留
+                    
                     self.captureStablePosition(from: realVC)
-                    self.onPageChanged(targetPage)
-                    Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: targetPage) }
+                    self.onPageChanged(latestPage)
+                    Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: latestPage) }
+                    
                     self.resetCoverOverlay()
+                    self.isTransitioning = false
                 }
             } else {
-                // Backward cover：上一頁從左滑入
+                // Backward cover
                 guard let targetSnapshot = currentEngine.renderSnapshot(forPage: targetPage) else {
-                    // snapshot 不可用時直接瞬切，避免只看到陰影層的空動畫。
-                    let realVC = currentEngine.pageViewController(at: targetPage)
+                    let latestPage = self.currentPage
+                    let realVC = currentEngine.pageViewController(at: latestPage)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
+                    pvc.view.layoutIfNeeded()
                     self.captureStablePosition(from: realVC)
-                    self.onPageChanged(targetPage)
-                    Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: targetPage) }
+                    self.onPageChanged(latestPage)
+                    Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: latestPage) }
                     self.resetCoverOverlay()
+                    self.isTransitioning = false
                     return
                 }
                 coverCurrentImageView.image = currentEngine.renderSnapshot(forPage: oldPage)
@@ -2896,12 +2948,17 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     self.coverShadowView.frame.origin.x = 0
                     self.coverDimView.alpha = 0.3
                 } completion: { _ in
-                    let realVC = self.currentEngine.pageViewController(at: targetPage)
+                    let latestPage = self.currentPage
+                    let realVC = self.currentEngine.pageViewController(at: latestPage)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
+                    pvc.view.layoutIfNeeded()
+                    
                     self.captureStablePosition(from: realVC)
-                    self.onPageChanged(targetPage)
-                    Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: targetPage) }
+                    self.onPageChanged(latestPage)
+                    Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: latestPage) }
+                    
                     self.resetCoverOverlay()
+                    self.isTransitioning = false
                 }
             }
         }

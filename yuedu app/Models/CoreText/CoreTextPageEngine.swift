@@ -913,7 +913,17 @@ final class CoreTextPageEngine: PageRenderingProvider {
             }
         }
         
-        return Self.renderImage(layout: layout, pageIndex: localPage, size: renderSize)
+        let bgColor: UIColor
+        if layout.attributedString.length > 0,
+           let color = layout.attributedString.attribute(
+               .backgroundColor, at: 0, effectiveRange: nil
+           ) as? UIColor {
+            bgColor = color
+        } else {
+            bgColor = .systemBackground
+        }
+
+        return Self.renderImage(layout: layout, pageIndex: localPage, size: renderSize, bgColor: bgColor.cgColor)
     }
 
     // MARK: - Private helpers
@@ -926,13 +936,25 @@ final class CoreTextPageEngine: PageRenderingProvider {
               renderSize.width > 0, renderSize.height > 0 else { return }
         
         let size = renderSize
+        let bgColor: UIColor
+        if layout.attributedString.length > 0,
+           let color = layout.attributedString.attribute(
+               .backgroundColor, at: 0, effectiveRange: nil
+           ) as? UIColor {
+            bgColor = color
+        } else {
+            bgColor = .systemBackground
+        }
+        
+        // 將 UIColor 轉為 CGColor 以便在非隔離環境傳遞
+        let bgCGColor = bgColor.cgColor
         
         // 第 0 頁快照 (Key: (spine << 1))
         let firstKey = NSNumber(value: (spineIndex << 1))
         if chapterSnapshots.object(forKey: firstKey) == nil {
             Task {
                 let img = await Task.detached(priority: .userInitiated) {
-                    Self.renderImage(layout: layout, pageIndex: 0, size: size)
+                    Self.renderImage(layout: layout, pageIndex: 0, size: size, bgColor: bgCGColor)
                 }.value
                 self.chapterSnapshots.setObject(img, forKey: firstKey)
             }
@@ -945,7 +967,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             if chapterSnapshots.object(forKey: lastKey) == nil {
                 Task {
                     let img = await Task.detached(priority: .userInitiated) {
-                        Self.renderImage(layout: layout, pageIndex: lastIdx, size: size)
+                        Self.renderImage(layout: layout, pageIndex: lastIdx, size: size, bgColor: bgCGColor)
                     }.value
                     self.chapterSnapshots.setObject(img, forKey: lastKey)
                 }
@@ -956,21 +978,12 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private nonisolated static func renderImage(
         layout: CoreTextPaginator.ChapterLayout,
         pageIndex: Int,
-        size: CGSize
+        size: CGSize,
+        bgColor: CGColor
     ) -> UIImage {
-        let bgColor: UIColor
-        if layout.attributedString.length > 0,
-           let color = layout.attributedString.attribute(
-               .backgroundColor, at: 0, effectiveRange: nil
-           ) as? UIColor {
-            bgColor = color
-        } else {
-            bgColor = .systemBackground
-        }
-        
         return UIGraphicsImageRenderer(size: size).image { ctx in
             let c = ctx.cgContext
-            c.setFillColor(bgColor.cgColor)
+            c.setFillColor(bgColor)
             c.fill(CGRect(origin: .zero, size: size))
             CoreTextPageView.renderPage(
                 layout: layout,

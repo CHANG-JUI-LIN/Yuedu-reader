@@ -5,6 +5,7 @@ import OSLog
 import SwiftSoup
 import SwiftUI
 import UIKit
+import ReadiumShared
 
 // MARK: - 書籍章節 (🟢修改1：加上 Codable，並將 let 改為 var，讓 EPUB 可以存成 JSON)
 
@@ -784,9 +785,16 @@ class BookStore: ObservableObject {
             )
             try Task.checkCancellation()
 
-            // 2. 提取封面圖片（在背景線程完成）
+            // 2. 提取封面與元數據（合併處理以避免重複解析 EPUB ZIP 與 XML）
+            let metadataStart = ProcessInfo.processInfo.systemUptime
+            let session = try? await PublicationSession.open(sourceURL: destURL)
+            importTrace(
+                "stage=metadataOpen done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - metadataStart) * 1000)) chapters=\(session?.chapters.count ?? 0)"
+            )
+            try Task.checkCancellation()
+
             let coverStart = ProcessInfo.processInfo.systemUptime
-            if let coverImage = await EPUBBookService.shared.extractCoverImage(from: destURL) {
+            if let coverResult = await session?.publication.cover(), case .success(let optionalImage) = coverResult, let coverImage = optionalImage {
                 let coverName = "\(uuid)_cover.jpg"
                 let coverURL = documentsURL(for: coverName)
                 // 將封面轉為 JPEG 儲存（壓縮節省空間）
@@ -801,13 +809,6 @@ class BookStore: ObservableObject {
             }
             importTrace(
                 "stage=coverExtract done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - coverStart) * 1000)) hasCover=\(coverFilename != nil)"
-            )
-            try Task.checkCancellation()
-
-            let metadataStart = ProcessInfo.processInfo.systemUptime
-            let session = try? await PublicationSession.open(sourceURL: destURL)
-            importTrace(
-                "stage=metadataOpen done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - metadataStart) * 1000)) chapters=\(session?.chapters.count ?? 0)"
             )
             try Task.checkCancellation()
 

@@ -133,6 +133,27 @@ final class PublicationSessionRegistry {
     }
 }
 
+
+struct SpinesCache: Codable {
+    let bookTitle: String
+    let author: String
+    let chapters: [PublicationChapterDescriptorCache]
+    
+    struct PublicationChapterDescriptorCache: Codable {
+        let index: Int
+        let href: String
+        let title: String
+        let mediaType: String
+    }
+}
+
+// 輔助尋找快取路徑
+private func getCacheURL(for sourceURL: URL) -> URL {
+    let cachesPaths = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+    let bookId = sourceURL.lastPathComponent.replacingOccurrences(of: ".epub", with: "")
+    return cachesPaths[0].appendingPathComponent("spine_cache_\(bookId).json")
+}
+
 final class PublicationSession {
     static let scheme = "reader-book"
 
@@ -181,39 +202,75 @@ final class PublicationSession {
 
         let publication = try await openPublication(sourceURL: sourceURL)
         let tocEntries = flattenTableOfContents(publication.manifest.tableOfContents)
-        let chapterTitleMap = Dictionary(
-            tocEntries.map { (normalizedHREF($0.href), $0.title) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        let readingOrder = chapterLinks(from: publication)
-        var lastResolvedTOCTitle: String?
-        let chapters = readingOrder.enumerated().map { (index, link) in
-            let href = normalizedHREF(link.href)
-            let matchedTOCTitle = chapterTitleMap[href] ?? chapterTitleMap.first(where: {
-                href.hasSuffix($0.key) || $0.key.hasSuffix(href)
-            })?.value
-            if let matchedTOCTitle, !matchedTOCTitle.isEmpty {
-                lastResolvedTOCTitle = matchedTOCTitle
+        
+        let cacheURL = getCacheURL(for: sourceURL)
+        let chapters: [PublicationChapterDescriptor]
+        let cachedTitle: String?
+        let cachedAuthor: String?
+        
+        if let data = try? Data(contentsOf: cacheURL),
+           let cache = try? JSONDecoder().decode(SpinesCache.self, from: data) {
+            // 命中快取，O(1) 讀取！ bypassing O(N^2) XML matching
+            chapters = cache.chapters.map { 
+                PublicationChapterDescriptor(index: $0.index, href: $0.href, title: $0.title, mediaType: $0.mediaType) 
             }
-            return PublicationChapterDescriptor(
-                index: index,
-                href: href,
-                title: sanitizedTitle(
-                    link.title ?? matchedTOCTitle ?? lastResolvedTOCTitle,
-                    fallbackHref: href,
-                    chapterIndex: index
-                ),
-                mediaType: link.mediaType?.string ?? "application/xhtml+xml"
+            cachedTitle = cache.bookTitle
+            cachedAuthor = cache.author
+        } else {
+            // Miss cache, do O(N^2)
+            let chapterTitleMap = Dictionary(
+                tocEntries.map { (normalizedHREF($0.href), $0.title) },
+                uniquingKeysWith: { first, _ in first }
             )
+            let readingOrder = chapterLinks(from: publication)
+            var lastResolvedTOCTitle: String?
+            chapters = readingOrder.enumerated().map { (index, link) in
+                let href = normalizedHREF(link.href)
+                let matchedTOCTitle = chapterTitleMap[href] ?? chapterTitleMap.first(where: {
+                    href.hasSuffix($0.key) || $0.key.hasSuffix(href)
+                })?.value
+                if let matchedTOCTitle, !matchedTOCTitle.isEmpty {
+                    lastResolvedTOCTitle = matchedTOCTitle
+                }
+                return PublicationChapterDescriptor(
+                    index: index,
+                    href: href,
+                    title: sanitizedTitle(
+                        link.title ?? matchedTOCTitle ?? lastResolvedTOCTitle,
+                        fallbackHref: href,
+                        chapterIndex: index
+                    ),
+                    mediaType: link.mediaType?.string ?? "application/xhtml+xml"
+                )
+            }
+            
+            // Save Cache
+            let cTitle = publication.metadata.title ?? "未知"
+            let cAuthor = publication.metadata.authors.map { $0.name }.joined(separator: ", ")
+            let cacheChapters = chapters.map { SpinesCache.PublicationChapterDescriptorCache(index: $0.index, href: $0.href, title: $0.title, mediaType: $0.mediaType) }
+            let cacheObj = SpinesCache(bookTitle: cTitle, author: cAuthor, chapters: cacheChapters)
+            if let cacheData = try? JSONEncoder().encode(cacheObj) {
+                try? cacheData.write(to: cacheURL)
+            }
+            cachedTitle = nil
+            cachedAuthor = nil
         }
 
-        let title = publication.metadata.title?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let authors = publication.metadata.authors
-            .map(\.name)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "、")
+        let finalTitle: String
+        let finalAuthor: String
+        if let cachedTitle = cachedTitle, let cachedAuthor = cachedAuthor {
+            finalTitle = cachedTitle
+            finalAuthor = cachedAuthor
+        } else {
+            let titleText = publication.metadata.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let authorText = publication.metadata.authors
+                .map(\.name)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "、")
+            finalTitle = titleText?.isEmpty == false ? titleText! : sourceURL.deletingPathExtension().lastPathComponent
+            finalAuthor = authorText
+        }
 
         let (obfuscationIdentifier, encryptionAlgorithmsByHref) = await epubEncryptionMetadata(from: sourceURL)
 
@@ -221,10 +278,8 @@ final class PublicationSession {
             id: UUID().uuidString.lowercased(),
             sourceURL: sourceURL,
             publication: publication,
-            bookTitle: title?.isEmpty == false
-                ? title!
-                : sourceURL.deletingPathExtension().lastPathComponent,
-            author: authors,
+            bookTitle: finalTitle,
+            author: finalAuthor,
             chapters: chapters,
             tocEntries: tocEntries,
             obfuscationIdentifier: obfuscationIdentifier,

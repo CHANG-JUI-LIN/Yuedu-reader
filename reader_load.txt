@@ -1,0 +1,98 @@
+    private func loadContent() {
+        guard !isLoadingPipeline else { return }
+        isLoadingPipeline = true
+        isRestoringPosition = true
+        refreshInitialRestoreState()
+
+        let marginH = effectivePageMarginH
+        guard let b = book else {
+            applyDocument(nil)
+            isRestoringPosition = false
+            isLoadingPipeline = false
+            return
+        }
+
+        if b.isOnline {
+            loadOnlineCoreText(b, marginH: marginH)
+            return
+        }
+        
+        if b.resolvedPipelineKind == .txt {
+            let bookTitle = b.title
+            let settings = currentRenderSettings(marginH: marginH)
+            let targetBook = b
+
+            DispatchQueue.global(qos: .userInitiated).async {
+                let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let txtURL = docsURL.appendingPathComponent(targetBook.contentFilename)
+
+                let mappedTextFile: TXTMappedTextFile
+                do {
+                    mappedTextFile = try TXTFileReader.readMappedTextFile(url: txtURL)
+                } catch {
+                    Task { @MainActor in
+                        guard self.book?.id == targetBook.id else { return }
+                        self.applyDocument(nil)
+                        self.isLoadingPipeline = false
+                        self.isRestoringPosition = false
+                    }
+                    return
+                }
+
+                let bookId = targetBook.id
+                let fingerprint = TXTFileReader.fileFingerprint(data: mappedTextFile.data)
+                let fileSize = mappedTextFile.byteCount
+                let encoding = mappedTextFile.encoding
+
+                let mappedChapterIndexes: [TXTMappedChapterIndex]
+                if let cached = TXTChapterParser.loadCachedIndexes(bookId: bookId, fileSize: fileSize, fingerprint: fingerprint, encoding: encoding) {
+                    mappedChapterIndexes = cached
+                } else {
+                    let fresh = TXTChapterParser.parseMappedChapterIndexes(mappedTextFile, bookTitle: bookTitle)
+                    TXTChapterParser.saveCachedIndexes(fresh, bookId: bookId, fileSize: fileSize, fingerprint: fingerprint, encoding: encoding)
+                    mappedChapterIndexes = fresh
+                }
+                let lazyBuilder = TXTLazyAttributedStringBuilder(
+                    mappedTextFile: mappedTextFile,
+                    chapterIndexes: mappedChapterIndexes
+                )
+
+                Task { @MainActor in
+                    guard self.book?.id == targetBook.id else {
+                        self.isLoadingPipeline = false
+                        self.isRestoringPosition = false
+                        return
+                    }
+
+                    let document = BookDocumentFactory.makeTXTDocument(
+                        book: targetBook,
+                        mappedChapterIndexes: mappedChapterIndexes,
+                        mappedTextFile: mappedTextFile
+                    )
+                    self.applyDocument(document)
+
+                    self.epubRenderer.loadTXT(
+                        attributedBuilder: lazyBuilder,
+                        bookIdentifier: targetBook.id.uuidString,
+                        renderSize: self.readerViewportSize,
+                        settings: settings
+                    )
+
+                    if document.tableOfContents.count > 0 {
+                        self.chapters = document.tableOfContents.enumerated().map { i, chapter in
+                            BookChapter(index: i, title: chapter.title, content: "")
+                        }
+                    } else {
+                        self.chapters = [BookChapter(index: 0, title: bookTitle, content: "")]
+                    }
+
+                    self.allPages = []
+                    if self.savedPositionSnapshot == 0 {
+                        self.currentPage = 0
+                    }
+                    self.isLoadingPipeline = false
+                    self.isRestoringPosition = false
+                }
+            }
+            return
+        }

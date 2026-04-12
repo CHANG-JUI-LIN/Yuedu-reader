@@ -1,0 +1,101 @@
+    }
+}
+
+private final class ReaderRuntimeState {
+    var systemBrightness: Double = 0.5
+    var isRestoringPosition = true
+    var savedPositionSnapshot: Double = 0
+    var savedCoreTextRestoreTarget: (chapterIndex: Int, charOffset: Int)?
+    var isApplyingCoreTextRestore = false
+    var hasAppliedNonZeroRestore = false
+    var isLoadingPipeline = false
+    var curlStartupStartedAt: CFAbsoluteTime? = nil
+    var hasLoggedCurlInteractiveReady = false
+    var hasPerformedInitialLoad = false
+}
+
+// MARK: - 閱讀器主視圖
+struct ReaderView: View {
+    let bookId: UUID
+    @EnvironmentObject var store: BookStore
+    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @ObservedObject private var settings = GlobalSettings.shared
+    @StateObject private var readerConfig = ReaderConfig.shared
+
+    @State private var chapters: [BookChapter] = []
+    @State private var allPages: [PageContent] = []
+    @State private var currentPage = 0
+    @State private var showBars = false
+    @State private var showSettings = false
+    @State private var showTOC = false
+    @State private var showBookmarkList = false
+
+    // 線上章節懶加載
+    @State private var fetchingChapters: Set<Int> = []
+    @State private var failedChapters: Set<Int> = []
+    @State private var lastChapterError: String = ""
+
+    // 亮度
+    @State private var showBrightness = false
+
+    /// 頂部 safe area（pt），傳給 EPUB 引擎讓 margin-top 至少為此值
+    @State private var readerSafeAreaTop: CGFloat = 59
+    @State private var readerViewportSize: CGSize = UIScreen.main.bounds.size
+    // 音量翻頁
+    @StateObject private var volumeHandler = VolumeKeyHandler()
+
+    // 自動閱讀 + TTS
+    @StateObject private var autoReader = AutoReadController()  // TTS
+    @StateObject private var tts = TTSManager()
+
+    // 時間與電池已移至 ReaderFooterView.swift (ClockBatteryModel)
+    // 不再作為 ReaderView 的 @State，避免每分鐘觸發整個 body 重算
+
+    private func syncReaderBrightnessFromSystem() {
+        let current = Double(UIScreen.main.brightness)
+        systemBrightness = current
+        settings.readerBrightness = current
+    }
+
+    private func restoreReaderDisplayStateAfterResume() {
+        guard let engine = epubRenderer.engine, isEPUB, engine.totalPages > 0 else { return }
+        // engine.currentPage is not updated by page turns (only set during start()),
+        // so we use the already-correct currentPage @State to sync currentChapterIndex only.
+        let (spineIndex, _) = engine.charOffset(forPage: currentPage)
+        currentChapterIndex = spineIndex
+    }
+
+    // EPUB 渲染器（CoreText）
+    @StateObject private var epubRenderer = EPUBPageRenderer()
+
+    @State private var showTTSPanel = false
+    @State private var showAutoReadPanel = false
+
+    // EPUB 章節導航狀態
+    @State private var currentChapterIndex = 0
+
+    // 捲動模式進度追蹤
+    @State private var scrollVisibleChapter = 0
+
+    // 防止載入期間 TabView 重置 selection 導致進度被覆寫為 0
+
+    // 換源
+    @State private var showChangeSourceSheet = false
+    @State private var changeSourceOrigins: [BookOrigin] = []
+    @State private var changeSourceLoading = false
+    @State private var changeSourceError: String?
+    @State private var runtimeState = ReaderRuntimeState()
+    @State private var chapterSliderDraft: Double? = nil
+    @State private var bookDocument: (any BookDocument)? = nil
+    @State private var contentProvider: (any BookContentProvider)? = nil
+    @State private var readerCapabilities: ReaderCapabilities = .reflowableText
+    private let progressManager = ReaderProgressManager.shared
+
+    private var systemBrightness: Double {
+        get { runtimeState.systemBrightness }
+        nonmutating set { runtimeState.systemBrightness = newValue }
+    }
+
+    private var isRestoringPosition: Bool {

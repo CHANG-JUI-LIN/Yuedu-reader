@@ -1,0 +1,101 @@
+            coverDimView.alpha = 0
+            coverDimView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            coverCurrentImageView.addSubview(coverDimView)
+        }
+
+        // MARK: - Cover pan gesture
+
+        @objc func handleCoverPan(_ gesture: UIPanGestureRecognizer) {
+            guard let view = gesture.view else { return }
+            let width = max(view.bounds.width, 1)
+            let translationX = gesture.translation(in: view).x
+            let velocityX = gesture.velocity(in: view).x
+
+            switch gesture.state {
+            case .began:
+                coverTargetPage = nil
+                coverDirection = 0
+                // 取消前一次可能還在播的動畫，不在此顯示 overlay（等方向確認後才顯示）
+                coverOverlayView.layer.removeAllAnimations()
+                coverIncomingImageView.layer.removeAllAnimations()
+                coverDimView.layer.removeAllAnimations()
+                coverDimView.alpha = 0
+
+            case .changed:
+                if coverTargetPage == nil {
+                    if translationX < -18, currentPage < currentEngine.totalPages - 1 {
+                        // Forward uncover：當前頁往左滑走，新頁在底下
+                        coverDirection = 1
+                        let target = currentPage + 1
+                        coverTargetPage = target
+                        coverOverlayView.frame = view.bounds
+                        coverCurrentImageView.frame = view.bounds
+                        coverOverlayView.isHidden = false
+                        setupForwardOutgoing(currentPageSnapshot: currentPage, newPage: target, in: view)
+                    } else if translationX > 18, currentPage > 0 {
+                        // Backward cover：上一頁從左側蓋入
+                        let target = currentPage - 1
+                        // 若 snapshot 尚未就緒（章節未載入），不啟動動畫
+                        guard let targetSnapshot = currentEngine.renderSnapshot(forPage: target) else { return }
+                        coverDirection = -1
+                        coverTargetPage = target
+                        coverOverlayView.frame = view.bounds
+                        coverCurrentImageView.frame = view.bounds
+                        coverCurrentImageView.image = currentEngine.renderSnapshot(forPage: currentPage)
+                        coverOverlayView.isHidden = false
+                        setupIncomingView(for: target, snapshot: targetSnapshot, in: view)
+                    }
+                }
+                guard coverTargetPage != nil else { return }
+                let rawProgress = min(max(abs(translationX) / width, 0), 0.999)
+                let newX: CGFloat = coverDirection == 1
+                    ? -rawProgress * width
+                    : -width * (1 - rawProgress)
+                coverIncomingImageView.frame.origin.x = newX
+                coverShadowView.frame.origin.x = newX
+                if coverDirection == -1 {
+                    coverDimView.frame = coverCurrentImageView.bounds
+                    coverDimView.alpha = rawProgress * 0.35
+                } else if coverDirection == 1 {
+                    coverDimView.frame = coverCurrentImageView.bounds
+                    coverDimView.alpha = (1 - rawProgress) * 0.35
+                }
+
+            case .ended, .cancelled, .failed:
+                guard let targetPage = coverTargetPage else {
+                    resetCoverOverlay()
+                    return
+                }
+                let progress = min(max(abs(translationX) / width, 0), 1)
+                let shouldCommit = progress > 0.34 || abs(velocityX) > 560
+
+                UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut]) {
+                    let destX: CGFloat = self.coverDirection == 1
+                        ? (shouldCommit ? -width : 0)
+                        : (shouldCommit ? 0 : -width)
+                    self.coverIncomingImageView.frame.origin.x = destX
+                    self.coverShadowView.frame.origin.x = destX
+                    if self.coverDirection == -1 {
+                        self.coverDimView.alpha = shouldCommit ? 0.35 : 0
+                    } else if self.coverDirection == 1 {
+                        self.coverDimView.alpha = shouldCommit ? 0 : 0.35
+                    }
+                } completion: { _ in
+                    if shouldCommit {
+                        // 先把真正的 VC 設上去，讓 updateUIViewController 進來時早返回，避免二次動畫
+                        if let pvc = self.coverPageViewController {
+                            let realVC = self.currentEngine.pageViewController(at: targetPage)
+                            pvc.setViewControllers([realVC], direction: .forward, animated: false)
+                            self.captureStablePosition(from: realVC)
+                        }
+                        self.currentPage = targetPage
+                        self.onPageChanged(targetPage)
+                        Task { @MainActor in
+                            self.currentEngine.warmUpNext(currentGlobalPage: targetPage)
+                        }
+                    }
+                    self.resetCoverOverlay()
+                }
+
+            default:
+                break

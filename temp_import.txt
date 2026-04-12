@@ -1,0 +1,121 @@
+        }
+    }
+
+    // MARK: 修改3：匯入 EPUB 檔案
+    @discardableResult
+    func importEpub(url: URL, title: String? = nil) async throws -> ReadingBook {
+        let importStartUptime = ProcessInfo.processInfo.systemUptime
+        func importTrace(_ message: String) {
+            let line = "[ImportTrace][BookStore.importEpub] \(message)"
+            print(line)
+            NSLog("%@", line)
+        }
+
+        // 0. 產生 UUID 作為新檔名
+        let uuid = UUID().uuidString
+        let filename = "\(uuid).epub"
+        let destURL = documentsURL(for: filename)
+        var coverFilename: String? = nil
+        let sourceSizeBytes = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        importTrace(
+            "begin source=\(url.lastPathComponent) sourceSizeBytes=\(sourceSizeBytes) dest=\(filename)"
+        )
+
+        func cleanupImportedFiles() {
+            if FileManager.default.fileExists(atPath: destURL.path) {
+                do {
+                try FileManager.default.removeItem(at: destURL)
+            } catch {
+                Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to remove item at \(destURL): \(error)")
+            }
+            }
+            if let coverFilename {
+                let coverURL = documentsURL(for: coverFilename)
+                if FileManager.default.fileExists(atPath: coverURL.path) {
+                    do {
+                        try FileManager.default.removeItem(at: coverURL)
+                    } catch {
+                        Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to remove cover image at \(coverURL): \(error)")
+                    }
+                }
+            }
+        }
+
+        do {
+            try Task.checkCancellation()
+
+            // 1. 複製 EPUB 檔案到 Documents 目錄
+            let copyStart = ProcessInfo.processInfo.systemUptime
+            if FileManager.default.fileExists(atPath: destURL.path) {
+                try FileManager.default.removeItem(at: destURL)
+            }
+            try FileManager.default.copyItem(at: url, to: destURL)
+            importTrace(
+                "stage=copy done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - copyStart) * 1000))"
+            )
+            try Task.checkCancellation()
+
+            // 2. 提取封面圖片（在背景線程完成）
+            let coverStart = ProcessInfo.processInfo.systemUptime
+            if let coverImage = await EPUBBookService.shared.extractCoverImage(from: destURL) {
+                let coverName = "\(uuid)_cover.jpg"
+                let coverURL = documentsURL(for: coverName)
+                // 將封面轉為 JPEG 儲存（壓縮節省空間）
+                if let jpegData = coverImage.jpegData(compressionQuality: 0.85) {
+                    do {
+                        try jpegData.write(to: coverURL)
+                    } catch {
+                        Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to write cover image at \(coverURL): \(error)")
+                    }
+                    coverFilename = coverName
+                }
+            }
+            importTrace(
+                "stage=coverExtract done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - coverStart) * 1000)) hasCover=\(coverFilename != nil)"
+            )
+            try Task.checkCancellation()
+
+            let metadataStart = ProcessInfo.processInfo.systemUptime
+            let session = try? await PublicationSession.open(sourceURL: destURL)
+            importTrace(
+                "stage=metadataOpen done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - metadataStart) * 1000)) chapters=\(session?.chapters.count ?? 0)"
+            )
+            try Task.checkCancellation()
+
+            // 3. 建立書籍模型
+            let fallbackTitle = title ?? url.deletingPathExtension().lastPathComponent
+            let parsedTitle = session?.bookTitle.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let parsedAuthor = session?.author.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let bookTitle = parsedTitle.isEmpty ? fallbackTitle : parsedTitle
+            let author = parsedAuthor.isEmpty ? "未知" : parsedAuthor
+            var book = ReadingBook(
+                title: bookTitle,
+                author: author,
+                source: "local_epub",
+                contentFilename: filename
+            )
+            book.contentPipelineKind = .epub
+            book.coverImagePath = coverFilename
+            let finalBook = book
+
+            try Task.checkCancellation()
+            let persistStart = ProcessInfo.processInfo.systemUptime
+            await MainActor.run {
+                self.books.insert(finalBook, at: 0)
+                self.saveMeta()
+            }
+            importTrace(
+                "stage=persist done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - persistStart) * 1000)) totalElapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - importStartUptime) * 1000))"
+            )
+            return finalBook
+        } catch is CancellationError {
+            importTrace("cancelled totalElapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - importStartUptime) * 1000))")
+            cleanupImportedFiles()
+            throw CancellationError()
+        }
+    }
+
+    // MARK: 匯入網頁文字
+    @discardableResult
+    func importWeb(
+        content: String,
