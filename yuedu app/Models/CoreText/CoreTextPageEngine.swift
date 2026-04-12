@@ -310,6 +310,21 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     private func scanChapterByteSizes(for bookId: String) async {
         startupTrace("byteScan begin bookId=\(bookId) chapters=\(chapterCount) mode=\(attributedBuilder != nil ? "builder" : "resource")")
+
+        // Fast path: use pre-scanned sizes from SpinesCache (no ZIP I/O)
+        if let adapter = resourceProvider as? ReadiumBookResourceAdapter,
+           let cached = adapter.cachedChapterByteSizes(),
+           cached.count == chapterCount {
+            guard !Task.isCancelled else { return }
+            guard currentBookId == bookId else { return }
+            chapterByteSizes = cached
+            let totalBytes = cached.reduce(0, +)
+            startupTrace("byteScan cached chapters=\(cached.count) totalBytes=\(totalBytes)")
+            rebuildPageOffsets()
+            onChapterReady?(nil)
+            return
+        }
+
         let sizes: [Int]
         if let attributedBuilder {
             var computed = [Int](repeating: 0, count: attributedBuilder.chapterCount)
@@ -343,6 +358,11 @@ final class CoreTextPageEngine: PageRenderingProvider {
         startupTrace("byteScan done chapters=\(sizes.count) totalBytes=\(totalBytes)")
         rebuildPageOffsets()
         onChapterReady?(nil)
+
+        // Persist sizes to SpinesCache so next open skips the scan entirely
+        if let adapter = resourceProvider as? ReadiumBookResourceAdapter {
+            adapter.saveChapterByteSizes(sizes)
+        }
     }
 
     /// 全書進度（0.0 ~ 1.0）= (前 N-1 章總 Bytes + 當前章 charOffset) / 全書總 Bytes

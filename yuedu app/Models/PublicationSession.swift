@@ -73,6 +73,14 @@ final class ReadiumBookResourceAdapter: BookResourceProvider {
         try await session.chapterDataSize(at: index)
     }
 
+    func cachedChapterByteSizes() -> [Int]? {
+        session.cachedChapterByteSizes
+    }
+
+    func saveChapterByteSizes(_ sizes: [Int]) {
+        session.saveChapterByteSizes(sizes)
+    }
+
     func chapterIndex(for href: String) -> Int? {
         session.chapterIndex(for: href)
     }
@@ -138,7 +146,12 @@ struct SpinesCache: Codable {
     let bookTitle: String
     let author: String
     let chapters: [PublicationChapterDescriptorCache]
-    
+    var chapterByteSizes: [Int]?             // nil = not yet scanned (backwards compatible)
+    // encryptionAlgorithms != nil means encryption metadata is cached.
+    // encryptionIdentifier may be nil even when cached (book has no unique-id).
+    var encryptionIdentifier: String?
+    var encryptionAlgorithms: [String: String]?
+
     struct PublicationChapterDescriptorCache: Codable {
         let index: Int
         let href: String
@@ -164,10 +177,13 @@ final class PublicationSession {
     let author: String
     let chapters: [PublicationChapterDescriptor]
     let tocEntries: [EPUBTocEntry]
+    /// Pre-scanned chapter byte sizes loaded from SpinesCache. nil = not yet available.
+    let cachedChapterByteSizes: [Int]?
     private let obfuscationIdentifier: String?
     private let encryptionAlgorithmsByHref: [String: String]
     private let resourceLock = NSLock()
     private var transformedResourceCache: [String: Data] = [:]
+    private let cacheURL: URL
 
     private init(
         id: String,
@@ -177,8 +193,10 @@ final class PublicationSession {
         author: String,
         chapters: [PublicationChapterDescriptor],
         tocEntries: [EPUBTocEntry],
+        cachedChapterByteSizes: [Int]?,
         obfuscationIdentifier: String?,
-        encryptionAlgorithmsByHref: [String: String]
+        encryptionAlgorithmsByHref: [String: String],
+        cacheURL: URL
     ) {
         self.id = id
         self.sourceURL = sourceURL
@@ -187,8 +205,20 @@ final class PublicationSession {
         self.author = author
         self.chapters = chapters
         self.tocEntries = tocEntries
+        self.cachedChapterByteSizes = cachedChapterByteSizes
         self.obfuscationIdentifier = obfuscationIdentifier
         self.encryptionAlgorithmsByHref = encryptionAlgorithmsByHref
+        self.cacheURL = cacheURL
+    }
+
+    /// Update the on-disk SpinesCache with scanned chapter byte sizes.
+    func saveChapterByteSizes(_ sizes: [Int]) {
+        guard let data = try? Data(contentsOf: cacheURL),
+              var cache = try? JSONDecoder().decode(SpinesCache.self, from: data) else { return }
+        cache.chapterByteSizes = sizes
+        if let encoded = try? JSONEncoder().encode(cache) {
+            try? encoded.write(to: cacheURL)
+        }
     }
 
     deinit {
@@ -202,20 +232,30 @@ final class PublicationSession {
 
         let publication = try await openPublication(sourceURL: sourceURL)
         let tocEntries = flattenTableOfContents(publication.manifest.tableOfContents)
-        
+
         let cacheURL = getCacheURL(for: sourceURL)
         let chapters: [PublicationChapterDescriptor]
         let cachedTitle: String?
         let cachedAuthor: String?
-        
+        var cachedByteSizes: [Int]? = nil
+        var cachedEncryptionIdentifier: String? = nil
+        var cachedEncryptionAlgorithms: [String: String]? = nil
+        var encryptionIsCached = false
+
         if let data = try? Data(contentsOf: cacheURL),
            let cache = try? JSONDecoder().decode(SpinesCache.self, from: data) {
             // 命中快取，O(1) 讀取！ bypassing O(N^2) XML matching
-            chapters = cache.chapters.map { 
-                PublicationChapterDescriptor(index: $0.index, href: $0.href, title: $0.title, mediaType: $0.mediaType) 
+            chapters = cache.chapters.map {
+                PublicationChapterDescriptor(index: $0.index, href: $0.href, title: $0.title, mediaType: $0.mediaType)
             }
             cachedTitle = cache.bookTitle
             cachedAuthor = cache.author
+            cachedByteSizes = cache.chapterByteSizes
+            if let algorithms = cache.encryptionAlgorithms {
+                cachedEncryptionIdentifier = cache.encryptionIdentifier
+                cachedEncryptionAlgorithms = algorithms
+                encryptionIsCached = true
+            }
         } else {
             // Miss cache, do O(N^2)
             let chapterTitleMap = Dictionary(
@@ -243,8 +283,8 @@ final class PublicationSession {
                     mediaType: link.mediaType?.string ?? "application/xhtml+xml"
                 )
             }
-            
-            // Save Cache
+
+            // Save Cache (encryption will be added after resolving below)
             let cTitle = publication.metadata.title ?? "未知"
             let cAuthor = publication.metadata.authors.map { $0.name }.joined(separator: ", ")
             let cacheChapters = chapters.map { SpinesCache.PublicationChapterDescriptorCache(index: $0.index, href: $0.href, title: $0.title, mediaType: $0.mediaType) }
@@ -272,7 +312,26 @@ final class PublicationSession {
             finalAuthor = authorText
         }
 
-        let (obfuscationIdentifier, encryptionAlgorithmsByHref) = await epubEncryptionMetadata(from: sourceURL)
+        let obfuscationIdentifier: String?
+        let encryptionAlgorithmsByHref: [String: String]
+        if encryptionIsCached {
+            // Use cached encryption metadata — skip ZIP I/O entirely
+            obfuscationIdentifier = cachedEncryptionIdentifier
+            encryptionAlgorithmsByHref = cachedEncryptionAlgorithms ?? [:]
+        } else {
+            let (parsedIdentifier, parsedAlgorithms) = await epubEncryptionMetadata(from: sourceURL)
+            obfuscationIdentifier = parsedIdentifier
+            encryptionAlgorithmsByHref = parsedAlgorithms
+            // Persist encryption metadata into SpinesCache
+            if let data = try? Data(contentsOf: cacheURL),
+               var cache = try? JSONDecoder().decode(SpinesCache.self, from: data) {
+                cache.encryptionIdentifier = parsedIdentifier
+                cache.encryptionAlgorithms = parsedAlgorithms
+                if let encoded = try? JSONEncoder().encode(cache) {
+                    try? encoded.write(to: cacheURL)
+                }
+            }
+        }
 
         let session = PublicationSession(
             id: UUID().uuidString.lowercased(),
@@ -282,8 +341,10 @@ final class PublicationSession {
             author: finalAuthor,
             chapters: chapters,
             tocEntries: tocEntries,
+            cachedChapterByteSizes: cachedByteSizes,
             obfuscationIdentifier: obfuscationIdentifier,
-            encryptionAlgorithmsByHref: encryptionAlgorithmsByHref
+            encryptionAlgorithmsByHref: encryptionAlgorithmsByHref,
+            cacheURL: cacheURL
         )
         PublicationSessionRegistry.shared.register(session)
         return session
@@ -336,6 +397,11 @@ final class PublicationSession {
         guard let resource = resource(for: descriptor.href) else {
             throw PublicationSessionError.resourceNotFound(descriptor.href)
         }
+        // estimatedLength() reads ZIP central directory uncompressedSize — no decompression needed
+        if case .success(let length) = await resource.estimatedLength(), let length {
+            return Int(length)
+        }
+        // fallback for non-ZIP resources or if metadata unavailable
         switch await resource.read() {
         case .success(let data): return data.count
         case .failure: return 0
