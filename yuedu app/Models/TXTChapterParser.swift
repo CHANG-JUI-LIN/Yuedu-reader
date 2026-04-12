@@ -154,7 +154,7 @@ enum TXTChapterParser {
         let cacheURL = Self.cacheURL(for: bookId)
         guard let data = try? Data(contentsOf: cacheURL),
               let cache = try? JSONDecoder().decode(TXTChapterIndexCache.self, from: data),
-              cache.version == 1,
+              cache.version == 2,
               cache.fileSize == fileSize,
               cache.fingerprint == fingerprint,
               cache.encodingRawValue == encoding.rawValue
@@ -168,7 +168,7 @@ enum TXTChapterParser {
         let cacheDir = cacheDirectoryURL()
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         let codable = indexes.map { CodableChapterIndex(index: $0.index, title: $0.title, lower: $0.byteRange.lowerBound, upper: $0.byteRange.upperBound) }
-        let cache = TXTChapterIndexCache(version: 1, fileSize: fileSize, fingerprint: fingerprint, encodingRawValue: encoding.rawValue, indexes: codable)
+        let cache = TXTChapterIndexCache(version: 2, fileSize: fileSize, fingerprint: fingerprint, encodingRawValue: encoding.rawValue, indexes: codable)
         guard let data = try? JSONEncoder().encode(cache) else { return }
         try? data.write(to: Self.cacheURL(for: bookId))
     }
