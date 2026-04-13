@@ -231,7 +231,7 @@ struct HomeView: View {
     private var bookGrid: some View {
         ScrollView {
             LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                columns: [GridItem(.adaptive(minimum: 100, maximum: 160), spacing: 10)],
                 spacing: 12
             ) {
                 ForEach(filteredBooks) { book in
