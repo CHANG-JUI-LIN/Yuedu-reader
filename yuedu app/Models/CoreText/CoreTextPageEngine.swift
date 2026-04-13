@@ -15,6 +15,25 @@ protocol FontRegistrationServicing {
 }
 
 final class CoreTextFontRegistrationService: FontRegistrationServicing {
+    static func cleanupStaleTemporaryFonts(maxAge: TimeInterval = 7 * 24 * 60 * 60) {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory
+        let cutoff = Date().addingTimeInterval(-maxAge)
+
+        guard let urls = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        for url in urls where url.lastPathComponent.hasPrefix("reader-font-") {
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if let modified, modified < cutoff {
+                try? fm.removeItem(at: url)
+            }
+        }
+    }
+
     func registerFont(data: Data, alias: String, existingTempURL: URL?) -> FontRegistrationResult? {
         let tempURL = existingTempURL
             ?? FileManager.default.temporaryDirectory
@@ -106,11 +125,6 @@ private final class EmptyBookResourceProvider: BookResourceProvider {
 
 @MainActor
 final class CoreTextPageEngine: PageRenderingProvider {
-    private struct RegisteredFontFace {
-        let alias: String
-        let familyName: String
-        let postScriptName: String
-    }
 
     private(set) var totalPages: Int = 0
     private(set) var currentPage: Int = 0
@@ -118,7 +132,12 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private(set) var layouts: [Int: CoreTextPaginator.ChapterLayout] = [:]
     private let chapterSnapshots: NSCache<NSNumber, UIImage> = {
         let cache = NSCache<NSNumber, UIImage>()
-        cache.countLimit = 20 // 提高容量以容納更多章節的邊界快照
+        let physicalMemory = ProcessInfo.processInfo.physicalMemory
+        // 控制快照快取成本：取實體記憶體約 5%，並限制在 64MB~256MB。
+        let budget = min(max(physicalMemory / 20, 64 * 1024 * 1024), 256 * 1024 * 1024)
+        cache.totalCostLimit = Int(budget)
+        // 保留小型 countLimit，避免短時間內寫入過多低成本快照。
+        cache.countLimit = 12
         return cache
     }()
     private var spinePageOffsets: [Int] = []
@@ -130,9 +149,9 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private let attributedBuilder: (any AttributedStringBuilding)?
     private let paginationManager: PaginationManager
     private let fontRegistrationService: any FontRegistrationServicing
+    private let styleResolver: EPUBStyleResolver
     let offsetStore: CharOffsetStore
-    private var registeredFontFaces: [String: RegisteredFontFace] = [:]
-    private var registeredFontFileURLs: [String: URL] = [:]
+
     private var renderSettings: ReaderRenderSettings
 
     private var currentBookId: String?
@@ -153,9 +172,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     deinit {
         chapterByteScanTask?.cancel()
-        for url in registeredFontFileURLs.values {
-            fontRegistrationService.cleanupTemporaryFile(at: url)
-        }
+        styleResolver.cleanupFontFiles()
     }
 
     private func startupElapsedMs() -> String {
@@ -183,6 +200,10 @@ final class CoreTextPageEngine: PageRenderingProvider {
         self.fontRegistrationService = fontRegistrationService
         self.paginationManager = paginationManager ?? PaginationManager()
         self.offsetStore = offsetStore
+        self.styleResolver = EPUBStyleResolver(
+            resourceProvider: resourceProvider,
+            fontRegistrationService: fontRegistrationService
+        )
     }
 
     init(
@@ -198,6 +219,10 @@ final class CoreTextPageEngine: PageRenderingProvider {
         self.fontRegistrationService = fontRegistrationService
         self.paginationManager = paginationManager ?? PaginationManager()
         self.offsetStore = offsetStore
+        self.styleResolver = EPUBStyleResolver(
+            resourceProvider: EmptyBookResourceProvider.shared,
+            fontRegistrationService: fontRegistrationService
+        )
     }
 
     convenience init(
@@ -638,7 +663,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         let chapterHref = chapterSourceHref(at: spineIndex)
         let localBuilder = HTMLAttributedStringBuilder()
         localBuilder.resolvedFont = { [weak self] families, weight, italic, size in
-            self?.resolveRegisteredFont(
+            self?.styleResolver.resolveRegisteredFont(
                 families: families,
                 weight: weight,
                 italic: italic,
@@ -651,8 +676,8 @@ final class CoreTextPageEngine: PageRenderingProvider {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
                 .lowercased()
-            return self.registeredFontFaces[normalized]?.postScriptName
-                ?? self.registeredFontFaces[normalized]?.familyName
+            return self.styleResolver.registeredFontFaces[normalized]?.postScriptName
+                ?? self.styleResolver.registeredFontFaces[normalized]?.familyName
         }
         localBuilder.imageLoader = { [weak self] src in
             guard let self else { return nil }
@@ -660,13 +685,13 @@ final class CoreTextPageEngine: PageRenderingProvider {
         }
         localBuilder.cssLoader = { [weak resourceProvider] href in
             guard let resourceProvider else { return nil }
-            let resolved = Self.resolveImageHref(href, chapterHref: chapterHref)
+            let resolved = EPUBStyleResolver.resolveImageHref(href, chapterHref: chapterHref)
             let url = resourceProvider.resourceURL(for: resolved)
             print("[CoreTextEngine] cssLoader href=\(href) → resolved=\(resolved) → url=\(url)")
             do {
                 let response = try await resourceProvider.response(for: url)
                 let cssText = String(data: response.data, encoding: .utf8) ?? ""
-                let processed = await self.processStylesheet(cssText, cssHref: resolved, chapterHref: chapterHref)
+                let processed = await self.styleResolver.processStylesheet(cssText, cssHref: resolved, chapterHref: chapterHref)
                 print("[CoreTextEngine] cssLoader OK len=\(processed.count)")
                 return processed.isEmpty ? nil : processed
             } catch {
@@ -777,7 +802,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
                 }
             }
         } else {
-            candidates.append(Self.resolveImageHref(source, chapterHref: chapterHref))
+            candidates.append(EPUBStyleResolver.resolveImageHref(source, chapterHref: chapterHref))
             let raw = source.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             if !raw.isEmpty {
                 candidates.append(raw)
@@ -838,7 +863,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         if rawPath.isEmpty {
             targetSpine = spineIndex
         } else {
-            let resolvedHref = Self.resolveImageHref(rawPath, chapterHref: chapterSourceHref(at: spineIndex))
+            let resolvedHref = EPUBStyleResolver.resolveImageHref(rawPath, chapterHref: chapterSourceHref(at: spineIndex))
             guard let matchedIndex = chapterIndex(for: resolvedHref) ?? chapterIndex(for: rawPath) else {
                 return nil
             }
@@ -976,7 +1001,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
                 let img = await Task.detached(priority: .userInitiated) {
                     Self.renderImage(layout: layout, pageIndex: 0, size: size, bgColor: bgCGColor)
                 }.value
-                self.chapterSnapshots.setObject(img, forKey: firstKey)
+                self.chapterSnapshots.setObject(img, forKey: firstKey, cost: Self.imageCost(img))
             }
         }
 
@@ -989,10 +1014,17 @@ final class CoreTextPageEngine: PageRenderingProvider {
                     let img = await Task.detached(priority: .userInitiated) {
                         Self.renderImage(layout: layout, pageIndex: lastIdx, size: size, bgColor: bgCGColor)
                     }.value
-                    self.chapterSnapshots.setObject(img, forKey: lastKey)
+                    self.chapterSnapshots.setObject(img, forKey: lastKey, cost: Self.imageCost(img))
                 }
             }
         }
+    }
+
+    private nonisolated static func imageCost(_ image: UIImage) -> Int {
+        let width = Int(image.size.width * image.scale)
+        let height = Int(image.size.height * image.scale)
+        let bytesPerPixel = 4
+        return max(width * height * bytesPerPixel, 1)
     }
 
     private nonisolated static func renderImage(
@@ -1152,277 +1184,6 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private func currentTextColor() -> UIColor { themeTextColor }
     private func currentBackgroundColor() -> UIColor { themeBackgroundColor }
 
-    private func processStylesheet(_ cssText: String, cssHref: String, chapterHref: String) async -> String {
-        let withImports = await inlineLocalImports(from: cssText, cssHref: cssHref, chapterHref: chapterHref, visited: [cssHref])
-        let fontFaces = extractFontFaces(from: withImports, cssHref: cssHref, chapterHref: chapterHref)
-        if !fontFaces.isEmpty {
-            print("[CoreTextEngine] discovered font faces: \(fontFaces.map { $0.alias })")
-        }
-
-        for fontFace in fontFaces {
-            if registeredFontFaces[fontFace.alias] != nil { continue }
-            guard
-                let fontURL = URL(string: fontFace.resolvedURL),
-                let response = try? await resourceProvider.response(for: fontURL),
-                let registeredFont = fontRegistrationService.registerFont(
-                    data: response.data,
-                    alias: fontFace.alias,
-                    existingTempURL: registeredFontFileURLs[fontFace.alias]
-                )
-            else {
-                print("[CoreTextEngine] font registration FAILED alias=\(fontFace.alias)")
-                continue
-            }
-            if let tempFileURL = registeredFont.tempFileURL {
-                registeredFontFileURLs[fontFace.alias] = tempFileURL
-            }
-            registeredFontFaces[fontFace.alias] = RegisteredFontFace(
-                alias: fontFace.alias,
-                familyName: registeredFont.familyName,
-                postScriptName: registeredFont.postScriptName
-            )
-            print("[CoreTextEngine] registered font alias=\(fontFace.alias) -> family=\(registeredFont.familyName) ps=\(registeredFont.postScriptName)")
-        }
-
-        let stripped = stripFontFaceBlocks(from: withImports)
-        let withRewrittenURLs = rewriteResourceURLs(in: stripped, cssHref: cssHref)
-        return rewriteFontFamilies(in: withRewrittenURLs)
-    }
-
-    private func inlineLocalImports(from cssText: String, cssHref: String, chapterHref: String, visited: Set<String>) async -> String {
-        guard let regex = try? NSRegularExpression(
-            pattern: #"@import\s+(?:url\()?['"]?([^'")]+)['"]?\)?\s*;"#,
-            options: [.caseInsensitive]
-        ) else {
-            return cssText
-        }
-
-        let nsCSS = cssText as NSString
-        let matches = regex.matches(in: cssText, range: NSRange(location: 0, length: nsCSS.length))
-        var result = cssText
-
-        for match in matches.reversed() {
-            let rawHref = nsCSS.substring(with: match.range(at: 1))
-            if rawHref.hasPrefix("http://") || rawHref.hasPrefix("https://") {
-                print("[CoreTextEngine] ignoring remote @import \(rawHref)")
-                result = (result as NSString).replacingCharacters(in: match.range, with: "")
-                continue
-            }
-
-            let resolved = Self.resolveCSSHref(rawHref, cssHref: cssHref, chapterHref: chapterHref)
-            if visited.contains(resolved) {
-                result = (result as NSString).replacingCharacters(in: match.range, with: "")
-                continue
-            }
-
-            guard
-                let response = try? await resourceProvider.response(for: resourceProvider.resourceURL(for: resolved)),
-                let imported = String(data: response.data, encoding: .utf8)
-            else {
-                print("[CoreTextEngine] local @import FAILED \(resolved)")
-                result = (result as NSString).replacingCharacters(in: match.range, with: "")
-                continue
-            }
-
-            let inlined = await inlineLocalImports(from: imported, cssHref: resolved, chapterHref: chapterHref, visited: visited.union([resolved]))
-            result = (result as NSString).replacingCharacters(in: match.range, with: inlined)
-        }
-
-        return result
-    }
-
-    private func rewriteResourceURLs(in cssText: String, cssHref: String) -> String {
-        guard let regex = try? NSRegularExpression(
-            pattern: #"url\(\s*['"]?([^'")]+)['"]?\s*\)"#,
-            options: [.caseInsensitive]
-        ) else {
-            return cssText
-        }
-
-        let nsCSS = cssText as NSString
-        let matches = regex.matches(in: cssText, range: NSRange(location: 0, length: nsCSS.length))
-        var result = cssText
-        for match in matches.reversed() {
-            let rawHref = nsCSS.substring(with: match.range(at: 1))
-            if rawHref.hasPrefix("data:") || rawHref.hasPrefix("http://") || rawHref.hasPrefix("https://") {
-                continue
-            }
-            let resolved = Self.resolveCSSRelativePath(rawHref, cssHref: cssHref)
-            let absolute = resourceProvider.resourceURL(for: resolved).absoluteString
-            result = (result as NSString).replacingCharacters(in: match.range(at: 1), with: absolute)
-        }
-        return result
-    }
-
-    private func extractFontFaces(from cssText: String, cssHref: String, chapterHref: String) -> [(alias: String, resolvedURL: String)] {
-        guard
-            let blockRegex = try? NSRegularExpression(pattern: #"@font-face\s*\{.*?\}"#, options: [.caseInsensitive, .dotMatchesLineSeparators]),
-            let familyRegex = try? NSRegularExpression(pattern: #"font-family\s*:\s*['"]?([^;'"}]+)['"]?"#, options: [.caseInsensitive]),
-            let srcRegex = try? NSRegularExpression(pattern: #"src\s*:\s*url\(\s*['"]?([^'")]+)['"]?\s*\)"#, options: [.caseInsensitive])
-        else {
-            return []
-        }
-
-        let nsCSS = cssText as NSString
-        return blockRegex.matches(in: cssText, range: NSRange(location: 0, length: nsCSS.length)).compactMap { match in
-            let block = nsCSS.substring(with: match.range)
-            let nsBlock = block as NSString
-            guard
-                let familyMatch = familyRegex.firstMatch(in: block, range: NSRange(location: 0, length: nsBlock.length)),
-                let srcMatch = srcRegex.firstMatch(in: block, range: NSRange(location: 0, length: nsBlock.length))
-            else {
-                print("[CoreTextEngine] unable to parse @font-face block: \(block)")
-                return nil
-            }
-            let alias = Self.normalizeFontName(nsBlock.substring(with: familyMatch.range(at: 1)))
-            let rawURL = nsBlock.substring(with: srcMatch.range(at: 1))
-            let resolvedHref = Self.resolveCSSHref(rawURL, cssHref: cssHref, chapterHref: chapterHref)
-            let resolvedURL = resourceProvider.resourceURL(for: resolvedHref).absoluteString
-            return alias.isEmpty ? nil : (alias, resolvedURL)
-        }
-    }
-
-    private func stripFontFaceBlocks(from cssText: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: #"@font-face\s*\{.*?\}"#, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
-            return cssText
-        }
-        return regex.stringByReplacingMatches(in: cssText, range: NSRange(location: 0, length: (cssText as NSString).length), withTemplate: "")
-    }
-
-    private func rewriteFontFamilies(in cssText: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: #"font-family\s*:\s*([^;}{]+)"#, options: [.caseInsensitive]) else {
-            return cssText
-        }
-
-        let nsCSS = cssText as NSString
-        let matches = regex.matches(in: cssText, range: NSRange(location: 0, length: nsCSS.length))
-        var result = cssText
-        for match in matches.reversed() {
-            let familyList = nsCSS.substring(with: match.range(at: 1))
-            let rewritten = familyList
-                .split(separator: ",", omittingEmptySubsequences: false)
-                .map { part in
-                    let normalized = Self.normalizeFontName(String(part))
-                    if let registered = registeredFontFaces[normalized] {
-                        return "\"\(registered.familyName)\""
-                    }
-                    return String(part).trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-                .joined(separator: ", ")
-            result = (result as NSString).replacingCharacters(in: match.range(at: 1), with: rewritten)
-        }
-        return result
-    }
-
-    /// 將 HTML img src（可能是相對路徑）解析成相對於章節 href 的絕對 EPUB 路徑。
-    /// 例：chapterHref="OEBPS/Text/ch01.xhtml", src="../Images/fig.jpg" → "OEBPS/Images/fig.jpg"
-    ///
-    /// 注意：不能用 URL(string:relativeTo:).standardized，因為 Swift 對非 file:// 的自定義
-    /// scheme URL 不能正確解析 ".." 段，必須用純字串路徑運算。
-    private static func resolveImageHref(_ src: String, chapterHref: String) -> String {
-        guard !src.isEmpty,
-              !src.hasPrefix("http://"),
-              !src.hasPrefix("https://"),
-              !src.hasPrefix("data:") else { return src }
-        if src.hasPrefix("/") { return String(src.dropFirst()) }
-
-        // 取章節所在目錄，與 src 拼接後用堆疊法解析 . / ..
-        let dir = (chapterHref as NSString).deletingLastPathComponent
-        let combined = dir.isEmpty ? src : dir + "/" + src
-
-        var stack: [String] = []
-        for seg in combined.components(separatedBy: "/") {
-            switch seg {
-            case "", ".": break
-            case "..": if !stack.isEmpty { stack.removeLast() }
-            default: stack.append(seg)
-            }
-        }
-        return stack.joined(separator: "/")
-    }
-
-    private static func resolveCSSHref(_ href: String, cssHref: String, chapterHref: String) -> String {
-        if cssHref.isEmpty {
-            return resolveImageHref(href, chapterHref: chapterHref)
-        }
-        return resolveCSSRelativePath(href, cssHref: cssHref)
-    }
-
-    private static func resolveCSSRelativePath(_ href: String, cssHref: String) -> String {
-        guard !href.isEmpty,
-              !href.hasPrefix("http://"),
-              !href.hasPrefix("https://"),
-              !href.hasPrefix("data:") else { return href }
-        if href.hasPrefix("/") { return String(href.dropFirst()) }
-
-        let dir = (cssHref as NSString).deletingLastPathComponent
-        let combined = dir.isEmpty ? href : dir + "/" + href
-        var stack: [String] = []
-        for segment in combined.components(separatedBy: "/") {
-            switch segment {
-            case "", ".":
-                break
-            case "..":
-                if !stack.isEmpty { stack.removeLast() }
-            default:
-                stack.append(segment)
-            }
-        }
-        return stack.joined(separator: "/")
-    }
-
-    private static func normalizeFontName(_ name: String) -> String {
-        name
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
-            .lowercased()
-    }
-
-    private func resolveRegisteredFont(
-        families: [String],
-        weight: Int,
-        italic: Bool,
-        size: CGFloat
-    ) -> UIFont? {
-        let normalizedFamilies = families
-            .map(Self.normalizeFontName)
-            .filter { !$0.isEmpty }
-
-        for family in normalizedFamilies {
-            let matchedFace = registeredFontFaces[family]
-                ?? registeredFontFaces.values.first(where: {
-                    Self.normalizeFontName($0.familyName) == family
-                        || Self.normalizeFontName($0.postScriptName) == family
-                })
-            guard let matchedFace else { continue }
-
-            let baseFont =
-                UIFont(name: matchedFace.postScriptName, size: size)
-                ?? UIFont(name: matchedFace.familyName, size: size)
-            guard let baseFont else { continue }
-
-            var descriptor = baseFont.fontDescriptor
-            var traits = descriptor.symbolicTraits
-            if italic {
-                traits.insert(.traitItalic)
-            }
-            if weight >= 600 {
-                traits.insert(.traitBold)
-            }
-            if let styledDescriptor = descriptor.withSymbolicTraits(traits) {
-                descriptor = styledDescriptor
-            }
-            descriptor = descriptor.addingAttributes([.cascadeList: fontCascadeDescriptors()])
-            return UIFont(descriptor: descriptor, size: size)
-        }
-
-        return nil
-    }
-
-    private func fontCascadeDescriptors() -> [UIFontDescriptor] {
-        ["PingFangSC-Regular", "STHeitiSC-Light", "AppleColorEmoji"]
-            .compactMap { UIFontDescriptor(name: $0, size: 0) }
-    }
 
     /// 取得某頁的純文字內容（供 TTS / 書籤摘錄使用）
     func plainText(forPage page: Int) -> String {

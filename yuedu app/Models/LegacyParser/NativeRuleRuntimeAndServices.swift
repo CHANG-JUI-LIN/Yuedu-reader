@@ -1928,8 +1928,13 @@ final class DefaultWebNovelParserService: WebNovelParserService {
         case .native:
             return RuleEngine.extractValue(fromHTML: html, rule: rule, baseURL: baseURL)
         case .modern:
-            if let value = try? modernRuleEngine.extractValue(from: html, rule: rule, baseURL: baseURL) {
-                return value
+            do {
+                let value = try modernRuleEngine.extractValue(from: html, rule: rule, baseURL: baseURL)
+                if !value.isEmpty { return value }
+            } catch {
+#if DEBUG
+                print("[ModernRuleEngine] extractValue 失敗，回退 native：\(error.localizedDescription) rule=\(rule.prefix(60))")
+#endif
             }
             return RuleEngine.extractValue(fromHTML: html, rule: rule, baseURL: baseURL)
         }
@@ -2010,8 +2015,13 @@ final class DefaultWebNovelParserService: WebNovelParserService {
                 runtimeVariables: runtimeVariables
             )
         case .modern:
-            if let value = try? modernRuleEngine.extractValue(from: html, rule: rule, baseURL: baseURL), !value.isEmpty {
-                return value
+            do {
+                let value = try modernRuleEngine.extractValue(from: html, rule: rule, baseURL: baseURL)
+                if !value.isEmpty { return value }
+            } catch {
+#if DEBUG
+                print("[ModernRuleEngine] extractSingleValue 失敗，回退 native：\(error.localizedDescription) rule=\(rule.prefix(60))")
+#endif
             }
             return try nativeRunner.extractSingleValue(
                 html: html,
@@ -2042,11 +2052,18 @@ final class DefaultWebNovelParserService: WebNovelParserService {
                 isURL: isURL
             )
         case .modern:
-            if let values = try? modernRuleEngine.extractList(from: html, rule: rule, baseURL: baseURL), !values.isEmpty {
-                if isURL {
-                    return values.map { RuleEngine.resolveURL($0, base: baseURL) }
+            do {
+                let values = try modernRuleEngine.extractList(from: html, rule: rule, baseURL: baseURL)
+                if !values.isEmpty {
+                    if isURL {
+                        return values.map { RuleEngine.resolveURL($0, base: baseURL) }
+                    }
+                    return values
                 }
-                return values
+            } catch {
+#if DEBUG
+                print("[ModernRuleEngine] extractStringList 失敗，回退 native：\(error.localizedDescription) rule=\(rule.prefix(60))")
+#endif
             }
             return try nativeRunner.extractStringList(
                 html: html,

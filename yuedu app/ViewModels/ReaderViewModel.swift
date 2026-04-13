@@ -8,6 +8,17 @@ final class ReaderViewModel: ObservableObject {
     @Published var fetchingChapters: Set<Int> = []
     @Published var failedChapters: Set<Int> = []
     @Published var lastChapterError: String = ""
+
+    private let bookSourceFetcher: BookSourceFetching
+    private let chapterFetcher: ChapterFetching
+
+    init(
+        bookSourceFetcher: BookSourceFetching,
+        chapterFetcher: ChapterFetching
+    ) {
+        self.bookSourceFetcher = bookSourceFetcher
+        self.chapterFetcher = chapterFetcher
+    }
     
     // MARK: - 資料獲取 (Data Fetching)
     /// 擷取線上章節
@@ -25,35 +36,41 @@ final class ReaderViewModel: ObservableObject {
         }
         
         let bookId = b.id
-        
-        // 此處假設存在 BookSourceFetcher 可同步檢查快取
-        // 注意：原 ReaderView 內的檢查邏輯需根據專案實際情況調整
-        // 若有快取，則直接呼叫 onSuccess() 返回
+
+        if bookSourceFetcher.isChapterCached(
+            bookId: bookId,
+            chapterIndex: chapterIndex,
+            expectedSourceURL: nil,
+            expectedTOCTitle: nil
+        ) {
+            failedChapters.remove(chapterIndex)
+            onSuccess()
+            return
+        }
         
         fetchingChapters.insert(chapterIndex)
+        let priority: ChapterFetchPriority = (chapterIndex == currentChapterIndex) ? .jump : .immediate
         
         Task {
             do {
-                // 這裡留出接口：原程式碼呼叫 `ChapterFetchManager.shared.fetchChapter(...)`
-                // 這邊我們假設它會被正確呼叫，並處理結果
-                // (請根據實際的 ChapterFetchManager 進行橋接，以下為概念代碼)
-                
-                /*
-                let pkg = try await ChapterFetchManager.shared.fetchChapter(
+                let pkg = try await chapterFetcher.fetchChapter(
                     book: b,
                     chapterIndex: chapterIndex,
-                    priority: .immediate,
+                    priority: priority,
                     store: store
                 )
-                */
-                // 暫時代替原程式碼中的網路請求
-                try? await Task.sleep(nanoseconds: 100_000_000)
-                
+
                 await MainActor.run {
                     self.fetchingChapters.remove(chapterIndex)
-                    // 這裡的狀態可以依據 pkg.state 等來決定
-                    self.failedChapters.remove(chapterIndex)
-                    onSuccess()
+                    if pkg.state == .cached && !pkg.content.isEmpty {
+                        self.failedChapters.remove(chapterIndex)
+                        onSuccess()
+                    } else {
+                        self.failedChapters.insert(chapterIndex)
+                        let reason = pkg.failureReason ?? "empty"
+                        self.lastChapterError = "ch\(chapterIndex): \(reason)"
+                        onFailure(self.lastChapterError)
+                    }
                 }
             } catch {
                 await MainActor.run {

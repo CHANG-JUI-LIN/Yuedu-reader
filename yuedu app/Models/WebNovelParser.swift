@@ -106,7 +106,7 @@ enum WebNovelParser {
             if let element = try? document.select(selector).first(),
                let text = extractedText(from: element),
                text.count >= 120 {
-                return ChapterFetcher.cleanChapterContent(text)
+                return ChapterFetcher.shared.cleanChapterContent(text)
             }
         }
 
@@ -124,11 +124,11 @@ enum WebNovelParser {
         }
 
         if bestText.count >= 120 {
-            return ChapterFetcher.cleanChapterContent(bestText)
+            return ChapterFetcher.shared.cleanChapterContent(bestText)
         }
 
         let fallback = (try? document.body()?.text()) ?? html.strippedHTML
-        return ChapterFetcher.cleanChapterContent(fallback)
+        return ChapterFetcher.shared.cleanChapterContent(fallback)
     }
 
     static func extractNextPageURL(html: String, currentURL: String) -> String {
@@ -156,7 +156,7 @@ enum WebNovelParser {
             }
         }
 
-        return ChapterFetcher.extractNextPageURL(
+        return ChapterFetcher.shared.extractNextPageURL(
             html: html,
             currentURL: currentURL,
             baseURL: currentURL

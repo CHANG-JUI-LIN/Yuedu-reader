@@ -67,6 +67,7 @@ private final class ReaderRuntimeState {
 struct ReaderView: View {
     let bookId: UUID
     @EnvironmentObject var store: BookStore
+    @Environment(\.appDependencies) private var dependencies
     @Environment(\.presentationMode) var presentationMode
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -1491,7 +1492,7 @@ struct ReaderView: View {
     private func refreshCurrentChapter() {
         guard let b = book, b.isOnline else { return }
         let idx = currentChapterIndex
-        BookSourceFetcher.shared.clearChapterCache(bookId: b.id, chapterIndex: idx)
+        dependencies.bookSourceFetcher.clearChapterCache(bookId: b.id, chapterIndex: idx)
         store.clearCachedChapter(bookId: b.id, chapterIndex: idx)
         fetchingChapters.remove(idx)
         failedChapters.remove(idx)
@@ -1533,7 +1534,7 @@ struct ReaderView: View {
             var byKey: [String: [OnlineBook]] = [:]
             for source in sources {
                 do {
-                    let list = try await BookSourceFetcher.shared.search(query: b.title, in: source)
+                    let list = try await dependencies.bookSourceFetcher.search(query: b.title, in: source)
                     for ob in list {
                         let k = SearchBook.makeKey(name: ob.name, author: ob.author)
                         if byKey[k] == nil { byKey[k] = [] }
@@ -1574,7 +1575,10 @@ struct ReaderView: View {
             return
         }
 
-        if BookSourceFetcher.shared.isChapterCached(bookId: b.id, chapterIndex: chapterIndex) {
+        if dependencies.bookSourceFetcher.isChapterCached(
+            bookId: b.id, chapterIndex: chapterIndex,
+            expectedSourceURL: nil, expectedTOCTitle: nil
+        ) {
             rebuildPages()
             prefetchAdjacentChapters(around: chapterIndex)
             return
@@ -1585,7 +1589,7 @@ struct ReaderView: View {
         Task {
             let isCurrentChapter = chapterIndex == currentChapterIndex
             do {
-                let pkg = try await ChapterFetchManager.shared.fetchChapter(
+                let pkg = try await dependencies.chapterFetcher.fetchChapter(
                     book: b,
                     chapterIndex: chapterIndex,
                     priority: .immediate,

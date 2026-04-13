@@ -195,7 +195,7 @@ struct OnlineHTMLContentProviderAdapter: BookContentProvider {
                     expectedTOCTitle: tocTitle
                 )
                 : nil)
-            ?? ChapterFetcher.buildNormalizedHTML(
+            ?? ChapterFetcher.shared.buildNormalizedHTML(
                 title: tocTitle,
                 content: fallbackContent
             )

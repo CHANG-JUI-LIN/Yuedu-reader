@@ -294,6 +294,12 @@ struct BookSource: Identifiable, Codable {
     }
 
     init() {}
+
+    init(bookSourceUrl: String, bookSourceName: String) {
+        self.init()
+        self.bookSourceUrl = bookSourceUrl
+        self.bookSourceName = bookSourceName
+    }
 }
 
 // MARK: - 搜尋結果 / 書籍資訊

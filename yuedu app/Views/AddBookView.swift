@@ -364,6 +364,7 @@ struct FileImportTab: View {
 // MARK: - 網址匯入頁
 struct URLImportTab: View {
     @EnvironmentObject var store: BookStore
+    @Environment(\.appDependencies) private var dependencies
     var onDismiss: () -> Void
     @State private var urlInput = ""
     @State private var titleInput = ""
@@ -470,12 +471,13 @@ struct URLImportTab: View {
 
         Task {
             do {
-                let html = try await WebFetcher.shared.fetchHTML(
+                let html = try await dependencies.webContentFetcher.fetchHTML(
                     url: url,
                     method: "GET",
                     body: nil,
                     headers: [:],
                     baseURL: url.absoluteString,
+                    bodyCharset: nil,
                     allowInteractiveChallengeOn503: false
                 )
                 let text = WebNovelParser.extractContent(html: html, pageURL: url.absoluteString)

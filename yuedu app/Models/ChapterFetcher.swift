@@ -31,9 +31,16 @@ struct ChapterBuildResult {
     let normalizedHTML: String
 }
 
-enum ChapterFetcher {
+struct ChapterFetcher {
+    let parserService: WebNovelParserService
 
-    static func buildNormalizedHTML(title: String, content: String) -> String {
+    init(parserService: WebNovelParserService = DefaultWebNovelParserService.shared) {
+        self.parserService = parserService
+    }
+
+    static let shared = ChapterFetcher()
+
+    func buildNormalizedHTML(title: String, content: String) -> String {
         let paragraphLines = content
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -44,7 +51,7 @@ enum ChapterFetcher {
         )
     }
 
-    static func buildRenderableNormalizedHTML(
+    func buildRenderableNormalizedHTML(
         title: String,
         plainTextContent: String,
         rawHTMLContent: String?
@@ -52,7 +59,7 @@ enum ChapterFetcher {
         guard
             let rawHTMLContent,
             !rawHTMLContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            containsLikelyHTMLTags(rawHTMLContent),
+            Self.containsLikelyHTMLTags(rawHTMLContent),
             let document = try? SwiftSoup.parse(rawHTMLContent),
             let body = document.body()
         else {
@@ -99,11 +106,11 @@ enum ChapterFetcher {
         return regex.firstMatch(in: text, range: range) != nil
     }
 
-    static func parseChapterRequest(_ raw: String) -> ChapterRequestSpec {
+    func parseChapterRequest(_ raw: String) -> ChapterRequestSpec {
         LegadoRequestParser.parseChapterRequest(raw)
     }
 
-    static func merge(_ current: ChapterParsePayload, _ next: ChapterParsePayload) -> ChapterParsePayload {
+    func merge(_ current: ChapterParsePayload, _ next: ChapterParsePayload) -> ChapterParsePayload {
         var merged = current
         if merged.title.isEmpty { merged.title = next.title }
         merged.sourceMatched = merged.sourceMatched && next.sourceMatched
@@ -117,7 +124,7 @@ enum ChapterFetcher {
         return merged
     }
 
-    static func fetchPaginatedContent(
+    func fetchPaginatedContent(
         initialHTML: String,
         initialURL: URL,
         initialBaseURL: String,
@@ -151,7 +158,7 @@ enum ChapterFetcher {
         return ChapterPaginatedResult(payload: parsed, rawHTMLPages: rawHTMLPages)
     }
 
-    static func buildChapterPackage(
+    func buildChapterPackage(
         bookId: UUID,
         chapterIndex: Int,
         sourceURL: String,
@@ -245,19 +252,19 @@ enum ChapterFetcher {
         return ChapterBuildResult(package: package, rawHTML: rawHTML, normalizedHTML: normalizedHTML)
     }
 
-    static func resolveContent(
+    func resolveContent(
         parsed: ChapterParsePayload,
         replaceRules: String,
         fetchViaJS: @escaping @Sendable () async throws -> String?,
         fetchBySelectors: @escaping @Sendable () async throws -> String?
     ) async -> String {
         let chapterTitle = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        var content = sanitizeResolvedContent(parsed.content, title: chapterTitle)
+        var content = Self.sanitizeResolvedContent(parsed.content, title: chapterTitle)
 
         if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !parsed.isPay {
             do {
                 if let fallback = try await fetchViaJS() {
-                    content = sanitizeResolvedContent(fallback, title: chapterTitle)
+                    content = Self.sanitizeResolvedContent(fallback, title: chapterTitle)
                 }
             } catch {}
         }
@@ -265,7 +272,7 @@ enum ChapterFetcher {
         if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !parsed.isPay {
             do {
                 if let fallback = try await fetchBySelectors() {
-                    content = sanitizeResolvedContent(fallback, title: chapterTitle)
+                    content = Self.sanitizeResolvedContent(fallback, title: chapterTitle)
                 }
             } catch {}
         }
@@ -274,14 +281,14 @@ enum ChapterFetcher {
             content = "[付費章節]"
         }
 
-        content = normalizeLegadoContent(content)
+        content = Self.normalizeLegadoContent(content)
 
         if !replaceRules.isEmpty {
             content = content
                 .components(separatedBy: .newlines)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .joined(separator: "\n")
-            content = DefaultWebNovelParserService.shared.applyReplaceRegex(content, rules: replaceRules)
+            content = parserService.applyReplaceRegex(content, rules: replaceRules)
             content = content
                 .components(separatedBy: .newlines)
                 .map { line in
@@ -291,7 +298,7 @@ enum ChapterFetcher {
                 .joined(separator: "\n")
         }
 
-        content = sanitizeResolvedContent(content, title: chapterTitle)
+        content = Self.sanitizeResolvedContent(content, title: chapterTitle)
 
         let finalNormalizedTitle = chapterTitle
             .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
@@ -316,7 +323,7 @@ enum ChapterFetcher {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if output.isEmpty { return "" }
         if output.contains("<") {
-            output = stripHtmlToText(output)
+            output = Self.stripHtmlToText(output)
         } else {
             output = output.replacingOccurrences(of: "&nbsp;", with: " ", options: .caseInsensitive)
             output = output.replacingOccurrences(of: "&ensp;", with: " ", options: .caseInsensitive)
@@ -335,9 +342,9 @@ enum ChapterFetcher {
     }
 
     private static func sanitizeResolvedContent(_ text: String?, title: String) -> String {
-        let normalized = normalizeLegadoContent(text ?? "")
+        let normalized = Self.normalizeLegadoContent(text ?? "")
         guard !normalized.isEmpty else { return "" }
-        if looksLikeRejectedChapterPage(normalized, title: title) {
+        if Self.looksLikeRejectedChapterPage(normalized, title: title) {
             return ""
         }
         return normalized
@@ -419,11 +426,11 @@ enum ChapterFetcher {
         return false
     }
 
-    static func isRejectedChapterContent(_ text: String, title: String) -> Bool {
-        looksLikeRejectedChapterPage(text, title: title)
+    func isRejectedChapterContent(_ text: String, title: String) -> Bool {
+        Self.looksLikeRejectedChapterPage(text, title: title)
     }
 
-    static func extractWebContentSinglePage(html: String, pageURL: String) async -> String {
+    func extractWebContentSinglePage(html: String, pageURL: String) async -> String {
         let parserContent = WebNovelParser.extractContent(html: html, pageURL: pageURL)
         if parserContent.count >= 120 {
             return parserContent
@@ -451,7 +458,7 @@ enum ChapterFetcher {
 
         var bestSelector = ""
         for selector in knownSelectors {
-            let text = DefaultWebNovelParserService.shared.extractValue(
+            let text = parserService.extractValue(
                 fromHTML: html, rule: selector + "@text", baseURL: pageURL
             )
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -464,124 +471,53 @@ enum ChapterFetcher {
         return html.strippedHTML
     }
 
-    static func extractNextPageURL(html: String, currentURL: String, baseURL: String) -> String {
+    func extractNextPageURL(html: String, currentURL: String, baseURL: String) -> String {
         NextPageLinkExtractor.extractNextPageURL(
             html: html,
             currentURL: currentURL,
             baseURL: baseURL,
-            resolveURL: { href, base in
-                DefaultWebNovelParserService.shared.resolveURL(href, base: base)
+            resolveURL: { [parserService] href, base in
+                parserService.resolveURL(href, base: base)
             }
         )
     }
 
     private static func stripHtmlToText(_ html: String) -> String {
-        var s = html
-        if let scriptRegex = try? NSRegularExpression(
-            pattern: "<(script|style|noscript)[^>]*>[\\s\\S]*?</\\1>",
-            options: .caseInsensitive
-        ) {
-            s = scriptRegex.stringByReplacingMatches(
-                in: s, range: NSRange(s.startIndex..., in: s), withTemplate: ""
-            )
-        }
-        if let brRegex = try? NSRegularExpression(pattern: "<br\\s*/?>", options: .caseInsensitive) {
-            s = brRegex.stringByReplacingMatches(
-                in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "\n"
-            )
-        }
-        if let blockCloseRegex = try? NSRegularExpression(
-            pattern: "</(?:p|div|li|blockquote|section|article|dt|dd|figcaption|pre|header|footer|tr)>",
-            options: .caseInsensitive
-        ) {
-            s = blockCloseRegex.stringByReplacingMatches(
-                in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "\n"
-            )
-        }
-        if let headingCloseRegex = try? NSRegularExpression(pattern: "</h[1-6]>", options: .caseInsensitive) {
-            s = headingCloseRegex.stringByReplacingMatches(
-                in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "\n"
-            )
-        }
-        if let regex = try? NSRegularExpression(pattern: "<[^>]+>") {
-            s = regex.stringByReplacingMatches(
-                in: s, range: NSRange(s.startIndex..., in: s), withTemplate: ""
-            )
-        }
-        if let nbspRegex = try? NSRegularExpression(pattern: "(&nbsp;)+", options: .caseInsensitive) {
-            s = nbspRegex.stringByReplacingMatches(
-                in: s, range: NSRange(s.startIndex..., in: s), withTemplate: " "
-            )
-        }
-        s = s.replacingOccurrences(of: "&ensp;", with: " ", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&emsp;", with: " ", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&thinsp;", with: "", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&zwnj;", with: "", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&zwj;", with: "", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "\u{2009}", with: "")
-        s = s.replacingOccurrences(of: "\u{200C}", with: "")
-        s = s.replacingOccurrences(of: "\u{200D}", with: "")
-        s = s.replacingOccurrences(of: "&lt;", with: "<", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&gt;", with: ">", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&amp;", with: "&", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&quot;", with: "\"", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&apos;", with: "'", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&#x27;", with: "'", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&hellip;", with: "…", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&mdash;", with: "—", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&ndash;", with: "–", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&lsquo;", with: "\u{2018}", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&rsquo;", with: "\u{2019}", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&ldquo;", with: "\u{201C}", options: .caseInsensitive)
-        s = s.replacingOccurrences(of: "&rdquo;", with: "\u{201D}", options: .caseInsensitive)
-
-        if let numericRegex = try? NSRegularExpression(pattern: #"&#(\d+);"#) {
-            var result = ""
-            var searchStart = s.startIndex
-            numericRegex.enumerateMatches(in: s, range: NSRange(s.startIndex..., in: s)) { match, _, _ in
-                guard let match,
-                    let fullRange = Range(match.range, in: s),
-                    let numRange = Range(match.range(at: 1), in: s)
-                else { return }
-                result += s[searchStart..<fullRange.lowerBound]
-                if let code = UInt32(s[numRange]), let scalar = Unicode.Scalar(code) {
-                    result += String(Character(scalar))
-                } else {
-                    result += s[fullRange]
-                }
-                searchStart = fullRange.upperBound
-            }
-            result += s[searchStart...]
-            s = result
-        }
-
-        if let hexRegex = try? NSRegularExpression(pattern: #"&#[xX]([0-9a-fA-F]+);"#) {
-            var result = ""
-            var searchStart = s.startIndex
-            hexRegex.enumerateMatches(in: s, range: NSRange(s.startIndex..., in: s)) { match, _, _ in
-                guard let match,
-                    let fullRange = Range(match.range, in: s),
-                    let hexRange = Range(match.range(at: 1), in: s)
-                else { return }
-                result += s[searchStart..<fullRange.lowerBound]
-                if let code = UInt32(s[hexRange], radix: 16), let scalar = Unicode.Scalar(code) {
-                    result += String(Character(scalar))
-                } else {
-                    result += s[fullRange]
-                }
-                searchStart = fullRange.upperBound
-            }
-            result += s[searchStart...]
-            s = result
-        }
-
-        while s.contains("\n\n\n") {
-            s = s.replacingOccurrences(of: "\n\n\n", with: "\n\n")
-        }
-        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+        stripHtmlToTextUsingSwiftSoup(html) ?? html.strippedHTML
     }
 
-    static func cleanChapterContent(_ text: String) -> String {
-        ChapterContentCleaner.cleanChapterContent(text, htmlToText: stripHtmlToText)
+    private static func stripHtmlToTextUsingSwiftSoup(_ html: String) -> String? {
+        guard let document = try? SwiftSoup.parse(html), let body = document.body() else {
+            return nil
+        }
+
+        _ = try? document.select("script,style,noscript,iframe,object,embed").remove()
+
+        let lineBreakMarker = "__YUEDU_LINE_BREAK__"
+        let lineBreakSelectors =
+            "br,p,div,li,blockquote,section,article,dt,dd,figcaption,pre,header,footer,tr,h1,h2,h3,h4,h5,h6"
+        if let nodes = try? document.select(lineBreakSelectors).array() {
+            for node in nodes {
+                try? node.appendText(lineBreakMarker)
+            }
+        }
+
+        var text = (try? body.text()) ?? (try? document.text()) ?? ""
+        text = text.replacingOccurrences(of: lineBreakMarker, with: "\n")
+        text = text.replacingOccurrences(of: "\u{00A0}", with: " ")
+        text = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        while text.contains("\n\n\n") {
+            text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    func cleanChapterContent(_ text: String) -> String {
+        ChapterContentCleaner.cleanChapterContent(text, htmlToText: Self.stripHtmlToText)
     }
 }

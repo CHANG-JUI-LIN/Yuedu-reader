@@ -83,7 +83,7 @@ struct ChapterCacheRepository {
         rawHTML: String? = nil
     ) -> String {
         let canonicalTitle = extractedTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedHTML = ChapterFetcher.buildNormalizedHTML(
+        let normalizedHTML = ChapterFetcher.shared.buildNormalizedHTML(
             title: canonicalTitle?.isEmpty == false ? canonicalTitle! : (tocTitle ?? ""),
             content: content
         )
@@ -220,7 +220,7 @@ struct ChapterCacheRepository {
             guard let artifact, !body.isEmpty, artifact.contentChecksum == cacheChecksum(for: body) else {
                 return nil
             }
-            if ChapterFetcher.isRejectedChapterContent(body, title: cachedTitle) {
+            if ChapterFetcher.shared.isRejectedChapterContent(body, title: cachedTitle) {
                 return nil
             }
             return ChapterPackage(

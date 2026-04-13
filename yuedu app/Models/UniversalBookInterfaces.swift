@@ -329,7 +329,7 @@ struct OnlineHTMLBookDocument: BookDocument {
                     expectedTOCTitle: ref.title
                 )
                 : nil)
-            ?? ChapterFetcher.buildNormalizedHTML(
+            ?? ChapterFetcher.shared.buildNormalizedHTML(
                 title: ref.title,
                 content: cached.content
             )
@@ -356,7 +356,7 @@ struct OnlineHTMLBookDocument: BookDocument {
                 expectedTOCTitle: ref.title
             )
             : nil)
-        ?? ChapterFetcher.buildNormalizedHTML(
+        ?? ChapterFetcher.shared.buildNormalizedHTML(
             title: ref.title,
             content: pkg.content
         )

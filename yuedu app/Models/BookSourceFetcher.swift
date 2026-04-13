@@ -50,6 +50,7 @@ actor BookSourceFetcher {
     }
     static let shared = BookSourceFetcher()
     private nonisolated static let chapterCacheRepository = ChapterCacheRepository()
+    private let pipeline = BookSourceParsingPipeline()
 
     private enum FetchTimeoutError: LocalizedError {
         case chapterTimeout
@@ -118,7 +119,7 @@ actor BookSourceFetcher {
 
         let books: [OnlineBook]
         do {
-            books = try await parseSearchResultsWithEngine(
+            books = try pipeline.parseSearchResults(
                 html: html, baseURL: url.absoluteString, source: source)
         } catch {
             return []
@@ -177,7 +178,7 @@ actor BookSourceFetcher {
                 url: bookURL, method: "GET", body: nil,
                 headers: source.parsedHeaders, baseURL: source.bookSourceUrl)
         }
-        let info = try await parseBookInfoWithEngine(
+        let info = try pipeline.parseBookInfo(
             html: html,
             bookUrl: url,
             baseURL: bookURL.absoluteString,
@@ -285,7 +286,7 @@ actor BookSourceFetcher {
                 "htmlPreview": String(html.prefix(150)).replacingOccurrences(of: "\n", with: " "),
             ], hyp: "H2")
         // #endregion
-        var chapters = try await parseTOCWithEngine(
+        var chapters = try pipeline.parseTOC(
             html: html,
             baseURL: url.absoluteString,
             source: source,
@@ -313,7 +314,7 @@ actor BookSourceFetcher {
                 timeout: 20,
                 jsWait: 4.0
             )
-            chapters = try await parseTOCWithEngine(
+            chapters = try pipeline.parseTOC(
                 html: webHtml,
                 baseURL: url.absoluteString,
                 source: source,
@@ -333,7 +334,7 @@ actor BookSourceFetcher {
                 timeout: 20,
                 jsWait: 4.0
             )
-            chapters = try await parseTOCWithEngine(
+            chapters = try pipeline.parseTOC(
                 html: delayedHtml,
                 baseURL: url.absoluteString,
                 source: source,
@@ -344,7 +345,7 @@ actor BookSourceFetcher {
 
         // 多頁目錄
         var rawHTMLPages: [String] = [htmlForNext]
-        var nextURL = await extractNextTocURL(
+        var nextURL = pipeline.extractNextTocURL(
             html: htmlForNext,
             baseURL: url.absoluteString,
             source: source,
@@ -370,13 +371,13 @@ actor BookSourceFetcher {
             }
             rawHTMLPages.append(nextHTML)
             chapters.append(
-                contentsOf: try await parseTOCWithEngine(
+                contentsOf: try pipeline.parseTOC(
                     html: nextHTML,
                     baseURL: nextURL,
                     source: source,
                     runtimeVariables: runtimeVariables
                 ))
-            nextURL = await extractNextTocURL(
+            nextURL = pipeline.extractNextTocURL(
                 html: nextHTML,
                 baseURL: nextURL,
                 source: source,
@@ -468,7 +469,7 @@ actor BookSourceFetcher {
                 base: chapterReferer ?? source.bookSourceUrl
             )
         }
-        let requestSpec = ChapterFetcher.parseChapterRequest(sanitizedRefUrl)
+        let requestSpec = ChapterFetcher.shared.parseChapterRequest(sanitizedRefUrl)
         let cleanUrl = requestSpec.url
         let urlWantsWebView = requestSpec.useWebView
         guard let url = safeURL(string: cleanUrl) else { throw FetchError.invalidURL(sanitizedRefUrl) }
@@ -559,13 +560,13 @@ actor BookSourceFetcher {
             let ruleContent = source.ruleContent.content.trimmingCharacters(
                 in: .whitespacesAndNewlines)
             if ruleContent.isEmpty {
-                let content = await ChapterFetcher.extractWebContentSinglePage(
+                let content = await ChapterFetcher.shared.extractWebContentSinglePage(
                     html: html, pageURL: baseURL)
                 return ChapterParsePayload(
                     content: content, title: "", sourceMatched: true, isPay: ref.isPay)
             }
             do {
-                let parsed = try await parseChapterResultWithEngine(
+                let parsed = try pipeline.parseChapterResult(
                     html: html,
                     baseURL: baseURL,
                     source: source,
@@ -576,7 +577,7 @@ actor BookSourceFetcher {
                 }
                 return parsed
             } catch {
-                let fallback = await ChapterFetcher.extractWebContentSinglePage(
+                let fallback = await ChapterFetcher.shared.extractWebContentSinglePage(
                     html: html,
                     pageURL: baseURL
                 )
@@ -593,7 +594,7 @@ actor BookSourceFetcher {
             }
         }
         let extractNextPages: @Sendable (String, String) async -> [String] = { [self] html, baseURL in
-            await extractNextContentURLs(
+            self.pipeline.extractNextContentURLs(
                 html: html,
                 baseURL: baseURL,
                 source: source,
@@ -603,7 +604,7 @@ actor BookSourceFetcher {
 
         let stagedRawHTML = try await fetchChapterHTML(url, requestSpec.method, requestSpec.body)
 
-        let buildResult = try await ChapterFetcher.buildChapterPackage(
+        let buildResult = try await ChapterFetcher.shared.buildChapterPackage(
             bookId: bookId,
             chapterIndex: ref.index,
             sourceURL: ref.url,
@@ -684,7 +685,7 @@ actor BookSourceFetcher {
                 break
             }
 
-            let pageContent = await ChapterFetcher.extractWebContentSinglePage(
+            let pageContent = await ChapterFetcher.shared.extractWebContentSinglePage(
                 html: html, pageURL: currentURL)
             if fullContent.isEmpty {
                 fullContent = pageContent
@@ -703,7 +704,7 @@ actor BookSourceFetcher {
             )
         } while !currentURL.isEmpty
 
-        let cleanedDirect = ChapterFetcher.cleanChapterContent(fullContent)
+        let cleanedDirect = ChapterFetcher.shared.cleanChapterContent(fullContent)
         if !cleanedDirect.isEmpty {
             return cleanedDirect
         }
@@ -718,7 +719,7 @@ actor BookSourceFetcher {
                 jsWait: 1.5
             )
             if !text.isEmpty {
-                let cleaned = ChapterFetcher.cleanChapterContent(text)
+                let cleaned = ChapterFetcher.shared.cleanChapterContent(text)
                 return cleaned.isEmpty ? text : cleaned
             }
         } catch {
@@ -832,134 +833,6 @@ actor BookSourceFetcher {
         )
     }
 
-    nonisolated func tocCacheDir() -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("toc_cache")
-    }
-
-    nonisolated func bookInfoCacheDir() -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("book_info_cache")
-    }
-
-    private nonisolated func tocCacheKey(tocUrl: String, source: BookSource) -> String {
-        let seed = "\(source.id.uuidString)|\(normalizedURLKey(tocUrl))"
-        let digest = SHA256.hash(data: Data(seed.utf8))
-        return digest.compactMap { String(format: "%02x", $0) }.joined()
-    }
-
-    private nonisolated func tocPackagePath(tocUrl: String, source: BookSource) -> URL {
-        tocCacheDir().appendingPathComponent("\(tocCacheKey(tocUrl: tocUrl, source: source)).json")
-    }
-
-    private nonisolated func tocRawHTMLPath(tocUrl: String, source: BookSource) -> URL {
-        tocCacheDir().appendingPathComponent("\(tocCacheKey(tocUrl: tocUrl, source: source)).raw.html")
-    }
-
-    private nonisolated func bookInfoCacheKey(url: String, source: BookSource) -> String {
-        let seed = "\(source.id.uuidString)|\(normalizedURLKey(url))"
-        let digest = SHA256.hash(data: Data(seed.utf8))
-        return digest.compactMap { String(format: "%02x", $0) }.joined()
-    }
-
-    private nonisolated func bookInfoPackagePath(url: String, source: BookSource) -> URL {
-        bookInfoCacheDir().appendingPathComponent("\(bookInfoCacheKey(url: url, source: source)).json")
-    }
-
-    private nonisolated func bookInfoRawHTMLPath(url: String, source: BookSource) -> URL {
-        bookInfoCacheDir().appendingPathComponent("\(bookInfoCacheKey(url: url, source: source)).raw.html")
-    }
-
-    nonisolated func loadTOCPackageSync(tocUrl: String, source: BookSource) -> TOCPackage? {
-        let path = tocPackagePath(tocUrl: tocUrl, source: source)
-        guard let data = try? Data(contentsOf: path),
-            let package = try? JSONDecoder().decode(TOCPackage.self, from: data),
-            normalizedURLKey(package.tocURL) == normalizedURLKey(tocUrl),
-            package.sourceId == source.id
-        else {
-            return nil
-        }
-        return package
-    }
-
-    nonisolated func loadBookInfoPackageSync(url: String, source: BookSource) -> BookInfoPackage? {
-        let path = bookInfoPackagePath(url: url, source: source)
-        guard let data = try? Data(contentsOf: path),
-            let package = try? JSONDecoder().decode(BookInfoPackage.self, from: data),
-            normalizedURLKey(package.bookURL) == normalizedURLKey(url),
-            package.sourceId == source.id
-        else {
-            return nil
-        }
-        return package
-    }
-
-    @discardableResult
-    nonisolated func saveTOCPackage(
-        tocUrl: String,
-        source: BookSource,
-        runtimeVariables: [String: String]?,
-        chapters: [OnlineChapterRef],
-        rawHTML: String?
-    ) -> TOCPackage {
-        let dir = tocCacheDir()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let package = TOCPackage(
-            sourceId: source.id,
-            sourceName: source.bookSourceName,
-            tocURL: tocUrl,
-            runtimeVariables: runtimeVariables,
-            chapters: chapters,
-            rawHTMLFilename: rawHTML?.isEmpty == false ? tocRawHTMLPath(tocUrl: tocUrl, source: source).lastPathComponent : nil,
-            savedAt: Date()
-        )
-        if let rawHTML, !rawHTML.isEmpty {
-            try? rawHTML.write(
-                to: tocRawHTMLPath(tocUrl: tocUrl, source: source),
-                atomically: true,
-                encoding: .utf8
-            )
-        }
-        if let data = try? JSONEncoder().encode(package) {
-            try? data.write(to: tocPackagePath(tocUrl: tocUrl, source: source), options: .atomic)
-        }
-        return package
-    }
-
-    @discardableResult
-    nonisolated func saveBookInfoPackage(
-        info: OnlineBook,
-        source: BookSource,
-        rawHTML: String?
-    ) -> BookInfoPackage {
-        let dir = bookInfoCacheDir()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let rawPath = bookInfoRawHTMLPath(url: info.bookUrl, source: source)
-        if let rawHTML, !rawHTML.isEmpty {
-            try? rawHTML.write(to: rawPath, atomically: true, encoding: .utf8)
-        }
-        let package = BookInfoPackage(
-            sourceId: source.id,
-            sourceName: source.bookSourceName,
-            bookURL: info.bookUrl,
-            name: info.name,
-            author: info.author,
-            intro: info.intro,
-            coverUrl: info.coverUrl,
-            tocUrl: info.tocUrl,
-            wordCount: info.wordCount,
-            lastChapter: info.lastChapter,
-            kind: info.kind,
-            runtimeVariables: info.runtimeVariables,
-            rawHTMLFilename: rawHTML?.isEmpty == false ? rawPath.lastPathComponent : nil,
-            savedAt: Date()
-        )
-        if let data = try? JSONEncoder().encode(package) {
-            try? data.write(to: bookInfoPackagePath(url: info.bookUrl, source: source), options: .atomic)
-        }
-        return package
-    }
-
     nonisolated func loadCachedChapterMetadataSync(bookId: UUID, chapterIndex: Int) -> CachedChapterMetadata? {
         Self.chapterCacheRepository.loadCachedChapterMetadataSync(
             bookId: bookId,
@@ -981,17 +854,6 @@ actor BookSourceFetcher {
         )
     }
 
-    private nonisolated func normalizedURLKey(_ raw: String?) -> String {
-        guard let raw, var components = URLComponents(string: raw) else { return "" }
-        components.fragment = nil
-        components.queryItems = components.queryItems?.sorted { $0.name < $1.name }
-        return (components.string ?? raw).lowercased()
-    }
-
-    nonisolated static func cleanChapterContent(_ text: String) -> String {
-        ChapterFetcher.cleanChapterContent(text)
-    }
-
     // MARK: - HTTP 請求
 
     private func fetchHTML(
@@ -1009,154 +871,6 @@ actor BookSourceFetcher {
             bodyCharset: bodyCharset,
             allowInteractiveChallengeOn503: allowInteractiveChallengeOn503
         )
-    }
-
-    // MARK: - HTML 解析（僅用 Legado JS ruleEngine.js）
-
-    /// 搜尋結果：Legado JS，失敗時拋錯並打 log
-    private func parseSearchResultsWithEngine(html: String, baseURL: String, source: BookSource)
-        async throws -> [OnlineBook]
-    {
-        return try DefaultWebNovelParserService.shared.parseSearchResults(
-            html: html,
-            baseURL: baseURL,
-            source: source,
-            runtimeVariables: nil
-        )
-    }
-
-    /// 書籍詳情：Legado JS
-    private func parseBookInfoWithEngine(
-        html: String,
-        bookUrl: String,
-        baseURL: String,
-        source: BookSource,
-        runtimeVariables: [String: String]? = nil
-    ) async throws -> OnlineBook {
-        do {
-            return try DefaultWebNovelParserService.shared.parseBookInfo(
-                html: html,
-                bookUrl: bookUrl,
-                baseURL: baseURL,
-                source: source,
-                runtimeVariables: runtimeVariables
-            )
-        } catch {
-            throw error
-        }
-    }
-
-    /// 目錄：Legado JS
-    private func parseTOCWithEngine(
-        html: String,
-        baseURL: String,
-        source: BookSource,
-        runtimeVariables: [String: String]? = nil
-    ) async throws
-        -> [OnlineChapterRef]
-    {
-        do {
-            return try DefaultWebNovelParserService.shared.parseTOC(
-                html: html,
-                baseURL: baseURL,
-                source: source,
-                runtimeVariables: runtimeVariables
-            )
-        } catch {
-            throw error
-        }
-    }
-
-    /// 章節正文：Legado JS
-    private func parseChapterContentWithEngine(html: String, baseURL: String, source: BookSource)
-        async throws -> String
-    {
-        do {
-            return try DefaultWebNovelParserService.shared.parseChapterPayload(
-                html: html,
-                baseURL: baseURL,
-                source: source,
-                runtimeVariables: nil
-            ).content
-        } catch {
-            throw error
-        }
-    }
-
-    private func parseChapterResultWithEngine(
-        html: String,
-        baseURL: String,
-        source: BookSource,
-        runtimeVariables: [String: String]? = nil
-    )
-        async throws -> ChapterParsePayload
-    {
-        do {
-            let payload = try DefaultWebNovelParserService.shared.parseChapterPayload(
-                html: html,
-                baseURL: baseURL,
-                source: source,
-                runtimeVariables: runtimeVariables
-            )
-            // Legado 的 sourceRegex 僅作為驗證提示，不應因不匹配就丟棄已成功提取的正文
-            // 保留 sourceMatched 標記供上層日誌使用，但不再以此清空 content
-            return ChapterParsePayload(
-                content: payload.content,
-                title: payload.title,
-                sourceMatched: payload.sourceMatched,
-                isPay: payload.isPay,
-                runtimeVariables: payload.runtimeVariables
-            )
-        } catch {
-            throw error
-        }
-    }
-
-    private func extractNextTocURL(
-        html: String,
-        baseURL: String,
-        source: BookSource,
-        runtimeVariables: [String: String]? = nil
-    ) async
-        -> String
-    {
-        let rule = source.ruleToc.nextTocUrl
-        guard !rule.isEmpty else { return "" }
-        do {
-            return try DefaultWebNovelParserService.shared.extractSingleValue(
-                html: html,
-                baseURL: baseURL,
-                rule: rule,
-                source: source,
-                runtimeVariables: runtimeVariables
-            )
-        } catch {
-            return ""
-        }
-    }
-
-    private func extractNextContentURLs(
-        html: String,
-        baseURL: String,
-        source: BookSource,
-        runtimeVariables: [String: String]? = nil
-    ) async
-        -> [String]
-    {
-        let rule = source.ruleContent.nextContentUrl
-        guard !rule.isEmpty else { return [] }
-        do {
-            return try DefaultWebNovelParserService.shared.extractStringList(
-                html: html,
-                baseURL: baseURL,
-                rule: rule,
-                source: source,
-                runtimeVariables: runtimeVariables,
-                isURL: true
-            )
-        } catch {
-            return []
-        }
     }
 
 }

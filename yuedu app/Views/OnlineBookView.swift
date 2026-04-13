@@ -5,6 +5,7 @@ import SwiftUI
 struct OnlineBookView: View {
     let book: OnlineBook
     @EnvironmentObject var bookStore: BookStore
+    @Environment(\.appDependencies) private var dependencies
     @ObservedObject private var sourceStore = BookSourceStore.shared
     @ObservedObject private var gs = GlobalSettings.shared
     @Environment(\.presentationMode) var dismiss
@@ -323,7 +324,7 @@ struct OnlineBookView: View {
                 var currentRuntimeVariables = book.runtimeVariables
                 // 始終抓取詳情頁：取得作者、書名等完整資訊，並提取真正的目錄 URL
                 if !book.bookUrl.isEmpty {
-                    let infoPackage = try await BookSourceFetcher.shared.fetchBookInfoPackage(
+                    let infoPackage = try await dependencies.bookSourceFetcher.fetchBookInfoPackage(
                         url: book.bookUrl,
                         source: source,
                         runtimeVariables: currentRuntimeVariables
@@ -334,7 +335,7 @@ struct OnlineBookView: View {
                         finalTocURL = infoPackage.tocUrl
                     }
                 }
-                let tocPackage = try await BookSourceFetcher.shared.fetchTOCPackage(
+                let tocPackage = try await dependencies.bookSourceFetcher.fetchTOCPackage(
                     tocUrl: finalTocURL,
                     source: source,
                     runtimeVariables: currentRuntimeVariables
@@ -403,7 +404,7 @@ struct OnlineBookView: View {
             }
 
             if let firstIndex = readingBook.onlineChapters?.first?.index {
-                _ = try? await ChapterFetchManager.shared.fetchChapter(
+                _ = try? await dependencies.chapterFetcher.fetchChapter(
                     book: readingBook,
                     chapterIndex: firstIndex,
                     priority: .jump,

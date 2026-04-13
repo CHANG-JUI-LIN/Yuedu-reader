@@ -8,7 +8,9 @@ struct yuedu_appApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(bookStore)
+                .environment(\.appDependencies, .live)
                 .onAppear {
+                    CoreTextFontRegistrationService.cleanupStaleTemporaryFonts()
                     Task {
                         await WebFetcher.shared.setCloudflareChallengeHandler { url in
                             try await CloudflareChallengePresenter.present(url: url)

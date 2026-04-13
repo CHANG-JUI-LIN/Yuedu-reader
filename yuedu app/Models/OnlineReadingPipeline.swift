@@ -581,7 +581,7 @@ final class OnlineBookCoordinator {
                         expectedSourceURL: ref.url,
                         expectedTOCTitle: ref.title
                     )
-                    ?? ChapterFetcher.buildNormalizedHTML(
+                    ?? ChapterFetcher.shared.buildNormalizedHTML(
                         title: displayTitle,
                         content: chapterPackage.content
                     )
