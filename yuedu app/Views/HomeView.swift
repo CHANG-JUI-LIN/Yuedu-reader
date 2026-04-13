@@ -22,11 +22,8 @@ struct HomeView: View {
     @State private var editMode = EditMode.inactive
     @State private var showSearch = false
 
-    // fullScreenCover 閱讀器（取代 NavigationLink，避免 SwiftUI NavLink 重建 @State bug）
-    @State private var readerBookId: UUID? = nil
-    @State private var selectedBookFrame: CGRect = .zero
-    @State private var isReaderExpanded = false
-    @State private var bookFrames: [UUID: CGRect] = [:]
+    // 開書 callback（由 ContentView 提供，負責 overlay 動畫）
+    let openBook: (UUID) -> Void
 
     // 過濾 + 排序
     var filteredBooks: [ReadingBook] {
@@ -45,8 +42,7 @@ struct HomeView: View {
     }
 
     var body: some View {
-        ZStack {
-            NavigationView {
+        NavigationView {
                 AdaptiveContentContainer(maxWidth: 920) {
                     Group {
                         if store.books.isEmpty {
@@ -146,33 +142,6 @@ struct HomeView: View {
                 }
             }
             .navigationViewStyle(.stack)
-
-            if let bookId = readerBookId {
-                BookReaderOverlay(
-                    bookId: bookId,
-                    sourceFrame: selectedBookFrame,
-                    isExpanded: isReaderExpanded,
-                    onClose: {
-                        withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
-                            isReaderExpanded = false
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                            readerBookId = nil
-                        }
-                    }
-                )
-                .environmentObject(store)
-                .onAppear {
-                    withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
-                        isReaderExpanded = true
-                    }
-                }
-                .ignoresSafeArea()
-            }
-        }
-        .onPreferenceChange(BookFramePreferenceKey.self) { frames in
-            bookFrames = frames
-        }
     }
 
     // MARK: - 搜尋欄
@@ -202,9 +171,7 @@ struct HomeView: View {
         List {
             ForEach(filteredBooks) { book in
                 Button {
-                    guard readerBookId == nil else { return }
-                    selectedBookFrame = bookFrames[book.id] ?? UIScreen.main.bounds
-                    readerBookId = book.id
+                    openBook(book.id)
                 } label: {
                     BookRow(book: book)
                 }
@@ -426,7 +393,7 @@ struct BookRow: View {
 }
 
 // MARK: - Book Reader Overlay
-private struct BookReaderOverlay: View {
+struct BookReaderOverlay: View {
     let bookId: UUID
     let sourceFrame: CGRect
     let isExpanded: Bool
