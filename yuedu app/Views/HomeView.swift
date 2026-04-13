@@ -231,8 +231,8 @@ struct HomeView: View {
     private var bookGrid: some View {
         ScrollView {
             LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-                spacing: 16
+                columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                spacing: 12
             ) {
                 ForEach(filteredBooks) { book in
                     BookGridCell(book: book, onOpen: { readerBookId = book.id }) {
@@ -464,12 +464,17 @@ struct BookGridCell: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(book.title)
                         .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(2)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Text(book.author)
                         .font(.system(size: 11))
                         .foregroundColor(DSColor.textSecondary)
                         .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(height: 34, alignment: .topLeading)
                 Spacer(minLength: 0)
                 Menu {
                     Button { onEdit() } label: {
@@ -485,33 +490,40 @@ struct BookGridCell: View {
                         .padding(4)
                 }
             }
+            .frame(height: 34)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private var coverView: some View {
+        let base = Color.clear
+            .aspectRatio(2/3, contentMode: .fit)
+
         if let coverPath = book.coverImagePath,
            let uiImage = loadCoverImage(filename: coverPath) {
-            Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .aspectRatio(2/3, contentMode: .fill)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .shadow(color: .black.opacity(0.18), radius: 5, x: 0, y: 3)
+            base.overlay(
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+            )
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
         } else {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(.secondarySystemBackground))
-                .aspectRatio(2/3, contentMode: .fit)
-                .overlay(
-                    Text(book.title)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(DSColor.textSecondary)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(6)
-                        .padding(10),
-                    alignment: .topLeading
-                )
+            base.overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(.secondarySystemBackground))
+                    .overlay(
+                        Text(book.title)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(DSColor.textSecondary)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(6)
+                            .padding(8),
+                        alignment: .topLeading
+                    )
+            )
         }
     }
 
