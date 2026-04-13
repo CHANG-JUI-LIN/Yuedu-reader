@@ -365,6 +365,12 @@ struct BookRow: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        .background(GeometryReader { geo in
+            Color.clear.preference(
+                key: BookFramePreferenceKey.self,
+                value: [book.id: geo.frame(in: .global)]
+            )
+        })
     }
 
     @ViewBuilder
@@ -394,4 +400,12 @@ struct BookRow: View {
         return UIImage(data: data)
     }
 
+}
+
+// MARK: - Book Frame Preference Key
+struct BookFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
 }
