@@ -4,6 +4,7 @@ import SwiftUI
 
 // MARK: - App 語言
 enum AppLanguage: String, CaseIterable {
+    case systemLanguage = "系統語言"
     case traditionalChinese = "繁體中文"
     case simplifiedChinese = "简体中文"
     case english = "English"
@@ -181,6 +182,29 @@ extension String {
 class GlobalSettings: ObservableObject {
     static let shared = GlobalSettings()
 
+    private static func systemDefaultAppLanguage() -> AppLanguage {
+        let preferred = Locale.preferredLanguages.first?.lowercased() ?? ""
+        if preferred.hasPrefix("zh-hans") || preferred.hasPrefix("zh-cn") || preferred.hasPrefix("zh-sg") {
+            return .simplifiedChinese
+        }
+        if preferred.hasPrefix("zh-hant") || preferred.hasPrefix("zh-tw") || preferred.hasPrefix("zh-hk") || preferred.hasPrefix("zh-mo") {
+            return .traditionalChinese
+        }
+        if preferred.hasPrefix("en") {
+            return .english
+        }
+        return .traditionalChinese
+    }
+
+    private var effectiveAppLanguage: AppLanguage {
+        switch appLanguage {
+        case .systemLanguage:
+            return Self.systemDefaultAppLanguage()
+        default:
+            return appLanguage
+        }
+    }
+
     @Published var appLanguage: AppLanguage {
         didSet { UserDefaults.standard.set(appLanguage.rawValue, forKey: "yd_app_lang") }
     }
@@ -247,7 +271,7 @@ class GlobalSettings: ObservableObject {
 
     private init() {
         let rawLang = UserDefaults.standard.string(forKey: "yd_app_lang") ?? ""
-        appLanguage = AppLanguage(rawValue: rawLang) ?? .traditionalChinese
+        appLanguage = AppLanguage(rawValue: rawLang) ?? .systemLanguage
         let rawConv = UserDefaults.standard.string(forKey: "yd_text_conv") ?? ""
         textConversion = TextConversion(rawValue: rawConv) ?? .original
         let persistedFontSize =
@@ -299,13 +323,15 @@ class GlobalSettings: ObservableObject {
 
     /// App UI 字串本地化（繁→簡 用 ICU，繁→英 用字典）
     func t(_ zhHant: String) -> String {
-        switch appLanguage {
+        switch effectiveAppLanguage {
         case .traditionalChinese: return zhHant
         case .simplifiedChinese:
             return zhHant.applyingTransform(StringTransform(rawValue: "Hant-Hans"), reverse: false)
                 ?? zhHant
         case .english:
             return GlobalSettings.en[zhHant] ?? zhHant
+        case .systemLanguage:
+            return zhHant
         }
     }
 

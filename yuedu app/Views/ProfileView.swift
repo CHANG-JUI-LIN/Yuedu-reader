@@ -2,9 +2,22 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var store: BookStore
+    @Environment(\.openURL) private var openURL
     @ObservedObject private var gs = GlobalSettings.shared
     @State private var showSourceList = false
     @State private var showDownloadManager = false
+
+    private let feedbackEmail = "r3212239269@gmail.com"
+
+    private var feedbackMailURL: URL? {
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = feedbackEmail
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: "yuedu app 反饋")
+        ]
+        return components.url
+    }
 
     var body: some View {
         NavigationView {
@@ -12,12 +25,16 @@ struct SettingsView: View {
                 Form {
                     // ── App 語言 ──
                     Section(header: Text(gs.t("App 語言"))) {
-                        Picker("", selection: $gs.appLanguage) {
-                            ForEach(AppLanguage.allCases, id: \.self) { lang in
-                                Text(lang.rawValue).tag(lang)
+                        HStack {
+                            Text(gs.t("語言"))
+                            Spacer()
+                            Picker("", selection: $gs.appLanguage) {
+                                ForEach(AppLanguage.allCases, id: \.self) { lang in
+                                    Text(lang.rawValue).tag(lang)
+                                }
                             }
+                            .pickerStyle(.menu)
                         }
-                        .pickerStyle(.segmented)
                     }
 
                     // ── 書源管理 ──
@@ -48,11 +65,26 @@ struct SettingsView: View {
                             Spacer()
                             Text(gs.t("TXT、EPUB、Web、書源")).foregroundColor(DSColor.textSecondary)
                         }
-                        HStack {
-                            Text(gs.t("反饋"))
-                            Spacer()
-                            Text(gs.t("請郵箱聯繫：<r3212239269@gmail.com>")).foregroundColor(DSColor.textSecondary)
+                        Button {
+                            if let url = feedbackMailURL {
+                                openURL(url)
+                            }
+                        } label: {
+                            HStack {
+                                Text(gs.t("反饋"))
+                                Spacer()
+                                Image(systemName: "envelope.fill")
+                                    .font(.caption)
+                                    .foregroundColor(DSColor.accent)
+                                Text(feedbackEmail)
+                                    .foregroundColor(DSColor.accent)
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.caption)
+                                    .foregroundColor(DSColor.textSecondary)
+                            }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
