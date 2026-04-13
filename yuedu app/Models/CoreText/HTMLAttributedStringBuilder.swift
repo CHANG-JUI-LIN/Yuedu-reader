@@ -91,6 +91,9 @@ final class HTMLAttributedStringBuilder {
         var borderTopColor: UIColor?
         var borderBottomColor: UIColor?
         var opacity: CGFloat
+        /// 使用者設定的段距，從 root 傳播，不受 CSS margin 覆蓋。
+        /// 用於確保 <p> 預設段距不被 EPUB CSS body/div margin:0 歸零。
+        var configParagraphSpacing: CGFloat
     }
 
     struct BlockRenderStyle {
@@ -1238,7 +1241,8 @@ final class HTMLAttributedStringBuilder {
             borderBottomWidth: 0,
             borderTopColor: nil,
             borderBottomColor: nil,
-            opacity: 1
+            opacity: 1,
+            configParagraphSpacing: parent.configParagraphSpacing
         )
     }
 
@@ -1276,7 +1280,8 @@ final class HTMLAttributedStringBuilder {
             borderBottomWidth: 0,
             borderTopColor: nil,
             borderBottomColor: nil,
-            opacity: 1
+            opacity: 1,
+            configParagraphSpacing: config.paragraphSpacing
         )
     }
 
@@ -1284,10 +1289,17 @@ final class HTMLAttributedStringBuilder {
         switch tag {
         case "body":
             return ["display": "block"]
-        case "div", "p", "section", "article":
+        case "div", "section", "article":
             return [
                 "display": "block",
                 "line-height": "\(config.lineHeight / max(config.fontSize, 1))",
+            ]
+        case "p":
+            return [
+                "display": "block",
+                "line-height": "\(config.lineHeight / max(config.fontSize, 1))",
+                // 使用者設定段距作為 <p> 預設值，不受 EPUB CSS body/div margin:0 影響
+                "paragraph-spacing": "\(config.configParagraphSpacing)",
             ]
         case "blockquote":
             return [
