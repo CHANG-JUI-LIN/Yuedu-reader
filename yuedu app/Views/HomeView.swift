@@ -21,6 +21,7 @@ struct HomeView: View {
     @State private var bookToDelete: ReadingBook? = nil
     @State private var editMode = EditMode.inactive
     @State private var showSearch = false
+    @AppStorage("bookLayoutIsGrid") private var isGridMode = false
 
     // fullScreenCover 閱讀器（取代 NavigationLink，避免 SwiftUI NavLink 重建 @State bug）
     @State private var readerBookId: UUID? = nil
@@ -60,8 +61,8 @@ struct HomeView: View {
                                 sortBar
                             }
                             Divider()
-                            // 書籍列表
-                            bookList
+                            // 書籍列表 / 網格
+                            if isGridMode { bookGrid } else { bookList }
                         }
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     }
@@ -83,6 +84,13 @@ struct HomeView: View {
                     .environment(\.editMode, $editMode)
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    // 佈局切換
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
+                    } label: {
+                        Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
+                            .font(DSFont.toolbarIcon)
+                    }
                     // 書籍搜索
                     Button { showSearch = true } label: {
                         Image(systemName: "magnifyingglass")
@@ -176,32 +184,36 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - 書籍列表
+    // MARK: - 書籍列表（條列式）
     private var bookList: some View {
         List {
             ForEach(filteredBooks) { book in
-                Button {
-                    readerBookId = book.id
-                } label: {
-                    BookRow(book: book)
+                HStack(spacing: 0) {
+                    Button {
+                        readerBookId = book.id
+                    } label: {
+                        BookRow(book: book)
+                    }
+                    .buttonStyle(.plain)
+
+                    Menu {
+                        Button { editingBook = book } label: {
+                            Label(gs.t("編輯書籍資訊"), systemImage: "pencil")
+                        }
+                        Button(role: .destructive) { bookToDelete = book } label: {
+                            Label(gs.t("刪除書籍"), systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 20))
+                            .foregroundColor(DSColor.textSecondary)
+                            .padding(.horizontal, 8)
+                    }
                 }
-                .buttonStyle(.plain)
                 .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 8))
                 .listRowBackground(Color.clear)
                 .transition(.opacity.combined(with: .move(edge: .leading)))
-                .contextMenu {
-                    Button {
-                        editingBook = book
-                    } label: {
-                        Label(gs.t("編輯書籍資訊"), systemImage: "pencil")
-                    }
-                    Button(role: .destructive) {
-                        bookToDelete = book
-                    } label: {
-                        Label(gs.t("刪除書籍"), systemImage: "trash")
-                    }
-                }
             }
             .onDelete { indexSet in
                 withAnimation(.easeOut(duration: 0.25)) {
@@ -213,6 +225,27 @@ struct HomeView: View {
         .environment(\.editMode, $editMode)
         .animation(.easeOut(duration: 0.25), value: filteredBooks.map(\.id))
         .accessibilityIdentifier("home_book_list")
+    }
+
+    // MARK: - 書籍網格（網格式）
+    private var bookGrid: some View {
+        ScrollView {
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                spacing: 16
+            ) {
+                ForEach(filteredBooks) { book in
+                    BookGridCell(book: book, onOpen: { readerBookId = book.id }) {
+                        editingBook = book
+                    } onDelete: {
+                        bookToDelete = book
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .animation(.easeOut(duration: 0.25), value: filteredBooks.map(\.id))
     }
 }
 
@@ -395,4 +428,109 @@ struct BookRow: View {
         return UIImage(data: data)
     }
 
+}
+
+// MARK: - 書籍網格格子
+struct BookGridCell: View {
+    let book: ReadingBook
+    let onOpen: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    @ObservedObject private var gs = GlobalSettings.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // 封面
+            Button(action: onOpen) {
+                ZStack(alignment: .topTrailing) {
+                    coverView
+                    // 閱讀進度角標
+                    if book.currentPosition > 0.01 && book.currentPosition < 0.99 {
+                        Text("\(Int(book.currentPosition * 100))%")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(DSColor.accent.opacity(0.85))
+                            .clipShape(Capsule())
+                            .padding(6)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            // 書名 + 選單
+            HStack(alignment: .top, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(book.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(2)
+                    Text(book.author)
+                        .font(.system(size: 11))
+                        .foregroundColor(DSColor.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Menu {
+                    Button { onEdit() } label: {
+                        Label(gs.t("編輯書籍資訊"), systemImage: "pencil")
+                    }
+                    Button(role: .destructive) { onDelete() } label: {
+                        Label(gs.t("刪除書籍"), systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 14))
+                        .foregroundColor(DSColor.textSecondary)
+                        .padding(4)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var coverView: some View {
+        if let coverPath = book.coverImagePath,
+           let uiImage = loadCoverImage(filename: coverPath) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity)
+                .aspectRatio(2/3, contentMode: .fill)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .shadow(color: .black.opacity(0.18), radius: 5, x: 0, y: 3)
+        } else {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(
+                    LinearGradient(
+                        colors: [coverColor(for: book.title).opacity(0.7), coverColor(for: book.title)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .aspectRatio(2/3, contentMode: .fit)
+                .overlay(
+                    Text(book.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(4)
+                        .padding(10)
+                )
+                .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+        }
+    }
+
+    private func loadCoverImage(filename: String) -> UIImage? {
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(filename)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
+    }
+
+    private func coverColor(for title: String) -> Color {
+        let colors: [Color] = [.blue, .indigo, .purple, .pink, .orange, .teal, .green]
+        let index = abs(title.hashValue) % colors.count
+        return colors[index]
+    }
 }
