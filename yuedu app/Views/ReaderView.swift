@@ -66,7 +66,6 @@ private final class ReaderRuntimeState {
 // MARK: - 閱讀器主視圖
 struct ReaderView: View {
     let bookId: UUID
-    var onClose: (() -> Void)? = nil
     @EnvironmentObject var store: BookStore
     @Environment(\.presentationMode) var presentationMode
     @Environment(\.scenePhase) private var scenePhase
@@ -1067,7 +1066,7 @@ struct ReaderView: View {
             overlayMaxWidth: overlayContentMaxWidth,
             onBack: {
                 saveProgress()
-                if let onClose { onClose() } else { presentationMode.wrappedValue.dismiss() }
+                presentationMode.wrappedValue.dismiss()
             },
             onToggleBookmark: {
                 withAnimation(.easeInOut(duration: uiFeedbackDuration)) {

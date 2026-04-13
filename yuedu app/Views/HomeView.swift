@@ -22,8 +22,8 @@ struct HomeView: View {
     @State private var editMode = EditMode.inactive
     @State private var showSearch = false
 
-    // 開書 callback（由 ContentView 提供，負責 overlay 動畫）
-    let openBook: (UUID) -> Void
+    // fullScreenCover 閱讀器（取代 NavigationLink，避免 SwiftUI NavLink 重建 @State bug）
+    @State private var readerBookId: UUID? = nil
 
     // 過濾 + 排序
     var filteredBooks: [ReadingBook] {
@@ -43,105 +43,115 @@ struct HomeView: View {
 
     var body: some View {
         NavigationView {
-                AdaptiveContentContainer(maxWidth: 920) {
-                    Group {
-                        if store.books.isEmpty {
-                            EmptyLibraryView(
-                                showAdd: $showAddSheet,
-                                showSearch: $showSearch
-                            )
-                                .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                        } else {
-                            VStack(spacing: 0) {
-                                // 搜尋欄
-                                searchBar
-                                // 排序選擇（僅在編輯模式顯示）
-                                if editMode == .active {
-                                    sortBar
-                                }
-                                Divider()
-                                // 書籍列表
-                                bookList
-                            }
+            AdaptiveContentContainer(maxWidth: 920) {
+                Group {
+                    if store.books.isEmpty {
+                        EmptyLibraryView(
+                            showAdd: $showAddSheet,
+                            showSearch: $showSearch
+                        )
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                        }
-                    }
-                }
-                .animation(DSAnimation.standard, value: store.books.isEmpty)
-                .navigationTitle(gs.t("書架"))
-                .navigationBarTitleDisplayMode(.large)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button {
-                            withAnimation {
-                                editMode = editMode == .active ? .inactive : .active
+                    } else {
+                        VStack(spacing: 0) {
+                            // 搜尋欄
+                            searchBar
+                            // 排序選擇（僅在編輯模式顯示）
+                            if editMode == .active {
+                                sortBar
                             }
-                        } label: {
-                            Text(editMode == .active ? gs.t("完成") : gs.t("編輯"))
+                            Divider()
+                            // 書籍列表
+                            bookList
                         }
-                        .id(gs.appLanguage.rawValue + (editMode == .active ? "_done" : "_edit"))
-                        .environment(\.editMode, $editMode)
-                    }
-                    ToolbarItemGroup(placement: .navigationBarTrailing) {
-                        // 書籍搜索
-                        Button { showSearch = true } label: {
-                            Image(systemName: "magnifyingglass")
-                                .font(DSFont.toolbarIcon)
-                        }
-                        // 新增本地書籍
-                        Button {
-                            addSheetSessionID = UUID()
-                            showAddSheet = true
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(DSFont.toolbarIconLarge)
-                        }
-                    }
-                }
-                .sheet(isPresented: $showAddSheet) {
-                    AdaptiveSheetContainer(maxWidth: 760) {
-                        AddBookView()
-                            .id(addSheetSessionID)
-                            .environmentObject(store)
-                    }
-                }
-                .onChange(of: showAddSheet) { isPresented in
-                    if isPresented {
-                        addSheetSessionID = UUID()
-                    }
-                }
-                .sheet(isPresented: $showSearch) {
-                    AdaptiveSheetContainer(maxWidth: 900) {
-                        BookSearchView().environmentObject(store)
-                    }
-                }
-                // 編輯書籍資訊 Sheet
-                .sheet(item: $editingBook) { book in
-                    AdaptiveSheetContainer(maxWidth: 640) {
-                        EditBookSheet(book: book) { newTitle, newAuthor in
-                            store.updateBook(bookId: book.id, title: newTitle, author: newAuthor)
-                        }
-                    }
-                }
-                // 刪除確認對話框
-                .alert(
-                    gs.t("確認刪除"),
-                    isPresented: Binding(
-                        get: { bookToDelete != nil },
-                        set: { if !$0 { bookToDelete = nil } }
-                    )
-                ) {
-                    Button(gs.t("刪除"), role: .destructive) {
-                        if let b = bookToDelete { store.delete(bookId: b.id) }
-                    }
-                    Button(gs.t("取消"), role: .cancel) {}
-                } message: {
-                    if let b = bookToDelete {
-                        Text(gs.t("確定要從書架刪除") + "《\(b.title)》" + gs.t("嗎？"))
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     }
                 }
             }
-            .navigationViewStyle(.stack)
+            .animation(DSAnimation.standard, value: store.books.isEmpty)
+            .navigationTitle(gs.t("書架"))
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        withAnimation {
+                            editMode = editMode == .active ? .inactive : .active
+                        }
+                    } label: {
+                        Text(editMode == .active ? gs.t("完成") : gs.t("編輯"))
+                    }
+                    .id(gs.appLanguage.rawValue + (editMode == .active ? "_done" : "_edit"))
+                    .environment(\.editMode, $editMode)
+                }
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    // 書籍搜索
+                    Button { showSearch = true } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(DSFont.toolbarIcon)
+                    }
+                    // 新增本地書籍
+                    Button {
+                        addSheetSessionID = UUID()
+                        showAddSheet = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(DSFont.toolbarIconLarge)
+                    }
+                }
+            }
+            .sheet(isPresented: $showAddSheet) {
+                AdaptiveSheetContainer(maxWidth: 760) {
+                    AddBookView()
+                        .id(addSheetSessionID)
+                        .environmentObject(store)
+                }
+            }
+            .onChange(of: showAddSheet) { isPresented in
+                if isPresented {
+                    addSheetSessionID = UUID()
+                }
+            }
+            .sheet(isPresented: $showSearch) {
+                AdaptiveSheetContainer(maxWidth: 900) {
+                    BookSearchView().environmentObject(store)
+                }
+            }
+            // 編輯書籍資訊 Sheet
+            .sheet(item: $editingBook) { book in
+                AdaptiveSheetContainer(maxWidth: 640) {
+                    EditBookSheet(book: book) { newTitle, newAuthor in
+                        store.updateBook(bookId: book.id, title: newTitle, author: newAuthor)
+                    }
+                }
+            }
+            // 刪除確認對話框
+            .alert(
+                gs.t("確認刪除"),
+                isPresented: Binding(
+                    get: { bookToDelete != nil },
+                    set: { if !$0 { bookToDelete = nil } }
+                )
+            ) {
+                Button(gs.t("刪除"), role: .destructive) {
+                    if let b = bookToDelete { store.delete(bookId: b.id) }
+                }
+                Button(gs.t("取消"), role: .cancel) {}
+            } message: {
+                if let b = bookToDelete {
+                    Text(gs.t("確定要從書架刪除") + "《\(b.title)》" + gs.t("嗎？"))
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+        .fullScreenCover(
+            isPresented: Binding(
+                get: { readerBookId != nil },
+                set: { if !$0 { readerBookId = nil } }
+            )
+        ) {
+            if let bookId = readerBookId {
+                ReaderView(bookId: bookId).environmentObject(store)
+            }
+        }
     }
 
     // MARK: - 搜尋欄
@@ -171,7 +181,7 @@ struct HomeView: View {
         List {
             ForEach(filteredBooks) { book in
                 Button {
-                    openBook(book.id)
+                    readerBookId = book.id
                 } label: {
                     BookRow(book: book)
                 }
@@ -355,12 +365,6 @@ struct BookRow: View {
             Spacer()
         }
         .padding(.vertical, 4)
-        .background(GeometryReader { geo in
-            Color.clear.preference(
-                key: BookFramePreferenceKey.self,
-                value: [book.id: geo.frame(in: .global)]
-            )
-        })
     }
 
     @ViewBuilder
@@ -390,38 +394,4 @@ struct BookRow: View {
         return UIImage(data: data)
     }
 
-}
-
-// MARK: - Book Reader Overlay
-struct BookReaderOverlay: View {
-    let bookId: UUID
-    let sourceFrame: CGRect
-    let isExpanded: Bool
-    let onClose: () -> Void
-    @EnvironmentObject var store: BookStore
-
-    var body: some View {
-        GeometryReader { proxy in
-            let globalFrame = proxy.frame(in: .global)
-            let scaleX = isExpanded ? 1.0 : max(sourceFrame.width  / globalFrame.width,  0.01)
-            let scaleY = isExpanded ? 1.0 : max(sourceFrame.height / globalFrame.height, 0.01)
-            let offsetX = isExpanded ? 0.0 : sourceFrame.midX - globalFrame.midX
-            let offsetY = isExpanded ? 0.0 : sourceFrame.midY - globalFrame.midY
-
-            ReaderView(bookId: bookId, onClose: onClose)
-                .environmentObject(store)
-                .scaleEffect(x: scaleX, y: scaleY)
-                .offset(x: offsetX, y: offsetY)
-                .ignoresSafeArea()
-        }
-        .ignoresSafeArea()
-    }
-}
-
-// MARK: - Book Frame Preference Key
-struct BookFramePreferenceKey: PreferenceKey {
-    static var defaultValue: [UUID: CGRect] = [:]
-    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { $1 })
-    }
 }
