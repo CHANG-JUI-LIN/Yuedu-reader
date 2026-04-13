@@ -9,6 +9,9 @@ final class EPUBPageRenderer: ObservableObject {
     // MARK: - CoreText engine
 
     private(set) var engine: (any PageRenderingProvider)?
+    /// Phase 7：當 useRenderableNodePipeline 開啟時持有 EPUB builder，
+    /// 供 notifyViewportSize 更新 renderSize 使用。
+    private var epubBuilder: EPUBAttributedStringBuilder?
 
     @Published var isCoreTextReady: Bool = false
 
@@ -55,16 +58,31 @@ final class EPUBPageRenderer: ObservableObject {
             "epub_charoffsets/\(bookIdentifier)"
         )
         let store = CharOffsetStore(directoryURL: progressDir)
-        let newEngine = CoreTextPageEngine(
-            resourceProvider: ReadiumBookResourceAdapter(session: session),
-            renderSettings: settings,
-            offsetStore: store
-        )
+
+        let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
+
+        // ── Phase 7 A/B 分支 ─────────────────────────────────────────────
+        let newEngine: CoreTextPageEngine
+        if GlobalSettings.shared.useRenderableNodePipeline {
+            let builder = EPUBAttributedStringBuilder(session: session, renderSize: effectiveSize)
+            self.epubBuilder = builder
+            newEngine = CoreTextPageEngine(
+                attributedBuilder: builder,
+                renderSettings: settings,
+                offsetStore: store
+            )
+        } else {
+            self.epubBuilder = nil
+            newEngine = CoreTextPageEngine(
+                resourceProvider: ReadiumBookResourceAdapter(session: session),
+                renderSettings: settings,
+                offsetStore: store
+            )
+        }
+
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         self.engine = newEngine
         isCoreTextReady = false
-
-        let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
 
         if effectiveSize.width > 0 {
             let startUptime = ProcessInfo.processInfo.systemUptime
@@ -192,6 +210,8 @@ final class EPUBPageRenderer: ObservableObject {
     func notifyViewportSize(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
         lastViewportSize = size
+        // Phase 7: EPUB builder が deferred start 前に作成された時のために renderSize を更新
+        epubBuilder?.renderSize = size
         guard let bookId = pendingStartBookId, let eng = engine else { return }
         pendingStartBookId = nil
         let startUptime = ProcessInfo.processInfo.systemUptime

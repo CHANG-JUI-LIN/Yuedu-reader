@@ -269,6 +269,14 @@ class GlobalSettings: ObservableObject {
         didSet { UserDefaults.standard.set(searchCacheDays, forKey: "yd_search_cache_days") }
     }
 
+    // MARK: - 實驗性功能旗標
+
+    /// 啟用 RenderableNode 渲染管道（TXT 路徑 A/B 驗收）。
+    /// 預設 false 使用舊路徑，可在 Settings 或 Debug console 手動開啟比對。
+    @Published var useRenderableNodePipeline: Bool {
+        didSet { UserDefaults.standard.set(useRenderableNodePipeline, forKey: "yd_use_renderable_node_pipeline") }
+    }
+
     private init() {
         let rawLang = UserDefaults.standard.string(forKey: "yd_app_lang") ?? ""
         appLanguage = AppLanguage(rawValue: rawLang) ?? .systemLanguage
@@ -319,6 +327,8 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_search_auto_pause_count") as? Int) ?? 0
         searchCacheDays =
             (UserDefaults.standard.object(forKey: "yd_search_cache_days") as? Int) ?? 5
+        useRenderableNodePipeline =
+            UserDefaults.standard.bool(forKey: "yd_use_renderable_node_pipeline")
     }
 
     /// App UI 字串本地化（繁→簡 用 ICU，繁→英 用字典）

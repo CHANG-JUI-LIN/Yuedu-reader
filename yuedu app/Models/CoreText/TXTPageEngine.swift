@@ -30,7 +30,11 @@ final class TXTPageEngine: PageRenderingProvider {
         self.bookTitle = title
         self.offsetStore = offsetStore
         let chapters = TXTChapterParser.parseUnifiedChapters(text, bookTitle: title)
-        self.attributedBuilder = TXTAttributedStringBuilder(chapters: chapters)
+        if GlobalSettings.shared.useRenderableNodePipeline {
+            self.attributedBuilder = NodeAttributedStringBuilder(chapters: chapters)
+        } else {
+            self.attributedBuilder = TXTAttributedStringBuilder(chapters: chapters)
+        }
         self.renderSettings = settings
     }
 

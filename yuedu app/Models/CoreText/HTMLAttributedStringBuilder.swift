@@ -166,13 +166,7 @@ final class HTMLAttributedStringBuilder {
     }()
 
     func build(html: String, config: Config) async -> BuildResult {
-        let sanitizedHTML = cleanDirtySpacesInHTML(html)
-        guard let parsed = await domParser.parse(
-            html: sanitizedHTML,
-            collectStyles: { document in
-                await self.collectStyles(from: document)
-            }
-        ) else {
+        guard let ast = await buildStyledAST(html: html, config: config) else {
             return BuildResult(
                 attributedString: NSAttributedString(),
                 imagePage: nil,
@@ -182,7 +176,62 @@ final class HTMLAttributedStringBuilder {
             )
         }
 
-        let ast = await styleResolver.buildAST(
+        if let imagePage = await imagePage(from: ast) {
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: makeFont(from: ast.resolvedStyle, config: config),
+                .foregroundColor: config.textColor,
+                .backgroundColor: config.backgroundColor,
+            ]
+            return BuildResult(
+                attributedString: NSAttributedString(string: "\u{FFFC}", attributes: attrs),
+                imagePage: imagePage,
+                pageBackgroundImage: nil,
+                pageBackgroundImageSource: nil,
+                anchorOffsets: [:]
+            )
+        }
+
+        let rendered = await coreTextRenderer.render(
+            ast: ast,
+            config: config,
+            renderBlockChildren: { nodes, parentStyle, config in
+                return await self.renderBlockChildren(nodes, parentStyle: parentStyle, config: config)
+            },
+            collectAnchorOffsets: { attributedString in
+                self.anchorOffsets(in: attributedString)
+            },
+            backgroundImageSource: { ast in
+                self.backgroundImageSource(from: ast)
+            },
+            loadBackgroundImage: { ast in
+                return await self.loadBackgroundImage(from: ast)
+            },
+            debugLog: { result in
+                self.debugLog(result: result)
+            }
+        )
+
+        return BuildResult(
+            attributedString: rendered.attributedString,
+            imagePage: nil,
+            pageBackgroundImage: rendered.pageBackgroundImage,
+            pageBackgroundImageSource: rendered.pageBackgroundImageSource,
+            anchorOffsets: rendered.anchorOffsets
+        )
+    }
+
+    func buildStyledAST(html: String, config: Config) async -> ElementNode? {
+        let sanitizedHTML = cleanDirtySpacesInHTML(html)
+        guard let parsed = await domParser.parse(
+            html: sanitizedHTML,
+            collectStyles: { document in
+                await self.collectStyles(from: document)
+            }
+        ) else {
+            return nil
+        }
+
+        return await styleResolver.buildAST(
             from: parsed,
             config: config,
             makeRootStyle: { config in
@@ -210,49 +259,18 @@ final class HTMLAttributedStringBuilder {
                 self.makeAttributeMap(for: element)
             }
         )
+    }
 
-        if let imagePage = await extractImagePage(from: ast) {
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: makeFont(from: ast.resolvedStyle, config: config),
-                .foregroundColor: config.textColor,
-                .backgroundColor: config.backgroundColor,
-            ]
-            return BuildResult(
-                attributedString: NSAttributedString(string: "\u{FFFC}", attributes: attrs),
-                imagePage: imagePage,
-                pageBackgroundImage: nil,
-                pageBackgroundImageSource: nil,
-                anchorOffsets: [:]
-            )
-        }
+    func imagePage(from body: ElementNode) async -> ImagePage? {
+        await extractImagePage(from: body)
+    }
 
-        let rendered = await coreTextRenderer.render(
-            ast: ast,
-            config: config,
-            renderBlockChildren: { nodes, parentStyle, config in
-                return await self.renderBlockChildren(nodes, parentStyle: parentStyle, config: config)
-            },
-            collectAnchorOffsets: { attributedString in
-                self.collectAnchorOffsets(in: attributedString)
-            },
-            backgroundImageSource: { ast in
-                self.backgroundImageSource(from: ast)
-            },
-            loadBackgroundImage: { ast in
-                return await self.loadBackgroundImage(from: ast)
-            },
-            debugLog: { result in
-                self.debugLog(result: result)
-            }
-        )
+    func pageBackgroundImage(from body: ElementNode) async -> UIImage? {
+        await loadBackgroundImage(from: body)
+    }
 
-        return BuildResult(
-            attributedString: rendered.attributedString,
-            imagePage: nil,
-            pageBackgroundImage: rendered.pageBackgroundImage,
-            pageBackgroundImageSource: rendered.pageBackgroundImageSource,
-            anchorOffsets: rendered.anchorOffsets
-        )
+    func anchorOffsets(in attributedString: NSAttributedString) -> [String: Int] {
+        collectAnchorOffsets(in: attributedString)
     }
 
     private func collectStyles(from document: Document) async -> [String] {
