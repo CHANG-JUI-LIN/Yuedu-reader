@@ -188,32 +188,17 @@ struct HomeView: View {
     private var bookList: some View {
         List {
             ForEach(filteredBooks) { book in
-                HStack(spacing: 0) {
-                    Button {
-                        readerBookId = book.id
-                    } label: {
-                        BookRow(book: book)
-                    }
-                    .buttonStyle(.plain)
-
-                    Menu {
-                        Button { editingBook = book } label: {
-                            Label(gs.t("編輯書籍資訊"), systemImage: "pencil")
-                        }
-                        Button(role: .destructive) { bookToDelete = book } label: {
-                            Label(gs.t("刪除書籍"), systemImage: "trash")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(DSColor.textSecondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                    }
-                }
+                BookRow(
+                    book: book,
+                    onOpen: { readerBookId = book.id },
+                    onEdit: { editingBook = book },
+                    onDelete: { bookToDelete = book }
+                )
                 .listRowSeparator(.visible)
                 .listRowSeparatorTint(DSColor.textSecondary.opacity(0.15))
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 12))
+                // 分隔線從文字左緣開始：16pt leading + 45pt cover + 12pt spacing = 73pt
+                .alignmentGuide(.listRowSeparatorLeading) { _ in -73 }
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 .listRowBackground(Color.clear)
                 .transition(.opacity.combined(with: .move(edge: .leading)))
             }
@@ -372,50 +357,74 @@ struct EmptyLibraryView: View {
 // MARK: - 書籍列表行（Apple Books 風格）
 struct BookRow: View {
     let book: ReadingBook
+    let onOpen: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
     @ObservedObject private var gs = GlobalSettings.shared
 
-    private let coverW: CGFloat = 72
-    private let coverH: CGFloat = 100
+    private let coverW: CGFloat = 45
+    private let coverH: CGFloat = 65
 
     var body: some View {
-        HStack(spacing: 16) {
-            bookCover
+        Button(action: onOpen) {
+            HStack(alignment: .top, spacing: 12) {
+                bookCover
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(book.title)
-                    .font(.system(size: 16, weight: .semibold))
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(book.title)
+                        .font(.system(size: 15, weight: .medium))
+                        .lineLimit(2)
+                        .foregroundColor(.primary)
 
-                if !book.author.isEmpty {
-                    Text(book.author)
-                        .font(.system(size: 13))
-                        .foregroundColor(DSColor.textSecondary)
-                        .lineLimit(1)
+                    if !book.author.isEmpty {
+                        Text(book.author)
+                            .font(.system(size: 13))
+                            .foregroundColor(DSColor.textSecondary)
+                            .lineLimit(1)
+                    }
+
+                    progressBadge
                 }
+                .padding(.top, 2)
 
-                Spacer(minLength: 6)
+                Spacer(minLength: 0)
 
-                // 進度標籤
-                progressBadge
+                // 右側雙 icon：雲端 + 三點選單
+                HStack(spacing: 18) {
+                    Image(systemName: "cloud")
+                        .font(.system(size: 16))
+                        .foregroundColor(DSColor.textSecondary)
+
+                    Menu {
+                        Button { onEdit() } label: {
+                            Label(gs.t("編輯書籍資訊"), systemImage: "pencil")
+                        }
+                        Button(role: .destructive) { onDelete() } label: {
+                            Label(gs.t("刪除書籍"), systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 16))
+                            .foregroundColor(DSColor.textSecondary)
+                    }
+                }
+                .padding(.top, 38)
             }
             .padding(.vertical, 10)
-
-            Spacer(minLength: 0)
+            .contentShape(Rectangle())
         }
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
     private var progressBadge: some View {
         if book.currentPosition < 0.01 {
-            // 新增（尚未開始閱讀）
             Text(gs.t("新增"))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(DSColor.accent)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(DSColor.accent.opacity(0.12))
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Color.blue)
                 .clipShape(Capsule())
         } else if book.currentPosition >= 0.99 {
             Text(gs.t("已讀完"))
@@ -423,7 +432,7 @@ struct BookRow: View {
                 .foregroundColor(DSColor.textSecondary)
         } else {
             Text("\(Int(book.currentPosition * 100))%")
-                .font(.system(size: 13))
+                .font(.system(size: 12))
                 .foregroundColor(DSColor.textSecondary)
         }
     }
@@ -436,25 +445,23 @@ struct BookRow: View {
                 .resizable()
                 .scaledToFill()
                 .frame(width: coverW, height: coverH)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .shadow(color: .black.opacity(0.18), radius: 5, x: 1, y: 3)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .shadow(color: .black.opacity(0.12), radius: 2, x: 0, y: 1)
         } else {
-            // 漸層色塊 fallback
             ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 4)
                     .fill(
                         LinearGradient(
                             colors: coverGradient(for: book.title),
                             startPoint: .topLeading, endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: coverW, height: coverH)
-                    .shadow(color: .black.opacity(0.18), radius: 5, x: 1, y: 3)
+                    .shadow(color: .black.opacity(0.12), radius: 2, x: 0, y: 1)
                 Text(book.title)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 9, weight: .medium))
                     .foregroundColor(.white.opacity(0.9))
                     .lineLimit(3)
-                    .padding(8)
+                    .padding(5)
             }
             .frame(width: coverW, height: coverH)
         }
