@@ -41,30 +41,63 @@ struct HomeView: View {
     var body: some View {
         NavigationView {
             AdaptiveContentContainer(maxWidth: 920) {
-                VStack(spacing: 0) {
-                    // 自訂 header：大標題 + 按鈕同一行
-                    libraryHeader
-
-                    Group {
-                        if store.books.isEmpty {
-                            EmptyLibraryView(showAdd: $showAddSheet, showSearch: $showSearch)
-                                .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                        } else {
-                            VStack(spacing: 0) {
-                                // 排序選擇（僅在編輯模式顯示）
-                                if editMode == .active {
-                                    sortBar
-                                }
-                                // 書籍列表 / 網格
-                                if isGridMode { bookGrid } else { bookList }
-                            }
+                Group {
+                    if store.books.isEmpty {
+                        EmptyLibraryView(showAdd: $showAddSheet, showSearch: $showSearch)
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    } else {
+                        VStack(spacing: 0) {
+                            // 排序選擇（僅在編輯模式顯示）
+                            if editMode == .active {
+                                sortBar
+                            }
+                            // 書籍列表 / 網格
+                            if isGridMode { bookGrid } else { bookList }
                         }
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     }
-                    .animation(DSAnimation.standard, value: store.books.isEmpty)
                 }
             }
-            .navigationBarHidden(true)
+            .animation(DSAnimation.standard, value: store.books.isEmpty)
+            .navigationTitle(gs.t("書架"))
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                // 搜尋獨立一個 ToolbarItem，與其他按鈕自然分開
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showSearch = true } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(DSFont.toolbarIcon)
+                    }
+                }
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    // 佈局切換
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
+                    } label: {
+                        Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
+                            .font(DSFont.toolbarIcon)
+                    }
+                    // 新增本地書籍
+                    Button {
+                        addSheetSessionID = UUID()
+                        showAddSheet = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(DSFont.toolbarIcon)
+                    }
+                    // 編輯模式（圓形 ellipsis）
+                    Button {
+                        withAnimation {
+                            editMode = editMode == .active ? .inactive : .active
+                        }
+                    } label: {
+                        Image(systemName: editMode == .active ? "xmark.circle" : "ellipsis.circle")
+                            .font(DSFont.toolbarIcon)
+                    }
+                    .id(gs.appLanguage.rawValue + (editMode == .active ? "_done" : "_edit"))
+                    .environment(\.editMode, $editMode)
+                }
+            }
             .sheet(isPresented: $showAddSheet) {
                 AdaptiveSheetContainer(maxWidth: 760) {
                     AddBookView()
@@ -119,47 +152,6 @@ struct HomeView: View {
                 ReaderView(bookId: bookId).environmentObject(store)
             }
         }
-    }
-
-    // MARK: - 自訂頂部 Header
-    private var libraryHeader: some View {
-        HStack(alignment: .center) {
-            Text(gs.t("書架"))
-                .font(.largeTitle)
-                .fontWeight(.bold)
-            Spacer()
-            // 搜尋（獨立）
-            Button { showSearch = true } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(DSFont.toolbarIcon)
-            }
-            // 三個按鈕組
-            HStack(spacing: 20) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
-                } label: {
-                    Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
-                        .font(DSFont.toolbarIcon)
-                }
-                Button {
-                    addSheetSessionID = UUID()
-                    showAddSheet = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(DSFont.toolbarIcon)
-                }
-                Button {
-                    withAnimation { editMode = editMode == .active ? .inactive : .active }
-                } label: {
-                    Image(systemName: editMode == .active ? "xmark.circle" : "ellipsis.circle")
-                        .font(DSFont.toolbarIcon)
-                }
-                .environment(\.editMode, $editMode)
-            }
-        }
-        .padding(.horizontal, hInset)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
     }
 
     // MARK: - 排序欄
