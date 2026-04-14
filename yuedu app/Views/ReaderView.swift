@@ -69,6 +69,7 @@ struct ReaderView: View {
     @EnvironmentObject var store: BookStore
     @Environment(\.appDependencies) private var dependencies
     @Environment(\.presentationMode) var presentationMode
+    @Environment(\.readerDismiss) private var readerDismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject private var settings = GlobalSettings.shared
@@ -1067,7 +1068,7 @@ struct ReaderView: View {
             overlayMaxWidth: overlayContentMaxWidth,
             onBack: {
                 saveProgress()
-                presentationMode.wrappedValue.dismiss()
+                if let dismiss = readerDismiss { dismiss() } else { presentationMode.wrappedValue.dismiss() }
             },
             onToggleBookmark: {
                 withAnimation(.easeInOut(duration: uiFeedbackDuration)) {
