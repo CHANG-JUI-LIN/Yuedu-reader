@@ -442,19 +442,14 @@ struct BookRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
         } else {
-            ZStack(alignment: .bottomLeading) {
+            ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(
-                        LinearGradient(
-                            colors: coverGradient(for: book.title),
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(Color(.secondarySystemBackground))
                     .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
                 Text(book.title)
                     .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.white.opacity(0.9))
-                    .lineLimit(3)
+                    .foregroundColor(DSColor.textSecondary)
+                    .lineLimit(4)
                     .padding(5)
             }
             .frame(width: coverW, height: coverH)
@@ -468,17 +463,6 @@ struct BookRow: View {
         return UIImage(data: data)
     }
 
-    private func coverGradient(for title: String) -> [Color] {
-        let palettes: [[Color]] = [
-            [Color(red: 0.30, green: 0.45, blue: 0.80), Color(red: 0.15, green: 0.25, blue: 0.55)],
-            [Color(red: 0.70, green: 0.25, blue: 0.30), Color(red: 0.45, green: 0.10, blue: 0.18)],
-            [Color(red: 0.20, green: 0.55, blue: 0.45), Color(red: 0.10, green: 0.35, blue: 0.28)],
-            [Color(red: 0.65, green: 0.45, blue: 0.15), Color(red: 0.42, green: 0.28, blue: 0.05)],
-            [Color(red: 0.45, green: 0.20, blue: 0.65), Color(red: 0.28, green: 0.10, blue: 0.45)],
-        ]
-        let idx = abs(title.hashValue) % palettes.count
-        return palettes[idx]
-    }
 }
 
 // MARK: - 書籍網格格子
