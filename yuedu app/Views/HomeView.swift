@@ -387,26 +387,29 @@ struct BookRow: View {
 
                 Spacer(minLength: 0)
 
-                // 右側雙 icon：雲端 + 三點選單
-                HStack(spacing: 18) {
-                    Image(systemName: "cloud")
-                        .font(.system(size: 16))
-                        .foregroundColor(DSColor.textSecondary)
-
-                    Menu {
-                        Button { onEdit() } label: {
-                            Label(gs.t("編輯書籍資訊"), systemImage: "pencil")
-                        }
-                        Button(role: .destructive) { onDelete() } label: {
-                            Label(gs.t("刪除書籍"), systemImage: "trash")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
+                // 右側雙 icon：雲端 + 三點選單，沉底對齊 badge
+                VStack {
+                    Spacer(minLength: 0)
+                    HStack(spacing: 18) {
+                        Image(systemName: "cloud")
                             .font(.system(size: 16))
                             .foregroundColor(DSColor.textSecondary)
+
+                        Menu {
+                            Button { onEdit() } label: {
+                                Label(gs.t("編輯書籍資訊"), systemImage: "pencil")
+                            }
+                            Button(role: .destructive) { onDelete() } label: {
+                                Label(gs.t("刪除書籍"), systemImage: "trash")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 16))
+                                .foregroundColor(DSColor.textSecondary)
+                        }
                     }
+                    .padding(.bottom, 2)
                 }
-                .padding(.top, 38)
             }
             .padding(.vertical, 10)
             .contentShape(Rectangle())
