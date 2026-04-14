@@ -60,7 +60,7 @@ struct HomeView: View {
             }
             .animation(DSAnimation.standard, value: store.books.isEmpty)
             .navigationTitle(gs.t("書架"))
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 // 搜尋獨立一個 ToolbarItem，與其他按鈕自然分開
                 ToolbarItem(placement: .navigationBarTrailing) {
