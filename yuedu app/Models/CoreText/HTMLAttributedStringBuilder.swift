@@ -1421,7 +1421,7 @@ final class HTMLAttributedStringBuilder {
         case "li":
             return ["display": "block", "text-indent": "0"]
         case "hr":
-            return ["display": "block"]
+            return ["display": "block", "border-top-width": "1", "border-top-color": "currentColor"]
         case "img", "image", "svg":
             return ["display": "inline-block"]
         case "b", "strong":
@@ -1696,6 +1696,23 @@ final class HTMLAttributedStringBuilder {
         if let borderRightColor = declarations["border-right-color"] {
             style.borderRightColor = parseBorderColor(borderRightColor, currentTextColor: style.textColor)
         }
+        if let borderWidth = declarations["border-width"] {
+            applyBorderWidthShorthand(borderWidth, to: &style, rootFontSize: rootFontSize)
+        }
+    }
+
+    private func applyBorderWidthShorthand(_ raw: String, to style: inout ResolvedStyle, rootFontSize: CGFloat) {
+        let tokens = raw.split(whereSeparator: \.isWhitespace)
+            .compactMap { resolveLength(String($0), currentFontSize: style.fontSize, rootFontSize: rootFontSize, relativeBase: style.fontSize) }
+        guard !tokens.isEmpty else { return }
+        let top    = tokens[0]
+        let right  = tokens.count >= 2 ? tokens[1] : top
+        let bottom = tokens.count >= 3 ? tokens[2] : top
+        let left   = tokens.count >= 4 ? tokens[3] : right
+        style.borderTopWidth    = max(0, top)
+        style.borderRightWidth  = max(0, right)
+        style.borderBottomWidth = max(0, bottom)
+        style.borderLeftWidth   = max(0, left)
     }
 
     private enum BorderEdge {

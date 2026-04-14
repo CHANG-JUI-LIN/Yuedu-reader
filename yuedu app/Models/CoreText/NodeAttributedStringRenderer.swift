@@ -87,6 +87,13 @@ struct NodeAttributedStringRenderer {
                     : style.height.flatMap { $0 > 0 ? $0 : nil }
             )
             attrs[HTMLAttributedStringBuilder.hrDividerAttribute] = hrStyle
+            let fontSize = ctx.font.pointSize
+            let hrPara = NSMutableParagraphStyle()
+            hrPara.minimumLineHeight = fontSize
+            hrPara.maximumLineHeight = fontSize
+            hrPara.paragraphSpacingBefore = fontSize * 0.5
+            hrPara.paragraphSpacing = fontSize * 0.5
+            attrs[.paragraphStyle] = hrPara
             return NSAttributedString(string: "\n", attributes: attrs)
 
         case .pageBreak:

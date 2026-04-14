@@ -602,7 +602,7 @@ final class CoreTextPaginator {
                 )
 
                 for groupIndex in groups.indices {
-                    if !groups[groupIndex].rect.isNull {
+                    if groups[groupIndex].usesExplicitGeometry {
                         continue
                     }
                     let intersects = groups[groupIndex].ranges.contains { span in
