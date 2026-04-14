@@ -6,6 +6,7 @@ struct SettingsView: View {
     @ObservedObject private var gs = GlobalSettings.shared
     @State private var showSourceList = false
     @State private var showDownloadManager = false
+    @State private var showReplaceRules = false
 
     private let feedbackEmail = "r3212239269@gmail.com"
 
@@ -50,6 +51,12 @@ struct SettingsView: View {
                             title: gs.t("下載管理"),
                             detail: "\(downloadedBooksCount) \(gs.t("本"))",
                             action: { showDownloadManager = true }
+                        )
+
+                        DSSettingsRow(
+                            icon: "text.magnifyingglass",
+                            title: gs.t("替換規則"),
+                            action: { showReplaceRules = true }
                         )
                     }
 
@@ -101,6 +108,9 @@ struct SettingsView: View {
                     DownloadManagementView()
                         .environmentObject(store)
                 }
+            }
+            .sheet(isPresented: $showReplaceRules) {
+                ReplaceRuleListView()
             }
         }
         .navigationViewStyle(.stack)

@@ -148,17 +148,39 @@ class ModernParserBridge {
         let elements = engine.getElements(ruleStr: listRule)
         guard !elements.isEmpty else { return [] }
 
+        let formatJs = source.ruleToc.formatJs.trimmingCharacters(in: .whitespacesAndNewlines)
+
         var chapters: [OnlineChapterRef] = []
         for (index, element) in elements.enumerated() {
             engine.setContent(element, baseUrl: baseURL)
 
-            let title = engine.getString(ruleStr: source.ruleToc.chapterName)
+            var title = engine.getString(ruleStr: source.ruleToc.chapterName)
             let url = engine.getString(ruleStr: source.ruleToc.chapterUrl, isUrl: true)
             guard !title.isEmpty || !url.isEmpty else { continue }
 
             let isVolumeStr = engine.getString(ruleStr: source.ruleToc.isVolume)
             let isVipStr = engine.getString(ruleStr: source.ruleToc.isVip)
             let isPayStr = engine.getString(ruleStr: source.ruleToc.isPay)
+
+            // Apply formatJs if specified (Legado: 章節格式化 JS).
+            // Injects `index`, `title`, and `chapter` (full object) into JS context,
+            // matching Legado's TocParser.applyFormatJS behaviour.
+            if !formatJs.isEmpty {
+                let chapterDict: [String: Any] = [
+                    "index": index,
+                    "title": title,
+                    "url": url,
+                    "isVolume": Self.parseBool(isVolumeStr),
+                    "isVip": Self.parseBool(isVipStr),
+                    "isPay": Self.parseBool(isPayStr)
+                ]
+                if let formatted = jsEngine.evaluate(
+                    formatJs,
+                    bindings: ["index": index, "title": title, "chapter": chapterDict]
+                ), !formatted.isEmpty {
+                    title = formatted
+                }
+            }
 
             chapters.append(OnlineChapterRef(
                 index: index,

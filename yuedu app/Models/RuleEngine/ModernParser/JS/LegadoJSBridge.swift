@@ -44,40 +44,15 @@ import CommonCrypto
 @objc class LegadoCookieBridge: NSObject, LegadoCookieBridgeExport {
 
     func get(_ url: String) -> String {
-        guard let cookieURL = URL(string: url),
-              let cookies = HTTPCookieStorage.shared.cookies(for: cookieURL),
-              !cookies.isEmpty else { return "" }
-        return cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+        CookieStore.shared.get(url: url)
     }
 
     func set(_ url: String, _ cookie: String) {
-        guard let cookieURL = URL(string: url), !cookie.isEmpty else { return }
-        let parsed = HTTPCookie.cookies(
-            withResponseHeaderFields: ["Set-Cookie": cookie], for: cookieURL)
-        if parsed.isEmpty {
-            if let simple = makeCookie(cookie, for: cookieURL) {
-                HTTPCookieStorage.shared.setCookie(simple)
-            }
-        } else {
-            parsed.forEach { HTTPCookieStorage.shared.setCookie($0) }
-        }
+        CookieStore.shared.set(url: url, cookie: cookie)
     }
 
     func remove(_ url: String) {
-        guard let cookieURL = URL(string: url),
-              let cookies = HTTPCookieStorage.shared.cookies(for: cookieURL) else { return }
-        cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
-    }
-
-    private func makeCookie(_ raw: String, for url: URL) -> HTTPCookie? {
-        guard let host = url.host else { return nil }
-        let pair = raw.split(separator: ";", maxSplits: 1).first
-            .map(String.init)?.trimmingCharacters(in: .whitespaces) ?? ""
-        let segments = pair.split(separator: "=", maxSplits: 1).map(String.init)
-        guard segments.count == 2, !segments[0].isEmpty else { return nil }
-        return HTTPCookie(properties: [
-            .name: segments[0], .value: segments[1], .domain: host, .path: "/"
-        ])
+        CookieStore.shared.remove(url: url)
     }
 }
 

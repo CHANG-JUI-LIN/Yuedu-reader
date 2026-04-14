@@ -7,6 +7,7 @@ struct BookSourceEditView: View {
     let onSave: (BookSource) -> Void
     @Environment(\.presentationMode) var dismiss
     @State private var showDebugger = false
+    @State private var showRuleDebugger = false
     @ObservedObject private var gs = GlobalSettings.shared
 
     init(source: BookSource, onSave: @escaping (BookSource) -> Void) {
@@ -34,18 +35,37 @@ struct BookSourceEditView: View {
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gs.t("儲存")) {
-                        onSave(source)
-                        dismiss.wrappedValue.dismiss()
+                    Menu {
+                        Button {
+                            onSave(source)
+                            dismiss.wrappedValue.dismiss()
+                        } label: {
+                            Label(gs.t("儲存"), systemImage: "checkmark")
+                        }
+                        .disabled(
+                            source.bookSourceName.trimmingCharacters(in: .whitespaces).isEmpty
+                                || source.bookSourceUrl.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                        Button { showRuleDebugger = true } label: {
+                            Label(gs.t("調試規則"), systemImage: "ladybug")
+                        }
+                        .disabled(
+                            source.bookSourceName.trimmingCharacters(in: .whitespaces).isEmpty
+                                || source.bookSourceUrl.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                        Button { showDebugger = true } label: {
+                            Label(gs.t("網路日誌"), systemImage: "network")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
-                    .font(.body.weight(.semibold))
-                    .disabled(
-                        source.bookSourceName.trimmingCharacters(in: .whitespaces).isEmpty
-                            || source.bookSourceUrl.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
             .sheet(isPresented: $showDebugger) {
                 BookSourceDebugView()
+            }
+            .sheet(isPresented: $showRuleDebugger) {
+                BookSourceRuleDebugView(source: source)
             }
         }
         .navigationViewStyle(.stack)

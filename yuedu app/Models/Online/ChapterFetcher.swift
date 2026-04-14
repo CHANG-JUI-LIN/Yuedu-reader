@@ -200,6 +200,7 @@ struct ChapterFetcher {
         let content = await resolveContent(
             parsed: parsed,
             replaceRules: replaceRules,
+            sourceUrl: sourceURL,
             fetchViaJS: fetchViaJS,
             fetchBySelectors: fetchBySelectors
         )
@@ -260,6 +261,7 @@ struct ChapterFetcher {
     func resolveContent(
         parsed: ChapterParsePayload,
         replaceRules: String,
+        sourceUrl: String = "",
         fetchViaJS: @escaping @Sendable () async throws -> String?,
         fetchBySelectors: @escaping @Sendable () async throws -> String?
     ) async -> String {
@@ -304,6 +306,12 @@ struct ChapterFetcher {
         }
 
         content = Self.sanitizeResolvedContent(content, title: chapterTitle)
+
+        // Apply user-configured global replace rules (after per-source rules).
+        let globalRules = ReplaceRuleStore.shared.rules(for: sourceUrl)
+        if !globalRules.isEmpty {
+            content = ReplaceRuleEngine.apply(globalRules, to: content)
+        }
 
         let finalNormalizedTitle = chapterTitle
             .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
