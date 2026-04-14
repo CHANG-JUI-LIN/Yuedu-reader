@@ -43,7 +43,6 @@ struct HomeView: View {
     }
 
     var body: some View {
-        ZStack {
         NavigationView {
             AdaptiveContentContainer(maxWidth: 920) {
                 Group {
@@ -151,16 +150,16 @@ struct HomeView: View {
             }
         }
         .navigationViewStyle(.stack)
-
-        // MARK: 開書 / 關書動畫 overlay（取代 fullScreenCover）
-        if let bookId = readerBookId {
-            BookOpenTransition(onClose: { readerBookId = nil }) {
+        .fullScreenCover(
+            isPresented: Binding(
+                get: { readerBookId != nil },
+                set: { if !$0 { readerBookId = nil } }
+            )
+        ) {
+            if let bookId = readerBookId {
                 ReaderView(bookId: bookId).environmentObject(store)
             }
-            .transition(.identity)
-            .zIndex(100)
         }
-        } // ZStack
     }
 
     // MARK: - 搜尋欄
