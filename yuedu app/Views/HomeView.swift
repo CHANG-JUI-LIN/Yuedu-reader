@@ -62,6 +62,12 @@ struct HomeView: View {
             .navigationTitle(gs.t("書架"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showSearch = true } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(DSFont.toolbarIcon)
+                    }
+                }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     // 佈局切換
                     Button {
@@ -76,11 +82,6 @@ struct HomeView: View {
                         showAddSheet = true
                     } label: {
                         Image(systemName: "plus")
-                            .font(DSFont.toolbarIcon)
-                    }
-                    // 書籍搜索
-                    Button { showSearch = true } label: {
-                        Image(systemName: "magnifyingglass")
                             .font(DSFont.toolbarIcon)
                     }
                     // 編輯模式（圓形 ellipsis）
