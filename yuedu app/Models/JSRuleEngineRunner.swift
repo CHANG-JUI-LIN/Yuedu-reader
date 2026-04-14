@@ -10,6 +10,47 @@ private func _dbgLog(location: String, message: String, data: [String: Any], hyp
 }
 // #endregion
 
+// MARK: - JS 安全驗證器
+// 在執行來自書源（用戶導入的不可信來源）的 JavaScript 之前，進行黑名單過濾。
+// 注意：這是縱深防禦，不是萬無一失的沙盒；主要防止明顯的惡意操作。
+
+private enum JSSecurityValidator {
+    struct ValidationError: Error {
+        let reason: String
+        var localizedDescription: String { reason }
+    }
+
+    /// 高危模式：出現即拒絕執行
+    private static let blockedPatterns: [String] = [
+        "document\\.cookie",          // 讀取 cookie
+        "localStorage",               // 存取本地存儲
+        "sessionStorage",             // 存取 session 存儲
+        "indexedDB",                  // 存取 IndexedDB
+        "XMLHttpRequest",             // 發起 XHR（應由 WebFetcher 管控）
+        "fetch\\s*\\(",               // Fetch API
+        "window\\.location\\s*=",     // 重定向頁面
+        "document\\.write\\s*\\(",    // 動態寫入文檔
+        "eval\\s*\\(",                // 動態執行（ruleEngine.js 內部已有沙盒）
+        "Function\\s*\\(",            // 動態函數構造
+        "webkit\\.messageHandlers",   // 直接呼叫 iOS bridge
+    ]
+
+    /// 驗證 JS 字串是否符合安全標準
+    /// - Returns: `.success(js)` 通過，`.failure(reason)` 拒絕並附原因
+    static func validate(_ js: String) -> Result<String, ValidationError> {
+        for pattern in blockedPatterns {
+            if js.range(of: pattern, options: .regularExpression) != nil {
+                AppLogger.security(
+                    "書源 JS 包含高危模式，已阻止執行",
+                    context: ["pattern": pattern, "jsPreview": String(js.prefix(120))]
+                )
+                return .failure(ValidationError(reason: "書源 JavaScript 包含不允許的操作：\(pattern)"))
+            }
+        }
+        return .success(js)
+    }
+}
+
 // MARK: - JS 書源引擎橋接（可選）
 // 書源解析改由 Assets/bookSourceEngine/ruleEngine.js 執行，Web 與 iOS 共用同一套邏輯。
 // 啟用方式：在 BookSourceFetcher 中改為呼叫 JSRuleEngineRunner.shared.parseSearchResults(...) 等。
@@ -125,8 +166,14 @@ final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
         return str
     }
 
-    private func evaluateJSONString(on webView: WKWebView, js: String, timeout: TimeInterval = 8) async throws -> String {
-        try await withThrowingTaskGroup(of: String.self) { group in
+    private func evaluateJSONString(on webView: WKWebView, js: String, timeout: TimeInterval = AppConfig.jsRuleEngineExecutionTimeout) async throws -> String {
+        // 安全驗證：拒絕來自書源的高危 JS 模式
+        switch JSSecurityValidator.validate(js) {
+        case .failure(let err):
+            throw NSError(domain: "JSRuleEngineRunner", code: -10, userInfo: [NSLocalizedDescriptionKey: err.reason])
+        case .success: break
+        }
+        return try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask { @MainActor in
                 try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
                     webView.evaluateJavaScript(js, in: nil, in: .defaultClient) { res in
@@ -156,7 +203,13 @@ final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
     }
 
     private func evaluateString(on webView: WKWebView, js: String, timeout: TimeInterval = 5) async throws -> String {
-        try await withThrowingTaskGroup(of: String.self) { group in
+        // 安全驗證：拒絕來自書源的高危 JS 模式
+        switch JSSecurityValidator.validate(js) {
+        case .failure(let err):
+            throw NSError(domain: "JSRuleEngineRunner", code: -10, userInfo: [NSLocalizedDescriptionKey: err.reason])
+        case .success: break
+        }
+        return try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask { @MainActor in
                 try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
                     webView.evaluateJavaScript(js, in: nil, in: .defaultClient) { res in

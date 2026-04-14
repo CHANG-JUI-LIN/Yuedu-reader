@@ -30,6 +30,7 @@ actor ChapterFetchManager {
     static let shared = ChapterFetchManager()
 
     private let bookSourceFetcher: BookSourceFetcher
+    private let webViewFetcher: WebViewFetcher
     private var tasks: [String: Task<ChapterPackage, Error>] = [:]
     private var states: [String: OnlineChapterLoadState] = [:]
 
@@ -40,10 +41,14 @@ actor ChapterFetchManager {
     // MARK: - 失敗計數 + Quarantine 觸發
     // 累積同一本書的章節取得失敗次數，超過門檻後標記為 quarantined
     private var bookFailureCounts: [UUID: Int] = [:]
-    private let quarantineThreshold = 5
+    private let quarantineThreshold = AppConfig.chapterFetchQuarantineThreshold
 
-    init(bookSourceFetcher: BookSourceFetcher = .shared) {
+    init(
+        bookSourceFetcher: BookSourceFetcher = .shared,
+        webViewFetcher: WebViewFetcher = .shared
+    ) {
         self.bookSourceFetcher = bookSourceFetcher
+        self.webViewFetcher = webViewFetcher
     }
 
     private func key(bookId: UUID, chapterIndex: Int) -> String {
@@ -150,7 +155,7 @@ actor ChapterFetchManager {
                 )
             }
 
-            let content = await Self.fetchBrowserImportedChapter(
+            let content = await fetchBrowserImportedChapter(
                 urlString: ref.url,
                 referer: book.bookInfoURL ?? book.source
             )
@@ -358,10 +363,10 @@ actor ChapterFetchManager {
     }
 
     @MainActor
-    private static func fetchBrowserImportedChapter(urlString: String, referer: String?) async
+    private func fetchBrowserImportedChapter(urlString: String, referer: String?) async
         -> String
     {
-        if let direct = try? await BookSourceFetcher.shared.fetchWebContent(
+        if let direct = try? await bookSourceFetcher.fetchWebContent(
             url: urlString,
             referer: referer
         ), !direct.isEmpty {
@@ -381,10 +386,10 @@ actor ChapterFetchManager {
             visited.insert(urlStr)
 
             do {
-                let result = try await WebViewFetcher.shared.fetchContentWithNextPage(
+                let result = try await webViewFetcher.fetchContentWithNextPage(
                     url: url,
                     headers: headers,
-                    timeout: 15,
+                    timeout: AppConfig.webViewFetchTimeout,
                     jsWait: 1.5
                 )
                 if !result.content.isEmpty {
@@ -408,6 +413,12 @@ actor ChapterFetchManager {
 actor BookDownloadManager {
     static let shared = BookDownloadManager()
 
+    private let chapterFetchManager: ChapterFetchManager
+
+    init(chapterFetchManager: ChapterFetchManager = .shared) {
+        self.chapterFetchManager = chapterFetchManager
+    }
+
     func downloadBook(book: ReadingBook, store: BookStore?) async {
         guard let refs = book.onlineChapters, !refs.isEmpty else { return }
         await MainActor.run {
@@ -426,7 +437,7 @@ actor BookDownloadManager {
         var completed = 0
         for idx in refs.indices {
             do {
-                _ = try await ChapterFetchManager.shared.fetchChapter(
+                _ = try await chapterFetchManager.fetchChapter(
                     book: book,
                     chapterIndex: idx,
                     priority: .download,
@@ -483,7 +494,20 @@ actor BookDownloadManager {
 final class OnlineBookCoordinator {
     static let shared = OnlineBookCoordinator()
 
-    private init() {}
+    // MARK: - 可注入依賴（默認使用 shared 單例，支援測試替換）
+    let bookSourceFetcher: BookSourceFetcher
+    let chapterFetchManager: ChapterFetchManager
+    let webViewFetcher: WebViewFetcher
+
+    init(
+        bookSourceFetcher: BookSourceFetcher = BookSourceFetcher.shared,
+        chapterFetchManager: ChapterFetchManager = ChapterFetchManager.shared,
+        webViewFetcher: WebViewFetcher = WebViewFetcher.shared
+    ) {
+        self.bookSourceFetcher = bookSourceFetcher
+        self.chapterFetchManager = chapterFetchManager
+        self.webViewFetcher = webViewFetcher
+    }
 
     private static let chapterPlaceholderBody = "載入章節中…"
 
@@ -531,39 +555,40 @@ final class OnlineBookCoordinator {
         )
     }
 
-    private static func buildConvertedBook(
+    private func buildConvertedBook(
         for book: ReadingBook,
         refs: [OnlineChapterRef],
         reuseBasePath: URL? = nil
     ) throws -> XHTMLBookBuilder.ConvertedBook {
+        let bsf = bookSourceFetcher
         let xhtmlChapters = refs.enumerated().map { idx, ref in
             let sanitizedURL = DefaultWebNovelParserService.shared.sanitizeExtractedURL(ref.url)
             // 嘗試用清理後的 URL 查找快取，若找不到再嘗試原始 URL（相容舊版快取）
-            var chapterPackage = BookSourceFetcher.shared.loadChapterPackageSync(
+            var chapterPackage = bsf.loadChapterPackageSync(
                 bookId: book.id,
                 chapterIndex: ref.index,
                 expectedSourceURL: sanitizedURL,
                 expectedTOCTitle: ref.title
             )
             if chapterPackage == nil && sanitizedURL != ref.url {
-                chapterPackage = BookSourceFetcher.shared.loadChapterPackageSync(
+                chapterPackage = bsf.loadChapterPackageSync(
                     bookId: book.id,
                     chapterIndex: ref.index,
                     expectedSourceURL: ref.url,
                     expectedTOCTitle: ref.title
                 )
             }
-            let hasLooseCache = BookSourceFetcher.shared.isChapterCached(
+            let hasLooseCache = bsf.isChapterCached(
                 bookId: book.id,
                 chapterIndex: ref.index
             )
-            let displayTitle = resolvedDisplayTitle(
+            let displayTitle = Self.resolvedDisplayTitle(
                 tocTitle: ref.title,
                 artifactTitle: chapterPackage?.canonicalTitle
             )
             let html: String
             if let chapterPackage, chapterPackage.state == .cached, !chapterPackage.content.isEmpty {
-                let contentMatches = validateContentMatchesTOCTitle(
+                let contentMatches = Self.validateContentMatchesTOCTitle(
                     content: chapterPackage.content,
                     tocTitle: ref.title,
                     chapterIndex: ref.index,
@@ -580,7 +605,7 @@ final class OnlineBookCoordinator {
                     )
                 }
                 html =
-                    BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+                    bsf.loadNormalizedChapterHTMLSync(
                         bookId: book.id,
                         chapterIndex: ref.index,
                         expectedSourceURL: ref.url,
@@ -591,23 +616,23 @@ final class OnlineBookCoordinator {
                         content: chapterPackage.content
                     )
             } else if hasLooseCache {
-                BookSourceFetcher.shared.clearChapterCache(
+                bsf.clearChapterCache(
                     bookId: book.id,
                     chapterIndex: ref.index
                 )
-                html = placeholderHTML(
+                html = Self.placeholderHTML(
                     title: displayTitle,
-                    body: chapterPlaceholderBody
+                    body: Self.chapterPlaceholderBody
                 )
             } else if let chapterPackage, chapterPackage.state == .failed {
-                html = placeholderHTML(
+                html = Self.placeholderHTML(
                     title: displayTitle,
-                    body: failurePlaceholder(for: displayTitle, reason: chapterPackage.failureReason)
+                    body: Self.failurePlaceholder(for: displayTitle, reason: chapterPackage.failureReason)
                 )
             } else {
-                html = placeholderHTML(
+                html = Self.placeholderHTML(
                     title: displayTitle,
-                    body: chapterPlaceholderBody
+                    body: Self.chapterPlaceholderBody
                 )
             }
             return XHTMLBookBuilder.XHTMLChapterInput(
@@ -636,7 +661,7 @@ final class OnlineBookCoordinator {
 
         let focus = preferredChapter ?? 0
         let reusePath = stableBasePath(for: book.id)
-        let converted = try Self.buildConvertedBook(for: book, refs: refs, reuseBasePath: reusePath)
+        let converted = try buildConvertedBook(for: book, refs: refs, reuseBasePath: reusePath)
         let package = XHTMLBookBuilder.package(
             from: converted,
             title: book.title,
@@ -652,7 +677,7 @@ final class OnlineBookCoordinator {
                 "pipelineKind": package.pipelineKind.rawValue,
                 "focusChapter": "\(focus)",
                 "cachedChapterCount":
-                    "\(refs.filter { BookSourceFetcher.shared.isChapterCached(bookId: book.id, chapterIndex: $0.index, expectedSourceURL: $0.url, expectedTOCTitle: $0.title) }.count)",
+                    "\(refs.filter { bookSourceFetcher.isChapterCached(bookId: book.id, chapterIndex: $0.index, expectedSourceURL: $0.url, expectedTOCTitle: $0.title) }.count)",
             ]
         )
         return package
@@ -664,7 +689,7 @@ final class OnlineBookCoordinator {
         store: BookStore?
     ) async -> BookPackage? {
         do {
-            let pkg = try await ChapterFetchManager.shared.fetchChapter(
+            let pkg = try await chapterFetchManager.fetchChapter(
                 book: book,
                 chapterIndex: chapterIndex,
                 priority: .immediate,
@@ -686,7 +711,7 @@ final class OnlineBookCoordinator {
         chapterIndex: Int,
         store: BookStore?
     ) async -> BookPackage? {
-        await ChapterFetchManager.shared.cancelAll(for: book.id)
+        await chapterFetchManager.cancelAll(for: book.id)
         ReaderTelemetry.shared.log(
             "jump_prefetch_promoted",
             attributes: [
@@ -696,7 +721,7 @@ final class OnlineBookCoordinator {
             ]
         )
         do {
-            let pkg = try await ChapterFetchManager.shared.fetchChapter(
+            let pkg = try await chapterFetchManager.fetchChapter(
                 book: book,
                 chapterIndex: chapterIndex,
                 priority: .jump,
@@ -715,7 +740,7 @@ final class OnlineBookCoordinator {
     func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {
         guard let refs = book.onlineChapters, !refs.isEmpty else { return }
         let range = (max(0, center - 2)...min(refs.count - 1, center + 2)).filter { $0 != center }
-        await ChapterFetchManager.shared.prefetchChapters(
+        await chapterFetchManager.prefetchChapters(
             book: book,
             indices: Array(range),
             priority: .prefetch,
@@ -724,7 +749,7 @@ final class OnlineBookCoordinator {
     }
 
     func chapterState(bookId: UUID, chapterIndex: Int) async -> OnlineChapterLoadState {
-        await ChapterFetchManager.shared.chapterState(bookId: bookId, chapterIndex: chapterIndex)
+        await chapterFetchManager.chapterState(bookId: bookId, chapterIndex: chapterIndex)
     }
 
     func downloadBook(_ book: ReadingBook, store: BookStore?) {

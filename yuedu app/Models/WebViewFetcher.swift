@@ -12,8 +12,10 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     /// WebView 實例池（重複使用避免頻繁建立）
     private var pool: [WKWebView] = []
     private let sharedProcessPool = WKProcessPool()
-    private let poolSize = 3
+    private let poolSize = AppConfig.webViewPoolSize
     private var waiters: [CheckedContinuation<WKWebView, Never>] = []
+    /// 當前在用（已從池中取出但尚未歸還）的 WebView 數量，包含臨時建立的
+    private var activeCount: Int = 0
 
     /// 正在進行的載入任務
     private var loadingMap: [WKWebView: CheckedContinuation<String, Error>] = [:]
@@ -58,7 +60,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     ///   - jsWait: JS 渲染後額外等待秒數
     func fetchHTML(
         url: URL, headers: [String: String] = [:],
-        timeout: TimeInterval = 15, jsWait: TimeInterval = 2.0
+        timeout: TimeInterval = AppConfig.webViewFetchTimeout, jsWait: TimeInterval = AppConfig.webViewJSRenderWait
     ) async throws -> String {
 
         let webView = await acquireWebView()
@@ -576,12 +578,16 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
 
     private func acquireWebView() async -> WKWebView {
         if let wv = pool.popLast() {
+            activeCount += 1
             return wv
         }
-        // 池已空，等待回收或建立臨時的
-        if pool.isEmpty && loadingMap.count < poolSize * 2 {
+        // 池已空：若活躍數量未超出上限，建立臨時 WebView（避免請求長時間排隊）
+        let maxActive = poolSize * AppConfig.webViewPoolOverflowMultiplier
+        if activeCount < maxActive {
+            activeCount += 1
             return createWebView()
         }
+        // 已達上限，進入等待佇列
         return await withCheckedContinuation { continuation in
             waiters.append(continuation)
         }
@@ -593,9 +599,11 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         // resume 給新呼叫者，導致目錄/詳情請求顯示 NSURLErrorDomain error -999。
         webView.stopLoading()
         loadingMap.removeValue(forKey: webView)
+        activeCount = max(0, activeCount - 1)
 
         if let waiter = waiters.first {
             waiters.removeFirst()
+            activeCount += 1  // 歸還給等待者，繼續算作已使用
             waiter.resume(returning: webView)
         } else if pool.count < poolSize {
             pool.append(webView)

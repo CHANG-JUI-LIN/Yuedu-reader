@@ -19,6 +19,9 @@ enum ReaderError: LocalizedError {
     /// 快取讀寫失敗
     case cache(underlying: Error)
 
+    /// 格式尚未支援（HTML/TXT 渲染等待遷移）
+    case unsupportedFormat(String)
+
     /// 無法識別的錯誤
     case unknown(underlying: Error)
 
@@ -34,6 +37,8 @@ enum ReaderError: LocalizedError {
             return "渲染失敗：\(err.localizedDescription)"
         case .cache(let err):
             return "快取錯誤：\(err.localizedDescription)"
+        case .unsupportedFormat(let msg):
+            return "格式不支援：\(msg)"
         case .unknown(let err):
             return err.localizedDescription
         }

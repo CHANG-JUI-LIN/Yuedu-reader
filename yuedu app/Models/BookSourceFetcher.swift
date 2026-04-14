@@ -33,12 +33,30 @@ private func _dbgLog(_ msg: String, data: [String: Any] = [:], hyp: String = "A"
 }
 // #endregion
 
-/// 安全建立 URL：若 `URL(string:)` 因未編碼字元（如中文）而失敗，嘗試 percent-encoding 後重試
+/// 安全建立 URL：若 `URL(string:)` 因未編碼字元（如中文）而失敗，嘗試 percent-encoding 後重試。
+/// 同時過濾危險 scheme（file://、javascript: 等）和私有 IP，防止書源 SSRF。
 private func safeURL(string raw: String) -> URL? {
-    if let url = URL(string: raw) { return url }
+    func validate(_ url: URL) -> URL? {
+        let scheme = url.scheme?.lowercased() ?? ""
+        // 僅允許白名單 scheme
+        guard AppConfig.allowedURLSchemes.contains(scheme) else {
+            AppLogger.security("書源 URL 使用了不允許的 scheme，已阻止", context: ["url": raw, "scheme": scheme])
+            return nil
+        }
+        // 阻止私有/保留 IP 前綴（防 SSRF）
+        if let host = url.host {
+            for prefix in AppConfig.blockedIPPrefixes where host.hasPrefix(prefix) {
+                AppLogger.security("書源 URL 指向保留 IP 範圍，已阻止", context: ["url": raw, "host": host])
+                return nil
+            }
+        }
+        return url
+    }
+
+    if let url = URL(string: raw) { return validate(url) }
     // 部分 Legado 書源回傳的章節 URL 含有未編碼中文或特殊字元
     if let encoded = raw.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-       let url = URL(string: encoded) { return url }
+       let url = URL(string: encoded) { return validate(url) }
     return nil
 }
 

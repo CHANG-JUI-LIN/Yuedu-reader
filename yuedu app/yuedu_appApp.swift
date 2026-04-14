@@ -32,7 +32,7 @@ enum ChapterUpdater {
         guard !onlineBooks.isEmpty else { return }
 
         // Limit concurrency to avoid network request storms on startup that trigger Rate Limiting/Cloudflare
-        let maxConcurrentTasks = 3
+        let maxConcurrentTasks = AppConfig.startupRefreshMaxConcurrentTasks
         await withTaskGroup(of: Void.self) { group in
             for i in 0..<min(maxConcurrentTasks, onlineBooks.count) {
                 group.addTask {
@@ -62,7 +62,11 @@ enum ChapterUpdater {
                 forceInfoRefresh: needInfoRefresh
             )
         } catch {
-            // 靜默失敗，不打擾使用者
+            AppLogger.network(
+                "自動更新書籍目錄失敗",
+                error: error,
+                context: ["bookId": book.id.uuidString, "title": book.title]
+            )
         }
     }
 }

@@ -566,9 +566,9 @@ class BookStore: ObservableObject {
             )
             return placeholder.makePackage(pipelineKind: .epub, originalSourceURL: epubURL)
         case .html:
-            fatalError("HTML rendering temporarily disabled pending CoreText migration")
+            throw ReaderError.unsupportedFormat("HTML 渲染尚待 CoreText 遷移完成，目前不支援")
         case .txt:
-            fatalError("TXT rendering temporarily disabled pending CoreText migration")
+            throw ReaderError.unsupportedFormat("TXT 渲染尚待 CoreText 遷移完成，目前不支援")
         }
     }
 

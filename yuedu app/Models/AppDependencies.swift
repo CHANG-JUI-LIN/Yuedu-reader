@@ -172,8 +172,9 @@ struct AppDependencies {
 
     static let live: AppDependencies = {
         let webFetcher = WebFetcher()
+        let webViewFetcher = WebViewFetcher.shared
         let bsf = BookSourceFetcher(webFetcher: webFetcher)
-        let cfm = ChapterFetchManager(bookSourceFetcher: bsf)
+        let cfm = ChapterFetchManager(bookSourceFetcher: bsf, webViewFetcher: webViewFetcher)
         return AppDependencies(
             webContentFetcher: LiveWebContentFetcher(webFetcher: webFetcher),
             bookSourceFetcher: LiveBookSourceFetcher(bookSourceFetcher: bsf),

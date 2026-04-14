@@ -4,8 +4,8 @@
 <dict>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
+		<!-- NSAllowsArbitraryLoads removed: too broad, exposes users to MITM attacks.
+		     Book sources must use HTTPS. Local network (LAN book servers) still allowed. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
