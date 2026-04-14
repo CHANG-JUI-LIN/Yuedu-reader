@@ -62,12 +62,14 @@ struct HomeView: View {
             .navigationTitle(gs.t("書架"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    // 書籍搜索（最左）
+                // 搜尋獨立一個 ToolbarItem，與其他按鈕自然分開
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showSearch = true } label: {
                         Image(systemName: "magnifyingglass")
                             .font(DSFont.toolbarIcon)
                     }
+                }
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
                     // 佈局切換
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
