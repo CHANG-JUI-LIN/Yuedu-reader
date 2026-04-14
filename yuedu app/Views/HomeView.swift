@@ -62,17 +62,6 @@ struct HomeView: View {
             .navigationTitle(gs.t("書架"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        withAnimation {
-                            editMode = editMode == .active ? .inactive : .active
-                        }
-                    } label: {
-                        Text(editMode == .active ? gs.t("完成") : gs.t("編輯"))
-                    }
-                    .id(gs.appLanguage.rawValue + (editMode == .active ? "_done" : "_edit"))
-                    .environment(\.editMode, $editMode)
-                }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     // 佈局切換
                     Button {
@@ -81,19 +70,30 @@ struct HomeView: View {
                         Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
                             .font(DSFont.toolbarIcon)
                     }
-                    // 書籍搜索
-                    Button { showSearch = true } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(DSFont.toolbarIcon)
-                    }
                     // 新增本地書籍
                     Button {
                         addSheetSessionID = UUID()
                         showAddSheet = true
                     } label: {
                         Image(systemName: "plus")
-                            .font(DSFont.toolbarIconLarge)
+                            .font(DSFont.toolbarIcon)
                     }
+                    // 書籍搜索
+                    Button { showSearch = true } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(DSFont.toolbarIcon)
+                    }
+                    // 編輯模式（圓形 ellipsis）
+                    Button {
+                        withAnimation {
+                            editMode = editMode == .active ? .inactive : .active
+                        }
+                    } label: {
+                        Image(systemName: editMode == .active ? "xmark.circle" : "ellipsis.circle")
+                            .font(DSFont.toolbarIcon)
+                    }
+                    .id(gs.appLanguage.rawValue + (editMode == .active ? "_done" : "_edit"))
+                    .environment(\.editMode, $editMode)
                 }
             }
             .sheet(isPresented: $showAddSheet) {
