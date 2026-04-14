@@ -62,6 +62,13 @@ struct HomeView: View {
             .navigationTitle(gs.t("書架"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                // 搜尋獨立一個 ToolbarItem，與其他按鈕自然分開
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showSearch = true } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(DSFont.toolbarIcon)
+                    }
+                }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     // 佈局切換
                     Button {
@@ -89,13 +96,6 @@ struct HomeView: View {
                     }
                     .id(gs.appLanguage.rawValue + (editMode == .active ? "_done" : "_edit"))
                     .environment(\.editMode, $editMode)
-                }
-                // 搜尋獨立在底部工具列
-                ToolbarItem(placement: .bottomBar) {
-                    Button { showSearch = true } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(DSFont.toolbarIcon)
-                    }
                 }
             }
             .sheet(isPresented: $showAddSheet) {
