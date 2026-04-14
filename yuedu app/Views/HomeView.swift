@@ -15,12 +15,10 @@ struct HomeView: View {
 
     @State private var showAddSheet = false
     @State private var addSheetSessionID = UUID()
-    @State private var searchText = ""
     @State private var sortOrder = BookSortOrder.dateAdded
     @State private var editingBook: ReadingBook? = nil
     @State private var bookToDelete: ReadingBook? = nil
     @State private var editMode = EditMode.inactive
-    @State private var showSearch = false
     @AppStorage("bookLayoutIsGrid") private var isGridMode = false
 
     // fullScreenCover 閱讀器（取代 NavigationLink，避免 SwiftUI NavLink 重建 @State bug）
@@ -28,17 +26,10 @@ struct HomeView: View {
 
     // 過濾 + 排序
     var filteredBooks: [ReadingBook] {
-        let base =
-            searchText.isEmpty
-            ? store.books
-            : store.books.filter {
-                $0.title.localizedCaseInsensitiveContains(searchText)
-                    || $0.author.localizedCaseInsensitiveContains(searchText)
-            }
         switch sortOrder {
-        case .dateAdded: return base  // 原始順序（最新在前）
-        case .titleAZ: return base.sorted { $0.title < $1.title }
-        case .progress: return base.sorted { $0.currentPosition > $1.currentPosition }
+        case .dateAdded: return store.books
+        case .titleAZ: return store.books.sorted { $0.title < $1.title }
+        case .progress: return store.books.sorted { $0.currentPosition > $1.currentPosition }
         }
     }
 
@@ -47,15 +38,10 @@ struct HomeView: View {
             AdaptiveContentContainer(maxWidth: 920) {
                 Group {
                     if store.books.isEmpty {
-                        EmptyLibraryView(
-                            showAdd: $showAddSheet,
-                            showSearch: $showSearch
-                        )
+                        EmptyLibraryView(showAdd: $showAddSheet)
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     } else {
                         VStack(spacing: 0) {
-                            // 搜尋欄
-                            searchBar
                             // 排序選擇（僅在編輯模式顯示）
                             if editMode == .active {
                                 sortBar
@@ -91,11 +77,6 @@ struct HomeView: View {
                         Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
                             .font(DSFont.toolbarIcon)
                     }
-                    // 書籍搜索
-                    Button { showSearch = true } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(DSFont.toolbarIcon)
-                    }
                     // 新增本地書籍
                     Button {
                         addSheetSessionID = UUID()
@@ -116,11 +97,6 @@ struct HomeView: View {
             .onChange(of: showAddSheet) { isPresented in
                 if isPresented {
                     addSheetSessionID = UUID()
-                }
-            }
-            .sheet(isPresented: $showSearch) {
-                AdaptiveSheetContainer(maxWidth: 900) {
-                    BookSearchView().environmentObject(store)
                 }
             }
             // 編輯書籍資訊 Sheet
@@ -160,11 +136,6 @@ struct HomeView: View {
                 ReaderView(bookId: bookId).environmentObject(store)
             }
         }
-    }
-
-    // MARK: - 搜尋欄
-    private var searchBar: some View {
-        DSSearchBar(placeholder: gs.t("搜索書名或作者"), text: $searchText)
     }
 
     // MARK: - 排序欄
@@ -313,7 +284,6 @@ struct EditBookSheet: View {
 // MARK: - 空書架
 struct EmptyLibraryView: View {
     @Binding var showAdd: Bool
-    @Binding var showSearch: Bool
     @ObservedObject private var gs = GlobalSettings.shared
     @State private var appeared = false
     var body: some View {
@@ -334,13 +304,6 @@ struct EmptyLibraryView: View {
                     .padding(.horizontal, DSSpacing.xxl).padding(.vertical, 14)
                     .background(DSColor.accent).clipShape(Capsule())
             }
-            Button {
-                showSearch = true
-            } label: {
-                Label(gs.t("搜索書籍"), systemImage: "magnifyingglass")
-                    .font(DSFont.subheadline.weight(.medium))
-            }
-            .buttonStyle(.plain)
             Spacer()
         }
         .padding()
