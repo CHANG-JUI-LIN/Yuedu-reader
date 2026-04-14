@@ -194,7 +194,8 @@ struct HomeView: View {
                     onEdit: { editingBook = book },
                     onDelete: { bookToDelete = book }
                 )
-                .listRowSeparator(.hidden)
+                .listRowSeparator(.visible)
+                .listRowSeparatorTint(DSColor.textSecondary.opacity(0.15))
                 .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 .listRowBackground(Color.clear)
                 .transition(.opacity.combined(with: .move(edge: .leading)))
@@ -363,67 +364,57 @@ struct BookRow: View {
     private let coverH: CGFloat = 65
 
     var body: some View {
-        VStack(spacing: 0) {
-            Button(action: onOpen) {
-                HStack(alignment: .top, spacing: 12) {
-                    bookCover
+        Button(action: onOpen) {
+            HStack(alignment: .top, spacing: 12) {
+                bookCover
 
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(book.title)
-                            .font(.system(size: 15, weight: .medium))
-                            .lineLimit(2)
-                            .foregroundColor(.primary)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(book.title)
+                        .font(.system(size: 15, weight: .medium))
+                        .lineLimit(2)
+                        .foregroundColor(.primary)
 
-                        if !book.author.isEmpty {
-                            Text(book.author)
-                                .font(.system(size: 13))
-                                .foregroundColor(DSColor.textSecondary)
-                                .lineLimit(1)
-                        }
-
-                        progressBadge
+                    if !book.author.isEmpty {
+                        Text(book.author)
+                            .font(.system(size: 13))
+                            .foregroundColor(DSColor.textSecondary)
+                            .lineLimit(1)
                     }
-                    .padding(.top, 2)
 
+                    progressBadge
+                }
+                .padding(.top, 2)
+
+                Spacer(minLength: 0)
+
+                // 右側雙 icon：雲端 + 三點選單，沉底對齊 badge
+                VStack {
                     Spacer(minLength: 0)
+                    HStack(spacing: 18) {
+                        Image(systemName: "cloud")
+                            .font(.system(size: 16))
+                            .foregroundColor(DSColor.textSecondary)
 
-                    // 右側雙 icon：雲端 + 三點選單，沉底對齊 badge
-                    VStack {
-                        Spacer(minLength: 0)
-                        HStack(spacing: 18) {
-                            Image(systemName: "cloud")
+                        Menu {
+                            Button { onEdit() } label: {
+                                Label(gs.t("編輯書籍資訊"), systemImage: "pencil")
+                            }
+                            Button(role: .destructive) { onDelete() } label: {
+                                Label(gs.t("刪除書籍"), systemImage: "trash")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
                                 .font(.system(size: 16))
                                 .foregroundColor(DSColor.textSecondary)
-
-                            Menu {
-                                Button { onEdit() } label: {
-                                    Label(gs.t("編輯書籍資訊"), systemImage: "pencil")
-                                }
-                                Button(role: .destructive) { onDelete() } label: {
-                                    Label(gs.t("刪除書籍"), systemImage: "trash")
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(DSColor.textSecondary)
-                            }
                         }
-                        .padding(.bottom, 2)
                     }
+                    .padding(.bottom, 2)
                 }
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-
-            // 自訂分隔線，從文字左緣開始（cover 45pt + spacing 12pt = 57pt offset）
-            HStack(spacing: 0) {
-                Color.clear.frame(width: coverW + 12)
-                Rectangle()
-                    .fill(DSColor.textSecondary.opacity(0.15))
-                    .frame(height: 0.5)
-            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
