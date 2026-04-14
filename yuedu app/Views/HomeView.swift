@@ -62,13 +62,12 @@ struct HomeView: View {
             .navigationTitle(gs.t("書架"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    // 書籍搜索（最左）
                     Button { showSearch = true } label: {
                         Image(systemName: "magnifyingglass")
                             .font(DSFont.toolbarIcon)
                     }
-                }
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
                     // 佈局切換
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
