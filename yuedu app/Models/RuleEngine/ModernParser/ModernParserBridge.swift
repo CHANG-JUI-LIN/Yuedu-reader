@@ -27,6 +27,11 @@ class ModernParserBridge {
     private let loginManager: LoginManager
     let sourceRuleData: BookSourceRuleData
 
+    /// When set, every `ModernRuleEngine` created by `makeEngine()` will have this
+    /// observer attached, emitting pipeline events for diff-driven debugging against
+    /// Legado's Android logs.  Set by `BookSourceDebugEngine`.
+    var debugObserver: ((RuleDebugEvent) -> Void)?
+
     // MARK: - Init
 
     init(source: BookSource) {
@@ -44,6 +49,7 @@ class ModernParserBridge {
     private func makeEngine() -> ModernRuleEngine {
         let e = ModernRuleEngine()
         e.source = sourceRuleData
+        e.debugObserver = debugObserver
 
         // Capture `e` weakly so the closure doesn't extend its lifetime past the parse call.
         e.jsEvaluator = { [weak self, weak e] jsCode, prevResult in

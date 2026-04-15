@@ -196,19 +196,21 @@ private struct DebugLogRow: View {
 
     private var icon: String {
         switch entry.level {
-        case .info:    return "ℹ️"
-        case .success: return "✅"
-        case .warning: return "⚠️"
-        case .error:   return "❌"
+        case .info:     return "ℹ️"
+        case .success:  return "✅"
+        case .warning:  return "⚠️"
+        case .error:    return "❌"
+        case .pipeline: return "🔍"
         }
     }
 
     private var color: Color {
         switch entry.level {
-        case .info:    return .primary
-        case .success: return .green
-        case .warning: return .orange
-        case .error:   return .red
+        case .info:     return .primary
+        case .success:  return .green
+        case .warning:  return .orange
+        case .error:    return .red
+        case .pipeline: return .secondary
         }
     }
 }

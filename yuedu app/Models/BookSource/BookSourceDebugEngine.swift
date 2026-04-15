@@ -8,6 +8,7 @@ enum DebugLevel: String {
     case success = "success"
     case warning = "warning"
     case error   = "error"
+    case pipeline = "pipeline"   // granular per-rule steps
 }
 
 struct DebugLogEntry: Identifiable {
@@ -58,8 +59,12 @@ final class BookSourceDebugEngine: ObservableObject {
         }
         logs.removeAll()
         isRunning = true
-        defer { isRunning = false }
+        defer {
+            isRunning = false
+            bridge.debugObserver = nil
+        }
 
+        attachObserver(stage: "搜索")
         appendLog(.info, step: "搜索", summary: "關鍵字: \(keyword)，頁碼: \(page)")
         appendLog(.info, step: "搜索 URL", summary: source.searchUrl)
 
@@ -93,8 +98,12 @@ final class BookSourceDebugEngine: ObservableObject {
         }
         logs.removeAll()
         isRunning = true
-        defer { isRunning = false }
+        defer {
+            isRunning = false
+            bridge.debugObserver = nil
+        }
 
+        attachObserver(stage: "詳情")
         appendLog(.info, step: "詳情", summary: "URL: \(url)")
 
         let t0 = Date()
@@ -120,8 +129,12 @@ final class BookSourceDebugEngine: ObservableObject {
         }
         logs.removeAll()
         isRunning = true
-        defer { isRunning = false }
+        defer {
+            isRunning = false
+            bridge.debugObserver = nil
+        }
 
+        attachObserver(stage: "目錄")
         appendLog(.info, step: "目錄", summary: "URL: \(url)")
 
         let t0 = Date()
@@ -155,8 +168,12 @@ final class BookSourceDebugEngine: ObservableObject {
         }
         logs.removeAll()
         isRunning = true
-        defer { isRunning = false }
+        defer {
+            isRunning = false
+            bridge.debugObserver = nil
+        }
 
+        attachObserver(stage: "正文")
         appendLog(.info, step: "正文", summary: "URL: \(url)")
 
         let t0 = Date()
@@ -181,7 +198,98 @@ final class BookSourceDebugEngine: ObservableObject {
 
     // MARK: - Private
 
+    /// Attaches the pipeline observer to `bridge` before each stage run.
+    /// Events arrive on whatever thread the engine runs on, so we hop to
+    /// `MainActor` before mutating `logs`.
+    private func attachObserver(stage: String) {
+        bridge.debugObserver = { [weak self] event in
+            let entry = Self.debugEntry(for: event, stage: stage)
+            Task { @MainActor [weak self] in
+                self?.logs.append(entry)
+            }
+        }
+    }
+
     private func appendLog(_ level: DebugLevel, step: String, summary: String, detail: String? = nil) {
         logs.append(DebugLogEntry(level: level, step: step, summary: summary, detail: detail))
+    }
+
+    // MARK: - RuleDebugEvent → DebugLogEntry
+
+    private static func debugEntry(for event: RuleDebugEvent, stage: String) -> DebugLogEntry {
+        let log = event.legadoStyleLog
+        // Classify by event type
+        let level: DebugLevel
+        let step: String
+        let summary: String
+        var detail: String?
+
+        switch event {
+        case .contentSet(let type, let length, let preview, _):
+            level = .info
+            step = "[\(stage)] 原始數據"
+            summary = "類型: \(type)  長度: \(length)字符"
+            detail = preview.isEmpty ? nil : preview
+
+        case .rulesParsed(let ruleStr, let segments):
+            level = .pipeline
+            step = "[\(stage)] 規則解析"
+            summary = "規則: \(String(ruleStr.prefix(60)))"
+            detail = segments.map { s in
+                "  [\(s.index)] mode=\(s.mode)  rule=\(String(s.rule.prefix(60)))"
+                + (s.replacePattern.isEmpty ? "" : "  ##\(s.replacePattern)")
+            }.joined(separator: "\n")
+
+        case .beforeExtract(let idx, let mode, let qualifiedRule, _):
+            level = .pipeline
+            step = "[\(stage)] 提取 #\(idx)"
+            summary = "[\(mode)] \(String(qualifiedRule.prefix(80)))"
+            detail = nil
+
+        case .afterExtractValue(let idx, let result):
+            level = result.isEmpty ? .warning : .pipeline
+            step = "[\(stage)] 提取結果 #\(idx)"
+            summary = result.isEmpty ? "（空）" : String(result.prefix(120))
+            detail = result.count > 120 ? result : nil
+
+        case .afterExtractList(let idx, let count, let items):
+            level = count == 0 ? .warning : .pipeline
+            step = "[\(stage)] 提取列表 #\(idx)"
+            summary = "共 \(count) 項"
+            detail = items.enumerated().map { "  [\($0)] \($1)" }.joined(separator: "\n")
+
+        case .regexApplied(let idx, let pattern, let replacement, let before, let after):
+            level = .pipeline
+            step = "[\(stage)] 正則替換 #\(idx)"
+            summary = "##\(String(pattern.prefix(40)))##\(String(replacement.prefix(20)))"
+            detail = "前: \(String(before.prefix(100)))\n後: \(String(after.prefix(100)))"
+
+        case .jsExecuted(let idx, _, _, let result):
+            level = .pipeline
+            step = "[\(stage)] JS執行 #\(idx)"
+            summary = result.isEmpty ? "（空結果）" : String(result.prefix(120))
+            detail = log
+
+        case .extractionError(let idx, let mode, _, let error):
+            level = .error
+            step = "[\(stage)] 提取錯誤 #\(idx)"
+            summary = "[\(mode)] \(error)"
+            detail = nil
+
+        case .finalResult(let value, let ms):
+            level = value.isEmpty ? .warning : .success
+            step = "[\(stage)] 最終值"
+            summary = (value.isEmpty ? "（空）" : String(value.prefix(120)))
+                + String(format: "  (%.1fms)", ms)
+            detail = value.count > 120 ? value : nil
+
+        case .finalResultList(let values, let ms):
+            level = values.isEmpty ? .warning : .success
+            step = "[\(stage)] 最終列表"
+            summary = "共 \(values.count) 項" + String(format: "  (%.1fms)", ms)
+            detail = values.prefix(20).enumerated().map { "  [\($0)] \($1)" }.joined(separator: "\n")
+        }
+
+        return DebugLogEntry(level: level, step: step, summary: summary, detail: detail)
     }
 }
