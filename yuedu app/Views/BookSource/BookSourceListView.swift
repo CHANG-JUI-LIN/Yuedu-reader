@@ -137,8 +137,16 @@ struct BookSourceListView: View {
                 }
             }
             .sheet(item: $loginSource) { src in
-                BookSourceLoginWebView(source: src) {
-                    loginSource = nil
+                if src.loginUi.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    // No form fields → interactive WebView login (captures cookies)
+                    BookSourceLoginWebView(source: src) {
+                        loginSource = nil
+                    }
+                } else {
+                    // Has loginUi form fields → credential form + JS execution
+                    BookSourceFormLoginView(source: src) {
+                        loginSource = nil
+                    }
                 }
             }
             .alert(gs.t("確認刪除"), isPresented: $showDeleteConfirm) {
