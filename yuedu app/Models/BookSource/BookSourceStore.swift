@@ -51,6 +51,26 @@ class BookSourceStore: ObservableObject {
 
     // MARK: 匯入（Legado 相容）
 
+    /// Import from raw Data, using the file extension to choose the right parser.
+    @discardableResult
+    func importFromData(_ data: Data, fileExtension ext: String) throws -> Int {
+        let lower = ext.lowercased()
+        switch lower {
+        case "yds":
+            let sources = try parseYDS(data)
+            return try importSources(sources)
+        case "xbs", "mrs":
+            throw ImportError.encryptedFormat(lower.uppercased())
+        default:
+            // .txt, .json, or unknown → try as Legado JSON
+            guard let text = String(data: data, encoding: .utf8)
+                          ?? String(data: data, encoding: .isoLatin1) else {
+                throw ImportError.invalidData
+            }
+            return try importFromJSON(text)
+        }
+    }
+
     @discardableResult
     func importFromJSON(_ json: String) throws -> Int {
         guard let data = json.data(using: .utf8) else {
@@ -91,15 +111,18 @@ class BookSourceStore: ObservableObject {
             throw ImportError.parseErrorDetail(detail)
         }
 
-        guard !imported.isEmpty else {
-            throw ImportError.parseError
-        }
+        return try importSources(imported)
+    }
 
-        // 去重：已存在相同 bookSourceUrl 的則更新，否則新增
+    // MARK: 私有：合併書源
+
+    @discardableResult
+    private func importSources(_ imported: [BookSource]) throws -> Int {
+        guard !imported.isEmpty else { throw ImportError.parseError }
         for src in imported {
             if let idx = sources.firstIndex(where: { $0.bookSourceUrl == src.bookSourceUrl }) {
                 var updated = src
-                updated.id = sources[idx].id   // 保留原 id
+                updated.id = sources[idx].id
                 sources[idx] = updated
             } else {
                 sources.append(src)
@@ -107,6 +130,119 @@ class BookSourceStore: ObservableObject {
         }
         save()
         return imported.count
+    }
+
+    // MARK: 你的益达 (.yds) 格式解析
+
+    /// .yds is a JSON dictionary keyed by source display name.
+    /// Each value uses different field names from Legado; convert to BookSource.
+    private func parseYDS(_ data: Data) throws -> [BookSource] {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw ImportError.invalidData
+        }
+        var results: [BookSource] = []
+        for (_, value) in root {
+            guard let obj = value as? [String: Any] else { continue }
+            var bs = BookSource()
+            bs.bookSourceName  = obj["siteName"] as? String ?? ""
+            bs.bookSourceUrl   = obj["host"] as? String ?? ""
+            bs.bookSourceType  = obj["siteType"] as? Int ?? 0
+            bs.enabled         = obj["enable"] as? Bool ?? true
+            bs.loginUrl        = obj["loginUrl"] as? String ?? ""
+
+            let host = bs.bookSourceUrl
+
+            // ── searchRule ──────────────────────────────
+            if let sr = obj["searchRule"] as? [String: Any] {
+                bs.searchUrl          = ydsResolveUrl(sr["requestUrl"], host: host)
+                bs.ruleSearch.bookList  = sr["list"]      as? String ?? ""
+                bs.ruleSearch.name      = sr["title"]     as? String ?? ""
+                bs.ruleSearch.author    = sr["author"]    as? String ?? ""
+                bs.ruleSearch.coverUrl  = sr["cover"]     as? String ?? ""
+                bs.ruleSearch.kind      = sr["tags"]      as? String ?? ""
+                bs.ruleSearch.intro     = sr["desc"]      as? String ?? ""
+                bs.ruleSearch.bookUrl   = sr["detailUrl"] as? String ?? ""
+            }
+
+            // ── detailRule → ruleBookInfo ────────────────
+            if let dr = obj["detailRule"] as? [String: Any] {
+                bs.ruleBookInfo.initScript = dr["requestUrl"] as? String ?? ""
+                // detailRule.url is the identifier extracted from detail response
+                // chapterRule.requestUrl then builds the actual TOC URL from that
+                let chapterRequestUrl = (obj["chapterRule"] as? [String: Any])?["requestUrl"] as? String ?? ""
+                if !chapterRequestUrl.isEmpty {
+                    // Compose: extract detailRule.url, then pipe into chapterRule.requestUrl
+                    let detailUrl = dr["url"] as? String ?? ""
+                    bs.ruleBookInfo.tocUrl = ydsComposeTocUrl(detailUrl: detailUrl,
+                                                               chapterRequestUrl: chapterRequestUrl)
+                }
+            }
+
+            // ── chapterRule → ruleToc ────────────────────
+            if let cr = obj["chapterRule"] as? [String: Any] {
+                bs.ruleToc.chapterList = cr["list"]  as? String ?? ""
+                bs.ruleToc.chapterName = cr["title"] as? String ?? ""
+                bs.ruleToc.chapterUrl  = cr["url"]   as? String ?? ""
+            }
+
+            // ── contentRule → ruleContent ────────────────
+            if let cont = obj["contentRule"] as? [String: Any] {
+                bs.ruleContent.content = cont["content"] as? String ?? ""
+                // contentRule.requestUrl: store as a init/preUpdate comment
+                if let reqUrl = cont["requestUrl"] as? String, !reqUrl.isEmpty {
+                    bs.ruleContent.webJs = reqUrl
+                }
+            }
+
+            if !bs.bookSourceName.isEmpty || !bs.bookSourceUrl.isEmpty {
+                results.append(bs)
+            }
+        }
+        return results
+    }
+
+    /// Resolve a .yds `requestUrl` to the actual URL string used in Legado.
+    /// The requestUrl is either:
+    ///   - A JSON string like `{"url": "/path?$keyWord..."}` → combine with host
+    ///   - A `@js:` expression → use as-is
+    ///   - A plain URL → use as-is
+    private func ydsResolveUrl(_ raw: Any?, host: String) -> String {
+        guard let raw else { return "" }
+        let s: String
+        if let str = raw as? String { s = str.trimmingCharacters(in: .whitespacesAndNewlines) }
+        else { return "" }
+
+        if s.hasPrefix("@js:") || s.hasPrefix("@JS:") { return s }
+
+        // Try JSON object with "url" key
+        if s.hasPrefix("{"), let d = s.data(using: .utf8),
+           let dict = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+           let path = dict["url"] as? String {
+            let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedPath.hasPrefix("http") { return trimmedPath }
+            return host + trimmedPath
+        }
+        // Plain URL or template
+        if s.hasPrefix("http") { return s }
+        return host + s
+    }
+
+    /// Compose a Legado `ruleBookInfo.tocUrl` from the .yds two-step chain:
+    /// 1. `detailUrl` is a template/JSONPath applied to the detail response
+    /// 2. `chapterRequestUrl` (@js:) builds the chapter list URL from that
+    /// If detailUrl is empty, just return chapterRequestUrl directly.
+    private func ydsComposeTocUrl(detailUrl: String, chapterRequestUrl: String) -> String {
+        let det = detailUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        let chap = chapterRequestUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        // If the chapterRequestUrl is pure @js:, wrap both into a single @js: that:
+        //   1. evaluates the detailUrl rule against `result` (the raw response)
+        //   2. passes that to the chapterRequestUrl JS
+        if det.isEmpty { return chap }
+        if chap.hasPrefix("@js:") {
+            let jsBody = String(chap.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines)
+            return "@js:\n// step 1: extract detail intermediate value\nvar _result = result;\n// step 2: build chapter URL\n\(jsBody)"
+        }
+        return det.isEmpty ? chap : det
     }
 
     // MARK: 匯出
@@ -147,6 +283,7 @@ class BookSourceStore: ObservableObject {
         case invalidData
         case parseError
         case parseErrorDetail(String)
+        case encryptedFormat(String)
 
         var errorDescription: String? {
             switch self {
@@ -154,6 +291,8 @@ class BookSourceStore: ObservableObject {
             case .parseError: return "無法解析書源 JSON，請確認格式正確"
             case .parseErrorDetail(let detail):
                 return "無法解析書源 JSON: \(detail)"
+            case .encryptedFormat(let fmt):
+                return "\(fmt) 格式使用私有加密，目前不支援直接導入。請改用對應 App 匯出為 JSON/TXT 格式。"
             }
         }
     }

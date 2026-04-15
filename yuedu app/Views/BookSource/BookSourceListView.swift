@@ -553,20 +553,36 @@ struct BookSourceListView: View {
         .navigationViewStyle(.stack)
         .fileImporter(
             isPresented: $showImportFile,
-            allowedContentTypes: [UTType.json, UTType.plainText]
+            allowedContentTypes: [UTType.json, UTType.plainText,
+                                  UTType(filenameExtension: "yds") ?? .data,
+                                  UTType(filenameExtension: "xbs") ?? .data,
+                                  UTType(filenameExtension: "mrs") ?? .data]
         ) { result in
             switch result {
             case .success(let url):
                 let ok = url.startAccessingSecurityScopedResource()
                 defer { if ok { url.stopAccessingSecurityScopedResource() } }
-                if let text = try? String(contentsOf: url, encoding: .utf8) {
-                    doImport(text)
+                if let data = try? Data(contentsOf: url) {
+                    doImportData(data, ext: url.pathExtension)
                 } else {
                     importError = gs.t("無法讀取文件")
                 }
             case .failure(let err):
                 importError = err.localizedDescription
             }
+        }
+    }
+
+    private func doImportData(_ data: Data, ext: String) {
+        do {
+            let count = try store.importFromData(data, fileExtension: ext)
+            withAnimation {
+                importSuccess = gs.t("成功匯入") + " \(count) " + gs.t("個書源")
+                importJSON = ""
+                showImport = false
+            }
+        } catch {
+            withAnimation { importError = error.localizedDescription }
         }
     }
 
