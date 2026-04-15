@@ -612,3 +612,111 @@ struct RuleEngineAPITests {
         #expect(RuleEngine.isJsoupDefaultRule("@css:div.title@text") == false)
     }
 }
+
+// MARK: - 7. RegexSanitizer — Java → ICU Pattern Conversion
+
+@Suite("RegexSanitizer Java→ICU")
+struct RegexSanitizerTests {
+
+    // MARK: Possessive quantifiers
+
+    @Test("strips possessive ++ quantifier")
+    func possessiveGreedyPlus() {
+        let sanitized = RegexSanitizer.sanitize(#"\d++"#)
+        #expect(sanitized == #"\d+"#)
+        #expect(RegexSanitizer.canCompile(#"\d++"#))
+    }
+
+    @Test("strips possessive *+ quantifier")
+    func possessiveGreedyStar() {
+        let sanitized = RegexSanitizer.sanitize(#"\w*+"#)
+        #expect(sanitized == #"\w*"#)
+        #expect(RegexSanitizer.canCompile(#"\w*+"#))
+    }
+
+    @Test("strips possessive ?+ quantifier")
+    func possessiveGreedyQuestion() {
+        let sanitized = RegexSanitizer.sanitize(#"\s?+"#)
+        #expect(sanitized == #"\s?"#)
+        #expect(RegexSanitizer.canCompile(#"\s?+"#))
+    }
+
+    // MARK: Atomic groups
+
+    @Test("converts atomic group to non-capturing group")
+    func atomicGroup() {
+        let sanitized = RegexSanitizer.sanitize("(?>abc)")
+        #expect(sanitized == "(?:abc)")
+        #expect(RegexSanitizer.canCompile("(?>abc)"))
+    }
+
+    // MARK: \R line break
+
+    @Test("expands \\R to line-break alternative")
+    func lineBreakR() {
+        let sanitized = RegexSanitizer.sanitize(#"\R"#)
+        #expect(sanitized.contains("\\r\\n"))
+        #expect(RegexSanitizer.canCompile(#"\R"#))
+    }
+
+    // MARK: \e escape char
+
+    @Test("converts \\e to \\x1B")
+    func escapeChar() {
+        let sanitized = RegexSanitizer.sanitize(#"\e"#)
+        #expect(sanitized == #"\x1B"#)
+        #expect(RegexSanitizer.canCompile(#"\e"#))
+    }
+
+    // MARK: Java Unicode categories
+
+    @Test("converts \\p{javaLetterOrDigit} to \\w")
+    func javaLetterOrDigit() {
+        let sanitized = RegexSanitizer.sanitize(#"\p{javaLetterOrDigit}+"#)
+        #expect(sanitized.contains("\\w"))
+        #expect(RegexSanitizer.canCompile(#"\p{javaLetterOrDigit}+"#))
+    }
+
+    // MARK: Passthrough (no Java syntax)
+
+    @Test("leaves ordinary pattern unchanged")
+    func ordinaryPattern() {
+        let plain = #"(\d{4})-(\d{2})-(\d{2})"#
+        #expect(RegexSanitizer.sanitize(plain) == plain)
+    }
+
+    @Test("plain pattern still compiles")
+    func ordinaryPatternCompiles() {
+        #expect(RegexSanitizer.canCompile(#"[a-z]+"#))
+    }
+
+    // MARK: End-to-end replacement through RegexReplacer
+
+    @Test("replaceRegex survives possessive quantifier from Java book source")
+    func replaceRegexWithPossessive() {
+        // Pattern a book source might write on Android using possessive quantifier
+        let input = "第001章 故事開始"
+        let result = RegexReplacer.replaceRegex(
+            result: input,
+            pattern: #"第\d++"#,   // possessive ++ — illegal in ICU
+            replacement: "",
+            replaceFirst: false
+        )
+        #expect(result == " 故事開始")
+    }
+
+    @Test("replaceRegex returns original on catastrophic backtracking pattern within timeout")
+    func catastrophicBacktrackingSafeguard() {
+        // Classic catastrophic backtracking pattern — nested quantifiers on large input
+        let input = String(repeating: "a", count: 30) + "!"
+        let result = RegexReplacer.replaceRegex(
+            result: input,
+            pattern: "(a+)+b",   // catastrophic on non-matching input
+            replacement: "X",
+            replaceFirst: false,
+            timeout: 0.5
+        )
+        // Expect original returned within timeout (not a hang)
+        #expect(result == input)
+    }
+}

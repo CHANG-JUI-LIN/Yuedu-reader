@@ -20,7 +20,11 @@ final class RegexExtractor: RuleExtractor {
 
         let nsContent = content as NSString
         let fullRange = NSRange(location: 0, length: nsContent.length)
-        let matches = regex.matches(in: content, range: fullRange)
+
+        let matches = RegexSanitizer.withTimeout(seconds: 2.0, work: {
+            regex.matches(in: content, range: fullRange)
+        }, fallback: [] as [NSTextCheckingResult])
+
         guard !matches.isEmpty else { return [] }
 
         var results: [String] = []
@@ -49,7 +53,10 @@ final class RegexExtractor: RuleExtractor {
 
         let nsContent = content as NSString
         let fullRange = NSRange(location: 0, length: nsContent.length)
-        guard let match = regex.firstMatch(in: content, range: fullRange) else {
+
+        guard let match = RegexSanitizer.withTimeout(seconds: 2.0, work: {
+            regex.firstMatch(in: content, range: fullRange)
+        }, fallback: nil) else {
             return ""
         }
 
@@ -83,35 +90,40 @@ enum RegexReplacer {
     /// Replace regex matches in `result`.
     /// - Parameters:
     ///   - result: The input string.
-    ///   - pattern: The regex pattern (supports `(?i)` inline flags).
+    ///   - pattern: The regex pattern (supports `(?i)` inline flags). Java-specific
+    ///              syntax is sanitized automatically via `RegexSanitizer`.
     ///   - replacement: Template string with `$0`–`$99` group references.
     ///   - replaceFirst: If `true`, only the first match is replaced.
-    /// - Returns: The modified string, or the original if the pattern is empty/invalid.
+    ///   - timeout: Maximum seconds to allow; returns original on catastrophic backtracking.
+    /// - Returns: The modified string, or the original if the pattern is empty/invalid/timed-out.
     static func replaceRegex(
         result: String,
         pattern: String,
         replacement: String,
-        replaceFirst: Bool
+        replaceFirst: Bool,
+        timeout: TimeInterval = 2.0
     ) -> String {
         guard !pattern.isEmpty else { return result }
         guard let regex = RegexCache.shared.regex(for: pattern) else { return result }
 
         let fullRange = NSRange(result.startIndex..., in: result)
 
-        if replaceFirst {
-            guard let match = regex.firstMatch(in: result, range: fullRange) else {
-                return result
+        return RegexSanitizer.withTimeout(seconds: timeout, work: {
+            if replaceFirst {
+                guard let match = regex.firstMatch(in: result, range: fullRange) else {
+                    return result
+                }
+                let template = regex.replacementString(
+                    for: match, in: result, offset: 0, template: replacement
+                )
+                let mutable = NSMutableString(string: result)
+                mutable.replaceCharacters(in: match.range, with: template)
+                return mutable as String
+            } else {
+                return regex.stringByReplacingMatches(
+                    in: result, range: fullRange, withTemplate: replacement
+                )
             }
-            let template = regex.replacementString(
-                for: match, in: result, offset: 0, template: replacement
-            )
-            let mutable = NSMutableString(string: result)
-            mutable.replaceCharacters(in: match.range, with: template)
-            return mutable as String
-        } else {
-            return regex.stringByReplacingMatches(
-                in: result, range: fullRange, withTemplate: replacement
-            )
-        }
+        }, fallback: result)
     }
 }

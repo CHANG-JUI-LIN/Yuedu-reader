@@ -12,14 +12,17 @@ final class RegexCache {
     }
 
     /// Get or compile a regex pattern. Returns nil if the pattern is invalid.
-    /// The cache key incorporates options so the same pattern with different flags is cached separately.
+    /// The pattern is sanitized via RegexSanitizer to handle Java-specific syntax
+    /// (possessive quantifiers, atomic groups, \R, \e, (?d) flag, \p{javaXxx}).
+    /// The cache key incorporates the sanitized pattern + options so the same pattern
+    /// with different flags is cached separately.
     func regex(for pattern: String, options: NSRegularExpression.Options = []) -> NSRegularExpression? {
-        let key = "\(pattern)|\(options.rawValue)"
-        // Use a two-step approach because NSRegularExpression init can throw
+        let sanitized = RegexSanitizer.sanitize(pattern)
+        let key = "\(sanitized)|\(options.rawValue)"
         if let cached = cache.get(key) {
             return cached
         }
-        guard let compiled = try? NSRegularExpression(pattern: pattern, options: options) else {
+        guard let compiled = try? NSRegularExpression(pattern: sanitized, options: options) else {
             return nil
         }
         cache.put(key, value: compiled)
@@ -27,28 +30,36 @@ final class RegexCache {
     }
 
     /// Replace all matches of `pattern` in `string` with `replacement`.
-    /// Returns nil if the pattern is invalid.
+    /// Protected by a 2-second timeout to guard against catastrophic backtracking.
+    /// Returns nil if the pattern is invalid, or the original string on timeout.
     func replaceMatches(
         in string: String,
         pattern: String,
         replacement: String,
-        options: NSRegularExpression.Options = []
+        options: NSRegularExpression.Options = [],
+        timeout: TimeInterval = 2.0
     ) -> String? {
         guard let regex = regex(for: pattern, options: options) else { return nil }
         let range = NSRange(string.startIndex..., in: string)
-        return regex.stringByReplacingMatches(in: string, range: range, withTemplate: replacement)
+        return RegexSanitizer.withTimeout(seconds: timeout, work: {
+            regex.stringByReplacingMatches(in: string, range: range, withTemplate: replacement)
+        }, fallback: string)
     }
 
     /// Find the first match of `pattern` in `string`.
-    /// Returns nil if the pattern is invalid or no match is found.
+    /// Protected by a 2-second timeout to guard against catastrophic backtracking.
+    /// Returns nil if the pattern is invalid or no match is found within the timeout.
     func firstMatch(
         in string: String,
         pattern: String,
-        options: NSRegularExpression.Options = []
+        options: NSRegularExpression.Options = [],
+        timeout: TimeInterval = 2.0
     ) -> NSTextCheckingResult? {
         guard let regex = regex(for: pattern, options: options) else { return nil }
         let range = NSRange(string.startIndex..., in: string)
-        return regex.firstMatch(in: string, range: range)
+        return RegexSanitizer.withTimeout(seconds: timeout, work: {
+            regex.firstMatch(in: string, range: range)
+        }, fallback: nil)
     }
 
     /// Clear all cached patterns.
