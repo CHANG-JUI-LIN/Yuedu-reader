@@ -10,6 +10,7 @@ struct WebDAVSyncView: View {
     @State private var showAlert = false
     @State private var alertTitle = ""
     @State private var alertMessage = ""
+    @State private var showConflictAlert = false
 
     // MARK: - Body
 
@@ -38,7 +39,30 @@ struct WebDAVSyncView: View {
             } message: {
                 Text(alertMessage)
             }
+            .onChange(of: manager.pendingConflict != nil) { hasConflict in
+                if hasConflict { showConflictAlert = true }
+            }
+            .alert(gs.t("偵測到備份衝突"), isPresented: $showConflictAlert) {
+                Button(gs.t("使用雲端備份"), role: .destructive) {
+                    Task { try? await manager.resolveConflict(keepRemote: true) }
+                }
+                Button(gs.t("保留本地資料"), role: .cancel) {
+                    Task { try? await manager.resolveConflict(keepRemote: false) }
+                }
+            } message: {
+                if let c = manager.pendingConflict {
+                    Text(conflictMessage(c))
+                }
+            }
         }
+    }
+
+    private func conflictMessage(_ c: SyncConflict) -> String {
+        let fmt = DateFormatter()
+        fmt.dateStyle = .short; fmt.timeStyle = .short
+        let remoteDate = fmt.string(from: c.remote.backupDate)
+        let localDate  = fmt.string(from: c.localLastSync)
+        return gs.t("雲端備份來自裝置「\(c.remote.deviceName)」（\(remoteDate)）。本裝置上次同步：\(localDate)。請選擇要使用哪個版本。")
     }
 
     // MARK: - Sections

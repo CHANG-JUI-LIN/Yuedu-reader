@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import UIKit
 
 // MARK: - WebDAV 錯誤類型
 
@@ -19,6 +20,22 @@ enum WebDAVError: LocalizedError {
         case .fileNotFound:         return "雲端找不到備份檔案"
         }
     }
+}
+
+// MARK: - 同步清單（隨每次備份上傳至 /yuedu/manifest.json）
+
+struct SyncManifest: Codable {
+    var deviceId: String
+    var deviceName: String
+    var backupDate: Date
+    var appVersion: String
+}
+
+// MARK: - 衝突資訊
+
+struct SyncConflict {
+    let remote: SyncManifest
+    let localLastSync: Date
 }
 
 // MARK: - WebDAV 管理器
@@ -42,15 +59,35 @@ final class WebDAVManager: ObservableObject {
     // MARK: 狀態
 
     @Published var isSyncing: Bool = false
-    @Published var lastSyncDate: Date?
+    @Published var lastSyncDate: Date? {
+        didSet {
+            if let date = lastSyncDate {
+                UserDefaults.standard.set(date, forKey: "webdav_last_sync")
+            }
+        }
+    }
     @Published var statusMessage: String = ""
+    /// 偵測到跨裝置衝突時非 nil；View 監聽並彈出選擇對話框。
+    @Published var pendingConflict: SyncConflict?
+
+    // MARK: 私有
+
+    /// 每台裝置唯一 ID，首次產生後存入 UserDefaults。
+    private static var deviceId: String {
+        let key = "sync_device_id"
+        if let id = UserDefaults.standard.string(forKey: key) { return id }
+        let id = UUID().uuidString
+        UserDefaults.standard.set(id, forKey: key)
+        return id
+    }
 
     // MARK: 初始化
 
     private init() {
-        serverUrl = UserDefaults.standard.string(forKey: "webdav_url") ?? ""
-        username  = UserDefaults.standard.string(forKey: "webdav_username") ?? ""
-        password  = UserDefaults.standard.string(forKey: "webdav_password") ?? ""
+        serverUrl    = UserDefaults.standard.string(forKey: "webdav_url") ?? ""
+        username     = UserDefaults.standard.string(forKey: "webdav_username") ?? ""
+        password     = UserDefaults.standard.string(forKey: "webdav_password") ?? ""
+        lastSyncDate = UserDefaults.standard.object(forKey: "webdav_last_sync") as? Date
     }
 
     // MARK: - 認證
@@ -72,31 +109,42 @@ final class WebDAVManager: ObservableObject {
         }
     }
 
-    /// 將三份本地資料備份至 WebDAV。
+    /// 將三份本地資料備份至 WebDAV，同時上傳包含裝置資訊的 manifest.json。
     func backup() async throws {
         await setSync(true, message: "備份中…")
         defer { Task { @MainActor in self.isSyncing = false } }
 
-        // 確保 /yuedu/ 目錄存在（忽略失敗，部分伺服器自動建立）
         try? await mkcol(path: "/yuedu/")
 
-        // 1. book_sources.json（BookSourceStore → documentDirectory）
         let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+
+        // 1. book_sources.json
         let bookSourcesURL = docsDir.appendingPathComponent("book_sources.json")
         if let data = try? Data(contentsOf: bookSourcesURL) {
             try await put(data: data, path: "/yuedu/book_sources.json")
         }
 
-        // 2. books.json（BookStore → UserDefaults key "yd_books_meta"）
+        // 2. books.json
         if let booksData = UserDefaults.standard.data(forKey: "yd_books_meta") {
             try await put(data: booksData, path: "/yuedu/books.json")
         }
 
-        // 3. replace_rules.json（ReplaceRuleStore → libraryDirectory）
+        // 3. replace_rules.json
         let libDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         let replaceURL = libDir.appendingPathComponent("replace_rules.json")
         if let data = try? Data(contentsOf: replaceURL) {
             try await put(data: data, path: "/yuedu/replace_rules.json")
+        }
+
+        // 4. manifest.json（衝突偵測用）
+        let manifest = SyncManifest(
+            deviceId: Self.deviceId,
+            deviceName: UIDevice.current.name,
+            backupDate: Date(),
+            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        )
+        if let manifestData = try? JSONEncoder().encode(manifest) {
+            try await put(data: manifestData, path: "/yuedu/manifest.json")
         }
 
         await MainActor.run {
@@ -105,32 +153,59 @@ final class WebDAVManager: ObservableObject {
         }
     }
 
-    /// 從 WebDAV 下載備份並覆寫本地資料，然後重新載入書源。
+    /// 從 WebDAV 下載備份並覆寫本地資料（含衝突偵測）。
+    /// 若偵測到跨裝置衝突，設定 `pendingConflict` 並提前返回，由 UI 決定是否繼續。
     func restore() async throws {
+        try await performRestore(skipConflictCheck: false)
+    }
+
+    /// 使用者確認後呼叫：強制以雲端備份覆蓋本地。
+    func resolveConflict(keepRemote: Bool) async throws {
+        await MainActor.run { pendingConflict = nil }
+        if keepRemote {
+            try await performRestore(skipConflictCheck: true)
+        }
+        // keepRemote == false：保留本地，什麼都不做
+    }
+
+    // MARK: - 私有還原實作
+
+    private func performRestore(skipConflictCheck: Bool) async throws {
         await setSync(true, message: "還原中…")
         defer { Task { @MainActor in self.isSyncing = false } }
 
-        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let libDir  = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-
-        // 1. book_sources.json
-        if let sourcesData = try? await get(path: "/yuedu/book_sources.json") {
-            let url = docsDir.appendingPathComponent("book_sources.json")
-            try sourcesData.write(to: url, options: .atomic)
-            // 立即更新 BookSourceStore（sources 是 @Published var，可直接賦值）
-            if let decoded = try? JSONDecoder().decode([BookSource].self, from: sourcesData) {
-                await MainActor.run {
-                    BookSourceStore.shared.sources = decoded
+        // ── 衝突偵測 ────────────────────────────────────────────────────────────
+        if !skipConflictCheck {
+            if let manifestData = try? await get(path: "/yuedu/manifest.json"),
+               let remote = try? JSONDecoder().decode(SyncManifest.self, from: manifestData) {
+                let isOtherDevice = remote.deviceId != Self.deviceId
+                // 本地曾同步過 → 雲端可能是另一台裝置的舊備份，可能覆蓋本地較新資料
+                if isOtherDevice, let localSync = lastSyncDate {
+                    await MainActor.run {
+                        self.pendingConflict = SyncConflict(remote: remote, localLastSync: localSync)
+                        self.statusMessage = "偵測到衝突，請選擇要使用哪個版本"
+                    }
+                    return
                 }
             }
         }
 
-        // 2. books.json（寫回 UserDefaults，下次 BookStore 初始化時生效）
+        // ── 正式還原 ─────────────────────────────────────────────────────────────
+        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let libDir  = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+
+        if let sourcesData = try? await get(path: "/yuedu/book_sources.json") {
+            let url = docsDir.appendingPathComponent("book_sources.json")
+            try sourcesData.write(to: url, options: .atomic)
+            if let decoded = try? JSONDecoder().decode([BookSource].self, from: sourcesData) {
+                await MainActor.run { BookSourceStore.shared.sources = decoded }
+            }
+        }
+
         if let booksData = try? await get(path: "/yuedu/books.json") {
             UserDefaults.standard.set(booksData, forKey: "yd_books_meta")
         }
 
-        // 3. replace_rules.json
         if let rulesData = try? await get(path: "/yuedu/replace_rules.json") {
             let url = libDir.appendingPathComponent("replace_rules.json")
             try rulesData.write(to: url, options: .atomic)
@@ -163,7 +238,6 @@ final class WebDAVManager: ObservableObject {
 
         let (_, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { return }
-        // 201 = created, 405 = already exists — both acceptable
         if http.statusCode != 201 && http.statusCode != 405 && http.statusCode != 200 {
             throw WebDAVError.connectionFailed(http.statusCode)
         }
