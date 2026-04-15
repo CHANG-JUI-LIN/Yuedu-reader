@@ -63,8 +63,7 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
             "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         wv.navigationDelegate = context.coordinator
 
-        let loginTarget = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let url = URL(string: loginTarget.isEmpty ? source.bookSourceUrl : loginTarget) {
+        if let url = Self.effectiveURL(source: source) {
             wv.load(URLRequest(url: url))
         }
         return wv
@@ -73,6 +72,31 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
     func makeCoordinator() -> Coordinator { Coordinator(source: source) }
+
+    /// Resolves the effective URL to open in the WebView.
+    /// Legado's `loginUrl` can be:
+    ///   1. A plain URL:                `https://www.qidian.com/sign/`
+    ///   2. A JS expression:            `@js: java.webView("https://...")`
+    ///   3. Empty → fall back to bookSourceUrl
+    static func effectiveURL(source: BookSource) -> URL? {
+        let raw = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // 1. Plain URL
+        if !raw.isEmpty && !raw.hasPrefix("@") && !raw.hasPrefix("{") {
+            if let url = URL(string: raw) { return url }
+        }
+
+        // 2. @js: expression — extract the first https?:// URL from inside quotes
+        if raw.lowercased().hasPrefix("@js:") {
+            let js = raw.dropFirst(4)
+            if let range = js.range(of: #"https?://[^"'\s)>]+"#, options: .regularExpression) {
+                if let url = URL(string: String(js[range])) { return url }
+            }
+        }
+
+        // 3. Fall back to bookSourceUrl
+        return URL(string: source.bookSourceUrl)
+    }
 
     // MARK: - Coordinator
 
@@ -87,9 +111,8 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
 
         /// Copies all domain-relevant WKWebView cookies into `CookieStore`.
         private func syncCookies(from webView: WKWebView) {
-            let loginTarget = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-            let urlString = loginTarget.isEmpty ? source.bookSourceUrl : loginTarget
-            guard let baseURL = URL(string: urlString), let host = baseURL.host else { return }
+            guard let baseURL = BookSourceLoginWebViewRepresentable.effectiveURL(source: source),
+                  let host = baseURL.host else { return }
 
             webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
                 let relevant = cookies.filter { c in
