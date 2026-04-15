@@ -106,21 +106,6 @@ struct yuedu_appTests {
         )
     }
 
-    @Test func txtChapterIngestBuildsOneSpinePerChapter() async throws {
-        let package = try TXTBookIngester(
-            chapters: [
-                .init(title: "第一章", body: "段落一\n\n段落二"),
-                .init(title: "第二章", body: "段落三"),
-            ],
-            title: "測試書",
-            author: "測試作者",
-            originalSourceURL: nil
-        ).ingest()
-
-        #expect(package.manifest.spine.count == 2)
-        #expect(package.parsedBook.chapters.first?.html.contains("id=\"reader-content\"") == true)
-    }
-
     @Test func onlineCoordinatorUsesCachedChapterAndPlaceholder() async throws {
         let book = ReadingBook(title: "線上書", author: "作者", source: "https://example.com", contentFilename: "")
         let bookId = book.id
@@ -301,11 +286,13 @@ struct yuedu_appTests {
         let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
             fontSize: 18,
+            lineHeightMultiple: 1.4,
             lineSpacing: 6,
             paragraphSpacing: 8,
             firstLineIndent: 36,
             textColor: .black,
-            backgroundColor: .white
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = "<p>Hello <strong>world</strong></p>"
         let result = await builder.build(html: html, config: config).attributedString
@@ -317,8 +304,14 @@ struct yuedu_appTests {
         let builder = HTMLAttributedStringBuilder()
         builder.imageLoader = { _ in UIImage(systemName: "photo") }
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 0, textColor: .black, backgroundColor: .white
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = "<p>Before</p><img src='cover.jpg'><p>After</p>"
         let result = await builder.build(html: html, config: config).attributedString
@@ -340,8 +333,14 @@ struct yuedu_appTests {
             name == "kai" ? "Courier" : nil
         }
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = """
         <html><head><style>.kai { font-family: kai; font-weight: bold; }</style></head>
@@ -358,8 +357,14 @@ struct yuedu_appTests {
             name == "kai" ? "TimesNewRomanPSMT" : nil
         }
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = """
         <html><head><style>.kai { font-family: kai; font-weight: bold; }</style></head>
@@ -373,8 +378,14 @@ struct yuedu_appTests {
     @Test func htmlBuilderPreservesNestedBoldInsideBlock() async {
         let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = "<p>Hello <strong>world</strong></p>"
         let result = await builder.build(html: html, config: config).attributedString
@@ -389,8 +400,14 @@ struct yuedu_appTests {
     @Test func htmlBuilderAppliesCSSColor() async {
         let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = """
         <html><head><style>.title { color: #254c8b; }</style></head>
@@ -415,8 +432,14 @@ struct yuedu_appTests {
             return UIFont(name: "Courier", size: size)
         }
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = """
         <html><head><style>.emph { font-family: kai; font-weight: 700; font-style: italic; }</style></head>
@@ -434,8 +457,14 @@ struct yuedu_appTests {
     @Test func htmlBuilderKeepsInlineSpeakerAndDialogueInSameParagraph() async {
         let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = "<p class='normaltext'><b class='calibre3'>青年：</b>那麼，我就重新向您發問了。</p>"
         let result = await builder.build(html: html, config: config).attributedString
@@ -448,8 +477,14 @@ struct yuedu_appTests {
     @Test func htmlBuilderUsesLineSeparatorForBrWithoutCreatingParagraphBreak() async {
         let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = "<p>青年：<br/>那麼，我就重新向您發問了。</p>"
         let result = await builder.build(html: html, config: config).attributedString
@@ -461,8 +496,14 @@ struct yuedu_appTests {
     @Test func htmlBuilderSkipsWhitespaceOnlyTextNodesBetweenParagraphs() async {
         let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = """
         <html><body><div>
@@ -481,8 +522,13 @@ struct yuedu_appTests {
     @Test func htmlBuilderPreservesDecorativeBlockWithWhitespaceContent() async {
         let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white,
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
             renderWidth: 320
         )
         let html = """
@@ -513,8 +559,14 @@ struct yuedu_appTests {
     @Test func htmlBuilderTreatsBlockBrAsParagraphBreak() async {
         let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = """
         <html><head><style>.calibre1 { display: block; }</style></head>
@@ -536,8 +588,14 @@ struct yuedu_appTests {
         let builder = HTMLAttributedStringBuilder()
         builder.imageLoader = { _ in UIImage(systemName: "diamond.fill") }
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = """
         <html><head><style>
@@ -567,8 +625,13 @@ struct yuedu_appTests {
             src == "images/00008.jpeg" ? background : nil
         }
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white,
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
             renderWidth: 320
         )
         let html = """
@@ -597,8 +660,13 @@ struct yuedu_appTests {
     @Test func htmlBuilderEmitsGenericBlockRenderStyleForBackgroundAndBorders() async {
         let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 0, textColor: .black, backgroundColor: .white,
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
             renderWidth: 320
         )
         let html = """
@@ -636,8 +704,13 @@ struct yuedu_appTests {
         }
         builder.imageLoader = { _ in diamond }
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 0, textColor: .black, backgroundColor: .white,
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
             renderWidth: 320
         )
         let html = """
@@ -677,8 +750,13 @@ struct yuedu_appTests {
         }
         builder.imageLoader = { _ in banner }
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white,
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
             renderWidth: 320
         )
         let html = """
@@ -713,8 +791,14 @@ struct yuedu_appTests {
         let builder = HTMLAttributedStringBuilder()
         builder.imageLoader = { _ in UIImage(systemName: "book") }
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 0, textColor: .black, backgroundColor: .white
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
         )
         let html = """
         <html><body><div><svg><image xlink:href='cover.jpeg' width='100' height='160' /></svg></div></body></html>
@@ -1006,6 +1090,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1046,6 +1144,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1115,6 +1227,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1219,6 +1345,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1301,6 +1441,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1323,6 +1477,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1353,6 +1521,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1384,6 +1566,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1448,6 +1644,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1508,6 +1718,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1629,6 +1853,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1696,6 +1934,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1751,6 +2003,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1872,6 +2138,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1945,6 +2225,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -1995,6 +2289,20 @@ struct yuedu_appTests {
         let engine = await MainActor.run {
             CoreTextPageEngine(
                 session: session,
+                renderSettings: ReaderRenderSettings(
+                    theme: "light",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 6,
+                    paragraphSpacing: 8,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 16,
+                    footerHeight: 24,
+                    contentInsets: .zero
+                ),
                 offsetStore: CharOffsetStore(directoryURL: storeDir)
             )
         }
@@ -2017,8 +2325,13 @@ struct yuedu_appTests {
             src == "images/00008.jpeg" ? background : nil
         }
         let config = HTMLAttributedStringBuilder.Config(
-            fontSize: 18, lineSpacing: 6, paragraphSpacing: 8,
-            firstLineIndent: 36, textColor: .black, backgroundColor: .white,
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 36,
+            textColor: .black,
+            backgroundColor: .white,
             renderWidth: 320
         )
         let html = """

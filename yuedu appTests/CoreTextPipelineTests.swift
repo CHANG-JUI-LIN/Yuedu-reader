@@ -180,10 +180,10 @@ struct CSSPropertyApplierTests {
             parentStyle: parentStyle,
             rootFontSize: rootFontSize,
             resolveLength: { raw, currentFontSize, rootFontSize, _ in
-                if raw.hasSuffix("px"), let px = CGFloat(raw.dropLast(2)) { return px }
-                if raw.hasSuffix("em"), let em = CGFloat(raw.dropLast(2)) { return em * currentFontSize }
-                if raw.hasSuffix("rem"), let rem = CGFloat(raw.dropLast(3)) { return rem * rootFontSize }
-                return CGFloat(raw)
+                if raw.hasSuffix("px"), let px = Double(raw.dropLast(2)) { return CGFloat(px) }
+                if raw.hasSuffix("em"), let em = Double(raw.dropLast(2)) { return CGFloat(em) * currentFontSize }
+                if raw.hasSuffix("rem"), let rem = Double(raw.dropLast(3)) { return CGFloat(rem) * rootFontSize }
+                return Double(raw).map { CGFloat($0) }
             },
             parseColor: { raw in
                 if raw == "red" { return .red }
@@ -218,8 +218,8 @@ struct CSSPropertyApplierTests {
             },
             resolveLineHeight: { raw, fontSize, _ in
                 if raw == "normal" { return fontSize * 1.4 }
-                if let num = CGFloat(raw) { return num * fontSize }
-                if raw.hasSuffix("px"), let px = CGFloat(raw.dropLast(2)) { return px }
+                if let d = Double(raw) { return CGFloat(d) * fontSize }
+                if raw.hasSuffix("px"), let px = Double(raw.dropLast(2)) { return CGFloat(px) }
                 return nil
             },
             extractURL: { raw in
