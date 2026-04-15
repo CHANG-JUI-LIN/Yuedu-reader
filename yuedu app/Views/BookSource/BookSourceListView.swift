@@ -13,6 +13,10 @@ struct BookSourceListView: View {
     @State private var importJSON = ""
     @State private var importError: String? = nil
     @State private var importSuccess: String? = nil
+    @State private var showNetworkImport = false
+    @State private var importURLString = ""
+    @State private var networkImportLoading = false
+    @State private var loginSource: BookSource? = nil
     @Environment(\.presentationMode) var dismiss
 
     // 批量操作
@@ -60,8 +64,17 @@ struct BookSourceListView: View {
                     Button(gs.t("關閉")) { dismiss.wrappedValue.dismiss() }
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button {
-                        showImport = true
+                    Menu {
+                        Button {
+                            showImport = true
+                        } label: {
+                            Label(gs.t("本地導入"), systemImage: "doc.badge.plus")
+                        }
+                        Button {
+                            showNetworkImport = true
+                        } label: {
+                            Label(gs.t("網路導入"), systemImage: "network")
+                        }
                     } label: {
                         Image(systemName: "square.and.arrow.down")
                     }
@@ -116,6 +129,16 @@ struct BookSourceListView: View {
             .sheet(isPresented: $showImport) {
                 AdaptiveSheetContainer(maxWidth: 820) {
                     importSheet
+                }
+            }
+            .sheet(isPresented: $showNetworkImport) {
+                AdaptiveSheetContainer(maxWidth: 820) {
+                    networkImportSheet
+                }
+            }
+            .sheet(item: $loginSource) { src in
+                BookSourceLoginWebView(source: src) {
+                    loginSource = nil
                 }
             }
             .alert(gs.t("確認刪除"), isPresented: $showDeleteConfirm) {
@@ -258,6 +281,13 @@ struct BookSourceListView: View {
                     Label(
                         gs.t(source.enabled ? "停用" : "啟用"),
                         systemImage: source.enabled ? "xmark.circle" : "checkmark.circle")
+                }
+                if !source.loginUrl.isEmpty {
+                    Button {
+                        loginSource = source
+                    } label: {
+                        Label(gs.t("Cookie 驗證登入"), systemImage: "key.fill")
+                    }
                 }
                 Divider()
                 Button(role: .destructive) {
@@ -553,6 +583,84 @@ struct BookSourceListView: View {
         } catch {
             withAnimation { importError = error.localizedDescription }
         }
+    }
+
+    // MARK: - 網路導入 Sheet
+
+    private var networkImportSheet: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "network").foregroundColor(DSColor.accent)
+                    Text(gs.t("輸入書源 JSON 的網路地址，支援直接返回 JSON 的 URL。"))
+                        .font(.caption).foregroundColor(DSColor.textSecondary)
+                }
+                .padding()
+                .background(DSColor.accent.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding()
+
+                TextField("https://example.com/booksource.json", text: $importURLString)
+                    .textFieldStyle(.roundedBorder)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .padding(.horizontal)
+
+                if networkImportLoading {
+                    ProgressView()
+                        .padding(.top, 24)
+                }
+
+                Spacer()
+            }
+            .navigationTitle(gs.t("網路導入"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(gs.t("取消")) {
+                        showNetworkImport = false
+                        importURLString = ""
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(gs.t("匯入")) {
+                        doNetworkImport()
+                    }
+                    .font(.body.weight(.semibold))
+                    .disabled(
+                        importURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || networkImportLoading)
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+
+    private func doNetworkImport() {
+        let urlString = importURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: urlString) else {
+            withAnimation { importError = gs.t("無效的 URL") }
+            return
+        }
+        networkImportLoading = true
+        URLSession.shared.dataTask(with: url) { data, _, error in
+            DispatchQueue.main.async {
+                networkImportLoading = false
+                if let err = error {
+                    withAnimation { importError = err.localizedDescription }
+                    return
+                }
+                guard let data, let text = String(data: data, encoding: .utf8)
+                        ?? String(data: data, encoding: .isoLatin1) else {
+                    withAnimation { importError = gs.t("無法解析伺服器回應") }
+                    return
+                }
+                showNetworkImport = false
+                importURLString = ""
+                doImport(text)
+            }
+        }.resume()
     }
 
     // MARK: - 工具
