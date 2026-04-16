@@ -764,13 +764,23 @@ final class OnlineBookCoordinator {
 
     func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {
         guard let refs = book.onlineChapters, !refs.isEmpty else { return }
-        let range = (max(0, center - 2)...min(refs.count - 1, center + 2)).filter { $0 != center }
-        await chapterFetchManager.prefetchChapters(
-            book: book,
-            indices: Array(range),
-            priority: .prefetch,
-            store: store
-        )
+        let last = refs.count - 1
+
+        // 前向優先：N+1、N+2 用 prefetch（使用者往後讀的概率遠大於往前）
+        let forwardIndices = [center + 1, center + 2]
+            .filter { $0 >= 0 && $0 <= last }
+        // 後向備用：N-1、N-2 用 background（保留回頭翻閱的情境）
+        let backwardIndices = [center - 1, center - 2]
+            .filter { $0 >= 0 && $0 <= last }
+
+        if !forwardIndices.isEmpty {
+            await chapterFetchManager.prefetchChapters(
+                book: book, indices: forwardIndices, priority: .prefetch, store: store)
+        }
+        if !backwardIndices.isEmpty {
+            await chapterFetchManager.prefetchChapters(
+                book: book, indices: backwardIndices, priority: .background, store: store)
+        }
     }
 
     func chapterState(bookId: UUID, chapterIndex: Int) async -> OnlineChapterLoadState {

@@ -1484,6 +1484,8 @@ struct ReaderView: View {
             // TXT：使用 allPages
             let page = allPages[min(currentPage, allPages.count - 1)]
             currentChapterIndex = page.chapterIndex
+            // 接近章節末尾時提前預加載下一章
+            maybeEarlyPrefetchIfNearChapterEnd()
             let progress = Double(currentPage) / Double(max(allPages.count - 1, 1))
             let normalized = min(1.0, max(0.0, progress))
             progressTrace(
@@ -1663,6 +1665,32 @@ struct ReaderView: View {
         guard let b = book, b.isOnline else { return }
         Task {
             await OnlineBookCoordinator.shared.prefetchAround(book: b, center: chapterIndex, store: store)
+        }
+    }
+
+    /// 當使用者翻到當前章節最後 25% 時，提前觸發下一章預加載，
+    /// 比等到章節末頁才觸發早幾頁，讓下一章有更多緩衝時間。
+    private func maybeEarlyPrefetchIfNearChapterEnd() {
+        guard let b = book, b.isOnline,
+              let refs = b.onlineChapters else { return }
+        let chIdx = currentChapterIndex
+        let nextIdx = chIdx + 1
+        guard refs.indices.contains(nextIdx) else { return }
+
+        // 下一章已快取則無需預加載
+        guard !dependencies.bookSourceFetcher.isChapterCached(
+            bookId: b.id, chapterIndex: nextIdx,
+            expectedSourceURL: nil, expectedTOCTitle: nil) else { return }
+
+        // 計算當前章節的頁數，判斷是否已超過 75%
+        let pagesInChapter = allPages.filter { $0.chapterIndex == chIdx }
+        guard !pagesInChapter.isEmpty else { return }
+        let currentPageInChapter = allPages.indices.contains(currentPage)
+            ? allPages[currentPage].pageInChapter : 0
+        guard currentPageInChapter >= (pagesInChapter.count * 3) / 4 else { return }
+
+        Task {
+            await OnlineBookCoordinator.shared.prefetchAround(book: b, center: chIdx, store: store)
         }
     }
 
