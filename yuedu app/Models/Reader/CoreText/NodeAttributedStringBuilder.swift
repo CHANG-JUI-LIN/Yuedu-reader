@@ -139,6 +139,7 @@ struct OnlineNodeAttributedStringBuilder: AttributedStringBuilding {
     // MARK: - AttributedStringBuilding
 
     var chapterCount: Int { refs.count }
+    var prefersLazyByteScan: Bool { true }
 
     func chapterTitle(at index: Int) -> String {
         guard refs.indices.contains(index) else { return "" }

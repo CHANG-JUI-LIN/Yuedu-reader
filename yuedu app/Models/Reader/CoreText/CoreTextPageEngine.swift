@@ -350,6 +350,18 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private func scanChapterByteSizes(for bookId: String) async {
         startupTrace("byteScan begin bookId=\(bookId) chapters=\(chapterCount) mode=\(attributedBuilder != nil ? "builder" : "resource")")
 
+        // Lazy path: online books skip the full O(N) scan.
+        // Sizes are filled incrementally via notifyChapterDataChanged.
+        if let attributedBuilder, attributedBuilder.prefersLazyByteScan {
+            guard !Task.isCancelled else { return }
+            guard currentBookId == bookId else { return }
+            chapterByteSizes = [Int](repeating: 0, count: attributedBuilder.chapterCount)
+            startupTrace("byteScan lazy chapters=\(attributedBuilder.chapterCount)")
+            rebuildPageOffsets()
+            onChapterReady?(nil)
+            return
+        }
+
         // Fast path: use pre-scanned sizes from SpinesCache (no ZIP I/O)
         if let adapter = resourceProvider as? ReadiumBookResourceAdapter,
            let cached = adapter.cachedChapterByteSizes(),

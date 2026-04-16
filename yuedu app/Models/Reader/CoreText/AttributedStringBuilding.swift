@@ -21,6 +21,10 @@ enum AttributedStringBuildingError: LocalizedError {
 
 protocol AttributedStringBuilding {
     var chapterCount: Int { get }
+    /// When true, CoreTextPageEngine skips the O(N) byte-size scan at startup
+    /// and initialises sizes to zero. Sizes are filled incrementally via
+    /// `notifyChapterDataChanged`. Online books should return true.
+    var prefersLazyByteScan: Bool { get }
     func chapterTitle(at index: Int) -> String
     func chapterSourceHref(at index: Int) -> String?
     func chapterDataSize(at index: Int) async -> Int
@@ -35,6 +39,7 @@ protocol AttributedStringBuilding {
 }
 
 extension AttributedStringBuilding {
+    var prefersLazyByteScan: Bool { false }
     func chapterSourceHref(at index: Int) -> String? { nil }
     func chapterIndex(for href: String) -> Int? { nil }
     func cssResourceHrefs() -> [String] { [] }
