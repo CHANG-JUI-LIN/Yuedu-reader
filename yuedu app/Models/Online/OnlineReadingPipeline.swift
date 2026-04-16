@@ -155,9 +155,26 @@ actor ChapterFetchManager {
                 )
             }
 
+            let bsf = bookSourceFetcher  // 在進入 @MainActor closure 前先捕捉 actor 屬性
+            let capturedStore = store
             let content = await fetchBrowserImportedChapter(
                 urlString: ref.url,
-                referer: book.bookInfoURL ?? book.source
+                referer: book.bookInfoURL ?? book.source,
+                progressHandler: { @MainActor partial in
+                    // 第一頁到手時先存 partial content，讓 Reader 立即顯示
+                    _ = bsf.saveToCache(
+                        content: partial,
+                        bookId: bookId,
+                        chapterIndex: chapterIndex,
+                        sourceURL: ref.url,
+                        tocTitle: ref.title
+                    )
+                    capturedStore?.updateCachedChapter(
+                        bookId: bookId,
+                        chapterIndex: chapterIndex,
+                        filename: "\(chapterIndex).txt"
+                    )
+                }
             )
             if !content.isEmpty {
                 _ = bookSourceFetcher.saveToCache(
@@ -363,13 +380,17 @@ actor ChapterFetchManager {
     }
 
     @MainActor
-    private func fetchBrowserImportedChapter(urlString: String, referer: String?) async
-        -> String
-    {
+    private func fetchBrowserImportedChapter(
+        urlString: String,
+        referer: String?,
+        progressHandler: (@MainActor (String) -> Void)? = nil
+    ) async -> String {
         if let direct = try? await bookSourceFetcher.fetchWebContent(
             url: urlString,
             referer: referer
         ), !direct.isEmpty {
+            // HTTP 直接命中：立即通知 Reader 顯示（無需等待 WebView）
+            progressHandler?(direct)
             return direct
         }
 
@@ -396,6 +417,10 @@ actor ChapterFetchManager {
                     let cleaned = BookSourceFetcher.cleanChapterContent(result.content)
                     if !allContent.isEmpty { allContent += "\n" }
                     allContent += cleaned
+                    // 第一頁到手：立即通知 Reader，不等後續分頁
+                    if visited.count == 1 {
+                        progressHandler?(allContent)
+                    }
                 }
                 if let next = result.nextPageURL, let nextURL = URL(string: next) {
                     currentURL = nextURL
