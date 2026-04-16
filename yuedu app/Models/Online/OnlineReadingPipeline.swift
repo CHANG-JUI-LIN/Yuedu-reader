@@ -610,6 +610,9 @@ final class OnlineBookCoordinator {
         )
     }
 
+    /// 將全書章節轉換為 XHTML 格式。
+    /// ⚠️ O(N) 操作（遍歷所有章節），僅供**下載離線閱讀**使用。
+    /// 線上閱讀的渲染路徑使用 CoreTextPageEngine 的增量載入機制，不經過此方法。
     private func buildConvertedBook(
         for book: ReadingBook,
         refs: [OnlineChapterRef],
@@ -709,6 +712,8 @@ final class OnlineBookCoordinator {
         try buildPackage(for: book)
     }
 
+    /// 建構完整的 BookPackage 供離線閱讀。僅供下載流程呼叫。
+    /// 線上閱讀使用 OnlineNodeAttributedStringBuilder + CoreTextPageEngine，不經過此方法。
     func buildPackage(for book: ReadingBook, preferredChapter: Int? = nil) throws -> BookPackage {
         guard let refs = book.onlineChapters, !refs.isEmpty else {
             return try Self.makePlaceholderPackage(for: book)
@@ -738,6 +743,7 @@ final class OnlineBookCoordinator {
         return package
     }
 
+    /// 預熱下載流程所需的章節視窗。僅供下載流程呼叫。
     func warmCurrentWindow(
         for book: ReadingBook,
         chapterIndex: Int,
@@ -761,6 +767,7 @@ final class OnlineBookCoordinator {
         }
     }
 
+    /// 跳轉到指定章節並建構 BookPackage。僅供下載/離線跳轉流程呼叫。
     func fetchJumpTarget(
         for book: ReadingBook,
         chapterIndex: Int,
