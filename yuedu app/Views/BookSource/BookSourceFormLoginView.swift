@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - BookSourceFormLoginView
 // Handles book sources whose `loginUi` JSON defines form fields (text/password/button).
@@ -158,6 +159,29 @@ struct BookSourceFormLoginView: View {
             let engine = JSCoreEngine()
             engine.bookSource = source
 
+            // Wire browser pop-up for java.startBrowser / java.startBrowserAwait
+            engine.browserPresentHandler = { url, title, done in
+                DispatchQueue.main.async {
+                    guard let topVC = BookSourceFormLoginView.topViewController() else {
+                        done(); return
+                    }
+                    let hostVC = UIHostingController(
+                        rootView: JsBridgeBrowserView(urlString: url, title: title) {
+                            topVC.dismiss(animated: true, completion: done)
+                        }
+                    )
+                    topVC.present(hostVC, animated: true)
+                }
+            }
+
+            // Wire java.toast / java.longToast — shows a UIAlertController auto-dismiss
+            engine.toastHandler = { msg in
+                guard let topVC = BookSourceFormLoginView.topViewController() else { return }
+                let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
+                topVC.present(alert, animated: true)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { alert.dismiss(animated: true) }
+            }
+
             // Build bindings mirroring Legado's login() JS context
             let bindings: [String: Any] = [
                 "result": "",
@@ -214,12 +238,47 @@ struct BookSourceFormLoginView: View {
         Task.detached(priority: .userInitiated) {
             let engine = JSCoreEngine()
             engine.bookSource = source
+
+            engine.browserPresentHandler = { url, title, done in
+                DispatchQueue.main.async {
+                    guard let topVC = BookSourceFormLoginView.topViewController() else {
+                        done(); return
+                    }
+                    let hostVC = UIHostingController(
+                        rootView: JsBridgeBrowserView(urlString: url, title: title) {
+                            topVC.dismiss(animated: true, completion: done)
+                        }
+                    )
+                    topVC.present(hostVC, animated: true)
+                }
+            }
+            engine.toastHandler = { msg in
+                guard let topVC = BookSourceFormLoginView.topViewController() else { return }
+                let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
+                topVC.present(alert, animated: true)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { alert.dismiss(animated: true) }
+            }
+
             let bindings: [String: Any] = [
                 "result": credentials,
                 "baseUrl": source.bookSourceUrl
             ]
             _ = engine.evaluate(combined, bindings: bindings)
         }
+    }
+
+    // MARK: - UIKit Helpers
+
+    /// Returns the topmost presented UIViewController for presenting modal sheets from background tasks.
+    @MainActor
+    static func topViewController() -> UIViewController? {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene }).first,
+              let root = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController
+        else { return nil }
+        var top = root
+        while let p = top.presentedViewController { top = p }
+        return top
     }
 }
 

@@ -20,6 +20,14 @@ import CommonCrypto
     func getString(_ ruleStr: String) -> String
     func getStringList(_ ruleStr: String) -> [String]
 
+    // Browser WebView (Legado startBrowser / startBrowserAwait)
+    func startBrowser(_ url: String, _ title: String)
+    func startBrowserAwait(_ url: String, _ title: String)
+
+    // Toast notifications
+    func toast(_ msg: String)
+    func longToast(_ msg: String)
+
     // Logging
     func log(_ msg: String) -> String
     func logType(_ msg: String)
@@ -79,6 +87,14 @@ import CommonCrypto
 
     /// Delegate for network requests.
     var networkHandler: ((URLRequest) -> String?)?
+
+    /// Called when JS invokes `java.startBrowser(url, title)` or `java.startBrowserAwait(url, title)`.
+    /// Receives (url, title, onDismiss). For `startBrowserAwait` the bridge blocks jsQueue via
+    /// DispatchSemaphore until `onDismiss()` is called; for `startBrowser` it is called immediately.
+    var browserPresentHandler: ((String, String, @escaping () -> Void) -> Void)?
+
+    /// Called when JS invokes `java.toast(msg)` / `java.longToast(msg)`.
+    var toastHandler: ((String) -> Void)?
 
     /// Delegate for rule evaluation (connected later).
     var getStringHandler: ((String) -> String?)?
@@ -142,6 +158,32 @@ import CommonCrypto
     func getStringList(_ ruleStr: String) -> [String] {
         return getStringListHandler?(ruleStr) ?? []
     }
+
+    // MARK: Browser & Toast (Legado java.startBrowser / startBrowserAwait / toast)
+
+    /// Opens a browser WebView without blocking JS execution.
+    func startBrowser(_ url: String, _ title: String) {
+        browserPresentHandler?(url, title) { /* fire and forget */ }
+    }
+
+    /// Opens a browser WebView and blocks the JS thread (jsQueue) until the user closes it.
+    /// Uses DispatchSemaphore — safe because jsQueue is a background serial queue, not MainThread.
+    func startBrowserAwait(_ url: String, _ title: String) {
+        guard let handler = browserPresentHandler else { return }
+        let sem = DispatchSemaphore(value: 0)
+        handler(url, title) { sem.signal() }
+        sem.wait()
+    }
+
+    /// Show a short toast. Delegates to `toastHandler` on MainThread.
+    func toast(_ msg: String) {
+        #if DEBUG
+        print("[JSBridge toast] \(msg)")
+        #endif
+        DispatchQueue.main.async { [weak self] in self?.toastHandler?(msg) }
+    }
+
+    func longToast(_ msg: String) { toast(msg) }
 
     // MARK: Logging
 
@@ -348,7 +390,14 @@ import CommonCrypto
         let task = URLSession.shared.dataTask(with: request) { data, response, _ in
             defer { semaphore.signal() }
             guard let data = data else { return }
-            responseBody = Self.decodeData(data, response: response)
+            let body = Self.decodeData(data, response: response)
+            if Self.isCloudflareChallenged(body, response: response) {
+                #if DEBUG
+                print("[JSBridge] ⚠️ Cloudflare challenge detected for \(urlStr) — returning empty to prevent JSON.parse crash")
+                #endif
+                return  // responseBody stays ""
+            }
+            responseBody = body
         }
         task.resume()
         _ = semaphore.wait(timeout: .now() + 8)
@@ -370,5 +419,25 @@ import CommonCrypto
         return String(data: data, encoding: .utf8)
             ?? String(data: data, encoding: .isoLatin1)
             ?? ""
+    }
+
+    /// Returns true when the response body looks like a Cloudflare challenge page.
+    /// Returning an empty string from performRequest prevents `JSON.parse` from crashing
+    /// with `SyntaxError` on the raw HTML protection page.
+    static func isCloudflareChallenged(_ body: String, response: URLResponse?) -> Bool {
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? 200
+        // CF typically returns 403 or 503 with recognisable markers
+        if status != 403 && status != 503 && status != 429 { return false }
+        let markers = [
+            "cf-browser-verification",
+            "cf_chl_prog",
+            "Checking if the site connection is secure",
+            "checking your browser",
+            "_cf_chl_",
+            "cf-challenge",
+        ]
+        let lower = body.lowercased()
+        return markers.contains(where: { lower.contains($0.lowercased()) })
     }
 }

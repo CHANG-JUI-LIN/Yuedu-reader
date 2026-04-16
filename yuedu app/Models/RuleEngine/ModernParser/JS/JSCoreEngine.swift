@@ -54,6 +54,17 @@ class JSCoreEngine {
         didSet { bridge.getStringListHandler = getStringListHandler }
     }
 
+    /// Called when JS invokes `java.startBrowser` / `java.startBrowserAwait`.
+    /// Set this before evaluating login JS to enable interactive browser pop-ups.
+    var browserPresentHandler: ((String, String, @escaping () -> Void) -> Void)? {
+        didSet { bridge.browserPresentHandler = browserPresentHandler }
+    }
+
+    /// Called when JS invokes `java.toast` / `java.longToast`.
+    var toastHandler: ((String) -> Void)? {
+        didSet { bridge.toastHandler = toastHandler }
+    }
+
     /// Book source object injected as `source` in JS — set this before evaluating rule scripts.
     var bookSource: BookSource? {
         didSet {
@@ -169,6 +180,13 @@ class JSCoreEngine {
             if (typeof JSON === 'undefined') {
                 var JSON = { parse: function(s){return eval('('+s+')');}, stringify: function(o){return ''} };
             }
+        """)
+
+        // Legado helper functions frequently used by complex sources (e.g. 晴天系列).
+        // getArgument(key) reads source-level variables; setArgument(key, val) writes them.
+        ctx.evaluateScript("""
+            function getArgument(key) { return java.get(key) || ''; }
+            function setArgument(key, value) { java.put(key, value); }
         """)
     }
 
