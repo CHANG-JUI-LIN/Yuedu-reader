@@ -1,17 +1,21 @@
 import SwiftUI
 import WebKit
-
-// MARK: - BookSourceLoginWebView
+import Combine
 
 /// Interactive WebView login for book sources that require cookie authentication.
 /// Shows the book source's `loginUrl` (or `bookSourceUrl` as fallback) in a real
-/// browser. Cookies are captured from WKWebView on each navigation finish and
-/// persisted to `CookieStore`. The user taps "完成" when they have logged in.
+/// browser. Cookies are captured **when the user taps "完成"** — NOT on `didFinish` —
+/// so that Cloudflare `cf_clearance` and other async-set cookies are captured
+/// after all JS challenges have resolved.
 struct BookSourceLoginWebView: View {
     let source: BookSource
     let onDismiss: () -> Void
 
     private let gs = GlobalSettings.shared
+    /// Bridge object shared with the UIViewRepresentable; wires the "完成" button to the
+    /// cookie sync routine running inside the Coordinator.
+    @StateObject private var bridge = LoginWebBridge()
+    @State private var isSyncing = false
 
     var body: some View {
         NavigationView {
@@ -27,7 +31,7 @@ struct BookSourceLoginWebView: View {
                 .padding()
                 .background(DSColor.accent.opacity(0.06))
 
-                BookSourceLoginWebViewRepresentable(source: source)
+                BookSourceLoginWebViewRepresentable(source: source, bridge: bridge)
                     .edgesIgnoringSafeArea(.bottom)
             }
             .navigationTitle(gs.t("Cookie 驗證登入"))
@@ -35,10 +39,20 @@ struct BookSourceLoginWebView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(gs.t("取消")) { onDismiss() }
+                        .disabled(isSyncing)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gs.t("完成")) { onDismiss() }
+                    if isSyncing {
+                        ProgressView().scaleEffect(0.85)
+                    } else {
+                        Button(gs.t("完成")) {
+                            isSyncing = true
+                            bridge.syncCookiesAndDismiss? {
+                                onDismiss()
+                            }
+                        }
                         .font(.body.weight(.semibold))
+                    }
                 }
             }
         }
@@ -46,10 +60,21 @@ struct BookSourceLoginWebView: View {
     }
 }
 
+// MARK: - LoginWebBridge
+
+/// Reference-type bridge that lets the SwiftUI "完成" button trigger the WKWebView's
+/// cookie extraction inside the UIKit Coordinator.
+final class LoginWebBridge: ObservableObject {
+    /// Set by the Coordinator after the WKWebView is created.
+    /// Calling it triggers a full cookie sync and then invokes `completion`.
+    var syncCookiesAndDismiss: ((@escaping () -> Void) -> Void)?
+}
+
 // MARK: - UIViewRepresentable
 
 struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
     let source: BookSource
+    let bridge: LoginWebBridge
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -62,6 +87,16 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
         wv.customUserAgent =
             "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         wv.navigationDelegate = context.coordinator
+
+        // Give the Coordinator a weak reference so the bridge closure can reach it
+        context.coordinator.webView = wv
+
+        // Wire the "完成" button to the Coordinator's authoritative sync
+        let coordinator = context.coordinator
+        bridge.syncCookiesAndDismiss = { completion in
+            guard let wv = coordinator.webView else { completion(); return }
+            coordinator.syncCookies(from: wv, completion: completion)
+        }
 
         if let url = Self.effectiveURL(source: source) {
             wv.load(URLRequest(url: url))
@@ -102,22 +137,23 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         private let source: BookSource
+        /// Weak reference set in makeUIView; used by the bridge closure.
+        weak var webView: WKWebView?
 
         init(source: BookSource) { self.source = source }
 
+        /// Intermediate sync on each page load — catches non-Cloudflare cookies early.
+        /// The definitive sync always happens when the user taps "完成".
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            syncCookies(from: webView)
+            syncCookies(from: webView, completion: nil)
         }
 
-        /// Copies all WKWebView cookies into CookieStore (for JS bridge) AND into
-        /// LoginManager as a Cookie header (for URLSession requests).
-        ///
-        /// WKWebView uses an isolated cookie store (WKWebsiteDataStore) that does NOT
-        /// sync with HTTPCookieStorage / URLSession automatically. We bridge the gap on
-        /// every page load so the full cookie jar is available when the user hits "完成".
-        private func syncCookies(from webView: WKWebView) {
+        /// Pull all WKWebView cookies (including async-set Cloudflare `cf_clearance`)
+        /// into CookieStore, HTTPCookieStorage, and LoginManager. Calls `completion`
+        /// after the async cookie fetch completes.
+        func syncCookies(from webView: WKWebView, completion: (() -> Void)?) {
             webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [source] cookies in
-                guard !cookies.isEmpty else { return }
+                guard !cookies.isEmpty else { completion?(); return }
 
                 // ① Push every cookie into HTTPCookieStorage for URLSession auto-handling
                 cookies.forEach { HTTPCookieStorage.shared.setCookie($0) }
@@ -131,14 +167,17 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
                     CookieStore.shared.set(url: baseURL.absoluteString, cookie: cookieString)
                 }
 
-                // ③ LoginManager keyed by bookSourceUrl — this is what applyLoginHeaders()
-                //    reads when constructing every URLRequest in the rule engine.
+                // ③ LoginManager keyed by bookSourceUrl — read by applyLoginHeaders()
+                //    when constructing every URLRequest in the rule engine.
                 var headers = LoginManager.shared.getLoginHeaders(sourceUrl: source.bookSourceUrl)
                 headers["Cookie"] = cookieString
                 LoginManager.shared.storeLoginHeaders(
                     sourceUrl: source.bookSourceUrl, headers: headers
                 )
+
+                completion?()
             }
         }
     }
 }
+

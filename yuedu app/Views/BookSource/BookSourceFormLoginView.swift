@@ -63,6 +63,7 @@ struct BookSourceFormLoginView: View {
                     }
                 }
             }
+            .disabled(isLoading)
             .navigationTitle(source.bookSourceName.isEmpty ? gs.t("書源登入") : source.bookSourceName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

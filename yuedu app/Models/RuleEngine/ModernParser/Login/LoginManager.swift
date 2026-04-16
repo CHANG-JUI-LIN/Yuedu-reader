@@ -403,6 +403,8 @@ final class LoginManager {
             self?.defaults.removeObject(
                 forKey: LoginManager.loginHeaderPrefix + sourceUrl
             )
+            // loginInfo is stored in Keychain; also clear any legacy UserDefaults entry
+            KeychainHelper.delete(account: LoginManager.loginInfoPrefix + sourceUrl)
             self?.defaults.removeObject(
                 forKey: LoginManager.loginInfoPrefix + sourceUrl
             )
@@ -419,22 +421,37 @@ final class LoginManager {
 
     // MARK: - Login Info (Credential) Storage
 
-    /// Store user-provided login credentials (Legado `putLoginInfo`).
+    /// Store user-provided login credentials in the **Keychain** (Legado `putLoginInfo`).
+    /// Passwords are never stored in UserDefaults — Keychain is the only accepted location
+    /// for sensitive data on iOS.
     func storeLoginInfo(sourceUrl: String, info: [String: String]) {
         guard let data = try? JSONSerialization.data(withJSONObject: info),
               let json = String(data: data, encoding: .utf8) else { return }
-        defaults.set(json, forKey: LoginManager.loginInfoPrefix + sourceUrl)
+        KeychainHelper.save(account: LoginManager.loginInfoPrefix + sourceUrl, data: json)
     }
 
     /// Retrieve stored login credentials (Legado `getLoginInfo`).
+    /// Reads from Keychain; migrates legacy UserDefaults data transparently on first access.
     func getLoginInfo(sourceUrl: String) -> [String: String]? {
-        guard let json = defaults.string(
-            forKey: LoginManager.loginInfoPrefix + sourceUrl
-        ) else { return nil }
-        guard let data = json.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String]
-        else { return nil }
-        return dict
+        let account = LoginManager.loginInfoPrefix + sourceUrl
+
+        // Primary: Keychain
+        if let json = KeychainHelper.load(account: account),
+           let data = json.data(using: .utf8),
+           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+            return dict
+        }
+
+        // Legacy: UserDefaults (migrate and remove)
+        if let json = defaults.string(forKey: account),
+           let data = json.data(using: .utf8),
+           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+            KeychainHelper.save(account: account, data: json)
+            defaults.removeObject(forKey: account)
+            return dict
+        }
+
+        return nil
     }
 
     // MARK: - Persistence Helpers
