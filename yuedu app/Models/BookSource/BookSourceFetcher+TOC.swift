@@ -77,12 +77,14 @@ extension BookSourceFetcher {
                 "htmlPreview": String(html.prefix(150)).replacingOccurrences(of: "\n", with: " "),
             ], hyp: "H2")
         // #endregion
-        var chapters = try pipeline.parseTOC(
-            html: html,
-            baseURL: url.absoluteString,
-            source: source,
-            runtimeVariables: runtimeVariables
-        )
+        var chapters: [OnlineChapterRef] = try autoreleasepool {
+            try pipeline.parseTOC(
+                html: html,
+                baseURL: url.absoluteString,
+                source: source,
+                runtimeVariables: runtimeVariables
+            )
+        }
         var htmlForNext = html
 
         // #region agent log
@@ -105,12 +107,14 @@ extension BookSourceFetcher {
                 timeout: 20,
                 jsWait: 4.0
             )
-            chapters = try pipeline.parseTOC(
-                html: webHtml,
-                baseURL: url.absoluteString,
-                source: source,
-                runtimeVariables: runtimeVariables
-            )
+            chapters = try autoreleasepool {
+                try pipeline.parseTOC(
+                    html: webHtml,
+                    baseURL: url.absoluteString,
+                    source: source,
+                    runtimeVariables: runtimeVariables
+                )
+            }
             htmlForNext = webHtml
             // #region agent log
             _dbgLog(
@@ -125,17 +129,24 @@ extension BookSourceFetcher {
                 timeout: 20,
                 jsWait: 4.0
             )
-            chapters = try pipeline.parseTOC(
-                html: delayedHtml,
-                baseURL: url.absoluteString,
-                source: source,
-                runtimeVariables: runtimeVariables
-            )
+            chapters = try autoreleasepool {
+                try pipeline.parseTOC(
+                    html: delayedHtml,
+                    baseURL: url.absoluteString,
+                    source: source,
+                    runtimeVariables: runtimeVariables
+                )
+            }
             htmlForNext = delayedHtml
         }
 
-        // 多頁目錄
-        var rawHTMLPages: [String] = [htmlForNext]
+        // 多頁目錄 — 逐頁寫入磁碟，避免 rawHTMLPages 全部堆積在記憶體中
+        let rawHTMLPath = tocRawHTMLPath(tocUrl: tocUrl, source: source)
+        let dir = tocCacheDir()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // 先寫入第一頁
+        let pageBreak = "\n<!-- toc-page-break -->\n"
+        try? htmlForNext.write(to: rawHTMLPath, atomically: false, encoding: .utf8)
         var nextURL = pipeline.extractNextTocURL(
             html: htmlForNext,
             baseURL: url.absoluteString,
@@ -147,6 +158,7 @@ extension BookSourceFetcher {
         while !nextURL.isEmpty && pageCount < 20 {
             guard let nextPageURL = URL(string: nextURL) else { break }
             let nextBase = nextURL.isEmpty ? source.bookSourceUrl : nextURL
+            // 網路請求必須在 autoreleasepool 外部（async 不能在同步 closure 中）
             let nextHTML: String
             if usePreUpdateJs {
                 nextHTML = try await WebViewFetcher.shared.fetchHTMLWithCustomJS(
@@ -160,20 +172,30 @@ extension BookSourceFetcher {
                     url: nextPageURL, method: "GET", body: nil,
                     headers: source.parsedHeaders, baseURL: nextBase)
             }
-            rawHTMLPages.append(nextHTML)
-            chapters.append(
-                contentsOf: try pipeline.parseTOC(
+            // 追加寫入磁碟而非保留在記憶體
+            if let handle = try? FileHandle(forWritingTo: rawHTMLPath) {
+                handle.seekToEndOfFile()
+                if let data = (pageBreak + nextHTML).data(using: .utf8) {
+                    handle.write(data)
+                }
+                handle.closeFile()
+            }
+            // autoreleasepool 確保每頁的 SwiftSoup DOM 物件被即時釋放
+            let pageChapters: [OnlineChapterRef] = try autoreleasepool {
+                try pipeline.parseTOC(
                     html: nextHTML,
                     baseURL: nextURL,
                     source: source,
                     runtimeVariables: runtimeVariables
-                ))
+                )
+            }
             nextURL = pipeline.extractNextTocURL(
                 html: nextHTML,
                 baseURL: nextURL,
                 source: source,
                 runtimeVariables: runtimeVariables
             )
+            chapters.append(contentsOf: pageChapters)
             pageCount += 1
         }
         let normalized = chapters.enumerated().map { i, ref in
@@ -181,12 +203,13 @@ extension BookSourceFetcher {
             r.index = i
             return r
         }
+        // rawHTML 已在多頁循環中逐頁寫入磁碟，不再需要傳入
         let package = saveTOCPackage(
             tocUrl: tocUrl,
             source: source,
             runtimeVariables: runtimeVariables,
             chapters: normalized,
-            rawHTML: rawHTMLPages.joined(separator: "\n<!-- toc-page-break -->\n")
+            rawHTML: nil
         )
         return package
     }

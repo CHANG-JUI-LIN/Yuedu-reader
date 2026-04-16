@@ -9,18 +9,17 @@ import SwiftSoup
 /// SwiftSoup's built-in `text()` inserts a **space** (not `\n`) at block boundaries,
 /// which causes chapter paragraphs to be crammed into a single line.
 func htmlElementToText(_ element: Element) -> String {
-    guard let html = try? element.outerHtml(),
-          let document = try? SwiftSoup.parse(html),
-          let body = document.body()
-    else { return (try? element.text()) ?? "" }
-
+    // 使用 element.copy() 避免污染原始 DOM，操作 clone 來插入換行標記
+    guard let cloned = element.copy() as? Element else {
+        return (try? element.text()) ?? ""
+    }
     let marker = "__YUEDU_LINE_BREAK__"
     let blockSel =
         "br,p,div,li,blockquote,section,article,dt,dd,figcaption,pre,header,footer,tr,h1,h2,h3,h4,h5,h6"
-    if let nodes = try? document.select(blockSel).array() {
+    if let nodes = try? cloned.select(blockSel).array() {
         for node in nodes { try? node.appendText(marker) }
     }
-    var text = (try? body.text()) ?? ""
+    var text = (try? cloned.text()) ?? ""
     text = text.replacingOccurrences(of: marker, with: "\n")
     while text.contains("\n\n\n") {
         text = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")

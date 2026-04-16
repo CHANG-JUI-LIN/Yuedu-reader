@@ -49,22 +49,21 @@ extension BookSourceFetcher {
     ) -> TOCPackage {
         let dir = tocCacheDir()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let rawPath = tocRawHTMLPath(tocUrl: tocUrl, source: source)
+        // rawHTML 可能已由呼叫端逐頁寫入磁碟，檢查檔案是否存在
+        let hasRawHTML = (rawHTML?.isEmpty == false)
+            || FileManager.default.fileExists(atPath: rawPath.path)
         let package = TOCPackage(
             sourceId: source.id,
             sourceName: source.bookSourceName,
             tocURL: tocUrl,
             runtimeVariables: runtimeVariables,
             chapters: chapters,
-            rawHTMLFilename: rawHTML?.isEmpty == false
-                ? tocRawHTMLPath(tocUrl: tocUrl, source: source).lastPathComponent : nil,
+            rawHTMLFilename: hasRawHTML ? rawPath.lastPathComponent : nil,
             savedAt: Date()
         )
         if let rawHTML, !rawHTML.isEmpty {
-            try? rawHTML.write(
-                to: tocRawHTMLPath(tocUrl: tocUrl, source: source),
-                atomically: true,
-                encoding: .utf8
-            )
+            try? rawHTML.write(to: rawPath, atomically: true, encoding: .utf8)
         }
         if let data = try? JSONEncoder().encode(package) {
             try? data.write(to: tocPackagePath(tocUrl: tocUrl, source: source), options: .atomic)
@@ -125,7 +124,7 @@ extension BookSourceFetcher {
         tocCacheDir().appendingPathComponent("\(tocCacheKey(tocUrl: tocUrl, source: source)).json")
     }
 
-    private nonisolated func tocRawHTMLPath(tocUrl: String, source: BookSource) -> URL {
+    nonisolated func tocRawHTMLPath(tocUrl: String, source: BookSource) -> URL {
         tocCacheDir().appendingPathComponent(
             "\(tocCacheKey(tocUrl: tocUrl, source: source)).raw.html")
     }
