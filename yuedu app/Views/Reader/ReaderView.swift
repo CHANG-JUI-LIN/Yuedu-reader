@@ -1091,6 +1091,7 @@ struct ReaderView: View {
                 set: { readerTheme = $0 }
             ),
             overlayContentMaxWidth: overlayContentMaxWidth,
+            showRefreshButton: !(book?.onlineChapters?.isEmpty ?? true),
             showChangeSourceButton: book?.isOnline == true && book?.bookSourceId != nil,
             showDownloadButton: book?.isOnline == true,
             downloadButtonIcon: downloadButtonIcon,
@@ -1530,7 +1531,7 @@ struct ReaderView: View {
     }
 
     private func refreshCurrentChapter() {
-        guard let b = book, b.isOnline else { return }
+        guard let b = book, !(b.onlineChapters?.isEmpty ?? true) else { return }
         let idx = currentChapterIndex
         dependencies.bookSourceFetcher.clearChapterCache(bookId: b.id, chapterIndex: idx)
         store.clearCachedChapter(bookId: b.id, chapterIndex: idx)
@@ -1623,7 +1624,11 @@ struct ReaderView: View {
             bookId: b.id, chapterIndex: chapterIndex,
             expectedSourceURL: nil, expectedTOCTitle: nil
         ) {
-            rebuildPages()
+            if let engine = epubRenderer.engine {
+                Task { await engine.preloadChapter(at: chapterIndex) }
+            } else {
+                rebuildPages()
+            }
             prefetchAdjacentChapters(around: chapterIndex)
             return
         }
@@ -1648,14 +1653,20 @@ struct ReaderView: View {
                         failedChapters.insert(chapterIndex)
                         lastChapterError = "ch\(chapterIndex): \(pkg.failureReason ?? "內容為空")"
                     }
-                    rebuildPages()
+                    if let engine = epubRenderer.engine {
+                        Task { await engine.notifyChapterDataChanged(at: chapterIndex) }
+                    } else {
+                        rebuildPages()
+                    }
                     prefetchAdjacentChapters(around: chapterIndex)
                 }
             } catch {
                 await MainActor.run {
                     failedChapters.insert(chapterIndex)
                     lastChapterError = "ch\(chapterIndex): \(error.localizedDescription)"
-                    rebuildPages()
+                    if epubRenderer.engine == nil {
+                        rebuildPages()
+                    }
                 }
             }
         }
@@ -2065,6 +2076,7 @@ private struct ReaderBottomControlBar: View {
 
     @Binding var readerTheme: ReaderTheme
     let overlayContentMaxWidth: CGFloat
+    let showRefreshButton: Bool
     let showChangeSourceButton: Bool
     let showDownloadButton: Bool
     let downloadButtonIcon: String
@@ -2094,7 +2106,9 @@ private struct ReaderBottomControlBar: View {
 
             HStack(spacing: 12) {
                 Spacer()
-                circleBtn(icon: "arrow.clockwise") { onRefresh() }
+                if showRefreshButton {
+                    circleBtn(icon: "arrow.clockwise") { onRefresh() }
+                }
                 if showChangeSourceButton {
                     circleBtn(icon: "arrow.left.and.right") { onOpenChangeSource() }
                 }
