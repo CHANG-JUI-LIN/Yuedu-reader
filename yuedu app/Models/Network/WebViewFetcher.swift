@@ -125,6 +125,9 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
                         "document.documentElement.outerHTML"
                     ) as? String ?? ""
 
+                if LegadoJSBridge.isCloudflareChallengedBody(html) {
+                    throw FetchError.cloudflareChallengeRequired(url.absoluteString)
+                }
                 return html
             }
 
@@ -168,6 +171,9 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
                     try await Task.sleep(nanoseconds: 500_000_000) // 0.5s 讓 JS 生效
                 }
                 let html = try await webView.evaluateJavaScript("document.documentElement.outerHTML") as? String ?? ""
+                if LegadoJSBridge.isCloudflareChallengedBody(html) {
+                    throw FetchError.cloudflareChallengeRequired(url.absoluteString)
+                }
                 return html
             }
             group.addTask {
@@ -398,7 +404,10 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
                     webView.load(request)
                 }
                 // 動態輪詢：等待 JS 渲染就緒，替代硬等 jsWait
-                _ = await self.pollForContent(webView: webView)
+                let polledHTML = await self.pollForContent(webView: webView)
+                if LegadoJSBridge.isCloudflareChallengedBody(polledHTML) {
+                    throw FetchError.cloudflareChallengeRequired(url.absoluteString)
+                }
 
                 _ = try? await webView.evaluateJavaScript("window.scrollTo(0, document.body.scrollHeight);")
 
@@ -453,7 +462,10 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
                     webView.load(request)
                 }
                 // 動態輪詢：替代硬等 jsWait
-                _ = await self.pollForContent(webView: webView)
+                let polledHTML = await self.pollForContent(webView: webView)
+                if LegadoJSBridge.isCloudflareChallengedBody(polledHTML) {
+                    throw FetchError.cloudflareChallengeRequired(url.absoluteString)
+                }
                 _ = try? await webView.evaluateJavaScript("window.scrollTo(0, document.body.scrollHeight);")
 
                 let jsonStr = try await webView.evaluateJavaScript(Self.contentAndNextPageJS) as? String ?? "{}"

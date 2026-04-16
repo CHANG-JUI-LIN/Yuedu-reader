@@ -427,6 +427,36 @@ actor ChapterFetchManager {
                 } else {
                     currentURL = nil
                 }
+            } catch let err as FetchError {
+                if case .cloudflareChallengeRequired(let urlStr) = err,
+                    let challengeURL = URL(string: urlStr)
+                {
+                    // Present CF challenge UI and retry the page once cookies are obtained.
+                    _ = try? await CloudflareChallengePresenter.present(url: challengeURL)
+                    do {
+                        let result = try await webViewFetcher.fetchContentWithNextPage(
+                            url: url,
+                            headers: headers,
+                            timeout: AppConfig.webViewFetchTimeout,
+                            jsWait: 1.5
+                        )
+                        if !result.content.isEmpty {
+                            let cleaned = BookSourceFetcher.cleanChapterContent(result.content)
+                            if !allContent.isEmpty { allContent += "\n" }
+                            allContent += cleaned
+                            if visited.count == 1 { progressHandler?(allContent) }
+                        }
+                        if let next = result.nextPageURL, let nextURL = URL(string: next) {
+                            currentURL = nextURL
+                        } else {
+                            currentURL = nil
+                        }
+                    } catch {
+                        break
+                    }
+                } else {
+                    break
+                }
             } catch {
                 break
             }

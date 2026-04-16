@@ -183,7 +183,13 @@ struct BookSourceFormLoginView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { alert.dismiss(animated: true) }
             }
 
-            // Build bindings mirroring Legado's login() JS context
+            // Wire CF challenge: present CloudflareChallengeView and call done() when cookies are ready
+            engine.cloudflareChallengeHandler = { url, done in
+                Task { @MainActor in
+                    _ = try? await CloudflareChallengePresenter.present(url: url)
+                    done()
+                }
+            }
             let bindings: [String: Any] = [
                 "result": "",
                 "baseUrl": source.bookSourceUrl,
@@ -258,6 +264,12 @@ struct BookSourceFormLoginView: View {
                 let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
                 topVC.present(alert, animated: true)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { alert.dismiss(animated: true) }
+            }
+            engine.cloudflareChallengeHandler = { url, done in
+                Task { @MainActor in
+                    _ = try? await CloudflareChallengePresenter.present(url: url)
+                    done()
+                }
             }
 
             let bindings: [String: Any] = [

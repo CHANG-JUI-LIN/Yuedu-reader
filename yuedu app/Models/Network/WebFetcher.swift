@@ -117,10 +117,13 @@ actor WebFetcher {
             let latencyMs = Int((CFAbsoluteTimeGetCurrent() - fetchStart) * 1000)
 
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                if http.statusCode == 503 && allowInteractiveChallengeOn503 {
+                let isCFError =
+                    (http.statusCode == 503 || http.statusCode == 403)
+                    && allowInteractiveChallengeOn503
+                if isCFError {
                     Task { @MainActor in
                         WebCrawlerDebugger.shared.logError(
-                            FetchError.httpError(503),
+                            FetchError.httpError(http.statusCode),
                             url: url.absoluteString
                         )
                     }
@@ -128,16 +131,26 @@ actor WebFetcher {
                     guard let challengeHandler = cloudflareChallengeHandler else {
                         throw FetchError.cloudflareChallengeRequired(url.absoluteString)
                     }
-                    let updatedHtml = try await challengeHandler(url)
+                    // Present challenge; cookies are synced inside CloudflareChallengeView.passed()
+                    _ = try await challengeHandler(url)
 
-                    if let host = url.host {
-                        let allCookies = await Self.harvestWebViewCookies(for: host)
-                        for cookie in allCookies {
-                            session.configuration.httpCookieStorage?.setCookie(cookie)
-                        }
+                    // Harvest WKWebView cookies into the session for the retry.
+                    let allCookies = await Self.harvestWebViewCookies(for: host)
+                    for cookie in allCookies {
+                        session.configuration.httpCookieStorage?.setCookie(cookie)
+                        HTTPCookieStorage.shared.setCookie(cookie)
                     }
 
-                    return updatedHtml
+                    // Retry via URLSession with the new cookies.
+                    let (retryData, retryResponse) = try await PerHostSemaphore.shared.withLock(
+                        host: host
+                    ) {
+                        try await self.session.data(for: requestCopy)
+                    }
+                    if let html = smartDecode(data: retryData, response: retryResponse) {
+                        return html
+                    }
+                    throw FetchError.emptyContent
                 }
 
                 let err = FetchError.httpError(http.statusCode)
@@ -156,6 +169,28 @@ actor WebFetcher {
             }
 
             if let html = smartDecode(data: data, response: response) {
+                // Even on HTTP 200, some CF-protected sites serve the challenge page body.
+                if allowInteractiveChallengeOn503,
+                    LegadoJSBridge.isCloudflareChallengedBody(html),
+                    let challengeHandler = cloudflareChallengeHandler
+                {
+                    _ = try await challengeHandler(url)
+                    let allCookies = await Self.harvestWebViewCookies(for: host)
+                    for cookie in allCookies {
+                        session.configuration.httpCookieStorage?.setCookie(cookie)
+                        HTTPCookieStorage.shared.setCookie(cookie)
+                    }
+                    let (retryData, retryResponse) = try await PerHostSemaphore.shared.withLock(
+                        host: host
+                    ) {
+                        try await self.session.data(for: requestCopy)
+                    }
+                    if let retryHtml = smartDecode(data: retryData, response: retryResponse) {
+                        return retryHtml
+                    }
+                    throw FetchError.emptyContent
+                }
+
                 Task { @MainActor in
                     WebCrawlerDebugger.shared.logResponse(
                         url: url.absoluteString,

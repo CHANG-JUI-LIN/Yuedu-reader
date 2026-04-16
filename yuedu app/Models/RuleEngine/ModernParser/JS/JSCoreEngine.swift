@@ -60,6 +60,13 @@ class JSCoreEngine {
         didSet { bridge.browserPresentHandler = browserPresentHandler }
     }
 
+    /// Called when JS network requests hit a Cloudflare challenge.
+    /// Presents the CF bypass UI on the main thread and calls `done` when CF cookies are obtained.
+    /// Same DispatchSemaphore pattern as browserPresentHandler.
+    var cloudflareChallengeHandler: ((URL, @escaping () -> Void) -> Void)? {
+        didSet { bridge.cloudflareChallengeHandler = cloudflareChallengeHandler }
+    }
+
     /// Called when JS invokes `java.toast` / `java.longToast`.
     var toastHandler: ((String) -> Void)? {
         didSet { bridge.toastHandler = toastHandler }

@@ -100,6 +100,10 @@ import CommonCrypto
     var getStringHandler: ((String) -> String?)?
     var getStringListHandler: ((String) -> [String]?)?
 
+    /// Called when JS issues a network request that hits a Cloudflare challenge.
+    /// Calls `done()` after CF cookies are obtained; jsQueue blocks via DispatchSemaphore until then.
+    var cloudflareChallengeHandler: ((URL, @escaping () -> Void) -> Void)?
+
     /// Book source headers (for JS network requests to use correct User-Agent etc.)
     var sourceHeaders: [String: String] = [:]
 
@@ -385,22 +389,48 @@ import CommonCrypto
         sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
         var responseBody = ""
+        // Use a long timeout: if a CF handler is registered, the user may need to solve CAPTCHA.
+        let timeoutSeconds: Double = cloudflareChallengeHandler != nil ? 120 : 8
         let semaphore = DispatchSemaphore(value: 0)
 
-        let task = URLSession.shared.dataTask(with: request) { data, response, _ in
-            defer { semaphore.signal() }
-            guard let data = data else { return }
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+            guard let data = data else { semaphore.signal(); return }
             let body = Self.decodeData(data, response: response)
-            if Self.isCloudflareChallenged(body, response: response) {
-                #if DEBUG
-                print("[JSBridge] ⚠️ Cloudflare challenge detected for \(urlStr) — returning empty to prevent JSON.parse crash")
-                #endif
-                return  // responseBody stays ""
+
+            let isCF =
+                Self.isCloudflareChallenged(body, response: response)
+                || Self.isCloudflareChallengedBody(body)
+            guard isCF, let self, let handler = self.cloudflareChallengeHandler, let reqURL = request.url else {
+                if isCF {
+                    #if DEBUG
+                    print("[JSBridge] ⚠️ CF detected for \(urlStr) — no handler, returning empty")
+                    #endif
+                } else {
+                    responseBody = body
+                }
+                semaphore.signal()
+                return
             }
-            responseBody = body
+
+            // Present the CF challenge UI on the main thread; signal cfSem via done() callback.
+            let cfSem = DispatchSemaphore(value: 0)
+            DispatchQueue.main.async {
+                handler(reqURL) { cfSem.signal() }
+            }
+            cfSem.wait()  // cookies are now in HTTPCookieStorage.shared
+
+            // Retry once without CF check (cookies are fresh).
+            let retrySem = DispatchSemaphore(value: 0)
+            URLSession.shared.dataTask(with: request) { retryData, retryResp, _ in
+                defer { retrySem.signal() }
+                guard let retryData else { return }
+                responseBody = Self.decodeData(retryData, response: retryResp)
+            }.resume()
+            _ = retrySem.wait(timeout: .now() + 15)
+            semaphore.signal()
         }
         task.resume()
-        _ = semaphore.wait(timeout: .now() + 8)
+        _ = semaphore.wait(timeout: .now() + timeoutSeconds)
         return responseBody
     }
 
@@ -439,5 +469,19 @@ import CommonCrypto
         ]
         let lower = body.lowercased()
         return markers.contains(where: { lower.contains($0.lowercased()) })
+    }
+
+    /// Returns true when the body alone (regardless of HTTP status) looks like a CF page.
+    /// Used for HTTP 200 responses that smuggle a CF challenge in the body.
+    static func isCloudflareChallengedBody(_ body: String) -> Bool {
+        // Use only unambiguous, CF-specific fingerprints to minimise false positives.
+        let specificMarkers = [
+            "cf-browser-verification",
+            "cf_chl_prog",
+            "_cf_chl_",
+            "cf-challenge-running",
+        ]
+        let lower = body.lowercased()
+        return specificMarkers.contains(where: { lower.contains($0) })
     }
 }

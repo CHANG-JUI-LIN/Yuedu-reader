@@ -74,31 +74,66 @@ struct InteractiveWebView: UIViewRepresentable {
 
         private func startCheckingCaptcha(_ webView: WKWebView) {
             checkingTimer?.invalidate()
-            // Check every 2 seconds if the page no longer has the challenge element
-            checkingTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) {
+            // Check every 0.5 s — fast sites pass CF in under 1 s; keep latency low.
+            checkingTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) {
                 [weak self] _ in
                 guard let self = self else { return }
+                self.checkOnce(webView)
+            }
+        }
 
-                webView.evaluateJavaScript(
-                    "document.documentElement.outerHTML"
-                ) { [weak self] result, error in
+        private func checkOnce(_ webView: WKWebView) {
+            // Primary signal: presence of the `cf_clearance` cookie (most reliable).
+            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+                guard let self = self else { return }
+                let hasClearance = cookies.contains { $0.name == "cf_clearance" }
+                if hasClearance {
+                    self.passed(webView)
+                    return
+                }
+                // Fallback: HTML body no longer contains CF challenge markers.
+                webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, _ in
                     guard let self = self, let html = result as? String else { return }
-
-                    // Simple heuristic: if the page title is not "Just a moment..." and doesn't contain common CF/DDOS keywords, we assume it's passed.
                     let isChallenge =
-                        html.contains("cf-browser-verification") || html.contains("Just a moment")
+                        html.contains("cf-browser-verification")
+                        || html.contains("cf_chl_prog")
+                        || html.contains("Just a moment")
                         || html.contains("DDoS-Guard")
-
-                    // Ensure the title is not empty, usually CF pages have very specific small titles.
-                    // Another reliable way is to check HTTP cookies for `cf_clearance`.
-                    // But checking HTML content is easiest.
                     if !isChallenge && html.count > 2000 {
-                        // Looks like a real page!
-                        self.checkingTimer?.invalidate()
-                        self.checkingTimer = nil
-                        DispatchQueue.main.async {
-                            self.parent.onPassed(html)
-                        }
+                        self.passed(webView)
+                    }
+                }
+            }
+        }
+
+        private func passed(_ webView: WKWebView) {
+            guard checkingTimer != nil else { return }  // guard against double-fire
+            checkingTimer?.invalidate()
+            checkingTimer = nil
+
+            // Harvest all WKWebView cookies into shared stores before returning.
+            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies {
+                [weak self] cookies in
+                guard let self = self else { return }
+
+                // Group by domain so we can build CookieStore strings efficiently.
+                var byDomain: [String: [HTTPCookie]] = [:]
+                for cookie in cookies {
+                    HTTPCookieStorage.shared.setCookie(cookie)
+                    let domain = cookie.domain.hasPrefix(".")
+                        ? String(cookie.domain.dropFirst()) : cookie.domain
+                    byDomain[domain, default: []].append(cookie)
+                }
+                for (domain, domainCookies) in byDomain {
+                    let str = domainCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+                    CookieStore.shared.set(url: "https://\(domain)", cookie: str)
+                }
+
+                webView.evaluateJavaScript("document.documentElement.outerHTML") {
+                    [weak self] result, _ in
+                    let html = (result as? String) ?? ""
+                    DispatchQueue.main.async {
+                        self?.parent.onPassed(html)
                     }
                 }
             }
