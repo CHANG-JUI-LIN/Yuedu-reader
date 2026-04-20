@@ -60,13 +60,17 @@ extension BookSourceFetching {
     }
 }
 
-protocol ChapterFetching {
+protocol ChapterFetching: Sendable {
+    func isChapterCached(book: ReadingBook, chapterIndex: Int) async -> Bool
+
     func fetchChapter(
         book: ReadingBook,
         chapterIndex: Int,
         priority: ChapterFetchPriority,
         store: BookStore?
     ) async throws -> ChapterPackage
+
+    func cancelChapter(bookId: UUID, chapterIndex: Int) async
 
     func cancelAll(for bookId: UUID) async
 }
@@ -164,6 +168,10 @@ struct LiveBookSourceFetcher: BookSourceFetching {
 struct LiveChapterFetcher: ChapterFetching {
     let chapterFetchManager: ChapterFetchManager
 
+    func isChapterCached(book: ReadingBook, chapterIndex: Int) async -> Bool {
+        await chapterFetchManager.isChapterCached(book: book, chapterIndex: chapterIndex)
+    }
+
     func fetchChapter(
         book: ReadingBook,
         chapterIndex: Int,
@@ -176,6 +184,10 @@ struct LiveChapterFetcher: ChapterFetching {
             priority: priority,
             store: store
         )
+    }
+
+    func cancelChapter(bookId: UUID, chapterIndex: Int) async {
+        await chapterFetchManager.cancelFetch(bookId: bookId, chapterIndex: chapterIndex)
     }
 
     func cancelAll(for bookId: UUID) async {
