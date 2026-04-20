@@ -78,7 +78,7 @@ final class ModernRuleEngine {
     var jsEvaluator: ((String, Any?) -> Any?)?
 
     /// Parsed-rule cache to avoid re-parsing the same rule string
-    private var stringRuleCache: [String: [SourceRule]] = [:]
+    private let stringRuleCache = LRUCache<String, [SourceRule]>(capacity: 256)
 
     /// Optional debug observer. When set, the engine emits `RuleDebugEvent`s at
     /// each pipeline step (raw data, rule type, nodes extracted, regex applied, JS result).
@@ -641,9 +641,9 @@ final class ModernRuleEngine {
     // MARK: - Private: Rule Cache
 
     private func splitSourceRuleCached(_ ruleStr: String) -> [SourceRule] {
-        if let cached = stringRuleCache[ruleStr] { return cached }
+        if let cached = stringRuleCache.get(ruleStr) { return cached }
         let parsed = splitSourceRule(ruleStr)
-        stringRuleCache[ruleStr] = parsed
+        stringRuleCache.put(ruleStr, value: parsed)
         return parsed
     }
 
