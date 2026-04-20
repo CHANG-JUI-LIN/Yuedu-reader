@@ -22,9 +22,11 @@ final class JSSandbox {
         "WebSocket",
     ]
 
-    /// Counter for unique queue labels (protected by a lock).
-    private static var _evalCounter: Int = 0
-    private static let evalCounterLock = NSLock()
+    /// Single shared JS evaluation queue. Bounds thread leaks to at most one.
+    private static let evalQueue = DispatchQueue(
+        label: "com.yuedu.jssandbox.eval",
+        qos: .userInitiated
+    )
 
     // MARK: - Public API
 
@@ -47,22 +49,11 @@ final class JSSandbox {
         script: String,
         timeout: TimeInterval = defaultTimeout
     ) -> JSValue? {
-        // Sanitize before evaluation
         guard sanitize(script) else {
             logSecurity("Script rejected by sanitization (length: \(script.count))")
             return nil
         }
 
-        // 每次 eval 建立獨立 queue，避免掛起的腳本鎖死後續所有 JS 呼叫。
-        // 若腳本超時，獨立 queue 的執行緒會繼續執行直到 iOS 回收，不影響其他 eval。
-        evalCounterLock.lock()
-        _evalCounter += 1
-        let id = _evalCounter
-        evalCounterLock.unlock()
-        let evalQueue = DispatchQueue(
-            label: "com.yuedu.jssandbox.eval.\(id)",
-            qos: .userInitiated
-        )
         let semaphore = DispatchSemaphore(value: 0)
         var result: JSValue?
 
@@ -75,7 +66,6 @@ final class JSSandbox {
             logSecurity("Script execution timed out after \(timeout)s")
             return nil
         }
-
         return result
     }
 
@@ -99,15 +89,10 @@ final class JSSandbox {
         })();
         """)
 
-        // Log eval usage instead of blocking — some sources depend on it.
         context.evaluateScript("""
         (function() {
-            var _origEval = eval;
             eval = function(code) {
-                if (typeof java !== 'undefined' && java.log) {
-                    java.log('[SANDBOX] eval() called with ' + (code ? code.length : 0) + ' chars');
-                }
-                return _origEval(code);
+                throw new Error('eval() is disabled in sandbox');
             };
         })();
         """)
