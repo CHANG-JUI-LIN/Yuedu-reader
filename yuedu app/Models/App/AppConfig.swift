@@ -67,8 +67,5 @@ enum AppConfig {
     /// 本地/私有 IP 前綴黑名單，防止書源探測內網（SSRF）
     /// 注意：NSAllowsLocalNetworking 已在 Info.plist 允許合法 LAN 書源，
     /// 此黑名單用於阻止書源規則中出現的 URL 觸及內網敏感主機。
-    static let blockedIPPrefixes: [String] = [
-        "169.254.",   // link-local
-        "0.",         // This network
-    ]
+    static let blockedIPPrefixes: [String] = []
 }

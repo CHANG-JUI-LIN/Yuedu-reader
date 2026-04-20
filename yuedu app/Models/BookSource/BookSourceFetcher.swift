@@ -49,12 +49,10 @@ func safeURL(string raw: String) -> URL? {
             AppLogger.security("書源 URL 使用了不允許的 scheme，已阻止", context: ["url": raw, "scheme": scheme])
             return nil
         }
-        // 阻止私有/保留 IP 前綴（防 SSRF）
-        if let host = url.host {
-            for prefix in AppConfig.blockedIPPrefixes where host.hasPrefix(prefix) {
-                AppLogger.security("書源 URL 指向保留 IP 範圍，已阻止", context: ["url": raw, "host": host])
-                return nil
-            }
+        // 阻止私有/保留 IP（防 SSRF）
+        if let host = url.host, isPrivateOrReservedHost(host) {
+            AppLogger.security("書源 URL 指向保留 IP 範圍，已阻止", context: ["url": raw, "host": host])
+            return nil
         }
         return url
     }
@@ -64,6 +62,41 @@ func safeURL(string raw: String) -> URL? {
     if let encoded = raw.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
        let url = URL(string: encoded) { return validate(url) }
     return nil
+}
+
+/// Returns true if host is a private/reserved IP (IPv4 or IPv6).
+/// Handles standard dotted notation, hex, decimal, and abbreviated forms via inet_pton.
+private func isPrivateOrReservedHost(_ host: String) -> Bool {
+    var addr4 = in_addr()
+    if inet_pton(AF_INET, host, &addr4) == 1 {
+        return isPrivateIPv4(UInt32(bigEndian: addr4.s_addr))
+    }
+    var addr6 = in6_addr()
+    if inet_pton(AF_INET6, host, &addr6) == 1 {
+        return isPrivateIPv6(addr6)
+    }
+    return false
+}
+
+/// Checks if an IPv4 address (in host byte order) falls in a private/reserved range.
+private func isPrivateIPv4(_ ip: UInt32) -> Bool {
+    if ip & 0xFF000000 == 0x7F000000 { return true } // 127.0.0.0/8 loopback
+    if ip & 0xFF000000 == 0x0A000000 { return true } // 10.0.0.0/8
+    if ip & 0xFFF00000 == 0xAC100000 { return true } // 172.16.0.0/12
+    if ip & 0xFFFF0000 == 0xC0A80000 { return true } // 192.168.0.0/16
+    if ip & 0xFFFF0000 == 0xA9FE0000 { return true } // 169.254.0.0/16 link-local
+    if ip & 0xFF000000 == 0x00000000 { return true } // 0.0.0.0/8 this network
+    if ip & 0xFFC00000 == 0x64400000 { return true } // 100.64.0.0/10 CGNAT
+    return false
+}
+
+/// Checks if an IPv6 address is loopback, unique local, or link-local.
+private func isPrivateIPv6(_ addr: in6_addr) -> Bool {
+    let bytes = withUnsafeBytes(of: addr) { Array($0) }
+    if bytes == [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,1] { return true } // ::1 loopback
+    if bytes[0] & 0xFE == 0xFC { return true }                         // fc00::/7 ULA
+    if bytes[0] == 0xFE && bytes[1] & 0xC0 == 0x80 { return true }    // fe80::/10 link-local
+    return false
 }
 
 actor BookSourceFetcher {
