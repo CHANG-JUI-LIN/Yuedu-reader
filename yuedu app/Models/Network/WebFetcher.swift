@@ -252,6 +252,17 @@ actor WebFetcher {
         appendCandidate(.windowsCP1252, priority: 180)
         appendCandidate(.isoLatin1, priority: 120)
 
+        // Short-circuit: if a high-confidence candidate decodes cleanly, return immediately
+        let highConfidence = candidates.filter { $0.priority >= 340 }
+        for candidate in highConfidence {
+            guard let decoded = String(data: data, encoding: candidate.encoding) else { continue }
+            let replacements = decoded.unicodeScalars.filter { $0.value == 0xFFFD }.count
+            let ratio = Double(replacements) / Double(max(decoded.unicodeScalars.count, 1))
+            if ratio < 0.0001 {
+                return decoded
+            }
+        }
+
         var best: (text: String, score: Int)?
         for candidate in candidates {
             guard let decoded = String(data: data, encoding: candidate.encoding) else { continue }
@@ -277,49 +288,39 @@ actor WebFetcher {
     }
 
     private func decodeQualityScore(_ text: String) -> Int {
-        if text.isEmpty { return -10_000 }
+        // Sample only first 4096 chars to avoid scanning multi-MB documents
+        let sample = text.count > 4096 ? String(text.prefix(4096)) : text
+        if sample.isEmpty { return -10_000 }
 
         var score = 0
 
-        let replacementCount = text.reduce(into: 0) { partialResult, character in
-            if character == "\u{FFFD}" { partialResult += 1 }
-        }
+        let replacementCount = sample.unicodeScalars.filter { $0.value == 0xFFFD }.count
         score -= replacementCount * 80
 
-        let suspiciousTokens = [
-            "锟斤拷", "Ã", "Â", "â€", "â€œ", "â€”", "ï»¿", "\u{FFFD}",
-        ]
+        let suspiciousTokens = [“锟斤拷”, “Ã”, “Â”, “â€”, “â€œ”, “â€””, “ï»¿”, “\u{FFFD}”]
         for token in suspiciousTokens {
-            score -= text.components(separatedBy: token).count > 1 ? 120 : 0
+            score -= sample.components(separatedBy: token).count > 1 ? 120 : 0
         }
 
-        let controlCount = text.unicodeScalars.reduce(into: 0) { partialResult, scalar in
-            if CharacterSet.controlCharacters.contains(scalar),
-                scalar != "\n", scalar != "\r", scalar != "\t"
-            {
-                partialResult += 1
-            }
-        }
+        let controlCount = sample.unicodeScalars.filter {
+            CharacterSet.controlCharacters.contains($0) && $0 != “\n” && $0 != “\r” && $0 != “\t”
+        }.count
         score -= controlCount * 25
 
-        let cjkCount = text.unicodeScalars.reduce(into: 0) { partialResult, scalar in
-            switch scalar.value {
-            case 0x4E00...0x9FFF, 0x3400...0x4DBF, 0x20000...0x2A6DF:
-                partialResult += 1
-            default:
-                break
+        let cjkCount = sample.unicodeScalars.filter {
+            switch $0.value {
+            case 0x4E00...0x9FFF, 0x3400...0x4DBF, 0x20000...0x2A6DF: return true
+            default: return false
             }
-        }
+        }.count
         score += min(cjkCount, 200)
 
-        let htmlHints = ["<html", "<body", "</html>", "<meta", "<title"]
-        for hint in htmlHints where text.localizedCaseInsensitiveContains(hint) {
+        let htmlHints = [“<html”, “<body”, “</html>”, “<meta”, “<title”]
+        for hint in htmlHints where sample.localizedCaseInsensitiveContains(hint) {
             score += 20
         }
 
-        let newlineCount = text.reduce(into: 0) { partialResult, character in
-            if character == "\n" { partialResult += 1 }
-        }
+        let newlineCount = sample.filter { $0 == “\n” }.count
         score += min(newlineCount, 40)
 
         return score
