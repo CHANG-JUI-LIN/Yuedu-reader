@@ -23,9 +23,14 @@ struct ReaderChapterPresentationTests {
 
     @Test("ready on current triggers correct refresh action")
     func readyOnCurrentTriggersCorrectRefreshAction() {
-        #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 3, currentChapterIndex: 3, usesCoreText: true, newState: .ready, isContentAvailable: true) == ReaderChapterRefreshAction.notifyChapterDataChanged(index: 3))
+        #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 3, currentChapterIndex: 3, usesCoreText: true, newState: .ready, isContentAvailable: true) == ReaderChapterRefreshAction.notifyChapterDataChanged(3))
         #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 4, currentChapterIndex: 4, usesCoreText: false, newState: .ready, isContentAvailable: true) == ReaderChapterRefreshAction.rebuildPages)
         #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 5, currentChapterIndex: 5, usesCoreText: true, newState: .ready, isContentAvailable: false) == ReaderChapterRefreshAction.none)
+    }
+
+    @Test("different indices return none")
+    func differentIndicesReturnNone() {
+        #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 2, currentChapterIndex: 3, usesCoreText: true, newState: .ready, isContentAvailable: true) == ReaderChapterRefreshAction.none)
     }
 
     @Test("ready but missing content resolves to loading")

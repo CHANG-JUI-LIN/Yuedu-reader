@@ -8,7 +8,7 @@ public enum ReaderChapterOverlayState: Equatable {
 
 public enum ReaderChapterRefreshAction: Equatable {
     case none
-    case notifyChapterDataChanged(index: Int)
+    case notifyChapterDataChanged(Int)
     case rebuildPages
 }
 
@@ -37,7 +37,7 @@ public enum ReaderChapterPresentation {
         guard changedChapterIndex == currentChapterIndex else { return .none }
         guard isContentAvailable, newState == .ready else { return .none }
         if usesCoreText {
-            return .notifyChapterDataChanged(index: currentChapterIndex)
+            return .notifyChapterDataChanged(currentChapterIndex)
         } else {
             return .rebuildPages
         }
