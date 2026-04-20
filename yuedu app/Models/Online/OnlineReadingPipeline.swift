@@ -33,6 +33,7 @@ actor ChapterFetchManager {
     private let webViewFetcher: WebViewFetcher
     private var tasks: [String: Task<ChapterPackage, Error>] = [:]
     private var states: [String: OnlineChapterLoadState] = [:]
+    private var priorities: [String: ChapterFetchPriority] = [:]
 
     // MARK: - Generation Token（防止舊世代 fetch 結果汙染新 UI）
     // 每次新的 fetchChapter 呼叫都會更新 token；回傳前先確認 token 仍有效
@@ -60,6 +61,37 @@ actor ChapterFetchManager {
             return .cached
         }
         return states[key(bookId: bookId, chapterIndex: chapterIndex)] ?? .missing
+    }
+
+    func isChapterCached(book: ReadingBook, chapterIndex: Int) -> Bool {
+        guard let refs = book.onlineChapters, refs.indices.contains(chapterIndex) else {
+            return false
+        }
+
+        let sanitizedURL = RuleEngine.sanitizeExtractedURL(refs[chapterIndex].url)
+        if let cached = bookSourceFetcher.loadChapterPackageSync(
+            bookId: book.id,
+            chapterIndex: chapterIndex,
+            expectedSourceURL: sanitizedURL,
+            expectedTOCTitle: refs[chapterIndex].title
+        ), cached.state == .cached, !cached.content.isEmpty {
+            states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
+            return true
+        }
+
+        if sanitizedURL != refs[chapterIndex].url,
+            let cached = bookSourceFetcher.loadChapterPackageSync(
+                bookId: book.id,
+                chapterIndex: chapterIndex,
+                expectedSourceURL: refs[chapterIndex].url,
+                expectedTOCTitle: refs[chapterIndex].title
+            ), cached.state == .cached, !cached.content.isEmpty
+        {
+            states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
+            return true
+        }
+
+        return false
     }
 
     func fetchChapter(
@@ -103,8 +135,19 @@ actor ChapterFetchManager {
         // 若已有相同章節的請求正在執行，直接共用該結果。
         // 不要在這裡刷新 generation token，否則會把 in-flight task 的合法結果判成舊世代。
         if let existing = tasks[taskKey] {
-            let result = try await existing.value
-            return result
+            if let existingPriority = priorities[taskKey],
+                priority == .jump,
+                existingPriority.rawValue < priority.rawValue
+            {
+                existing.cancel()
+                tasks.removeValue(forKey: taskKey)
+                priorities.removeValue(forKey: taskKey)
+                generationTokens.removeValue(forKey: taskKey)
+                states[taskKey] = .missing
+            } else {
+                let result = try await existing.value
+                return result
+            }
         }
 
         // 只有建立新 task 時才生成 token，作為這次抓取結果的唯一有效世代。
@@ -221,15 +264,13 @@ actor ChapterFetchManager {
         }
 
         tasks[taskKey] = task
+        priorities[taskKey] = priority
 
         do {
             let package = try await task.value
 
             // Generation Token 驗證：確保此結果仍屬於最新的請求
             guard generationTokens[taskKey] == myToken else {
-                if tasks[taskKey] != nil {
-                    tasks.removeValue(forKey: taskKey)
-                }
                 throw CancellationError()  // 舊世代結果，靜默丟棄
             }
 
@@ -264,24 +305,18 @@ actor ChapterFetchManager {
                     bookId: bookId, chapterIndex: chapterIndex, sourceURL: ref.url, tocTitle: ref.title, store: store, startedAt: startedAt,
                     reason: "empty", pipelineKind: book.isOnline ? "online" : "txt")
             }
-            tasks.removeValue(forKey: taskKey)
-            if generationTokens[taskKey] == myToken {
-                generationTokens.removeValue(forKey: taskKey)
-            }
+            clearRequestTracking(for: taskKey, token: myToken)
             return package
         } catch is CancellationError {
             // Generation token 失效或 Task 被取消：清理不記失敗
-            tasks.removeValue(forKey: taskKey)
-            if generationTokens[taskKey] == myToken {
-                generationTokens.removeValue(forKey: taskKey)
-            }
+            clearRequestTracking(for: taskKey, token: myToken)
             throw CancellationError()
         } catch {
-            states[taskKey] = .failed
-            tasks.removeValue(forKey: taskKey)
-            if generationTokens[taskKey] == myToken {
-                generationTokens.removeValue(forKey: taskKey)
+            guard generationTokens[taskKey] == myToken else {
+                throw CancellationError()
             }
+            states[taskKey] = .failed
+            clearRequestTracking(for: taskKey, token: myToken)
             await handleFetchFailure(
                 bookId: bookId, chapterIndex: chapterIndex, sourceURL: ref.url, tocTitle: ref.title, store: store, startedAt: startedAt,
                 reason: "error", pipelineKind: book.isOnline ? "online" : "txt")
@@ -307,8 +342,19 @@ actor ChapterFetchManager {
         for (taskKey, task) in tasks where taskKey.hasPrefix(prefix) {
             task.cancel()
             tasks.removeValue(forKey: taskKey)
+            priorities.removeValue(forKey: taskKey)
+            states[taskKey] = .missing
         }
         generationTokens = generationTokens.filter { !$0.key.hasPrefix(prefix) }
+    }
+
+    func cancelFetch(bookId: UUID, chapterIndex: Int) {
+        let taskKey = key(bookId: bookId, chapterIndex: chapterIndex)
+        tasks[taskKey]?.cancel()
+        tasks.removeValue(forKey: taskKey)
+        priorities.removeValue(forKey: taskKey)
+        generationTokens.removeValue(forKey: taskKey)
+        states[taskKey] = .missing
     }
 
     /// 取消低優先任務（background/prefetch），保留 immediate/jump 任務。
@@ -319,13 +365,14 @@ actor ChapterFetchManager {
             guard key.hasPrefix(prefix),
                 Int(key.split(separator: "#").last ?? "") != nil
             else { return false }
-            // 移除所有「非高優先」的任務（不影響已在跑的 immediate/jump）
-            let state = states[key]
-            return state == .loading  // 僅取消仍在 loading 的
+            guard let priority = priorities[key] else { return false }
+            return priority.rawValue < keepPriority.rawValue
         }
         for key in keysToCancel {
             tasks[key]?.cancel()
             tasks.removeValue(forKey: key)
+            priorities.removeValue(forKey: key)
+            states[key] = .missing
         }
     }
 
@@ -377,6 +424,13 @@ actor ChapterFetchManager {
                 store?.setCompatibilityState(bookId: bookId, state: .quarantined)
             }
         }
+    }
+
+    private func clearRequestTracking(for taskKey: String, token: UUID) {
+        guard generationTokens[taskKey] == token else { return }
+        tasks.removeValue(forKey: taskKey)
+        priorities.removeValue(forKey: taskKey)
+        generationTokens.removeValue(forKey: taskKey)
     }
 
     @MainActor
