@@ -22,12 +22,6 @@ final class JSSandbox {
         "WebSocket",
     ]
 
-    /// Single shared JS evaluation queue. Bounds thread leaks to at most one.
-    private static let evalQueue = DispatchQueue(
-        label: "com.yuedu.jssandbox.eval",
-        qos: .userInitiated
-    )
-
     // MARK: - Public API
 
     /// Configure a JSContext with security restrictions and safe polyfills.
@@ -57,7 +51,7 @@ final class JSSandbox {
         let semaphore = DispatchSemaphore(value: 0)
         var result: JSValue?
 
-        evalQueue.async {
+        DispatchQueue.global(qos: .userInitiated).async {
             result = context.evaluateScript(script)
             semaphore.signal()
         }
