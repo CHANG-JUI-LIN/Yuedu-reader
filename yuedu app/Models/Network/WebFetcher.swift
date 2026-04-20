@@ -297,13 +297,13 @@ actor WebFetcher {
         let replacementCount = sample.unicodeScalars.filter { $0.value == 0xFFFD }.count
         score -= replacementCount * 80
 
-        let suspiciousTokens = [“锟斤拷”, “Ã”, “Â”, “â€”, “â€œ”, “â€””, “ï»¿”, “\u{FFFD}”]
+        let suspiciousTokens = ["锟斤拷", "Ã", "Â", "â€", "â€œ", "â€\u{201D}", "ï»¿", "\u{FFFD}"]
         for token in suspiciousTokens {
             score -= sample.components(separatedBy: token).count > 1 ? 120 : 0
         }
 
         let controlCount = sample.unicodeScalars.filter {
-            CharacterSet.controlCharacters.contains($0) && $0 != “\n” && $0 != “\r” && $0 != “\t”
+            CharacterSet.controlCharacters.contains($0) && $0 != "\n" && $0 != "\r" && $0 != "\t"
         }.count
         score -= controlCount * 25
 
@@ -315,12 +315,12 @@ actor WebFetcher {
         }.count
         score += min(cjkCount, 200)
 
-        let htmlHints = [“<html”, “<body”, “</html>”, “<meta”, “<title”]
+        let htmlHints = ["<html", "<body", "</html>", "<meta", "<title"]
         for hint in htmlHints where sample.localizedCaseInsensitiveContains(hint) {
             score += 20
         }
 
-        let newlineCount = sample.filter { $0 == “\n” }.count
+        let newlineCount = sample.filter { $0 == "\n" }.count
         score += min(newlineCount, 40)
 
         return score

@@ -637,6 +637,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     func notifyChapterDataChanged(at spineIndex: Int) async {
         guard (0..<chapterCount).contains(spineIndex) else { return }
+        print("[FetchTrace] engine.notifyChapterDataChanged enter ch=\(spineIndex)")
 
         // 1. 清除舊 layout 與進行中的 preload task
         layouts[spineIndex] = nil
@@ -656,6 +657,14 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
         // 3. 重新載入該章節（preloadChapter 會檢查 layouts[spineIndex] == nil 後執行）
         await preloadChapter(at: spineIndex)
+
+        // 4. 通知 ReaderView 刷新：舊的 CoreTextPageView 還渲染著 placeholder，
+        //    必須換成新 layout 對應的 VC 才能看到真正內容。
+        let layoutOK = layouts[spineIndex] != nil
+        print("[FetchTrace] engine.notifyChapterDataChanged done ch=\(spineIndex) layoutOK=\(layoutOK) hasCallback=\(onChapterReady != nil)")
+        if layoutOK {
+            onChapterReady?(spineIndex)
+        }
     }
 
     private func preloadChapterInternal(at spineIndex: Int, generation: Int) async {

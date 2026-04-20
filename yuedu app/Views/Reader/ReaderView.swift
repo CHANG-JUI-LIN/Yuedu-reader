@@ -413,6 +413,9 @@ struct ReaderView: View {
 
     /// 章節頁碼資訊
     var chapterPageInfo: String {
+        if book?.isOnline == true && readerViewModel.chapterState(for: currentChapterIndex) == .loading {
+            return ""
+        }
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let (spineIndex, charOffset) = engine.charOffset(forPage: currentPage)
             guard let layout = engine.layouts[spineIndex], !layout.pageRanges.isEmpty else {
@@ -798,18 +801,26 @@ struct ReaderView: View {
             Task {
                 _ = try? await store.refreshOnlineBookMetadata(
                     bookId: currentBook.id,
-                    forceInfoRefresh: true
+                    forceInfoRefresh: true,
+                    bookSourceFetcher: dependencies.bookSourceFetcher
                 )
             }
         } else {
-            // 無章節 → 必須等待抓取
+            // 無章節 → 第一頁 TOC 一到就先開書，不等完整目錄返回
             Task {
                 _ = try? await store.refreshOnlineBookMetadata(
                     bookId: currentBook.id,
-                    forceInfoRefresh: true
+                    forceInfoRefresh: true,
+                    bookSourceFetcher: dependencies.bookSourceFetcher,
+                    onFirstChaptersReady: { repairedBook in
+                        guard repairedBook.id == currentBook.id, self.chapters.isEmpty else { return }
+                        self.loadContent()
+                    }
                 )
                 await MainActor.run {
-                    loadContent()
+                    if self.chapters.isEmpty {
+                        loadContent()
+                    }
                 }
             }
         }
@@ -856,6 +867,7 @@ struct ReaderView: View {
                     currentPage = currentEnginePage
                     currentChapterIndex = engine.charOffset(forPage: currentEnginePage).spineIndex
                 }
+                ensureChapterReady(chapterIndex: currentChapterIndex)
                 if engine.totalPages > 0 {
                     epubRenderer.updateCurrentPosition(globalPage: currentEnginePage, engine: engine)
                 }
@@ -890,6 +902,7 @@ struct ReaderView: View {
                     self.progressTrace("applyInitialProgress preciseRestore resolvedPage=\(resolvedPage) from=(\(spineIndex),\(target.charOffset))")
                     self.currentPage = resolvedPage
                     self.currentChapterIndex = spineIndex
+                    self.ensureChapterReady(chapterIndex: spineIndex)
                     self.epubRenderer.updateCurrentPosition(globalPage: resolvedPage, engine: engine)
                     if resolvedPage > 0 {
                         self.hasAppliedNonZeroRestore = true
@@ -909,6 +922,7 @@ struct ReaderView: View {
                 currentPage = target
                 let (spineIndex, _) = engine.charOffset(forPage: target)
                 currentChapterIndex = spineIndex
+                ensureChapterReady(chapterIndex: spineIndex)
                 epubRenderer.updateCurrentPosition(globalPage: target, engine: engine)
                 hasAppliedNonZeroRestore = true
                 progressTrace("applyInitialProgress fallbackByPercentage targetPage=\(target) fromPct=\(String(format: "%.6f", progress))")
@@ -1341,6 +1355,14 @@ struct ReaderView: View {
 
     /// 根據進度值（0–1）反查對應的章節標題，用於拖動 HUD
     private func chapterTitle(forProgress value: Double) -> String {
+        let totalChapters = book?.onlineChapters?.count ?? chapters.count
+        if book?.isOnline == true && totalChapters > 0 {
+            let targetIndex = max(0, min(Int(round(value * Double(totalChapters - 1))), totalChapters - 1))
+            if let refs = book?.onlineChapters, refs.indices.contains(targetIndex) {
+                return refs[targetIndex].title
+            }
+            return chapters.indices.contains(targetIndex) ? chapters[targetIndex].title : ""
+        }
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let pos = engine.position(forProgress: value)
             if chapters.indices.contains(pos.spineIndex) {
@@ -1355,6 +1377,11 @@ struct ReaderView: View {
     }
 
     private func chapterSliderProgressValue() -> Double {
+        let totalChapters = book?.onlineChapters?.count ?? chapters.count
+        guard totalChapters > 1 else { return 0 }
+        if book?.isOnline == true {
+            return Double(currentChapterIndex) / Double(totalChapters - 1)
+        }
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let pos = engine.charOffset(forPage: currentPage)
             return engine.totalProgress(forSpine: pos.spineIndex, charOffset: pos.charOffset)
@@ -1364,6 +1391,12 @@ struct ReaderView: View {
     }
 
     private func applyChapterSliderProgress(_ value: Double) {
+        let totalChapters = book?.onlineChapters?.count ?? chapters.count
+        if book?.isOnline == true && totalChapters > 1 {
+            let targetIndex = max(0, min(Int(round(value * Double(totalChapters - 1))), totalChapters - 1))
+            jumpToChapter(targetIndex)
+            return
+        }
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let pos = engine.position(forProgress: value)
             jumpToChapter(pos.spineIndex, charOffset: pos.charOffset)
@@ -1870,7 +1903,9 @@ struct ReaderView: View {
     }
 
     private func loadOnlineCoreText(_ book: ReadingBook, marginH: CGFloat) {
+        print("[FetchTrace] loadOnlineCoreText enter bookId=\(book.id) chapters=\(book.onlineChapters?.count ?? -1)")
         guard let document = BookDocumentFactory.makeOnlineDocument(book: book, store: store) else {
+            print("[FetchTrace] loadOnlineCoreText makeOnlineDocument returned nil")
             applyDocument(nil)
             isLoadingPipeline = false
             isRestoringPosition = false
@@ -1913,7 +1948,12 @@ struct ReaderView: View {
         isRestoringPosition = false
 
         // Lazy loading: 自動抓取初始章節（存檔位置或第 0 章）
-        let initialChapter = currentChapterIndex
+        let initialChapter = OnlineInitialChapterResolver.preferredInitialChapter(
+            chapterCount: refs.count,
+            savedPositionSnapshot: savedPositionSnapshot,
+            restoreTargetChapter: savedCoreTextRestoreTarget?.chapterIndex
+        )
+        currentChapterIndex = initialChapter
         ensureChapterReady(chapterIndex: initialChapter)
         if initialChapter != 0 {
             ensureChapterReady(chapterIndex: 0)
@@ -2696,20 +2736,26 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return
             }
 
-            let targetVC = engine.pageViewController(at: clampedPage)
-            if shouldAnimate && direction == .reverse && pageTurnStyle != .curl {
-                // UIPageViewController .scroll 的已知 bug：programmatic reverse 動畫方向錯誤。
-                // 暫時移除 dataSource 讓 UIKit 走正確的反向動畫路徑，完成後明確掛回 coordinator。
-                uiViewController.dataSource = nil
-                uiViewController.setViewControllers([targetVC], direction: .reverse, animated: true) { _ in
-                    if pageTurnStyle == .slide {
-                        uiViewController.dataSource = context.coordinator
-                    }
-                }
-            } else {
-                uiViewController.setViewControllers([targetVC], direction: direction, animated: shouldAnimate)
+            if shouldAnimate {
+                let decision = context.coordinator.transitionQueue.requestTransition(
+                    to: clampedPage,
+                    visiblePage: visible.globalPageIndex
+                )
+                guard decision == .startImmediately else { return }
+            } else if context.coordinator.transitionQueue.isTransitioning {
+                _ = context.coordinator.transitionQueue.requestTransition(
+                    to: clampedPage,
+                    visiblePage: visible.globalPageIndex
+                )
+                return
             }
-            _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
+
+            context.coordinator.performProgrammaticTransition(
+                on: uiViewController,
+                to: clampedPage,
+                direction: direction,
+                animated: shouldAnimate
+            )
             return
         }
 
@@ -2754,6 +2800,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private weak var callbackEngineObject: AnyObject?
         private var callbackEngineIdentifier: ObjectIdentifier?
         fileprivate var isTransitioning = false
+        fileprivate var transitionQueue = ReaderPageTransitionQueue()
 
         init(engine: any PageRenderingProvider,
              pageTurnStyle: PageTurnStyle,
@@ -2856,6 +2903,51 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             onPageChanged(clamped)
         }
 
+        private func continueQueuedTransitionIfNeeded(
+            on pageViewController: UIPageViewController,
+            showing visiblePage: Int
+        ) {
+            guard let queuedPage = transitionQueue.transitionFinished(showing: visiblePage) else { return }
+            let direction: UIPageViewController.NavigationDirection =
+                queuedPage >= visiblePage ? .forward : .reverse
+            let shouldAnimate = (pageTurnStyle != .none) && abs(queuedPage - visiblePage) == 1
+            performProgrammaticTransition(
+                on: pageViewController,
+                to: queuedPage,
+                direction: direction,
+                animated: shouldAnimate
+            )
+        }
+
+        fileprivate func performProgrammaticTransition(
+            on pageViewController: UIPageViewController,
+            to targetPage: Int,
+            direction: UIPageViewController.NavigationDirection,
+            animated: Bool
+        ) {
+            let targetViewController = currentEngine.pageViewController(at: targetPage)
+            let finishTransition: (UIViewController) -> Void = { shownViewController in
+                if let resolvedPage = self.syncStablePosition(afterShowing: shownViewController, notifyFallback: true) {
+                    Task { @MainActor in
+                        self.currentEngine.warmUpNext(currentGlobalPage: resolvedPage)
+                    }
+                    self.continueQueuedTransitionIfNeeded(on: pageViewController, showing: resolvedPage)
+                } else {
+                    self.continueQueuedTransitionIfNeeded(on: pageViewController, showing: targetPage)
+                }
+            }
+
+            ProgrammaticPageTransitionPerformer(pageTurnStyle: pageTurnStyle).perform(
+                on: pageViewController,
+                targetViewController: targetViewController,
+                direction: direction,
+                animated: animated,
+                restoringDataSource: self
+            ) { settledViewController in
+                finishTransition(settledViewController)
+            }
+        }
+
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
             guard recognizer.state == .ended,
                   let view = recognizer.view else { return }
@@ -2949,11 +3041,23 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         func pageViewController(
             _ pvc: UIPageViewController,
+            willTransitionTo pendingViewControllers: [UIViewController]
+        ) {
+            transitionQueue.beginInteractiveTransition()
+        }
+
+        func pageViewController(
+            _ pvc: UIPageViewController,
             didFinishAnimating finished: Bool,
             previousViewControllers: [UIViewController],
             transitionCompleted completed: Bool
         ) {
-            guard completed else { return }
+            guard completed else {
+                let settledPage = (pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex
+                    ?? currentPage
+                continueQueuedTransitionIfNeeded(on: pvc, showing: settledPage)
+                return
+            }
 
             // 若落地的是快照 VC，立即換成真正的渲染 VC（佈局已就緒，視覺上無縫）
             if let snapVC = pvc.viewControllers?.first as? SnapshotPageViewController {
@@ -2968,6 +3072,9 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     Task { @MainActor in
                         currentEngine.warmUpNext(currentGlobalPage: resolvedPage)
                     }
+                    continueQueuedTransitionIfNeeded(on: pvc, showing: resolvedPage)
+                } else {
+                    continueQueuedTransitionIfNeeded(on: pvc, showing: snapVC.globalPageIndex)
                 }
                 return
             }
@@ -2977,6 +3084,9 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 Task { @MainActor in
                     currentEngine.warmUpNext(currentGlobalPage: resolvedPage)
                 }
+                continueQueuedTransitionIfNeeded(on: pvc, showing: resolvedPage)
+            } else {
+                continueQueuedTransitionIfNeeded(on: pvc, showing: vc.globalPageIndex)
             }
         }
 

@@ -78,6 +78,122 @@ struct yuedu_appTests {
         }
     }
 
+    private actor ProgressiveTOCGate {
+        private var continuation: CheckedContinuation<Void, Never>?
+
+        func wait() async {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+            }
+        }
+
+        func release() {
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+
+    private final class ProgressiveTOCFetcher: BookSourceFetching {
+        let source: BookSource
+        let firstPageChapters: [OnlineChapterRef]
+        let finalPackage: TOCPackage
+        let gate = ProgressiveTOCGate()
+
+        init(source: BookSource, firstPageChapters: [OnlineChapterRef], finalPackage: TOCPackage) {
+            self.source = source
+            self.firstPageChapters = firstPageChapters
+            self.finalPackage = finalPackage
+        }
+
+        func fetchBookInfoPackage(
+            url: String,
+            source: BookSource,
+            runtimeVariables: [String: String]?
+        ) async throws -> BookInfoPackage {
+            throw NSError(domain: "ProgressiveTOCFetcher", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "fetchBookInfoPackage should not be called in this test"
+            ])
+        }
+
+        func fetchTOCPackage(
+            tocUrl: String,
+            source: BookSource,
+            runtimeVariables: [String: String]?,
+            onFirstPageReady: (([OnlineChapterRef]) -> Void)?
+        ) async throws -> TOCPackage {
+            #expect(source.id == self.source.id)
+            #expect(tocUrl == finalPackage.tocURL)
+            onFirstPageReady?(firstPageChapters)
+            await gate.wait()
+            return finalPackage
+        }
+
+        func isChapterCached(
+            bookId: UUID,
+            chapterIndex: Int,
+            expectedSourceURL: String?,
+            expectedTOCTitle: String?
+        ) -> Bool {
+            false
+        }
+
+        func clearChapterCache(bookId: UUID, chapterIndex: Int) {}
+
+        func search(query: String, in source: BookSource) async throws -> [OnlineBook] { [] }
+
+        func loadChapterPackageSync(
+            bookId: UUID,
+            chapterIndex: Int,
+            expectedSourceURL: String?,
+            expectedTOCTitle: String?
+        ) -> ChapterPackage? {
+            nil
+        }
+    }
+
+    private final class StubPaginatedURLProtocol: URLProtocol {
+        static var htmlByURL: [String: String] = [:]
+        static var blockingURL: String?
+        static var beforeRespond: ((String) -> Void)?
+        static var blockSemaphore = DispatchSemaphore(value: 0)
+
+        static func reset() {
+            htmlByURL = [:]
+            blockingURL = nil
+            beforeRespond = nil
+            blockSemaphore = DispatchSemaphore(value: 0)
+        }
+
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+        override func startLoading() {
+            guard let url = request.url?.absoluteString,
+                  let html = Self.htmlByURL[url],
+                  let responseURL = request.url else {
+                client?.urlProtocolDidFinishLoading(self)
+                return
+            }
+
+            Self.beforeRespond?(url)
+            if url == Self.blockingURL {
+                Self.blockSemaphore.wait()
+            }
+
+            let response = HTTPURLResponse(
+                url: responseURL,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/html; charset=utf-8"]
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(html.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+
+        override func stopLoading() {}
+    }
+
     private func fetchFirstChapter(sourceName: String, keyword: String, expectedTitle: String) async throws
         -> ChapterPackage
     {
@@ -1078,6 +1194,149 @@ struct yuedu_appTests {
         )
         #expect(!package.content.isEmpty)
         BookSourceFetcher.shared.clearAllChapterCache(bookId: stale.id)
+    }
+
+    @Test func refreshOnlineBookMetadataPersistsFirstTOCPageBeforeFullFetchCompletes() async throws {
+        let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "測試書源")
+        let previousSources = BookSourceStore.shared.sources
+        BookSourceStore.shared.sources = [source]
+        defer {
+            BookSourceStore.shared.sources = previousSources
+        }
+
+        let store = BookStore()
+        let stale = store.addOnlineBook(
+            name: "測試書",
+            author: "作者",
+            sourceId: source.id,
+            bookInfoURL: "https://example.com/book",
+            tocURL: "https://example.com/toc",
+            runtimeVariables: nil,
+            chapters: []
+        )
+        defer {
+            store.delete(bookId: stale.id)
+        }
+
+        let firstPage = [
+            OnlineChapterRef(index: 0, title: "第 1 章", url: "https://example.com/c1"),
+            OnlineChapterRef(index: 1, title: "第 2 章", url: "https://example.com/c2"),
+        ]
+        let fullTOC = firstPage + [
+            OnlineChapterRef(index: 2, title: "第 3 章", url: "https://example.com/c3")
+        ]
+        let fetcher = ProgressiveTOCFetcher(
+            source: source,
+            firstPageChapters: firstPage,
+            finalPackage: TOCPackage(
+                sourceId: source.id,
+                sourceName: source.bookSourceName,
+                tocURL: "https://example.com/toc",
+                runtimeVariables: ["token": "final"],
+                chapters: fullTOC,
+                rawHTMLFilename: nil,
+                savedAt: Date()
+            )
+        )
+
+        let refreshTask = Task {
+            try await store.refreshOnlineBookMetadata(
+                bookId: stale.id,
+                forceInfoRefresh: false,
+                bookSourceFetcher: fetcher
+            )
+        }
+
+        var intermediate: ReadingBook?
+        for _ in 0..<20 {
+            if let current = store.books.first(where: { $0.id == stale.id }),
+               current.onlineChapters?.count == firstPage.count {
+                intermediate = current
+                break
+            }
+            await Task.yield()
+        }
+
+        let repairedEarly = try #require(intermediate)
+        #expect(repairedEarly.onlineChapters?.map { $0.title } == firstPage.map { $0.title })
+
+        await fetcher.gate.release()
+        let refreshed = try await refreshTask.value
+        #expect(refreshed.onlineChapters?.map { $0.title } == fullTOC.map { $0.title })
+        #expect(refreshed.runtimeVariables?["token"] == "final")
+    }
+
+    @Test func fetchWebContentProgressivelyPublishesFirstPageBeforeNextPageCompletes() async throws {
+        StubPaginatedURLProtocol.reset()
+        let firstURL = "https://example.com/chapter-1"
+        let secondURL = "https://example.com/chapter-1?page=2"
+        let firstText = String(repeating: "第一頁內容", count: 80)
+        let secondText = String(repeating: "第二頁內容", count: 80)
+
+        StubPaginatedURLProtocol.htmlByURL = [
+            firstURL: """
+            <html><body><article><p>\(firstText)</p><a href="\(secondURL)">下一頁</a></article></body></html>
+            """,
+            secondURL: """
+            <html><body><article><p>\(secondText)</p></article></body></html>
+            """
+        ]
+        StubPaginatedURLProtocol.blockingURL = secondURL
+
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubPaginatedURLProtocol.self]
+        let session = URLSession(configuration: config)
+        let webFetcher = WebFetcher(session: session)
+        let fetcher = BookSourceFetcher(webFetcher: webFetcher)
+
+        var firstPageContent: String?
+        let task = Task {
+            try await fetcher.fetchWebContent(
+                url: firstURL,
+                referer: nil,
+                onFirstPageReady: { partial in
+                    firstPageContent = partial
+                }
+            )
+        }
+
+        for _ in 0..<20 {
+            if firstPageContent?.contains("第一頁內容") == true {
+                break
+            }
+            await Task.yield()
+        }
+
+        #expect(firstPageContent?.contains("第一頁內容") == true)
+        #expect(firstPageContent?.contains("第二頁內容") != true)
+
+        StubPaginatedURLProtocol.blockSemaphore.signal()
+        let finalContent = try await task.value
+        #expect(finalContent.contains("第一頁內容"))
+        #expect(finalContent.contains("第二頁內容"))
+    }
+
+    @Test func onlineInitialChapterResolverPrefersRestoreTargetAndProgress() {
+        let explicit = OnlineInitialChapterResolver.preferredInitialChapter(
+            chapterCount: 3000,
+            savedPositionSnapshot: 0,
+            restoreTargetChapter: 100
+        )
+        #expect(explicit == 100)
+
+        let fromProgress = OnlineInitialChapterResolver.preferredInitialChapter(
+            chapterCount: 3000,
+            savedPositionSnapshot: 100.0 / 2999.0,
+            restoreTargetChapter: nil
+        )
+        #expect(fromProgress == 100)
+
+        let clamped = OnlineInitialChapterResolver.preferredInitialChapter(
+            chapterCount: 10,
+            savedPositionSnapshot: 2.0,
+            restoreTargetChapter: 99
+        )
+        #expect(clamped == 9)
     }
 
     @Test func coreTextEngineLoadsActualPartPageBackgroundImage() async throws {

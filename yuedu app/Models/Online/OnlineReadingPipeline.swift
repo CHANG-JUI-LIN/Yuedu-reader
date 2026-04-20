@@ -1,6 +1,10 @@
 import Foundation
 import SwiftUI
 
+extension Notification.Name {
+    static let onlineChapterCacheDidUpdate = Notification.Name("onlineChapterCacheDidUpdate")
+}
+
 enum OnlineChapterLoadState: String {
     case missing
     case loading
@@ -54,6 +58,10 @@ actor ChapterFetchManager {
 
     private func key(bookId: UUID, chapterIndex: Int) -> String {
         "\(bookId.uuidString)#\(chapterIndex)"
+    }
+
+    fileprivate func isTokenValid(taskKey: String, token: UUID) -> Bool {
+        generationTokens[taskKey] == token
     }
 
     func chapterState(bookId: UUID, chapterIndex: Int) -> OnlineChapterLoadState {
@@ -154,6 +162,17 @@ actor ChapterFetchManager {
         let myToken = UUID()
         generationTokens[taskKey] = myToken
 
+        // 高優先插隊：跳章時中斷本書其他 in-flight fetch，釋放 WKWebView slot
+        if priority == .jump {
+            let prefix = "\(book.id.uuidString)#"
+            for (otherKey, otherTask) in tasks where otherKey != taskKey && otherKey.hasPrefix(prefix) {
+                otherTask.cancel()
+                tasks.removeValue(forKey: otherKey)
+                generationTokens.removeValue(forKey: otherKey)
+                states[otherKey] = .missing
+            }
+        }
+
         states[taskKey] = .loading
         var ref = refs[chapterIndex]
         // 將清理過的 URL 寫回 ref，確保下游所有程式碼使用乾淨的 URL
@@ -200,25 +219,38 @@ actor ChapterFetchManager {
 
             let bsf = bookSourceFetcher  // 在進入 @MainActor closure 前先捕捉 actor 屬性
             let capturedStore = store
+            let selfRef = self
+            print("[FetchTrace] fetchBrowserImportedChapter start ch=\(chapterIndex) url=\(ref.url)")
             let content = await fetchBrowserImportedChapter(
                 urlString: ref.url,
                 referer: book.bookInfoURL ?? book.source,
                 progressHandler: { @MainActor partial in
-                    // 第一頁到手時先存 partial content，讓 Reader 立即顯示
-                    _ = bsf.saveToCache(
-                        content: partial,
-                        bookId: bookId,
-                        chapterIndex: chapterIndex,
-                        sourceURL: ref.url,
-                        tocTitle: ref.title
-                    )
-                    capturedStore?.updateCachedChapter(
-                        bookId: bookId,
-                        chapterIndex: chapterIndex,
-                        filename: "\(chapterIndex).txt"
-                    )
+                    // Generation token 守門：若此 task 已被插隊中斷/作廢，不要汙染 cache
+                    Task {
+                        guard await selfRef.isTokenValid(taskKey: taskKey, token: myToken) else { return }
+                        _ = bsf.saveToCache(
+                            content: partial,
+                            bookId: bookId,
+                            chapterIndex: chapterIndex,
+                            sourceURL: ref.url,
+                            tocTitle: ref.title
+                        )
+                        await MainActor.run {
+                            capturedStore?.updateCachedChapter(
+                                bookId: bookId,
+                                chapterIndex: chapterIndex,
+                                filename: "\(chapterIndex).txt"
+                            )
+                            NotificationCenter.default.post(
+                                name: .onlineChapterCacheDidUpdate,
+                                object: nil,
+                                userInfo: ["bookId": bookId, "chapterIndex": chapterIndex]
+                            )
+                        }
+                    }
                 }
             )
+            print("[FetchTrace] fetchBrowserImportedChapter done ch=\(chapterIndex) contentLen=\(content.count)")
             if !content.isEmpty {
                 _ = bookSourceFetcher.saveToCache(
                     content: content,
@@ -439,13 +471,24 @@ actor ChapterFetchManager {
         referer: String?,
         progressHandler: (@MainActor (String) -> Void)? = nil
     ) async -> String {
-        if let direct = try? await bookSourceFetcher.fetchWebContent(
-            url: urlString,
-            referer: referer
-        ), !direct.isEmpty {
-            // HTTP 直接命中：立即通知 Reader 顯示（無需等待 WebView）
-            progressHandler?(direct)
-            return direct
+        print("[FetchTrace]   strategy1 fetchWebContent start url=\(urlString)")
+        let startT = CFAbsoluteTimeGetCurrent()
+        do {
+            let direct = try await bookSourceFetcher.fetchWebContent(
+                url: urlString,
+                referer: referer,
+                onFirstPageReady: { partial in
+                    Task { @MainActor in
+                        progressHandler?(partial)
+                    }
+                }
+            )
+            let ms = Int((CFAbsoluteTimeGetCurrent() - startT) * 1000)
+            print("[FetchTrace]   strategy1 done len=\(direct.count) elapsedMs=\(ms)")
+            if !direct.isEmpty { return direct }
+        } catch {
+            let ms = Int((CFAbsoluteTimeGetCurrent() - startT) * 1000)
+            print("[FetchTrace]   strategy1 threw error=\(error) elapsedMs=\(ms)")
         }
 
         guard let firstURL = URL(string: urlString) else { return "" }

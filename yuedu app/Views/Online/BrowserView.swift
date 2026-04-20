@@ -671,12 +671,18 @@ struct BrowserView: View {
     @State private var addressText = ""
     @State private var isExtracting = false
 
-    @State private var readerBookId: UUID?
-    @State private var showReader = false
+    // 用 Identifiable item 驅動 fullScreenCover，避免 Bool + UUID 兩條 state 競爭。
+    private struct ReaderPresentation: Identifiable {
+        let id: UUID
+    }
+    @State private var readerPresentation: ReaderPresentation?
 
     @State private var extractedChapters: [WebChapterItem] = []
     @State private var showTOCSheet = false
     @State private var tocBookTitle = ""
+    // 延後 present Reader 直到 TOC sheet 真正 dismiss 結束。
+    // 在 sheet 還在收起動畫時呼叫 fullScreenCover SwiftUI 會靜默忽略。
+    @State private var pendingChapterStart: (chapters: [WebChapterItem], title: String, startIndex: Int)?
 
     @State private var errorMsg: String?
 
@@ -721,25 +727,28 @@ struct BrowserView: View {
         .onReceive(browser.$currentURL) { url in
             if !addressFocused { addressText = url }
         }
-        .fullScreenCover(isPresented: $showReader) {
-            if let bid = readerBookId {
-                ReaderView(bookId: bid)
-                    .environmentObject(store)
-            }
+        .fullScreenCover(item: $readerPresentation) { presentation in
+            ReaderView(bookId: presentation.id)
+                .environmentObject(store)
         }
-        .sheet(isPresented: $showTOCSheet) {
+        .sheet(isPresented: $showTOCSheet, onDismiss: {
+            // onDismiss 在 sheet 動畫完全結束後觸發，此時才 present Reader 不會 crash。
+            guard let pending = pendingChapterStart else { return }
+            pendingChapterStart = nil
+            startChapterDownload(
+                chapters: pending.chapters,
+                title: pending.title,
+                startIndex: pending.startIndex
+            )
+        }) {
             AdaptiveSheetContainer(maxWidth: 820) {
                 WebTOCSheet(
                     title: tocBookTitle,
                     chapters: extractedChapters,
                     isPresented: $showTOCSheet
                 ) { _, startIndex in
+                    pendingChapterStart = (extractedChapters, tocBookTitle, startIndex)
                     showTOCSheet = false
-                    startChapterDownload(
-                        chapters: extractedChapters,
-                        title: tocBookTitle,
-                        startIndex: startIndex
-                    )
                 }
             }
         }
@@ -759,6 +768,7 @@ struct BrowserView: View {
 
     // MARK: - 建立線上書 → 按需懶加載章節（不預下載全部）
     private func startChapterDownload(chapters: [WebChapterItem], title: String, startIndex: Int) {
+        print("[BrowserView] startChapterDownload chapters=\(chapters.count) startIndex=\(startIndex)")
         let refs = chapters.enumerated().map { idx, ch in
             OnlineChapterRef(index: idx, title: ch.title, url: ch.url)
         }
@@ -769,14 +779,32 @@ struct BrowserView: View {
             sourceURL: browser.currentURL,
             chapters: refs
         )
+        print("[BrowserView] book created id=\(book.id)")
 
         if startIndex > 0, chapters.count > 1 {
             let pos = Double(startIndex) / Double(max(chapters.count - 1, 1))
             store.updatePosition(bookId: book.id, position: pos)
         }
 
-        readerBookId = book.id
-        showReader = true
+        // 搶先觸發起始章節的網路抓取：ReaderView 開啟後 fetchChapterIfNeeded
+        // 會在 ChapterFetchManager 找到同 key 的 Task 並共用，縮短等待時間。
+        let prefetchBook = book
+        let prefetchStore = store
+        Task {
+            _ = try? await ChapterFetchManager.shared.fetchChapter(
+                book: prefetchBook,
+                chapterIndex: startIndex,
+                priority: .jump,
+                store: prefetchStore
+            )
+        }
+
+        // 把瀏覽器的登入 cookies 同步到 HTTPCookieStorage.shared，
+        // 後續 ChapterFetchManager 透過 URLSession / WebViewFetcher 抓章節時才能帶著登入狀態。
+        browser.syncCookiesToURLSession {
+            print("[BrowserView] cookies synced, presenting Reader")
+            readerPresentation = ReaderPresentation(id: book.id)
+        }
     }
 
     // MARK: 首頁
@@ -909,9 +937,8 @@ struct BrowserView: View {
                             sourceURL: browser.currentURL,
                             format: .plainText  // 一律存 .txt；TXTChapterParser.splitIntoParagraphs 會在 Swift 端解析 HTML 標籤
                         )
-                        readerBookId = book.id
                         isExtracting = false
-                        showReader = true
+                        readerPresentation = ReaderPresentation(id: book.id)
                     } catch {
                         isExtracting = false
                         errorMsg = "儲存失敗：\(error.localizedDescription)"

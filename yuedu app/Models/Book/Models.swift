@@ -1164,7 +1164,9 @@ class BookStore: ObservableObject {
     @discardableResult
     func refreshOnlineBookMetadata(
         bookId: UUID,
-        forceInfoRefresh: Bool = false
+        forceInfoRefresh: Bool = false,
+        bookSourceFetcher: any BookSourceFetching = LiveBookSourceFetcher(bookSourceFetcher: BookSourceFetcher.shared),
+        onFirstChaptersReady: (@MainActor (ReadingBook) -> Void)? = nil
     ) async throws -> ReadingBook {
         guard let snapshot = await MainActor.run(body: {
             books.first(where: { $0.id == bookId && $0.isOnline })
@@ -1194,7 +1196,7 @@ class BookStore: ObservableObject {
         var infoPackage: BookInfoPackage?
 
         if forceInfoRefresh || tocURL.isEmpty {
-            let fetchedInfo = try await BookSourceFetcher.shared.fetchBookInfoPackage(
+            let fetchedInfo = try await bookSourceFetcher.fetchBookInfoPackage(
                 url: bookURL,
                 source: source,
                 runtimeVariables: runtimeVariables
@@ -1213,31 +1215,74 @@ class BookStore: ObservableObject {
             tocURL = bookURL
         }
 
-        let tocPackage = try await BookSourceFetcher.shared.fetchTOCPackage(
+        let progressiveTOCURL = tocURL
+        let progressiveRuntimeVariables = runtimeVariables
+        let progressiveInfoPackage = infoPackage
+
+        let tocPackage = try await bookSourceFetcher.fetchTOCPackage(
             tocUrl: tocURL,
             source: source,
-            runtimeVariables: runtimeVariables
+            runtimeVariables: runtimeVariables,
+            onFirstPageReady: { [weak self] firstChapters in
+                guard let self else { return }
+                Task { @MainActor in
+                    guard let idx = self.books.firstIndex(where: { $0.id == bookId }) else { return }
+
+                    let previousTitle = self.books[idx].title
+                    let previousAuthor = self.books[idx].author
+                    let existingChapters = self.books[idx].onlineChapters ?? []
+                    let mergedChapters = self.mergeOnlineChapters(existing: existingChapters, refreshed: firstChapters)
+                    let chaptersChanged = self.chapterListChanged(existing: existingChapters, refreshed: firstChapters)
+                    let tocChanged = self.normalizedOnlineValue(self.books[idx].tocURL) != progressiveTOCURL
+                    let runtimeChanged = (self.books[idx].runtimeVariables ?? [:]) != (progressiveRuntimeVariables ?? [:])
+
+                    self.books[idx].bookSourceId = source.id
+                    self.books[idx].bookInfoURL = bookURL
+                    self.books[idx].tocURL = progressiveTOCURL
+                    self.books[idx].runtimeVariables = progressiveRuntimeVariables
+                    self.books[idx].onlineChapters = mergedChapters
+
+                    if let progressiveInfoPackage {
+                        let resolvedName = self.normalizedOnlineValue(progressiveInfoPackage.name)
+                        let resolvedAuthor = self.normalizedOnlineValue(progressiveInfoPackage.author)
+                        if !resolvedName.isEmpty {
+                            self.books[idx].title = resolvedName
+                        }
+                        if !resolvedAuthor.isEmpty {
+                            self.books[idx].author = resolvedAuthor
+                        }
+                    }
+
+                    let titleChanged = previousTitle != self.books[idx].title
+                    let authorChanged = previousAuthor != self.books[idx].author
+                    if runtimeChanged || chaptersChanged || tocChanged || titleChanged || authorChanged {
+                        self.saveMeta()
+                    }
+                    onFirstChaptersReady?(self.books[idx])
+                }
+            }
         )
         if let fetchedRuntime = tocPackage.runtimeVariables, !fetchedRuntime.isEmpty {
             runtimeVariables = fetchedRuntime
         }
 
-        let existingChapters = snapshot.onlineChapters ?? []
-        let mergedChapters = mergeOnlineChapters(existing: existingChapters, refreshed: tocPackage.chapters)
-        let chaptersChanged = chapterListChanged(existing: existingChapters, refreshed: tocPackage.chapters)
-        let tocChanged = normalizedOnlineValue(snapshot.tocURL) != tocURL
-        let runtimeChanged = (snapshot.runtimeVariables ?? [:]) != (runtimeVariables ?? [:])
-        let shouldClearCache = chaptersChanged || tocChanged
         let finalTOCURL = tocURL
         let finalRuntimeVariables = runtimeVariables
         let finalInfoPackage = infoPackage
 
-        let updated = await MainActor.run { () -> ReadingBook in
+        let updateResult = await MainActor.run { () -> (ReadingBook, Bool)? in
             guard let idx = books.firstIndex(where: { $0.id == bookId }) else {
-                return snapshot
+                return nil
             }
+
+            let existingChapters = books[idx].onlineChapters ?? []
+            let mergedChapters = mergeOnlineChapters(existing: existingChapters, refreshed: tocPackage.chapters)
+            let chaptersChanged = chapterListChanged(existing: existingChapters, refreshed: tocPackage.chapters)
+            let tocChanged = normalizedOnlineValue(books[idx].tocURL) != finalTOCURL
+            let runtimeChanged = (books[idx].runtimeVariables ?? [:]) != (finalRuntimeVariables ?? [:])
             let previousTitle = books[idx].title
             let previousAuthor = books[idx].author
+
             books[idx].bookSourceId = source.id
             books[idx].bookInfoURL = bookURL
             books[idx].tocURL = finalTOCURL
@@ -1261,7 +1306,11 @@ class BookStore: ObservableObject {
             if runtimeChanged || chaptersChanged || tocChanged || titleChanged || authorChanged {
                 saveMeta()
             }
-            return books[idx]
+            return (books[idx], chaptersChanged || tocChanged)
+        }
+
+        guard let (updated, shouldClearCache) = updateResult else {
+            return snapshot
         }
 
         if shouldClearCache {

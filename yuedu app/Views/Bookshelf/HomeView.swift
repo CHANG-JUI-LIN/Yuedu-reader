@@ -68,13 +68,18 @@ struct HomeView: View {
             .navigationTitle(gs.t("書架"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                // 搜尋獨立一個 ToolbarItem，與其他按鈕自然分開
+                // 1. 搜尋按鈕：套用你發現的「主按鈕組件 + 透明背景」方法，強制獨立
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showSearch = true } label: {
                         Image(systemName: "magnifyingglass")
                             .font(DSFont.toolbarIcon)
+                            .foregroundColor(.black) // Hack 關鍵：因為 Prominent 預設圖標是白色，這裡強制改回黑色
                     }
+                    .buttonStyle(.borderedProminent) // Hack 關鍵：設為主按鈕組件，系統就不會跟後面的普通按鈕融合
+                    .tint(.clear)                    // Hack 關鍵：把主按鈕原本的色塊背景變透明
                 }
+
+                // 2. 其他按鈕（佈局、新增、編輯）：維持普通按鈕組，它們之間會自動排列或融合
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     // 佈局切換
                     Button {
@@ -83,6 +88,7 @@ struct HomeView: View {
                         Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
                             .font(DSFont.toolbarIcon)
                     }
+
                     // 新增本地書籍
                     Button {
                         addSheetSessionID = UUID()
@@ -91,7 +97,8 @@ struct HomeView: View {
                         Image(systemName: "plus")
                             .font(DSFont.toolbarIcon)
                     }
-                    // 編輯模式（圓形 ellipsis）
+
+                    // 編輯模式
                     Button {
                         withAnimation {
                             editMode = editMode == .active ? .inactive : .active
@@ -104,6 +111,7 @@ struct HomeView: View {
                     .environment(\.editMode, $editMode)
                 }
             }
+
             .sheet(isPresented: $showAddSheet) {
                 AdaptiveSheetContainer(maxWidth: 760) {
                     AddBookView()

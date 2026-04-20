@@ -7,7 +7,11 @@ extension BookSourceFetcher {
     /// 抓取任意 URL 的正文，不依賴書源規則（對齊 Legado BackstageWebView 動態提取）
     /// 優先用 App 端直接抓取 + SwiftSoup 啟發式（文本密度）→ 失敗才回退 WebView
     /// 會自動跟隨「下一頁」連結，合併多頁以補足章節內容。
-    func fetchWebContent(url: String, referer: String? = nil) async throws -> String {
+    func fetchWebContent(
+        url: String,
+        referer: String? = nil,
+        onFirstPageReady: ((String) -> Void)? = nil
+    ) async throws -> String {
         guard let pageURL = URL(string: url) else { throw FetchError.invalidURL(url) }
 
         // 策略一：URLSession 直接抓取 + 本地解析（On-Device Parsing）
@@ -35,12 +39,15 @@ extension BookSourceFetcher {
 
             let pageContent = await ChapterFetcher.shared.extractWebContentSinglePage(
                 html: html, pageURL: currentURL)
+            let trimmedPageContent = pageContent.trimmingCharacters(in: .whitespacesAndNewlines)
+            if pageCount == 0, !trimmedPageContent.isEmpty {
+                onFirstPageReady?(ChapterFetcher.shared.cleanChapterContent(trimmedPageContent))
+            }
             if fullContent.isEmpty {
                 fullContent = pageContent
             } else {
-                let trimmed = pageContent.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.count > 50 {
-                    fullContent += "\n\n" + trimmed
+                if trimmedPageContent.count > 50 {
+                    fullContent += "\n\n" + trimmedPageContent
                 }
             }
 
