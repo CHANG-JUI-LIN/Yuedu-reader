@@ -152,6 +152,13 @@ class LanWebServer: ObservableObject {
             var accumulated = buffer
             accumulated.append(chunk)
 
+            // Guard: reject requests larger than 10 MB to prevent DoS
+            let maxBufferSize = 10 * 1024 * 1024
+            if accumulated.count > maxBufferSize {
+                completion(nil)
+                return
+            }
+
             let headerDelimiter = Data("\r\n\r\n".utf8)
             guard let delimRange = accumulated.range(of: headerDelimiter) else {
                 self.receiveAll(connection: connection, buffer: accumulated, completion: completion)
@@ -184,8 +191,10 @@ class LanWebServer: ObservableObject {
     }
 
     private func isAuthorized(queryItems: [URLQueryItem], headers: [String: String]) -> Bool {
+        // Note: String == is not constant-time. For a 6-digit LAN-only PIN,
+        // timing attacks are impractical given typical LAN jitter (>1ms vs nanosecond differences).
         if let pin = queryItems.first(where: { $0.name == "pin" })?.value, pin == accessPIN { return true }
-        let authHeader = headers["authorization"] ?? headers["Authorization"] ?? ""
+        let authHeader = headers["authorization"] ?? ""
         return authHeader == "Bearer \(accessPIN)"
     }
 
@@ -202,7 +211,7 @@ class LanWebServer: ObservableObject {
             if let colonIdx = line.firstIndex(of: ":") {
                 let key = String(line[..<colonIdx])
                 let value = String(line[line.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
-                headers[key] = value
+                headers[key.lowercased()] = value
             }
         }
 
@@ -214,9 +223,10 @@ class LanWebServer: ObservableObject {
         }
 
         var body: Data? = nil
-        if let separatorRange = text.range(of: "\r\n\r\n") {
-            let bodyStr = String(text[separatorRange.upperBound...])
-            if !bodyStr.isEmpty { body = bodyStr.data(using: .utf8) }
+        let delimData = Data("\r\n\r\n".utf8)
+        if let delimRange = rawData.range(of: delimData) {
+            let bodyData = rawData[delimRange.upperBound...]
+            if !bodyData.isEmpty { body = Data(bodyData) }
         }
         return (method, path, body, headers, queryItems)
     }
