@@ -23,7 +23,7 @@ actor WebFetcher {
             config.timeoutIntervalForResource = 30
             config.httpMaximumConnectionsPerHost = 6
             config.httpCookieStorage = HTTPCookieStorage.shared
-            config.httpShouldSetCookies = true
+            config.httpShouldSetCookies = false
             config.httpCookieAcceptPolicy = .always
             self.session = URLSession(configuration: config)
         }
@@ -139,9 +139,8 @@ actor WebFetcher {
                     // Harvest WKWebView cookies and inject via Cookie header for the retry.
                     let retryCookies = await Self.harvestWebViewCookies(for: host)
                     var retryRequest = requestCopy
-                    if let wvCookieHeader = cookieHeaderString(from: retryCookies) {
-                        retryRequest.setValue(wvCookieHeader, forHTTPHeaderField: "Cookie")
-                    }
+                    let retryCookieHeader = cookieHeaderString(from: retryCookies) ?? cookieHeader(for: url)
+                    retryRequest.setValue(retryCookieHeader, forHTTPHeaderField: "Cookie")
 
                     // Retry via URLSession with the new cookies.
                     let (retryData, retryResponse) = try await PerHostSemaphore.shared.withLock(
@@ -179,9 +178,8 @@ actor WebFetcher {
                     _ = try await challengeHandler(url)
                     let retryCookies = await Self.harvestWebViewCookies(for: host)
                     var retryRequest = requestCopy
-                    if let wvCookieHeader = cookieHeaderString(from: retryCookies) {
-                        retryRequest.setValue(wvCookieHeader, forHTTPHeaderField: "Cookie")
-                    }
+                    let retryCookieHeader = cookieHeaderString(from: retryCookies) ?? cookieHeader(for: url)
+                    retryRequest.setValue(retryCookieHeader, forHTTPHeaderField: "Cookie")
                     let (retryData, retryResponse) = try await PerHostSemaphore.shared.withLock(
                         host: host
                     ) {
