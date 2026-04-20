@@ -12,8 +12,12 @@ final class ReaderViewModel: ObservableObject {
         let task: Task<Void, Never>
     }
 
-    private let chapterFetcher: ChapterFetching
+    private var chapterFetcher: ChapterFetching
     private var inFlightRequests: [Int: InFlightRequest] = [:]
+
+    convenience init() {
+        self.init(chapterFetcher: AppDependencies.live.chapterFetcher)
+    }
 
     init(chapterFetcher: ChapterFetching) {
         self.chapterFetcher = chapterFetcher
@@ -21,6 +25,17 @@ final class ReaderViewModel: ObservableObject {
 
     func chapterState(for chapterIndex: Int) -> ChapterLoadState {
         chapterStates[chapterIndex] ?? .idle
+    }
+
+    func configure(chapterFetcher: ChapterFetching) {
+        self.chapterFetcher = chapterFetcher
+    }
+
+    func resetChapterState(for chapterIndex: Int) {
+        if let existing = inFlightRequests.removeValue(forKey: chapterIndex) {
+            existing.task.cancel()
+        }
+        chapterStates.removeValue(forKey: chapterIndex)
     }
 
     func ensureChapterReady(

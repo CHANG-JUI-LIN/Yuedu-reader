@@ -110,9 +110,8 @@ struct ReaderView: View {
     @State private var showBookmarkList = false
 
     // 線上章節懶加載
-    @State private var fetchingChapters: Set<Int> = []
-    @State private var failedChapters: Set<Int> = []
-    @State private var lastChapterError: String = ""
+    @StateObject private var readerViewModel = ReaderViewModel()
+    @State private var observedChapterStates: [Int: ChapterLoadState] = [:]
 
     // 亮度
     @State private var showBrightness = false
@@ -281,6 +280,49 @@ struct ReaderView: View {
         return "coretext-\(currentBook.id.uuidString)"
     }
 
+    private func onlineChapterRef(for chapterIndex: Int) -> OnlineChapterRef? {
+        guard let refs = book?.onlineChapters, refs.indices.contains(chapterIndex) else { return nil }
+        return refs[chapterIndex]
+    }
+
+    private func cachedChapterPackage(for chapterIndex: Int) -> ChapterPackage? {
+        guard let currentBook = book,
+              let ref = onlineChapterRef(for: chapterIndex)
+        else {
+            return nil
+        }
+
+        let sanitizedURL = RuleEngine.sanitizeExtractedURL(ref.url)
+        return dependencies.bookSourceFetcher.loadChapterPackageSync(
+            bookId: currentBook.id,
+            chapterIndex: chapterIndex,
+            expectedSourceURL: sanitizedURL,
+            expectedTOCTitle: ref.title
+        ) ?? (
+            sanitizedURL != ref.url
+                ? dependencies.bookSourceFetcher.loadChapterPackageSync(
+                    bookId: currentBook.id,
+                    chapterIndex: chapterIndex,
+                    expectedSourceURL: ref.url,
+                    expectedTOCTitle: ref.title
+                )
+                : nil
+        )
+    }
+
+    private func isChapterContentAvailable(at chapterIndex: Int) -> Bool {
+        guard let package = cachedChapterPackage(for: chapterIndex) else { return false }
+        return package.state == .cached && !package.content.isEmpty
+    }
+
+    private var currentChapterOverlayState: ReaderChapterOverlayState {
+        guard book?.onlineChapters?.isEmpty == false else { return .hidden }
+        return ReaderChapterPresentation.overlayState(
+            isContentAvailable: isChapterContentAvailable(at: currentChapterIndex),
+            loadState: readerViewModel.chapterState(for: currentChapterIndex)
+        )
+    }
+
     private var telemetryPipelineKind: String {
         book?.resolvedPipelineKind.rawValue ?? "epub"
     }
@@ -422,7 +464,7 @@ struct ReaderView: View {
                         progressTrace("onPageChanged page=\(newPage) chapter=\(currentChapterIndex)")
                         // Lazy loading: 翻頁換章時自動抓取
                         if chapterChanged {
-                            fetchChapterIfNeeded(chapterIndex: newChapter)
+                            ensureChapterReady(chapterIndex: newChapter)
                         }
                         guard ReaderProgressSyncPolicy.shouldPersistOnPageChanged(
                             isCoreTextReady: epubRenderer.isCoreTextReady,
@@ -471,21 +513,44 @@ struct ReaderView: View {
                     .transition(.opacity.animation(.easeOut(duration: 0.25)))
             }
 
-            // 章節載入失敗時顯示錯誤訊息（刷新功能已整合至工具列的刷新 icon）
-            if book?.isOnline == true && !showBars && failedChapters.contains(currentChapterIndex) && !fetchingChapters.contains(currentChapterIndex) {
-                VStack(spacing: 8) {
-                    Spacer()
-                    if !lastChapterError.isEmpty {
-                        Text(lastChapterError)
+            if !showBars {
+                switch currentChapterOverlayState {
+                case .hidden:
+                    EmptyView()
+                case .loading:
+                    VStack(spacing: 16) {
+                        Spacer()
+                        ProgressView(settings.t("載入章節中…"))
+                        Spacer().frame(height: 60)
+                    }
+                    .transition(.opacity.animation(.easeOut(duration: 0.2)))
+                case .failed(let message):
+                    VStack(spacing: 12) {
+                        Spacer()
+                        Text(settings.t("章節載入失敗"))
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(readerTheme.textColor.opacity(0.8))
+                        Text(message)
                             .font(.system(size: 12))
                             .foregroundColor(readerTheme.textColor.opacity(0.6))
                             .lineLimit(3)
                             .padding(.horizontal, 24)
                             .multilineTextAlignment(.center)
+                        Button {
+                            refreshCurrentChapter()
+                        } label: {
+                            Text(settings.t("點擊重試"))
+                                .font(.system(size: 13, weight: .medium))
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 8)
+                                .background(readerTheme.textColor.opacity(0.12))
+                                .foregroundColor(readerTheme.textColor.opacity(0.8))
+                                .clipShape(Capsule())
+                        }
+                        Spacer().frame(height: 60)
                     }
-                    Spacer().frame(height: 60)
+                    .transition(.opacity.animation(.easeOut(duration: 0.2)))
                 }
-                .transition(.opacity.animation(.easeOut(duration: 0.2)))
             }
 
             // 頂/底欄
@@ -518,6 +583,7 @@ struct ReaderView: View {
         .animation(.easeInOut(duration: 0.25), value: showBars)
         .modifier(HideTabBarModifier())
         .onAppear {
+            readerViewModel.configure(chapterFetcher: dependencies.chapterFetcher)
             ReaderTelemetry.shared.log(
                 "reader_load_start",
                 attributes: [
@@ -618,6 +684,9 @@ struct ReaderView: View {
         }
         .onReceive(readerConfig.refresh) { kind in
             handleReaderConfigRefresh(kind)
+        }
+        .onReceive(readerViewModel.$chapterStates) { states in
+            handleChapterStateChanges(states)
         }
         .onChange(of: settings.pageTurnStyle) { _ in
             // 翻頁樣式變更不需重建頁面，body 會自動切換視圖
@@ -998,7 +1067,7 @@ struct ReaderView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 40)
-                            .onAppear { fetchChapterIfNeeded(chapterIndex: ci) }
+                            .onAppear { ensureChapterReady(chapterIndex: ci) }
                         } else {
                             let cleaned = chapter.content
                             let paragraphs = cleaned.converted(to: settings.textConversion)
@@ -1446,8 +1515,6 @@ struct ReaderView: View {
     private func jumpToChapter(_ idx: Int, charOffset: Int = 0) {
         guard chapters.indices.contains(idx) else { return }
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            // Lazy loading: 跳章時觸發網路抓取
-            fetchChapterIfNeeded(chapterIndex: idx)
             Task { @MainActor in
                 engine.cancelPendingWork()
                 await engine.preloadChapter(at: idx)
@@ -1458,11 +1525,12 @@ struct ReaderView: View {
                 currentChapterIndex = idx
                 currentPage = targetPage
                 epubRenderer.currentEpubPage = targetPage
+                ensureChapterReady(chapterIndex: idx, priority: .jump)
             }
         } else {
             currentChapterIndex = idx
             if let p = findChapterFirstPage(idx) { currentPage = p }
-            if !isEPUB { fetchChapterIfNeeded(chapterIndex: idx) }
+            ensureChapterReady(chapterIndex: idx, priority: .jump)
         }
     }
 
@@ -1555,9 +1623,8 @@ struct ReaderView: View {
         let idx = currentChapterIndex
         dependencies.bookSourceFetcher.clearChapterCache(bookId: b.id, chapterIndex: idx)
         store.clearCachedChapter(bookId: b.id, chapterIndex: idx)
-        fetchingChapters.remove(idx)
-        failedChapters.remove(idx)
-        fetchChapterIfNeeded(chapterIndex: idx)
+        readerViewModel.resetChapterState(for: idx)
+        ensureChapterReady(chapterIndex: idx, priority: .jump)
     }
 
     private var downloadButtonIcon: String {
@@ -1629,66 +1696,50 @@ struct ReaderView: View {
     }
 
     // MARK: - 線上章節懶加載
-    private func fetchChapterIfNeeded(chapterIndex: Int) {
-        // 用資料結構本身（onlineChapters）判斷能不能 fetch，不依賴 isOnline 旗標。
-        // 這讓 ReaderView 對「章節來源類型」保持多型：只要 book 有 onlineChapters
-        // 且索引合法，就可以發起 fetch，無需知道 book 是不是「線上書」。
-        guard let b = book,
-              let refs = b.onlineChapters, refs.indices.contains(chapterIndex),
-              !fetchingChapters.contains(chapterIndex)
-        else {
-            return
+    private func ensureChapterReady(
+        chapterIndex: Int,
+        priority: ChapterFetchPriority = .immediate
+    ) {
+        guard let currentBook = book else { return }
+        Task { @MainActor in
+            await readerViewModel.ensureChapterReady(
+                book: currentBook,
+                chapterIndex: chapterIndex,
+                priority: priority,
+                store: store
+            )
         }
+    }
 
-        if dependencies.bookSourceFetcher.isChapterCached(
-            bookId: b.id, chapterIndex: chapterIndex,
-            expectedSourceURL: nil, expectedTOCTitle: nil
-        ) {
-            if let engine = epubRenderer.engine {
-                Task { await engine.preloadChapter(at: chapterIndex) }
-            } else {
-                rebuildPages()
+    private func handleChapterStateChanges(_ states: [Int: ChapterLoadState]) {
+        let previousStates = observedChapterStates
+        observedChapterStates = states
+
+        for (chapterIndex, newState) in states where previousStates[chapterIndex] != newState {
+            if newState == .ready {
+                prefetchAdjacentChapters(around: chapterIndex)
             }
-            prefetchAdjacentChapters(around: chapterIndex)
-            return
+            applyChapterRefreshAction(for: chapterIndex, newState: newState)
         }
+    }
 
-        fetchingChapters.insert(chapterIndex)
+    private func applyChapterRefreshAction(for chapterIndex: Int, newState: ChapterLoadState) {
+        let action = ReaderChapterPresentation.refreshAction(
+            changedChapterIndex: chapterIndex,
+            currentChapterIndex: currentChapterIndex,
+            usesCoreText: usesCoreTextEPUB,
+            newState: newState,
+            isContentAvailable: isChapterContentAvailable(at: chapterIndex)
+        )
 
-        Task {
-            defer {
-                Task { @MainActor in self.fetchingChapters.remove(chapterIndex) }
-            }
-            do {
-                let pkg = try await dependencies.chapterFetcher.fetchChapter(
-                    book: b,
-                    chapterIndex: chapterIndex,
-                    priority: .immediate,
-                    store: store
-                )
-                await MainActor.run {
-                    if pkg.state == .cached && !pkg.content.isEmpty {
-                        failedChapters.remove(chapterIndex)
-                    } else {
-                        failedChapters.insert(chapterIndex)
-                        lastChapterError = "ch\(chapterIndex): \(pkg.failureReason ?? "內容為空")"
-                    }
-                    if let engine = epubRenderer.engine {
-                        Task { await engine.notifyChapterDataChanged(at: chapterIndex) }
-                    } else {
-                        rebuildPages()
-                    }
-                    prefetchAdjacentChapters(around: chapterIndex)
-                }
-            } catch {
-                await MainActor.run {
-                    failedChapters.insert(chapterIndex)
-                    lastChapterError = "ch\(chapterIndex): \(error.localizedDescription)"
-                    if epubRenderer.engine == nil {
-                        rebuildPages()
-                    }
-                }
-            }
+        switch action {
+        case .none:
+            break
+        case .notifyChapterDataChanged(let visibleChapterIndex):
+            guard let engine = epubRenderer.engine else { return }
+            Task { await engine.notifyChapterDataChanged(at: visibleChapterIndex) }
+        case .rebuildPages:
+            rebuildPages()
         }
     }
 
@@ -1863,9 +1914,9 @@ struct ReaderView: View {
 
         // Lazy loading: 自動抓取初始章節（存檔位置或第 0 章）
         let initialChapter = currentChapterIndex
-        fetchChapterIfNeeded(chapterIndex: initialChapter)
+        ensureChapterReady(chapterIndex: initialChapter)
         if initialChapter != 0 {
-            fetchChapterIfNeeded(chapterIndex: 0)
+            ensureChapterReady(chapterIndex: 0)
         }
     }
 

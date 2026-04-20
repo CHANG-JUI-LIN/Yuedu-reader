@@ -120,6 +120,22 @@ struct ReaderViewModelChapterStateTests {
         await waitForState(.ready, in: viewModel, chapterIndex: 0)
     }
 
+    @Test("reset chapter state clears stale failures")
+    func resetChapterStateClearsStaleFailures() async throws {
+        let fetcher = MockChapterFetcher()
+        let book = makeBook()
+        let viewModel = ReaderViewModel(chapterFetcher: fetcher)
+
+        await fetcher.enqueueFailure(chapterIndex: 0, message: "offline")
+        await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
+        await waitForFailure("offline", in: viewModel, chapterIndex: 0)
+
+        viewModel.resetChapterState(for: 0)
+
+        #expect(viewModel.chapterStates[0] == nil)
+        #expect(viewModel.chapterState(for: 0) == .idle)
+    }
+
     @Test("jump promotes an in-flight immediate request")
     func jumpPromotesImmediateRequest() async throws {
         let fetcher = MockChapterFetcher()
