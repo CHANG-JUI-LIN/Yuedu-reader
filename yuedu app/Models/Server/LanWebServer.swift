@@ -7,6 +7,7 @@ class LanWebServer: ObservableObject {
 
     @Published var isRunning: Bool = false
     @Published var localIPAddress: String = ""
+    @Published var accessPIN: String = ""
 
     let port: UInt16 = 1122
 
@@ -22,6 +23,7 @@ class LanWebServer: ObservableObject {
 
     func start() {
         guard !isRunning else { return }
+        accessPIN = String(format: "%06d", Int.random(in: 0..<1_000_000))
         do {
             let nwPort = NWEndpoint.Port(rawValue: port)!
             let listener = try NWListener(using: .tcp, on: nwPort)
@@ -96,47 +98,127 @@ class LanWebServer: ObservableObject {
 
     private func handleConnection(_ connection: NWConnection) {
         connection.start(queue: .global(qos: .userInitiated))
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, isComplete, error in
-            guard let self = self, let data = data, !data.isEmpty else {
+        receiveAll(connection: connection) { [weak self] data in
+            guard let self, let data, !data.isEmpty else {
                 connection.cancel()
                 return
             }
 
             let requestStr = String(data: data, encoding: .utf8) ?? ""
-            let (method, path, body) = self.parseHTTPRequest(requestStr, rawData: data)
-            let result = self.handleRequest(method: method, path: path, body: body)
+            let (method, path, body, reqHeaders, queryItems) = self.parseHTTPRequest(requestStr, rawData: data)
 
-            let statusText = result.status == 200 ? "OK" : (result.status == 404 ? "Not Found" : "Bad Request")
+            if path != "/health" && !self.isAuthorized(queryItems: queryItems, headers: reqHeaders) {
+                let unauthorizedBody = Data(#"{"error":"unauthorized","hint":"append ?pin=YOUR_PIN to the URL"}"#.utf8)
+                let header = "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: \(unauthorizedBody.count)\r\n\r\n"
+                var resp = (header.data(using: .utf8) ?? Data())
+                resp.append(unauthorizedBody)
+                connection.send(content: resp, completion: .contentProcessed { _ in connection.cancel() })
+                return
+            }
+
+            let result = self.handleRequest(method: method, path: path, body: body)
+            let statusText: String
+            switch result.status {
+            case 200: statusText = "OK"
+            case 401: statusText = "Unauthorized"
+            case 404: statusText = "Not Found"
+            default:  statusText = "Bad Request"
+            }
             let bodyData = result.body
             let header = "HTTP/1.1 \(result.status) \(statusText)\r\n" +
                 "Content-Type: \(result.contentType)\r\n" +
                 "Content-Length: \(bodyData.count)\r\n" +
                 "Access-Control-Allow-Origin: *\r\n" +
                 "\r\n"
-
-            var responseData = header.data(using: .utf8) ?? Data()
+            var responseData = (header.data(using: .utf8) ?? Data())
             responseData.append(bodyData)
-
             connection.send(content: responseData, completion: .contentProcessed { _ in
                 connection.cancel()
             })
         }
     }
 
-    private func parseHTTPRequest(_ text: String, rawData: Data) -> (method: String, path: String, body: Data?) {
+    private func receiveAll(
+        connection: NWConnection,
+        buffer: Data = Data(),
+        completion: @escaping (Data?) -> Void
+    ) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
+            guard let self else { completion(nil); return }
+            guard let chunk = data, !chunk.isEmpty else {
+                completion(isComplete ? buffer : nil)
+                return
+            }
+            var accumulated = buffer
+            accumulated.append(chunk)
+
+            let headerDelimiter = Data("\r\n\r\n".utf8)
+            guard let delimRange = accumulated.range(of: headerDelimiter) else {
+                self.receiveAll(connection: connection, buffer: accumulated, completion: completion)
+                return
+            }
+
+            let headerPart = accumulated[..<delimRange.lowerBound]
+            let headerStr = String(data: headerPart, encoding: .utf8) ?? ""
+            let contentLength = self.parseContentLength(from: headerStr)
+            let bodyStart = delimRange.upperBound
+            let receivedBodyLength = accumulated.count - bodyStart
+
+            if receivedBodyLength >= contentLength {
+                completion(accumulated)
+            } else {
+                self.receiveAll(connection: connection, buffer: accumulated, completion: completion)
+            }
+        }
+    }
+
+    private func parseContentLength(from headers: String) -> Int {
+        let lines = headers.lowercased().components(separatedBy: "\r\n")
+        for line in lines {
+            if line.hasPrefix("content-length:") {
+                let value = line.dropFirst("content-length:".count).trimmingCharacters(in: .whitespaces)
+                return Int(value) ?? 0
+            }
+        }
+        return 0
+    }
+
+    private func isAuthorized(queryItems: [URLQueryItem], headers: [String: String]) -> Bool {
+        if let pin = queryItems.first(where: { $0.name == "pin" })?.value, pin == accessPIN { return true }
+        let authHeader = headers["authorization"] ?? headers["Authorization"] ?? ""
+        return authHeader == "Bearer \(accessPIN)"
+    }
+
+    private func parseHTTPRequest(_ text: String, rawData: Data) -> (method: String, path: String, body: Data?, headers: [String: String], queryItems: [URLQueryItem]) {
         let lines = text.components(separatedBy: "\r\n")
-        guard let requestLine = lines.first else { return ("GET", "/", nil) }
+        guard let requestLine = lines.first else { return ("GET", "/", nil, [:], []) }
         let parts = requestLine.components(separatedBy: " ")
         let method = parts.count > 0 ? parts[0] : "GET"
-        let path = parts.count > 1 ? parts[1] : "/"
+        let rawPath = parts.count > 1 ? parts[1] : "/"
 
-        // Extract body after blank line
+        var headers: [String: String] = [:]
+        for line in lines.dropFirst() {
+            guard !line.isEmpty else { break }
+            if let colonIdx = line.firstIndex(of: ":") {
+                let key = String(line[..<colonIdx])
+                let value = String(line[line.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+                headers[key] = value
+            }
+        }
+
+        var path = rawPath
+        var queryItems: [URLQueryItem] = []
+        if let comps = URLComponents(string: rawPath) {
+            path = comps.path
+            queryItems = comps.queryItems ?? []
+        }
+
         var body: Data? = nil
         if let separatorRange = text.range(of: "\r\n\r\n") {
             let bodyStr = String(text[separatorRange.upperBound...])
             if !bodyStr.isEmpty { body = bodyStr.data(using: .utf8) }
         }
-        return (method, path, body)
+        return (method, path, body, headers, queryItems)
     }
 
     // MARK: - Request routing
