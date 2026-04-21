@@ -31,7 +31,7 @@ enum ChapterFetchPriority: Int {
 }
 
 actor ChapterFetchManager {
-    static let shared = ChapterFetchManager()
+    static let shared = ChapterFetchManager(webViewFetcher: MainActor.assumeIsolated { WebViewFetcher.shared })
 
     private let bookSourceFetcher: BookSourceFetcher
     private let webViewFetcher: WebViewFetcher
@@ -644,7 +644,7 @@ actor BookDownloadManager {
 }
 
 final class OnlineBookCoordinator {
-    static let shared = OnlineBookCoordinator()
+    static let shared = OnlineBookCoordinator(webViewFetcher: MainActor.assumeIsolated { WebViewFetcher.shared })
 
     // MARK: - 可注入依賴（默認使用 shared 單例，支援測試替換）
     let bookSourceFetcher: BookSourceFetcher
