@@ -13,6 +13,14 @@ import Foundation
 ///
 /// All conversions are semantically approximate.  Possessive quantifiers and
 /// atomic groups lose their backtrack-preventing semantics but remain valid.
+/// Box for safely transferring a value across a DispatchQueue boundary without
+/// requiring `T: Sendable`. The semaphore signal/wait pair provides the
+/// happens-before ordering that makes the @unchecked Sendable safe:
+/// write completes before signal(), read happens after wait().
+private final class _TimeoutResultBox<T>: @unchecked Sendable {
+    var value: T?
+}
+
 enum RegexSanitizer {
 
     // MARK: - Public API
@@ -49,13 +57,7 @@ enum RegexSanitizer {
         work: @escaping @Sendable () -> T,
         fallback: T
     ) -> T {
-        // Safe wrapper for cross-thread value transfer. The semaphore provides
-        // happens-before ordering: write occurs before signal(), read after wait().
-        final class ResultBox: @unchecked Sendable {
-            var value: T?
-        }
-        
-        let box = ResultBox()
+        let box = _TimeoutResultBox<T>()
         let sema = DispatchSemaphore(value: 0)
         DispatchQueue.global(qos: .userInitiated).async {
             box.value = work()
