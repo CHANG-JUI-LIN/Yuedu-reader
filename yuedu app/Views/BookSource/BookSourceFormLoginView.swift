@@ -177,7 +177,7 @@ struct BookSourceFormLoginView: View {
 
             // Wire java.toast / java.longToast — shows a UIAlertController auto-dismiss
             engine.toastHandler = { msg in
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     guard let topVC = BookSourceFormLoginView.topViewController() else { return }
                     let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
                     topVC.present(alert, animated: true)
@@ -262,7 +262,7 @@ struct BookSourceFormLoginView: View {
                 }
             }
             engine.toastHandler = { msg in
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     guard let topVC = BookSourceFormLoginView.topViewController() else { return }
                     let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
                     topVC.present(alert, animated: true)
