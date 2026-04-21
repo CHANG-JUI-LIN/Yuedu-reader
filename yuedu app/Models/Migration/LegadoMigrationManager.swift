@@ -150,12 +150,15 @@ class LegadoMigrationManager: ObservableObject {
             }
         }
 
+        let finalSourcesImported = sourcesImported
+        let finalBooksImported   = booksImported
+        let finalErrors          = errors
         await MainActor.run {
             progress     = 1.0
             importResult = ImportResult(
-                sourcesImported: sourcesImported,
-                booksImported:   booksImported,
-                errors:          errors
+                sourcesImported: finalSourcesImported,
+                booksImported:   finalBooksImported,
+                errors:          finalErrors
             )
             isImporting = false
         }

@@ -27,14 +27,9 @@ final class EPUBStyleResolver {
     }
 
     nonisolated func cleanupFontFiles() {
-        // Note: called from deinit which runs on main actor for @MainActor classes.
-        // fontRegistrationService.cleanupTemporaryFile is file I/O and safe to call here.
-        let service = fontRegistrationService
-        // Cannot access @MainActor registeredFontFileURLs here; instead EPUBStyleResolver
-        // makes the URLs available via a nonisolated snapshot taken at init.
-        // For simplicity, schedule cleanup on MainActor.
         Task { @MainActor [weak self] in
             guard let self else { return }
+            let service = self.fontRegistrationService
             for url in self.registeredFontFileURLs.values {
                 service.cleanupTemporaryFile(at: url)
             }

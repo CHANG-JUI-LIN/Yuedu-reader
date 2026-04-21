@@ -50,7 +50,7 @@ actor ChapterFetchManager {
 
     init(
         bookSourceFetcher: BookSourceFetcher = .shared,
-        webViewFetcher: WebViewFetcher = .shared
+        webViewFetcher: WebViewFetcher
     ) {
         self.bookSourceFetcher = bookSourceFetcher
         self.webViewFetcher = webViewFetcher
@@ -654,7 +654,7 @@ final class OnlineBookCoordinator {
     init(
         bookSourceFetcher: BookSourceFetcher = BookSourceFetcher.shared,
         chapterFetchManager: ChapterFetchManager = ChapterFetchManager.shared,
-        webViewFetcher: WebViewFetcher = WebViewFetcher.shared
+        webViewFetcher: WebViewFetcher
     ) {
         self.bookSourceFetcher = bookSourceFetcher
         self.chapterFetchManager = chapterFetchManager

@@ -430,7 +430,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
     }
 
     // 根據 style.width 和 textAlign 計算 border 的起始 x 和寬度
-    private static func borderXAndWidth(for item: CoreTextPaginator.RenderedBlockRenderable) -> (CGFloat, CGFloat) {
+    private nonisolated static func borderXAndWidth(for item: CoreTextPaginator.RenderedBlockRenderable) -> (CGFloat, CGFloat) {
         guard let constrainedWidth = item.style.width else {
             return (item.rect.minX, item.rect.width)
         }
