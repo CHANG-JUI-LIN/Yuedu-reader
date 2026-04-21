@@ -7,13 +7,12 @@ import WebKit
 /// 使用方式：let html = try await WebViewFetcher.shared.fetchHTML(url: url, timeout: 15)
 @MainActor
 final class WebViewFetcher: NSObject, WKNavigationDelegate {
-    nonisolated(unsafe) static let shared = WebViewFetcher()
+    static let shared = WebViewFetcher()
 
     /// WebView 實例池（重複使用避免頻繁建立）
     private var pool: [WKWebView] = []
     private let poolSize = AppConfig.webViewPoolSize
     private var waiters: [CheckedContinuation<WKWebView, Never>] = []
-    private let sharedProcessPool = WKProcessPool()
     /// 當前在用（已從池中取出但尚未歸還）的 WebView 數量，包含臨時建立的
     private var activeCount: Int = 0
 
@@ -32,10 +31,6 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     private func createWebView() -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
-        if #unavailable(iOS 17) {
-            config.processPool = sharedProcessPool
-        }
-
         // 允許 JavaScript
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
