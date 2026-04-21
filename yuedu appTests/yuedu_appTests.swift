@@ -222,7 +222,7 @@ struct yuedu_appTests {
         )
     }
 
-    @Test func onlineCoordinatorUsesCachedChapterAndPlaceholder() async throws {
+    @Test @MainActor func onlineCoordinatorUsesCachedChapterAndPlaceholder() async throws {
         let book = ReadingBook(title: "線上書", author: "作者", source: "https://example.com", contentFilename: "")
         let bookId = book.id
         let refs = [
@@ -1151,7 +1151,7 @@ struct yuedu_appTests {
         #expect(accepted == true)
     }
 
-    @Test func refreshOnlineBookMetadataRepairsLegacyShelfEntry() async throws {
+    @Test @MainActor func refreshOnlineBookMetadataRepairsLegacyShelfEntry() async throws {
         let source = try loadSource(named: "速读谷")
         let previousSources = BookSourceStore.shared.sources
         BookSourceStore.shared.sources = [source]

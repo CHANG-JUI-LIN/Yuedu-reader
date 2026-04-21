@@ -31,6 +31,7 @@ enum ChapterFetchPriority: Int {
 }
 
 actor ChapterFetchManager {
+    // Safe: always first accessed from @MainActor context (AppDependencies.live or @MainActor tests).
     static let shared = ChapterFetchManager(webViewFetcher: MainActor.assumeIsolated { WebViewFetcher.shared })
 
     private let bookSourceFetcher: BookSourceFetcher
@@ -644,6 +645,7 @@ actor BookDownloadManager {
 }
 
 final class OnlineBookCoordinator {
+    // Safe: always first accessed from @MainActor context (AppDependencies.live or @MainActor tests).
     static let shared = OnlineBookCoordinator(webViewFetcher: MainActor.assumeIsolated { WebViewFetcher.shared })
 
     // MARK: - 可注入依賴（默認使用 shared 單例，支援測試替換）
