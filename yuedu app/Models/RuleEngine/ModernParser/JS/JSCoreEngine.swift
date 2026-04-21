@@ -182,10 +182,23 @@ class JSCoreEngine {
         }
         ctx.setObject(printBlock, forKeyedSubscript: "print" as NSString)
 
-        // JSON polyfill safety — JSContext already has JSON, but ensure it exists
+        // Block eval() — book sources must not use dynamic code evaluation
+        ctx.evaluateScript("""
+        (function() {
+            eval = function(code) {
+                throw new Error('eval() is disabled in sandbox');
+            };
+        })();
+        """)
+
+        // JSON is always natively available in JSContext — this guard is a safety net only.
+        // The eval() fallback from the original Legado port has been removed (eval is disabled).
         ctx.evaluateScript("""
             if (typeof JSON === 'undefined') {
-                var JSON = { parse: function(s){return eval('('+s+')');}, stringify: function(o){return ''} };
+                var JSON = {
+                    parse: function(s) { return null; },
+                    stringify: function(o) { return ''; }
+                };
             }
         """)
 
