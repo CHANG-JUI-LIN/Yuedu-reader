@@ -44,21 +44,27 @@ enum RegexSanitizer {
     ///
     /// Use this wrapper around any NSRegularExpression matching call to guard
     /// against catastrophic backtracking.
-    static func withTimeout<T: Sendable>(
+    static func withTimeout<T>(
         seconds: TimeInterval,
         work: @escaping @Sendable () -> T,
         fallback: T
     ) -> T {
-        var result = fallback
+        // Safe wrapper for cross-thread value transfer. The semaphore provides
+        // happens-before ordering: write occurs before signal(), read after wait().
+        final class ResultBox: @unchecked Sendable {
+            var value: T?
+        }
+        
+        let box = ResultBox()
         let sema = DispatchSemaphore(value: 0)
         DispatchQueue.global(qos: .userInitiated).async {
-            result = work()
+            box.value = work()
             sema.signal()
         }
         if sema.wait(timeout: .now() + seconds) == .timedOut {
             return fallback
         }
-        return result
+        return box.value ?? fallback
     }
 
     // MARK: - Private Helpers
