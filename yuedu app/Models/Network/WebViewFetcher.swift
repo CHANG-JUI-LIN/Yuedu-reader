@@ -13,6 +13,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     private var pool: [WKWebView] = []
     private let poolSize = AppConfig.webViewPoolSize
     private var waiters: [CheckedContinuation<WKWebView, Never>] = []
+    private let sharedProcessPool = WKProcessPool()
     /// 當前在用（已從池中取出但尚未歸還）的 WebView 數量，包含臨時建立的
     private var activeCount: Int = 0
 
@@ -30,6 +31,9 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     private func createWebView() -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
+        if #unavailable(iOS 17) {
+            config.processPool = sharedProcessPool
+        }
 
         // 允許 JavaScript
         let prefs = WKWebpagePreferences()
