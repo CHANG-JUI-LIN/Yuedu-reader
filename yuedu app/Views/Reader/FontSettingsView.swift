@@ -96,9 +96,6 @@ struct FontSettingsView: View {
                                 Text("\(Int(readerConfig.pageMarginH))").font(DSFont.caption).foregroundColor(DSColor.textSecondary).frame(width: 24)
                             }
                         }
-                        Text(gs.t("上下留白與 footer 距離由系統自動控制"))
-                            .font(DSFont.caption)
-                            .foregroundColor(DSColor.textSecondary)
                     }
                 }
 
@@ -162,10 +159,7 @@ struct FontSettingsView: View {
 
                 // 翻頁動畫（僅左右翻頁時有效）
                 if !settings.scrollMode && supportsLineHeight {
-                    Section(
-                        header: Text(gs.t("翻頁動畫")),
-                        footer: Text(gs.t("滑動：左右平移；覆蓋翻頁：新頁滑入蓋住舊頁（Legado）；仿真翻書：捲曲效果；無動畫：立即切換"))
-                    ) {
+                    Section(header: Text(gs.t("翻頁動畫"))) {
                         Picker(gs.t("動畫樣式"), selection: $settings.pageTurnStyle) {
                             ForEach(PageTurnStyle.allCases, id: \.self) { style in
                                 Text(gs.t(style.rawValue)).tag(style)
