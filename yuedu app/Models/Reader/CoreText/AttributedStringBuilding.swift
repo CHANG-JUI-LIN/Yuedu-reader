@@ -10,11 +10,14 @@ struct AttributedChapterBuildResult {
 
 enum AttributedStringBuildingError: LocalizedError {
     case chapterOutOfRange(Int)
+    case contentNotCached(Int)
 
     var errorDescription: String? {
         switch self {
         case .chapterOutOfRange(let index):
             return "章節索引超出範圍：\(index)"
+        case .contentNotCached(let index):
+            return "章節 \(index) 內容尚未緩存"
         }
     }
 }

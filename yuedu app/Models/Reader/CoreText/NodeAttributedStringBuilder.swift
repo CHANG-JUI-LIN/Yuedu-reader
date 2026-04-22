@@ -183,17 +183,13 @@ struct OnlineNodeAttributedStringBuilder: AttributedStringBuilding {
             expectedSourceURL: sanitizedURL, expectedTOCTitle: ref.title)
         let content = pkg?.content ?? ""
 
-        // 未快取 → 回傳佔位符，讓 Reader 有畫面可顯示。
-        // fetchChapterIfNeeded 完成後 engine 會 notifyChapterDataChanged 重排這一章。
-        let paragraphs: [String]
         if content.isEmpty {
-            paragraphs = ["\u{3000}\u{3000}章節載入中…"]
-        } else {
-            paragraphs = content
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
+            throw AttributedStringBuildingError.contentNotCached(index)
         }
+        let paragraphs = content
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
 
         let chapter = UnifiedChapter(
             index: index,

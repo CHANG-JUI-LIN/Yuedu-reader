@@ -891,16 +891,24 @@ extension SnapshotPageViewController: CoreTextReadingPositionProviding {}
 final class PlaceholderPageViewController: UIViewController {
     private let titleLabel = UILabel()
     private let spinner = UIActivityIndicatorView(style: .medium)
+    private let footerTimeLabel = UILabel()
     private(set) var globalPageIndex: Int
     private(set) var coreTextReadingPosition: CoreTextReadingPosition?
+
+    private let themeBackgroundColor: UIColor
+    private let themeTextColor: UIColor
 
     init(
         chapterTitle: String = "",
         globalPage: Int = 0,
-        readingPosition: CoreTextReadingPosition? = nil
+        readingPosition: CoreTextReadingPosition? = nil,
+        themeBackgroundColor: UIColor = .systemBackground,
+        themeTextColor: UIColor = .label
     ) {
         self.globalPageIndex = globalPage
         self.coreTextReadingPosition = readingPosition
+        self.themeBackgroundColor = themeBackgroundColor
+        self.themeTextColor = themeTextColor
         super.init(nibName: nil, bundle: nil)
         titleLabel.text = chapterTitle
     }
@@ -911,16 +919,30 @@ final class PlaceholderPageViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = themeBackgroundColor
 
         titleLabel.font = .systemFont(ofSize: 16, weight: .medium)
-        titleLabel.textColor = .secondaryLabel
+        titleLabel.textColor = themeTextColor.withAlphaComponent(0.5)
         titleLabel.textAlignment = .center
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        spinner.color = themeTextColor.withAlphaComponent(0.6)
         spinner.translatesAutoresizingMaskIntoConstraints = false
+
+        footerTimeLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        footerTimeLabel.textColor = themeTextColor.withAlphaComponent(0.4)
+        footerTimeLabel.textAlignment = .right
+        footerTimeLabel.translatesAutoresizingMaskIntoConstraints = false
+        footerTimeLabel.text = {
+            let f = DateFormatter()
+            f.dateFormat = "HH:mm"
+            return f.string(from: Date())
+        }()
 
         view.addSubview(titleLabel)
         view.addSubview(spinner)
+        view.addSubview(footerTimeLabel)
+
         NSLayoutConstraint.activate([
             spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
@@ -928,6 +950,11 @@ final class PlaceholderPageViewController: UIViewController {
             titleLabel.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 12),
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            footerTimeLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
+            footerTimeLabel.bottomAnchor.constraint(
+                equalTo: view.bottomAnchor,
+                constant: -8
+            ),
         ])
         spinner.startAnimating()
     }

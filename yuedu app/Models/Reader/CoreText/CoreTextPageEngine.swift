@@ -546,7 +546,9 @@ final class CoreTextPageEngine: PageRenderingProvider {
         let placeholder = PlaceholderPageViewController(
             chapterTitle: title,
             globalPage: index,
-            readingPosition: readingPosition
+            readingPosition: readingPosition,
+            themeBackgroundColor: themeBackgroundColor,
+            themeTextColor: themeTextColor
         )
         Task { [weak self] in
             guard let self else { return }
@@ -612,7 +614,9 @@ final class CoreTextPageEngine: PageRenderingProvider {
         let placeholder = PlaceholderPageViewController(
             chapterTitle: title,
             globalPage: estimatedGlobalPage,
-            readingPosition: position
+            readingPosition: position,
+            themeBackgroundColor: themeBackgroundColor,
+            themeTextColor: themeTextColor
         )
         Task { [weak self] in
             guard let self else { return }

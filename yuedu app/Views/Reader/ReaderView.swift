@@ -530,12 +530,7 @@ struct ReaderView: View {
                 case .hidden:
                     EmptyView()
                 case .loading:
-                    VStack(spacing: 16) {
-                        Spacer()
-                        ProgressView(settings.t("載入章節中…"))
-                        Spacer().frame(height: 60)
-                    }
-                    .transition(.opacity.animation(.easeOut(duration: 0.2)))
+                    EmptyView()
                 case .failed(let message):
                     VStack(spacing: 12) {
                         Spacer()
