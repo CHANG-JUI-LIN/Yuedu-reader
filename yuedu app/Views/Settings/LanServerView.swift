@@ -15,7 +15,7 @@ struct LanServerView: View {
                     Circle()
                         .fill(server.isRunning ? Color.green : Color.gray)
                         .frame(width: 10, height: 10)
-                    Text(server.isRunning ? gs.t("運行中") : gs.t("已停止"))
+                    Text(server.isRunning ? localized("運行中") : localized("已停止"))
                         .foregroundColor(server.isRunning ? .green : DSColor.textSecondary)
                     Spacer()
                 }
@@ -23,7 +23,7 @@ struct LanServerView: View {
 
                 if server.isRunning && !server.localIPAddress.isEmpty {
                     HStack {
-                        Text(gs.t("地址"))
+                        Text(localized("地址"))
                             .foregroundColor(DSColor.textSecondary)
                         Spacer()
                         Text("http://\(server.localIPAddress):\(server.port)")
@@ -33,7 +33,7 @@ struct LanServerView: View {
                     }
                 }
             } header: {
-                Text(gs.t("服務狀態"))
+                Text(localized("服務狀態"))
             }
 
             // MARK: Toggle button
@@ -48,7 +48,7 @@ struct LanServerView: View {
                 } label: {
                     HStack {
                         Spacer()
-                        Text(server.isRunning ? gs.t("停止服務") : gs.t("啟動服務"))
+                        Text(server.isRunning ? localized("停止服務") : localized("啟動服務"))
                             .fontWeight(.semibold)
                             .foregroundColor(server.isRunning ? .red : DSColor.accent)
                         Spacer()
@@ -58,15 +58,15 @@ struct LanServerView: View {
 
             // MARK: API endpoints
             Section {
-                endpointRow(method: "GET", path: "/", description: gs.t("書架列表"))
-                endpointRow(method: "GET", path: "/book/:id", description: gs.t("書籍詳情"))
-                endpointRow(method: "GET", path: "/api/sources", description: gs.t("書源列表"))
-                endpointRow(method: "GET", path: "/health", description: gs.t("健康檢查"))
+                endpointRow(method: "GET", path: "/", description: localized("書架列表"))
+                endpointRow(method: "GET", path: "/book/:id", description: localized("書籍詳情"))
+                endpointRow(method: "GET", path: "/api/sources", description: localized("書源列表"))
+                endpointRow(method: "GET", path: "/health", description: localized("健康檢查"))
             } header: {
-                Text(gs.t("可用接口"))
+                Text(localized("可用接口"))
             }
         }
-        .navigationTitle(gs.t("局域網服務"))
+        .navigationTitle(localized("局域網服務"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             server.bookProvider = store

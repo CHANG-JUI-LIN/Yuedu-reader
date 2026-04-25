@@ -33,9 +33,9 @@ struct BookSourceRuleDebugView: View {
         NavigationView {
             VStack(spacing: 0) {
                 // Tab picker
-                Picker(gs.t("解析段落"), selection: $selectedTab) {
+                Picker(localized("解析段落"), selection: $selectedTab) {
                     ForEach(DebugTab.allCases) {
-                        Text(gs.t($0.rawValue)).tag($0)
+                        Text(localized($0.rawValue)).tag($0)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -48,13 +48,13 @@ struct BookSourceRuleDebugView: View {
                 VStack(spacing: 8) {
                     if selectedTab == .search {
                         HStack {
-                            TextField(gs.t("搜索關鍵字"), text: $keyword)
+                            TextField(localized("搜索關鍵字"), text: $keyword)
                                 .textFieldStyle(.roundedBorder)
                             Stepper("P\(page)", value: $page, in: 1...999)
                                 .fixedSize()
                         }
                     } else {
-                        TextField(gs.t("URL"), text: $inputURL)
+                        TextField(localized("URL"), text: $inputURL)
                             .textFieldStyle(.roundedBorder)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
@@ -65,7 +65,7 @@ struct BookSourceRuleDebugView: View {
                         Button {
                             engine.clear()
                         } label: {
-                            Label(gs.t("清空"), systemImage: "trash")
+                            Label(localized("清空"), systemImage: "trash")
                                 .foregroundColor(.red)
                         }
                         .buttonStyle(.bordered)
@@ -79,7 +79,7 @@ struct BookSourceRuleDebugView: View {
                                 ProgressView()
                                     .padding(.horizontal, 12)
                             } else {
-                                Label(gs.t("執行"), systemImage: "play.fill")
+                                Label(localized("執行"), systemImage: "play.fill")
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 12)
                             }
@@ -100,7 +100,7 @@ struct BookSourceRuleDebugView: View {
                         Image(systemName: "magnifyingglass")
                             .font(.largeTitle)
                             .foregroundColor(.secondary)
-                        Text(gs.t("輸入資料後按「執行」開始調試"))
+                        Text(localized("輸入資料後按「執行」開始調試"))
                             .foregroundColor(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -112,11 +112,11 @@ struct BookSourceRuleDebugView: View {
                     .listStyle(.plain)
                 }
             }
-            .navigationTitle(source.bookSourceName.isEmpty ? gs.t("書源調試") : source.bookSourceName)
+            .navigationTitle(source.bookSourceName.isEmpty ? localized("書源調試") : source.bookSourceName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gs.t("關閉")) { dismiss() }
+                    Button(localized("關閉")) { dismiss() }
                 }
             }
         }

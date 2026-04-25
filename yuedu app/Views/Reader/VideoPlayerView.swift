@@ -25,7 +25,7 @@ struct VideoPlayerView: View {
             } else if isLoading {
                 VStack(spacing: 16) {
                     ProgressView().tint(.white)
-                    Text(gs.t("載入中...")).foregroundColor(.white)
+                    Text(localized("載入中...")).foregroundColor(.white)
                 }
             } else if let errorMessage = errorMessage {
                 VStack(spacing: 16) {
@@ -33,7 +33,7 @@ struct VideoPlayerView: View {
                         .font(.system(size: 40))
                         .foregroundColor(.yellow)
                     Text(errorMessage).foregroundColor(.white).multilineTextAlignment(.center)
-                    Button(gs.t("重試")) { loadVideo() }
+                    Button(localized("重試")) { loadVideo() }
                         .foregroundColor(DSColor.accent)
                 }
                 .padding()
@@ -72,7 +72,7 @@ struct VideoPlayerView: View {
         player = nil
         guard let url = URL(string: videoUrlString) else {
             isLoading = false
-            errorMessage = gs.t("無效的影片網址")
+            errorMessage = localized("無效的影片網址")
             return
         }
         let avPlayer = AVPlayer(url: url)

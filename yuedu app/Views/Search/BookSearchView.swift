@@ -46,7 +46,7 @@ struct BookSearchView: View {
                         } else if aggregator.isSearching {
                             VStack(spacing: 12) {
                                 Spacer()
-                                ProgressView(gs.t("搜索中…"))
+                                ProgressView(localized("搜索中…"))
                                 Spacer()
                             }
                         } else if !query.isEmpty {
@@ -57,11 +57,11 @@ struct BookSearchView: View {
                     }
                 }
             }
-            .navigationTitle(gs.t("搜索書籍"))
+            .navigationTitle(localized("搜索書籍"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("關閉")) { dismiss.wrappedValue.dismiss() }
+                    Button(localized("關閉")) { dismiss.wrappedValue.dismiss() }
                 }
             }
             .sheet(item: $selectedBook) { book in
@@ -80,10 +80,10 @@ struct BookSearchView: View {
                 }
             }
             .alert(
-                gs.t("搜索失敗"),
+                localized("搜索失敗"),
                 isPresented: Binding(get: { errorMsg != nil }, set: { if !$0 { errorMsg = nil } })
             ) {
-                Button(gs.t("確認")) { errorMsg = nil }
+                Button(localized("確認")) { errorMsg = nil }
             } message: {
                 Text(errorMsg ?? "")
             }
@@ -96,7 +96,7 @@ struct BookSearchView: View {
     private var searchBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundColor(.secondary)
-            TextField(gs.t("輸入書名或作者"), text: $query)
+            TextField(localized("輸入書名或作者"), text: $query)
                 .focused($searchFocused)
                 .submitLabel(.search)
                 .onSubmit { doSearch() }
@@ -129,12 +129,12 @@ struct BookSearchView: View {
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     if aggregator.progress.timedOut > 0 {
-                        Text(gs.t("超時") + " \(aggregator.progress.timedOut)")
+                        Text(localized("超時") + " \(aggregator.progress.timedOut)")
                             .font(.system(size: 10))
                             .foregroundColor(.orange)
                     }
                     if aggregator.progress.failed > 0 {
-                        Text(gs.t("失敗") + " \(aggregator.progress.failed)")
+                        Text(localized("失敗") + " \(aggregator.progress.failed)")
                             .font(.system(size: 10))
                             .foregroundColor(.red)
                     }
@@ -149,7 +149,7 @@ struct BookSearchView: View {
     private var sourceSelector: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                sourceChip(id: nil, name: gs.t("全部"))
+                sourceChip(id: nil, name: localized("全部"))
                 ForEach(enabledSources) { src in
                     sourceChip(id: src.id, name: src.bookSourceName)
                 }
@@ -202,8 +202,8 @@ struct BookSearchView: View {
             Spacer()
             Image(systemName: "magnifyingglass").font(.system(size: 48)).foregroundColor(
                 Color.secondary.opacity(0.3))
-            Text(gs.t("沒有找到") + "「\(query)」").font(.headline)
-            Text(gs.t("嘗試換個關鍵字，或切換書源")).font(.subheadline).foregroundColor(.secondary)
+            Text(localized("沒有找到") + "「\(query)」").font(.headline)
+            Text(localized("嘗試換個關鍵字，或切換書源")).font(.subheadline).foregroundColor(.secondary)
             Spacer()
         }
     }
@@ -214,13 +214,13 @@ struct BookSearchView: View {
             if enabledSources.isEmpty {
                 Image(systemName: "exclamationmark.triangle").font(.system(size: 48))
                     .foregroundColor(.orange)
-                Text(gs.t("尚未設置書源")).font(.headline)
-                Text(gs.t("請先在書源管理中新增並啟用書源")).font(.subheadline).foregroundColor(.secondary)
+                Text(localized("尚未設置書源")).font(.headline)
+                Text(localized("請先在書源管理中新增並啟用書源")).font(.subheadline).foregroundColor(.secondary)
             } else {
                 Image(systemName: "text.magnifyingglass").font(.system(size: 48)).foregroundColor(
                     Color.secondary.opacity(0.3))
-                Text(gs.t("輸入書名或作者搜索")).font(.subheadline).foregroundColor(.secondary)
-                Text(gs.t("已啟用") + " \(enabledSources.count) " + gs.t("個書源")).font(.caption)
+                Text(localized("輸入書名或作者搜索")).font(.subheadline).foregroundColor(.secondary)
+                Text(localized("已啟用") + " \(enabledSources.count) " + localized("個書源")).font(.caption)
                     .foregroundColor(
                         Color.secondary.opacity(0.7))
             }
@@ -237,7 +237,7 @@ struct BookSearchView: View {
             ? enabledSources
             : enabledSources.filter { $0.id == selectedSourceId }
         guard !sources.isEmpty else {
-            errorMsg = gs.t("沒有可用的書源，請先啟用書源")
+            errorMsg = localized("沒有可用的書源，請先啟用書源")
             return
         }
 
@@ -321,7 +321,7 @@ struct AggregatedResultRow: View {
             VStack(alignment: .trailing) {
                 HStack(spacing: 3) {
                     Image(systemName: "globe").font(.system(size: 9))
-                    Text("\(book.origins.count) " + gs.t("源"))
+                    Text("\(book.origins.count) " + localized("源"))
                         .font(.system(size: 10, weight: .medium))
                         .lineLimit(1)
                 }
@@ -426,11 +426,11 @@ struct SourcePickerSheet: View {
                 }
                 .listStyle(.plain)
             }
-            .navigationTitle(gs.t("選擇來源") + "（\(searchBook.origins.count) " + gs.t("個") + "）")
+            .navigationTitle(localized("選擇來源") + "（\(searchBook.origins.count) " + localized("個") + "）")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("關閉")) { dismiss.wrappedValue.dismiss() }
+                    Button(localized("關閉")) { dismiss.wrappedValue.dismiss() }
                 }
             }
         }

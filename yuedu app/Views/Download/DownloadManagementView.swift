@@ -30,11 +30,11 @@ struct DownloadManagementView: View {
                 activeDownloadsSection
                 downloadedBooksSection
             }
-            .navigationTitle(gs.t("下載管理"))
+            .navigationTitle(localized("下載管理"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gs.t("關閉")) { presentationMode.wrappedValue.dismiss() }
+                    Button(localized("關閉")) { presentationMode.wrappedValue.dismiss() }
                 }
             }
         }
@@ -42,19 +42,19 @@ struct DownloadManagementView: View {
     }
 
     private var summarySection: some View {
-        Section(header: Text(gs.t("總覽"))) {
+        Section(header: Text(localized("總覽"))) {
             statRow(
-                title: gs.t("下載中"),
+                title: localized("下載中"),
                 value: "\(activeDownloads.count)",
-                detail: gs.t("本")
+                detail: localized("本")
             )
             statRow(
-                title: gs.t("已下載"),
+                title: localized("已下載"),
                 value: "\(downloadedBooks.count)",
-                detail: gs.t("本")
+                detail: localized("本")
             )
             statRow(
-                title: gs.t("佔用空間"),
+                title: localized("佔用空間"),
                 value: String(format: "%.1f", totalDownloadedMegabytes),
                 detail: "MB"
             )
@@ -62,9 +62,9 @@ struct DownloadManagementView: View {
     }
 
     private var activeDownloadsSection: some View {
-        Section(header: Text(gs.t("下載中"))) {
+        Section(header: Text(localized("下載中"))) {
             if activeDownloads.isEmpty {
-                Text(gs.t("目前沒有下載任務"))
+                Text(localized("目前沒有下載任務"))
                     .foregroundColor(DSColor.textSecondary)
             } else {
                 ForEach(activeDownloads) { book in
@@ -84,7 +84,7 @@ struct DownloadManagementView: View {
                                 .font(DSFont.caption)
                                 .foregroundColor(DSColor.textSecondary)
                             Spacer()
-                            Button(gs.t("重新下載")) {
+                            Button(localized("重新下載")) {
                                 OnlineBookCoordinator.shared.downloadBook(book, store: store)
                             }
                             .font(DSFont.caption)
@@ -97,9 +97,9 @@ struct DownloadManagementView: View {
     }
 
     private var downloadedBooksSection: some View {
-        Section(header: Text(gs.t("已下載書籍"))) {
+        Section(header: Text(localized("已下載書籍"))) {
             if downloadedBooks.isEmpty {
-                Text(gs.t("尚未下載任何書籍"))
+                Text(localized("尚未下載任何書籍"))
                     .foregroundColor(DSColor.textSecondary)
             } else {
                 ForEach(downloadedBooks) { book in
@@ -107,7 +107,7 @@ struct DownloadManagementView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(book.title)
                             Text(
-                                "\(book.downloadedChapterCount)/\(chapterTotal(for: book)) \(gs.t("章"))  ·  \(String(format: "%.1f", cacheSizeMB(for: book))) MB"
+                                "\(book.downloadedChapterCount)/\(chapterTotal(for: book)) \(localized("章"))  ·  \(String(format: "%.1f", cacheSizeMB(for: book))) MB"
                             )
                             .font(DSFont.caption)
                             .foregroundColor(DSColor.textSecondary)
@@ -116,7 +116,7 @@ struct DownloadManagementView: View {
                         Button(role: .destructive) {
                             store.clearOnlineDownload(bookId: book.id)
                         } label: {
-                            Text(gs.t("移除"))
+                            Text(localized("移除"))
                         }
                     }
                     .padding(.vertical, 2)

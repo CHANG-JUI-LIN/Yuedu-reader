@@ -24,11 +24,11 @@ struct LegadoMigrationView: View {
                     logSection
                 }
             }
-            .navigationTitle(gs.t("Legado 資料遷移"))
+            .navigationTitle(localized("Legado 資料遷移"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("關閉")) { dismiss() }
+                    Button(localized("關閉")) { dismiss() }
                 }
             }
             .fileImporter(
@@ -59,18 +59,18 @@ struct LegadoMigrationView: View {
     // MARK: - Sections
 
     private var descriptionSection: some View {
-        Section(header: Text(gs.t("說明"))) {
+        Section(header: Text(localized("說明"))) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(gs.t("支援從 Legado（閱讀）Android 應用匯入："))
+                Text(localized("支援從 Legado（閱讀）Android 應用匯入："))
                     .font(.subheadline)
                     .foregroundColor(DSColor.textPrimary)
-                Text("• " + gs.t("書源 JSON（書源備份 / 分享檔）"))
+                Text("• " + localized("書源 JSON（書源備份 / 分享檔）"))
                     .font(.caption)
                     .foregroundColor(DSColor.textSecondary)
-                Text("• " + gs.t("書籍 JSON（書架備份檔）"))
+                Text("• " + localized("書籍 JSON（書架備份檔）"))
                     .font(.caption)
                     .foregroundColor(DSColor.textSecondary)
-                Text(gs.t("請從 Legado → 備份與恢復 中匯出對應 JSON 檔案後選擇匯入。"))
+                Text(localized("請從 Legado → 備份與恢復 中匯出對應 JSON 檔案後選擇匯入。"))
                     .font(.caption)
                     .foregroundColor(DSColor.textSecondary)
                     .padding(.top, 2)
@@ -80,14 +80,14 @@ struct LegadoMigrationView: View {
     }
 
     private var importSection: some View {
-        Section(header: Text(gs.t("匯入"))) {
+        Section(header: Text(localized("匯入"))) {
             Button {
                 showFilePicker = true
             } label: {
                 HStack {
                     Image(systemName: "doc.badge.plus")
                         .foregroundColor(DSColor.accent)
-                    Text(gs.t("選擇 JSON 檔案"))
+                    Text(localized("選擇 JSON 檔案"))
                         .foregroundColor(DSColor.accent)
                 }
             }
@@ -97,7 +97,7 @@ struct LegadoMigrationView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ProgressView(value: manager.progress)
                         .tint(DSColor.accent)
-                    Text(gs.t("匯入中，請稍候…"))
+                    Text(localized("匯入中，請稍候…"))
                         .font(.caption)
                         .foregroundColor(DSColor.textSecondary)
                 }
@@ -108,23 +108,23 @@ struct LegadoMigrationView: View {
 
     @ViewBuilder
     private func resultSection(_ result: LegadoMigrationManager.ImportResult) -> some View {
-        Section(header: Text(gs.t("結果"))) {
+        Section(header: Text(localized("結果"))) {
             if result.sourcesImported > 0 {
                 HStack {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
-                    Text(gs.t("書源：") + "\(result.sourcesImported) " + gs.t("個"))
+                    Text(localized("書源：") + "\(result.sourcesImported) " + localized("個"))
                 }
             }
             if result.booksImported > 0 {
                 HStack {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
-                    Text(gs.t("書籍：") + "\(result.booksImported) " + gs.t("本"))
+                    Text(localized("書籍：") + "\(result.booksImported) " + localized("本"))
                 }
             }
             if result.sourcesImported == 0 && result.booksImported == 0 && result.errors.isEmpty {
-                Text(gs.t("未匯入任何資料"))
+                Text(localized("未匯入任何資料"))
                     .foregroundColor(DSColor.textSecondary)
             }
             ForEach(result.errors, id: \.self) { error in
@@ -140,7 +140,7 @@ struct LegadoMigrationView: View {
     }
 
     private var logSection: some View {
-        Section(header: Text(gs.t("記錄"))) {
+        Section(header: Text(localized("記錄"))) {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 2) {

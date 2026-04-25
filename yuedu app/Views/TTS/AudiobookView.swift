@@ -44,7 +44,7 @@ struct AudiobookView: View {
                             .foregroundColor(.red)
                             .multilineTextAlignment(.center)
 
-                        Button(gs.t("重試")) {
+                        Button(localized("重試")) {
                             player.play(url: audioUrl, title: chapterTitle)
                         }
                         .foregroundColor(DSColor.accent)
@@ -127,7 +127,7 @@ struct AudiobookView: View {
                 .padding(.horizontal, 40)
 
                 // 播放速率選擇器
-                Picker(gs.t("速度"), selection: Binding(
+                Picker(localized("速度"), selection: Binding(
                     get: { player.playbackRate },
                     set: { player.setRate($0) }
                 )) {

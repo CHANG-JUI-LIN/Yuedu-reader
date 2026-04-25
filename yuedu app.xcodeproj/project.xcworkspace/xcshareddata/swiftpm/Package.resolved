@@ -1,5 +1,5 @@
 {
-  "originHash" : "3b9115510cb795729eb4ac9ea55e8d6ff6684224e0754b6a6952a4777310820d",
+  "originHash" : "bf2f90a5112421712e0f9f1a84c2944828672602e124784ec72cedf54bd1304f",
   "pins" : [
     {
       "identity" : "cryptoswift",
@@ -17,24 +17,6 @@
       "state" : {
         "revision" : "073b9671ce2b9b5b96398611427a1f929927e428",
         "version" : "1.3.0"
-      }
-    },
-    {
-      "identity" : "dtcoretext",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Cocoanetics/DTCoreText.git",
-      "state" : {
-        "revision" : "c0fe041c87c773321785d68a10c63c29a9c763e8",
-        "version" : "1.6.28"
-      }
-    },
-    {
-      "identity" : "dtfoundation",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Cocoanetics/DTFoundation.git",
-      "state" : {
-        "revision" : "a61be65dd7d5b2cde3acabd13bf320b71f2907a5",
-        "version" : "1.7.19"
       }
     },
     {

@@ -44,7 +44,7 @@ struct RSSFeedView: View {
                         .foregroundColor(DSColor.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
-                    Button(gs.t("重試")) {
+                    Button(localized("重試")) {
                         Task { await fetcher.fetchItems(from: source) }
                     }
                     .foregroundColor(DSColor.accent)

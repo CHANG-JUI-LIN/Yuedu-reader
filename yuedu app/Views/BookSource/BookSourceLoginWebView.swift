@@ -23,7 +23,7 @@ struct BookSourceLoginWebView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "key.fill")
                         .foregroundColor(DSColor.accent)
-                    Text(gs.t("請在下方完成登入。登入成功後點「完成」，Cookie 將自動儲存供書源使用。"))
+                    Text(localized("請在下方完成登入。登入成功後點「完成」，Cookie 將自動儲存供書源使用。"))
                         .font(.caption)
                         .foregroundColor(DSColor.textSecondary)
                     Spacer()
@@ -34,18 +34,18 @@ struct BookSourceLoginWebView: View {
                 BookSourceLoginWebViewRepresentable(source: source, bridge: bridge)
                     .edgesIgnoringSafeArea(.bottom)
             }
-            .navigationTitle(gs.t("Cookie 驗證登入"))
+            .navigationTitle(localized("Cookie 驗證登入"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("取消")) { onDismiss() }
+                    Button(localized("取消")) { onDismiss() }
                         .disabled(isSyncing)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if isSyncing {
                         ProgressView().scaleEffect(0.85)
                     } else {
-                        Button(gs.t("完成")) {
+                        Button(localized("完成")) {
                             isSyncing = true
                             bridge.syncCookiesAndDismiss? {
                                 onDismiss()

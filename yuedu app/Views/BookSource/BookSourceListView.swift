@@ -57,23 +57,23 @@ struct BookSourceListView: View {
                     bottomToolbar
                 }
             }
-            .navigationTitle(gs.t("書源管理"))
+            .navigationTitle(localized("書源管理"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("關閉")) { dismiss.wrappedValue.dismiss() }
+                    Button(localized("關閉")) { dismiss.wrappedValue.dismiss() }
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Menu {
                         Button {
                             showImport = true
                         } label: {
-                            Label(gs.t("本地導入"), systemImage: "doc.badge.plus")
+                            Label(localized("本地導入"), systemImage: "doc.badge.plus")
                         }
                         Button {
                             showNetworkImport = true
                         } label: {
-                            Label(gs.t("網路導入"), systemImage: "network")
+                            Label(localized("網路導入"), systemImage: "network")
                         }
                     } label: {
                         Image(systemName: "square.and.arrow.down")
@@ -88,24 +88,24 @@ struct BookSourceListView: View {
                         Button {
                             enableAll()
                         } label: {
-                            Label(gs.t("全部啟用"), systemImage: "checkmark.circle")
+                            Label(localized("全部啟用"), systemImage: "checkmark.circle")
                         }
                         Button {
                             disableAll()
                         } label: {
-                            Label(gs.t("全部停用"), systemImage: "xmark.circle")
+                            Label(localized("全部停用"), systemImage: "xmark.circle")
                         }
                         Divider()
                         Button {
                             exportSelected()
                         } label: {
-                            Label(gs.t("匯出選中"), systemImage: "square.and.arrow.up")
+                            Label(localized("匯出選中"), systemImage: "square.and.arrow.up")
                         }
                         .disabled(selectedIds.isEmpty)
                         Button {
                             exportAll()
                         } label: {
-                            Label(gs.t("匯出全部"), systemImage: "square.and.arrow.up.fill")
+                            Label(localized("匯出全部"), systemImage: "square.and.arrow.up.fill")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -149,13 +149,13 @@ struct BookSourceListView: View {
                     }
                 }
             }
-            .alert(gs.t("確認刪除"), isPresented: $showDeleteConfirm) {
-                Button(gs.t("取消"), role: .cancel) {}
-                Button(gs.t("刪除"), role: .destructive) {
+            .alert(localized("確認刪除"), isPresented: $showDeleteConfirm) {
+                Button(localized("取消"), role: .cancel) {}
+                Button(localized("刪除"), role: .destructive) {
                     deleteSelected()
                 }
             } message: {
-                Text(gs.t("確定要刪除選中的") + " \(selectedIds.count) " + gs.t("個書源嗎？"))
+                Text(localized("確定要刪除選中的") + " \(selectedIds.count) " + localized("個書源嗎？"))
             }
             .overlay(alignment: .top) {
                 if let msg = importSuccess {
@@ -183,7 +183,7 @@ struct BookSourceListView: View {
 
     // MARK: - 搜索欄
     private var searchBar: some View {
-        DSSearchBar(placeholder: gs.t("搜索書源"), text: $searchText)
+        DSSearchBar(placeholder: localized("搜索書源"), text: $searchText)
     }
 
     // MARK: - 書源列表
@@ -219,7 +219,7 @@ struct BookSourceListView: View {
             // ── 書源名稱 ──
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(source.bookSourceName.isEmpty ? gs.t("未命名書源") : source.bookSourceName)
+                    Text(source.bookSourceName.isEmpty ? localized("未命名書源") : source.bookSourceName)
                         .font(DSFont.toolbarIcon)
                         .foregroundColor(source.enabled ? .primary : .secondary)
                         .lineLimit(1)
@@ -270,7 +270,7 @@ struct BookSourceListView: View {
                 Button {
                     editingSource = source
                 } label: {
-                    Label(gs.t("編輯"), systemImage: "pencil")
+                    Label(localized("編輯"), systemImage: "pencil")
                 }
                 Button {
                     // 複製書源 JSON
@@ -278,30 +278,30 @@ struct BookSourceListView: View {
                         let str = String(data: data, encoding: .utf8)
                     {
                         UIPasteboard.general.string = str
-                        withAnimation { importSuccess = gs.t("已複製書源 JSON") }
+                        withAnimation { importSuccess = localized("已複製書源 JSON") }
                     }
                 } label: {
-                    Label(gs.t("複製 JSON"), systemImage: "doc.on.doc")
+                    Label(localized("複製 JSON"), systemImage: "doc.on.doc")
                 }
                 Button {
                     store.toggle(id: source.id)
                 } label: {
                     Label(
-                        gs.t(source.enabled ? "停用" : "啟用"),
+                        localized(source.enabled ? "停用" : "啟用"),
                         systemImage: source.enabled ? "xmark.circle" : "checkmark.circle")
                 }
                 if !source.loginUrl.isEmpty {
                     Button {
                         loginSource = source
                     } label: {
-                        Label(gs.t("Cookie 驗證登入"), systemImage: "key.fill")
+                        Label(localized("Cookie 驗證登入"), systemImage: "key.fill")
                     }
                 }
                 Divider()
                 Button(role: .destructive) {
                     store.delete(id: source.id)
                 } label: {
-                    Label(gs.t("刪除"), systemImage: "trash")
+                    Label(localized("刪除"), systemImage: "trash")
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -333,7 +333,7 @@ struct BookSourceListView: View {
                     .foregroundColor(
                         selectedIds.count == filteredSources.count && !filteredSources.isEmpty
                             ? DSColor.accent : Color(UIColor.systemGray3))
-                    Text(gs.t("全選") + "(\(selectedIds.count)/\(store.sources.count))")
+                    Text(localized("全選") + "(\(selectedIds.count)/\(store.sources.count))")
                         .font(.system(size: 13))
                         .foregroundColor(DSColor.textPrimary)
                 }
@@ -347,7 +347,7 @@ struct BookSourceListView: View {
             Button {
                 invertSelection()
             } label: {
-                Text(gs.t("反選"))
+                Text(localized("反選"))
                     .font(.system(size: 13))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 7)
@@ -364,7 +364,7 @@ struct BookSourceListView: View {
                     showDeleteConfirm = true
                 }
             } label: {
-                Text(gs.t("刪除"))
+                Text(localized("刪除"))
                     .font(.system(size: 13))
                     .foregroundColor(selectedIds.isEmpty ? .secondary : .red)
                     .padding(.horizontal, 16)
@@ -382,13 +382,13 @@ struct BookSourceListView: View {
                 Button {
                     enableSelected()
                 } label: {
-                    Label(gs.t("啟用選中"), systemImage: "checkmark.circle")
+                    Label(localized("啟用選中"), systemImage: "checkmark.circle")
                 }
                 .disabled(selectedIds.isEmpty)
                 Button {
                     disableSelected()
                 } label: {
-                    Label(gs.t("停用選中"), systemImage: "xmark.circle")
+                    Label(localized("停用選中"), systemImage: "xmark.circle")
                 }
                 .disabled(selectedIds.isEmpty)
             } label: {
@@ -470,13 +470,13 @@ struct BookSourceListView: View {
     private func exportSelected() {
         let json = store.exportToJSON(ids: Array(selectedIds))
         UIPasteboard.general.string = json
-        withAnimation { importSuccess = gs.t("已複製") + " \(selectedIds.count) " + gs.t("個書源到剪貼簿") }
+        withAnimation { importSuccess = localized("已複製") + " \(selectedIds.count) " + localized("個書源到剪貼簿") }
     }
 
     private func exportAll() {
         let json = store.exportToJSON()
         UIPasteboard.general.string = json
-        withAnimation { importSuccess = gs.t("已複製全部") + " \(store.sources.count) " + gs.t("個書源到剪貼簿") }
+        withAnimation { importSuccess = localized("已複製全部") + " \(store.sources.count) " + localized("個書源到剪貼簿") }
     }
 
     // MARK: - 空狀態
@@ -486,15 +486,15 @@ struct BookSourceListView: View {
             Image(systemName: "books.vertical.circle")
                 .font(.system(size: 64))
                 .foregroundColor(Color.secondary.opacity(0.35))
-            Text(gs.t("尚無書源"))
+            Text(localized("尚無書源"))
                 .font(.title2.weight(.semibold))
-            Text(gs.t("點擊右上角 + 手動新增\n或 ↓ 貼上 Legado 書源 JSON 匯入"))
+            Text(localized("點擊右上角 + 手動新增\n或 ↓ 貼上 Legado 書源 JSON 匯入"))
                 .font(.subheadline).foregroundColor(DSColor.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
                 showImport = true
             } label: {
-                Label(gs.t("匯入書源 JSON"), systemImage: "square.and.arrow.down")
+                Label(localized("匯入書源 JSON"), systemImage: "square.and.arrow.down")
                     .font(.headline).foregroundColor(.white)
                     .padding(.horizontal, 28).padding(.vertical, 13)
                     .background(DSColor.accent).clipShape(Capsule())
@@ -510,7 +510,7 @@ struct BookSourceListView: View {
             VStack(spacing: 0) {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "info.circle").foregroundColor(DSColor.accent)
-                    Text(gs.t("貼上 Legado 格式的書源 JSON（支援單個 {} 或陣列 []），或選取 .json 文件。"))
+                    Text(localized("貼上 Legado 格式的書源 JSON（支援單個 {} 或陣列 []），或選取 .json 文件。"))
                         .font(.caption).foregroundColor(DSColor.textSecondary)
                 }
                 .padding()
@@ -529,7 +529,7 @@ struct BookSourceListView: View {
                 Button {
                     showImportFile = true
                 } label: {
-                    Label(gs.t("從文件選取 .json"), systemImage: "doc.badge.plus")
+                    Label(localized("從文件選取 .json"), systemImage: "doc.badge.plus")
                         .frame(maxWidth: .infinity).padding()
                         .background(Color.secondary.opacity(0.15))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -540,17 +540,17 @@ struct BookSourceListView: View {
 
                 Spacer()
             }
-            .navigationTitle(gs.t("匯入書源"))
+            .navigationTitle(localized("匯入書源"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("取消")) {
+                    Button(localized("取消")) {
                         showImport = false
                         importJSON = ""
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gs.t("匯入")) {
+                    Button(localized("匯入")) {
                         doImport(importJSON)
                     }
                     .font(.body.weight(.semibold))
@@ -573,7 +573,7 @@ struct BookSourceListView: View {
                 if let data = try? Data(contentsOf: url) {
                     doImportData(data, ext: url.pathExtension)
                 } else {
-                    importError = gs.t("無法讀取文件")
+                    importError = localized("無法讀取文件")
                 }
             case .failure(let err):
                 importError = err.localizedDescription
@@ -585,7 +585,7 @@ struct BookSourceListView: View {
         do {
             let count = try store.importFromData(data, fileExtension: ext)
             withAnimation {
-                importSuccess = gs.t("成功匯入") + " \(count) " + gs.t("個書源")
+                importSuccess = localized("成功匯入") + " \(count) " + localized("個書源")
                 importJSON = ""
                 showImport = false
             }
@@ -600,7 +600,7 @@ struct BookSourceListView: View {
         do {
             let count = try store.importFromJSON(trimmed)
             withAnimation {
-                importSuccess = gs.t("成功匯入") + " \(count) " + gs.t("個書源")
+                importSuccess = localized("成功匯入") + " \(count) " + localized("個書源")
                 importJSON = ""
                 showImport = false
             }
@@ -616,7 +616,7 @@ struct BookSourceListView: View {
             VStack(spacing: 0) {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "network").foregroundColor(DSColor.accent)
-                    Text(gs.t("輸入書源 JSON 的網路地址，支援直接返回 JSON 的 URL。"))
+                    Text(localized("輸入書源 JSON 的網路地址，支援直接返回 JSON 的 URL。"))
                         .font(.caption).foregroundColor(DSColor.textSecondary)
                 }
                 .padding()
@@ -638,17 +638,17 @@ struct BookSourceListView: View {
 
                 Spacer()
             }
-            .navigationTitle(gs.t("網路導入"))
+            .navigationTitle(localized("網路導入"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("取消")) {
+                    Button(localized("取消")) {
                         showNetworkImport = false
                         importURLString = ""
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gs.t("匯入")) {
+                    Button(localized("匯入")) {
                         doNetworkImport()
                     }
                     .font(.body.weight(.semibold))
@@ -664,7 +664,7 @@ struct BookSourceListView: View {
     private func doNetworkImport() {
         let urlString = importURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: urlString) else {
-            withAnimation { importError = gs.t("無效的 URL") }
+            withAnimation { importError = localized("無效的 URL") }
             return
         }
         networkImportLoading = true
@@ -677,7 +677,7 @@ struct BookSourceListView: View {
                 }
                 guard let data, let text = String(data: data, encoding: .utf8)
                         ?? String(data: data, encoding: .isoLatin1) else {
-                    withAnimation { importError = gs.t("無法解析伺服器回應") }
+                    withAnimation { importError = localized("無法解析伺服器回應") }
                     return
                 }
                 showNetworkImport = false

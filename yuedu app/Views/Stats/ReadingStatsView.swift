@@ -17,10 +17,10 @@ struct ReadingStatsView: View {
 
         func localizedLabel(gs: GlobalSettings) -> String {
             switch self {
-            case .today: return gs.t("今日")
-            case .week:  return gs.t("本週")
-            case .month: return gs.t("本月")
-            case .all:   return gs.t("全部")
+            case .today: return localized("今日")
+            case .week:  return localized("本週")
+            case .month: return localized("本月")
+            case .all:   return localized("全部")
             }
         }
 
@@ -60,7 +60,7 @@ struct ReadingStatsView: View {
                 }
             }
             .background(DSColor.groupedBackground.ignoresSafeArea())
-            .navigationTitle(gs.t("閱讀統計"))
+            .navigationTitle(localized("閱讀統計"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -78,7 +78,7 @@ struct ReadingStatsView: View {
     // MARK: - Period Picker
 
     private var periodPicker: some View {
-        Picker(gs.t("時間範圍"), selection: $selectedPeriod) {
+        Picker(localized("時間範圍"), selection: $selectedPeriod) {
             ForEach(Period.allCases, id: \.rawValue) { period in
                 Text(period.localizedLabel(gs: gs)).tag(period)
             }
@@ -102,12 +102,12 @@ struct ReadingStatsView: View {
         HStack(spacing: DSSpacing.md) {
             summaryCard(
                 icon: "clock.fill",
-                title: gs.t("閱讀時長"),
+                title: localized("閱讀時長"),
                 value: formatDuration(store.totalDuration(in: filteredSessions))
             )
             summaryCard(
                 icon: "text.alignleft",
-                title: gs.t("閱讀字數"),
+                title: localized("閱讀字數"),
                 value: "\(store.totalCharacters(in: filteredSessions))"
             )
         }
@@ -139,7 +139,7 @@ struct ReadingStatsView: View {
 
     private var barChartSection: some View {
         VStack(alignment: .leading, spacing: DSSpacing.md) {
-            Text(gs.t("每日閱讀（分鐘）"))
+            Text(localized("每日閱讀（分鐘）"))
                 .font(DSFont.subheadline)
                 .foregroundColor(DSColor.textSecondary)
 
@@ -240,12 +240,12 @@ struct ReadingStatsView: View {
     private var topBooksSection: some View {
         let books = store.topBooks(limit: 5, sessions: filteredSessions)
         return VStack(alignment: .leading, spacing: DSSpacing.md) {
-            Text(gs.t("閱讀最多"))
+            Text(localized("閱讀最多"))
                 .font(DSFont.subheadline)
                 .foregroundColor(DSColor.textSecondary)
 
             if books.isEmpty {
-                Text(gs.t("暫無資料"))
+                Text(localized("暫無資料"))
                     .font(DSFont.body)
                     .foregroundColor(DSColor.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -285,9 +285,9 @@ struct ReadingStatsView: View {
         let hours = total / 3600
         let minutes = (total % 3600) / 60
         if hours > 0 {
-            return gs.t("\(hours) 小時 \(minutes) 分鐘")
+            return localized("\(hours) 小時 \(minutes) 分鐘")
         } else {
-            return gs.t("\(minutes) 分鐘")
+            return localized("\(minutes) 分鐘")
         }
     }
 }

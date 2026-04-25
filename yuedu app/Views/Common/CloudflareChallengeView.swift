@@ -14,7 +14,7 @@ struct CloudflareChallengeView: View {
                 HStack {
                     Image(systemName: "exclamationmark.shield.fill")
                         .foregroundColor(.orange)
-                    Text(gs.t("本站啟用了防護 (Cloudflare / DDoS-Guard)。\n請手動通過人機驗證後，系統將自動繼續。"))
+                    Text(localized("本站啟用了防護 (Cloudflare / DDoS-Guard)。\n請手動通過人機驗證後，系統將自動繼續。"))
                         .font(.caption)
                         .foregroundColor(DSColor.textSecondary)
                     Spacer()
@@ -25,9 +25,9 @@ struct CloudflareChallengeView: View {
                 InteractiveWebView(url: targetURL, onPassed: onChallengePassed)
                     .edgesIgnoringSafeArea(.bottom)
             }
-            .navigationTitle(gs.t("網站安全驗證"))
+            .navigationTitle(localized("網站安全驗證"))
             .navigationBarTitleDisplayMode(.inline)
-            .navigationBarItems(leading: Button(gs.t("放棄")) { onCancel() })
+            .navigationBarItems(leading: Button(localized("放棄")) { onCancel() })
         }
     }
 }

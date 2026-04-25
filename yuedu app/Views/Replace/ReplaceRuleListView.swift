@@ -20,9 +20,9 @@ struct ReplaceRuleListView: View {
                         Image(systemName: "text.magnifyingglass")
                             .font(.system(size: 48))
                             .foregroundColor(.secondary)
-                        Text(gs.t("尚無替換規則"))
+                        Text(localized("尚無替換規則"))
                             .foregroundColor(.secondary)
-                        Button(gs.t("新增規則")) { showingAdd = true }
+                        Button(localized("新增規則")) { showingAdd = true }
                             .buttonStyle(.bordered)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -41,11 +41,11 @@ struct ReplaceRuleListView: View {
                     .listStyle(.plain)
                 }
             }
-            .navigationTitle(gs.t("替換規則"))
+            .navigationTitle(localized("替換規則"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("關閉")) { dismiss() }
+                    Button(localized("關閉")) { dismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack {
@@ -79,13 +79,13 @@ private struct ReplaceRuleRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(rule.name.isEmpty ? gs.t("未命名規則") : rule.name)
+                    Text(rule.name.isEmpty ? localized("未命名規則") : rule.name)
                         .font(.subheadline)
                         .bold()
                         .foregroundColor(rule.enabled ? .primary : .secondary)
 
                     if rule.scope != "global" {
-                        Text(gs.t("書源"))
+                        Text(localized("書源"))
                             .font(.caption2)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
@@ -143,37 +143,37 @@ struct ReplaceRuleEditView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text(gs.t("基本"))) {
-                    TextField(gs.t("規則名稱"), text: $rule.name)
-                    Toggle(gs.t("啟用"), isOn: $rule.enabled)
+                Section(header: Text(localized("基本"))) {
+                    TextField(localized("規則名稱"), text: $rule.name)
+                    Toggle(localized("啟用"), isOn: $rule.enabled)
                 }
 
-                Section(header: Text(gs.t("匹配"))) {
-                    Toggle(gs.t("正則表達式"), isOn: $rule.isRegex)
-                    TextField(gs.t("匹配模式"), text: $rule.pattern)
+                Section(header: Text(localized("匹配"))) {
+                    Toggle(localized("正則表達式"), isOn: $rule.isRegex)
+                    TextField(localized("匹配模式"), text: $rule.pattern)
                         .font(.system(size: 14, design: .monospaced))
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
-                    TextField(gs.t("替換為（空白=刪除）"), text: $rule.replacement)
+                    TextField(localized("替換為（空白=刪除）"), text: $rule.replacement)
                         .font(.system(size: 14, design: .monospaced))
                         .autocapitalization(.none)
                 }
 
-                Section(header: Text(gs.t("作用範圍"))) {
-                    Picker(gs.t("範圍"), selection: $rule.scope) {
-                        Text(gs.t("全局")).tag("global")
+                Section(header: Text(localized("作用範圍"))) {
+                    Picker(localized("範圍"), selection: $rule.scope) {
+                        Text(localized("全局")).tag("global")
                     }
                     .pickerStyle(.inline)
                 }
             }
-            .navigationTitle(rule.name.isEmpty ? gs.t("新增規則") : rule.name)
+            .navigationTitle(rule.name.isEmpty ? localized("新增規則") : rule.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("取消")) { dismiss() }
+                    Button(localized("取消")) { dismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gs.t("儲存")) {
+                    Button(localized("儲存")) {
                         onSave(rule)
                         dismiss()
                     }

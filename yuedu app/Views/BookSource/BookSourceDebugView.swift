@@ -10,10 +10,10 @@ struct BookSourceDebugView: View {
             VStack(spacing: 0) {
                 // Toolbar
                 HStack {
-                    Toggle(gs.t("啟用網路除錯錄製"), isOn: $debugger.isRecording)
+                    Toggle(localized("啟用網路除錯錄製"), isOn: $debugger.isRecording)
                         .padding()
                     Spacer()
-                    Button(gs.t("清空紀錄")) {
+                    Button(localized("清空紀錄")) {
                         debugger.clear()
                     }
                     .padding()
@@ -28,8 +28,8 @@ struct BookSourceDebugView: View {
                 }
                 .listStyle(.plain)
             }
-            .navigationTitle(gs.t("書源除錯大師"))
-            .navigationBarItems(trailing: Button(gs.t("關閉")) { dismiss() })
+            .navigationTitle(localized("書源除錯大師"))
+            .navigationBarItems(trailing: Button(localized("關閉")) { dismiss() })
         }
     }
 }

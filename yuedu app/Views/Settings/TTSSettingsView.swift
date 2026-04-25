@@ -9,10 +9,10 @@ struct TTSSettingsView: View {
     var body: some View {
         Form {
             // ── 引擎選擇 ──
-            Section(header: Text(gs.t("語音引擎"))) {
-                Picker(gs.t("引擎"), selection: $gs.ttsEngine) {
+            Section(header: Text(localized("語音引擎"))) {
+                Picker(localized("引擎"), selection: $gs.ttsEngine) {
                     ForEach(GlobalSettings.TTSEngineType.allCases, id: \.self) { type in
-                        Text(gs.t(type.displayName)).tag(type)
+                        Text(localized(type.displayName)).tag(type)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -20,18 +20,18 @@ struct TTSSettingsView: View {
 
             // ── HTTP TTS 設定（只在 HTTP 模式顯示） ──
             if gs.ttsEngine == .http {
-                Section(header: Text(gs.t("HTTP TTS URL 模板"))) {
+                Section(header: Text(localized("HTTP TTS URL 模板"))) {
                     TextEditor(text: $gs.httpTtsUrlTemplate)
                         .frame(minHeight: 80)
                         .font(.system(.footnote, design: .monospaced))
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(gs.t("支援的佔位符："))
+                        Text(localized("支援的佔位符："))
                             .font(.caption)
                             .foregroundColor(DSColor.textSecondary)
-                        placeholderRow("{{text}}", desc: gs.t("段落文字（URL 編碼）"))
-                        placeholderRow("{{title}}", desc: gs.t("章節標題（URL 編碼）"))
-                        placeholderRow("{{speakSpeed}}", desc: gs.t("語速，範圍 0.10–0.65"))
+                        placeholderRow("{{text}}", desc: localized("段落文字（URL 編碼）"))
+                        placeholderRow("{{title}}", desc: localized("章節標題（URL 編碼）"))
+                        placeholderRow("{{speakSpeed}}", desc: localized("語速，範圍 0.10–0.65"))
                     }
                     .padding(.vertical, 4)
 
@@ -41,14 +41,14 @@ struct TTSSettingsView: View {
                     } label: {
                         HStack {
                             Image(systemName: isTesting ? "stop.circle" : "play.circle")
-                            Text(isTesting ? gs.t("停止測試") : gs.t("測試播放"))
+                            Text(isTesting ? localized("停止測試") : localized("測試播放"))
                         }
                     }
                     .disabled(gs.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
-        .navigationTitle(gs.t("語音朗讀設定"))
+        .navigationTitle(localized("語音朗讀設定"))
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear {
             testCoordinator.stop()

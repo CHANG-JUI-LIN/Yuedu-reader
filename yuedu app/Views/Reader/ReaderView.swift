@@ -458,7 +458,7 @@ struct ReaderView: View {
             if chapters.isEmpty {
                 VStack {
                     Spacer()
-                    ProgressView(settings.t("載入中…"))
+                    ProgressView(localized("載入中…"))
                     Spacer()
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
@@ -516,7 +516,7 @@ struct ReaderView: View {
             } else if usesCoreTextEPUB {
                 VStack {
                     Spacer()
-                    ProgressView(settings.t("載入中…"))
+                    ProgressView(localized("載入中…"))
                     Spacer()
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
@@ -1055,7 +1055,7 @@ struct ReaderView: View {
                         if chapter.content.isEmpty && book?.isOnline == true {
                             VStack(spacing: 16) {
                                 ProgressView()
-                                Text(settings.t("載入章節中…"))
+                                Text(localized("載入章節中…"))
                                     .font(.system(size: fontSize - 2, design: .serif))
                                     .foregroundColor(readerTheme.textColor.opacity(0.6))
                             }
@@ -1199,7 +1199,7 @@ struct ReaderView: View {
     private var brightnessRow: some View {
         VStack(spacing: 6) {
             HStack(spacing: 8) {
-                Text(settings.t("亮度")).font(.system(size: 11)).foregroundColor(
+                Text(localized("亮度")).font(.system(size: 11)).foregroundColor(
                     readerTheme.textColor.opacity(0.7))
                 Slider(value: $settings.readerBrightness, in: 0.05...1.0, step: 0.05)
                     .accentColor(readerTheme.textColor.opacity(0.5))
@@ -1226,7 +1226,7 @@ struct ReaderView: View {
                                 ? "checkmark.circle.fill" : "circle"
                         )
                         .font(.system(size: 14))
-                        Text(settings.t("跟隨系統亮度"))
+                        Text(localized("跟隨系統亮度"))
                             .font(.system(size: 12))
                     }
                     .foregroundColor(
@@ -1239,7 +1239,7 @@ struct ReaderView: View {
                 Button {
                     syncReaderBrightnessFromSystem()
                 } label: {
-                    Text(settings.t("同步系統"))
+                    Text(localized("同步系統"))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(Color.blue)
                 }
@@ -1258,7 +1258,7 @@ struct ReaderView: View {
                 if changeSourceLoading {
                     VStack(spacing: 12) {
                         ProgressView()
-                        Text(settings.t("正在搜尋其他書源…"))
+                        Text(localized("正在搜尋其他書源…"))
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -1276,7 +1276,7 @@ struct ReaderView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if changeSourceOrigins.isEmpty {
-                    Text(settings.t("暫無其他書源"))
+                    Text(localized("暫無其他書源"))
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1310,11 +1310,11 @@ struct ReaderView: View {
                     }
                 }
             }
-            .navigationTitle(settings.t("換源"))
+            .navigationTitle(localized("換源"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(settings.t("關閉")) { showChangeSourceSheet = false }
+                    Button(localized("關閉")) { showChangeSourceSheet = false }
                 }
             }
         }
@@ -1399,7 +1399,7 @@ struct ReaderView: View {
             } label: {
                 HStack(spacing: 3) {
                     Image(systemName: "chevron.left").font(.system(size: 12))
-                    Text(settings.t("上一章")).font(.system(size: 14))
+                    Text(localized("上一章")).font(.system(size: 14))
                 }
                 .foregroundColor(
                     canGoPrevChapter ? readerTheme.textColor : readerTheme.textColor.opacity(0.22)
@@ -1433,7 +1433,7 @@ struct ReaderView: View {
                 jumpToChapter(currentChapterIndex + 1)
             } label: {
                 HStack(spacing: 3) {
-                    Text(settings.t(canGoNextChapter ? "下一章" : "書末頁")).font(.system(size: 14))
+                    Text(localized(canGoNextChapter ? "下一章" : "書末頁")).font(.system(size: 14))
                     Image(systemName: "chevron.right").font(.system(size: 12))
                 }
                 .foregroundColor(
@@ -1470,13 +1470,13 @@ struct ReaderView: View {
     }
     private var toolRow: some View {
         HStack(spacing: 0) {
-            toolBtn(icon: "list.bullet", label: settings.t("目錄")) { showTOC = true }
-            toolBtn(icon: "sun.max", label: settings.t("亮度"), active: showBrightness) {
+            toolBtn(icon: "list.bullet", label: localized("目錄")) { showTOC = true }
+            toolBtn(icon: "sun.max", label: localized("亮度"), active: showBrightness) {
                 withAnimation(.easeOut(duration: 0.2)) { showBrightness.toggle() }
             }
             toolBtn(
                 icon: readerTheme == .night ? "sun.min" : "moon",
-                label: settings.t(readerTheme == .night ? "白天" : "深色"),
+                label: localized(readerTheme == .night ? "白天" : "深色"),
                 active: readerTheme == .night
             ) {
                 withAnimation(.easeInOut(duration: uiFeedbackDuration)) {
@@ -1490,7 +1490,7 @@ struct ReaderView: View {
                     }
                 }
             }
-            toolBtn(icon: "gearshape", label: settings.t("設置")) { showSettings = true }
+            toolBtn(icon: "gearshape", label: localized("設置")) { showSettings = true }
         }
         .padding(.top, 4).padding(.bottom, 20)
         .background(readerTheme.barColor)
@@ -2263,7 +2263,7 @@ private struct ReaderBottomControlBar: View {
     private var brightnessRow: some View {
         VStack(spacing: 6) {
             HStack(spacing: 8) {
-                Text(settings.t("亮度")).font(.system(size: 11)).foregroundColor(
+                Text(localized("亮度")).font(.system(size: 11)).foregroundColor(
                     readerTheme.textColor.opacity(0.7))
                 Slider(value: $settings.readerBrightness, in: 0.05...1.0, step: 0.05)
                     .accentColor(readerTheme.textColor.opacity(0.5))
@@ -2290,7 +2290,7 @@ private struct ReaderBottomControlBar: View {
                                 ? "checkmark.circle.fill" : "circle"
                         )
                         .font(.system(size: 14))
-                        Text(settings.t("跟隨系統亮度"))
+                        Text(localized("跟隨系統亮度"))
                             .font(.system(size: 12))
                     }
                     .foregroundColor(
@@ -2303,7 +2303,7 @@ private struct ReaderBottomControlBar: View {
                 Button {
                     onSyncSystemBrightness()
                 } label: {
-                    Text(settings.t("同步系統"))
+                    Text(localized("同步系統"))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(Color.blue)
                 }
@@ -2335,7 +2335,7 @@ private struct ReaderBottomControlBar: View {
             } label: {
                 HStack(spacing: 3) {
                     Image(systemName: "chevron.left").font(.system(size: 12))
-                    Text(settings.t("上一章")).font(.system(size: 14))
+                    Text(localized("上一章")).font(.system(size: 14))
                 }
                 .foregroundColor(
                     canGoPrevChapter ? readerTheme.textColor : readerTheme.textColor.opacity(0.22)
@@ -2369,7 +2369,7 @@ private struct ReaderBottomControlBar: View {
                 onNextChapter()
             } label: {
                 HStack(spacing: 3) {
-                    Text(settings.t(canGoNextChapter ? "下一章" : "書末頁")).font(.system(size: 14))
+                    Text(localized(canGoNextChapter ? "下一章" : "書末頁")).font(.system(size: 14))
                     Image(systemName: "chevron.right").font(.system(size: 12))
                 }
                 .foregroundColor(
@@ -2383,13 +2383,13 @@ private struct ReaderBottomControlBar: View {
 
     private var toolRow: some View {
         HStack(spacing: 0) {
-            toolBtn(icon: "list.bullet", label: settings.t("目錄")) { onOpenTOC() }
-            toolBtn(icon: "sun.max", label: settings.t("亮度"), active: showBrightness) {
+            toolBtn(icon: "list.bullet", label: localized("目錄")) { onOpenTOC() }
+            toolBtn(icon: "sun.max", label: localized("亮度"), active: showBrightness) {
                 withAnimation(.easeOut(duration: 0.2)) { showBrightness.toggle() }
             }
             toolBtn(
                 icon: readerTheme == .night ? "sun.min" : "moon",
-                label: settings.t(readerTheme == .night ? "白天" : "深色"),
+                label: localized(readerTheme == .night ? "白天" : "深色"),
                 active: readerTheme == .night
             ) {
                 withAnimation(.easeInOut(duration: uiFeedbackDuration)) {
@@ -2402,7 +2402,7 @@ private struct ReaderBottomControlBar: View {
                     }
                 }
             }
-            toolBtn(icon: "gearshape", label: settings.t("設置")) { onOpenSettings() }
+            toolBtn(icon: "gearshape", label: localized("設置")) { onOpenSettings() }
         }
         .padding(.top, 4).padding(.bottom, 20)
         .background(readerTheme.barColor)
@@ -2464,8 +2464,8 @@ struct BookmarkListView: View {
                         Spacer()
                         Image(systemName: "bookmark").font(.system(size: 48)).foregroundColor(
                             Color.secondary.opacity(0.3))
-                        Text(gs.t("尚無書籤")).font(.headline).foregroundColor(.secondary)
-                        Text(gs.t("在閱讀時點擊右上角書籤按鈕添加")).font(.subheadline).foregroundColor(
+                        Text(localized("尚無書籤")).font(.headline).foregroundColor(.secondary)
+                        Text(localized("在閱讀時點擊右上角書籤按鈕添加")).font(.subheadline).foregroundColor(
                             Color.secondary.opacity(0.7))
                         Spacer()
                     }
@@ -2499,11 +2499,11 @@ struct BookmarkListView: View {
                     }.listStyle(.plain)
                 }
             }
-            .navigationTitle(gs.t("書籤") + "（\(bookmarks.count)）")
+            .navigationTitle(localized("書籤") + "（\(bookmarks.count)）")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gs.t("關閉")) { dismiss.wrappedValue.dismiss() }
+                    Button(localized("關閉")) { dismiss.wrappedValue.dismiss() }
                 }
             }
         }.navigationViewStyle(.stack)
@@ -2562,11 +2562,11 @@ struct TOCView: View {
                     }
                 }
             }
-            .navigationTitle(gs.t("目錄"))
+            .navigationTitle(localized("目錄"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gs.t("關閉")) { isPresented = false }
+                    Button(localized("關閉")) { isPresented = false }
                 }
             }
         }.navigationViewStyle(.stack)

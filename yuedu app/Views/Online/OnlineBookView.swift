@@ -30,7 +30,7 @@ struct OnlineBookView: View {
         let d = detailInfo?.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let b = book.name.trimmingCharacters(in: .whitespacesAndNewlines)
         if let d = d, !d.isEmpty { return d }
-        return b.isEmpty ? gs.t("未知書名") : b
+        return b.isEmpty ? localized("未知書名") : b
     }
 
     /// 顯示用作者：詳情頁有則用詳情，否則用搜尋結果；若皆空則從 intro/kind 提取「作者:XXX」
@@ -49,7 +49,7 @@ struct OnlineBookView: View {
         if let extracted = Self.extractAuthorFromText(candidates), !extracted.isEmpty {
             return extracted
         }
-        return gs.t("未知作者")
+        return localized("未知作者")
     }
 
     /// 從文字中提取「作者:XXX」或「作者：XXX」格式
@@ -108,11 +108,11 @@ struct OnlineBookView: View {
                     }
                 }
             }
-            .navigationTitle(gs.t("書籍詳情"))
+            .navigationTitle(localized("書籍詳情"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("關閉")) { dismiss.wrappedValue.dismiss() }
+                    Button(localized("關閉")) { dismiss.wrappedValue.dismiss() }
                 }
             }
             .fullScreenCover(isPresented: $showReader, onDismiss: {
@@ -205,7 +205,7 @@ struct OnlineBookView: View {
                         ProgressView().scaleEffect(0.8).tint(.white)
                     }
                     Label(
-                        openingReader ? gs.t("打開中…") : (alreadyInShelf ? "繼續閱讀" : "閱讀"),
+                        openingReader ? localized("打開中…") : (alreadyInShelf ? "繼續閱讀" : "閱讀"),
                         systemImage: "book.open"
                     )
                 }
@@ -225,7 +225,7 @@ struct OnlineBookView: View {
                     if addingToShelf {
                         ProgressView().scaleEffect(0.8).tint(.white)
                     }
-                    Text(alreadyInShelf ? gs.t("已加入書架") : (addingToShelf ? gs.t("加入中…") : gs.t("加入書架")))
+                    Text(alreadyInShelf ? localized("已加入書架") : (addingToShelf ? localized("加入中…") : localized("加入書架")))
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 12)
                 .background(alreadyInShelf ? Color(.systemGray4) : (chapters.isEmpty ? Color.gray : Color.blue))
@@ -235,14 +235,14 @@ struct OnlineBookView: View {
             .buttonStyle(.plain)
             .disabled(chapters.isEmpty || addingToShelf || alreadyInShelf)
         }
-        .environment(\.locale, Locale(identifier: gs.appLanguage.rawValue))
+        .environment(\.locale, Locale(identifier: gs.localeIdentifier))
     }
 
     // MARK: 目錄區
     private var tocSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(gs.t("目錄"))
+                Text(localized("目錄"))
                     .font(.headline)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -257,18 +257,18 @@ struct OnlineBookView: View {
             Divider()
 
             if loadingTOC {
-                HStack { Spacer(); ProgressView(gs.t("載入目錄…")); Spacer() }
+                HStack { Spacer(); ProgressView(localized("載入目錄…")); Spacer() }
                     .padding(.vertical, 32)
             } else if let err = tocError {
                 VStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle").foregroundColor(.orange)
                     Text(err).font(DSFont.caption).foregroundColor(DSColor.textSecondary).multilineTextAlignment(.center)
-                    Button(gs.t("重試")) { loadTOC() }
+                    Button(localized("重試")) { loadTOC() }
                         .font(DSFont.caption).foregroundColor(DSColor.accent)
                 }
                 .padding()
             } else if chapters.isEmpty {
-                Text(gs.t("目錄為空")).font(DSFont.caption).foregroundColor(DSColor.textSecondary).padding()
+                Text(localized("目錄為空")).font(DSFont.caption).foregroundColor(DSColor.textSecondary).padding()
             } else {
                 // 顯示前 50 章預覽，點擊章節直接進入閱讀
                 let preview = Array(chapters.prefix(50))
@@ -292,7 +292,7 @@ struct OnlineBookView: View {
                     Divider().padding(.leading, 16)
                 }
                 if chapters.count > 50 {
-                    Text("…" + gs.t("共") + " \(chapters.count) " + gs.t("章"))
+                    Text("…" + localized("共") + " \(chapters.count) " + localized("章"))
                         .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                         .padding(.horizontal, 16).padding(.vertical, 10)
                 }
@@ -311,7 +311,7 @@ struct OnlineBookView: View {
 
     private func loadTOC() {
         guard let source else {
-            tocError = gs.t("書源已被刪除")
+            tocError = localized("書源已被刪除")
             return
         }
 
@@ -375,7 +375,7 @@ struct OnlineBookView: View {
         addingToShelf = true
         let newBook = bookStore.addOnlineBook(
             name: displayName,
-            author: displayAuthor == gs.t("未知作者") ? "" : displayAuthor,
+            author: displayAuthor == localized("未知作者") ? "" : displayAuthor,
             sourceId: source.id,
             bookInfoURL: book.bookUrl,
             tocURL: resolvedTOCURL,
@@ -402,7 +402,7 @@ struct OnlineBookView: View {
         } else {
             let tempBook = bookStore.addOnlineBook(
                 name: displayName,
-                author: displayAuthor == gs.t("未知作者") ? "" : displayAuthor,
+                author: displayAuthor == localized("未知作者") ? "" : displayAuthor,
                 sourceId: source.id,
                 bookInfoURL: book.bookUrl,
                 tocURL: resolvedTOCURL,

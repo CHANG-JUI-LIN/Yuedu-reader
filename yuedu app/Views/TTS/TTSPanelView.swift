@@ -18,9 +18,9 @@ struct TTSPanelView: View {
                         HStack {
                             Image(systemName: "waveform")
                                 .foregroundColor(DSColor.accent)
-                            Text(gs.t("語音引擎"))
+                            Text(localized("語音引擎"))
                             Spacer()
-                            Text(gs.t(gs.ttsEngine.displayName))
+                            Text(localized(gs.ttsEngine.displayName))
                                 .foregroundColor(DSColor.textSecondary)
                         }
                     }
@@ -74,7 +74,7 @@ struct TTSPanelView: View {
                 }
 
                 // 語速
-                Section(header: Text(gs.t("語速"))) {
+                Section(header: Text(localized("語速"))) {
                     HStack {
                         Image(systemName: "tortoise.fill")
                             .foregroundColor(DSColor.textSecondary)
@@ -89,19 +89,19 @@ struct TTSPanelView: View {
                         Image(systemName: "hare.fill")
                             .foregroundColor(DSColor.textSecondary)
                     }
-                    Text("\(gs.t("當前速度"))：\(String(format: "%.0f%%", tts.speechRate / 0.5 * 100))")
+                    Text("\(localized("當前速度"))：\(String(format: "%.0f%%", tts.speechRate / 0.5 * 100))")
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                 }
 
                 // 定時停止
-                Section(header: Text(gs.t("定時停止"))) {
+                Section(header: Text(localized("定時停止"))) {
                     ForEach([0, 15, 30, 60, 90], id: \.self) { min in
                         Button {
                             tts.setSleepTimer(minutes: min)
                         } label: {
                             HStack {
-                                Text(min == 0 ? gs.t("不定時") : "\(min) \(gs.t("分鐘"))")
+                                Text(min == 0 ? localized("不定時") : "\(min) \(localized("分鐘"))")
                                     .foregroundColor(.primary)
                                 Spacer()
                                 if tts.sleepMinutes == min {
@@ -113,11 +113,11 @@ struct TTSPanelView: View {
                     }
                 }
             }
-            .navigationTitle(gs.t("語音朗讀"))
+            .navigationTitle(localized("語音朗讀"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gs.t("完成")) { dismiss() }
+                    Button(localized("完成")) { dismiss() }
                 }
             }
         }
@@ -148,7 +148,7 @@ struct AutoReadPanelView: View {
                                 )
                                 .font(.system(size: 52))
                                 .foregroundColor(.accentColor)
-                                Text(gs.t(autoReader.isRunning ? "暫停" : "開始自動翻頁"))
+                                Text(localized(autoReader.isRunning ? "暫停" : "開始自動翻頁"))
                                     .font(DSFont.caption)
                                     .foregroundColor(DSColor.textSecondary)
                             }
@@ -159,7 +159,7 @@ struct AutoReadPanelView: View {
                 }
 
                 // 速度
-                Section(header: Text(gs.t("翻頁速度"))) {
+                Section(header: Text(localized("翻頁速度"))) {
                     HStack {
                         Image(systemName: "tortoise.fill")
                             .foregroundColor(DSColor.textSecondary)
@@ -175,17 +175,17 @@ struct AutoReadPanelView: View {
                             .foregroundColor(DSColor.textSecondary)
                     }
                     Text(
-                        "\(gs.t("速度")) \(String(format: "%.1fx", autoReader.speed))（\(gs.t("約每")) \(String(format: "%.1f", max(0.5, 4.0 / autoReader.speed))) \(gs.t("秒翻一頁") )）"
+                        "\(localized("速度")) \(String(format: "%.1fx", autoReader.speed))（\(localized("約每")) \(String(format: "%.1f", max(0.5, 4.0 / autoReader.speed))) \(localized("秒翻一頁") )）"
                     )
                     .font(DSFont.caption)
                     .foregroundColor(DSColor.textSecondary)
                 }
             }
-            .navigationTitle(gs.t("自動閱讀"))
+            .navigationTitle(localized("自動閱讀"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gs.t("完成")) { dismiss() }
+                    Button(localized("完成")) { dismiss() }
                 }
             }
         }

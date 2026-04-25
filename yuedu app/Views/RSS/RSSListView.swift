@@ -25,7 +25,7 @@ struct RSSListView: View {
             }
             .onDelete(perform: store.removeSource)
         }
-        .navigationTitle(gs.t("RSS 訂閱"))
+        .navigationTitle(localized("RSS 訂閱"))
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -57,27 +57,27 @@ private struct AddRSSSourceSheet: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text(gs.t("來源名稱"))) {
-                    TextField(gs.t("例如：科技新聞"), text: $name)
+                Section(header: Text(localized("來源名稱"))) {
+                    TextField(localized("例如：科技新聞"), text: $name)
                 }
-                Section(header: Text(gs.t("RSS 網址"))) {
+                Section(header: Text(localized("RSS 網址"))) {
                     TextField("https://", text: $url)
                         .keyboardType(.URL)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                 }
             }
-            .navigationTitle(gs.t("新增 RSS 訂閱"))
+            .navigationTitle(localized("新增 RSS 訂閱"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("取消")) {
+                    Button(localized("取消")) {
                         isPresented = false
                     }
                     .foregroundColor(DSColor.accent)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(gs.t("新增")) {
+                    Button(localized("新增")) {
                         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trimmedName.isEmpty, !trimmedURL.isEmpty else { return }

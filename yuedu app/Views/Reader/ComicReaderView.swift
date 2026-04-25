@@ -104,7 +104,7 @@ struct ComicChapterReaderView: View {
 
             // Bottom bar: page count
             VStack(spacing: 0) {
-                Text(gs.t("共 \(fetcher.imageUrls.count) 頁"))
+                Text(localized("共 \(fetcher.imageUrls.count) 頁"))
                     .font(DSFont.caption)
                     .foregroundColor(.white)
                     .padding(.vertical, DSSpacing.sm)
@@ -121,7 +121,7 @@ struct ComicChapterReaderView: View {
         VStack(spacing: DSSpacing.md) {
             ProgressView()
                 .tint(.white)
-            Text(gs.t("載入中..."))
+            Text(localized("載入中..."))
                 .foregroundColor(.white)
                 .font(DSFont.subheadline)
         }
@@ -135,7 +135,7 @@ struct ComicChapterReaderView: View {
                 .font(DSFont.body)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
-            Button(gs.t("重試")) {
+            Button(localized("重試")) {
                 Task {
                     await fetcher.fetchImages(chapterUrl: chapter.url, source: source)
                 }

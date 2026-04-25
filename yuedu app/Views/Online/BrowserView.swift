@@ -823,7 +823,7 @@ struct BrowserView: View {
                     .font(.system(size: 16))
                 ZStack(alignment: .leading) {
                     if addressText.isEmpty {
-                        Text(gs.t("網址或搜尋"))
+                        Text(localized("網址或搜尋"))
                             .font(.system(size: 16))
                             .foregroundColor(iconGray)
                     }
@@ -892,7 +892,7 @@ struct BrowserView: View {
                 Image(systemName: "info.circle")
                     .font(.system(size: 13))
                     .foregroundColor(iconGray)
-                Text(gs.t("前往小說章節頁，點擊右下角即可轉碼閱讀"))
+                Text(localized("前往小說章節頁，點擊右下角即可轉碼閱讀"))
                     .font(.system(size: 13))
                     .foregroundColor(iconGray)
             }
@@ -993,7 +993,7 @@ struct BrowserView: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").font(.caption).foregroundColor(.secondary)
-                TextField(gs.t("輸入網址或搜尋"), text: $addressText)
+                TextField(localized("輸入網址或搜尋"), text: $addressText)
                     .font(.system(size: 14))
                     .disableAutocorrection(true)
                     .focused($addressFocused)
@@ -1044,7 +1044,7 @@ struct BrowserView: View {
                     }.buttonStyle(.plain)
                 }
                 Divider().frame(height: 20)
-                Text(gs.t("進入小說章節頁，點「轉碼閱讀」直接開書"))
+                Text(localized("進入小說章節頁，點「轉碼閱讀」直接開書"))
                     .font(.caption).foregroundColor(.secondary).lineLimit(1)
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
@@ -1073,7 +1073,7 @@ struct WebTOCSheet: View {
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)
                     }
-                    Text(gs.t("共偵測到") + " \(chapters.count) " + gs.t("章，選擇開始閱讀的章節"))
+                    Text(localized("共偵測到") + " \(chapters.count) " + localized("章，選擇開始閱讀的章節"))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -1093,7 +1093,7 @@ struct WebTOCSheet: View {
                                 .font(.caption.monospacedDigit())
                                 .foregroundColor(.secondary)
                                 .frame(width: 36, alignment: .trailing)
-                            Text(chapters[idx].title.isEmpty ? gs.t("第") + " \(idx + 1) " + gs.t("章") : chapters[idx].title)
+                            Text(chapters[idx].title.isEmpty ? localized("第") + " \(idx + 1) " + localized("章") : chapters[idx].title)
                                 .font(.body)
                                 .foregroundColor(.primary)
                                 .lineLimit(1)
@@ -1116,13 +1116,13 @@ struct WebTOCSheet: View {
                     let refs = chapters.enumerated().map { i, ch in
                         OnlineChapterRef(
                             index: i,
-                            title: ch.title.isEmpty ? gs.t("第") + " \(i + 1) " + gs.t("章") : ch.title,
+                            title: ch.title.isEmpty ? localized("第") + " \(i + 1) " + localized("章") : ch.title,
                             url: ch.url
                         )
                     }
                     onConfirm(refs, selectedIndex)
                 } label: {
-                    Text(gs.t("從第") + " \(selectedIndex + 1) " + gs.t("章開始閱讀"))
+                    Text(localized("從第") + " \(selectedIndex + 1) " + localized("章開始閱讀"))
                         .font(.system(size: 16, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
@@ -1134,11 +1134,11 @@ struct WebTOCSheet: View {
                 .padding(.vertical, 12)
                 .background(Color(UIColor.systemBackground))
             }
-            .navigationTitle(gs.t("偵測到章節目錄"))
+            .navigationTitle(localized("偵測到章節目錄"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("取消")) { isPresented = false }
+                    Button(localized("取消")) { isPresented = false }
                 }
             }
         }

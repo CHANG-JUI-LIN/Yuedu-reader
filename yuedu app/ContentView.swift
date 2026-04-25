@@ -7,13 +7,13 @@ struct ContentView: View {
     var body: some View {
         TabView {
             HomeView()
-                .tabItem { Label(gs.t("書架"), systemImage: "books.vertical") }
+                .tabItem { Label(localized("書架"), systemImage: "books.vertical") }
 
             BrowserView()
-                .tabItem { Label(gs.t("瀏覽"), systemImage: "globe") }
+                .tabItem { Label(localized("瀏覽"), systemImage: "globe") }
 
             SettingsView()
-                .tabItem { Label(gs.t("設定"), systemImage: "gearshape") }
+                .tabItem { Label(localized("設定"), systemImage: "gearshape") }
         }
     }
 }

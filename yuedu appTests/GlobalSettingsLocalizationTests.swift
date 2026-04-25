@@ -6,57 +6,29 @@ import Testing
 struct GlobalSettingsLocalizationTests {
     @Test("traditional chinese returns source string")
     func traditionalChineseReturnsSourceString() {
-        let translated = GlobalSettings.translatedString(
-            "書架",
-            language: .traditionalChinese,
-            bundle: testBundle()
-        )
+        let translated = localized("書架", bundle: testBundle(localizations: ["zh-Hant"]))
 
         #expect(translated == "書架")
     }
 
-    @Test("simplified chinese converts source string")
-    func simplifiedChineseConvertsSourceString() {
-        let translated = GlobalSettings.translatedString(
-            "書架",
-            language: .simplifiedChinese,
-            bundle: testBundle()
-        )
-
-        #expect(translated == "书架")
-    }
-
-    @Test("english prefers dictionary values")
-    func englishPrefersDictionaryValues() {
-        let translated = GlobalSettings.translatedString(
-            "書架",
-            language: .english,
-            bundle: testBundle()
-        )
-
-        #expect(translated == "Library")
-    }
-
-    @Test("english falls back to localized string when key is missing from dictionary")
-    func englishFallsBackToLocalizedString() {
-        let translated = GlobalSettings.translatedString(
+    @Test("english localized string comes from bundle")
+    func englishLocalizedStringComesFromBundle() {
+        let translated = localized(
             "系統語言提示",
-            language: .english,
             bundle: testBundle()
         )
 
         #expect(translated == "System language hint")
     }
 
-    @Test("system language uses bundle localization instead of effective app language")
-    func systemLanguageUsesBundleLocalization() {
-        let translated = GlobalSettings.translatedString(
-            "系統語言提示",
-            language: .systemLanguage,
+    @Test("missing localized string falls back to source key")
+    func missingLocalizedStringFallsBackToSourceKey() {
+        let translated = localized(
+            "不存在的字串",
             bundle: testBundle(localizations: ["en"])
         )
 
-        #expect(translated == "System language hint")
+        #expect(translated == "不存在的字串")
     }
 
     private func testBundle(localizations: [String] = ["en", "zh-Hant"]) -> Bundle {
@@ -95,6 +67,7 @@ struct GlobalSettingsLocalizationTests {
 
         let stringsByLocalization = [
             "en": """
+            "書架" = "Library";
             "系統語言提示" = "System language hint";
             """,
             "zh-Hant": """

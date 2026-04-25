@@ -20,7 +20,7 @@ struct BookSourceFormLoginView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text(gs.t("請填入登入資訊"))) {
+                Section(header: Text(localized("請填入登入資訊"))) {
                     ForEach(fields) { field in
                         switch field.type {
                         case .text:
@@ -64,17 +64,17 @@ struct BookSourceFormLoginView: View {
                 }
             }
             .disabled(isLoading)
-            .navigationTitle(source.bookSourceName.isEmpty ? gs.t("書源登入") : source.bookSourceName)
+            .navigationTitle(source.bookSourceName.isEmpty ? localized("書源登入") : source.bookSourceName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("取消")) { onDismiss() }
+                    Button(localized("取消")) { onDismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if isLoading {
                         ProgressView()
                     } else {
-                        Button(gs.t("確認")) { doLogin() }
+                        Button(localized("確認")) { doLogin() }
                             .font(.body.weight(.semibold))
                     }
                 }
@@ -151,7 +151,7 @@ struct BookSourceFormLoginView: View {
     private func runLoginJS(credentials: [String: String]) {
         let rawLogin = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rawLogin.isEmpty else {
-            errorMessage = gs.t("書源未設定 loginUrl")
+            errorMessage = localized("書源未設定 loginUrl")
             return
         }
 
@@ -232,7 +232,7 @@ struct BookSourceFormLoginView: View {
                 if let err = engine.lastError, !err.isEmpty {
                     errorMessage = err
                 } else {
-                    successMessage = gs.t("登入成功")
+                    successMessage = localized("登入成功")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { onDismiss() }
                 }
             }

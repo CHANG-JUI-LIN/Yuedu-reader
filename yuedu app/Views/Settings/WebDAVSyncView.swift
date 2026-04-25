@@ -21,11 +21,11 @@ struct WebDAVSyncView: View {
                 actionsSection
                 statusSection
             }
-            .navigationTitle(gs.t("WebDAV 同步"))
+            .navigationTitle(localized("WebDAV 同步"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(gs.t("關閉")) { dismiss() }
+                    Button(localized("關閉")) { dismiss() }
                 }
             }
             .disabled(manager.isSyncing)
@@ -35,18 +35,18 @@ struct WebDAVSyncView: View {
                 }
             }
             .alert(alertTitle, isPresented: $showAlert) {
-                Button(gs.t("確定"), role: .cancel) {}
+                Button(localized("確定"), role: .cancel) {}
             } message: {
                 Text(alertMessage)
             }
             .onChange(of: manager.pendingConflict != nil) { hasConflict in
                 if hasConflict { showConflictAlert = true }
             }
-            .alert(gs.t("偵測到備份衝突"), isPresented: $showConflictAlert) {
-                Button(gs.t("使用雲端備份"), role: .destructive) {
+            .alert(localized("偵測到備份衝突"), isPresented: $showConflictAlert) {
+                Button(localized("使用雲端備份"), role: .destructive) {
                     Task { try? await manager.resolveConflict(keepRemote: true) }
                 }
-                Button(gs.t("保留本地資料"), role: .cancel) {
+                Button(localized("保留本地資料"), role: .cancel) {
                     Task { try? await manager.resolveConflict(keepRemote: false) }
                 }
             } message: {
@@ -62,15 +62,15 @@ struct WebDAVSyncView: View {
         fmt.dateStyle = .short; fmt.timeStyle = .short
         let remoteDate = fmt.string(from: c.remote.backupDate)
         let localDate  = fmt.string(from: c.localLastSync)
-        return gs.t("雲端備份來自裝置「\(c.remote.deviceName)」（\(remoteDate)）。本裝置上次同步：\(localDate)。請選擇要使用哪個版本。")
+        return localized("雲端備份來自裝置「\(c.remote.deviceName)」（\(remoteDate)）。本裝置上次同步：\(localDate)。請選擇要使用哪個版本。")
     }
 
     // MARK: - Sections
 
     private var serverSection: some View {
-        Section(header: Text(gs.t("伺服器設定"))) {
+        Section(header: Text(localized("伺服器設定"))) {
             HStack {
-                Text(gs.t("網址"))
+                Text(localized("網址"))
                     .foregroundColor(DSColor.textSecondary)
                 TextField("https://example.com/dav", text: $manager.serverUrl)
                     .autocapitalization(.none)
@@ -78,50 +78,50 @@ struct WebDAVSyncView: View {
                     .keyboardType(.URL)
             }
             HStack {
-                Text(gs.t("帳號"))
+                Text(localized("帳號"))
                     .foregroundColor(DSColor.textSecondary)
-                TextField(gs.t("使用者名稱"), text: $manager.username)
+                TextField(localized("使用者名稱"), text: $manager.username)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
             }
             HStack {
-                Text(gs.t("密碼"))
+                Text(localized("密碼"))
                     .foregroundColor(DSColor.textSecondary)
-                SecureField(gs.t("密碼"), text: $manager.password)
+                SecureField(localized("密碼"), text: $manager.password)
             }
         }
     }
 
     private var actionsSection: some View {
-        Section(header: Text(gs.t("操作"))) {
+        Section(header: Text(localized("操作"))) {
             Button {
                 Task { await testConnection() }
             } label: {
-                Label(gs.t("測試連線"), systemImage: "network")
+                Label(localized("測試連線"), systemImage: "network")
                     .foregroundColor(DSColor.accent)
             }
 
             Button {
                 Task { await runBackup() }
             } label: {
-                Label(gs.t("備份到雲端"), systemImage: "icloud.and.arrow.up")
+                Label(localized("備份到雲端"), systemImage: "icloud.and.arrow.up")
                     .foregroundColor(DSColor.accent)
             }
 
             Button {
                 Task { await runRestore() }
             } label: {
-                Label(gs.t("從雲端還原"), systemImage: "icloud.and.arrow.down")
+                Label(localized("從雲端還原"), systemImage: "icloud.and.arrow.down")
                     .foregroundColor(DSColor.accent)
             }
         }
     }
 
     private var statusSection: some View {
-        Section(header: Text(gs.t("狀態"))) {
+        Section(header: Text(localized("狀態"))) {
             if let date = manager.lastSyncDate {
                 HStack {
-                    Text(gs.t("上次同步"))
+                    Text(localized("上次同步"))
                         .foregroundColor(DSColor.textSecondary)
                     Spacer()
                     Text(date, style: .relative)
@@ -160,10 +160,10 @@ struct WebDAVSyncView: View {
         guard validateSettings() else { return }
         let ok = await manager.testConnection()
         await MainActor.run {
-            alertTitle   = ok ? gs.t("連線成功") : gs.t("連線失敗")
+            alertTitle   = ok ? localized("連線成功") : localized("連線失敗")
             alertMessage = ok
-                ? gs.t("已成功連線至 WebDAV 伺服器")
-                : gs.t("無法連線，請確認網址、帳號及密碼")
+                ? localized("已成功連線至 WebDAV 伺服器")
+                : localized("無法連線，請確認網址、帳號及密碼")
             showAlert = true
         }
     }
@@ -173,8 +173,8 @@ struct WebDAVSyncView: View {
         do {
             try await manager.backup()
             await MainActor.run {
-                alertTitle   = gs.t("備份成功")
-                alertMessage = gs.t("資料已成功備份至雲端")
+                alertTitle   = localized("備份成功")
+                alertMessage = localized("資料已成功備份至雲端")
                 showAlert    = true
             }
         } catch {
@@ -187,8 +187,8 @@ struct WebDAVSyncView: View {
         do {
             try await manager.restore()
             await MainActor.run {
-                alertTitle   = gs.t("還原成功")
-                alertMessage = gs.t("書源已立即更新，書庫和替換規則將在重啟 App 後完全生效")
+                alertTitle   = localized("還原成功")
+                alertMessage = localized("書源已立即更新，書庫和替換規則將在重啟 App 後完全生效")
                 showAlert    = true
             }
         } catch {
@@ -201,8 +201,8 @@ struct WebDAVSyncView: View {
     @discardableResult
     private func validateSettings() -> Bool {
         guard !manager.serverUrl.isEmpty else {
-            alertTitle   = gs.t("設定不完整")
-            alertMessage = gs.t("請填寫伺服器網址")
+            alertTitle   = localized("設定不完整")
+            alertMessage = localized("請填寫伺服器網址")
             showAlert    = true
             return false
         }
@@ -211,7 +211,7 @@ struct WebDAVSyncView: View {
 
     private func presentError(_ error: Error) {
         Task { @MainActor in
-            alertTitle   = gs.t("操作失敗")
+            alertTitle   = localized("操作失敗")
             alertMessage = error.localizedDescription
             showAlert    = true
         }

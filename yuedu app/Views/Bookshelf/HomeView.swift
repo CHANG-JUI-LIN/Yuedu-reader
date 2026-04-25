@@ -65,7 +65,7 @@ struct HomeView: View {
                 }
             }
             .animation(DSAnimation.standard, value: store.books.isEmpty)
-            .navigationTitle(gs.t("書架"))
+            .navigationTitle(localized("書架"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 // 1. 搜尋按鈕：套用你發現的「主按鈕組件 + 透明背景」方法，強制獨立
@@ -107,7 +107,7 @@ struct HomeView: View {
                         Image(systemName: editMode == .active ? "xmark.circle" : "ellipsis.circle")
                             .font(DSFont.toolbarIcon)
                     }
-                    .id(gs.appLanguage.rawValue + (editMode == .active ? "_done" : "_edit"))
+                    .id(gs.localeIdentifier + (editMode == .active ? "_done" : "_edit"))
                     .environment(\.editMode, $editMode)
                 }
             }
@@ -141,19 +141,19 @@ struct HomeView: View {
             }
             // 刪除確認對話框
             .alert(
-                gs.t("確認刪除"),
+                localized("確認刪除"),
                 isPresented: Binding(
                     get: { bookToDelete != nil },
                     set: { if !$0 { bookToDelete = nil } }
                 )
             ) {
-                Button(gs.t("刪除"), role: .destructive) {
+                Button(localized("刪除"), role: .destructive) {
                     if let b = bookToDelete { store.delete(bookId: b.id) }
                 }
-                Button(gs.t("取消"), role: .cancel) {}
+                Button(localized("取消"), role: .cancel) {}
             } message: {
                 if let b = bookToDelete {
-                    Text(gs.t("確定要從書架刪除") + "《\(b.title)》" + gs.t("嗎？"))
+                    Text(localized("確定要從書架刪除") + "《\(b.title)》" + localized("嗎？"))
                 }
             }
         }
@@ -174,7 +174,7 @@ struct HomeView: View {
     private var groupFilterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: DSSpacing.sm) {
-                DSChip(title: gs.t("全部"), isSelected: selectedGroup.isEmpty) {
+                DSChip(title: localized("全部"), isSelected: selectedGroup.isEmpty) {
                     withAnimation { selectedGroup = "" }
                 }
                 ForEach(store.allGroups, id: \.self) { group in
@@ -191,14 +191,14 @@ struct HomeView: View {
     private var sortBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: DSSpacing.sm) {
-                Text(gs.t("排序：")).font(DSFont.caption).foregroundColor(DSColor.textSecondary)
+                Text(localized("排序：")).font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                 ForEach(BookSortOrder.allCases, id: \.self) { order in
-                    DSChip(title: gs.t(order.rawValue), isSelected: sortOrder == order) {
+                    DSChip(title: localized(order.rawValue), isSelected: sortOrder == order) {
                         withAnimation { sortOrder = order }
                     }
                 }
                 Spacer()
-                Text("\(filteredBooks.count) " + gs.t("本")).font(DSFont.caption).foregroundColor(DSColor.textSecondary)
+                Text("\(filteredBooks.count) " + localized("本")).font(DSFont.caption).foregroundColor(DSColor.textSecondary)
             }
             .padding(.horizontal, DSSpacing.lg).padding(.vertical, 6)
         }
@@ -277,23 +277,23 @@ struct EditBookSheet: View {
         NavigationView {
             AdaptiveSheetContainer(maxWidth: 640) {
                 Form {
-                    Section(header: Text(gs.t("基本資訊"))) {
+                    Section(header: Text(localized("基本資訊"))) {
                         HStack {
-                            Text(gs.t("書名"))
+                            Text(localized("書名"))
                             Spacer()
-                            TextField(gs.t("書名"), text: $titleInput)
+                            TextField(localized("書名"), text: $titleInput)
                                 .multilineTextAlignment(.trailing)
                         }
                         HStack {
-                            Text(gs.t("作者"))
+                            Text(localized("作者"))
                             Spacer()
-                            TextField(gs.t("作者"), text: $authorInput)
+                            TextField(localized("作者"), text: $authorInput)
                                 .multilineTextAlignment(.trailing)
                         }
                         HStack {
-                            Text(gs.t("分組"))
+                            Text(localized("分組"))
                             Spacer()
-                            TextField(gs.t("未分組"), text: $groupInput)
+                            TextField(localized("未分組"), text: $groupInput)
                                 .multilineTextAlignment(.trailing)
                         }
                         if !store.allGroups.isEmpty {
@@ -311,39 +311,39 @@ struct EditBookSheet: View {
                             }
                         }
                     }
-                    Section(header: Text(gs.t("閱讀進度"))) {
+                    Section(header: Text(localized("閱讀進度"))) {
                         HStack {
-                            Text(gs.t("目前進度"))
+                            Text(localized("目前進度"))
                             Spacer()
                             Text("\(Int(book.currentPosition * 100))%")
                                 .foregroundColor(.secondary)
                         }
                         HStack {
-                            Text(gs.t("加入時間"))
+                            Text(localized("加入時間"))
                             Spacer()
                             Text(book.addedDate, style: .date)
                                 .foregroundColor(.secondary)
                         }
                         HStack {
-                            Text(gs.t("來源"))
+                            Text(localized("來源"))
                             Spacer()
-                            Text(book.source == "local" ? gs.t("本機文件") : gs.t("網頁匯入"))
+                            Text(book.source == "local" ? localized("本機文件") : localized("網頁匯入"))
                                 .foregroundColor(.secondary)
                         }
                     }
                 }
-                .navigationTitle(gs.t("書籍資訊"))
+                .navigationTitle(localized("書籍資訊"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
-                        Button(gs.t("取消")) { dismiss.wrappedValue.dismiss() }
+                        Button(localized("取消")) { dismiss.wrappedValue.dismiss() }
                     }
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button {
                             onSave(titleInput, authorInput, groupInput)
                             dismiss.wrappedValue.dismiss()
                         } label: {
-                            Text(gs.t("儲存")).font(.body.weight(.semibold))
+                            Text(localized("儲存")).font(.body.weight(.semibold))
                         }
                         .disabled(titleInput.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
@@ -365,14 +365,14 @@ struct EmptyLibraryView: View {
             Image(systemName: "books.vertical")
                 .font(.system(size: 72))
                 .foregroundColor(DSColor.textSecondary.opacity(0.35))
-            Text(gs.t("書架還是空的"))
+            Text(localized("書架還是空的"))
                 .font(DSFont.title2.weight(.semibold))
-            Text(gs.t("匯入 TXT 文件，或是輸入網址\n抓取網頁小說加入書架"))
+            Text(localized("匯入 TXT 文件，或是輸入網址\n抓取網頁小說加入書架"))
                 .font(DSFont.subheadline).foregroundColor(DSColor.textSecondary).multilineTextAlignment(.center)
             Button {
                 showAdd = true
             } label: {
-                Label(gs.t("添加書籍"), systemImage: "plus")
+                Label(localized("添加書籍"), systemImage: "plus")
                     .font(DSFont.headline).foregroundColor(.white)
                     .padding(.horizontal, DSSpacing.xxl).padding(.vertical, 14)
                     .background(DSColor.accent).clipShape(Capsule())
@@ -380,7 +380,7 @@ struct EmptyLibraryView: View {
             Button {
                 showSearch = true
             } label: {
-                Label(gs.t("搜索書籍"), systemImage: "magnifyingglass")
+                Label(localized("搜索書籍"), systemImage: "magnifyingglass")
                     .font(DSFont.subheadline.weight(.medium))
             }
             .buttonStyle(.plain)
@@ -440,10 +440,10 @@ struct BookRow: View {
 
                             Menu {
                                 Button { onEdit() } label: {
-                                    Label(gs.t("編輯書籍資訊"), systemImage: "pencil")
+                                    Label(localized("編輯書籍資訊"), systemImage: "pencil")
                                 }
                                 Button(role: .destructive) { onDelete() } label: {
-                                    Label(gs.t("刪除書籍"), systemImage: "trash")
+                                    Label(localized("刪除書籍"), systemImage: "trash")
                                 }
                             } label: {
                                 Image(systemName: "ellipsis")
@@ -469,7 +469,7 @@ struct BookRow: View {
     @ViewBuilder
     private var progressBadge: some View {
         if book.currentPosition < 0.01 {
-            Text(gs.t("新增"))
+            Text(localized("新增"))
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(.white)
                 .padding(.horizontal, 7)
@@ -477,7 +477,7 @@ struct BookRow: View {
                 .background(Color.blue)
                 .clipShape(Capsule())
         } else if book.currentPosition >= 0.99 {
-            Text(gs.t("已讀完"))
+            Text(localized("已讀完"))
                 .font(.system(size: 12))
                 .foregroundColor(DSColor.textSecondary)
         } else {
@@ -569,10 +569,10 @@ struct BookGridCell: View {
                 Spacer(minLength: 0)
                 Menu {
                     Button { onEdit() } label: {
-                        Label(gs.t("編輯書籍資訊"), systemImage: "pencil")
+                        Label(localized("編輯書籍資訊"), systemImage: "pencil")
                     }
                     Button(role: .destructive) { onDelete() } label: {
-                        Label(gs.t("刪除書籍"), systemImage: "trash")
+                        Label(localized("刪除書籍"), systemImage: "trash")
                     }
                 } label: {
                     Image(systemName: "ellipsis")
