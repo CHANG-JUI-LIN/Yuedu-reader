@@ -887,11 +887,14 @@ final class SnapshotPageViewController: UIViewController {
 extension SnapshotPageViewController: PageIndexProviding {}
 extension SnapshotPageViewController: CoreTextReadingPositionProviding {}
 
-/// 章節尚未計算完成時的佔位 ViewController（顯示章節標題 + 載入指示器）
+/// 章節尚未計算完成時的佔位 ViewController（顯示章節標題 + 載入指示器）。
+///
+/// 原先右下角還有一個 `footerTimeLabel` 時鐘，但它會和閱讀器底部 footer 的時鐘
+/// 重疊（使用者截圖中的「那個奇怪的時間」），所以拿掉了。
+/// 如果之後想再顯示時鐘，把 footerTimeLabel 相關的建構與 constraint 搬回來即可。
 final class PlaceholderPageViewController: UIViewController {
     private let titleLabel = UILabel()
     private let spinner = UIActivityIndicatorView(style: .medium)
-    private let footerTimeLabel = UILabel()
     private(set) var globalPageIndex: Int
     private(set) var coreTextReadingPosition: CoreTextReadingPosition?
 
@@ -929,19 +932,8 @@ final class PlaceholderPageViewController: UIViewController {
         spinner.color = themeTextColor.withAlphaComponent(0.6)
         spinner.translatesAutoresizingMaskIntoConstraints = false
 
-        footerTimeLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
-        footerTimeLabel.textColor = themeTextColor.withAlphaComponent(0.4)
-        footerTimeLabel.textAlignment = .right
-        footerTimeLabel.translatesAutoresizingMaskIntoConstraints = false
-        footerTimeLabel.text = {
-            let f = DateFormatter()
-            f.dateFormat = "HH:mm"
-            return f.string(from: Date())
-        }()
-
         view.addSubview(titleLabel)
         view.addSubview(spinner)
-        view.addSubview(footerTimeLabel)
 
         NSLayoutConstraint.activate([
             spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -950,11 +942,6 @@ final class PlaceholderPageViewController: UIViewController {
             titleLabel.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 12),
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            footerTimeLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
-            footerTimeLabel.bottomAnchor.constraint(
-                equalTo: view.bottomAnchor,
-                constant: -8
-            ),
         ])
         spinner.startAnimating()
     }

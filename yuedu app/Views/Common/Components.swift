@@ -83,7 +83,7 @@ struct DSChip: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(DSFont.caption)
+                .font(DSFont.caption )
                 .padding(.horizontal, DSSpacing.md)
                 .padding(.vertical, DSSpacing.sm - 2)
                 .background(isSelected ? DSColor.accent : Color(.systemGray5))

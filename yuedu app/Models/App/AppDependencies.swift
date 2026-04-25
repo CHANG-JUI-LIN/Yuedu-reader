@@ -35,6 +35,7 @@ protocol BookSourceFetching {
     ) -> Bool
 
     func clearChapterCache(bookId: UUID, chapterIndex: Int)
+    func clearAllChapterCache(bookId: UUID)
     func search(query: String, in source: BookSource) async throws -> [OnlineBook]
 
     func loadChapterPackageSync(
@@ -150,6 +151,10 @@ struct LiveBookSourceFetcher: BookSourceFetching {
 
     func clearChapterCache(bookId: UUID, chapterIndex: Int) {
         bookSourceFetcher.clearChapterCache(bookId: bookId, chapterIndex: chapterIndex)
+    }
+
+    func clearAllChapterCache(bookId: UUID) {
+        bookSourceFetcher.clearAllChapterCache(bookId: bookId)
     }
 
     func search(query: String, in source: BookSource) async throws -> [OnlineBook] {

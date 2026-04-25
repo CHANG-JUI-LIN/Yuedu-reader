@@ -70,15 +70,21 @@ enum CloudflareChallengePresenter {
                 return
             }
 
+            // 預先 retain hostVC 供 callback dismiss 自己用，避免 dismiss rootVC
+            // 把底下的閱讀器 fullScreenCover 一起關掉。
+            var hostVCRef: UIHostingController<CloudflareChallengeView>?
+
             let challengeView = CloudflareChallengeView(
                 targetURL: url,
                 onChallengePassed: { html in
-                    rootVC.dismiss(animated: true) {
+                    hostVCRef?.dismiss(animated: true) {
+                        hostVCRef = nil
                         continuation.resume(returning: html)
                     }
                 },
                 onCancel: {
-                    rootVC.dismiss(animated: true) {
+                    hostVCRef?.dismiss(animated: true) {
+                        hostVCRef = nil
                         continuation.resume(throwing: FetchError.httpError(503))
                     }
                 }
@@ -86,6 +92,7 @@ enum CloudflareChallengePresenter {
 
             let hostVC = UIHostingController(rootView: challengeView)
             hostVC.modalPresentationStyle = .fullScreen
+            hostVCRef = hostVC
 
             var topVC = rootVC
             while let presented = topVC.presentedViewController {

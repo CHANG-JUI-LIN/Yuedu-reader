@@ -525,40 +525,16 @@ struct ReaderView: View {
                     .transition(.opacity.animation(.easeOut(duration: 0.25)))
             }
 
-            if !showBars {
-                switch currentChapterOverlayState {
-                case .hidden:
-                    EmptyView()
-                case .loading:
-                    EmptyView()
-                case .failed(let message):
-                    VStack(spacing: 12) {
-                        Spacer()
-                        Text(settings.t("章節載入失敗"))
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(readerTheme.textColor.opacity(0.8))
-                        Text(message)
-                            .font(.system(size: 12))
-                            .foregroundColor(readerTheme.textColor.opacity(0.6))
-                            .lineLimit(3)
-                            .padding(.horizontal, 24)
-                            .multilineTextAlignment(.center)
-                        Button {
-                            refreshCurrentChapter()
-                        } label: {
-                            Text(settings.t("點擊重試"))
-                                .font(.system(size: 13, weight: .medium))
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 8)
-                                .background(readerTheme.textColor.opacity(0.12))
-                                .foregroundColor(readerTheme.textColor.opacity(0.8))
-                                .clipShape(Capsule())
-                        }
-                        Spacer().frame(height: 60)
-                    }
-                    .transition(.opacity.animation(.easeOut(duration: 0.2)))
-                }
-            }
+            // 網路抓取狀態覆蓋層已停用（使用者要求不顯示任何抓取中 / 載入失敗 UI）。
+            // 業務邏輯保留在 `currentChapterOverlayState` + `refreshCurrentChapter()`，
+            // 未來要恢復 UI 時把下列 switch 搬回來即可：
+            //
+            //   if !showBars {
+            //       switch currentChapterOverlayState {
+            //       case .hidden, .loading: EmptyView()
+            //       case .failed(let message): /* 錯誤提示 + 點擊重試按鈕 */
+            //       }
+            //   }
 
             // 頂/底欄
             if !showBars && !settings.scrollMode && !chapters.isEmpty {
@@ -1663,12 +1639,21 @@ struct ReaderView: View {
     }
 
     private func refreshCurrentChapter() {
-        guard let b = book, !(b.onlineChapters?.isEmpty ?? true) else { return }
+        guard let b = book, let refs = b.onlineChapters, !refs.isEmpty else { return }
         let idx = currentChapterIndex
-        print("[StateDebug] refreshCurrentChapter ch=\(idx) ← clearing cache and restarting fetch")
-        dependencies.bookSourceFetcher.clearChapterCache(bookId: b.id, chapterIndex: idx)
-        store.clearCachedChapter(bookId: b.id, chapterIndex: idx)
-        readerViewModel.resetChapterState(for: idx)
+        print("[StateDebug] refreshCurrentChapter ch=\(idx) ← clearing ENTIRE book cache and restarting fetch")
+        // 整本書清快取：因為「下一章誤判為下一頁」的 bug 會把後續多章串接到當章 cache 裡，
+        // 只清當前章不夠，必須整本書一次清掉，否則跨章污染還在。
+        dependencies.bookSourceFetcher.clearAllChapterCache(bookId: b.id)
+        store.clearAllCachedChapterFilenames(bookId: b.id)
+        for ref in refs {
+            readerViewModel.resetChapterState(for: ref.index)
+        }
+        // 立即把當前章 layout 失效並換成 PlaceholderVC（loading UI），
+        // 不要讓使用者繼續看著舊的（被 concat 過的）正文等到重抓完成。
+        if let engine = epubRenderer.engine {
+            Task { await engine.notifyChapterDataChanged(at: idx) }
+        }
         ensureChapterReady(chapterIndex: idx, priority: .jump)
     }
 
@@ -1754,7 +1739,12 @@ struct ReaderView: View {
                 return
             }
             print("[StateDebug] notifyChapterDataChanged ch=\(visibleChapterIndex) launching Task")
-            Task { await engine.notifyChapterDataChanged(at: visibleChapterIndex) }
+            Task {
+                await engine.notifyChapterDataChanged(at: visibleChapterIndex)
+                if self.savedCoreTextRestoreTarget != nil {
+                    self.applyInitialProgressIfNeeded()
+                }
+            }
         case .rebuildPages:
             print("[StateDebug] rebuildPages()")
             rebuildPages()

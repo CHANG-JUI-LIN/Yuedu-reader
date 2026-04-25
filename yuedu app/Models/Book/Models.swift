@@ -447,7 +447,10 @@ struct ReaderRenderSettings: Equatable {
 enum ReaderLayoutMetrics {
     static let footerHeight: CGFloat = 24
     static let footerBottomGap: CGFloat = 28
-    static let footerVisualBottomPadding: CGFloat = 0
+    /// 負值 = 把 footer 往螢幕底拉近。
+    /// 原本 `= 0` 時 footer 離底邊 = safeAreaBottom（notch 機約 34pt）偏高；
+    /// 設 -14 讓 footer 緊貼 home indicator 上方（約 20pt），視覺更貼底但不會蓋到。
+    static let footerVisualBottomPadding: CGFloat = -14
     static let minimumVerticalPadding: CGFloat = 24
     static let topSafeAreaExtra: CGFloat = 10
 
@@ -1120,6 +1123,22 @@ class BookStore: ObservableObject, BookProvider {
             books[idx].onlineChapters = chapters
             saveMeta()
         }
+    }
+
+    /// 清掉整本書所有章節的 cachedFilename 標記（不動 offlineDownloadState）。
+    /// 用於 refresh 時搭配 `clearAllChapterCache` 一次重置全書 cache 狀態。
+    func clearAllCachedChapterFilenames(bookId: UUID) {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }),
+            var chapters = books[idx].onlineChapters
+        else { return }
+        var changed = false
+        for i in chapters.indices where chapters[i].cachedFilename != nil {
+            chapters[i].cachedFilename = nil
+            changed = true
+        }
+        guard changed else { return }
+        books[idx].onlineChapters = chapters
+        saveMeta()
     }
 
     func clearOnlineDownload(bookId: UUID) {

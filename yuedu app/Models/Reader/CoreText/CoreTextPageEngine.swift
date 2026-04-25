@@ -418,11 +418,29 @@ final class CoreTextPageEngine: PageRenderingProvider {
         }
     }
 
-    /// 全書進度（0.0 ~ 1.0）= (前 N-1 章總 Bytes + 當前章 charOffset) / 全書總 Bytes
+    /// 全書進度（0.0 ~ 1.0）。
+    ///
+    /// - 線上書（`prefersLazyByteScan == true`）：用 `(spineIndex + 章內頁進度) / chapterCount`。
+    ///   因為線上書未抓取的章節 byteSize=0，按 byte 加總會隨抓取進度漂移
+    ///   （ch=4 一開始顯示 80%、抓多了變 7% 那種荒謬行為），改成章節索引制保持穩定。
+    /// - EPUB / TXT：開書即知所有章節 byteSize，按 byte 加總更精確（長章權重更高）。
     func totalProgress(forSpine spineIndex: Int, charOffset: Int) -> Double {
+        let totalChapters = max(chapterCount, 1)
+        let clampedSpine = min(max(spineIndex, 0), totalChapters - 1)
+
+        if attributedBuilder?.prefersLazyByteScan == true {
+            let layout = layouts[clampedSpine]
+            let charLen = layout?.attributedString.length ?? 0
+            let chapterFraction: Double
+            if charLen > 0 {
+                chapterFraction = min(1.0, max(0.0, Double(charOffset) / Double(charLen)))
+            } else {
+                chapterFraction = 0
+            }
+            return min(1.0, (Double(clampedSpine) + chapterFraction) / Double(totalChapters))
+        }
+
         guard !chapterByteSizes.isEmpty else {
-            let totalChapters = max(chapterCount, 1)
-            let clampedSpine = min(max(spineIndex, 0), totalChapters - 1)
             if !didLogProgressFallback {
                 didLogProgressFallback = true
                 startupTrace("totalProgress mode=fallback spine=\(spineIndex) clamped=\(clampedSpine) totalChapters=\(totalChapters)")
@@ -453,6 +471,16 @@ final class CoreTextPageEngine: PageRenderingProvider {
     func position(forProgress progress: Double) -> (spineIndex: Int, charOffset: Int) {
         let totalChapters = chapterCount
         guard totalChapters > 0 else { return (0, 0) }
+
+        // 線上書：對齊 totalProgress 的章節索引制，避免拖動 slider 時跳到錯誤章節
+        if attributedBuilder?.prefersLazyByteScan == true {
+            let scaled = progress * Double(totalChapters)
+            let idx = max(0, min(Int(scaled), totalChapters - 1))
+            let chapterFraction = max(0.0, min(1.0, scaled - Double(idx)))
+            let charLen = layouts[idx]?.attributedString.length ?? 0
+            let charOffset = charLen > 0 ? Int(chapterFraction * Double(charLen)) : 0
+            return (idx, charOffset)
+        }
 
         guard !chapterByteSizes.isEmpty else {
             let idx = Int(progress * Double(max(0, totalChapters - 1)))
@@ -664,13 +692,13 @@ final class CoreTextPageEngine: PageRenderingProvider {
         // 3. 重新載入該章節（preloadChapter 會檢查 layouts[spineIndex] == nil 後執行）
         await preloadChapter(at: spineIndex)
 
-        // 4. 通知 ReaderView 刷新：舊的 CoreTextPageView 還渲染著 placeholder，
-        //    必須換成新 layout 對應的 VC 才能看到真正內容。
+        // 4. 通知 ReaderView 刷新：
+        //    - layoutOK=true → 換成新 layout 對應的 VC，看到真正內容
+        //    - layoutOK=false → 換成 PlaceholderVC（loading UI），讓 refresh 場景能立即
+        //      把舊正文清掉、顯示載入中，等重抓完成才再次 notifyChapterDataChanged。
         let layoutOK = layouts[spineIndex] != nil
         print("[FetchTrace] engine.notifyChapterDataChanged done ch=\(spineIndex) layoutOK=\(layoutOK) hasCallback=\(onChapterReady != nil)")
-        if layoutOK {
-            onChapterReady?(spineIndex)
-        }
+        onChapterReady?(spineIndex)
     }
 
     private func preloadChapterInternal(at spineIndex: Int, generation: Int) async {

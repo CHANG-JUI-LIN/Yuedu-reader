@@ -139,6 +139,8 @@ struct yuedu_appTests {
 
         func clearChapterCache(bookId: UUID, chapterIndex: Int) {}
 
+        func clearAllChapterCache(bookId: UUID) {}
+
         func search(query: String, in source: BookSource) async throws -> [OnlineBook] { [] }
 
         func loadChapterPackageSync(

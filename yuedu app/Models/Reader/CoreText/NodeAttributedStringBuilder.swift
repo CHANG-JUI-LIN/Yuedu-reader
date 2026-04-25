@@ -186,6 +186,12 @@ struct OnlineNodeAttributedStringBuilder: AttributedStringBuilding {
         if content.isEmpty {
             throw AttributedStringBuildingError.contentNotCached(index)
         }
+
+        // 壞快取（多章合併、異常超長）直接清掉並觸發重抓，避免永久卡在 128 頁
+        if ChapterFetchManager.isSuspiciousChapterContent(content) {
+            fetcher.clearChapterCache(bookId: bookId, chapterIndex: index)
+            throw AttributedStringBuildingError.contentNotCached(index)
+        }
         let paragraphs = content
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

@@ -40,8 +40,12 @@ enum WebNovelParser {
         options: [.caseInsensitive]
     )
 
+    /// 「下一頁」連結的文字 pattern。
+    /// 注意：故意不收「下一章/下一节/下一節」 — 那是換章連結，把它當成「下一頁」
+    /// 會讓 fetchWebContent 的 while 迴圈把後續整章接到當章內容後面，
+    /// 造成單章 cache 串成 10 章、頁數爆到 100+。
     private static let nextPageTitleRegex = try? NSRegularExpression(
-        pattern: "^(下一页|下一頁|下页|下頁|next|next page|下一章|下一节|下一節)$",
+        pattern: "^(下一页|下一頁|下页|下頁|next|next page)$",
         options: [.caseInsensitive]
     )
 

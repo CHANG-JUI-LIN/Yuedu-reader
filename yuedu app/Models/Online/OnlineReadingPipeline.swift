@@ -65,6 +65,26 @@ actor ChapterFetchManager {
         generationTokens[taskKey] == token
     }
 
+    /// 判斷快取章節內容是否明顯異常（過長、或包含多個章節標題）。
+    /// 用於 CF 流程或爬取出錯時把「多章合併」的壞快取擋下，觸發重抓。
+    ///
+    /// 之前還有一條「本章完／未完待續 ≥ 2」的規則，但 69shuba 之類的站
+    /// 單章正文裡天然會出現多次這些標記（章間廣告／分頁提示），導致整本書
+    /// 卡在 placeholder。多章合併必然伴隨多個章節標題頭，靠 chapterMarkers
+    /// 那條已足以捕捉，endMarker 規則拿掉。
+    static func isSuspiciousChapterContent(_ content: String) -> Bool {
+        // 單章正常在 10,000 字以內，超過 50,000 字幾乎可斷定是多章合併
+        if content.count > 50_000 { return true }
+        let range = NSRange(content.startIndex..., in: content)
+        // 內容中出現 3 個以上「第X章/回/節」標題，視為多章混入
+        if let regex = try? NSRegularExpression(
+            pattern: #"第\s*[\d零一二三四五六七八九十百千萬万]+\s*[章回卷節节篇部]"#
+        ), regex.numberOfMatches(in: content, range: range) >= 3 {
+            return true
+        }
+        return false
+    }
+
     func chapterState(bookId: UUID, chapterIndex: Int) -> OnlineChapterLoadState {
         if bookSourceFetcher.isChapterCached(bookId: bookId, chapterIndex: chapterIndex) {
             return .cached
@@ -123,7 +143,9 @@ actor ChapterFetchManager {
             chapterIndex: chapterIndex,
             expectedSourceURL: sanitizedURL,
             expectedTOCTitle: refs[chapterIndex].title
-        ), cached.state == .cached, !cached.content.isEmpty {
+        ), cached.state == .cached, !cached.content.isEmpty,
+           !Self.isSuspiciousChapterContent(cached.content)
+        {
             states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
             return cached
         }
@@ -134,7 +156,9 @@ actor ChapterFetchManager {
             chapterIndex: chapterIndex,
             expectedSourceURL: refs[chapterIndex].url,
             expectedTOCTitle: refs[chapterIndex].title
-        ), cached.state == .cached, !cached.content.isEmpty {
+        ), cached.state == .cached, !cached.content.isEmpty,
+           !Self.isSuspiciousChapterContent(cached.content)
+        {
             states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
             return cached
         }
@@ -529,8 +553,12 @@ actor ChapterFetchManager {
                 if case .cloudflareChallengeRequired(let urlStr) = err,
                     let challengeURL = URL(string: urlStr)
                 {
-                    // Present CF challenge UI and retry the page once cookies are obtained.
-                    _ = try? await CloudflareChallengePresenter.present(url: challengeURL)
+                    // 使用者取消 CF 挑戰時直接放棄，不重試（避免循環彈出）
+                    do {
+                        _ = try await CloudflareChallengePresenter.present(url: challengeURL)
+                    } catch {
+                        break
+                    }
                     do {
                         let result = try await webViewFetcher.fetchContentWithNextPage(
                             url: url,
