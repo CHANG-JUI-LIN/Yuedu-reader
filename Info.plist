@@ -2,14 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>UIRequiresFullScreen</key>
-	<true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>zh-Hant</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>zh-Hant</string>
+		<string>zh-Hans</string>
+		<string>en</string>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- NSAllowsArbitraryLoads removed: too broad, exposes users to MITM attacks.
-		     Book sources must use HTTPS. Local network (LAN book servers) still allowed. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>UIPrefersShowingLanguageSettings</key>
+	<true/>
 </dict>
 </plist>

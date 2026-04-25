@@ -182,29 +182,6 @@ extension String {
 class GlobalSettings: ObservableObject {
     static let shared = GlobalSettings()
 
-    private static func systemDefaultAppLanguage() -> AppLanguage {
-        let preferred = Locale.preferredLanguages.first?.lowercased() ?? ""
-        if preferred.hasPrefix("zh-hans") || preferred.hasPrefix("zh-cn") || preferred.hasPrefix("zh-sg") {
-            return .simplifiedChinese
-        }
-        if preferred.hasPrefix("zh-hant") || preferred.hasPrefix("zh-tw") || preferred.hasPrefix("zh-hk") || preferred.hasPrefix("zh-mo") {
-            return .traditionalChinese
-        }
-        if preferred.hasPrefix("en") {
-            return .english
-        }
-        return .traditionalChinese
-    }
-
-    private var effectiveAppLanguage: AppLanguage {
-        switch appLanguage {
-        case .systemLanguage:
-            return Self.systemDefaultAppLanguage()
-        default:
-            return appLanguage
-        }
-    }
-
     @Published var appLanguage: AppLanguage {
         didSet { UserDefaults.standard.set(appLanguage.rawValue, forKey: "yd_app_lang") }
     }
@@ -354,18 +331,27 @@ class GlobalSettings: ObservableObject {
         httpTtsUrlTemplate = UserDefaults.standard.string(forKey: "yd_http_tts_url_template") ?? ""
     }
 
-    /// App UI 字串本地化（繁→簡 用 ICU，繁→英 用字典）
-    func t(_ zhHant: String) -> String {
-        switch effectiveAppLanguage {
-        case .traditionalChinese: return zhHant
+    static func translatedString(
+        _ zhHant: String,
+        language: AppLanguage,
+        bundle: Bundle = .main
+    ) -> String {
+        switch language {
+        case .traditionalChinese:
+            return zhHant
         case .simplifiedChinese:
             return zhHant.applyingTransform(StringTransform(rawValue: "Hant-Hans"), reverse: false)
                 ?? zhHant
         case .english:
-            return GlobalSettings.en[zhHant] ?? zhHant
+            return en[zhHant] ?? NSLocalizedString(zhHant, bundle: bundle, comment: "")
         case .systemLanguage:
-            return zhHant
+            return NSLocalizedString(zhHant, bundle: bundle, comment: "")
         }
+    }
+
+    /// App UI 字串本地化（繁→簡 用 ICU，繁→英 用字典）
+    func t(_ zhHant: String) -> String {
+        Self.translatedString(zhHant, language: appLanguage)
     }
 
     static let en: [String: String] = [

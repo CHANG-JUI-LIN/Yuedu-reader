@@ -26,12 +26,26 @@ struct SettingsView: View {
         return components.url
     }
 
+    private var appLanguageFooter: String? {
+        guard gs.appLanguage == .systemLanguage else { return nil }
+        let appName = Bundle.main.infoDictionary?["CFBundleName"] as? String ?? "App"
+        let template = gs.t("跟隨系統語言。可在「設定 → %@ → 語言」單獨設定")
+        return String(format: template, appName)
+    }
+
     var body: some View {
         NavigationView {
             AdaptiveContentContainer(maxWidth: 760) {
                 Form {
                     // ── App 語言 ──
-                    Section(header: Text(gs.t("App 語言"))) {
+                    Section(
+                        header: Text(gs.t("App 語言")),
+                        footer: appLanguageFooter.map {
+                            Text($0)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    ) {
                         HStack {
                             Text(gs.t("語言"))
                             Spacer()
