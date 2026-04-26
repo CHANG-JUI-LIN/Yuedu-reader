@@ -65,9 +65,15 @@ struct HomeView: View {
                 }
             }
             .animation(DSAnimation.standard, value: store.books.isEmpty)
-            .navigationTitle(localized("書架"))
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // 標題用 principal 放在中間（比 leading 有空間，不會被 trailing 擠掉）
+                ToolbarItem(placement: .principal) {
+                    Text(localized("書架"))
+                        .font(.system(size: 34, weight: .bold))
+                        .foregroundColor(.primary)
+                }
+
                 // 1. 搜尋按鈕：套用你發現的「主按鈕組件 + 透明背景」方法，強制獨立
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showSearch = true } label: {
