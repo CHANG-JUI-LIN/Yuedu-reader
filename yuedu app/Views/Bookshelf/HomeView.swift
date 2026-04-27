@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var showBulkDeleteAlert = false
     @State private var showAddToGroupSheet = false
     @AppStorage("bookLayoutIsGrid") private var isGridMode = false
+    @AppStorage("bookSortOrder") private var sortOrder = BookSortOrder.manual.rawValue
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Namespace private var bookTransition
 
@@ -26,13 +27,20 @@ struct HomeView: View {
     // fullScreenCover 閱讀器（取代 NavigationLink，避免 SwiftUI NavLink 重建 @State bug）
     @State private var readerBookId: UUID? = nil
 
-    // 依分組過濾，順序維持加入時間（books 陣列原順序）
-    var filteredBooks: [ReadingBook] {
-        selectedGroup.isEmpty ? store.books : store.books.filter { $0.group == selectedGroup }
+    var sortedFilteredBooks: [ReadingBook] {
+        let base = selectedGroup.isEmpty ? store.books : store.books.filter { $0.group == selectedGroup }
+        switch BookSortOrder(rawValue: sortOrder) ?? .manual {
+        case .manual:       return base
+        case .recentlyRead: return base.sorted {
+            ($0.lastOpenedDate ?? $0.addedDate) > ($1.lastOpenedDate ?? $1.addedDate)
+        }
+        case .title:        return base.sorted { $0.title.localizedCompare($1.title) == .orderedAscending }
+        case .author:       return base.sorted { $0.author.localizedCompare($1.author) == .orderedAscending }
+        }
     }
 
     private var isAllSelected: Bool {
-        !filteredBooks.isEmpty && selectedBookIds.count == filteredBooks.count
+        !sortedFilteredBooks.isEmpty && selectedBookIds.count == sortedFilteredBooks.count
     }
 
     var body: some View {
@@ -72,12 +80,15 @@ struct HomeView: View {
                                 if isAllSelected {
                                     selectedBookIds = []
                                 } else {
-                                    selectedBookIds = Set(filteredBooks.map(\.id))
+                                    selectedBookIds = Set(sortedFilteredBooks.map(\.id))
                                 }
                             } label: {
                                 Text(localized(isAllSelected ? "全不選" : "全選"))
                                     .font(DSFont.subheadline.weight(.medium))
+                                    .foregroundColor(.primary)
                             }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.clear)
                         } else {
                             Button { showSearch = true } label: {
                                 Image(systemName: "magnifyingglass")
@@ -90,7 +101,7 @@ struct HomeView: View {
                     }
                 }
 
-                // 後續 trailing：編輯模式 = 完成；非編輯 = 佈局/新增/編輯
+                // 後續 trailing：編輯模式 = 完成；非編輯 = 新增 + 選單
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     if editMode == .active {
                         Button {
@@ -104,25 +115,43 @@ struct HomeView: View {
                         }
                     } else {
                         Button {
-                            withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
-                        } label: {
-                            Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
-                                .font(DSFont.toolbarIcon)
-                        }
-                        Button {
                             addSheetSessionID = UUID()
                             showAddSheet = true
                         } label: {
                             Image(systemName: "plus")
                                 .font(DSFont.toolbarIcon)
                         }
-                        Button {
-                            withAnimation { editMode = .active }
+                        Menu {
+                            Button {
+                                withAnimation { editMode = .active }
+                            } label: {
+                                Label(localized("選取"), systemImage: "checkmark.circle")
+                            }
+
+                            Divider()
+
+                            Picker("", selection: $isGridMode) {
+                                Label(localized("列表"), systemImage: "list.bullet").tag(false)
+                                Label(localized("格狀"), systemImage: "square.grid.2x2").tag(true)
+                            }
+                            .pickerStyle(.inline)
+                            .labelsHidden()
+
+                            Divider()
+
+                            Picker("", selection: $sortOrder) {
+                                Text(localized("最近閱讀")).tag(BookSortOrder.recentlyRead.rawValue)
+                                Text(localized("書名")).tag(BookSortOrder.title.rawValue)
+                                Text(localized("作者")).tag(BookSortOrder.author.rawValue)
+                                Text(localized("手動")).tag(BookSortOrder.manual.rawValue)
+                            }
+                            .pickerStyle(.inline)
+                            .labelsHidden()
                         } label: {
                             Image(systemName: "ellipsis.circle")
                                 .font(DSFont.toolbarIcon)
                         }
-                        .id(gs.localeIdentifier + "_edit")
+                        .id(gs.localeIdentifier + "_menu")
                     }
                 }
             }
@@ -274,7 +303,7 @@ struct HomeView: View {
     // MARK: - 書籍列表（條列式）
     private var bookList: some View {
         List {
-            ForEach(filteredBooks) { book in
+            ForEach(sortedFilteredBooks) { book in
                 BookRow(
                     book: book,
                     isEditing: editMode == .active,
@@ -288,6 +317,7 @@ struct HomeView: View {
                                 selectedBookIds.insert(book.id)
                             }
                         } else {
+                            store.updateLastOpened(bookId: book.id)
                             readerBookId = book.id
                         }
                     },
@@ -300,7 +330,8 @@ struct HomeView: View {
                 .transition(.opacity.combined(with: .move(edge: .leading)))
             }
             .onMove { src, dst in
-                let filtered = filteredBooks
+                guard sortOrder == BookSortOrder.manual.rawValue else { return }
+                let filtered = sortedFilteredBooks
                 let movingIds = src.map { filtered[$0].id }
                 let targetId: UUID? = dst < filtered.count ? filtered[dst].id : nil
                 store.moveBooks(ids: movingIds, before: targetId)
@@ -308,7 +339,7 @@ struct HomeView: View {
         }
         .listStyle(.plain)
         .environment(\.editMode, $editMode)
-        .animation(.easeOut(duration: 0.25), value: filteredBooks.map(\.id))
+        .animation(.easeOut(duration: 0.25), value: sortedFilteredBooks.map(\.id))
         .accessibilityIdentifier("home_book_list")
     }
 
@@ -319,11 +350,14 @@ struct HomeView: View {
                 columns: [GridItem(.adaptive(minimum: 100, maximum: 160), spacing: 10)],
                 spacing: 12
             ) {
-                ForEach(filteredBooks) { book in
+                ForEach(sortedFilteredBooks) { book in
                     BookGridCell(
                         book: book,
                         transitionNamespace: bookTransition,
-                        onOpen: { readerBookId = book.id },
+                        onOpen: {
+                            store.updateLastOpened(bookId: book.id)
+                            readerBookId = book.id
+                        },
                         onEdit: { editingBook = book },
                         onDelete: { bookToDelete = book }
                     )
@@ -332,7 +366,7 @@ struct HomeView: View {
             .padding(.horizontal, hInset)
             .padding(.vertical, 12)
         }
-        .animation(.easeOut(duration: 0.25), value: filteredBooks.map(\.id))
+        .animation(.easeOut(duration: 0.25), value: sortedFilteredBooks.map(\.id))
     }
 }
 

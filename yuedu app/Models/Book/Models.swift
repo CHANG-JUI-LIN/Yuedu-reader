@@ -55,6 +55,7 @@ struct ReadingBook: Identifiable, Codable {
     var contentPipelineKind: BookPipelineKind
     var currentPosition: Double  // 0.0 ~ 1.0
     var addedDate: Date
+    var lastOpenedDate: Date?
 
     // 線上書源欄位
     var isOnline: Bool
@@ -124,6 +125,7 @@ struct ReadingBook: Identifiable, Codable {
             )
         currentPosition = try c.decode(Double.self, forKey: .currentPosition)
         addedDate = try c.decode(Date.self, forKey: .addedDate)
+        lastOpenedDate = try? c.decode(Date.self, forKey: .lastOpenedDate)
         isOnline = (try? c.decode(Bool.self, forKey: .isOnline)) ?? false
         bookSourceId = try? c.decode(UUID.self, forKey: .bookSourceId)
         bookInfoURL = try? c.decode(String.self, forKey: .bookInfoURL)
@@ -149,7 +151,7 @@ struct ReadingBook: Identifiable, Codable {
         case id, title, author, source, contentFilename, contentPipelineKind, currentPosition, addedDate
         case isOnline, bookSourceId, bookInfoURL, tocURL, runtimeVariables, onlineChapters, bookmarks
         case coverImagePath, rendererPreference, compatibilityState
-        case offlineDownloadState, downloadedChapterCount, group
+        case offlineDownloadState, downloadedChapterCount, group, lastOpenedDate
     }
 
     private static func inferPipelineKind(
@@ -543,6 +545,11 @@ final class ReaderTelemetry {
     func log(_ event: String, attributes: [String: String] = [:]) {}
 }
 
+// MARK: - 書架排序
+enum BookSortOrder: String {
+    case manual, recentlyRead, title, author
+}
+
 // MARK: - 書庫管理
 class BookStore: ObservableObject, BookProvider {
     @Published var books: [ReadingBook] = []
@@ -924,6 +931,12 @@ class BookStore: ObservableObject, BookProvider {
             books[idx].currentPosition = position
             saveMeta()
         }
+    }
+
+    func updateLastOpened(bookId: UUID) {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        books[idx].lastOpenedDate = Date()
+        saveMeta()
     }
 
     func setRendererPreference(bookId: UUID, preference: BookRendererPreference) {
