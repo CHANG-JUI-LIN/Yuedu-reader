@@ -72,17 +72,18 @@ actor ChapterFetchManager {
     /// 單章正文裡天然會出現多次這些標記（章間廣告／分頁提示），導致整本書
     /// 卡在 placeholder。多章合併必然伴隨多個章節標題頭，靠 chapterMarkers
     /// 那條已足以捕捉，endMarker 規則拿掉。
+    // 超過此字數幾乎可斷定是多章合併
+    private static let suspiciousContentLengthThreshold = 50_000
+    // 內容中出現此數量以上「第X章/回/節」標題，視為多章混入
+    private static let suspiciousChapterHeadingThreshold = 3
+    private static let chapterHeadingRegex = try! NSRegularExpression(
+        pattern: #"第\s*[\d零一二三四五六七八九十百千萬万]+\s*[章回卷節节篇部]"#
+    )
+
     static func isSuspiciousChapterContent(_ content: String) -> Bool {
-        // 單章正常在 10,000 字以內，超過 50,000 字幾乎可斷定是多章合併
-        if content.count > 50_000 { return true }
+        if content.count > suspiciousContentLengthThreshold { return true }
         let range = NSRange(content.startIndex..., in: content)
-        // 內容中出現 3 個以上「第X章/回/節」標題，視為多章混入
-        if let regex = try? NSRegularExpression(
-            pattern: #"第\s*[\d零一二三四五六七八九十百千萬万]+\s*[章回卷節节篇部]"#
-        ), regex.numberOfMatches(in: content, range: range) >= 3 {
-            return true
-        }
-        return false
+        return chapterHeadingRegex.numberOfMatches(in: content, range: range) >= suspiciousChapterHeadingThreshold
     }
 
     func chapterState(bookId: UUID, chapterIndex: Int) -> OnlineChapterLoadState {

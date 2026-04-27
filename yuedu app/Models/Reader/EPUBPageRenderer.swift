@@ -12,6 +12,10 @@ final class EPUBPageRenderer: ObservableObject {
     /// Phase 7：當 useRenderableNodePipeline 開啟時持有 EPUB builder，
     /// 供 notifyViewportSize 更新 renderSize 使用。
     private var epubBuilder: EPUBAttributedStringBuilder?
+    private var onlineBuilder: OnlineProviderAttributedStringBuilder?
+
+    /// 捲動模式專用引擎（與 page engine 並列）。當 builder 可取得時自動建立。
+    @Published private(set) var scrollEngine: CoreTextScrollEngine?
 
     @Published var isCoreTextReady: Bool = false
 
@@ -62,6 +66,7 @@ final class EPUBPageRenderer: ObservableObject {
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
 
         // ── Phase 7 A/B 分支 ─────────────────────────────────────────────
+        self.onlineBuilder = nil
         let newEngine: CoreTextPageEngine
         if GlobalSettings.shared.useRenderableNodePipeline {
             let builder = EPUBAttributedStringBuilder(session: session, renderSize: effectiveSize)
@@ -71,13 +76,18 @@ final class EPUBPageRenderer: ObservableObject {
                 renderSettings: settings,
                 offsetStore: store
             )
+            self.scrollEngine = CoreTextScrollEngine(builder: builder, renderSettings: settings)
         } else {
-            self.epubBuilder = nil
+            // 雖然 paged 引擎走 resourceProvider 路徑，但捲動模式仍需要 AttributedStringBuilding。
+            // 額外建一個 EPUB builder 給 scrollEngine 用（兩條路徑共享同一個 PublicationSession）。
+            let builder = EPUBAttributedStringBuilder(session: session, renderSize: effectiveSize)
+            self.epubBuilder = builder
             newEngine = CoreTextPageEngine(
                 resourceProvider: ReadiumBookResourceAdapter(session: session),
                 renderSettings: settings,
                 offsetStore: store
             )
+            self.scrollEngine = CoreTextScrollEngine(builder: builder, renderSettings: settings)
         }
 
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
@@ -138,6 +148,9 @@ final class EPUBPageRenderer: ObservableObject {
         )
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         self.engine = newEngine
+        self.epubBuilder = nil
+        self.onlineBuilder = nil
+        self.scrollEngine = CoreTextScrollEngine(builder: attributedBuilder, renderSettings: settings)
         isCoreTextReady = false
 
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
@@ -185,6 +198,14 @@ final class EPUBPageRenderer: ObservableObject {
         )
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         self.engine = newEngine
+        // 線上書：另建一個 OnlineProviderAttributedStringBuilder 給 scrollEngine 使用。
+        let effectiveSizeForBuilder = renderSize.width > 0 ? renderSize : lastViewportSize
+        let onlineBuilder = OnlineProviderAttributedStringBuilder(
+            provider: contentProvider,
+            renderSize: effectiveSizeForBuilder
+        )
+        self.onlineBuilder = onlineBuilder
+        self.scrollEngine = CoreTextScrollEngine(builder: onlineBuilder, renderSettings: settings)
         isCoreTextReady = false
 
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
@@ -212,6 +233,7 @@ final class EPUBPageRenderer: ObservableObject {
         lastViewportSize = size
         // Phase 7: EPUB builder が deferred start 前に作成された時のために renderSize を更新
         epubBuilder?.renderSize = size
+        onlineBuilder?.updateRenderSize(size)
         guard let bookId = pendingStartBookId, let eng = engine else { return }
         pendingStartBookId = nil
         let startUptime = ProcessInfo.processInfo.systemUptime
@@ -298,5 +320,6 @@ final class EPUBPageRenderer: ObservableObject {
 
     func updateRenderSettings(_ settings: ReaderRenderSettings) {
         engine?.updateRenderSettings(settings)
+        scrollEngine?.updateRenderSettings(settings)
     }
 }

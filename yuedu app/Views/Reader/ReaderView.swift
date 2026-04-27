@@ -154,6 +154,7 @@ struct ReaderView: View {
 
     // 捲動模式進度追蹤
     @State private var scrollVisibleChapter = 0
+    @State private var scrollResliceToken: UInt = 0
 
     // 防止載入期間 TabView 重置 selection 導致進度被覆寫為 0
 
@@ -462,6 +463,9 @@ struct ReaderView: View {
                     Spacer()
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            } else if settings.scrollMode {
+                scrollBody
+                    .transition(.opacity.animation(.easeOut(duration: 0.25)))
             } else if let ctEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
                 // 在 EPUB 渲染區塊，当 engine 已就緒時改用 CoreText
                 let _ = { print("[ReaderView] ✅ 使用 CoreText 引擎") }()
@@ -520,9 +524,6 @@ struct ReaderView: View {
                     Spacer()
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            } else if settings.scrollMode {
-                scrollBody
-                    .transition(.opacity.animation(.easeOut(duration: 0.25)))
             }
 
             // 網路抓取狀態覆蓋層已停用（使用者要求不顯示任何抓取中 / 載入失敗 UI）。
@@ -1038,7 +1039,96 @@ struct ReaderView: View {
     }
 
     // MARK: - TXT 上下滾動模式
+    @ViewBuilder
     private var scrollBody: some View {
+        if let scrollEngine = epubRenderer.scrollEngine {
+            let initialPos = computeScrollInitialPosition()
+            CoreTextScrollHostView(
+                engine: scrollEngine,
+                horizontalInset: effectivePageMarginH,
+                verticalInset: readerConfig.pageMarginV,
+                backgroundColor: UIColor(readerTheme.backgroundColor),
+                initialChapter: initialPos.chapter,
+                initialCharOffset: initialPos.charOffset,
+                resliceToken: scrollResliceToken,
+                onTap: {
+                    withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
+                },
+                onProgressChange: { chapter, charOffset, pct in
+                    scrollVisibleChapter = chapter
+                    currentChapterIndex = chapter
+                    progressManager.saveScroll(
+                        bookId: bookId,
+                        chapterIndex: chapter,
+                        charOffset: charOffset,
+                        percentage: pct
+                    )
+                    store.updatePosition(bookId: bookId, position: pct)
+                    // 同步 paged 引擎當前頁，下次切回左右翻頁時不會跑掉
+                    if let pagedEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
+                        let page = pagedEngine.pageIndex(forSpine: chapter, charOffset: charOffset)
+                        if page >= 0 { currentPage = page }
+                    }
+                }
+            )
+            .background(readerTheme.backgroundColor)
+            .ignoresSafeArea()
+            .onChange(of: readerConfig.fontSize) { _ in scheduleScrollReslice() }
+            .onChange(of: readerConfig.lineHeightMultiple) { _ in scheduleScrollReslice() }
+            .onChange(of: readerConfig.letterSpacing) { _ in scheduleScrollReslice() }
+            .onChange(of: readerConfig.paragraphSpacingMultiplier) { _ in scheduleScrollReslice() }
+            .onChange(of: readerConfig.pageMarginH) { _ in scheduleScrollReslice() }
+            .onChange(of: readerConfig.pageMarginV) { _ in scheduleScrollReslice() }
+            .onChange(of: readerTheme) { _ in scheduleScrollReslice() }
+        } else {
+            legacyScrollBody
+        }
+    }
+
+    private func scheduleScrollReslice() {
+        guard let engine = epubRenderer.scrollEngine else { return }
+        engine.updateRenderSettings(buildRenderSettings())
+        scrollResliceToken &+= 1
+    }
+
+    /// 捲動模式起點優先序：
+    /// 1) paged engine ready → 用當前頁的 (spine, charOffset)（同 session 切換）
+    /// 2) 持久化 snapshot (mode == .scroll) → 用回前次離開位置（冷啟動回復）
+    /// 3) 退回 currentChapterIndex / 0
+    private func computeScrollInitialPosition() -> (chapter: Int, charOffset: Int) {
+        if let pagedEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
+            let (spine, offset) = pagedEngine.charOffset(forPage: currentPage)
+            return (max(0, spine), max(0, offset))
+        }
+        if let snap = progressManager.loadSnapshot(bookId: bookId), snap.mode == .scroll {
+            return (max(0, snap.chapterIndex), max(0, snap.charOffset ?? 0))
+        }
+        return (max(0, currentChapterIndex), 0)
+    }
+
+    private func buildRenderSettings() -> ReaderRenderSettings {
+        ReaderRenderSettings(
+            theme: readerTheme.rawValue,
+            textColor: UIColor(readerTheme.textColor),
+            backgroundColor: UIColor(readerTheme.backgroundColor),
+            fontSize: readerConfig.fontSize,
+            lineHeightMultiple: readerConfig.lineHeightMultiple,
+            lineSpacing: readerConfig.lineSpacing,
+            paragraphSpacing: readerConfig.paragraphSpacing,
+            letterSpacing: readerConfig.letterSpacing,
+            marginH: effectivePageMarginH,
+            marginV: readerConfig.pageMarginV,
+            footerHeight: ReaderLayoutMetrics.footerHeight,
+            contentInsets: UIEdgeInsets(
+                top: readerConfig.pageMarginV,
+                left: effectivePageMarginH,
+                bottom: readerConfig.pageMarginV,
+                right: effectivePageMarginH
+            )
+        )
+    }
+
+    private var legacyScrollBody: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -1357,6 +1447,11 @@ struct ReaderView: View {
     }
 
     private func chapterSliderProgressValue() -> Double {
+        // 捲動模式：用章節索引近似（chunk 還沒全部載完，沒有可靠的全書字元數）
+        if settings.scrollMode {
+            let total = max(chapters.count - 1, 1)
+            return Double(min(scrollVisibleChapter, total)) / Double(total)
+        }
         let totalChapters = book?.onlineChapters?.count ?? chapters.count
         guard totalChapters > 1 else { return 0 }
         if book?.isOnline == true {
@@ -1371,6 +1466,16 @@ struct ReaderView: View {
     }
 
     private func applyChapterSliderProgress(_ value: Double) {
+        // 捲動模式：四捨五入到最近章節 → reslice 引擎
+        if settings.scrollMode, let scrollEngine = epubRenderer.scrollEngine {
+            let total = max(chapters.count - 1, 1)
+            let target = max(0, min(Int(round(value * Double(total))), total))
+            scrollVisibleChapter = target
+            currentChapterIndex = target
+            let width = scrollEngine.contentWidth
+            Task { await scrollEngine.reslice(restoreAt: target, contentWidth: width) }
+            return
+        }
         let totalChapters = book?.onlineChapters?.count ?? chapters.count
         if book?.isOnline == true && totalChapters > 1 {
             let targetIndex = max(0, min(Int(round(value * Double(totalChapters - 1))), totalChapters - 1))

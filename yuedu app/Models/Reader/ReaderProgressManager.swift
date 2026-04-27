@@ -64,17 +64,17 @@ final class ReaderProgressManager {
         )
     }
 
-    func saveScroll(bookId: UUID, chapterIndex: Int, percentage: Double) {
+    func saveScroll(bookId: UUID, chapterIndex: Int, charOffset: Int = 0, percentage: Double) {
         let snapshot = BookProgressSnapshot(
             bookId: bookId,
             mode: .scroll,
             chapterIndex: chapterIndex,
             pageIndex: nil,
-            charOffset: nil,
+            charOffset: charOffset,
             percentage: normalized(percentage),
             timestamp: Date()
         )
-        log("saveScroll bookId=\(bookId.uuidString) chapter=\(chapterIndex) pct=\(String(format: "%.6f", snapshot.percentage))")
+        log("saveScroll bookId=\(bookId.uuidString) chapter=\(chapterIndex) charOffset=\(charOffset) pct=\(String(format: "%.6f", snapshot.percentage))")
         saveSnapshot(snapshot)
     }
 
