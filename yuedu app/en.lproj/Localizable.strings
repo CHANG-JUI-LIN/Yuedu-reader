@@ -360,3 +360,10 @@
 "頁面留白" = "Page Margin";
 "點擊右上角 + 手動新增\\n或 ↓ 貼上 Legado 書源 JSON 匯入" = "Tap + in the top-right to add one manually\\nor use ↓ to paste Legado source JSON for import";
 "點擊選取 TXT / EPUB 文件" = "Tap to Select a TXT / EPUB File";
+
+// Bookshelf toolbar menu
+"選取" = "Select";
+"列表" = "List";
+"格狀" = "Grid";
+"最近閱讀" = "Recently Read";
+"手動" = "Manual";
