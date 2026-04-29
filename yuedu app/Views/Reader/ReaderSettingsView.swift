@@ -23,7 +23,11 @@ struct ReaderSettingsView: View {
     }
 
     private var pageBackground: Color {
-        Color(uiColor: .secondarySystemBackground)
+        Color(uiColor: .systemGroupedBackground)
+    }
+
+    private var readerTint: Color {
+        Color(red: 82 / 255, green: 99 / 255, blue: 84 / 255)
     }
 
     private enum MarginPreset: String, CaseIterable, Hashable {
@@ -59,18 +63,33 @@ struct ReaderSettingsView: View {
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
+                VStack(spacing: 14) {
                     previewCard
 
-                    if supportsFontSize || supportsSpacing || supportsLineHeight || supportsBackground {
-                        SettingSectionCard(title: localized("閱讀外觀"), systemImage: "textformat.size") {
+                    if supportsBackground || supportsLineHeight {
+                        SettingSectionCard(title: localized("頁面與主題"), systemImage: "rectangle.on.rectangle") {
                             if supportsBackground {
                                 themeSelector
                             }
 
-                            if supportsUserFont {
+                            if supportsBackground && supportsLineHeight {
                                 Divider().opacity(0.5)
+                            }
+
+                            if supportsLineHeight {
+                                marginSelector
+                            }
+                        }
+                    }
+
+                    if supportsFontSize || supportsSpacing || supportsUserFont {
+                        SettingSectionCard(title: localized("字體與排版"), systemImage: "textformat.size") {
+                            if supportsUserFont {
                                 fontSelector
+                            }
+
+                            if supportsUserFont && (supportsFontSize || supportsSpacing) {
+                                Divider().opacity(0.5)
                             }
 
                             if supportsFontSize {
@@ -110,10 +129,6 @@ struct ReaderSettingsView: View {
                                     )
                                 }
                             }
-
-                            if supportsLineHeight {
-                                marginSelector
-                            }
                         }
                     }
 
@@ -135,7 +150,7 @@ struct ReaderSettingsView: View {
                         }
 
                         if !settings.scrollMode && supportsLineHeight {
-                            SegmentedPickerRow(
+                            MenuPickerRow(
                                 title: localized("翻頁動畫"),
                                 selection: $settings.pageTurnStyle,
                                 items: PageTurnStyle.allCases,
@@ -162,7 +177,7 @@ struct ReaderSettingsView: View {
                     }
                 }
                 .padding(.horizontal, 18)
-                .padding(.vertical, 16)
+                .padding(.vertical, 14)
             }
             .background(pageBackground.ignoresSafeArea())
             .navigationTitle(localized("閱讀設定"))
@@ -173,6 +188,7 @@ struct ReaderSettingsView: View {
                 }
             }
         }
+        .tint(readerTint)
         .fileImporter(
             isPresented: $showingFontImporter,
             allowedContentTypes: Self.fontContentTypes,
@@ -200,16 +216,16 @@ struct ReaderSettingsView: View {
     }
 
     private var previewCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(localized("預覽"))
-                    .font(.headline)
+                    .font(.subheadline)
                     .foregroundStyle(theme.textColor.opacity(0.85))
                 Spacer()
                 Text(localized(theme.rawValue))
                     .font(.caption)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
                     .background(theme.textColor.opacity(0.10), in: Capsule())
                     .foregroundStyle(theme.textColor.opacity(0.85))
             }
@@ -219,14 +235,18 @@ struct ReaderSettingsView: View {
                 .lineSpacing(readerConfig.lineSpacing)
                 .tracking(readerConfig.letterSpacing)
                 .foregroundStyle(theme.textColor)
-                .padding(.horizontal, readerConfig.pageMarginH * 0.45)
-                .padding(.vertical, max(14, readerConfig.pageMarginV))
+                .lineLimit(3)
+                .padding(.horizontal, max(14, readerConfig.pageMarginH * 0.35))
+                .padding(.vertical, max(10, readerConfig.pageMarginV * 0.65))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(theme.backgroundColor, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(theme.backgroundColor, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-        .padding(16)
-        .background(theme.barColor, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: .black.opacity(0.06), radius: 16, x: 0, y: 8)
+        .padding(14)
+        .background(theme.barColor, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.black.opacity(0.04), lineWidth: 0.5)
+        }
     }
 
     private var themeSelector: some View {
@@ -469,10 +489,10 @@ private struct SettingSectionCard<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 Image(systemName: systemImage)
-                    .font(.headline)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Text(title)
                     .font(.headline)
@@ -482,7 +502,11 @@ private struct SettingSectionCard<Content: View>: View {
             content
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.black.opacity(0.04), lineWidth: 0.5)
+        }
     }
 }
 
@@ -504,6 +528,7 @@ private struct StepperValueRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .controlSize(.regular)
     }
 }
 
@@ -529,6 +554,7 @@ private struct ValueSliderRow: View {
             Slider(value: $value, in: range, step: step)
                 .disabled(isDisabled)
                 .opacity(isDisabled ? 0.45 : 1)
+                .controlSize(.regular)
         }
     }
 }
@@ -551,7 +577,48 @@ private struct SegmentedPickerRow<Item: Hashable>: View {
                 }
             }
             .pickerStyle(.segmented)
+            .controlSize(.regular)
         }
+    }
+}
+
+private struct MenuPickerRow<Item: Hashable>: View {
+    let title: String
+    @Binding var selection: Item
+    let items: [Item]
+    let titleProvider: (Item) -> String
+
+    private var selectedTitle: String {
+        guard let selected = items.first(where: { $0 == selection }) else {
+            return ""
+        }
+        return titleProvider(selected)
+    }
+
+    var body: some View {
+        Menu {
+            Picker(title, selection: $selection) {
+                ForEach(items, id: \.self) { item in
+                    Text(titleProvider(item)).tag(item)
+                }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text(selectedTitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .controlSize(.regular)
     }
 }
 
