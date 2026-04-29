@@ -28,6 +28,8 @@ enum TXTFileReader {
         rawValue: CFStringConvertEncodingToNSStringEncoding(
             CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
 
+    static let gb18030Encoding = gbkEncoding
+
     static func fileFingerprint(data: Data) -> String {
         // Take first 64KB + last 64KB, hash with MD5
         let prefixSize = min(65536, data.count)
@@ -43,33 +45,24 @@ enum TXTFileReader {
 
     static func readMappedTextFile(url: URL) throws -> TXTMappedTextFile {
         let data = try Data(contentsOf: url, options: .alwaysMapped)
-        let encoding = detectEncoding(from: data)
+        let encoding = detectEncoding(fromSample: data)
         return TXTMappedTextFile(data: data, encoding: encoding)
     }
 
-    /// 多編碼嘗試讀取 TXT：UTF-8 → BIG5 → GBK → 系統自動偵測
+    /// Sample first, then read the whole file once with the selected encoding.
     static func readTextFile(url: URL) throws -> String {
-        if let text = try? String(contentsOf: url, encoding: .utf8) {
-            return text
-        }
-
-        if let text = try? String(contentsOf: url, encoding: big5Encoding) {
-            return text
-        }
-
-        if let text = try? String(contentsOf: url, encoding: gbkEncoding) {
-            return text
-        }
-
-        var usedEncoding: String.Encoding = .utf8
-        if let text = try? String(contentsOf: url, usedEncoding: &usedEncoding) {
-            return text
-        }
-
-        throw TXTFileReaderError.encodingNotSupported
+        let encoding = try detectEncodingBySampling(url: url)
+        return try string(contentsOf: url, encoding: encoding)
     }
 
-    private static func detectEncoding(from data: Data) -> String.Encoding {
+    static func detectEncodingBySampling(url: URL) throws -> String.Encoding {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let sample = try handle.read(upToCount: 8192) ?? Data()
+        return detectEncoding(fromSample: sample)
+    }
+
+    private static func detectEncoding(fromSample data: Data) -> String.Encoding {
         // BOM 優先
         if data.starts(with: [0xEF, 0xBB, 0xBF]) {
             return .utf8
@@ -81,15 +74,27 @@ enum TXTFileReader {
             return .utf16BigEndian
         }
 
-        let sampleCount = min(data.count, 128 * 1024)
-        let sample = Data(data.prefix(sampleCount))
-        let candidates: [String.Encoding] = [.utf8, big5Encoding, gbkEncoding, .utf16LittleEndian, .utf16BigEndian]
+        let candidates: [String.Encoding] = [.utf8, gbkEncoding, big5Encoding, .utf16LittleEndian, .utf16BigEndian]
         for encoding in candidates {
-            if String(data: sample, encoding: encoding) != nil {
+            if String(data: data, encoding: encoding) != nil {
                 return encoding
             }
         }
         return .utf8
+    }
+
+    private static func string(contentsOf url: URL, encoding: String.Encoding) throws -> String {
+        guard let text = try? String(contentsOf: url, encoding: encoding) else {
+            throw TXTFileReaderError.encodingNotSupported
+        }
+        return text.trimmingLeadingByteOrderMark()
+    }
+}
+
+private extension String {
+    func trimmingLeadingByteOrderMark() -> String {
+        guard unicodeScalars.first == "\u{FEFF}" else { return self }
+        return String(unicodeScalars.dropFirst())
     }
 }
 

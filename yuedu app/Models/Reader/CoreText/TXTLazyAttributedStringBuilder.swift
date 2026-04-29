@@ -80,8 +80,8 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         let chapterTitle = chapterTitle(at: index)
         let paragraphs = TXTChapterParser.paragraphsForChapterContent(chapterText)
 
-        let titleFont = UIFont.systemFont(ofSize: settings.fontSize + 8, weight: .bold)
-        let bodyFont = UIFont.systemFont(ofSize: settings.fontSize)
+        let titleFont = UserReaderFontResolver.titleFont(size: settings.fontSize + 8)
+        let bodyFont = UserReaderFontResolver.bodyFont(size: settings.fontSize)
         let bodyTargetLineHeight = ReaderTypographyCorrection.targetLineHeight(
             font: bodyFont,
             fontSize: settings.fontSize,

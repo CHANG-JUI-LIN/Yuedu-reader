@@ -13,7 +13,7 @@ struct ReaderViewModelChapterStateTests {
         let readyPackage = makePackage(bookId: book.id, chapterIndex: 0, content: "ready")
 
         await fetcher.enqueuePending(chapterIndex: 0)
-        let viewModel = ReaderViewModel(chapterFetcher: fetcher)
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
 
         await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
         await waitForState(.loading, in: viewModel, chapterIndex: 0)
@@ -28,7 +28,7 @@ struct ReaderViewModelChapterStateTests {
         let fetcher = MockChapterFetcher()
         let book = makeBook()
         await fetcher.setCached(chapterIndex: 0)
-        let viewModel = ReaderViewModel(chapterFetcher: fetcher)
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
 
         await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
 
@@ -42,7 +42,7 @@ struct ReaderViewModelChapterStateTests {
         let book = makeBook()
 
         await fetcher.enqueuePending(chapterIndex: 0)
-        let viewModel = ReaderViewModel(chapterFetcher: fetcher)
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
 
         await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
         await waitForState(.loading, in: viewModel, chapterIndex: 0)
@@ -75,7 +75,7 @@ struct ReaderViewModelChapterStateTests {
         )
 
         await fetcher.enqueuePackage(chapterIndex: 0, package: failedPackage)
-        let viewModel = ReaderViewModel(chapterFetcher: fetcher)
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
 
         await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
 
@@ -88,7 +88,7 @@ struct ReaderViewModelChapterStateTests {
         let book = makeBook()
 
         await fetcher.enqueuePending(chapterIndex: 0)
-        let viewModel = ReaderViewModel(chapterFetcher: fetcher)
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
 
         await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
         await waitForState(.loading, in: viewModel, chapterIndex: 0)
@@ -106,7 +106,7 @@ struct ReaderViewModelChapterStateTests {
 
         await fetcher.enqueueFailure(chapterIndex: 0, message: "offline")
         await fetcher.enqueuePending(chapterIndex: 0)
-        let viewModel = ReaderViewModel(chapterFetcher: fetcher)
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
 
         await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
         await waitForFailure("offline", in: viewModel, chapterIndex: 0)
@@ -124,7 +124,7 @@ struct ReaderViewModelChapterStateTests {
     func resetChapterStateClearsStaleFailures() async throws {
         let fetcher = MockChapterFetcher()
         let book = makeBook()
-        let viewModel = ReaderViewModel(chapterFetcher: fetcher)
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
 
         await fetcher.enqueueFailure(chapterIndex: 0, message: "offline")
         await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
@@ -144,7 +144,7 @@ struct ReaderViewModelChapterStateTests {
 
         await fetcher.enqueuePending(chapterIndex: 0)
         await fetcher.enqueuePending(chapterIndex: 0)
-        let viewModel = ReaderViewModel(chapterFetcher: fetcher)
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
 
         await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
         await waitForState(.loading, in: viewModel, chapterIndex: 0)
@@ -171,7 +171,7 @@ struct ReaderViewModelChapterStateTests {
         await fetcher.enqueuePending(chapterIndex: 0)
         await fetcher.enqueuePending(chapterIndex: 0)
         await fetcher.blockNextCancellation()
-        let viewModel = ReaderViewModel(chapterFetcher: fetcher)
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
 
         await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
         await waitForState(.loading, in: viewModel, chapterIndex: 0)
@@ -203,6 +203,14 @@ struct ReaderViewModelChapterStateTests {
             OnlineChapterRef(index: 0, title: "Chapter 1", url: "https://example.com/1")
         ]
         return book
+    }
+
+    private func makeViewModel(chapterFetcher: MockChapterFetcher) -> ReaderViewModel {
+        ReaderViewModel(
+            chapterFetcher: chapterFetcher,
+            bookCoordinator: StubOnlineBookCoordinator(),
+            bookSourceFetcher: StubBookSourceFetcher()
+        )
     }
 
     private func makePackage(bookId: UUID, chapterIndex: Int, content: String) -> ChapterPackage {
@@ -359,4 +367,50 @@ actor MockChapterFetcher: ChapterFetching {
     }
 
     func cancelAll(for bookId: UUID) async {}
+}
+
+private final class StubOnlineBookCoordinator: OnlineBookCoordinating {
+    func downloadBook(_ book: ReadingBook, store: BookStore?) {}
+    func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {}
+}
+
+private struct StubBookSourceFetcher: BookSourceFetching {
+    func fetchBookInfoPackage(
+        url: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> BookInfoPackage {
+        throw NSError(domain: "StubBookSourceFetcher", code: 1)
+    }
+
+    func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?
+    ) async throws -> TOCPackage {
+        throw NSError(domain: "StubBookSourceFetcher", code: 2)
+    }
+
+    func isChapterCached(
+        bookId: UUID,
+        chapterIndex: Int,
+        expectedSourceURL: String?,
+        expectedTOCTitle: String?
+    ) -> Bool {
+        false
+    }
+
+    func clearChapterCache(bookId: UUID, chapterIndex: Int) {}
+    func clearAllChapterCache(bookId: UUID) {}
+    func search(query: String, in source: BookSource) async throws -> [OnlineBook] { [] }
+
+    func loadChapterPackageSync(
+        bookId: UUID,
+        chapterIndex: Int,
+        expectedSourceURL: String?,
+        expectedTOCTitle: String?
+    ) -> ChapterPackage? {
+        nil
+    }
 }

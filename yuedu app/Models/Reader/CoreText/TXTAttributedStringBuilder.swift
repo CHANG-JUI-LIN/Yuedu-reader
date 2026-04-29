@@ -48,8 +48,8 @@ struct TXTAttributedStringBuilder: AttributedStringBuilding {
         }
 
         let chapter = chapters[index]
-        let titleFont = UIFont.systemFont(ofSize: settings.fontSize + 8, weight: .bold)
-        let bodyFont = UIFont.systemFont(ofSize: settings.fontSize)
+        let titleFont = UserReaderFontResolver.titleFont(size: settings.fontSize + 8)
+        let bodyFont = UserReaderFontResolver.bodyFont(size: settings.fontSize)
         let bodyTargetLineHeight = ReaderTypographyCorrection.targetLineHeight(
             font: bodyFont,
             fontSize: settings.fontSize,

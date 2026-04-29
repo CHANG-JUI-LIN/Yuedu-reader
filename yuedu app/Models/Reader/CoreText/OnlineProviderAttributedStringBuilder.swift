@@ -62,7 +62,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 firstLineIndent: 0,
                 textColor: themeTextColor,
                 backgroundColor: themeBackgroundColor,
-                fontFamilyName: nil,
+                fontFamilyName: UserReaderFontResolver.selectedPostScriptName,
                 renderWidth: max(0, renderSize.width)
             )
             let builder = HTMLAttributedStringBuilder()
@@ -76,8 +76,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         }
 
         // TXT-style fallback：標題 + 段落
-        let titleFont = UIFont.systemFont(ofSize: settings.fontSize + 8, weight: .bold)
-        let bodyFont = UIFont.systemFont(ofSize: settings.fontSize)
+        let titleFont = UserReaderFontResolver.titleFont(size: settings.fontSize + 8)
+        let bodyFont = UserReaderFontResolver.bodyFont(size: settings.fontSize)
         let bodyTargetLineHeight = ReaderTypographyCorrection.targetLineHeight(
             font: bodyFont,
             fontSize: settings.fontSize,

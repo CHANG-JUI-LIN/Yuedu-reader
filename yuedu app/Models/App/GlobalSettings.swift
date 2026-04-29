@@ -209,6 +209,22 @@ class GlobalSettings: ObservableObject {
     @Published var pageTurnStyle: PageTurnStyle {
         didSet { UserDefaults.standard.set(pageTurnStyle.rawValue, forKey: "yd_page_turn_style") }
     }
+    @Published var selectedReaderFontPostScript: String? {
+        didSet {
+            if let selectedReaderFontPostScript, !selectedReaderFontPostScript.isEmpty {
+                UserDefaults.standard.set(selectedReaderFontPostScript, forKey: "yd_reader_font_postscript")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "yd_reader_font_postscript")
+            }
+        }
+    }
+    @Published var userFonts: [UserFontInfo] {
+        didSet {
+            if let data = try? JSONEncoder().encode(userFonts) {
+                UserDefaults.standard.set(data, forKey: "yd_user_fonts")
+            }
+        }
+    }
 
     // MARK: - 閱讀器字體（跨 session 持久化）
     @Published var readerFontSize: Double {
@@ -310,6 +326,13 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_page_margin_v") as? Double) ?? 16.0
         let rawPageTurn = UserDefaults.standard.string(forKey: "yd_page_turn_style") ?? ""
         pageTurnStyle = PageTurnStyle(rawValue: rawPageTurn) ?? .slide
+        selectedReaderFontPostScript = UserDefaults.standard.string(forKey: "yd_reader_font_postscript")
+        if let fontData = UserDefaults.standard.data(forKey: "yd_user_fonts"),
+           let decodedFonts = try? JSONDecoder().decode([UserFontInfo].self, from: fontData) {
+            userFonts = decodedFonts
+        } else {
+            userFonts = []
+        }
 
         searchConcurrency =
             (UserDefaults.standard.object(forKey: "yd_search_concurrency") as? Int) ?? 8
@@ -322,5 +345,23 @@ class GlobalSettings: ObservableObject {
         let rawTTSEngine = UserDefaults.standard.string(forKey: "yd_tts_engine") ?? ""
         ttsEngine = TTSEngineType(rawValue: rawTTSEngine) ?? .system
         httpTtsUrlTemplate = UserDefaults.standard.string(forKey: "yd_http_tts_url_template") ?? ""
+    }
+
+    @discardableResult
+    func importReaderFont(from url: URL) throws -> UserFontInfo {
+        let info = try UserFontStorageManager.shared.importFont(fileURL: url)
+        userFonts.removeAll { $0.postScriptName == info.postScriptName }
+        userFonts.append(info)
+        userFonts.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        selectedReaderFontPostScript = info.postScriptName
+        return info
+    }
+
+    func deleteReaderFont(_ font: UserFontInfo) {
+        UserFontStorageManager.shared.delete(font)
+        userFonts.removeAll { $0.id == font.id }
+        if selectedReaderFontPostScript == font.postScriptName {
+            selectedReaderFontPostScript = nil
+        }
     }
 }

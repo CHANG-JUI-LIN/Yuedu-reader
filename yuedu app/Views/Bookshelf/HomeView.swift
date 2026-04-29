@@ -4,7 +4,6 @@ import UniformTypeIdentifiers
 // MARK: - 書架主頁
 struct HomeView: View {
     @EnvironmentObject var store: BookStore
-    @ObservedObject private var gs = GlobalSettings.shared
 
     @State private var showAddSheet = false
     @State private var addSheetSessionID = UUID()
@@ -151,7 +150,7 @@ struct HomeView: View {
                             Image(systemName: "ellipsis.circle")
                                 .font(DSFont.toolbarIcon)
                         }
-                        .id(gs.localeIdentifier + "_menu")
+                        .id("\(Locale.autoupdatingCurrent.identifier)_menu")
                     }
                 }
             }
@@ -379,7 +378,6 @@ struct EditBookSheet: View {
     @State private var authorInput: String
     @State private var groupInput: String
     @Environment(\.presentationMode) var dismiss
-    @ObservedObject private var gs = GlobalSettings.shared
     @EnvironmentObject private var store: BookStore
 
     init(book: ReadingBook, onSave: @escaping (String, String, String) -> Void) {
@@ -474,7 +472,6 @@ struct EditBookSheet: View {
 struct EmptyLibraryView: View {
     @Binding var showAdd: Bool
     @Binding var showSearch: Bool
-    @ObservedObject private var gs = GlobalSettings.shared
     @State private var appeared = false
     var body: some View {
         VStack(spacing: 20) {
@@ -520,7 +517,6 @@ struct BookRow: View {
     let onTap: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
-    @ObservedObject private var gs = GlobalSettings.shared
 
     private let coverW: CGFloat = 45
     private let coverH: CGFloat = 65
@@ -663,7 +659,6 @@ struct BookGridCell: View {
     let onOpen: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
-    @ObservedObject private var gs = GlobalSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {

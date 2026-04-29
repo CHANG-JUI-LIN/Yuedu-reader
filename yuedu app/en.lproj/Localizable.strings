@@ -367,3 +367,10 @@
 "格狀" = "Grid";
 "最近閱讀" = "Recently Read";
 "手動" = "Manual";
+"字體" = "Font";
+"系統字體" = "System Font";
+"匯入字體..." = "Import Font...";
+"字體匯入失敗" = "Font Import Failed";
+"僅支援 TTF 或 OTF 字體" = "Only TTF and OTF fonts are supported";
+"無法讀取字體檔案" = "Could not read the font file";
+"無法存取文件資料夾" = "Could not access the documents folder";

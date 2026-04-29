@@ -47,7 +47,7 @@ enum CJKTypographyProcessor {
         return closingMarks.contains(first)
     }
 
-    /// 對 `attrStr` 套用 CJK 標點擠壓，回傳修改後的副本。
+    /// 對 `attrStr` 套用 CJK 標點擠壓與中英混排間距，回傳修改後的副本。
     static func apply(to attrStr: NSAttributedString) -> NSAttributedString {
         guard attrStr.length > 1 else { return attrStr }
 
@@ -85,6 +85,11 @@ enum CJKTypographyProcessor {
                 // 開 + 開：向左推後一個開括號，壓縮其前導空白（0.5em）
                 addKern(-halfEm, at: utf16Idx, in: mutable)
             }
+
+            if shouldApplyCJKLatinSpacing(between: curr, and: next) {
+                let spacing = fontSize * 0.125
+                addKern(spacing, at: utf16Idx, in: mutable)
+            }
         }
 
         return mutable
@@ -103,6 +108,36 @@ enum CJKTypographyProcessor {
         let range = NSRange(location: utf16Offset, length: 1)
         let existing = mutable.attribute(.kern, at: utf16Offset, effectiveRange: nil) as? CGFloat ?? 0
         mutable.addAttribute(.kern, value: existing + delta, range: range)
+    }
+
+    private static func shouldApplyCJKLatinSpacing(
+        between lhs: Unicode.Scalar,
+        and rhs: Unicode.Scalar
+    ) -> Bool {
+        (isCJKTextScalar(lhs) && isLatinOrNumberScalar(rhs))
+            || (isLatinOrNumberScalar(lhs) && isCJKTextScalar(rhs))
+    }
+
+    private static func isLatinOrNumberScalar(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x0030...0x0039, 0x0041...0x005A, 0x0061...0x007A:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isCJKTextScalar(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x3400...0x4DBF,   // CJK Unified Ideographs Extension A
+             0x4E00...0x9FFF,   // CJK Unified Ideographs
+             0x3040...0x309F,   // Hiragana
+             0x30A0...0x30FF,   // Katakana
+             0xAC00...0xD7AF:   // Hangul syllables
+            return true
+        default:
+            return false
+        }
     }
 
     /// 建立 Unicode scalar index → UTF-16 code unit offset 的對應陣列

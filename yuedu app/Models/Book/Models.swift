@@ -184,6 +184,11 @@ extension ReadingBook {
         return contentPipelineKind
     }
 
+    var allowsUserSelectedReaderFont: Bool {
+        if isOnline { return true }
+        return resolvedPipelineKind.allowsUserSelectedReaderFont
+    }
+
     var isLegacyParsedEPUB: Bool {
         contentFilename.hasSuffix("_epub.json")
     }
@@ -193,6 +198,15 @@ enum BookPipelineKind: String, Codable {
     case epub
     case txt
     case html
+
+    var allowsUserSelectedReaderFont: Bool {
+        switch self {
+        case .txt:
+            return true
+        case .epub, .html:
+            return false
+        }
+    }
 }
 
 enum BookRendererPreference: String, Codable {

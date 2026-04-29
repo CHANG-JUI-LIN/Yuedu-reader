@@ -695,7 +695,8 @@ struct ReaderView: View {
                         get: { readerConfig.theme },
                         set: { readerConfig.theme = $0 }
                     ),
-                    capabilities: readerCapabilities
+                    capabilities: readerCapabilities,
+                    allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont ?? false
                 )
             }
         }

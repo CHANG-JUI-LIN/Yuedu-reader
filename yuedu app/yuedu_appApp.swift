@@ -11,6 +11,7 @@ struct yuedu_appApp: App {
                 .environment(\.appDependencies, .live)
                 .onAppear {
                     CoreTextFontRegistrationService.cleanupStaleTemporaryFonts()
+                    UserFontStorageManager.shared.registerAllOnLaunch()
                     Task {
                         await WebFetcher.shared.setCloudflareChallengeHandler { url in
                             try await CloudflareChallengePresenter.present(url: url)

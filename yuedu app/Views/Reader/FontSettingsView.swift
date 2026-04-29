@@ -1,12 +1,17 @@
+import Combine
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct FontSettingsView: View {
     @Binding var fontSize: CGFloat
     @Binding var theme: ReaderTheme
     var capabilities: ReaderCapabilities = .reflowableText
+    var allowsUserSelectedReaderFont = false
     @StateObject private var readerConfig = ReaderConfig.shared
     @ObservedObject private var settings = GlobalSettings.shared
     @ObservedObject private var gs = GlobalSettings.shared
+    @State private var showingFontImporter = false
+    @State private var fontImportError: FontImportError?
     @Environment(\.presentationMode) var presentationMode
 
     private func syncBrightnessFromSystem() {
@@ -14,6 +19,9 @@ struct FontSettingsView: View {
     }
 
     private var supportsFontSize: Bool { capabilities.contains(.fontSize) }
+    private var supportsUserFont: Bool {
+        supportsFontSize && allowsUserSelectedReaderFont
+    }
     private var supportsLineHeight: Bool { capabilities.contains(.lineHeight) }
     private var supportsSpacing: Bool { capabilities.contains(.spacing) }
     private var supportsBackground: Bool {
@@ -23,6 +31,50 @@ struct FontSettingsView: View {
     var body: some View {
         NavigationView {
             Form {
+                if supportsUserFont {
+                    Section(header: Text(localized("字體"))) {
+                        Picker(
+                            localized("字體"),
+                            selection: Binding(
+                                get: { settings.selectedReaderFontPostScript ?? "" },
+                                set: { value in
+                                    settings.selectedReaderFontPostScript = value.isEmpty ? nil : value
+                                    readerConfig.refresh.send(.layout)
+                                }
+                            )
+                        ) {
+                            Text(localized("系統字體")).tag("")
+                            ForEach(settings.userFonts) { font in
+                                Text(font.displayName).tag(font.postScriptName)
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        Button {
+                            showingFontImporter = true
+                        } label: {
+                            Label(localized("匯入字體..."), systemImage: "plus")
+                        }
+
+                        ForEach(settings.userFonts) { font in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(font.displayName)
+                                Text(font.postScriptName)
+                                    .font(DSFont.caption)
+                                    .foregroundColor(DSColor.textSecondary)
+                            }
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    settings.deleteReaderFont(font)
+                                    readerConfig.refresh.send(.layout)
+                                } label: {
+                                    Label(localized("刪除"), systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // 字體大小
                 if supportsFontSize {
                     Section(header: Text(localized("字體大小"))) {
@@ -223,6 +275,20 @@ struct FontSettingsView: View {
                 syncBrightnessFromSystem()
             }
         }
+        .fileImporter(
+            isPresented: $showingFontImporter,
+            allowedContentTypes: Self.fontContentTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            handleFontImport(result)
+        }
+        .alert(item: $fontImportError) { error in
+            Alert(
+                title: Text(localized("字體匯入失敗")),
+                message: Text(error.message),
+                dismissButton: .default(Text(localized("確定")))
+            )
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification))
         { _ in
             if settings.followSystemBrightness {
@@ -230,4 +296,31 @@ struct FontSettingsView: View {
             }
         }
     }
+
+    private static let fontContentTypes: [UTType] = [
+        .font,
+        UTType(filenameExtension: "ttf") ?? .data,
+        UTType(filenameExtension: "otf") ?? .data,
+    ]
+
+    private func handleFontImport(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let shouldStopAccessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if shouldStopAccessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            try settings.importReaderFont(from: url)
+            readerConfig.refresh.send(.layout)
+        } catch {
+            fontImportError = FontImportError(message: error.localizedDescription)
+        }
+    }
+}
+
+private struct FontImportError: Identifiable {
+    let id = UUID()
+    let message: String
 }
