@@ -1290,8 +1290,7 @@ struct ReaderView: View {
             onDownloadAction: { handleDownloadAction() },
             onOpenTTS: { showTTSPanel = true },
             onOpenTOC: { showTOC = true },
-            onOpenSettings: { showSettings = true },
-            onSyncSystemBrightness: { syncReaderBrightnessFromSystem() }
+            onOpenSettings: { showSettings = true }
         )
     }
 

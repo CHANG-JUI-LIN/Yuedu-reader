@@ -383,6 +383,7 @@
 "直排目前使用左右翻頁" = "Vertical writing currently uses page turning";
 "橫排支援翻頁與滾動" = "Horizontal writing supports paging and scrolling";
 "閱讀外觀" = "Reading Appearance";
+"文字" = "Text";
 "常用" = "Common";
 "頁面與主題" = "Page and Theme";
 "字體與排版" = "Font and Layout";
@@ -417,6 +418,9 @@
 "緊湊" = "Compact";
 "標準" = "Standard";
 "寬鬆" = "Loose";
+"自訂" = "Custom";
+"輔助使用與佈局選項" = "Accessibility and Layout Options";
+"可是越獄成功以後呢？以前我們裹足不前，可以怪父母怨社會，而阿德勒卻完全把人生責任和選擇的權力交給了我們自己。當我們從這些束縛中解脫出來後，卻會發現，我們其實一直都很自由，真正讓我們裹足不前的，原來正是我們自己。" = "What happens after breaking free? We used to blame our parents or society, but Adler places responsibility and choice back in our own hands. Once we escape those constraints, we may discover that we were free all along, and what held us back was ourselves.";
 "小" = "Small";
 "中" = "Medium";
 "大" = "Large";

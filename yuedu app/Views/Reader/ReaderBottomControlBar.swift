@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct ReaderBottomControlBar: View {
-    @ObservedObject private var settings = GlobalSettings.shared
-
     @Binding var readerTheme: ReaderTheme
     let overlayContentMaxWidth: CGFloat
     let showRefreshButton: Bool
@@ -24,9 +22,7 @@ struct ReaderBottomControlBar: View {
     let onOpenTTS: () -> Void
     let onOpenTOC: () -> Void
     let onOpenSettings: () -> Void
-    let onSyncSystemBrightness: () -> Void
 
-    @State private var showBrightness = false
     @State private var chapterSliderDraft: Double? = nil
 
     private let feedbackDuration: Double = 0.25
@@ -56,10 +52,6 @@ struct ReaderBottomControlBar: View {
                     Divider().opacity(0.18)
                     progressSliderRow
                     Divider().opacity(0.1)
-                    if showBrightness {
-                        brightnessRow
-                        Divider().opacity(0.1)
-                    }
                     toolRow
                 }
                 .frame(maxWidth: overlayContentMaxWidth)
@@ -91,66 +83,6 @@ struct ReaderBottomControlBar: View {
             }
             .animation(.easeOut(duration: 0.15), value: chapterSliderDraft == nil)
         }
-        .onChange(of: showBrightness) { _, isVisible in
-            if isVisible && settings.followSystemBrightness {
-                onSyncSystemBrightness()
-            }
-        }
-    }
-
-    private var brightnessRow: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 8) {
-                Text(localized("亮度")).font(.system(size: 11)).foregroundColor(
-                    readerTheme.textColor.opacity(0.7))
-                Slider(value: $settings.readerBrightness, in: 0.05...1.0, step: 0.05)
-                    .accentColor(readerTheme.textColor.opacity(0.5))
-                    .disabled(settings.followSystemBrightness)
-                Text("\(Int(settings.readerBrightness * 100))%").font(
-                    .system(size: 10).monospacedDigit()
-                ).foregroundColor(readerTheme.textColor.opacity(0.5))
-                    .frame(width: 28, alignment: .trailing)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            HStack(spacing: 10) {
-                Button {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        settings.followSystemBrightness.toggle()
-                    }
-                    if settings.followSystemBrightness {
-                        onSyncSystemBrightness()
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(
-                            systemName: settings.followSystemBrightness
-                                ? "checkmark.circle.fill" : "circle"
-                        )
-                        .font(.system(size: 14))
-                        Text(localized("跟隨系統亮度"))
-                            .font(.system(size: 12))
-                    }
-                    .foregroundColor(
-                        settings.followSystemBrightness
-                            ? Color.blue : readerTheme.textColor.opacity(0.8))
-                }
-
-                Spacer()
-
-                Button {
-                    onSyncSystemBrightness()
-                } label: {
-                    Text(localized("同步系統"))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color.blue)
-                }
-                .opacity(settings.followSystemBrightness ? 1.0 : 0.7)
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 6)
-        }
-        .background(readerTheme.barColor)
     }
 
     @ViewBuilder
@@ -222,9 +154,6 @@ struct ReaderBottomControlBar: View {
     private var toolRow: some View {
         HStack(spacing: 0) {
             toolBtn(icon: "list.bullet", label: localized("目錄")) { onOpenTOC() }
-            toolBtn(icon: "sun.max", label: localized("亮度"), active: showBrightness) {
-                withAnimation(.easeOut(duration: 0.2)) { showBrightness.toggle() }
-            }
             toolBtn(
                 icon: readerTheme == .night ? "sun.min" : "moon",
                 label: localized(readerTheme == .night ? "白天" : "深色"),
@@ -242,7 +171,7 @@ struct ReaderBottomControlBar: View {
             }
             toolBtn(icon: "gearshape", label: localized("設置")) { onOpenSettings() }
         }
-        .padding(.top, 4).padding(.bottom, 20)
+        .padding(.top, 2).padding(.bottom, 14)
         .background(readerTheme.barColor)
     }
 
@@ -252,9 +181,9 @@ struct ReaderBottomControlBar: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(spacing: 3) {
+            VStack(spacing: 2) {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: icon).font(.system(size: 22))
+                    Image(systemName: icon).font(.system(size: 20))
                     if let count = badge, count > 0 {
                         Text("\(count)")
                             .font(.system(size: 9, weight: .semibold))
