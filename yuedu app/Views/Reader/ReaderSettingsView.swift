@@ -120,7 +120,7 @@ struct ReaderSettingsView: View {
     }
 
     private var quickSettingsSection: some View {
-        SettingsSection(title: localized("常用")) {
+        SettingsSection(title: localized("外觀與翻頁")) {
             VStack(spacing: 0) {
                 if supportsBackground {
                     themeSelector
@@ -251,7 +251,7 @@ struct ReaderSettingsView: View {
             }
         } label: {
             HStack(spacing: 16) {
-                TextSizeIcon()
+                SettingSymbolIcon(systemName: "textformat")
                 Text(localized("字體"))
                     .font(.body)
                     .foregroundStyle(.primary)
@@ -260,7 +260,7 @@ struct ReaderSettingsView: View {
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                Image(systemName: "chevron.right")
+                Image(systemName: "textformat.alt")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
@@ -532,19 +532,6 @@ private struct SettingRowHeader: View {
     }
 }
 
-private struct TextSizeIcon: View {
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 1) {
-            Text(localized("大"))
-                .font(.system(size: 24, weight: .semibold))
-            Text(localized("小"))
-                .font(.system(size: 12, weight: .semibold))
-        }
-        .frame(width: 34, height: 28)
-        .foregroundStyle(.primary)
-    }
-}
-
 private struct LayoutSliderRow: View {
     let title: String
     let icon: LayoutMetricIconKind
@@ -638,7 +625,7 @@ private struct StepperValueRow: View {
     var body: some View {
         Stepper(value: $value, in: range, step: step) {
             HStack(spacing: 16) {
-                TextSizeIcon()
+                SettingSymbolIcon(systemName: "textformat.size")
                 Text(title)
                     .font(.body)
                 Spacer()
@@ -648,6 +635,17 @@ private struct StepperValueRow: View {
             }
         }
         .controlSize(.regular)
+    }
+}
+
+private struct SettingSymbolIcon: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 22, weight: .regular))
+            .frame(width: 34, height: 28)
+            .foregroundStyle(.primary)
     }
 }
 

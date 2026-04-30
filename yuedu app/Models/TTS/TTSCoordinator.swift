@@ -56,7 +56,6 @@ final class TTSCoordinator: ObservableObject {
         currentEngine.pause()
         isPlaying = false
         updateNowPlaying()
-        deactivateAudioSession()
     }
 
     func resume() {
@@ -129,14 +128,16 @@ final class TTSCoordinator: ObservableObject {
     private func activateAudioSession() {
         guard !audioSessionActive else { return }
         let s = AVAudioSession.sharedInstance()
-        try? s.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        try? s.setCategory(.playback, mode: .spokenAudio)
         try? s.setActive(true)
         audioSessionActive = true
+        UIApplication.shared.beginReceivingRemoteControlEvents()
         setupRemoteCommands()
     }
 
     private func deactivateAudioSession() {
         guard audioSessionActive else { return }
+        UIApplication.shared.endReceivingRemoteControlEvents()
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
         audioSessionActive = false
     }
@@ -155,10 +156,22 @@ final class TTSCoordinator: ObservableObject {
         c.togglePlayPauseCommand.removeTarget(nil)
         c.stopCommand.removeTarget(nil)
 
-        c.playCommand.addTarget  { [weak self] _ in self?.resume(); return .success }
-        c.pauseCommand.addTarget { [weak self] _ in self?.pause();  return .success }
-        c.togglePlayPauseCommand.addTarget { [weak self] _ in self?.toggle(); return .success }
-        c.stopCommand.addTarget  { [weak self] _ in self?.stop();   return .success }
+        c.playCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async { self?.resume() }
+            return .success
+        }
+        c.pauseCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async { self?.pause() }
+            return .success
+        }
+        c.togglePlayPauseCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async { self?.toggle() }
+            return .success
+        }
+        c.stopCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async { self?.stop() }
+            return .success
+        }
     }
 
     private func updateNowPlaying(title: String = "") {

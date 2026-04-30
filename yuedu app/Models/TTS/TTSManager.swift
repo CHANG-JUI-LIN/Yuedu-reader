@@ -1,6 +1,5 @@
 import AVFoundation
 import Combine
-import MediaPlayer
 import UIKit
 
 // MARK: - TTS 語音朗讀管理器
@@ -21,68 +20,10 @@ final class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     private let synthesizer = AVSpeechSynthesizer()
     private var sleepTimer: Timer?
     private var currentText: String = ""
-    private var audioSessionActive = false
 
     override init() {
         super.init()
         synthesizer.delegate = self
-        setupRemoteCommands()
-    }
-
-    // MARK: - 音頻會話（背景播放）
-    private func activateAudioSessionIfNeeded() {
-        guard !audioSessionActive else { return }
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-            try session.setActive(true)
-            audioSessionActive = true
-        } catch { }
-    }
-
-    private func deactivateAudioSessionIfNeeded() {
-        guard audioSessionActive else { return }
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setActive(false, options: [.notifyOthersOnDeactivation])
-        } catch { }
-        audioSessionActive = false
-    }
-
-    // MARK: - 鎖屏控制面板
-    private func setupRemoteCommands() {
-        let center = MPRemoteCommandCenter.shared()
-
-        center.playCommand.isEnabled = true
-        center.playCommand.addTarget { [weak self] _ in
-            self?.resume()
-            return .success
-        }
-
-        center.pauseCommand.isEnabled = true
-        center.pauseCommand.addTarget { [weak self] _ in
-            self?.pause()
-            return .success
-        }
-
-        center.togglePlayPauseCommand.isEnabled = true
-        center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.toggle()
-            return .success
-        }
-
-        center.stopCommand.isEnabled = true
-        center.stopCommand.addTarget { [weak self] _ in
-            self?.stop()
-            return .success
-        }
-    }
-
-    private func updateNowPlaying(title: String = "正在朗讀") {
-        var info = [String: Any]()
-        info[MPMediaItemPropertyTitle] = title
-        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
     // MARK: - 控制方法
@@ -90,7 +31,6 @@ final class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     func speak(text: String, title: String = "") {
         self.currentText = text
         synthesizer.stopSpeaking(at: .immediate)
-        activateAudioSessionIfNeeded()
 
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = speechRate
@@ -102,7 +42,6 @@ final class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
         synthesizer.speak(utterance)
         isPlaying = true
-        updateNowPlaying(title: title.isEmpty ? "正在朗讀" : title)
 
         if sleepMinutes > 0 {
             startSleepTimer()
@@ -111,18 +50,14 @@ final class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
     func pause() {
         guard isPlaying else { return }
-        synthesizer.pauseSpeaking(at: .word)
+        synthesizer.pauseSpeaking(at: .immediate)
         isPlaying = false
-        updateNowPlaying()
-        deactivateAudioSessionIfNeeded()
     }
 
     func resume() {
         guard !isPlaying else { return }
-        activateAudioSessionIfNeeded()
         synthesizer.continueSpeaking()
         isPlaying = true
-        updateNowPlaying()
     }
 
     func toggle() {
@@ -133,8 +68,6 @@ final class TTSManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
         synthesizer.stopSpeaking(at: .immediate)
         isPlaying = false
         cancelSleepTimer()
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-        deactivateAudioSessionIfNeeded()
         onStop?()
     }
 

@@ -76,7 +76,7 @@ struct TTSPanelView: View {
                 // 語速
                 Section(header: Text(localized("語速"))) {
                     HStack {
-                        Image(systemName: "tortoise.fill")
+                        Image(systemName: "speedometer")
                             .foregroundColor(DSColor.textSecondary)
                         Slider(
                             value: Binding(
@@ -86,7 +86,7 @@ struct TTSPanelView: View {
                             in: 0.1...0.65,
                             step: 0.05
                         )
-                        Image(systemName: "hare.fill")
+                        Image(systemName: "speedometer")
                             .foregroundColor(DSColor.textSecondary)
                     }
                     Text("\(localized("當前速度"))：\(String(format: "%.0f%%", tts.speechRate / 0.5 * 100))")
@@ -161,7 +161,7 @@ struct AutoReadPanelView: View {
                 // 速度
                 Section(header: Text(localized("翻頁速度"))) {
                     HStack {
-                        Image(systemName: "tortoise.fill")
+                        Image(systemName: "speedometer")
                             .foregroundColor(DSColor.textSecondary)
                         Slider(
                             value: Binding(
@@ -171,7 +171,7 @@ struct AutoReadPanelView: View {
                             in: 0.5...5.0,
                             step: 0.5
                         )
-                        Image(systemName: "hare.fill")
+                        Image(systemName: "speedometer")
                             .foregroundColor(DSColor.textSecondary)
                     }
                     Text(
