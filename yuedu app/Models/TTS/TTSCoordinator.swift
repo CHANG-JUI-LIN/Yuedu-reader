@@ -20,6 +20,9 @@ final class TTSCoordinator: ObservableObject {
     // MARK: - Published 狀態（與 TTSPanelView 繫結）
     @Published var isPlaying = false
     @Published private(set) var playbackState: TTSPlaybackState = .stopped
+    @Published private(set) var currentSegmentIndex = 0
+    @Published private(set) var totalSegments = 0
+    @Published private(set) var currentSegmentText = ""
     @Published var speechRate: Float = 0.5
     @Published var sleepMinutes: Int = 0
 
@@ -30,7 +33,6 @@ final class TTSCoordinator: ObservableObject {
     var onStop: (() -> Void)? {
         didSet { rewireCallbacks() }
     }
-
     // MARK: - 引擎
     private let httpEngine = HTTPTTSEngine()
     private var currentEngine: TTSPlayable { httpEngine }
@@ -45,6 +47,7 @@ final class TTSCoordinator: ObservableObject {
     private var audioInterruptionCancellable: AnyCancellable?
     private var routeChangeCancellable: AnyCancellable?
     private var shouldResumeAfterInterruption = false
+    private var isStoppingFromCoordinator = false
 
     init() {
         rewireCallbacks()
@@ -70,6 +73,9 @@ final class TTSCoordinator: ObservableObject {
         nowPlayingElapsed = 0
         nowPlayingDuration = estimatedDuration(for: text)
         nowPlayingStartedAt = Date()
+        currentSegmentIndex = 0
+        totalSegments = 0
+        currentSegmentText = ""
         currentEngine.speak(text: text, title: title, rate: speechRate)
         ttsLog("[TTS][Coordinator] engine speak returned enginePlaying=\(currentEngine.isPlaying)")
         guard currentEngine.isPlaying else {
@@ -121,8 +127,34 @@ final class TTSCoordinator: ObservableObject {
 
     func stop(reason: String = "direct") {
         ttsLog("[TTS][Coordinator] stop requested reason=\(reason) coordinatorPlaying=\(isPlaying) enginePlaying=\(currentEngine.isPlaying)")
-        let ownsSystemMedia = Self.activeSystemMediaCoordinator === self
+        isStoppingFromCoordinator = true
         currentEngine.stop()
+        isStoppingFromCoordinator = false
+        finishStopped(reason: reason)
+    }
+
+    func skipForward() {
+        ttsLog("[TTS][Coordinator] skipForward requested state=\(playbackState)")
+        guard hasActivePlaybackSession else { return }
+        currentEngine.skipForward()
+        isPlaying = currentEngine.isPlaying
+        playbackState = isPlaying ? .playing : .paused
+        resetNowPlayingClockForCurrentAudio()
+        updateNowPlaying()
+    }
+
+    func skipBackward() {
+        ttsLog("[TTS][Coordinator] skipBackward requested state=\(playbackState)")
+        guard hasActivePlaybackSession else { return }
+        currentEngine.skipBackward()
+        isPlaying = currentEngine.isPlaying
+        playbackState = isPlaying ? .playing : .paused
+        resetNowPlayingClockForCurrentAudio()
+        updateNowPlaying()
+    }
+
+    private func finishStopped(reason: String) {
+        let ownsSystemMedia = Self.activeSystemMediaCoordinator === self
         isPlaying = false
         playbackState = .stopped
         cancelSleepTimer()
@@ -136,6 +168,9 @@ final class TTSCoordinator: ObservableObject {
         nowPlayingElapsed = 0
         nowPlayingDuration = 1
         nowPlayingStartedAt = nil
+        currentSegmentIndex = 0
+        totalSegments = 0
+        currentSegmentText = ""
         if ownsSystemMedia {
             setRemoteCommandsEnabled(false)
             deactivateAudioSession()
@@ -168,10 +203,28 @@ final class TTSCoordinator: ObservableObject {
             return self.onPageFinished?()
         }
         httpEngine.onStop = { [weak self] in
+            let handleStop = {
+                guard let self else { return }
+                guard !self.isStoppingFromCoordinator else { return }
+                self.finishStopped(reason: "engine finished")
+                self.onStop?()
+            }
+            if Thread.isMainThread {
+                handleStop()
+            } else {
+                DispatchQueue.main.async(execute: handleStop)
+            }
+        }
+        httpEngine.onPlaybackStarted = { [weak self] duration in
             DispatchQueue.main.async {
-                self?.isPlaying = false
-                self?.playbackState = .stopped
-                self?.onStop?()
+                self?.handleEnginePlaybackStarted(duration: duration)
+            }
+        }
+        httpEngine.onSegmentChanged = { [weak self] index, total, text in
+            DispatchQueue.main.async {
+                self?.currentSegmentIndex = index
+                self?.totalSegments = total
+                self?.currentSegmentText = text
             }
         }
     }
@@ -236,14 +289,16 @@ final class TTSCoordinator: ObservableObject {
         c.pauseCommand.isEnabled = true
         c.togglePlayPauseCommand.isEnabled = true
         c.stopCommand.isEnabled  = false
-        c.nextTrackCommand.isEnabled = false
-        c.previousTrackCommand.isEnabled = false
+        c.nextTrackCommand.isEnabled = true
+        c.previousTrackCommand.isEnabled = true
         c.changePlaybackPositionCommand.isEnabled = false
 
         c.playCommand.removeTarget(nil)
         c.pauseCommand.removeTarget(nil)
         c.togglePlayPauseCommand.removeTarget(nil)
         c.stopCommand.removeTarget(nil)
+        c.nextTrackCommand.removeTarget(nil)
+        c.previousTrackCommand.removeTarget(nil)
 
         c.playCommand.addTarget { [weak self] _ in
             ttsLog("[TTS][Remote] playCommand")
@@ -256,6 +311,14 @@ final class TTSCoordinator: ObservableObject {
         c.togglePlayPauseCommand.addTarget { [weak self] _ in
             ttsLog("[TTS][Remote] togglePlayPauseCommand")
             return self?.performRemoteCommand(requiresActiveSession: true) { $0.toggle() } ?? .commandFailed
+        }
+        c.nextTrackCommand.addTarget { [weak self] _ in
+            ttsLog("[TTS][Remote] nextTrackCommand")
+            return self?.performRemoteCommand(requiresActiveSession: true) { $0.skipForward() } ?? .commandFailed
+        }
+        c.previousTrackCommand.addTarget { [weak self] _ in
+            ttsLog("[TTS][Remote] previousTrackCommand")
+            return self?.performRemoteCommand(requiresActiveSession: true) { $0.skipBackward() } ?? .commandFailed
         }
     }
 
@@ -327,8 +390,8 @@ final class TTSCoordinator: ObservableObject {
         c.pauseCommand.isEnabled = enabled
         c.togglePlayPauseCommand.isEnabled = enabled
         c.stopCommand.isEnabled = false
-        c.nextTrackCommand.isEnabled = false
-        c.previousTrackCommand.isEnabled = false
+        c.nextTrackCommand.isEnabled = enabled
+        c.previousTrackCommand.isEnabled = enabled
         c.changePlaybackPositionCommand.isEnabled = false
         ttsLog("[TTS][Coordinator] remote commands enabled=\(enabled)")
     }
@@ -371,6 +434,21 @@ final class TTSCoordinator: ObservableObject {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
         ttsLog("[TTS][NowPlaying] update title=\(nowPlayingTitle) elapsed=\(info[MPNowPlayingInfoPropertyElapsedPlaybackTime] ?? "?") duration=\(info[MPMediaItemPropertyPlaybackDuration] ?? "?") rate=\(info[MPNowPlayingInfoPropertyPlaybackRate] ?? "?") state=\(isPlaying ? "playing" : "paused")")
+    }
+
+    private func handleEnginePlaybackStarted(duration: TimeInterval) {
+        guard Self.activeSystemMediaCoordinator === self else {
+            ttsLog("[TTS][NowPlaying] playback started ignored because coordinator is not active owner")
+            return
+        }
+        nowPlayingDuration = max(duration, 1)
+        resetNowPlayingClockForCurrentAudio()
+        updateNowPlaying()
+    }
+
+    private func resetNowPlayingClockForCurrentAudio() {
+        nowPlayingElapsed = 0
+        nowPlayingStartedAt = playbackState == .playing ? Date() : nil
     }
 
     private func currentNowPlayingElapsed() -> TimeInterval {

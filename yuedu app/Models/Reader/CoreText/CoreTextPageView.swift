@@ -17,8 +17,10 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
     private var layout: CoreTextPaginator.ChapterLayout?
     private var localPageIndex: Int = 0
     private let selectionManager = TextSelectionManager()
+    private let playbackOverlay = InteractionOverlayView()
     private let interactionOverlay = InteractionOverlayView()
     private var selectedTextForCopy: String?
+    private var playbackHighlightText: String?
     private lazy var linkTapGesture: UITapGestureRecognizer = {
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         tap.cancelsTouchesInView = false
@@ -37,8 +39,13 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
         super.init(frame: frame)
         isOpaque = true
         backgroundColor = .systemBackground
+        playbackOverlay.frame = bounds
+        playbackOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        playbackOverlay.fillColor = UIColor.systemYellow.withAlphaComponent(0.28)
+        playbackOverlay.showsHandles = false
         interactionOverlay.frame = bounds
         interactionOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(playbackOverlay)
         addSubview(interactionOverlay)
 
         addGestureRecognizer(linkTapGesture)
@@ -58,6 +65,12 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
             ? extractBackgroundColor(from: layout.attributedString)
             : fallbackBackgroundColor
         setNeedsDisplay()
+        updatePlaybackHighlightOverlay()
+    }
+
+    func setPlaybackHighlight(text: String?) {
+        playbackHighlightText = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        updatePlaybackHighlightOverlay()
     }
 
     override var canBecomeFirstResponder: Bool { true }
@@ -763,6 +776,44 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
         interactionOverlay.endHandlePoint = rects.last.map { CGPoint(x: $0.maxX, y: $0.maxY) }
     }
 
+    private func updatePlaybackHighlightOverlay() {
+        guard let layout,
+              let text = playbackHighlightText,
+              !text.isEmpty,
+              localPageIndex < layout.pageRanges.count
+        else {
+            playbackOverlay.clearSelection()
+            return
+        }
+
+        let pageCFRange = layout.pageRanges[localPageIndex]
+        let pageRange = NSRange(location: pageCFRange.location, length: pageCFRange.length)
+        guard pageRange.location >= 0,
+              pageRange.length > 0,
+              pageRange.location + pageRange.length <= layout.attributedString.length
+        else {
+            playbackOverlay.clearSelection()
+            return
+        }
+
+        let pageText = (layout.attributedString.string as NSString).substring(with: pageRange)
+        let found = (pageText as NSString).range(of: text, options: [.caseInsensitive, .diacriticInsensitive])
+        guard found.location != NSNotFound, found.length > 0 else {
+            playbackOverlay.clearSelection()
+            return
+        }
+
+        guard let context = makeInteractionContext() else {
+            playbackOverlay.clearSelection()
+            return
+        }
+        let chapterRange = NSRange(location: pageRange.location + found.location, length: found.length)
+        let rects = selectionRects(for: chapterRange, in: context)
+        playbackOverlay.selectionRects = rects
+        playbackOverlay.startHandlePoint = nil
+        playbackOverlay.endHandlePoint = nil
+    }
+
     private func selectionRects(for range: NSRange, in context: InteractionContext) -> [CGRect] {
         var result: [CGRect] = []
 
@@ -838,6 +889,7 @@ final class CoreTextPageViewController: UIViewController {
     private var pendingLayout: CoreTextPaginator.ChapterLayout?
     private var pendingLocalPage: Int = 0
     private var pendingFallbackColor: UIColor = .systemBackground
+    private var pendingPlaybackHighlightText: String?
 
     func configure(
         layout: CoreTextPaginator.ChapterLayout,
@@ -852,10 +904,17 @@ final class CoreTextPageViewController: UIViewController {
         if isViewLoaded {
             pageView.onInternalLinkTap = onInternalLinkTap
             pageView.configure(layout: layout, pageIndex: localPage, fallbackBackgroundColor: fallbackBackgroundColor)
+            pageView.setPlaybackHighlight(text: pendingPlaybackHighlightText)
         } else {
             pendingLayout = layout
             pendingLocalPage = localPage
         }
+    }
+
+    func setPlaybackHighlight(text: String?) {
+        pendingPlaybackHighlightText = text
+        guard isViewLoaded else { return }
+        pageView.setPlaybackHighlight(text: text)
     }
 
     override func viewDidLoad() {
@@ -866,6 +925,7 @@ final class CoreTextPageViewController: UIViewController {
         view.addSubview(pageView)
         if let layout = pendingLayout {
             pageView.configure(layout: layout, pageIndex: pendingLocalPage, fallbackBackgroundColor: pendingFallbackColor)
+            pageView.setPlaybackHighlight(text: pendingPlaybackHighlightText)
             pendingLayout = nil
         }
     }

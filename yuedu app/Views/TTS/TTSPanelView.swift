@@ -38,54 +38,70 @@ struct TTSPanelView: View {
 
                 // 播放控制
                 Section {
-                    HStack {
-                        Spacer()
-                        // 上一頁 (未實作跨頁)
-                        Button {
-                        } label: {
-                            Image(systemName: "backward.fill")
-                                .font(.system(size: 24))
+                    VStack(spacing: 12) {
+                        if tts.playbackState != .stopped, tts.totalSegments > 0 {
+                            Text("\(localized("段落進度")) \(tts.currentSegmentIndex + 1) / \(tts.totalSegments)")
+                                .font(DSFont.caption)
                                 .foregroundColor(DSColor.textSecondary)
                         }
-                        .disabled(true)
 
-                        Spacer()
-
-                        // 播放 / 暫停
-                        Button {
-                            ttsLog("[TTS][Panel] playButton tapped coordinatorPlaying=\(tts.isPlaying) engine=http textCount=\(currentText.count) title=\(chapterTitle)")
-                            if tts.playbackState == .playing {
-                                tts.pause()
-                            } else if tts.playbackState == .paused {
-                                tts.resume()
-                            } else if hasAudioSource, !currentText.isEmpty {
-                                tts.speak(text: currentText, title: chapterTitle)
-                            } else if !hasAudioSource {
-                                ttsLog("[TTS][Panel] ignored play tap because audio source is not configured")
-                            } else {
-                                ttsLog("[TTS][Panel] ignored play tap because currentText is empty")
+                        HStack {
+                            Spacer()
+                            Button {
+                                tts.skipBackward()
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "backward.fill")
+                                        .font(.system(size: 24))
+                                    Text(localized("上一段"))
+                                        .font(DSFont.caption)
+                                }
+                                .foregroundColor(DSColor.textSecondary)
                             }
-                        } label: {
-                            Image(
-                                systemName: tts.playbackState == .playing ? "pause.circle.fill" : "play.circle.fill"
-                            )
-                            .font(.system(size: 52))
-                            .foregroundColor(.accentColor)
-                        }
-                        .disabled(tts.playbackState == .stopped && !hasAudioSource)
+                            .disabled(tts.playbackState == .stopped || tts.currentSegmentIndex <= 0)
 
-                        Spacer()
+                            Spacer()
 
-                        // 下一頁 (未實作跨頁)
-                        Button {
-                        } label: {
-                            Image(systemName: "forward.fill")
-                                .font(.system(size: 24))
+                            // 播放 / 暫停
+                            Button {
+                                ttsLog("[TTS][Panel] playButton tapped coordinatorPlaying=\(tts.isPlaying) engine=http textCount=\(currentText.count) title=\(chapterTitle)")
+                                if tts.playbackState == .playing {
+                                    tts.pause()
+                                } else if tts.playbackState == .paused {
+                                    tts.resume()
+                                } else if hasAudioSource, !currentText.isEmpty {
+                                    tts.speak(text: currentText, title: chapterTitle)
+                                } else if !hasAudioSource {
+                                    ttsLog("[TTS][Panel] ignored play tap because audio source is not configured")
+                                } else {
+                                    ttsLog("[TTS][Panel] ignored play tap because currentText is empty")
+                                }
+                            } label: {
+                                Image(
+                                    systemName: tts.playbackState == .playing ? "pause.circle.fill" : "play.circle.fill"
+                                )
+                                .font(.system(size: 52))
+                                .foregroundColor(.accentColor)
+                            }
+                            .disabled(tts.playbackState == .stopped && !hasAudioSource)
+
+                            Spacer()
+
+                            Button {
+                                tts.skipForward()
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "forward.fill")
+                                        .font(.system(size: 24))
+                                    Text(localized("下一段"))
+                                        .font(DSFont.caption)
+                                }
                                 .foregroundColor(DSColor.textSecondary)
-                        }
-                        .disabled(true)
+                            }
+                            .disabled(tts.playbackState == .stopped || tts.totalSegments <= 0)
 
-                        Spacer()
+                            Spacer()
+                        }
                     }
                     .padding(.vertical, 8)
                 }

@@ -3,6 +3,7 @@ import SwiftUI
 struct TTSSettingsView: View {
     @ObservedObject private var gs = GlobalSettings.shared
     @StateObject private var testCoordinator = TTSCoordinator()
+    private let localTestTemplate = "http://192.168.1.16:5001/tts?text={{text}}"
 
     var body: some View {
         Form {
@@ -10,6 +11,12 @@ struct TTSSettingsView: View {
                 TextEditor(text: $gs.httpTtsUrlTemplate)
                     .frame(minHeight: 80)
                     .font(.system(.footnote, design: .monospaced))
+
+                Button {
+                    gs.httpTtsUrlTemplate = localTestTemplate
+                } label: {
+                    Label(localized("使用本機測試服務"), systemImage: "network")
+                }
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(localized("目前沒有內建雲端 TTS。這裡需要填入能直接回傳音訊資料的接口。"))

@@ -10,6 +10,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
     var isPlaying: Bool = false
     var onPageFinished: (() -> String?)?
     var onStop: (() -> Void)?
+    var onPlaybackStarted: ((TimeInterval) -> Void)?
+    var onSegmentChanged: ((Int, Int, String) -> Void)?
 
     private var audioPlayer: AVAudioPlayer?
     private let audioProvider: TTSAudioProvider
@@ -26,6 +28,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
 
     private let preloadWindow = 3
     private let maxConcurrentDownloads = 2
+    private let maxDownloadRetries = 2
     private let targetChunkLength = 80
 
     init(audioProvider: TTSAudioProvider = CustomHTTPProvider()) {
@@ -98,6 +101,23 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
         onStop?()
     }
 
+    func skipForward() {
+        ttsLog("[TTS][HTTPEngine] skipForward requested index=\(currentIndex) count=\(chunks.count)")
+        guard !chunks.isEmpty else { return }
+        let nextIndex = currentIndex + 1
+        guard nextIndex < chunks.count else {
+            handlePageChunksFinished(token: playbackToken)
+            return
+        }
+        jumpToChunk(at: nextIndex)
+    }
+
+    func skipBackward() {
+        ttsLog("[TTS][HTTPEngine] skipBackward requested index=\(currentIndex) count=\(chunks.count)")
+        guard !chunks.isEmpty else { return }
+        jumpToChunk(at: max(currentIndex - 1, 0))
+    }
+
     // MARK: - Queue
 
     private func playChunk(at index: Int, token: UUID) {
@@ -115,6 +135,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
         }
 
         currentIndex = index
+        publishSegmentChanged(index: index)
 
         if let data = audioCache.removeValue(forKey: index) {
             ttsLog("[TTS][HTTPEngine] playChunk cached index=\(index) bytes=\(data.count)")
@@ -167,11 +188,18 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
         let rate = lastRate
         ttsLog("[TTS][HTTPEngine] provider request start index=\(index) provider=\(audioProvider.displayName) priority=\(priority) textCount=\(chunkText.count)")
         let task = Task { [weak self, audioProvider] in
+            guard let self else { return }
             do {
-                let data = try await audioProvider.audioData(for: chunkText, title: title, rate: rate)
+                let data = try await self.fetchAudioDataWithRetry(
+                    provider: audioProvider,
+                    text: chunkText,
+                    title: title,
+                    rate: rate,
+                    index: index
+                )
                 guard !Task.isCancelled else { return }
                 DispatchQueue.main.async {
-                    self?.handleDownloadedData(data, index: index, token: token, priority: priority)
+                    self.handleDownloadedData(data, index: index, token: token, priority: priority)
                 }
             } catch is CancellationError {
                 ttsLog("[TTS][HTTPEngine] provider request cancelled index=\(index)")
@@ -180,12 +208,37 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
             } catch {
                 guard !Task.isCancelled else { return }
                 DispatchQueue.main.async {
-                    self?.handleDownloadFailure(error, index: index, token: token, priority: priority)
+                    self.handleDownloadFailure(error, index: index, token: token, priority: priority)
                 }
             }
         }
 
         activeTasks[index] = task
+    }
+
+    private func fetchAudioDataWithRetry(
+        provider: TTSAudioProvider,
+        text: String,
+        title: String,
+        rate: Float,
+        index: Int
+    ) async throws -> Data {
+        var lastError: Error?
+        for attempt in 0...maxDownloadRetries {
+            do {
+                return try await provider.audioData(for: text, title: title, rate: rate)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as URLError where error.code == .cancelled {
+                throw error
+            } catch {
+                lastError = error
+                guard attempt < maxDownloadRetries else { break }
+                ttsLog("[TTS][HTTPEngine] provider retry index=\(index) attempt=\(attempt + 1)/\(maxDownloadRetries) error=\(error.localizedDescription)")
+                try? await Task.sleep(nanoseconds: 700_000_000)
+            }
+        }
+        throw lastError ?? TTSAudioProviderError.emptyData
     }
 
     private func handleDownloadedData(
@@ -259,11 +312,30 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
 
             if !success {
                 playChunk(at: index + 1, token: token)
+            } else {
+                onPlaybackStarted?(player.duration)
             }
         } catch {
             ttsLog("[TTS][HTTPEngine] player init failed index=\(index) error=\(error.localizedDescription)")
             playChunk(at: index + 1, token: token)
         }
+    }
+
+    private func jumpToChunk(at index: Int) {
+        guard index >= 0, index < chunks.count else { return }
+        audioPlayer?.delegate = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
+        pendingPlaybackIndex = nil
+        isPaused = false
+        isPlaying = true
+        currentIndex = index
+        playChunk(at: index, token: playbackToken)
+    }
+
+    private func publishSegmentChanged(index: Int) {
+        guard chunks.indices.contains(index) else { return }
+        onSegmentChanged?(index, chunks.count, chunks[index])
     }
 
     private func handlePlaybackEnded(successfully flag: Bool) {

@@ -469,6 +469,9 @@ struct ReaderView: View {
                     engine: ctEngine,
                     pageTurnStyle: settings.pageTurnStyle,
                     theme: readerTheme,
+                    playbackHighlightText: ttsCoordinator.playbackState == .stopped
+                        ? nil
+                        : ttsCoordinator.currentSegmentText,
                     currentPage: $currentPage,
                     onPageChanged: { newPage in
                         let newChapter = ctEngine.charOffset(forPage: newPage).spineIndex
@@ -598,6 +601,13 @@ struct ReaderView: View {
             autoReader.onNextPage = { goToNextPage() }
             ttsCoordinator.onPageFinished = {
                 ttsLog("[TTS][Reader] onPageFinished currentPage=\(currentPage) allPages=\(allPages.count) usesCoreTextEPUB=\(usesCoreTextEPUB)")
+                if let engine = epubRenderer.engine,
+                   epubRenderer.isCoreTextReady,
+                   currentPage < engine.totalPages - 1 {
+                    currentPage += 1
+                    ttsLog("[TTS][Reader] onPageFinished advancedCoreTextPage=\(currentPage)")
+                    return engine.plainText(forPage: currentPage)
+                }
                 if !usesCoreTextEPUB, currentPage < allPages.count - 1 {
                     currentPage += 1
                     ttsLog("[TTS][Reader] onPageFinished advancedToPage=\(currentPage) nextTextCount=\(allPages[currentPage].content.count)")
@@ -2272,6 +2282,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
     let engine: any PageRenderingProvider
     let pageTurnStyle: PageTurnStyle
     let theme: ReaderTheme
+    let playbackHighlightText: String?
     @Binding var currentPage: Int
     let onPageChanged: (Int) -> Void
     let onTapZone: (String) -> Void
@@ -2303,6 +2314,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             ? max(0, min(currentPage, engine.totalPages - 1))
             : 0
         let initialVC = engine.pageViewController(at: initialPage)
+        context.coordinator.applyPlaybackHighlight(to: initialVC)
         context.coordinator.captureStablePosition(from: initialVC)
         pvc.setViewControllers([initialVC], direction: .forward, animated: false)
         // 同步 binding，讓 ReaderView.currentPage 對齊 engine 恢復的位置
@@ -2340,6 +2352,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIPageViewController, context: Context) {
         context.coordinator.currentEngine = engine
+        context.coordinator.currentPlaybackHighlightText = playbackHighlightText
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: uiViewController)
         let clampedPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
         if context.coordinator.currentTheme != theme {
@@ -2349,13 +2362,17 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 backgroundColor: UIColor(theme.backgroundColor)
             )
             let targetVC = engine.pageViewController(at: clampedPage)
+            context.coordinator.applyPlaybackHighlight(to: targetVC)
             uiViewController.setViewControllers([targetVC], direction: .forward, animated: false)
             _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
             return
         }
 
         if let visible = uiViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController) {
-            guard visible.globalPageIndex != clampedPage else { return }
+            if visible.globalPageIndex == clampedPage {
+                context.coordinator.applyPlaybackHighlight(to: visible)
+                return
+            }
             let direction: UIPageViewController.NavigationDirection =
                 clampedPage >= visible.globalPageIndex ? .forward : .reverse
 
@@ -2363,6 +2380,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if context.coordinator.suppressNextTransition {
                 context.coordinator.suppressNextTransition = false
                 let targetVC = engine.pageViewController(at: clampedPage)
+                context.coordinator.applyPlaybackHighlight(to: targetVC)
                 uiViewController.setViewControllers([targetVC], direction: direction, animated: false)
                 _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
                 return
@@ -2382,6 +2400,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     )
                 } else if !context.coordinator.isTransitioning {
                     let targetVC = engine.pageViewController(at: clampedPage)
+                    context.coordinator.applyPlaybackHighlight(to: targetVC)
                     uiViewController.setViewControllers([targetVC], direction: direction, animated: false)
                     uiViewController.view.layoutIfNeeded()
                     _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
@@ -2413,6 +2432,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         let targetVC = engine.pageViewController(at: clampedPage)
+        context.coordinator.applyPlaybackHighlight(to: targetVC)
         uiViewController.setViewControllers([targetVC], direction: .forward, animated: false)
         _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
     }
@@ -2422,6 +2442,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             engine: engine,
             pageTurnStyle: pageTurnStyle,
             theme: theme,
+            playbackHighlightText: playbackHighlightText,
             currentPage: $currentPage,
             onPageChanged: onPageChanged,
             onTapZone: onTapZone
@@ -2435,6 +2456,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         var currentEngine: any PageRenderingProvider
         let pageTurnStyle: PageTurnStyle
         var currentTheme: ReaderTheme
+        var currentPlaybackHighlightText: String?
         @Binding var currentPage: Int
         let onPageChanged: (Int) -> Void
         let onTapZone: (String) -> Void
@@ -2460,12 +2482,14 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         init(engine: any PageRenderingProvider,
              pageTurnStyle: PageTurnStyle,
              theme: ReaderTheme,
+             playbackHighlightText: String?,
              currentPage: Binding<Int>,
              onPageChanged: @escaping (Int) -> Void,
              onTapZone: @escaping (String) -> Void) {
             self.currentEngine = engine
             self.pageTurnStyle = pageTurnStyle
             self.currentTheme = theme
+            self.currentPlaybackHighlightText = playbackHighlightText
             self._currentPage = currentPage
             self.onPageChanged = onPageChanged
             self.onTapZone = onTapZone
@@ -2547,6 +2571,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
 
             pageViewController.setViewControllers([freshVC], direction: direction, animated: false)
+            applyPlaybackHighlight(to: freshVC)
             let resolved = syncStablePosition(afterShowing: freshVC, notifyFallback: false)
             let resolvedLine =
                 "[StartupTrace][ReaderView.Coordinator] handleChapterReady syncedPage=\(resolved ?? -1)"
@@ -2583,6 +2608,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             animated: Bool
         ) {
             let targetViewController = currentEngine.pageViewController(at: targetPage)
+            applyPlaybackHighlight(to: targetViewController)
             let finishTransition: (UIViewController) -> Void = { shownViewController in
                 if let resolvedPage = self.syncStablePosition(afterShowing: shownViewController, notifyFallback: true) {
                     Task { @MainActor in
@@ -2616,6 +2642,12 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         func captureStablePosition(from viewController: UIViewController) {
             currentCoreTextPosition = readingPosition(from: viewController)
+        }
+
+        func applyPlaybackHighlight(to viewController: UIViewController) {
+            (viewController as? CoreTextPageViewController)?.setPlaybackHighlight(
+                text: currentPlaybackHighlightText
+            )
         }
 
         @discardableResult
@@ -2665,9 +2697,13 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                   vc.globalPageIndex > 0 else { return nil }
             let (currentSpine, currentLocal) = currentEngine.localPosition(for: vc.globalPageIndex)
             if currentLocal == 0 && currentSpine > 0 {
-                return currentEngine.pageViewController(for: .chapterEnd(currentSpine - 1))
+                let previousVC = currentEngine.pageViewController(for: .chapterEnd(currentSpine - 1))
+                applyPlaybackHighlight(to: previousVC)
+                return previousVC
             }
-            return currentEngine.pageViewController(at: vc.globalPageIndex - 1)
+            let previousVC = currentEngine.pageViewController(at: vc.globalPageIndex - 1)
+            applyPlaybackHighlight(to: previousVC)
+            return previousVC
         }
 
         func pageViewController(
@@ -2684,14 +2720,18 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                    let snapVC = currentEngine.snapshotViewController(at: targetPage) {
                     return snapVC
                 }
-                return currentEngine.pageViewController(for: nextPosition)
+                let nextVC = currentEngine.pageViewController(for: nextPosition)
+                applyPlaybackHighlight(to: nextVC)
+                return nextVC
             }
             let nextIndex = vc.globalPageIndex + 1
             // 快照接力：若下一頁是新章節且快照已就緒，回傳靜態圖 VC 供動畫用
             if let snapVC = currentEngine.snapshotViewController(at: nextIndex) {
                 return snapVC
             }
-            return currentEngine.pageViewController(at: nextIndex)
+            let nextVC = currentEngine.pageViewController(at: nextIndex)
+            applyPlaybackHighlight(to: nextVC)
+            return nextVC
         }
 
         // MARK: - UIPageViewControllerDelegate
@@ -2724,6 +2764,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 } else {
                     realVC = currentEngine.pageViewController(at: snapVC.globalPageIndex)
                 }
+                applyPlaybackHighlight(to: realVC)
                 pvc.setViewControllers([realVC], direction: .forward, animated: false)
                 if let resolvedPage = syncStablePosition(afterShowing: realVC, notifyFallback: false) {
                     Task { @MainActor in
@@ -2891,6 +2932,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         // 先把真正的 VC 設上去，讓 updateUIViewController 進來時早返回，避免二次動畫
                         if let pvc = self.coverPageViewController {
                             let realVC = self.currentEngine.pageViewController(at: targetPage)
+                            self.applyPlaybackHighlight(to: realVC)
                             pvc.setViewControllers([realVC], direction: .forward, animated: false)
                             pvc.view.layoutIfNeeded()
                             self.captureStablePosition(from: realVC)
@@ -2951,6 +2993,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 } completion: { _ in
                     let latestPage = self.currentPage // 抓取最新的 binding 值
                     let realVC = self.currentEngine.pageViewController(at: latestPage)
+                    self.applyPlaybackHighlight(to: realVC)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded() // 強制佈局，避免 scroll 偏移殘留
                     
@@ -2966,6 +3009,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 guard let targetSnapshot = currentEngine.renderSnapshot(forPage: targetPage) else {
                     let latestPage = self.currentPage
                     let realVC = currentEngine.pageViewController(at: latestPage)
+                    self.applyPlaybackHighlight(to: realVC)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded()
                     self.captureStablePosition(from: realVC)
@@ -2984,6 +3028,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 } completion: { _ in
                     let latestPage = self.currentPage
                     let realVC = self.currentEngine.pageViewController(at: latestPage)
+                    self.applyPlaybackHighlight(to: realVC)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded()
                     

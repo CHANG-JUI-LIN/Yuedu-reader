@@ -429,3 +429,7 @@
 "尚未配置語音源，暫時無法開始聽書" = "No voice source is configured, so listening cannot start yet.";
 "語音源 URL 模板" = "Voice Source URL Template";
 "目前沒有內建雲端 TTS。這裡需要填入能直接回傳音訊資料的接口。" = "There is no built-in cloud TTS yet. Enter an endpoint that directly returns audio data.";
+"上一段" = "Previous Segment";
+"下一段" = "Next Segment";
+"段落進度" = "Segment";
+"使用本機測試服務" = "Use Local Test Service";

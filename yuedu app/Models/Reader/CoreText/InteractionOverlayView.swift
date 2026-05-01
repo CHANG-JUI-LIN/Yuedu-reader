@@ -1,6 +1,18 @@
 import UIKit
 
 final class InteractionOverlayView: UIView {
+    var fillColor: UIColor = UIColor.systemBlue.withAlphaComponent(0.20) {
+        didSet { setNeedsDisplay() }
+    }
+
+    var handleColor: UIColor = .systemBlue {
+        didSet { setNeedsDisplay() }
+    }
+
+    var showsHandles: Bool = true {
+        didSet { setNeedsDisplay() }
+    }
+
     var selectionRects: [CGRect] = [] {
         didSet { setNeedsDisplay() }
     }
@@ -27,14 +39,14 @@ final class InteractionOverlayView: UIView {
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
 
-        let fillColor = UIColor.systemBlue.withAlphaComponent(0.20)
         ctx.setFillColor(fillColor.cgColor)
         for selectionRect in selectionRects {
             ctx.fill(selectionRect)
         }
 
+        guard showsHandles else { return }
         let handleRadius: CGFloat = 5
-        ctx.setFillColor(UIColor.systemBlue.cgColor)
+        ctx.setFillColor(handleColor.cgColor)
         if let startHandlePoint {
             ctx.fillEllipse(in: CGRect(
                 x: startHandlePoint.x - handleRadius,
