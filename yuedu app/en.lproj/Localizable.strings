@@ -425,3 +425,7 @@
 "小" = "Small";
 "中" = "Medium";
 "大" = "Large";
+"語音源設定" = "Voice Source Settings";
+"尚未配置語音源，暫時無法開始聽書" = "No voice source is configured, so listening cannot start yet.";
+"語音源 URL 模板" = "Voice Source URL Template";
+"目前沒有內建雲端 TTS。這裡需要填入能直接回傳音訊資料的接口。" = "There is no built-in cloud TTS yet. Enter an endpoint that directly returns audio data.";

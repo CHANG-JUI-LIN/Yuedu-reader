@@ -597,14 +597,18 @@ struct ReaderView: View {
             if volumeHandler.isEnabled { volumeHandler.startListening() }
             autoReader.onNextPage = { goToNextPage() }
             ttsCoordinator.onPageFinished = {
+                ttsLog("[TTS][Reader] onPageFinished currentPage=\(currentPage) allPages=\(allPages.count) usesCoreTextEPUB=\(usesCoreTextEPUB)")
                 if !usesCoreTextEPUB, currentPage < allPages.count - 1 {
                     currentPage += 1
+                    ttsLog("[TTS][Reader] onPageFinished advancedToPage=\(currentPage) nextTextCount=\(allPages[currentPage].content.count)")
                     return allPages[currentPage].content
                 }
+                ttsLog("[TTS][Reader] onPageFinished no next text")
                 return nil
             }
         }
         .onDisappear {
+            ttsLog("[TTS][Reader] onDisappear cleanup only ttsPlaying=\(ttsCoordinator.isPlaying)")
             epubRenderer.engine?.cancelPendingWork()
             if !settings.followSystemBrightness {
                 UIScreen.main.brightness = CGFloat(systemBrightness)
@@ -617,10 +621,11 @@ struct ReaderView: View {
             }
             volumeHandler.stopListening()
             autoReader.pause()
-            ttsCoordinator.stop()
         }
         .onChange(of: scenePhase) { phase in
+            ttsLog("[TTS][Reader] scenePhase=\(String(describing: phase)) ttsPlaying=\(ttsCoordinator.isPlaying)")
             if phase == .background || phase == .inactive {
+                ttsCoordinator.refreshNowPlayingForSystemSurfaces()
                 epubRenderer.engine?.cancelPendingWork()
                 saveProgress()
                 if let bookId = localEPUBBookIdentifier {

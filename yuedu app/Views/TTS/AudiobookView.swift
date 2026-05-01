@@ -81,11 +81,10 @@ struct AudiobookView: View {
 
                 // 播放控制列
                 HStack {
-                    // 後退 15 秒
                     Button {
                         player.skipBack(15)
                     } label: {
-                        Image(systemName: "gobackward.15")
+                        Image(systemName: "backward.fill")
                             .font(.system(size: 28))
                             .foregroundColor(DSColor.textPrimary)
                     }
@@ -114,11 +113,10 @@ struct AudiobookView: View {
 
                     Spacer()
 
-                    // 前進 30 秒
                     Button {
                         player.skipForward(30)
                     } label: {
-                        Image(systemName: "goforward.30")
+                        Image(systemName: "forward.fill")
                             .font(.system(size: 28))
                             .foregroundColor(DSColor.textPrimary)
                     }

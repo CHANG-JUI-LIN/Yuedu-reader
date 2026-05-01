@@ -12,9 +12,13 @@
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>用於連接同一 Wi-Fi 下的本機語音測試服務。</string>
 	<key>UIPrefersShowingLanguageSettings</key>
 	<true/>
 	<key>UIBackgroundModes</key>

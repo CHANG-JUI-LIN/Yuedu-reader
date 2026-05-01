@@ -9,20 +9,30 @@ struct TTSPanelView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject private var gs = GlobalSettings.shared
 
+    private var hasAudioSource: Bool {
+        !gs.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
         NavigationView {
             List {
-                // 引擎標示
+                // 語音設定
                 Section {
                     NavigationLink(destination: TTSSettingsView()) {
                         HStack {
                             Image(systemName: "waveform")
                                 .foregroundColor(DSColor.accent)
-                            Text(localized("語音引擎"))
+                            Text(localized("語音源設定"))
                             Spacer()
-                            Text(localized(gs.ttsEngine.displayName))
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
                                 .foregroundColor(DSColor.textSecondary)
                         }
+                    }
+                    if !hasAudioSource {
+                        Label(localized("尚未配置語音源，暫時無法開始聽書"), systemImage: "exclamationmark.triangle")
+                            .font(DSFont.caption)
+                            .foregroundColor(DSColor.textSecondary)
                     }
                 }
 
@@ -43,30 +53,37 @@ struct TTSPanelView: View {
 
                         // 播放 / 暫停
                         Button {
-                            if tts.isPlaying {
+                            ttsLog("[TTS][Panel] playButton tapped coordinatorPlaying=\(tts.isPlaying) engine=http textCount=\(currentText.count) title=\(chapterTitle)")
+                            if tts.playbackState == .playing {
                                 tts.pause()
-                            } else if !currentText.isEmpty {
+                            } else if tts.playbackState == .paused {
+                                tts.resume()
+                            } else if hasAudioSource, !currentText.isEmpty {
                                 tts.speak(text: currentText, title: chapterTitle)
+                            } else if !hasAudioSource {
+                                ttsLog("[TTS][Panel] ignored play tap because audio source is not configured")
+                            } else {
+                                ttsLog("[TTS][Panel] ignored play tap because currentText is empty")
                             }
                         } label: {
                             Image(
-                                systemName: tts.isPlaying ? "pause.circle.fill" : "play.circle.fill"
+                                systemName: tts.playbackState == .playing ? "pause.circle.fill" : "play.circle.fill"
                             )
                             .font(.system(size: 52))
                             .foregroundColor(.accentColor)
                         }
+                        .disabled(tts.playbackState == .stopped && !hasAudioSource)
 
                         Spacer()
 
-                        // 停止
+                        // 下一頁 (未實作跨頁)
                         Button {
-                            tts.stop()
-                            dismiss()
                         } label: {
-                            Image(systemName: "stop.circle.fill")
+                            Image(systemName: "forward.fill")
                                 .font(.system(size: 24))
-                                .foregroundColor(.red.opacity(0.8))
+                                .foregroundColor(DSColor.textSecondary)
                         }
+                        .disabled(true)
 
                         Spacer()
                     }

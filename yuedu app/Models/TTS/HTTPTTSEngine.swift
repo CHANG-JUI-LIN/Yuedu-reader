@@ -1,10 +1,9 @@
 import AVFoundation
-import Combine
 import Foundation
+import UIKit
 
-// MARK: - HTTP TTS 引擎（AVPlayer 串流播放）
+// MARK: - HTTP TTS 引擎（分段下載 + 預載 + AVAudioPlayer 播放）
 
-/// 透過 HTTP URL 取得 TTS 音頻串流，使用 AVPlayer 播放。
 /// URL 模板支援佔位符：{{text}}、{{title}}、{{speakSpeed}}
 final class HTTPTTSEngine: NSObject, TTSPlayable {
 
@@ -12,104 +11,362 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
     var onPageFinished: (() -> String?)?
     var onStop: (() -> Void)?
 
-    private var player: AVPlayer?
-    private var playerItem: AVPlayerItem?
-    private var itemObserver: NSKeyValueObservation?
-    private var endObserver: Any?
+    private var audioPlayer: AVAudioPlayer?
+    private let audioProvider: TTSAudioProvider
+    private var activeTasks: [Int: Task<Void, Never>] = [:]
+    private var audioCache: [Int: Data] = [:]
+    private var chunks: [String] = []
+    private var currentIndex = 0
+    private var playbackToken = UUID()
+    private var lastTitle = ""
     private var lastRate: Float = 0.5
+    private var isPaused = false
+    private var pendingPlaybackIndex: Int?
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+
+    private let preloadWindow = 3
+    private let maxConcurrentDownloads = 2
+    private let targetChunkLength = 80
+
+    init(audioProvider: TTSAudioProvider = CustomHTTPProvider()) {
+        self.audioProvider = audioProvider
+        super.init()
+    }
 
     // MARK: - TTSPlayable
 
+    func configureAudioSessionOwnership(_ enabled: Bool) {
+        ttsLog("[TTS][HTTPEngine] configureAudioSessionOwnership ignored enabled=\(enabled)")
+    }
+
     func speak(text: String, title: String, rate: Float) {
-        let template = GlobalSettings.shared.httpTtsUrlTemplate
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !template.isEmpty, let url = buildURL(template: template, text: text, title: title, rate: rate) else {
+        ttsLog("[TTS][HTTPEngine] speak requested textCount=\(text.count) title=\(title) rate=\(rate)")
+        guard !GlobalSettings.shared.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            ttsLog("[TTS][HTTPEngine] speak aborted empty template")
             return
         }
 
+        resetPlaybackState()
+        chunks = splitText(text)
+        guard !chunks.isEmpty else {
+            ttsLog("[TTS][HTTPEngine] speak aborted no chunks")
+            return
+        }
+
+        playbackToken = UUID()
+        lastTitle = title
         lastRate = rate
-        stopInternal()
-
-        let item = AVPlayerItem(url: url)
-        playerItem = item
-
-        // 監聽播放結束
-        endObserver = NotificationCenter.default.addObserver(
-            forName: AVPlayerItem.didPlayToEndTimeNotification,
-            object: item,
-            queue: .main
-        ) { [weak self] _ in
-            self?.handlePlaybackEnded()
-        }
-
-        // 監聽載入失敗
-        itemObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
-            guard item.status == .failed else { return }
-            DispatchQueue.main.async { self?.stop() }
-        }
-
-        if player == nil {
-            player = AVPlayer(playerItem: item)
-        } else {
-            player?.replaceCurrentItem(with: item)
-        }
-
-        player?.play()
+        currentIndex = 0
+        isPaused = false
         isPlaying = true
+        beginBackgroundTask()
+
+        ttsLog("[TTS][HTTPEngine] chunked count=\(chunks.count) firstCount=\(chunks.first?.count ?? 0)")
+        playChunk(at: 0, token: playbackToken)
     }
 
     func pause() {
-        player?.pause()
+        ttsLog("[TTS][HTTPEngine] pause requested isPlaying=\(isPlaying) index=\(currentIndex) playerPlaying=\(audioPlayer?.isPlaying ?? false)")
+        guard isPlaying else { return }
+        audioPlayer?.pause()
+        isPaused = true
         isPlaying = false
+        endBackgroundTask()
+        ttsLog("[TTS][HTTPEngine] pause done currentTime=\(audioPlayer?.currentTime ?? 0)")
     }
 
     func resume() {
-        player?.play()
+        ttsLog("[TTS][HTTPEngine] resume requested isPlaying=\(isPlaying) isPaused=\(isPaused) index=\(currentIndex)")
+        guard !isPlaying, isPaused else { return }
+        beginBackgroundTask()
+        isPaused = false
         isPlaying = true
+
+        if let audioPlayer {
+            let success = audioPlayer.play()
+            isPlaying = success
+            ttsLog("[TTS][HTTPEngine] resume player success=\(success) currentTime=\(audioPlayer.currentTime)")
+        } else {
+            playChunk(at: currentIndex, token: playbackToken)
+        }
     }
 
     func stop() {
-        stopInternal()
+        ttsLog("[TTS][HTTPEngine] stop requested")
+        playbackToken = UUID()
+        resetPlaybackState()
         onStop?()
     }
 
-    // MARK: - Internal helpers
+    // MARK: - Queue
 
-    private func stopInternal() {
-        player?.pause()
-        if let obs = endObserver {
-            NotificationCenter.default.removeObserver(obs)
-            endObserver = nil
+    private func playChunk(at index: Int, token: UUID) {
+        guard token == playbackToken else {
+            ttsLog("[TTS][HTTPEngine] playChunk ignored stale token index=\(index)")
+            return
         }
-        itemObserver?.invalidate()
-        itemObserver = nil
-        player?.replaceCurrentItem(with: nil)
-        isPlaying = false
+        guard !isPaused else {
+            ttsLog("[TTS][HTTPEngine] playChunk paused index=\(index)")
+            return
+        }
+        guard index < chunks.count else {
+            handlePageChunksFinished(token: token)
+            return
+        }
+
+        currentIndex = index
+
+        if let data = audioCache.removeValue(forKey: index) {
+            ttsLog("[TTS][HTTPEngine] playChunk cached index=\(index) bytes=\(data.count)")
+            startPreloading(from: index + 1, token: token)
+            playAudioData(data, index: index, token: token)
+            return
+        }
+
+        if activeTasks[index] != nil {
+            pendingPlaybackIndex = index
+            ttsLog("[TTS][HTTPEngine] playChunk pending active preload index=\(index)")
+            return
+        }
+
+        ttsLog("[TTS][HTTPEngine] playChunk waiting download index=\(index)")
+        downloadChunk(at: index, token: token, priority: .current)
+        startPreloading(from: index + 1, token: token)
     }
 
-    private func handlePlaybackEnded() {
-        isPlaying = false
+    private func startPreloading(from index: Int, token: UUID) {
+        guard token == playbackToken, !chunks.isEmpty else { return }
+        let end = min(chunks.count, index + preloadWindow)
+        guard index < end else { return }
+
+        for preloadIndex in index..<end {
+            guard activeTasks.count < maxConcurrentDownloads else { return }
+            guard audioCache[preloadIndex] == nil, activeTasks[preloadIndex] == nil else { continue }
+            downloadChunk(at: preloadIndex, token: token, priority: .preload)
+        }
+    }
+
+    private enum DownloadPriority {
+        case current
+        case preload
+    }
+
+    private func downloadChunk(at index: Int, token: UUID, priority: DownloadPriority) {
+        guard token == playbackToken, index < chunks.count else { return }
+        if audioCache[index] != nil { return }
+        if activeTasks[index] != nil {
+            if priority == .current {
+                pendingPlaybackIndex = index
+                ttsLog("[TTS][HTTPEngine] download already active; marked pending index=\(index)")
+            }
+            return
+        }
+
+        let chunkText = chunks[index]
+        let title = lastTitle
+        let rate = lastRate
+        ttsLog("[TTS][HTTPEngine] provider request start index=\(index) provider=\(audioProvider.displayName) priority=\(priority) textCount=\(chunkText.count)")
+        let task = Task { [weak self, audioProvider] in
+            do {
+                let data = try await audioProvider.audioData(for: chunkText, title: title, rate: rate)
+                guard !Task.isCancelled else { return }
+                DispatchQueue.main.async {
+                    self?.handleDownloadedData(data, index: index, token: token, priority: priority)
+                }
+            } catch is CancellationError {
+                ttsLog("[TTS][HTTPEngine] provider request cancelled index=\(index)")
+            } catch let error as URLError where error.code == .cancelled {
+                ttsLog("[TTS][HTTPEngine] provider request cancelled index=\(index)")
+            } catch {
+                guard !Task.isCancelled else { return }
+                DispatchQueue.main.async {
+                    self?.handleDownloadFailure(error, index: index, token: token, priority: priority)
+                }
+            }
+        }
+
+        activeTasks[index] = task
+    }
+
+    private func handleDownloadedData(
+        _ data: Data,
+        index: Int,
+        token: UUID,
+        priority: DownloadPriority
+    ) {
+        activeTasks[index] = nil
+        guard token == playbackToken else {
+            ttsLog("[TTS][HTTPEngine] provider result ignored stale token index=\(index)")
+            return
+        }
+
+        let isPendingPlayback = pendingPlaybackIndex == index && currentIndex == index
+        audioCache[index] = data
+        ttsLog("[TTS][HTTPEngine] provider result success index=\(index) bytes=\(data.count)")
+
+        if (priority == .current || isPendingPlayback), currentIndex == index, audioPlayer == nil, !isPaused {
+            pendingPlaybackIndex = nil
+            playChunk(at: index, token: token)
+        } else {
+            startPreloading(from: index + 1, token: token)
+        }
+    }
+
+    private func handleDownloadFailure(
+        _ error: Error,
+        index: Int,
+        token: UUID,
+        priority: DownloadPriority
+    ) {
+        activeTasks[index] = nil
+        guard token == playbackToken else {
+            ttsLog("[TTS][HTTPEngine] provider failure ignored stale token index=\(index)")
+            return
+        }
+
+        let isPendingPlayback = pendingPlaybackIndex == index && currentIndex == index
+        ttsLog("[TTS][HTTPEngine] provider request failed index=\(index) error=\(error.localizedDescription)")
+        if priority == .current || isPendingPlayback {
+            pendingPlaybackIndex = nil
+            playChunk(at: index + 1, token: token)
+        } else {
+            startPreloading(from: index + 1, token: token)
+        }
+    }
+
+    // MARK: - Playback
+
+    private func playAudioData(_ data: Data, index: Int, token: UUID) {
+        guard token == playbackToken else {
+            ttsLog("[TTS][HTTPEngine] play ignored stale token index=\(index)")
+            return
+        }
+
+        do {
+            audioPlayer?.delegate = nil
+            audioPlayer?.stop()
+
+            let player = try AVAudioPlayer(data: data)
+            player.delegate = self
+            let prepared = player.prepareToPlay()
+            player.volume = 1.0
+            player.numberOfLoops = 0
+            audioPlayer = player
+
+            let success = player.play()
+            isPlaying = success
+            ttsLog("[TTS][HTTPEngine] play submitted index=\(index) prepared=\(prepared) success=\(success) duration=\(player.duration) currentTime=\(player.currentTime) format=\(player.format) volume=\(player.volume)")
+
+            if !success {
+                playChunk(at: index + 1, token: token)
+            }
+        } catch {
+            ttsLog("[TTS][HTTPEngine] player init failed index=\(index) error=\(error.localizedDescription)")
+            playChunk(at: index + 1, token: token)
+        }
+    }
+
+    private func handlePlaybackEnded(successfully flag: Bool) {
+        let finishedIndex = currentIndex
+        ttsLog("[TTS][HTTPEngine] playback ended index=\(finishedIndex) successfully=\(flag)")
+        audioPlayer?.delegate = nil
+        audioPlayer = nil
+
+        guard isPlaying, !isPaused else { return }
+        playChunk(at: finishedIndex + 1, token: playbackToken)
+    }
+
+    private func handlePageChunksFinished(token: UUID) {
+        guard token == playbackToken else { return }
+        ttsLog("[TTS][HTTPEngine] page chunks finished count=\(chunks.count)")
+
         if let nextText = onPageFinished?(), !nextText.isEmpty {
             speak(text: nextText, title: "", rate: lastRate)
         } else {
-            stop()
+            resetPlaybackState()
+            onStop?()
         }
     }
 
-    /// 將模板佔位符替換為實際值並回傳 URL。
-    func buildURL(template: String, text: String, title: String, rate: Float) -> URL? {
-        guard !template.isEmpty else { return nil }
-        var queryValueCS = CharacterSet.urlQueryAllowed
-        queryValueCS.remove(charactersIn: "&+=?#%")
-        let encodedText  = text.addingPercentEncoding(withAllowedCharacters: queryValueCS) ?? text
-        let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: queryValueCS) ?? title
-        let speedStr     = String(format: "%.2f", rate)
+    private func resetPlaybackState() {
+        activeTasks.values.forEach { $0.cancel() }
+        activeTasks.removeAll()
+        audioCache.removeAll()
+        chunks.removeAll()
+        currentIndex = 0
+        isPaused = false
+        pendingPlaybackIndex = nil
+        isPlaying = false
+        audioPlayer?.delegate = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
+        endBackgroundTask()
+    }
 
-        let resolved = template
-            .replacingOccurrences(of: "{{text}}",       with: encodedText)
-            .replacingOccurrences(of: "{{title}}",      with: encodedTitle)
-            .replacingOccurrences(of: "{{speakSpeed}}", with: speedStr)
+    // MARK: - Text splitting
 
-        return URL(string: resolved)
+    private func splitText(_ text: String) -> [String] {
+        var result: [String] = []
+        var buffer = ""
+        let terminators = CharacterSet(charactersIn: "。！？!?；;…\n")
+
+        for scalar in text.unicodeScalars {
+            buffer.unicodeScalars.append(scalar)
+            let shouldBreak = terminators.contains(scalar) || buffer.count >= targetChunkLength
+            if shouldBreak {
+                appendChunk(buffer, to: &result)
+                buffer.removeAll(keepingCapacity: true)
+            }
+        }
+
+        appendChunk(buffer, to: &result)
+        return result
+    }
+
+    private func appendChunk(_ text: String, to result: inout [String]) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        result.append(trimmed)
+    }
+
+    // MARK: - Background task
+
+    private func beginBackgroundTask() {
+        guard backgroundTask == .invalid else { return }
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "HTTP TTS Playback") { [weak self] in
+            ttsLog("[TTS][HTTPEngine] background task expired")
+            self?.endBackgroundTask()
+        }
+        ttsLog("[TTS][HTTPEngine] background task started id=\(backgroundTask.rawValue)")
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        ttsLog("[TTS][HTTPEngine] background task ended id=\(backgroundTask.rawValue)")
+        backgroundTask = .invalid
+    }
+
+    deinit {
+        playbackToken = UUID()
+        resetPlaybackState()
+    }
+}
+
+extension HTTPTTSEngine: AVAudioPlayerDelegate {
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            self?.handlePlaybackEnded(successfully: flag)
+        }
+    }
+
+    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        DispatchQueue.main.async { [weak self] in
+            ttsLog("[TTS][HTTPEngine] decode error=\(error?.localizedDescription ?? "nil")")
+            guard let self else { return }
+            self.audioPlayer?.delegate = nil
+            self.audioPlayer = nil
+            self.playChunk(at: self.currentIndex + 1, token: self.playbackToken)
+        }
     }
 }
