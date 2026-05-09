@@ -759,11 +759,23 @@ final class HTMLAttributedStringBuilder {
 
         var attachmentStyle = element.resolvedStyle
         resolveSVGPresentationAttributes(imageElement, style: &attachmentStyle, config: config)
-        if let widthValue = attachmentStyle.rawWidthPercent {
-            // Re-resolve percentage widths relative to render width, not font size
-            attachmentStyle.width = config.renderWidth * widthValue / 100.0
-        } else if let width = imageElement.resolvedStyle.width ?? attachmentStyle.width {
-            attachmentStyle.width = width
+
+        // Fix percentage width: CSS resolves % relative to font size, but images need render width
+        let percentWidth = imageElement.resolvedStyle.rawWidthPercent ?? attachmentStyle.rawWidthPercent
+        if let pct = percentWidth {
+            attachmentStyle.width = config.renderWidth * pct / 100.0
+        }
+
+        let percentHeight = imageElement.resolvedStyle.rawHeightPercent ?? attachmentStyle.rawHeightPercent
+        if let pct = percentHeight {
+            attachmentStyle.height = config.renderWidth * pct / 100.0
+        }
+
+        if attachmentStyle.width == nil, let w = imageElement.resolvedStyle.width {
+            attachmentStyle.width = w
+        }
+        if attachmentStyle.height == nil, let h = imageElement.resolvedStyle.height {
+            attachmentStyle.height = h
         }
         if let height = imageElement.resolvedStyle.height ?? attachmentStyle.height {
             attachmentStyle.height = height
