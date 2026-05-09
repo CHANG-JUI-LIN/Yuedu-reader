@@ -1,0 +1,14 @@
+// Shared settings for all targets
+
+SWIFT_VERSION = 6.0
+IPHONEOS_DEPLOYMENT_TARGET = 18.0
+TARGETED_DEVICE_FAMILY = 1,2
+
+// Warnings as errors (staged — enable fully after cleanup)
+SWIFT_TREAT_WARNINGS_AS_ERRORS = NO
+
+// Debug information
+DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
+
+// Enable module verification
+ENABLE_MODULE_VERIFIER = YES
