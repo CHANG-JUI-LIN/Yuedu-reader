@@ -1,13 +1,13 @@
 import Foundation
 
-// MARK: - RuleEngine 替換規則擴展
+// MARK: - RuleEngine Replace Rule Extensions
 
 extension RuleEngine {
     static func applyReplaceRegex(_ text: String, rules: String) -> String {
         let trimmedRules = rules.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedRules.isEmpty else { return text }
 
-        // 嘗試 JSON 陣列格式 [{"regex":"...", "replacement":"...", "isRegex":true}]
+        // Try JSON array format [{"regex":"...", "replacement":"...", "isRegex":true}]
         if trimmedRules.hasPrefix("["),
            let data = trimmedRules.data(using: .utf8),
            let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
@@ -29,7 +29,7 @@ extension RuleEngine {
             return result
         }
 
-        // Legado getString 格式：##pattern##replacement 或 ##pattern##replacement##（replaceFirst）
+        // Legado getString format: ##pattern##replacement or ##pattern##replacement## (replaceFirst)
         var result = text
         let lines = trimmedRules.components(separatedBy: "\n").filter { !$0.isEmpty }
         for line in lines {
@@ -45,7 +45,7 @@ extension RuleEngine {
                 if content.hasPrefix("##") {
                     content = String(content.dropFirst(2))
                 }
-                // Legado: 尾部 ### 表示 replaceFirst（只替換第一次匹配）
+                // Legado: trailing ### indicates replaceFirst (replace only first match)
                 if content.hasSuffix("###") {
                     replaceFirst = true
                     content = String(content.dropLast(3))

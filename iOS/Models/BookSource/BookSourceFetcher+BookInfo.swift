@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - 獲取書籍詳情
+// MARK: - Fetch Book Details
 
 extension BookSourceFetcher {
 

@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - 九宮格觸控區域動作
+// MARK: - Grid Touch Zone Actions
 enum TouchAction: String, CaseIterable, Codable {
     case prevPage = "上一頁"
     case nextPage = "下一頁"
@@ -8,26 +8,26 @@ enum TouchAction: String, CaseIterable, Codable {
     case none = "無動作"
 }
 
-// MARK: - 九宮格觸控配置
+// MARK: - Grid Touch Configuration
 
-/// 3×3 九宮格：index 0-8 由左上到右下
+/// 3x3 grid: indices 0-8 from top-left to bottom-right
 /// ┌───────┬────────┬───────┐
-/// │ 0 左上 │ 1 中上 │ 2 右上 │
+/// │ 0 TL  │ 1 TC   │ 2 TR  │
 /// ├───────┼────────┼───────┤
-/// │ 3 左中 │ 4 正中 │ 5 右中 │
+/// │ 3 ML  │ 4 MC   │ 5 MR  │
 /// ├───────┼────────┼───────┤
-/// │ 6 左下 │ 7 中下 │ 8 右下 │
+/// │ 6 BL  │ 7 BC   │ 8 BR  │
 /// └───────┴────────┴───────┘
 struct TouchZoneConfig: Codable {
-    var zones: [TouchAction]  // 恆為 9 個元素
+    var zones: [TouchAction]  // Always 9 elements
 
     static let `default` = TouchZoneConfig(zones: [
-        .prevPage, .prevPage, .nextPage,  // 上排：左上←, 中上←, 右上→
-        .prevPage, .toggleMenu, .nextPage,  // 中排：左中←, 正中選單, 右中→
-        .prevPage, .nextPage, .nextPage,  // 下排：左下←, 中下→, 右下→
+        .prevPage, .prevPage, .nextPage,  // Top row: TL←, TC←, TR→
+        .prevPage, .toggleMenu, .nextPage,  // Middle row: ML←, MC menu, MR→
+        .prevPage, .nextPage, .nextPage,  // Bottom row: BL←, BC→, BR→
     ])
 
-    /// 持久化 key
+    /// Persistence key
     private static let key = "yd_touch_zones"
 
     static func load() -> TouchZoneConfig {
@@ -44,7 +44,7 @@ struct TouchZoneConfig: Codable {
         }
     }
 
-    /// 根據觸控位置比例（0~1, 0~1）回傳動作
+    /// Returns the action for a given normalized touch position (0~1, 0~1)
     func action(at point: CGPoint, in size: CGSize) -> TouchAction {
         let col = min(2, Int(point.x / size.width * 3))
         let row = min(2, Int(point.y / size.height * 3))

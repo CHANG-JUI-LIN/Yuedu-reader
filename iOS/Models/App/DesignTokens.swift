@@ -1,51 +1,51 @@
 import SwiftUI
 
-// MARK: - 設計系統：顏色 Token
+// MARK: - Design System: Color Tokens
 
 enum DSColor {
-    // ── 品牌色 ──
-    /// 主要強調色（按鈕、連結、選中態）
+    // ── Brand ──
+    /// Primary accent (buttons, links, selected state)
     static let accent = Color.accentColor
-    /// 成功狀態
+    /// Success state
     static let success = Color.green
-    /// 警告狀態
+    /// Warning state
     static let warning = Color.orange
-    /// 危險/刪除
+    /// Destructive / delete
     static let destructive = Color.red
 
-    // ── 文字 ──
-    /// 主要文字（自動適配亮/暗模式）
+    // ── Text ──
+    /// Primary text (auto-adapts to light/dark mode)
     static let textPrimary = Color.primary
-    /// 次要文字（說明、副標題）
+    /// Secondary text (captions, subtitles)
     static let textSecondary = Color.secondary
-    /// 禁用狀態文字
+    /// Disabled text
     static let textDisabled = Color.secondary.opacity(0.5)
 
-    // ── 背景 ──
-    /// 頁面底色
+    // ── Background ──
+    /// Page background
     static let background = Color(.systemBackground)
-    /// 分組/卡片背景
+    /// Group / card background
     static let surface = Color(.secondarySystemBackground)
-    /// 三級背景（嵌套分組）
+    /// Tertiary background (nested groups)
     static let surfaceTertiary = Color(.tertiarySystemBackground)
-    /// 分組內容背景
+    /// Grouped content background
     static let groupedBackground = Color(.systemGroupedBackground)
 
-    // ── 邊框與分隔線 ──
-    /// 細分隔線
+    // ── Borders & Separators ──
+    /// Thin separator
     static let separator = Color(.separator)
-    /// 輕量邊框
+    /// Light border
     static let border = Color(.systemGray4)
 
-    // ── 功能色 ──
-    /// 淺色標籤/選中背景
+    // ── Functional ──
+    /// Light label / selected background
     static let accentLight = Color.blue.opacity(0.08)
-    /// 卡片陰影
+    /// Card shadow
     static let shadow = Color.black.opacity(0.05)
-    /// 選中高亮
+    /// Selected highlight
     static let highlight = Color.blue.opacity(0.15)
 
-    // ── 書封面漸層調色板 ──
+    // ── Book Cover Gradient Palette ──
     static let coverGradients: [[Color]] = [
         [Color(red: 0.2, green: 0.3, blue: 0.7), Color(red: 0.1, green: 0.6, blue: 0.8)],
         [Color(red: 0.6, green: 0.1, blue: 0.1), Color(red: 0.9, green: 0.4, blue: 0.1)],
@@ -54,81 +54,81 @@ enum DSColor {
         [Color(red: 0.1, green: 0.1, blue: 0.15), Color(red: 0.3, green: 0.3, blue: 0.5)],
     ]
 
-    // ── 搜尋引擎品牌色 ──
+    // ── Search Engine Brand Colors ──
     static let brandBaidu = Color(red: 0.1, green: 0.4, blue: 0.9)
     static let brandBing = Color(red: 0.0, green: 0.5, blue: 0.7)
 }
 
-// MARK: - 設計系統：字體 Token
+// MARK: - Design System: Font Tokens
 
 enum DSFont {
-    /// 最小標籤（10pt）
+    /// Smallest label (10pt)
     static let caption2 = Font.caption2
-    /// 小型說明文字（12pt）
+    /// Small caption (12pt)
     static let caption = Font.caption
-    /// 副標題（15pt）
+    /// Subheadline (15pt)
     static let subheadline = Font.subheadline
-    /// 正文（17pt）
+    /// Body (17pt)
     static let body = Font.body
-    /// 正文粗體
+    /// Body bold
     static let bodyBold = Font.body.weight(.semibold)
-    /// 標題級（17pt bold）
+    /// Headline (17pt bold)
     static let headline = Font.headline
-    /// 次級標題（22pt）
+    /// Title 2 (22pt)
     static let title2 = Font.title2
-    /// 主標題（28pt）
+    /// Title (28pt)
     static let title = Font.title
-    /// 大標題（34pt）
+    /// Large title (34pt)
     static let largeTitle = Font.largeTitle
 
-    /// 等寬字體（代碼/規則/URL）
+    /// Monospaced font for code, rules, and URLs
     static func monospaced(size: CGFloat = 13) -> Font {
         .system(size: size, design: .monospaced)
     }
 
-    /// 工具欄圖標字體
+    /// Toolbar icon font
     static let toolbarIcon = Font.system(size: 16)
-    /// 工具欄大圖標
+    /// Toolbar large icon
     static let toolbarIconLarge = Font.system(size: 18, weight: .semibold)
 }
 
-// MARK: - 設計系統：間距 Token
+// MARK: - Design System: Spacing Tokens
 
 enum DSSpacing {
-    /// 4pt — 極小間距（緊湊元素間）
+    /// 4pt — extra-small (between compact elements)
     static let xs: CGFloat = 4
-    /// 8pt — 小間距（元素內部）
+    /// 8pt — small (within elements)
     static let sm: CGFloat = 8
-    /// 12pt — 中間距（元素之間）
+    /// 12pt — medium (between elements)
     static let md: CGFloat = 12
-    /// 16pt — 大間距（分組/區塊之間）
+    /// 16pt — large (between groups / blocks)
     static let lg: CGFloat = 16
-    /// 24pt — 超大間距（頁面留白）
+    /// 24pt — extra-large (page padding)
     static let xl: CGFloat = 24
-    /// 32pt — 最大間距（區域分隔）
+    /// 32pt — maximum (region separation)
     static let xxl: CGFloat = 32
 }
 
-// MARK: - 設計系統：圓角 Token
+// MARK: - Design System: Corner Radius Tokens
 
 enum DSRadius {
-    /// 小圓角（標籤、小按鈕）
+    /// Small radius (labels, small buttons)
     static let sm: CGFloat = 6
-    /// 中圓角（按鈕、輸入框）
+    /// Medium radius (buttons, input fields)
     static let md: CGFloat = 8
-    /// 大圓角（卡片、對話框）
+    /// Large radius (cards, dialogs)
     static let lg: CGFloat = 12
-    /// 超大圓角（圖片容器）
+    /// Extra-large radius (image containers)
     static let xl: CGFloat = 16
 }
 
-// MARK: - 設計系統：動畫 Token
+// MARK: - Design System: Animation Tokens
 
 enum DSAnimation {
-    /// 快速交互反饋
+    /// Fast interactive feedback
     static let fast = Animation.easeOut(duration: 0.15)
-    /// 標準過渡
+    /// Standard transition
     static let standard = Animation.easeOut(duration: 0.28)
-    /// 慢速展開
+    /// Slow expansion
     static let slow = Animation.easeInOut(duration: 0.4)
 }

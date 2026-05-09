@@ -1,8 +1,9 @@
 import UIKit
 
-/// CADisplayLink 會強引用 target，導致 Retain Cycle。
-/// 使用 WeakProxy 中介，讓 CADisplayLink → Proxy（強引用）→ target（弱引用），
-/// 確保容器 View 被移除時能正常 deinit。
+/// CADisplayLink strongly references its target, causing a retain cycle.
+/// DisplayLinkProxy acts as an intermediary, so CADisplayLink has a strong
+/// reference to the proxy, and the proxy holds a weak reference to the real
+/// target, ensuring the container view can deinit properly.
 final class DisplayLinkProxy: NSObject {
     private weak var target: AnyObject?
     private let action: Selector
@@ -18,11 +19,10 @@ final class DisplayLinkProxy: NSObject {
             link.invalidate()
             return
         }
-        // 透過 performSelector 轉發 tick
         _ = target.perform(action, with: link)
     }
 
-    /// 建立一個透過 proxy 的 CADisplayLink
+    /// Creates a CADisplayLink that routes through a proxy to avoid retain cycles.
     static func displayLink(
         target: AnyObject,
         selector: Selector,
@@ -33,7 +33,6 @@ final class DisplayLinkProxy: NSObject {
         if let fps = preferredFPS {
             link.preferredFrameRateRange = fps
         }
-        // proxy 由 CADisplayLink 強引用，target 被 proxy 弱引用
         return link
     }
 }

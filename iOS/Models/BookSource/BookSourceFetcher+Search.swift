@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - 搜索書籍
+// MARK: - Search Books
 
 extension BookSourceFetcher {
 
@@ -43,7 +43,7 @@ extension BookSourceFetcher {
             return []
         }
 
-        // Legado loginCheckJs：透過 JSCore 求值，若回傳需登入則跳過解析
+        // Legado loginCheckJs: evaluate via JSCore; skip parsing if login is required
         if pipeline.checkLoginRequired(html: html, baseURL: url.absoluteString, source: source) {
             return []
         }
@@ -59,7 +59,7 @@ extension BookSourceFetcher {
             books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
     }
 
-    /// Legado 相容：依 checkKeyWord 過濾搜尋結果（僅保留書名/作者含關鍵字的項）
+    /// Legado compatible: filter search results by checkKeyWord (keep only items matching keyword in title/author)
     private func filterSearchResultsByCheckKeyWord(
         _ books: [OnlineBook], query: String, checkKeyWord: String
     ) -> [OnlineBook] {

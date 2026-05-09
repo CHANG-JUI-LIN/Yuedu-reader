@@ -2,24 +2,23 @@ import CoreText
 import Foundation
 import UIKit
 
-/// 一塊已切片的 CoreText 內容，對應 UICollectionView 的一個 cell。
-/// `frame` 為 nil 代表已被驅逐，可從 `framesetter` + `charRange` 重建。
+/// A sliced CoreText content block, corresponding to one UICollectionView cell.
+/// `frame` being nil means it has been evicted and can be reconstructed from `framesetter` + `charRange`.
 final class CoreTextChunk {
     let chapterIndex: Int
-    /// 在該章 attributedString 中的 character range（UTF-16）
+    /// Character range (UTF-16) within the chapter's attributedString
     let charRange: CFRange
     let height: CGFloat
     let width: CGFloat
-    /// 共享於同一章所有 chunk，用來在 evict 後重建 frame
+    /// Shared across all chunks of the same chapter; used to rebuild frame after eviction
     let framesetter: CTFramesetter
-    /// 整章 attributedString，drawLines 需要查屬性（Phase 1 直接交給 CTFrameDraw 渲染，仍保留以便日後擴充）
     let attributedString: NSAttributedString
 
     private(set) var frame: CTFrame?
-    /// 圖片附件位置（UIKit 座標，相對 chunk 左上原點）。slice 時計算一次後快取。
+    /// Image attachment positions (UIKit coordinates, relative to chunk top-left origin). Cached once during slicing.
     private(set) var attachments: [CoreTextPaginator.RenderedAttachment] = []
 
-    /// 是否為「整塊單圖」chunk（封面 / 整頁插圖）。為 true 時跳過 CTFrame 渲染，只畫 attachments。
+    /// Whether this chunk is a single-image block (cover / full-page illustration). When true, skip CTFrame rendering and only draw attachments.
     let isImageOnly: Bool
 
     init(chapterIndex: Int,
@@ -70,9 +69,9 @@ final class CoreTextChunk {
         frame = nil
     }
 
-    // MARK: - 選取（hit-test / rect 計算）
+    // MARK: - Selection (hit-test / rect calculation)
 
-    /// 把 cell 內的 UIKit 座標點轉成「章節層級」字元 index（含 chunk.charRange.location 起算的全章 index）
+    /// Converts a UIKit coordinate point within the cell to a chapter-level character index (including the full-chapter index starting from charRange.location)
     func stringIndex(atLocalPoint point: CGPoint) -> Int? {
         if isImageOnly { return nil }
         materializeFrameIfNeeded()
@@ -110,7 +109,7 @@ final class CoreTextChunk {
         return max(0, range.location + range.length - 1)
     }
 
-    /// 把章節範圍交集到本 chunk 的字元範圍，產出 cell-local（UIKit 座標）的反白矩形
+    /// Intersects the chapter range with this chunk's character range and produces cell-local (UIKit coordinate) highlight rectangles
     func selectionRects(forChapterRange chapterRange: NSRange) -> [CGRect] {
         if isImageOnly { return [] }
         materializeFrameIfNeeded()

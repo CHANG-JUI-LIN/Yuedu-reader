@@ -1,8 +1,8 @@
 import Foundation
 import UIKit
 
-/// 實驗性極速 HTML 轉 String 引擎 (The Dirty SAX Transpiler)
-/// 避開 DOM Tree 建立，實現記憶體優化與 20x 提速。
+/// Experimental high-speed HTML-to-String engine (SAX-style transpiler).
+/// Avoids DOM tree construction for memory optimization and ~20x speedup.
 final class DirtyHTMLParser {
     static let shared = DirtyHTMLParser()
     
@@ -13,7 +13,7 @@ final class DirtyHTMLParser {
         var currentTag = ""
         var currentFont = baseFont
         
-        // 簡單的狀態機直讀字節流
+        // Simple state machine processing the byte stream directly
         data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
             for byte in bytes {
                 let char = Character(UnicodeScalar(byte))
@@ -22,7 +22,7 @@ final class DirtyHTMLParser {
                     isTag = true
                     currentTag = ""
                     if !currentText.isEmpty {
-                        // 替換基本實體字符
+                        // Replace basic entity characters
                         let text = currentText
                             .replacingOccurrences(of: "&nbsp;", with: " ")
                             .replacingOccurrences(of: "&lt;", with: "<")
@@ -33,7 +33,7 @@ final class DirtyHTMLParser {
                     }
                 } else if char == ">" {
                     isTag = false
-                    // 根據 tag 變更狀態 (例如 b 變粗體)
+                    // Update state based on tag (e.g. <b> makes bold)
                     let lowerTag = currentTag.lowercased()
                     if lowerTag == "b" || lowerTag == "strong" {
                         if let descriptor = currentFont.fontDescriptor.withSymbolicTraits(.traitBold) {

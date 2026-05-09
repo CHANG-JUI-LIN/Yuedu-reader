@@ -2,20 +2,20 @@ import Combine
 import Foundation
 import SwiftUI
 
-// MARK: - 安全解析擴充（容錯 null / 缺失 key / 類型不匹配）
+// MARK: - Safe Decoding Extensions (null / missing key / type mismatch tolerance)
 
 extension KeyedDecodingContainer {
-    /// 遇到 null 或 key 缺失都回傳 ""，不拋錯
+    /// Returns "" when encountering null or missing key, without throwing
     func safeString(forKey key: Key) -> String {
         if let s = try? decodeIfPresent(String.self, forKey: key) { return s }
-        // Legado 某些欄位可能被序列化為數字而非字串
+        // Some Legado fields may be serialized as numbers instead of strings
         if let i = try? decodeIfPresent(Int.self, forKey: key) { return String(i) }
         if let d = try? decodeIfPresent(Double.self, forKey: key) { return String(d) }
         if let b = try? decodeIfPresent(Bool.self, forKey: key) { return b ? "true" : "false" }
         return ""
     }
 
-    /// Int 容錯：接受 Int、String("0")、Double、Bool
+    /// Int tolerant decoding: accepts Int, String("0"), Double, Bool
     func safeInt(forKey key: Key) -> Int {
         if let i = try? decodeIfPresent(Int.self, forKey: key) { return i }
         if let s = try? decodeIfPresent(String.self, forKey: key), let i = Int(s) { return i }
@@ -24,7 +24,7 @@ extension KeyedDecodingContainer {
         return 0
     }
 
-    /// Int64 容錯：接受 Int64、Int、String、Double
+    /// Int64 tolerant decoding: accepts Int64, Int, String, Double
     func safeInt64(forKey key: Key) -> Int64 {
         if let i = try? decodeIfPresent(Int64.self, forKey: key) { return i }
         if let i = try? decodeIfPresent(Int.self, forKey: key) { return Int64(i) }
@@ -33,7 +33,7 @@ extension KeyedDecodingContainer {
         return 0
     }
 
-    /// Bool 容錯：接受 Bool、Int(0/1)、String("true"/"false"/"0"/"1")
+    /// Bool tolerant decoding: accepts Bool, Int(0/1), String("true"/"false"/"0"/"1")
     func safeBool(forKey key: Key, defaultValue: Bool = false) -> Bool {
         if let b = try? decodeIfPresent(Bool.self, forKey: key) { return b }
         if let i = try? decodeIfPresent(Int.self, forKey: key) { return i != 0 }
@@ -45,7 +45,7 @@ extension KeyedDecodingContainer {
         return defaultValue
     }
 
-    /// Legado 規則可能是物件或 JSON 字串（備份/匯出時雙重編碼）
+    /// Legado rules may be objects or JSON strings (double-encoded during backup/export)
     func decodeRule<T: Decodable>(_ type: T.Type, forKey key: Key) -> T? {
         if let obj = try? decodeIfPresent(T.self, forKey: key) { return obj }
         if let str = try? decodeIfPresent(String.self, forKey: key),
@@ -55,7 +55,7 @@ extension KeyedDecodingContainer {
     }
 }
 
-// MARK: - 規則結構（Legado 相容，高容錯）
+// MARK: - Rule Structures (Legado compatible, high tolerance)
 
 struct SearchRule: Codable {
     var checkKeyWord: String = ""
@@ -99,8 +99,8 @@ struct BookInfoRule: Codable {
     var updateTime: String = ""
     var tocUrl: String = ""
     var canReName: String = ""
-    var downloadUrls: String = ""  // Legado: 下載地址規則
-    var ttsDice: String = ""       // Legado: TTS 隨機選擇器
+    var downloadUrls: String = ""  // Legado: download URL rule
+    var ttsDice: String = ""       // Legado: TTS random selector
 
     enum CodingKeys: String, CodingKey {
         case initScript = "init"
@@ -132,7 +132,7 @@ struct TOCRule: Codable {
     var chapterList: String = ""
     var chapterName: String = ""
     var chapterUrl: String = ""
-    var formatJs: String = ""   // Legado：章節格式化 JS
+    var formatJs: String = ""   // Legado: chapter formatting JS
     var isVolume: String = ""
     var isVip: String = ""
     var isPay: String = ""
@@ -168,7 +168,7 @@ struct ContentRule: Codable {
     var sourceRegex: String = ""
     var replaceRegex: String = ""
     var imageStyle: String = ""
-    var imageDecode: String = ""   // Legado: 圖片解碼規則
+    var imageDecode: String = ""   // Legado: image decode rule
     var payAction: String = ""
 
     init() {}
@@ -186,7 +186,7 @@ struct ContentRule: Codable {
     }
 }
 
-// MARK: - 發現頁規則（Legado ExploreRule）
+// MARK: - Discover Page Rules (Legado ExploreRule)
 
 struct ExploreRule: Codable {
     var bookList: String = ""
@@ -216,7 +216,7 @@ struct ExploreRule: Codable {
     }
 }
 
-// MARK: - 評論規則（Legado ReviewRule）
+// MARK: - Review Rules (Legado ReviewRule)
 
 struct ReviewRule: Codable {
     var review: String = ""
@@ -228,7 +228,7 @@ struct ReviewRule: Codable {
     }
 }
 
-// MARK: - 書源
+// MARK: - Book Source
 
 struct BookSource: Identifiable, Codable {
     var id: UUID = UUID()
@@ -236,34 +236,34 @@ struct BookSource: Identifiable, Codable {
     var bookSourceUrl: String = ""
     var bookSourceGroup: String = ""
     var bookSourceComment: String = ""
-    var bookSourceType: Int = 0       // 0 = 純文本, 1 = 音頻, 2 = 圖片, 3 = 文件
-    var bookUrlPattern: String = ""   // Legado: URL 匹配模式
-    var customOrder: Int = 0          // Legado: 自定義排序
+    var bookSourceType: Int = 0       // 0 = text, 1 = audio, 2 = image, 3 = file
+    var bookUrlPattern: String = ""   // Legado: URL match pattern
+    var customOrder: Int = 0          // Legado: custom ordering
     var enabled: Bool = true
-    var enabledExplore: Bool = true   // Legado: 發現頁開關
-    var enabledCookieJar: Bool = false // Legado: 自動 Cookie 管理
-    var enabledReview: Bool = false   // Legado: 較新版本字段
+    var enabledExplore: Bool = true   // Legado: discover page toggle
+    var enabledCookieJar: Bool = false // Legado: automatic cookie management
+    var enabledReview: Bool = false   // Legado: newer version field
     var searchUrl: String = ""
-    var exploreUrl: String = ""       // 發現/分類頁 URL（Legado 常見字段）
-    var concurrentRate: String = ""   // 並發限速
-    var header: String = ""           // JSON 字串，如 {"User-Agent":"..."}
+    var exploreUrl: String = ""       // Discover/category page URL (common Legado field)
+    var concurrentRate: String = ""   // Concurrency rate limit
+    var header: String = ""           // JSON string, e.g. {"User-Agent":"..."}
     var loginUrl: String = ""
-    var loginUi: String = ""          // Legado: 登入介面配置 JSON
-    var loginCheckJs: String = ""     // Legado：搜尋回應後執行，若回傳需登入則不解析結果
-    var respondTime: Int64 = 180000   // Legado: 回應時間（毫秒）
-    var lastUpdateTime: Int64 = 0     // Legado: 最後更新時間戳
+    var loginUi: String = ""          // Legado: login UI configuration JSON
+    var loginCheckJs: String = ""     // Legado: executed after search response; skip parsing if login is required
+    var respondTime: Int64 = 180000   // Legado: response time (milliseconds)
+    var lastUpdateTime: Int64 = 0     // Legado: last update timestamp
     var weight: Int = 0
-    var variableComment: String = ""  // Legado: 變量注釋
-    var exploreScreen: String = ""    // Legado: 發現頁面配置
-    var coverDecodeJs: String = ""    // Legado: 封面解碼 JS
+    var variableComment: String = ""  // Legado: variable comment
+    var exploreScreen: String = ""    // Legado: discover page configuration
+    var coverDecodeJs: String = ""    // Legado: cover decode JS
     var ruleSearch: SearchRule = SearchRule()
-    var ruleExplore: ExploreRule = ExploreRule()  // Legado: 發現頁規則
+    var ruleExplore: ExploreRule = ExploreRule()  // Legado: discover page rule
     var ruleBookInfo: BookInfoRule = BookInfoRule()
     var ruleToc: TOCRule = TOCRule()
     var ruleContent: ContentRule = ContentRule()
-    var ruleReview: ReviewRule = ReviewRule()      // Legado: 評論規則
+    var ruleReview: ReviewRule = ReviewRule()      // Legado: review rule
 
-    /// 此書源是否需要 WebView JS 渲染
+    /// Whether this book source requires WebView JS rendering
     var needsWebView: Bool { bookSourceType == 1 }
 
     enum CodingKeys: String, CodingKey {
@@ -296,18 +296,18 @@ struct BookSource: Identifiable, Codable {
         loginUi          = c.safeString(forKey: .loginUi)
         loginCheckJs     = c.safeString(forKey: .loginCheckJs)
         respondTime      = c.safeInt64(forKey: .respondTime)
-        if respondTime == 0 { respondTime = 180000 }  // Legado 默認值
+        if respondTime == 0 { respondTime = 180000 }  // Legado default value
         lastUpdateTime   = c.safeInt64(forKey: .lastUpdateTime)
         weight           = c.safeInt(forKey: .weight)
         variableComment  = c.safeString(forKey: .variableComment)
         exploreScreen    = c.safeString(forKey: .exploreScreen)
         coverDecodeJs    = c.safeString(forKey: .coverDecodeJs)
-        // Legado 的 enabled 可能是 Bool、Int 1/0 或 String "true"/"false"
+        // Legado's enabled field may be Bool, Int 1/0, or String "true"/"false"
         enabled          = c.safeBool(forKey: .enabled, defaultValue: true)
         enabledExplore   = c.safeBool(forKey: .enabledExplore, defaultValue: true)
         enabledCookieJar = c.safeBool(forKey: .enabledCookieJar, defaultValue: false)
         enabledReview    = c.safeBool(forKey: .enabledReview, defaultValue: false)
-        // Rule 結構：Legado 可能是物件或 JSON 字串（備份時雙重編碼）
+        // Rule structures: Legado may use objects or JSON strings (double-encoded during backup)
         ruleSearch   = c.decodeRule(SearchRule.self,   forKey: .ruleSearch)   ?? SearchRule()
         ruleExplore  = c.decodeRule(ExploreRule.self,  forKey: .ruleExplore)  ?? ExploreRule()
         ruleBookInfo = c.decodeRule(BookInfoRule.self, forKey: .ruleBookInfo) ?? BookInfoRule()
@@ -325,7 +325,7 @@ struct BookSource: Identifiable, Codable {
     }
 }
 
-// MARK: - 搜尋結果 / 書籍資訊
+// MARK: - Search Results / Book Info
 
 struct OnlineBook: Identifiable {
     var id = UUID()
@@ -334,16 +334,16 @@ struct OnlineBook: Identifiable {
     var intro: String
     var coverUrl: String
     var bookUrl: String
-    var tocUrl: String  // 目錄頁 URL（可能與 bookUrl 相同）
+    var tocUrl: String  // TOC page URL (may be identical to bookUrl)
     var wordCount: String
     var lastChapter: String
-    var kind: String  // 分類 / 標籤
+    var kind: String  // Category / tag
     var sourceId: UUID
     var sourceName: String
     var runtimeVariables: [String: String]? = nil
 }
 
-// MARK: - 線上章節引用
+// MARK: - Online Chapter Reference
 
 struct OnlineChapterRef: Identifiable, Codable {
     var id: UUID = UUID()
@@ -353,6 +353,6 @@ struct OnlineChapterRef: Identifiable, Codable {
     var isVolume: Bool = false
     var isVip: Bool = false
     var isPay: Bool = false
-    var cachedFilename: String? = nil  // nil 表示尚未抓取
+    var cachedFilename: String? = nil  // nil means not yet fetched
     var runtimeVariables: [String: String]? = nil
 }

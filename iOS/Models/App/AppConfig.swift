@@ -1,71 +1,77 @@
 import Foundation
 
-// MARK: - 應用配置常量
+// MARK: - Application Configuration Constants
 //
-// 集中管理所有硬編碼的業務邏輯常量，方便調整和測試。
-// 每個常量都有說明其用途和合理的取值範圍。
+// Centralizes all hardcoded business-logic constants for easier tuning and testing.
+// Each constant documents its purpose and reasonable value range.
 
 enum AppConfig {
-    // MARK: - 章節獲取
+    // MARK: - Chapter Fetching
 
-    /// 同一本書累積失敗幾次後，標記為 quarantined 並停止自動重試
-    /// 合理範圍：3~10；太小容易誤判，太大浪費網路資源
+    /// Number of cumulative failures before marking a book as quarantined
+    /// and stopping automatic retry.
+    /// Reasonable range: 3–10; too low risks false positives, too high wastes network resources.
     static let chapterFetchQuarantineThreshold: Int = 5
 
-    // MARK: - 啟動時自動更新
+    // MARK: - Startup Auto-Refresh
 
-    /// App 啟動時並行刷新書架的最大並發數
-    /// 過高會觸發書源的 Rate Limiting / Cloudflare 防護
+    /// Maximum concurrent bookshelf refreshes at app launch.
+    /// Too high triggers book-source rate limiting / Cloudflare protection.
     static let startupRefreshMaxConcurrentTasks: Int = 3
 
-    // MARK: - WebView 池
+    // MARK: - WebView Pool
 
-    /// WebView 池的固定大小；超出此數量的臨時 WebView 用完即棄
-    /// 過大會浪費記憶體，過小會排隊等待
+    /// Fixed size of the WebView pool. Temporary WebViews beyond this count are
+    /// discarded after use. Too large wastes memory, too small causes queuing.
     static let webViewPoolSize: Int = 3
 
-    /// WebView 池在全忙時最多允許多建幾個臨時 WebView（防止請求餓死）
-    /// 實際上限 = poolSize * webViewPoolOverflowMultiplier
+    /// Maximum additional temporary WebViews allowed when the pool is fully
+    /// occupied (prevents request starvation).
+    /// Effective limit = poolSize × webViewPoolOverflowMultiplier.
     static let webViewPoolOverflowMultiplier: Int = 2
 
-    // MARK: - 網路超時
+    // MARK: - Network Timeouts
 
-    /// WebView 渲染類請求的預設超時秒數
+    /// Default timeout in seconds for WebView rendering requests.
     static let webViewFetchTimeout: TimeInterval = 15
 
-    /// WebView 頁面加載後等待 JS 渲染完成的預設額外秒數（書源規則等舊路徑保留此值）
+    /// Default additional seconds to wait for JS rendering after WebView page
+    /// load (retained for legacy paths like book-source rules).
     static let webViewJSRenderWait: TimeInterval = 2.0
 
-    /// JS 規則引擎單次執行超時秒數
+    /// Timeout in seconds for a single JS rule engine execution.
     static let jsRuleEngineExecutionTimeout: TimeInterval = 8
 
-    /// 章節封裝抓取的最大超時秒數（超過即拋出 FetchTimeoutError.chapterTimeout）
+    /// Maximum timeout in seconds for chapter package fetch.
+    /// Exceeding this throws FetchTimeoutError.chapterTimeout.
     static let chapterFetchTimeoutSeconds: UInt64 = 35
 
-    /// WebView 執行 `jsAfterLoad` 後的額外等待秒數，讓動態頁面有時間套用 JS 結果
+    /// Additional seconds to wait after executing `jsAfterLoad` in WebView,
+    /// allowing dynamic pages time to apply JS results.
     static let webViewPostLoadJSEffectDelay: TimeInterval = 0.5
 
-    /// HTML 字串載入 WKWebView 後等待完成的超時秒數
+    /// Timeout in seconds for waiting after loading an HTML string into WKWebView.
     static let webViewHTMLLoadTimeout: UInt64 = 10
 
-    // MARK: - WebView 動態輪詢
+    // MARK: - WebView Dynamic Polling
 
-    /// JS 輪詢：每次探測間隔（毫秒）
+    /// JS polling: interval between probes (ms).
     static let webViewPollingIntervalMs: Int = 100
 
-    /// JS 輪詢：認定「內容已就緒」的最低字數（innerText.length）
+    /// JS polling: minimum innerText.length to consider content ready.
     static let webViewPollingMinTextLength: Int = 300
 
-    /// JS 輪詢：最多等待毫秒數，超過即強制繼續抓取
+    /// JS polling: maximum wait in ms; exceeded → force-continue fetch.
     static let webViewPollingMaxWaitMs: Int = 1500
 
-    // MARK: - 安全
+    // MARK: - Security
 
-    /// 允許書源使用的 URL scheme 白名單
+    /// Allowed URL schemes for book sources.
     static let allowedURLSchemes: Set<String> = ["http", "https"]
 
-    /// 本地/私有 IP 前綴黑名單，防止書源探測內網（SSRF）
-    /// 注意：NSAllowsLocalNetworking 已在 Info.plist 允許合法 LAN 書源，
-    /// 此黑名單用於阻止書源規則中出現的 URL 觸及內網敏感主機。
+    /// Local/private IP prefix blocklist to prevent book-source SSRF.
+    /// NSAllowsLocalNetworking in Info.plist already permits legitimate LAN
+    /// sources; this blocklist prevents URLs in book-source rules from
+    /// reaching sensitive internal hosts.
     static let blockedIPPrefixes: [String] = []
 }

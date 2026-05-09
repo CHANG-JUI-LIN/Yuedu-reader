@@ -2,20 +2,20 @@ import Combine
 import Foundation
 import SwiftUI
 
-// MARK: - 自動閱讀控制器
+// MARK: - Auto Read Controller
 
 /// Timer-driven auto page turning / auto scrolling
-/// 速度範圍 0.5x ~ 5.0x（越快，翻頁間隔越短）
+/// Speed range 0.5x ~ 5.0x (faster = shorter page-turn interval)
 final class AutoReadController: ObservableObject {
 
     @Published var isRunning = false
-    @Published var speed: Double = 1.0  // 1x = 每 4 秒翻一頁
+    @Published var speed: Double = 1.0  // 1x = one page every 4 seconds
 
     var onNextPage: (() -> Void)?
 
     private var timer: Timer?
 
-    /// 翻頁間隔（秒）
+    /// Page turn interval (seconds)
     private var interval: TimeInterval {
         max(0.5, 4.0 / speed)
     }
@@ -36,13 +36,13 @@ final class AutoReadController: ObservableObject {
         if isRunning { pause() } else { start() }
     }
 
-    /// 觸控時自動暫停
+    /// Auto-pause on touch
     func touchPause() {
         guard isRunning else { return }
         pause()
     }
 
-    /// 速度改變時重新排程
+    /// Reschedule when speed changes
     func updateSpeed(_ newSpeed: Double) {
         speed = max(0.5, min(newSpeed, 5.0))
         if isRunning {

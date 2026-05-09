@@ -4,29 +4,29 @@ import CoreText
 import Foundation
 import UIKit
 
-// MARK: - Core Text 分頁器：將 NSAttributedString 切成多頁
+// MARK: - Core Text Paginator: Split NSAttributedString into pages
 
 final class NativePageBuilder {
 
-    /// 分頁結果
+    /// Pagination result
     struct PageSlice {
         let chapterIndex: Int
         let chapterTitle: String
-        /// 該頁對應的富文字子串
+        /// The attributed substring for this page
         let attributedContent: NSAttributedString
-        /// 該頁在章節中的序號（0 起始）
+        /// The page's zero-based index within the chapter
         let pageInChapter: Int
     }
 
-    /// 章節分頁摘要（用於懶加載時的快速索引）
+    /// Chapter page summary for fast indexing during lazy loading
     struct ChapterPageInfo {
         let chapterIndex: Int
         let pageCount: Int
-        /// 該章節第一頁在全域 allPages 中的起始索引
+        /// Starting global page index of this chapter in allPages
         let globalStartPage: Int
     }
 
-    /// 對一個章節的 NSAttributedString 做 Core Text 分頁
+    /// Paginate a single chapter's NSAttributedString using Core Text
     static func paginate(
         attributed: NSAttributedString,
         chapterIndex: Int,
@@ -50,7 +50,7 @@ final class NativePageBuilder {
         let totalLength = attributed.length
 
         while currentOffset < totalLength {
-            // 第一頁留出標題空間
+            // Reserve space for the title on the first page
             var availableHeight = pageSize.height
             if pageNum == 0, let titleAttrs = titleAttributes {
                 let titleStr = NSAttributedString(string: chapterTitle + "
@@ -64,15 +64,15 @@ final class NativePageBuilder {
                     nil
                 )
                 availableHeight -= (titleSize.height + titleBottomPadding)
-                availableHeight = max(availableHeight, pageSize.height * 0.3) // 至少保留 30%
+                availableHeight = max(availableHeight, pageSize.height * 0.3) // Reserve at least 30%
             }
 
-            // 取剩餘文字
+            // Get remaining text
             let remaining = attributed.attributedSubstring(
                 from: NSRange(location: currentOffset, length: totalLength - currentOffset)
             )
 
-            // 用 CTFramesetter 計算這一頁能容納多少字
+            // Use CTFramesetter to determine how many characters fit on this page
             let framesetter = CTFramesetterCreateWithAttributedString(remaining)
             var fitRange = CFRange(location: 0, length: 0)
             CTFramesetterSuggestFrameSizeWithConstraints(
@@ -97,14 +97,14 @@ final class NativePageBuilder {
             currentOffset += pageRange.length
             pageNum += 1
 
-            // 安全閥：避免死循環
+            // Safety valve: prevent infinite loop
             if pageRange.length == 0 { break }
         }
 
         return pages
     }
 
-    /// 批量分頁所有章節（同步，適合章節數量少的書）
+    /// Batch-paginate all chapters synchronously (suitable for books with few chapters)
     static func paginateAll(
         chapters: [(title: String, attributed: NSAttributedString)],
         pageSize: CGSize,
@@ -130,9 +130,9 @@ final class NativePageBuilder {
         return allPages
     }
 
-    // MARK: - 漸進式分頁（百萬字小說專用）
+    // MARK: - Progressive Pagination (for large novels)
 
-    /// 估算單章頁數（不做真正的 CoreText 排版，極快）
+    /// Estimate the page count for a single chapter (no actual CoreText layout, very fast)
     static func estimatePageCount(
         charCount: Int,
         pageSize: CGSize,
@@ -143,13 +143,12 @@ final class NativePageBuilder {
         let font = UIFont.systemFont(ofSize: fontSize)
         let lineH = font.lineHeight + lineSpacing
         let linesPerPage = max(1, Int(pageSize.height / lineH))
-        // 中文約每行 pageSize.width / fontSize 個字
         let charsPerLine = max(1, Int(pageSize.width / fontSize))
         let charsPerPage = linesPerPage * charsPerLine
         return max(1, Int(ceil(Double(charCount) / Double(charsPerPage))))
     }
 
-    /// 並行分頁所有章節（多核加速，適合大型書籍）
+    /// Paginate all chapters concurrently (multi-core, suitable for large books)
     static func paginateAllConcurrently(
         chapters: [(title: String, attributed: NSAttributedString)],
         pageSize: CGSize,
@@ -178,14 +177,15 @@ final class NativePageBuilder {
         return results.flatMap { $0 }
     }
 
-    /// 漸進式分頁：先分頁焦點章節附近，立刻返回可用結果。
-    /// 剩餘章節在背景並行分頁，透過 onProgress 回調更新。
+    /// Progressive pagination: paginate chapters near the focus chapter first,
+    /// return usable results immediately. Remaining chapters are paginated in
+    /// the background, with updates delivered via onProgress.
     ///
     /// - Parameters:
-    ///   - focusChapter: 使用者當前閱讀的章節索引
-    ///   - chapters: 所有章節
-    ///   - onReady: 焦點區域分頁完成，帶初始 allPages 和估算總頁數（可立刻顯示 UI）
-    ///   - onProgress: 背景每完成一批章節就回調，帶更新後的完整 allPages
+    ///   - focusChapter: The chapter index the user is currently reading
+    ///   - chapters: All chapters
+    ///   - onReady: Focus zone pagination complete, with initial allPages and estimated total pages
+    ///   - onProgress: Callback after each background batch, with updated allPages
     static func paginateProgressively(
         focusChapter: Int,
         chapters: [(title: String, attributed: NSAttributedString)],
@@ -209,14 +209,14 @@ final class NativePageBuilder {
         let focus = min(max(focusChapter, 0), count - 1)
 
         DispatchQueue.global(qos: .userInitiated).async {
-            // Phase 1: 分頁焦點區域（前後各 3 章）
+            // Phase 1: Paginate focus zone (±3 chapters)
             let radius = 3
             let lo = max(0, focus - radius)
             let hi = min(count - 1, focus + radius)
 
             var paginatedSlices = [[PageSlice]?](repeating: nil, count: count)
 
-            // 焦點區域同步分頁（量小，很快）
+            // Focus zone: synchronous pagination (small, fast)
             for i in lo...hi {
                 let ch = chapters[i]
                 paginatedSlices[i] = paginate(
@@ -228,7 +228,7 @@ final class NativePageBuilder {
                 )
             }
 
-            // 非焦點區域：用估算頁數生成佔位 PageSlice
+            // Non-focus zone: generate placeholder slices using estimated page counts
             for i in 0..<count where paginatedSlices[i] == nil {
                 let ch = chapters[i]
                 let est = estimatePageCount(
@@ -239,7 +239,7 @@ final class NativePageBuilder {
                 )
                 var placeholder: [PageSlice] = []
                 for p in 0..<est {
-                    // 佔位 slice：attributedContent 留空，後續替換
+                    // Placeholder slice: attributedContent empty, replaced later
                     placeholder.append(PageSlice(
                         chapterIndex: i,
                         chapterTitle: ch.title,
@@ -254,18 +254,18 @@ final class NativePageBuilder {
             let estimatedTotal = initialPages.count
             onReady(initialPages, estimatedTotal)
 
-            // Phase 2: 背景並行分頁剩餘章節
+            // Phase 2: Background concurrent pagination of remaining chapters
             let remaining = (0..<count).filter { $0 < lo || $0 > hi }
             guard !remaining.isEmpty else { return }
 
-            // 分批處理，每批 20 章，避免記憶體峰值過高
+            // Process in batches of 20 chapters to avoid memory spikes
             let batchSize = 20
             var batchStart = 0
             while batchStart < remaining.count {
                 let batchEnd = min(batchStart + batchSize, remaining.count)
                 let batch = Array(remaining[batchStart..<batchEnd])
 
-                // 批內並行
+                // Intra-batch concurrency
                 var batchResults = [[PageSlice]](repeating: [], count: batch.count)
                 DispatchQueue.concurrentPerform(iterations: batch.count) { idx in
                     let i = batch[idx]
@@ -279,7 +279,7 @@ final class NativePageBuilder {
                     )
                 }
 
-                // 更新結果
+                // Update results
                 for (idx, i) in batch.enumerated() {
                     paginatedSlices[i] = batchResults[idx]
                 }
@@ -292,7 +292,7 @@ final class NativePageBuilder {
         }
     }
 
-    /// 計算排版區域（與 TXT 版 charsPerPage 使用相同邊距邏輯）
+    /// Compute the layout area (uses the same margin logic as the TXT charsPerPage path)
     static func computePageSize(
         screenSize: CGSize? = nil,
         pageMarginH: CGFloat,
@@ -308,7 +308,7 @@ final class NativePageBuilder {
         var h = max(200, screen.height - totalV)
         let w = max(200, screen.width - pageMarginH * 2)
 
-        // 將高度對齊到行高的整數倍，確保每頁剛好塞滿整數行（類似起點排版）
+        // Snap height to an integer multiple of line height, ensuring full lines per page
         if fontSize > 0 {
             let font = UIFont.systemFont(ofSize: fontSize)
             let singleLineHeight = font.lineHeight + lineSpacing

@@ -1,11 +1,11 @@
 import Foundation
 import os.log
 
-// MARK: - 結構化日誌模組
+// MARK: - Structured Logging Module
 //
-// 替換散落在代碼庫中的靜默失敗（// 靜默失敗，不打擾使用者）。
-// Release build 使用 os_log，保留在 Console.app 可查閱，不影響 UI。
-// Debug build 額外輸出到 stderr 方便開發者即時查看。
+// Replaces silent failures scattered across the codebase.
+// Release builds use os_log, viewable in Console.app without affecting the UI.
+// Debug builds additionally output to stderr for developer visibility.
 
 enum AppLogger {
     private static let subsystem = Bundle.main.bundleIdentifier ?? "com.yuedu.app"
@@ -82,10 +82,10 @@ enum AppLogger {
         #if DEBUG
         let prefix: String
         switch level {
-        case .fault:  prefix = "🔴 SECURITY"
-        case .error:  prefix = "🟠 ERROR"
-        case .info:   prefix = "🔵 INFO"
-        default:      prefix = "⚪ DEBUG"
+        case .fault:  prefix = "[SECURITY]"
+        case .error:  prefix = "[ERROR]"
+        case .info:   prefix = "[INFO]"
+        default:      prefix = "[DEBUG]"
         }
         print("\(prefix) \(fullMessage)")
         #endif

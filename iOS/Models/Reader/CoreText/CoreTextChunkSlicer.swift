@@ -2,13 +2,13 @@ import CoreText
 import Foundation
 import UIKit
 
-/// 把整章 NSAttributedString 切成多個 ~heightCap 高的 chunk。
-/// 純函式，可在背景執行緒跑。
+/// Slices a chapter's NSAttributedString into multiple chunks of approximately heightCap height each.
+/// Pure function, safe to run on background threads.
 enum CoreTextChunkSlicer {
-    /// 預設每塊高度上限：約 3 個螢幕，平衡切片成本與記憶體
+    /// Default max height per chunk: ~3 screen heights, balancing slicing cost and memory
     static let defaultHeightCap: CGFloat = 2000
 
-    /// 切片結果
+    /// Slicing result
     struct Output {
         let chunks: [CoreTextChunk]
         let framesetter: CTFramesetter
@@ -41,7 +41,7 @@ enum CoreTextChunkSlicer {
                 &fitRange
             )
 
-            // 單一元素超過 heightCap（典型：封面圖、巨幅插圖）→ 不限高重抓
+            // Single element exceeds heightCap (e.g. cover image, large illustration) → re-fetch without height limit
             if fitRange.length == 0 {
                 var fr2 = CFRange(location: 0, length: 0)
                 suggested = CTFramesetterSuggestFrameSizeWithConstraints(
@@ -54,12 +54,12 @@ enum CoreTextChunkSlicer {
                 fitRange = fr2
             }
 
-            // 防呆：CoreText 偶爾會回 length 0；強制至少推進 1 字以避免無限迴圈
+            // Guard: CoreText occasionally returns length 0; force advance at least 1 character to avoid infinite loop
             let consumeLen = max(fitRange.length, 1)
             let actualRange = CFRange(location: offset, length: min(consumeLen, totalLen - offset))
             var actualHeight = ceil(max(suggested.height, 1))
 
-            // 確保 chunk 高度容得下其中的 block 圖片（drawHeight）
+            // Ensure chunk height accommodates block images (drawHeight) within the range
             actualHeight = max(actualHeight, blockImageHeight(in: attrStr, range: actualRange))
 
             let path = CGPath(
@@ -83,8 +83,8 @@ enum CoreTextChunkSlicer {
         return Output(chunks: chunks, framesetter: framesetter, attributedString: attrStr)
     }
 
-    /// 掃描指定 range 內含 CTRunDelegate 的 block 圖片，回傳最大 drawHeight。
-    /// 用於確保 chunk path 高度足夠容納整張圖（CoreText 量度可能略小於 drawHeight）。
+    /// Scans the specified range for block images with CTRunDelegate and returns the maximum drawHeight.
+    /// Ensures the chunk path height is large enough to contain the entire image (CoreText measurement may be slightly smaller than drawHeight).
     private static func blockImageHeight(in attrStr: NSAttributedString, range: CFRange) -> CGFloat {
         let nsRange = NSRange(location: range.location, length: range.length)
         guard nsRange.location >= 0,

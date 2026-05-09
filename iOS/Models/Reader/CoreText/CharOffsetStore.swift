@@ -1,7 +1,7 @@
 import Foundation
 
-// charOffset 基準：NSAttributedString UTF-16 length，與 NSRange/CFRange 對齊。
-// 一個 Emoji（如 👨‍👩‍👧‍👦）在 NSRange 可能佔 10 個長度，請勿用 Swift String.count。
+// charOffset is based on NSAttributedString UTF-16 length, aligned with NSRange/CFRange.
+// A single emoji (e.g. 👨‍👩‍👧‍👦) may span 10 units in NSRange. Do not use Swift String.count.
 struct CharOffsetRecord: Codable, Equatable {
     let bookId: String
     let spineIndex: Int

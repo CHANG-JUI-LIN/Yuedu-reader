@@ -1,28 +1,28 @@
 import Foundation
 
-// MARK: - 閱讀器統一錯誤類型
+// MARK: - Reader Unified Error Type
 //
-// UI 層用來捕捉並呈現錯誤的統一抽象。
-// 底層各 domain 錯誤（FetchError, WebViewError, ParseError…）在 call site
-// 以 ReaderError.wrap(_:) 包裹後，UI 只需處理單一類型。
+// A unified abstraction for the UI layer to catch and present errors.
+// Underlying domain errors (FetchError, WebViewError, ParseError, etc.) are
+// wrapped via ReaderError.wrap(_:) at the call site, so the UI only handles a single type.
 
 enum ReaderError: LocalizedError {
-    /// 網路/HTTP 層錯誤（來自 FetchError / WebViewError / URLError 等）
+    /// Network/HTTP layer errors (from FetchError / WebViewError / URLError, etc.)
     case network(underlying: Error)
 
-    /// HTML/JSON 規則解析失敗（來自 ModernRuleEngineError 等）
+    /// HTML/JSON rule parsing failures (from ModernRuleEngineError, etc.)
     case parse(underlying: Error)
 
-    /// 本地 I/O 或資料格式錯誤（EPUB 解壓縮、TXT 編碼等）
+    /// Local I/O or data format errors (EPUB decompression, TXT encoding, etc.)
     case rendering(underlying: Error)
 
-    /// 快取讀寫失敗
+    /// Cache read/write failures
     case cache(underlying: Error)
 
-    /// 格式尚未支援（HTML/TXT 渲染等待遷移）
+    /// Unsupported format
     case unsupportedFormat(String)
 
-    /// 無法識別的錯誤
+    /// Unrecognized error
     case unknown(underlying: Error)
 
     // MARK: LocalizedError
@@ -44,9 +44,9 @@ enum ReaderError: LocalizedError {
         }
     }
 
-    // MARK: 自動分類工廠方法
+    // MARK: Auto-categorization factory method
 
-    /// 根據底層錯誤類型自動分配類別。
+    /// Automatically categorizes based on the underlying error type.
     static func wrap(_ error: Error) -> ReaderError {
         if error is ReaderError {
             return error as! ReaderError
@@ -70,9 +70,9 @@ enum ReaderError: LocalizedError {
     }
 }
 
-// MARK: - 便利擴展
+// MARK: - Convenience Extension
 
 extension Error {
-    /// 將任意錯誤包裹為 ReaderError
+    /// Wraps any error as a ReaderError
     var asReaderError: ReaderError { ReaderError.wrap(self) }
 }

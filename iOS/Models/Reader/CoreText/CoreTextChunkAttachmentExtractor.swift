@@ -1,8 +1,8 @@
 import CoreText
 import UIKit
 
-/// 從一個 chunk 的 CTFrame 中抽取圖片附件 rect（UIKit 座標：原點左上、y 向下）。
-/// chunkSize 是 chunk 的 path 大小 (width × height)；座標系與 cell 的 drawView bounds 相同。
+/// Extracts image attachment rects (UIKit coordinates: origin top-left, y downward) from a chunk's CTFrame.
+/// chunkSize is the chunk's path size (width × height); the coordinate system matches the cell's drawView bounds.
 enum CoreTextChunkAttachmentExtractor {
 
     static func extract(
@@ -29,7 +29,7 @@ enum CoreTextChunkAttachmentExtractor {
                 let info = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
                 guard let img = info.image else { continue }
 
-                // run 在原 attributedString 的位置；用該位置查 paragraphStyle
+                // Use the run's position in the original attributedString to look up paragraphStyle
                 let runStart = CTRunGetStringRange(run).location
                 let lookupIdx = max(0, min(attributedString.length - 1, runStart))
                 let paragraphStyle = attributedString.attribute(
@@ -52,12 +52,12 @@ enum CoreTextChunkAttachmentExtractor {
                 var lineDescent: CGFloat = 0
                 _ = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
 
-                // CoreText baseline Y（chunk 的 path 原點是左下，向上為正）
+                // CoreText baseline Y (chunk path origin is bottom-left, positive upward)
                 let baselineY = lineOrigin.y
                 let lineHeight = lineAscent + lineDescent
                 let lineBottom = baselineY - lineDescent
                 let centeredBottom = lineBottom + max(0, (lineHeight - info.drawHeight) / 2)
-                // 轉到 UIKit（左上原點，向下為正）
+                // Convert to UIKit (origin top-left, positive downward)
                 let uiY = chunkSize.height - centeredBottom - info.drawHeight
 
                 let rect: CGRect
@@ -97,7 +97,7 @@ enum CoreTextChunkAttachmentExtractor {
             }
         }
 
-        _ = rangeInChapter // 預留：日後若需要章節定位可用
+        _ = rangeInChapter // Reserved for future chapter-level positioning if needed
         return result
     }
 }

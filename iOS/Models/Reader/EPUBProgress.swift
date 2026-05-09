@@ -1,7 +1,7 @@
 import Foundation
 
 
-// MARK: - 統一閱讀定位
+// MARK: - Unified Reading Locator
 
 struct ReaderLocator: Codable, Equatable {
     let spineHref: String
@@ -141,7 +141,7 @@ struct ReaderLocator: Codable, Equatable {
 typealias SnapshotLocator = ReaderLocator
 typealias LocatorRecord = ReaderLocator
 
-// MARK: - 進度儲存
+// MARK: - Progress Storage
 
 final class EPUBProgressStore {
     private let queue = DispatchQueue(label: "com.yuedu.epub-progress", qos: .utility)

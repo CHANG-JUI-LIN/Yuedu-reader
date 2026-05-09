@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - 章節快取委派（ChapterCacheRepository）
+// MARK: - Chapter Cache Delegation (ChapterCacheRepository)
 
 extension BookSourceFetcher {
 
@@ -50,7 +50,7 @@ extension BookSourceFetcher {
         Self.chapterCacheRepository.clearChapterCache(bookId: bookId, chapterIndex: chapterIndex)
     }
 
-    /// 清空該書所有章節快取（換源時呼叫）
+    /// Clear all chapter caches for a book (called when switching sources)
     nonisolated func clearAllChapterCache(bookId: UUID) {
         Self.chapterCacheRepository.clearAllChapterCache(bookId: bookId)
     }

@@ -61,7 +61,8 @@ extension BookSourceFetching {
     }
 }
 
-/// 線上書籍下載與鄰域章節預加載協定，讓閱讀器不直接依賴 OnlineBookCoordinator 具體實作
+/// Protocol for online book download and neighborhood chapter prefetch,
+/// decoupling the reader from the concrete OnlineBookCoordinator implementation.
 protocol OnlineBookCoordinating: AnyObject {
     func downloadBook(_ book: ReadingBook, store: BookStore?)
     func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async

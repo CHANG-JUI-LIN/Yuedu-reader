@@ -3,18 +3,18 @@ import Combine
 import MediaPlayer
 import UIKit
 
-// MARK: - 音量鍵翻頁
+// MARK: - Volume Key Page Turn
 
-/// 攔截硬體音量鍵，轉換為翻頁指令
-/// 使用 MPVolumeView 隱藏系統音量 HUD + KVO 監聽 outputVolume 變化
+/// Intercepts hardware volume buttons and converts them to page-turn commands.
+/// Uses MPVolumeView to hide the system volume HUD + KVO to monitor outputVolume changes.
 final class VolumeKeyHandler: NSObject, ObservableObject {
 
     enum PageDirection { case prev, next }
 
-    /// 翻頁回調
+    /// Page-turn callback
     var onPageTurn: ((PageDirection) -> Void)?
 
-    /// 是否啟用音量翻頁
+    /// Whether volume-based page turning is enabled
     @Published var isEnabled: Bool = false {
         didSet {
             if isEnabled { startListening() } else { stopListening() }
@@ -22,12 +22,12 @@ final class VolumeKeyHandler: NSObject, ObservableObject {
         }
     }
 
-    // 內部狀態
+    // Internal state
     private var volumeView: MPVolumeView?
     private var observation: NSKeyValueObservation?
     private let audioSession = AVAudioSession.sharedInstance()
     private var previousVolume: Float = 0.5
-    private var isAdjusting = false  // 防止自己復原音量時觸發循環
+    private var isAdjusting = false  // Prevents feedback loop when restoring volume
 
     override init() {
         super.init()
@@ -36,19 +36,19 @@ final class VolumeKeyHandler: NSObject, ObservableObject {
 
     deinit { stopListening() }
 
-    // MARK: - 開始監聽
+    // MARK: - Start Listening
 
     func startListening() {
         guard observation == nil else { return }
 
-        // 啟用音頻會話（監聽才生效）
+        // Activate audio session (only when listening)
         try? audioSession.setActive(true)
         previousVolume = audioSession.outputVolume
 
-        // 隱藏系統音量 HUD：放一個 MPVolumeView 到畫面外
+        // Hide the system volume HUD: place an MPVolumeView off-screen
         if volumeView == nil {
             let view = MPVolumeView(frame: CGRect(x: -1000, y: -1000, width: 1, height: 1))
-            view.alpha = 0.001  // 不能完全為 0，否則系統忽略
+            view.alpha = 0.001  // Cannot be exactly 0, otherwise the system ignores it
             if let windowScene = UIApplication.shared.connectedScenes.first(where: {
                 $0.activationState == .foregroundActive
             }) as? UIWindowScene,
@@ -59,7 +59,7 @@ final class VolumeKeyHandler: NSObject, ObservableObject {
             volumeView = view
         }
 
-        // KVO 監聽 outputVolume 變化
+        // KVO monitoring of outputVolume changes
         observation = audioSession.observe(\.outputVolume, options: [.new]) {
             [weak self] _, change in
             guard let self = self, !self.isAdjusting,
@@ -67,15 +67,15 @@ final class VolumeKeyHandler: NSObject, ObservableObject {
             else { return }
 
             let diff = newValue - self.previousVolume
-            if abs(diff) < 0.01 { return }  // 忽略微量浮點誤差
+            if abs(diff) < 0.01 { return }  // Ignore minor floating-point drift
 
             DispatchQueue.main.async {
                 if diff > 0 {
-                    self.onPageTurn?(.prev)  // 音量+ → 上一頁
+                    self.onPageTurn?(.prev)  // Volume+ → previous page
                 } else {
-                    self.onPageTurn?(.next)  // 音量- → 下一頁
+                    self.onPageTurn?(.next)  // Volume- → next page
                 }
-                // 將音量靜默恢復，讓連續按壓能持續觸發
+                // Silently restore volume so consecutive presses continue to trigger
                 self.restoreVolume()
             }
         }
@@ -88,15 +88,15 @@ final class VolumeKeyHandler: NSObject, ObservableObject {
         volumeView = nil
     }
 
-    // MARK: - 靜默恢復音量
+    // MARK: - Silent Volume Restore
 
     private func restoreVolume() {
         isAdjusting = true
-        // 找到 MPVolumeView 中的 UISlider 來設置音量
+        // Find the UISlider inside MPVolumeView to set the volume
         if let slider = volumeView?.subviews.first(where: { $0 is UISlider }) as? UISlider {
             slider.value = previousVolume
         }
-        // 等一小段時間再解鎖，避免 KVO 回調
+        // Brief delay before unlocking to avoid KVO callback loop
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             self?.isAdjusting = false
         }

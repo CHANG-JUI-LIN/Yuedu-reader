@@ -3,22 +3,25 @@ import Foundation
 import GoogleSignIn
 import SwiftUI
 
-// MARK: - 書本文字轉換（只在閱讀器使用）
+// MARK: - Reader Text Conversion
+
 enum TextConversion: String, CaseIterable {
     case original = "原文"
     case toTraditional = "繁體"
     case toSimplified = "简体"
 }
 
-// MARK: - 翻頁動畫（對應 Koodo 滑動、Legado 仿真/滑動/覆蓋）
+// MARK: - Page-Turn Style
+
 enum PageTurnStyle: String, CaseIterable {
-    case slide = "滑動"       // 左右滑動過渡（預設）
-    case cover = "覆蓋翻頁"   // 新頁滑入覆蓋舊頁（Legado 同款）
-    case curl = "仿真翻書"   // 書頁捲曲效果
-    case none = "無動畫"     // 立即切換
+    case slide = "滑動"
+    case cover = "覆蓋翻頁"
+    case curl = "仿真翻書"
+    case none = "無動畫"
 }
 
-// MARK: - 閱讀主題
+// MARK: - Reader Theme
+
 enum ReaderTheme: String, CaseIterable {
     case white = "白天"
     case sepia = "護眼"
@@ -161,7 +164,7 @@ final class ReaderConfig: ObservableObject {
 }
 
 extension String {
-    /// 書本文字 ICU 離線轉換
+    /// Offline ICU text conversion for book content.
     func converted(to mode: TextConversion) -> String {
         switch mode {
         case .original: return self
@@ -179,11 +182,13 @@ func localized(_ key: String, bundle: Bundle = .main) -> String {
     NSLocalizedString(key, bundle: bundle, comment: "")
 }
 
-// MARK: - 全局設定（App 語言 + 書本轉換 + 閱讀器）
+// MARK: - Global Settings
+
 class GlobalSettings: ObservableObject {
     static let shared = GlobalSettings()
 
-    // MARK: - App 帳號狀態
+    // MARK: - Account State
+
     @Published var isLoggedIn: Bool {
         didSet { UserDefaults.standard.set(isLoggedIn, forKey: "yd_account_logged_in") }
     }
@@ -258,17 +263,18 @@ class GlobalSettings: ObservableObject {
         }
     }
 
-    // MARK: - 閱讀器字體（跨 session 持久化）
+    // MARK: - Reader Font (persisted across sessions)
+
     @Published var readerFontSize: Double {
         didSet { UserDefaults.standard.set(readerFontSize, forKey: "yd_reader_font_size") }
     }
 
-    /// 由倍率換算出的行與行額外距離（pt）
+    /// Additional inter-line spacing derived from the line-height multiplier (pt).
     var lineSpacing: Double {
         max(0, (lineHeightMultiple - 1.0) * readerFontSize)
     }
 
-    /// 由倍率換算出的段距（pt）
+    /// Paragraph spacing derived from the multiplier (pt).
     var paragraphSpacing: Double {
         max(0, readerFontSize * paragraphSpacingMultiplier)
     }
@@ -277,7 +283,8 @@ class GlobalSettings: ObservableObject {
         Locale.autoupdatingCurrent.identifier
     }
 
-    // MARK: - 網路設定
+    // MARK: - Network Settings
+
     @Published var searchConcurrency: Int {
         didSet { UserDefaults.standard.set(searchConcurrency, forKey: "yd_search_concurrency") }
     }
@@ -290,7 +297,8 @@ class GlobalSettings: ObservableObject {
         didSet { UserDefaults.standard.set(searchCacheDays, forKey: "yd_search_cache_days") }
     }
 
-    // MARK: - TTS 設定
+    // MARK: - TTS Settings
+
     @Published var httpTtsUrlTemplate: String {
         didSet { UserDefaults.standard.set(httpTtsUrlTemplate, forKey: "yd_http_tts_url_template") }
     }
@@ -301,7 +309,7 @@ class GlobalSettings: ObservableObject {
         didSet { Self.saveImportedTTSSources(importedTTSSources) }
     }
 
-    // MARK: - 實驗性功能旗標
+    // MARK: - Experimental Feature Flags
 
     @Published var useRenderableNodePipeline: Bool {
         didSet { UserDefaults.standard.set(useRenderableNodePipeline, forKey: "yd_use_renderable_node_pipeline") }
@@ -331,7 +339,6 @@ class GlobalSettings: ObservableObject {
         scrollMode = UserDefaults.standard.bool(forKey: "yd_scroll_mode")
         readerBrightness =
             (UserDefaults.standard.object(forKey: "yd_reader_brightness") as? Double) ?? 0.8
-        // 預設開啟「跟隨系統亮度」
         if UserDefaults.standard.object(forKey: "yd_follow_sys_brightness") == nil {
             followSystemBrightness = true
         } else {

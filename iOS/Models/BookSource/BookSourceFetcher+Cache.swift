@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-// MARK: - TOC + BookInfo 快取管理
+// MARK: - TOC + BookInfo Cache Management
 
 extension BookSourceFetcher {
 
@@ -50,7 +50,7 @@ extension BookSourceFetcher {
         let dir = tocCacheDir()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let rawPath = tocRawHTMLPath(tocUrl: tocUrl, source: source)
-        // rawHTML 可能已由呼叫端逐頁寫入磁碟，檢查檔案是否存在
+        // rawHTML may have been written to disk by caller page by page; check if file exists
         let hasRawHTML = (rawHTML?.isEmpty == false)
             || FileManager.default.fileExists(atPath: rawPath.path)
         let package = TOCPackage(
@@ -105,7 +105,7 @@ extension BookSourceFetcher {
         return package
     }
 
-    // MARK: - 私有輔助
+    // MARK: - Private Helpers
 
     private nonisolated func normalizedURLKey(_ raw: String?) -> String {
         guard let raw, var components = URLComponents(string: raw) else { return "" }

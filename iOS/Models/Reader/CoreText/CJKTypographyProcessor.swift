@@ -1,47 +1,47 @@
 import UIKit
 
-/// CJK 排版後處理器。
-/// 在 HTMLAttributedStringBuilder.build() 產出 NSAttributedString 後呼叫，
-/// 對相鄰全形標點施加負 kern，實現標點擠壓（Punctuation Compression）。
+/// CJK typography post-processor.
+/// Called after HTMLAttributedStringBuilder.build() produces the NSAttributedString,
+/// applies negative kern between adjacent full-width punctuation marks for Punctuation Compression.
 ///
-/// ## W3C JLREQ 壓縮規則
-/// - 閉括號（」。，等）後接閉括號：壓縮閉括號尾部空白（-0.5em kern）
-/// - 閉括號後接開括號（「（等）：閉括號尾部 + 開括號前導空白都壓縮（-1.0em kern）
-/// - 開括號後接開括號：壓縮後一個開括號的前導空白（-0.5em kern on 前一個開括號）
+/// ## W3C JLREQ compression rules
+/// - Closing mark (」。， etc.) followed by another closing mark: compress the trailing space of the closing mark (-0.5em kern)
+/// - Closing mark followed by opening mark (「（ etc.): compress both trailing space of closing and leading space of opening (-1.0em kern)
+/// - Opening mark followed by opening mark: compress the leading space of the following opening mark (-0.5em kern on preceding opening mark)
 ///
-/// ## 不修改字串長度
-/// 只修改 `.kern` attribute，不插入字符，charOffset 進度紀錄不受影響。
+/// ## Does not modify string length
+/// Only modifies `.kern` attributes without inserting characters, so charOffset progress tracking is unaffected.
 enum CJKTypographyProcessor {
 
-    // MARK: - 標點分類
+    // MARK: - Punctuation Classification
 
-    /// 閉括號 / 句尾標點：字形在左，右半為空白
+    /// Closing marks / sentence-ending punctuation: glyph on left, right half is empty space
     public static let closingMarks: Set<Unicode.Scalar> = [
         "」", "』", "）", "】", "〕", "｝", "〉", "》",
         "。", "．", "，", "、", "；", "：", "！", "？",
         "\u{2026}", // …
     ]
 
-    /// 開括號：字形在右，左半為空白
+    /// Opening marks: glyph on right, left half is empty space
     public static let openingMarks: Set<Unicode.Scalar> = [
         "「", "『", "（", "【", "〔", "｛", "〈", "《",
     ]
 
-    /// 行首禁則：不應該出現在行首的標點（通常是閉括號）
+    /// Line-start prohibition: punctuation that should not appear at the beginning of a line (typically closing marks)
     public static let lineStartForbidden: Set<Unicode.Scalar> = closingMarks
 
-    /// 行末禁則：不應該出現在行末的標點（通常是開括號）
+    /// Line-end prohibition: punctuation that should not appear at the end of a line (typically opening marks)
     public static let lineEndForbidden: Set<Unicode.Scalar> = openingMarks
 
-    // MARK: - 公開 API
+    // MARK: - Public API
 
-    /// 判斷第一個字是否為開括號，用於行首擠壓
+    /// Checks whether the first character is an opening mark, used for line-start compression
     static func isOpening(_ char: Character) -> Bool {
         guard let first = char.unicodeScalars.first else { return false }
         return openingMarks.contains(first)
     }
 
-    /// 判斷最後一個字是否為閉括號，用於行末擠壓
+    /// Checks whether the last character is a closing mark, used for line-end compression
     static func isClosing(_ char: Character) -> Bool {
         guard let first = char.unicodeScalars.first else { return false }
         return closingMarks.contains(first)
@@ -75,16 +75,16 @@ enum CJKTypographyProcessor {
         return max(lowerBound, adjusted)
     }
 
-    /// 對 `attrStr` 套用 CJK 標點擠壓與中英混排間距，回傳修改後的副本。
+    /// Applies CJK punctuation compression and CJK-Latin spacing to `attrStr`, returning a modified copy.
     static func apply(to attrStr: NSAttributedString) -> NSAttributedString {
         guard attrStr.length > 1 else { return attrStr }
 
         let mutable = NSMutableAttributedString(attributedString: attrStr)
         let string = attrStr.string
 
-        // 使用 Unicode scalar view 以正確處理多 code unit 字符
+        // Use Unicode scalar view to correctly handle multi-code-unit characters
         let scalars = Array(string.unicodeScalars)
-        // 預建 scalar → UTF-16 offset 的對應表
+        // Pre-build scalar → UTF-16 offset mapping
         let utf16Offsets = buildUTF16OffsetMap(for: string)
 
         guard scalars.count == utf16Offsets.count else { return attrStr }
@@ -99,18 +99,18 @@ enum CJKTypographyProcessor {
             let nextIsClosing = closingMarks.contains(next)
             let nextIsOpening = openingMarks.contains(next)
 
-            // 取得當前字符的字體大小，以計算 em 單位
+            // Get the current character's font size to calculate em units
             let fontSize = fontSizeAt(utf16Idx, in: attrStr)
             let halfEm = fontSize * 0.5
 
             if currIsClosing && nextIsOpening {
-                // 閉 + 開：壓縮兩個半寬空白（共 1em）
+                // Closing + Opening: compress two half-width spaces (1em total)
                 addKern(-halfEm * 2, at: utf16Idx, in: mutable)
             } else if currIsClosing && nextIsClosing {
-                // 閉 + 閉：壓縮前一個閉括號的尾部空白（0.5em）
+                // Closing + Closing: compress the trailing space of the first closing mark (0.5em)
                 addKern(-halfEm, at: utf16Idx, in: mutable)
             } else if currIsOpening && nextIsOpening {
-                // 開 + 開：向左推後一個開括號，壓縮其前導空白（0.5em）
+                // Opening + Opening: push the following opening mark left by compressing its leading space (0.5em)
                 addKern(-halfEm, at: utf16Idx, in: mutable)
             }
 
@@ -131,7 +131,7 @@ enum CJKTypographyProcessor {
         return font?.pointSize ?? 17
     }
 
-    /// 在 utf16Offset 處累加 kern（若已有 kern 則疊加，避免覆蓋既有排版）
+    /// Accumulates kern at utf16Offset (adds to existing kern to avoid overwriting existing typography)
     private static func addKern(_ delta: CGFloat, at utf16Offset: Int, in mutable: NSMutableAttributedString) {
         let range = NSRange(location: utf16Offset, length: 1)
         let existing = mutable.attribute(.kern, at: utf16Offset, effectiveRange: nil) as? CGFloat ?? 0
@@ -195,7 +195,7 @@ enum CJKTypographyProcessor {
         }
     }
 
-    /// 建立 Unicode scalar index → UTF-16 code unit offset 的對應陣列
+    /// Builds a mapping array from Unicode scalar index → UTF-16 code unit offset
     private static func buildUTF16OffsetMap(for string: String) -> [Int] {
         var map: [Int] = []
         map.reserveCapacity(string.unicodeScalars.count)

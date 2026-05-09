@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - 獲取章節正文
+// MARK: - Fetch Chapter Content
 
 extension BookSourceFetcher {
 
@@ -64,9 +64,9 @@ extension BookSourceFetcher {
         ), cached.state == .cached, !cached.content.isEmpty {
             return cached
         }
-        // 安全清理：舊的目錄快取可能包含 HTML 片段（如 <a href="...">），先清理再解析
+        // Sanitize: old TOC cache may contain HTML fragments (e.g. <a href="...">), sanitize before parsing
         var sanitizedRefUrl = RuleEngine.sanitizeExtractedURL(ref.url)
-        // 若清理後為相對路徑（如 /2280/1091923.html），需要重新解析為絕對 URL
+        // If sanitized result is a relative path (e.g. /2280/1091923.html), resolve to absolute URL
         if !sanitizedRefUrl.hasPrefix("http://") && !sanitizedRefUrl.hasPrefix("https://") {
             sanitizedRefUrl = RuleEngine.resolveURL(
                 sanitizedRefUrl,
@@ -79,7 +79,7 @@ extension BookSourceFetcher {
         guard let url = safeURL(string: cleanUrl) else { throw FetchError.invalidURL(sanitizedRefUrl) }
         let runtimeBox = RuntimeVariableBox(ref.runtimeVariables)
 
-        // 對齊 Legado getContentAwait：判斷是否需要 WebView
+        // Align with Legado getContentAwait: determine if WebView is needed
         let hasWebJs = !source.ruleContent.webJs.trimmingCharacters(in: .whitespacesAndNewlines)
             .isEmpty
         let requiresWebViewTransport = source.needsWebView || hasWebJs
