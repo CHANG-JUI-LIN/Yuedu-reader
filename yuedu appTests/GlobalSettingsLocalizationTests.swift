@@ -15,7 +15,7 @@ struct GlobalSettingsLocalizationTests {
     func englishLocalizedStringComesFromBundle() {
         let translated = localized(
             "系統語言提示",
-            bundle: testBundle()
+            bundle: testBundle(localizations: ["en"])
         )
 
         #expect(translated == "System language hint")
@@ -55,7 +55,7 @@ struct GlobalSettingsLocalizationTests {
             <key>CFBundleShortVersionString</key>
             <string>1.0</string>
             <key>CFBundleDevelopmentRegion</key>
-            <string>zh-Hant</string>
+            <string>\(localizations.first ?? "zh-Hant")</string>
             <key>CFBundleLocalizations</key>
             <array>
                 \(localizations.map { "<string>\($0)</string>" }.joined(separator: "\n        "))

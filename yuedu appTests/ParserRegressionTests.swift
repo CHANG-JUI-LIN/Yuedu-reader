@@ -503,7 +503,7 @@ struct RegexSanitizerTests {
         let input = "第001章 故事開始"
         let result = RegexReplacer.replaceRegex(
             result: input,
-            pattern: #"第\d++"#,   // possessive ++ — illegal in ICU
+            pattern: #"第\d++章"#,   // possessive ++ — illegal in ICU
             replacement: "",
             replaceFirst: false
         )

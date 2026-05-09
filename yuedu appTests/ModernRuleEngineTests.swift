@@ -51,14 +51,14 @@ struct ModernRuleEngineTests {
         </body></html>
         """
         let baseURL = "https://example.com"
-        let rule = "@xpath://li/a@href"
+        let rule = "@xpath://li/a/@href"
 
         let legacy = RuleEngine.extractValueList(fromHTML: html, rule: rule, baseURL: baseURL)
         let modern = try ModernRuleEngine().extractList(from: html, rule: rule, baseURL: baseURL)
 
         #expect(modern == legacy)
         #expect(modern.count == 2)
-        #expect(modern[0] == "https://example.com/ch/1")
+        #expect(modern.first == "https://example.com/ch/1")
     }
 
     @Test
