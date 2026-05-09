@@ -182,7 +182,8 @@ final class SourceRule {
         }
 
         // Split by ## to extract regex replacement info.
-        let segments = rule.components(separatedBy: "##")
+        // Bracket-aware split so that `@css:div[data-x="##"]` keeps its ## intact.
+        let segments = Self.bracketAwareSplitOnHashHash(rule)
         rule = segments[0].trimmingCharacters(in: .whitespaces)
 
         if segments.count > 1 {
@@ -191,7 +192,9 @@ final class SourceRule {
         if segments.count > 2 {
             replacement = segments[2]
         }
-        if segments.count > 3 {
+        // ### suffix (Legado OnlyOne regex) produces a 4th non-empty segment ("#")
+        // which is the standard way to signal "replace first match only".
+        if segments.count > 3, !segments[3].isEmpty {
             replaceFirst = true
         }
     }
@@ -251,8 +254,10 @@ private extension SourceRule {
 
     // MARK: @put extraction
 
-    /// Remove all `@put:{…}` directives from the rule, parsing each JSON body
-    /// into `putMap`.
+    /// Remove all `@put:{…}` directives from the rule, parsing each body into `putMap`.
+    ///
+    /// First attempts standard JSON parsing.  When JSON fails the content is treated as
+    /// a bare `key:value` pair (e.g. `@put:{bid://xpath/expr}`) and split on the first `:`.
     static func extractPutDirectives(
         _ ruleStr: String,
         into putMap: inout [String: String]
@@ -264,22 +269,32 @@ private extension SourceRule {
 
         var result = ruleStr
         for match in matches {
-            // Remove the full @put:{…} from the rule text.
             let fullMatch = nsRule.substring(with: match.range)
             result = result.replacingOccurrences(of: fullMatch, with: "")
 
-            // Parse JSON inside the braces (capture group 1).
             guard match.numberOfRanges > 1 else { continue }
             let jsonRange = match.range(at: 1)
             guard jsonRange.location != NSNotFound else { continue }
             let jsonStr = nsRule.substring(with: jsonRange)
 
-            guard let data = jsonStr.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else { continue }
-
-            for (key, value) in obj {
-                putMap[key] = value is String ? (value as! String) : "\(value)"
+            // First try standard JSON
+            if let data = jsonStr.data(using: .utf8),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                for (key, value) in obj {
+                    putMap[key] = value is String ? (value as! String) : "\(value)"
+                }
+            } else {
+                // Fallback: bare key:value (e.g. @put:{bid://xpath})
+                let content = String(jsonStr.dropFirst().dropLast())
+                if let colonIndex = content.firstIndex(of: ":") {
+                    let key = String(content[content.startIndex..<colonIndex])
+                        .trimmingCharacters(in: .whitespaces)
+                    let value = String(content[content.index(after: colonIndex)...])
+                        .trimmingCharacters(in: .whitespaces)
+                    if !key.isEmpty {
+                        putMap[key] = value
+                    }
+                }
             }
         }
         return result
@@ -407,5 +422,55 @@ private extension SourceRule {
             || expression.hasPrefix("$.")
             || expression.hasPrefix("$[")
             || expression.hasPrefix("//")
+    }
+
+    /// Split `rule` on `##` while respecting bracket/quote boundaries.
+    /// CSS selectors like `@css:div[data-x="##"]` must keep their `##` intact,
+    /// and Legado's `###` (OnlyOne regex) suffix must correctly produce the 4th segment.
+    static func bracketAwareSplitOnHashHash(_ rule: String) -> [String] {
+        var parts: [String] = []
+        var current = ""
+        var squareDepth = 0
+        var parenDepth = 0
+        var inDoubleQuote = false
+        var inSingleQuote = false
+        var index = rule.startIndex
+
+        while index < rule.endIndex {
+            let ch = rule[index]
+            let nextIdx = rule.index(after: index)
+
+            if !inDoubleQuote, !inSingleQuote, squareDepth == 0, parenDepth == 0 {
+                if ch == "#", nextIdx < rule.endIndex, rule[nextIdx] == "#" {
+                    parts.append(current)
+                    current = ""
+                    index = rule.index(after: nextIdx)
+                    continue
+                }
+            }
+
+            switch ch {
+            case "[" where !inDoubleQuote && !inSingleQuote:
+                squareDepth += 1
+            case "]" where !inDoubleQuote && !inSingleQuote:
+                squareDepth = max(0, squareDepth - 1)
+            case "(" where !inDoubleQuote && !inSingleQuote:
+                parenDepth += 1
+            case ")" where !inDoubleQuote && !inSingleQuote:
+                parenDepth = max(0, parenDepth - 1)
+            case "\"" where !inSingleQuote:
+                inDoubleQuote.toggle()
+            case "'" where !inDoubleQuote:
+                inSingleQuote.toggle()
+            default:
+                break
+            }
+
+            current.append(ch)
+            index = nextIdx
+        }
+
+        parts.append(current)
+        return parts
     }
 }

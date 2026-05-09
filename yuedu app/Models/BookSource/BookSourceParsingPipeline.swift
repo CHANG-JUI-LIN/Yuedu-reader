@@ -86,4 +86,17 @@ struct BookSourceParsingPipeline {
             source: source, runtimeVariables: runtimeVariables
         )
     }
+
+    // MARK: - loginCheckJs
+
+    /// Evaluate `loginCheckJs` against the raw HTML using JSCoreEngine.
+    /// Returns `true` when the rule signals that a login is required.
+    func checkLoginRequired(
+        html: String,
+        baseURL: String,
+        source: BookSource
+    ) -> Bool {
+        let bridge = ModernParserBridge(source: source)
+        return bridge.checkLoginRequired(html: html, baseURL: baseURL)
+    }
 }

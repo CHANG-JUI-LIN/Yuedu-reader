@@ -157,7 +157,30 @@ class ModernParserBridge {
         let initScript = source.ruleBookInfo.initScript
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !initScript.isEmpty {
-            _ = jsEngine.evaluate(initScript, result: html)
+            if initScript.hasPrefix(":") {
+                // AllInOne Regex: matches groups become the effective content for subsequent rules
+                let pattern = String(initScript.dropFirst())
+                if !pattern.isEmpty,
+                   let regex = try? NSRegularExpression(pattern: pattern, options: .dotMatchesLineSeparators),
+                   let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)) {
+                    let nsHTML = html as NSString
+                    var groups: [String] = []
+                    for i in 0..<match.numberOfRanges {
+                        let r = match.range(at: i)
+                        groups.append(r.location != NSNotFound ? nsHTML.substring(with: r) : "")
+                    }
+                    engine.setContent(groups, baseUrl: baseURL)
+                }
+            } else {
+                // JavaScript: evaluate and use returned JSON object keys as field sources
+                if let jsonText = jsEngine.evaluate(initScript, result: html),
+                   let jsonData = jsonText.data(using: .utf8),
+                   let jsonObj = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                    engine.setContent(jsonObj, baseUrl: baseURL)
+                } else {
+                    _ = jsEngine.evaluate(initScript, result: html)
+                }
+            }
         }
 
         let name = engine.getString(ruleStr: source.ruleBookInfo.name)
@@ -347,6 +370,22 @@ class ModernParserBridge {
     }
 
     // MARK: - Network fetch using AnalyzeUrl
+
+    func checkLoginRequired(
+        html: String,
+        baseURL: String
+    ) -> Bool {
+        let engine = makeEngine()
+        engine.setContent(html, baseUrl: baseURL)
+
+        let js = sourceRuleData.source.loginCheckJs
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !js.isEmpty else { return false }
+
+        let result = engine.getString(ruleStr: js)
+        let lower = result.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        return lower == "true" || lower == "1" || lower == "yes"
+    }
 
     func fetch(
         ruleUrl: String, key: String? = nil, page: Int? = nil

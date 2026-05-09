@@ -206,30 +206,31 @@ class AnalyzeUrl {
         return result
     }
 
-    /// Replace `<val0,val1,val2,...>` with the value at the current page index.
+    /// Replace `<key,value>` page-conditional rules.
+    ///
+    /// Legado format: `<,{{page}}>` — the content before the **first** comma is the key
+    /// (used when page == 1), and the rest is the value (used when page > 1).
+    /// Both key and value may contain `{{…}}` templates that are resolved in a later step.
+    ///
+    /// Example: `<,{{page}}>` evaluates to `""` on page 1, `"{{page}}"` on page 2+.
     private func replacePageRules(_ input: String) -> String {
         let nsRange = NSRange(input.startIndex..., in: input)
         var result = input
 
-        // Process all matches (iterate in reverse to preserve ranges)
         let matches = Self.pagePattern.matches(in: input, range: nsRange)
         for match in matches.reversed() {
             guard let fullRange = Range(match.range, in: result),
                   let innerRange = Range(match.range(at: 1), in: result) else { continue }
 
             let inner = String(result[innerRange])
-            let pages = inner.components(separatedBy: ",")
+            guard let commaIndex = inner.firstIndex(of: ",") else { continue }
 
-            guard !pages.isEmpty else { continue }
+            let keyPart = String(inner[inner.startIndex..<commaIndex])
+            let valuePart = String(inner[inner.index(after: commaIndex)...])
 
-            let pageIndex = (page ?? 1) - 1
-            let value: String
-            if pageIndex < pages.count && pageIndex >= 0 {
-                value = pages[pageIndex]
-            } else {
-                value = pages.last!
-            }
-            result.replaceSubrange(fullRange, with: value)
+            let pageNum = page ?? 1
+            let replacement = pageNum == 1 ? keyPart : valuePart
+            result.replaceSubrange(fullRange, with: replacement)
         }
 
         return result

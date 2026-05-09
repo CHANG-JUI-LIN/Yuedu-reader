@@ -43,13 +43,9 @@ extension BookSourceFetcher {
             return []
         }
 
-        // Legado loginCheckJs：搜尋回應後執行，若回傳需登入則不解析、直接回傳空結果
-        if !source.loginCheckJs.isEmpty {
-            let needLogin = try await WebViewFetcher.shared.evaluateInHTML(
-                html: html, baseURL: url.absoluteString, js: source.loginCheckJs)
-            if needLogin {
-                return []
-            }
+        // Legado loginCheckJs：透過 JSCore 求值，若回傳需登入則跳過解析
+        if pipeline.checkLoginRequired(html: html, baseURL: url.absoluteString, source: source) {
+            return []
         }
 
         let books: [OnlineBook]
