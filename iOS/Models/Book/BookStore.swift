@@ -4,6 +4,7 @@ import OSLog
 import SwiftSoup
 import SwiftUI
 import UIKit
+import WidgetKit
 import ReadiumShared
 
 // Widget data model — matched with Widget target's BookProgress
@@ -945,6 +946,7 @@ class BookStore: ObservableObject, BookProvider {
 
         if let data = try? JSONEncoder().encode(entry) {
             defaults.set(data, forKey: Self.widgetDataKey)
+            WidgetCenter.shared.reloadTimelines(ofKind: "BookProgressWidget")
         }
     }
 
