@@ -2,8 +2,8 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT="$PROJECT_DIR/yuedu app.xcodeproj"
-SCHEME="yuedu app"
+PROJECT="$PROJECT_DIR/Yuedu-Reader.xcodeproj"
+SCHEME="Yuedu-Reader"
 
 echo "Building $SCHEME for iOS Simulator..."
 

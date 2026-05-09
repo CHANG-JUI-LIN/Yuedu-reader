@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1E90D290C84CF7DFB61183AB /* yuedu_app_Widget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 4E4E1DDA4EE35F67778097F0 /* yuedu_app_Widget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		2EE60C00FD763A43CFCAC2A0 /* yuedu_app_ShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 81F92752186D8D0E971A17B9 /* yuedu_app_ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1E90D290C84CF7DFB61183AB /* Yuedu_Reader_Widget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 4E4E1DDA4EE35F67778097F0 /* Yuedu_Reader_Widget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		2EE60C00FD763A43CFCAC2A0 /* Yuedu_Reader_ShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 81F92752186D8D0E971A17B9 /* Yuedu_Reader_ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3021769152B9F41FC1F2CBA5 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 489E6E08B47AA3AC9F140CAD /* SwiftSoup */; };
 		460274852F710D7500486947 /* ReadiumAdapterLCPSQLite in Frameworks */ = {isa = PBXBuildFile; productRef = 460274842F710D7500486947 /* ReadiumAdapterLCPSQLite */; };
 		463C854D2FA4F48E008F9AD7 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 463C854C2FA4F48E008F9AD7 /* GoogleSignIn */; };
@@ -25,28 +25,28 @@
 			containerPortal = 460D36512F51C5B8006E774C /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 460D36582F51C5B8006E774C;
-			remoteInfo = "yuedu app";
+			remoteInfo = "Yuedu-Reader";
 		};
 		460D36712F51C5B9006E774C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 460D36512F51C5B8006E774C /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 460D36582F51C5B8006E774C;
-			remoteInfo = "yuedu app";
+			remoteInfo = "Yuedu-Reader";
 		};
 		46C7C03A2F8F59E000182BEC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 460D36512F51C5B8006E774C /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 3D398CD107E29DC5585FDF83;
-			remoteInfo = "yuedu app Widget";
+			remoteInfo = "Yuedu-Reader Widget";
 		};
 		46C7C03B2F8F59E000182BEC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 460D36512F51C5B8006E774C /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = C7BCB242F4C3B08FEE1E0216;
-			remoteInfo = "yuedu app ShareExtension";
+			remoteInfo = "Yuedu-Reader ShareExtension";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -57,8 +57,8 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				1E90D290C84CF7DFB61183AB /* yuedu_app_Widget.appex in Embed App Extensions */,
-				2EE60C00FD763A43CFCAC2A0 /* yuedu_app_ShareExtension.appex in Embed App Extensions */,
+				1E90D290C84CF7DFB61183AB /* Yuedu_Reader_Widget.appex in Embed App Extensions */,
+				2EE60C00FD763A43CFCAC2A0 /* Yuedu_Reader_ShareExtension.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -66,22 +66,22 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		460D36592F51C5B8006E774C /* yuedu app.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "yuedu app.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		460D36662F51C5B9006E774C /* yuedu appTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "yuedu appTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		460D36702F51C5B9006E774C /* yuedu appUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "yuedu appUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		4E4E1DDA4EE35F67778097F0 /* yuedu_app_Widget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = yuedu_app_Widget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		81F92752186D8D0E971A17B9 /* yuedu_app_ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = yuedu_app_ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		460D36592F51C5B8006E774C /* yuedu app.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Yuedu-Reader.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		460D36662F51C5B9006E774C /* yuedu appTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Yuedu-ReaderTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		460D36702F51C5B9006E774C /* yuedu appUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Yuedu-ReaderUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4E4E1DDA4EE35F67778097F0 /* Yuedu_Reader_Widget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Yuedu_Reader_Widget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		81F92752186D8D0E971A17B9 /* Yuedu_Reader_ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Yuedu_Reader_ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		AA11BB22CC33DD44EE55FF66AA11BB22 /* Exceptions for "yuedu app Widget" folder in "yuedu app Widget" target */ = {
+		AA11BB22CC33DD44EE55FF66AA11BB22 /* Exceptions for "Yuedu-Reader Widget" folder in "Yuedu-Reader Widget" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 3D398CD107E29DC5585FDF83 /* yuedu app Widget */;
 		};
-		BB22CC33DD44EE55FF66AA11BB22CC33 /* Exceptions for "yuedu app ShareExtension" folder in "yuedu app ShareExtension" target */ = {
+		BB22CC33DD44EE55FF66AA11BB22CC33 /* Exceptions for "Yuedu-Reader ShareExtension" folder in "Yuedu-Reader ShareExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -93,33 +93,33 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		460D365B2F51C5B8006E774C /* yuedu app */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "yuedu app";
+			path = iOS;
 			sourceTree = "<group>";
 		};
 		460D36692F51C5B9006E774C /* yuedu appTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "yuedu appTests";
+			path = "Tests/iOS";
 			sourceTree = "<group>";
 		};
 		460D36732F51C5B9006E774C /* yuedu appUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "yuedu appUITests";
+			path = "Tests/iOS-UI";
 			sourceTree = "<group>";
 		};
 		501150730FA6492E85D96D0235061651 /* yuedu app Widget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				AA11BB22CC33DD44EE55FF66AA11BB22 /* Exceptions for "yuedu app Widget" folder in "yuedu app Widget" target */,
+				AA11BB22CC33DD44EE55FF66AA11BB22 /* Exceptions for "Yuedu-Reader Widget" folder in "Yuedu-Reader Widget" target */,
 			);
-			path = "yuedu app Widget";
+			path = Widget;
 			sourceTree = "<group>";
 		};
 		A1BCCA3D5B9C4DD1AFB56B678141488F /* yuedu app ShareExtension */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				BB22CC33DD44EE55FF66AA11BB22CC33 /* Exceptions for "yuedu app ShareExtension" folder in "yuedu app ShareExtension" target */,
+				BB22CC33DD44EE55FF66AA11BB22CC33 /* Exceptions for "Yuedu-Reader ShareExtension" folder in "Yuedu-Reader ShareExtension" target */,
 			);
-			path = "yuedu app ShareExtension";
+			path = ShareExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -190,8 +190,8 @@
 				460D36592F51C5B8006E774C /* yuedu app.app */,
 				460D36662F51C5B9006E774C /* yuedu appTests.xctest */,
 				460D36702F51C5B9006E774C /* yuedu appUITests.xctest */,
-				4E4E1DDA4EE35F67778097F0 /* yuedu_app_Widget.appex */,
-				81F92752186D8D0E971A17B9 /* yuedu_app_ShareExtension.appex */,
+				4E4E1DDA4EE35F67778097F0 /* Yuedu_Reader_Widget.appex */,
+				81F92752186D8D0E971A17B9 /* Yuedu_Reader_ShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -208,7 +208,7 @@
 /* Begin PBXNativeTarget section */
 		3D398CD107E29DC5585FDF83 /* yuedu app Widget */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = D37606683213C45CAB3FA44D /* Build configuration list for PBXNativeTarget "yuedu app Widget" */;
+			buildConfigurationList = D37606683213C45CAB3FA44D /* Build configuration list for PBXNativeTarget "Yuedu-Reader Widget" */;
 			buildPhases = (
 				294F7FDF7FF0212C35C6AC00 /* Sources */,
 				CB9AB3CEC68FA4821DD057BF /* Frameworks */,
@@ -221,9 +221,9 @@
 			fileSystemSynchronizedGroups = (
 				501150730FA6492E85D96D0235061651 /* yuedu app Widget */,
 			);
-			name = "yuedu app Widget";
-			productName = "yuedu app Widget";
-			productReference = 4E4E1DDA4EE35F67778097F0 /* yuedu_app_Widget.appex */;
+			name = "Yuedu-Reader Widget";
+			productName = "Yuedu-Reader Widget";
+			productReference = 4E4E1DDA4EE35F67778097F0 /* Yuedu_Reader_Widget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		460D36582F51C5B8006E774C /* yuedu app */ = {
@@ -303,7 +303,7 @@
 		};
 		C7BCB242F4C3B08FEE1E0216 /* yuedu app ShareExtension */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 769A042B4AB48419646F9829 /* Build configuration list for PBXNativeTarget "yuedu app ShareExtension" */;
+			buildConfigurationList = 769A042B4AB48419646F9829 /* Build configuration list for PBXNativeTarget "Yuedu-Reader ShareExtension" */;
 			buildPhases = (
 				FAFEC42AFCA7FB37C3C8EE88 /* Sources */,
 				A3F2826CDEDB4D2F4B5CF845 /* Frameworks */,
@@ -316,9 +316,9 @@
 			fileSystemSynchronizedGroups = (
 				A1BCCA3D5B9C4DD1AFB56B678141488F /* yuedu app ShareExtension */,
 			);
-			name = "yuedu app ShareExtension";
-			productName = "yuedu app ShareExtension";
-			productReference = 81F92752186D8D0E971A17B9 /* yuedu_app_ShareExtension.appex */;
+			name = "Yuedu-Reader ShareExtension";
+			productName = "Yuedu-Reader ShareExtension";
+			productReference = 81F92752186D8D0E971A17B9 /* Yuedu_Reader_ShareExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
@@ -484,7 +484,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				EXECUTABLE_NAME = yuedu_app_Widget;
-				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/yuedu app Widget/Info.plist";
+				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/Widget/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -666,7 +666,7 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "yuedu app/yuedu app-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "iOS/yuedu app-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -712,7 +712,7 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "yuedu app/yuedu app-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "iOS/yuedu app-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -737,7 +737,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "yuedu app/yuedu app-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "iOS/yuedu app-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -763,7 +763,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "yuedu app/yuedu app-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "iOS/yuedu app-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -791,7 +791,7 @@
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "yuedu app/yuedu app-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "iOS/yuedu app-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -819,7 +819,7 @@
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "yuedu app/yuedu app-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "iOS/yuedu app-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -835,7 +835,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				EXECUTABLE_NAME = yuedu_app_ShareExtension;
-				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/yuedu app ShareExtension/Info.plist";
+				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/ShareExtension/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -865,7 +865,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				EXECUTABLE_NAME = yuedu_app_ShareExtension;
-				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/yuedu app ShareExtension/Info.plist";
+				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/ShareExtension/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -894,7 +894,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				EXECUTABLE_NAME = yuedu_app_Widget;
-				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/yuedu app Widget/Info.plist";
+				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/Widget/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -954,7 +954,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		769A042B4AB48419646F9829 /* Build configuration list for PBXNativeTarget "yuedu app ShareExtension" */ = {
+		769A042B4AB48419646F9829 /* Build configuration list for PBXNativeTarget "Yuedu-Reader ShareExtension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				61425AD8B03743B687E0D0AF /* Release */,
@@ -963,7 +963,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		D37606683213C45CAB3FA44D /* Build configuration list for PBXNativeTarget "yuedu app Widget" */ = {
+		D37606683213C45CAB3FA44D /* Build configuration list for PBXNativeTarget "Yuedu-Reader Widget" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1796357FCB75F4989CD52D5A /* Release */,

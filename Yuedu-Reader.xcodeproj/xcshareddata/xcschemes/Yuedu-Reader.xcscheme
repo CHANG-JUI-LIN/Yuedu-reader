@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "460D36582F51C5B8006E774C"
-               BuildableName = "yuedu app.app"
-               BlueprintName = "yuedu app"
-               ReferencedContainer = "container:yuedu app.xcodeproj">
+               BuildableName = "Yuedu-Reader.app"
+               BlueprintName = "Yuedu-Reader"
+               ReferencedContainer = "container:Yuedu-Reader.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -36,9 +36,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "460D36652F51C5B9006E774C"
-               BuildableName = "yuedu appTests.xctest"
-               BlueprintName = "yuedu appTests"
-               ReferencedContainer = "container:yuedu app.xcodeproj">
+               BuildableName = "Yuedu-ReaderTests.xctest"
+               BlueprintName = "Yuedu-ReaderTests"
+               ReferencedContainer = "container:Yuedu-Reader.xcodeproj">
             </BuildableReference>
          </TestableReference>
          <TestableReference
@@ -47,9 +47,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "460D366F2F51C5B9006E774C"
-               BuildableName = "yuedu appUITests.xctest"
-               BlueprintName = "yuedu appUITests"
-               ReferencedContainer = "container:yuedu app.xcodeproj">
+               BuildableName = "Yuedu-ReaderUITests.xctest"
+               BlueprintName = "Yuedu-ReaderUITests"
+               ReferencedContainer = "container:Yuedu-Reader.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -69,9 +69,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "460D36582F51C5B8006E774C"
-            BuildableName = "yuedu app.app"
-            BlueprintName = "yuedu app"
-            ReferencedContainer = "container:yuedu app.xcodeproj">
+            BuildableName = "Yuedu-Reader.app"
+            BlueprintName = "Yuedu-Reader"
+            ReferencedContainer = "container:Yuedu-Reader.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -86,9 +86,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "460D36582F51C5B8006E774C"
-            BuildableName = "yuedu app.app"
-            BlueprintName = "yuedu app"
-            ReferencedContainer = "container:yuedu app.xcodeproj">
+            BuildableName = "Yuedu-Reader.app"
+            BlueprintName = "Yuedu-Reader"
+            ReferencedContainer = "container:Yuedu-Reader.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

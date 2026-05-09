@@ -1,19 +1,33 @@
 # yuedu
 
-An iOS EPUB/TXT/web-novel reader built with SwiftUI and CoreText.  
-Read, bookmark, annotate, and listen — all in one app.
+[English](README.md) | [简体中文](README.zh-Hans.md) | [繁體中文](README.zh-Hant.md)
 
-## Features
+A highly customizable native iOS reader built with SwiftUI and CoreText.
 
-- **EPUB & TXT reading** — CoreText-based paged and vertical-scroll rendering
-- **Web novel support** — Rule-engine book sources with CSS/XPath/Regex/JSON extraction
-- **RSS subscriptions** — Standard RSS/Atom feeds plus Legado-format rule-based sources
-- **TTS (Text-to-Speech)** — AVSpeechSynthesizer and HTTP-based custom TTS backends
-- **Bookmarks & annotations** — Paragraph-level underline annotation persistence
-- **Vertical writing mode** — CJK vertical right-to-left text
-- **OPML & Legado JSON import/export** — Migrate subscriptions easily
-- **WebDAV sync** — Backup and restore reading progress
-- **Google Sign-In** — Account sync (optional)
+yuedu focuses on CJK long-form reading, custom typography, large-book performance, EPUB/TXT import, RSS, TTS, WebDAV, and user-defined web content normalization.
+
+> Status: CJK-first. Chinese reading, mixed CJK/Latin text, and long-form novel scenarios are the primary targets. English EPUB/TXT rendering is supported at a basic level but has not been fully tested as a primary use case.
+
+## Highlights
+
+- **CJK-first typography** — optimized for Chinese long-form reading, punctuation handling, paragraph spacing, indentation, and vertical writing.
+- **Custom CoreText renderer** — paged and vertical-scroll rendering without relying on a WebView-based reading surface.
+- **EPUB & TXT import** — local book import, parsing, caching, and reading-position restoration.
+- **Large-book handling** — tested with 14M-character TXT files and 8M-character EPUB files.
+- **TTS reading** — AVSpeechSynthesizer and HTTP-based custom TTS backends.
+- **RSS subscriptions** — standard RSS/Atom feeds and rule-based feed extraction.
+- **WebDAV support** — backup, restore, and library/progress synchronization workflows.
+- **Web content normalization** — convert user-provided web articles or novel pages into the reader format.
+- **Bookmarks & annotations** — paragraph-level bookmark and underline annotation persistence.
+- **Customizable reading UI** — fonts, font size, line spacing, margins, themes, page/scroll modes, and vertical writing mode.
+
+## Scope
+
+yuedu is a reading engine and app shell. It does not include, host, or recommend copyrighted content sources.
+
+Users are responsible for ensuring that imported files, web content, RSS feeds, and custom rules comply with applicable laws, copyright requirements, and website terms.
+
+Requests or contributions for built-in piracy sources, DRM circumvention, paywall bypassing, private tokens, cookies, or anti-bot bypass logic will not be accepted.
 
 ## Requirements
 
@@ -24,62 +38,81 @@ Read, bookmark, annotate, and listen — all in one app.
 ## Getting Started
 
 ```bash
-git clone https://github.com/yuedu-reader/yuedu-app.git
-cd yuedu-app
-open "yuedu app.xcodeproj"
+git clone https://github.com/yuedu-reader/yuedu.git
+cd yuedu
+open Yuedu-Reader.xcodeproj
 ```
 
-Select the `yuedu app` scheme and build to a simulator or device.
+Select the `Yuedu-Reader` scheme and build to a simulator or device.
 
 ## Project Structure
 
-```
-yuedu app/
+```text
+iOS/
 ├── Models/               # Data models, stores, engines
-│   ├── App/              # Global settings, design tokens, DI
+│   ├── App/              # Global settings, design tokens, dependency injection
 │   ├── Book/             # Book model, BookStore, bookmarks
-│   ├── BookSource/       # Book source fetch pipeline
+│   ├── BookSource/       # User-defined source fetch pipeline
 │   ├── LocalBook/        # EPUB/TXT/Markdown parsers
-│   ├── Online/           # Online reading pipeline
+│   ├── Online/           # Online reading and web normalization pipeline
 │   ├── RSS/              # RSS models, fetcher, parser
-│   ├── Reader/CoreText/  # CoreText layout engine
+│   ├── Reader/CoreText/  # CoreText layout and pagination engine
 │   ├── RuleEngine/       # CSS/XPath/Regex/JSON rule extraction
 │   ├── TTS/              # Text-to-speech coordination
 │   └── ...               # Comic, Migration, Network, Sync, Server
 ├── Views/                # SwiftUI views
 │   ├── Reader/           # Reader UI and controls
 │   ├── Bookshelf/        # Home bookshelf
-│   ├── BookSource/       # Book source management
+│   ├── BookSource/       # Source management
 │   ├── RSS/              # RSS subscription views
 │   ├── Settings/         # App settings
 │   └── ...               # Search, Stats, TTS, etc.
 ├── ViewModels/           # ObservableObject view models
-├── Assets/               # Assets catalog and book source engine JS
+├── Assets/               # Assets catalog and rule-engine resources
 └── *.lproj/              # Localization (zh-Hant, zh-Hans, en)
 ```
 
 ## Architecture
 
-- **Reader**: `EPUBPageRenderer` dispatches to `CoreTextPageEngine` (paged) or `CoreTextScrollEngine` (scroll). Each page is rendered by `CoreTextPageView` via CoreText `CTFrame` drawing.
-- **Book sources**: `BookSourceFetcher` → `OnlineReadingPipeline` → rule engine extracts chapters and content.
-- **RSS**: `RSSFetcher` handles standard XML feeds and Legado rule-based HTML scraping.
-- **Dependency injection**: `AppDependencies` + `@Environment` for services; singletons for caches and managers.
+- **EPUB parsing**: Readium components are used for EPUB package parsing and resource management.
+- **Rendering**: `EPUBPageRenderer` dispatches to `CoreTextPageEngine` for paged reading or `CoreTextScrollEngine` for vertical scrolling. Pages are drawn by `CoreTextPageView` using CoreText `CTFrame` rendering.
+- **CJK layout**: The renderer is designed around Chinese long-form reading, including CJK punctuation, paragraph indentation, mixed CJK/Latin text, and vertical right-to-left layout.
+- **Book sources**: `BookSourceFetcher` → `OnlineReadingPipeline` → `RuleEngine` extracts chapters and normalized content from user-defined rules.
+- **RSS**: `RSSFetcher` handles standard XML feeds and rule-based HTML extraction.
+- **TTS**: The TTS coordinator maps readable text blocks to playback state and reader position.
+- **Sync**: WebDAV and account-related services handle backup, restore, and progress synchronization.
+- **Dependency injection**: `AppDependencies` and `@Environment` provide services; caches and managers are centralized where necessary.
 
 ## Localization
 
-All UI strings must use `localized()`. Do not hardcode strings.
+All UI strings must use `localized()`. Do not hardcode user-facing strings.
 
-When adding keys, update all three files:
+When adding localization keys, update all three files:
+
 - `zh-Hant.lproj/Localizable.strings`
 - `zh-Hans.lproj/Localizable.strings`
 - `en.lproj/Localizable.strings`
+
+## Recommended README Assets
+
+For a public GitHub release, add the following assets:
+
+- Bookshelf screenshot
+- Reading page screenshot
+- Typography/settings screenshot
+- Page-turning animation GIF
+- TTS playback GIF or short video
+- Import benchmark table
+- Architecture diagram
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+Contributions should focus on the reader engine, UI, localization, EPUB/TXT handling, RSS, WebDAV, accessibility, tests, and legal user-provided content workflows.
+
 ## License
 
 MIT — See [LICENSE](LICENSE).
 
-**Note:** This project links against [Readium](https://github.com/readium) components which are BSD-licensed. The Readium name and logo are trademarks of the Readium Foundation.
+This project links against [Readium](https://github.com/readium) components, which are BSD-licensed. The Readium name and logo are trademarks of the Readium Foundation.
