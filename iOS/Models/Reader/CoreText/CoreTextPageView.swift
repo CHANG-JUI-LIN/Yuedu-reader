@@ -147,12 +147,14 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
         ctx.scaleBy(x: scaleX, y: scaleY)
 
         if layout.pageKinds[pageIndex] == .image {
+            print("[draw] pageKind=image pageIndex=\(pageIndex) — skipping drawLines, drawing \(layout.blockAttachments[pageIndex]?.count ?? 0) attachments")
             for attachment in layout.blockAttachments[pageIndex] ?? [] {
                 attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
             }
             ctx.restoreGState()
             return
         }
+        print("[draw] pageKind=text pageIndex=\(pageIndex) stringLen=\(layout.attributedString.length) pages=\(layout.pageRanges.count)")
 
         if let backgroundImage = layout.pageBackgroundImage {
             drawPageBackground(backgroundImage, in: canonicalBounds)
