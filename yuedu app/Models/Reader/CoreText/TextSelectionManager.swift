@@ -16,15 +16,47 @@ final class TextSelectionManager {
         return range.length > 0
     }
 
+    var selectionBounds: (start: Int, end: Int)? {
+        guard let range = selectedRange else { return nil }
+        return (range.location, range.location + range.length - 1)
+    }
+
     func beginSelection(at index: Int, maxLength: Int) {
         let clamped = clamp(index, maxLength: maxLength)
         anchorIndex = clamped
         focusIndex = clamped
     }
 
+    func setSelection(range: NSRange, maxLength: Int) {
+        guard maxLength > 0, range.length > 0 else {
+            clear()
+            return
+        }
+        let start = clamp(range.location, maxLength: maxLength)
+        let end = clamp(range.location + range.length - 1, maxLength: maxLength)
+        anchorIndex = min(start, end)
+        focusIndex = max(start, end)
+    }
+
     func updateSelection(to index: Int, maxLength: Int) {
         guard anchorIndex != nil else { return }
         focusIndex = clamp(index, maxLength: maxLength)
+    }
+
+    func updateSelectionStart(to index: Int, maxLength: Int) {
+        guard let bounds = selectionBounds else { return }
+        let newStart = clamp(index, maxLength: maxLength)
+        let end = bounds.end
+        anchorIndex = min(newStart, end)
+        focusIndex = max(newStart, end)
+    }
+
+    func updateSelectionEnd(to index: Int, maxLength: Int) {
+        guard let bounds = selectionBounds else { return }
+        let start = bounds.start
+        let newEnd = clamp(index, maxLength: maxLength)
+        anchorIndex = min(start, newEnd)
+        focusIndex = max(start, newEnd)
     }
 
     func clear() {

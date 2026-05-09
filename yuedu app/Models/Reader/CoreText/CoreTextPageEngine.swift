@@ -167,6 +167,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     private var themeTextColor: UIColor = .label
     private var themeBackgroundColor: UIColor = .systemBackground
+    private var textAnnotations: [CoreTextTextAnnotation] = []
     var onChapterReady: ((Int?) -> Void)?
     var onNavigateToPage: ((Int) -> Void)?
 
@@ -259,6 +260,11 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     func updateRenderSettings(_ settings: ReaderRenderSettings) {
         renderSettings = settings
+    }
+
+    func setTextAnnotations(_ annotations: [CoreTextTextAnnotation]) {
+        textAnnotations = annotations
+        onChapterReady?(nil)
     }
 
     private var chapterCount: Int {
@@ -1223,6 +1229,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             readingPosition: readingPosition,
             fallbackBackgroundColor: themeBackgroundColor
         )
+        vc.setTextAnnotations(textAnnotations.filter { $0.spineIndex == spineIndex })
         return vc
     }
 

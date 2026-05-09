@@ -23,10 +23,17 @@ struct BookChapter: Identifiable, Codable {
 // MARK: - 書籤
 
 struct Bookmark: Identifiable, Codable, Equatable {
+    enum Kind: String, Codable {
+        case bookmark
+        case underline
+    }
+
     let id: UUID
     let chapterIndex: Int
     let chapterTitle: String
     let position: CoreTextReadingPosition
+    let length: Int
+    let kind: Kind
     let date: Date
     var note: String
     let excerpt: String  // 書籤位置前幾個字的摘錄
@@ -35,6 +42,8 @@ struct Bookmark: Identifiable, Codable, Equatable {
         chapterIndex: Int,
         chapterTitle: String,
         position: CoreTextReadingPosition,
+        length: Int = 0,
+        kind: Kind = .bookmark,
         note: String = "",
         excerpt: String = "",
         id: UUID = UUID(),
@@ -44,6 +53,8 @@ struct Bookmark: Identifiable, Codable, Equatable {
         self.chapterIndex = chapterIndex
         self.chapterTitle = chapterTitle
         self.position = position
+        self.length = max(0, length)
+        self.kind = kind
         self.date = date
         self.note = note
         self.excerpt = excerpt
@@ -68,7 +79,7 @@ struct Bookmark: Identifiable, Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, chapterIndex, chapterTitle, position, date, note, excerpt
+        case id, chapterIndex, chapterTitle, position, length, kind, date, note, excerpt
         case spineIndex, charOffset, pageIndex
     }
 
@@ -84,6 +95,8 @@ struct Bookmark: Identifiable, Codable, Equatable {
             let legacyOffset = (try? c.decode(Int.self, forKey: .charOffset)) ?? 0
             position = CoreTextReadingPosition(spineIndex: legacySpine, charOffset: legacyOffset)
         }
+        length = (try? c.decode(Int.self, forKey: .length)) ?? 0
+        kind = (try? c.decode(Kind.self, forKey: .kind)) ?? .bookmark
         date = (try? c.decode(Date.self, forKey: .date)) ?? Date()
         note = (try? c.decode(String.self, forKey: .note)) ?? ""
         excerpt = (try? c.decode(String.self, forKey: .excerpt)) ?? ""
@@ -95,6 +108,8 @@ struct Bookmark: Identifiable, Codable, Equatable {
         try c.encode(chapterIndex, forKey: .chapterIndex)
         try c.encode(chapterTitle, forKey: .chapterTitle)
         try c.encode(position, forKey: .position)
+        try c.encode(length, forKey: .length)
+        try c.encode(kind, forKey: .kind)
         try c.encode(date, forKey: .date)
         try c.encode(note, forKey: .note)
         try c.encode(excerpt, forKey: .excerpt)
@@ -1088,6 +1103,34 @@ class BookStore: ObservableObject, BookProvider {
             books[idx].bookmarks.append(bm)
             books[idx].bookmarks = books[idx].bookmarks.sortedByStablePosition()
         }
+        saveMeta()
+    }
+
+    func addUnderlineBookmark(
+        bookId: UUID,
+        chapterIndex: Int,
+        chapterTitle: String,
+        position: CoreTextReadingPosition,
+        length: Int,
+        excerpt: String
+    ) {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        let safeLength = max(1, length)
+        if books[idx].bookmarks.contains(where: {
+            $0.kind == .underline && $0.position == position && $0.length == safeLength
+        }) {
+            return
+        }
+        let bookmark = Bookmark(
+            chapterIndex: chapterIndex,
+            chapterTitle: chapterTitle,
+            position: position,
+            length: safeLength,
+            kind: .underline,
+            excerpt: excerpt
+        )
+        books[idx].bookmarks.append(bookmark)
+        books[idx].bookmarks = books[idx].bookmarks.sortedByStablePosition()
         saveMeta()
     }
 

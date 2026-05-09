@@ -65,6 +65,7 @@ protocol PageLayoutEngine: AnyObject {
     // MARK: 樣式更新
     func applyThemeChange(textColor: UIColor, backgroundColor: UIColor)
     func updateRenderSettings(_ settings: ReaderRenderSettings)
+    func setTextAnnotations(_ annotations: [CoreTextTextAnnotation])
 
     // MARK: 回呼（取代 Notification 廣播）
     var onChapterReady: ((Int?) -> Void)? { get set }
@@ -118,6 +119,7 @@ extension PageLayoutEngine {
     func cancelPendingWork() {}
     func notifyChapterDataChanged(at spineIndex: Int) async {}
     func updateRenderSettings(_ settings: ReaderRenderSettings) {}
+    func setTextAnnotations(_ annotations: [CoreTextTextAnnotation]) {}
 }
 
 // MARK: - PageViewControllerVending 預設實作

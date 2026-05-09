@@ -18,9 +18,16 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
     private var localPageIndex: Int = 0
     private let selectionManager = TextSelectionManager()
     private let playbackOverlay = InteractionOverlayView()
+    private let annotationOverlay = InteractionOverlayView()
     private let interactionOverlay = InteractionOverlayView()
     private var selectedTextForCopy: String?
     private var playbackHighlightText: String?
+    private var textAnnotations: [CoreTextTextAnnotation] = []
+    private enum SelectionDragHandle {
+        case start
+        case end
+    }
+    private var activeDragHandle: SelectionDragHandle?
     private lazy var linkTapGesture: UITapGestureRecognizer = {
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         tap.cancelsTouchesInView = false
@@ -30,6 +37,12 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
     private lazy var longPressGesture: UILongPressGestureRecognizer = {
         let gesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         gesture.minimumPressDuration = 0.25
+        return gesture
+    }()
+    private lazy var selectionHandlePanGesture: UIPanGestureRecognizer = {
+        let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleSelectionHandlePan(_:)))
+        gesture.cancelsTouchesInView = true
+        gesture.delegate = self
         return gesture
     }()
 
@@ -43,13 +56,21 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
         playbackOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         playbackOverlay.fillColor = UIColor.systemYellow.withAlphaComponent(0.28)
         playbackOverlay.showsHandles = false
+        annotationOverlay.frame = bounds
+        annotationOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        annotationOverlay.fillColor = .clear
+        annotationOverlay.showsHandles = false
         interactionOverlay.frame = bounds
         interactionOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        interactionOverlay.fillColor = UIColor.systemYellow.withAlphaComponent(0.30)
+        interactionOverlay.handleColor = UIColor(red: 0.63, green: 0.40, blue: 0.00, alpha: 1.0)
         addSubview(playbackOverlay)
+        addSubview(annotationOverlay)
         addSubview(interactionOverlay)
 
         addGestureRecognizer(linkTapGesture)
         addGestureRecognizer(longPressGesture)
+        addGestureRecognizer(selectionHandlePanGesture)
     }
 
     required init?(coder: NSCoder) {
@@ -73,10 +94,16 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
         updatePlaybackHighlightOverlay()
     }
 
+    func setTextAnnotations(_ annotations: [CoreTextTextAnnotation]) {
+        textAnnotations = annotations
+        updateAnnotationOverlay()
+    }
+
     override var canBecomeFirstResponder: Bool { true }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        action == #selector(copy(_:)) && (selectedTextForCopy?.isEmpty == false)
+        guard selectedTextForCopy?.isEmpty == false else { return false }
+        return action == #selector(copy(_:)) || action == #selector(underlineSelection(_:))
     }
 
     override func didMoveToSuperview() {
@@ -544,6 +571,37 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
         UIPasteboard.general.string = text
     }
 
+    @objc private func underlineSelection(_ sender: Any?) {
+        guard let layout,
+              let range = selectionManager.selectedRange,
+              range.length > 0,
+              range.location >= 0,
+              range.location + range.length <= layout.attributedString.length
+        else { return }
+        let excerpt = selectedTextForCopy ?? selectionManager.selectedText(in: layout.attributedString) ?? ""
+        let annotation = CoreTextTextAnnotation(
+            id: UUID(),
+            spineIndex: layout.spineIndex,
+            range: range
+        )
+        textAnnotations.append(annotation)
+        updateAnnotationOverlay()
+        NotificationCenter.default.post(
+            name: .coreTextUnderlineSelectionRequested,
+            object: self,
+            userInfo: [
+                "request": CoreTextUnderlineSelectionRequest(
+                    position: CoreTextReadingPosition(
+                        spineIndex: layout.spineIndex,
+                        charOffset: range.location
+                    ),
+                    length: range.length,
+                    excerpt: excerpt.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            ]
+        )
+    }
+
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         guard gesture.state == .ended,
               let layout,
@@ -578,6 +636,14 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
         return shouldHandleTap(at: touch.location(in: self))
     }
 
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === selectionHandlePanGesture {
+            return selectionManager.hasSelection
+                && nearestHandle(to: selectionHandlePanGesture.location(in: self)) != nil
+        }
+        return true
+    }
+
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
         guard let layout,
               localPageIndex < layout.pageRanges.count,
@@ -592,7 +658,8 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
 
         switch gesture.state {
         case .began:
-            selectionManager.beginSelection(at: index, maxLength: layout.attributedString.length)
+            let paragraphRange = defaultSelectionRange(around: index, in: layout.attributedString)
+            selectionManager.setSelection(range: paragraphRange, maxLength: layout.attributedString.length)
             updateSelectionOverlay(with: context)
         case .changed:
             selectionManager.updateSelection(to: index, maxLength: layout.attributedString.length)
@@ -603,10 +670,53 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
             guard selectionManager.hasSelection else { return }
             selectedTextForCopy = selectionManager.selectedText(in: layout.attributedString)
             becomeFirstResponder()
+            UIMenuController.shared.menuItems = [
+                UIMenuItem(title: localized("下劃線"), action: #selector(underlineSelection(_:)))
+            ]
             let point = gesture.location(in: self)
             UIMenuController.shared.showMenu(from: self, rect: CGRect(x: point.x, y: point.y, width: 1, height: 1))
         case .cancelled, .failed:
             clearSelection()
+        default:
+            break
+        }
+    }
+
+    @objc private func handleSelectionHandlePan(_ gesture: UIPanGestureRecognizer) {
+        guard selectionManager.hasSelection,
+              let layout,
+              localPageIndex < layout.pageRanges.count,
+              let context = makeInteractionContext()
+        else {
+            activeDragHandle = nil
+            return
+        }
+
+        let point = gesture.location(in: self)
+        switch gesture.state {
+        case .began:
+            activeDragHandle = nearestHandle(to: point)
+        case .changed:
+            guard let activeDragHandle,
+                  let index = stringIndex(at: point, in: context) else { return }
+            switch activeDragHandle {
+            case .start:
+                selectionManager.updateSelectionStart(to: index, maxLength: layout.attributedString.length)
+            case .end:
+                selectionManager.updateSelectionEnd(to: index, maxLength: layout.attributedString.length)
+            }
+            updateSelectionOverlay(with: context)
+            selectedTextForCopy = selectionManager.selectedText(in: layout.attributedString)
+        case .ended:
+            selectedTextForCopy = selectionManager.selectedText(in: layout.attributedString)
+            becomeFirstResponder()
+            UIMenuController.shared.menuItems = [
+                UIMenuItem(title: localized("下劃線"), action: #selector(underlineSelection(_:)))
+            ]
+            UIMenuController.shared.showMenu(from: self, rect: CGRect(x: point.x, y: point.y, width: 1, height: 1))
+            activeDragHandle = nil
+        case .cancelled, .failed:
+            activeDragHandle = nil
         default:
             break
         }
@@ -649,6 +759,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
     private func clearSelection() {
         selectionManager.clear()
         selectedTextForCopy = nil
+        activeDragHandle = nil
         interactionOverlay.clearSelection()
         // 同步關掉「拷貝」menu，否則點掉反白後 menu 會繼續黏在畫面上
         if #available(iOS 13.0, *) {
@@ -656,6 +767,43 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
         } else {
             UIMenuController.shared.setMenuVisible(false, animated: true)
         }
+    }
+
+    private func defaultSelectionRange(around index: Int, in attributedString: NSAttributedString) -> NSRange {
+        guard attributedString.length > 0 else { return NSRange(location: 0, length: 0) }
+        let nsString = attributedString.string as NSString
+        var range = nsString.paragraphRange(for: NSRange(location: min(max(index, 0), attributedString.length - 1), length: 0))
+        while range.length > 0 {
+            let first = nsString.character(at: range.location)
+            if CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(first)!) {
+                range.location += 1
+                range.length -= 1
+            } else {
+                break
+            }
+        }
+        while range.length > 0 {
+            let lastIndex = range.location + range.length - 1
+            let last = nsString.character(at: lastIndex)
+            if CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(last)!) {
+                range.length -= 1
+            } else {
+                break
+            }
+        }
+        if range.length > 0 { return range }
+        return NSRange(location: min(max(index, 0), attributedString.length - 1), length: 1)
+    }
+
+    private func nearestHandle(to point: CGPoint) -> SelectionDragHandle? {
+        let hitRadius: CGFloat = 36
+        let start = interactionOverlay.startHandlePoint
+        let end = interactionOverlay.endHandlePoint
+        let startDistance = start.map { hypot($0.x - point.x, $0.y - point.y) } ?? .greatestFiniteMagnitude
+        let endDistance = end.map { hypot($0.x - point.x, $0.y - point.y) } ?? .greatestFiniteMagnitude
+        let best = min(startDistance, endDistance)
+        guard best <= hitRadius else { return nil }
+        return startDistance <= endDistance ? .start : .end
     }
 
     private func makeInteractionContext() -> InteractionContext? {
@@ -772,8 +920,31 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
 
         let rects = selectionRects(for: range, in: context)
         interactionOverlay.selectionRects = rects
-        interactionOverlay.startHandlePoint = rects.first.map { CGPoint(x: $0.minX, y: $0.maxY) }
+        interactionOverlay.startHandlePoint = rects.first.map { CGPoint(x: $0.minX, y: $0.minY) }
         interactionOverlay.endHandlePoint = rects.last.map { CGPoint(x: $0.maxX, y: $0.maxY) }
+    }
+
+    private func updateAnnotationOverlay() {
+        guard let layout,
+              localPageIndex < layout.pageRanges.count,
+              let context = makeInteractionContext()
+        else {
+            annotationOverlay.clearSelection()
+            return
+        }
+        let pageCFRange = layout.pageRanges[localPageIndex]
+        let pageRange = NSRange(location: pageCFRange.location, length: pageCFRange.length)
+        let rects = textAnnotations
+            .filter { $0.spineIndex == layout.spineIndex }
+            .flatMap { annotation -> [CGRect] in
+                let intersection = NSIntersectionRange(pageRange, annotation.range)
+                guard intersection.length > 0 else { return [] }
+                return selectionRects(for: intersection, in: context)
+            }
+        annotationOverlay.selectionRects = []
+        annotationOverlay.underlineRects = rects
+        annotationOverlay.startHandlePoint = nil
+        annotationOverlay.endHandlePoint = nil
     }
 
     private func updatePlaybackHighlightOverlay() {
@@ -890,6 +1061,7 @@ final class CoreTextPageViewController: UIViewController {
     private var pendingLocalPage: Int = 0
     private var pendingFallbackColor: UIColor = .systemBackground
     private var pendingPlaybackHighlightText: String?
+    private var pendingTextAnnotations: [CoreTextTextAnnotation] = []
 
     func configure(
         layout: CoreTextPaginator.ChapterLayout,
@@ -904,6 +1076,7 @@ final class CoreTextPageViewController: UIViewController {
         if isViewLoaded {
             pageView.onInternalLinkTap = onInternalLinkTap
             pageView.configure(layout: layout, pageIndex: localPage, fallbackBackgroundColor: fallbackBackgroundColor)
+            pageView.setTextAnnotations(pendingTextAnnotations)
             pageView.setPlaybackHighlight(text: pendingPlaybackHighlightText)
         } else {
             pendingLayout = layout
@@ -917,6 +1090,12 @@ final class CoreTextPageViewController: UIViewController {
         pageView.setPlaybackHighlight(text: text)
     }
 
+    func setTextAnnotations(_ annotations: [CoreTextTextAnnotation]) {
+        pendingTextAnnotations = annotations
+        guard isViewLoaded else { return }
+        pageView.setTextAnnotations(annotations)
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         pageView.frame = view.bounds
@@ -925,6 +1104,7 @@ final class CoreTextPageViewController: UIViewController {
         view.addSubview(pageView)
         if let layout = pendingLayout {
             pageView.configure(layout: layout, pageIndex: pendingLocalPage, fallbackBackgroundColor: pendingFallbackColor)
+            pageView.setTextAnnotations(pendingTextAnnotations)
             pageView.setPlaybackHighlight(text: pendingPlaybackHighlightText)
             pendingLayout = nil
         }

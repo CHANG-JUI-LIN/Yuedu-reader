@@ -429,6 +429,28 @@ struct ReaderView: View {
         return String(content.prefix(30))
     }
 
+    private var coreTextTextAnnotations: [CoreTextTextAnnotation] {
+        (book?.bookmarks ?? []).compactMap(\.coreTextTextAnnotation)
+    }
+
+    private func syncCoreTextTextAnnotations() {
+        epubRenderer.engine?.setTextAnnotations(coreTextTextAnnotations)
+    }
+
+    private func addUnderlineBookmark(_ request: CoreTextUnderlineSelectionRequest) {
+        let position = request.position
+        guard chapters.indices.contains(position.spineIndex) else { return }
+        store.addUnderlineBookmark(
+            bookId: bookId,
+            chapterIndex: position.spineIndex,
+            chapterTitle: bookmarkChapterTitle(for: position.spineIndex),
+            position: position,
+            length: request.length,
+            excerpt: request.excerpt.isEmpty ? currentPageExcerpt : String(request.excerpt.prefix(80))
+        )
+        syncCoreTextTextAnnotations()
+    }
+
     /// 閱讀總進度百分比
     var totalProgressPercent: String {
         if usesCoreTextEPUB, let engine = epubRenderer.engine {
@@ -477,7 +499,12 @@ struct ReaderView: View {
 
     // ── 主體 ──
     var body: some View {
-        ZStack(alignment: .top) {
+        buildBody()
+    }
+
+    private func buildBody() -> AnyView {
+        AnyView(
+            ZStack(alignment: .top) {
             readerTheme.backgroundColor
                 .ignoresSafeArea()
                 .animation(.easeInOut(duration: uiFeedbackDuration), value: readerTheme)
@@ -628,6 +655,7 @@ struct ReaderView: View {
             } else {
                 restoreReaderDisplayStateAfterResume()
             }
+            syncCoreTextTextAnnotations()
             systemBrightness = Double(UIScreen.main.brightness)
             if settings.followSystemBrightness {
                 settings.readerBrightness = systemBrightness
@@ -726,6 +754,10 @@ struct ReaderView: View {
         .onReceive(readerConfig.refresh) { kind in
             handleReaderConfigRefresh(kind)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .coreTextUnderlineSelectionRequested)) { notification in
+            guard let request = notification.userInfo?["request"] as? CoreTextUnderlineSelectionRequest else { return }
+            addUnderlineBookmark(request)
+        }
         .onReceive(readerViewModel.$chapterStates) { states in
             handleChapterStateChanges(states)
         }
@@ -740,6 +772,9 @@ struct ReaderView: View {
         }
         .onChange(of: settings.readerWritingMode) { _ in
             handleReaderConfigRefresh(.layout)
+        }
+        .onChange(of: book?.bookmarks ?? []) { _ in
+            syncCoreTextTextAnnotations()
         }
         .onChange(of: showBars) { visible in
             setTTSFloatingOverlayVisible(visible)
@@ -818,7 +853,10 @@ struct ReaderView: View {
             if show { loadOtherOrigins() }
         }
         .onChange(of: epubRenderer.isCoreTextReady) { ready in
-            if ready { applyInitialProgressIfNeeded() }
+            if ready {
+                syncCoreTextTextAnnotations()
+                applyInitialProgressIfNeeded()
+            }
         }
         .onChange(of: allPages.count) { _ in
             applyInitialProgressIfNeeded()
@@ -826,6 +864,7 @@ struct ReaderView: View {
         .onChange(of: chapters.count) { _ in
             applyInitialProgressIfNeeded()
         }
+        )
     }
 
     private func performInitialLoad() {
@@ -1421,62 +1460,70 @@ struct ReaderView: View {
     }
 
     // MARK: - 換源 Sheet
-    private var changeSourceSheetContent: some View {
-        NavigationView {
+    private var changeSourceSheetContent: AnyView {
+        AnyView(NavigationView {
             Group {
                 if changeSourceLoading {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text(localized("正在搜尋其他書源…"))
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let err = changeSourceError {
-                    VStack(spacing: 12) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.title)
-                            .foregroundColor(.orange)
-                        Text(err)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if changeSourceOrigins.isEmpty {
-                    Text(localized("暫無其他書源"))
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    AnyView(
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text(localized("正在搜尋其他書源…"))
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    )
+                } else if let err = changeSourceError {
+                    AnyView(
+                        VStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.title)
+                                .foregroundColor(.orange)
+                            Text(err)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding()
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    )
+                } else if changeSourceOrigins.isEmpty {
+                    AnyView(
+                        Text(localized("暫無其他書源"))
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    )
                 } else {
-                    List(changeSourceOrigins) { origin in
-                        Button {
-                            Task {
-                                do {
-                                    try await store.updateOnlineBookSource(
-                                        bookId: bookId, origin: origin)
-                                    await MainActor.run {
-                                        showChangeSourceSheet = false
-                                        loadContent()
-                                    }
-                                } catch {
-                                    await MainActor.run {
-                                        readerViewModel.reportChangeSourceError(error.localizedDescription)
+                    AnyView(
+                        List(changeSourceOrigins) { origin in
+                            Button {
+                                Task {
+                                    do {
+                                        try await store.updateOnlineBookSource(
+                                            bookId: bookId, origin: origin)
+                                        await MainActor.run {
+                                            showChangeSourceSheet = false
+                                            loadContent()
+                                        }
+                                    } catch {
+                                        await MainActor.run {
+                                            readerViewModel.reportChangeSourceError(error.localizedDescription)
+                                        }
                                     }
                                 }
-                            }
-                        } label: {
-                            HStack {
-                                Text(origin.sourceName)
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                            } label: {
+                                HStack {
+                                    Text(origin.sourceName)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
-                    }
+                    )
                 }
             }
             .navigationTitle(localized("換源"))
@@ -1486,7 +1533,7 @@ struct ReaderView: View {
                     Button(localized("關閉")) { showChangeSourceSheet = false }
                 }
             }
-        }
+        })
     }
 
     @ViewBuilder
