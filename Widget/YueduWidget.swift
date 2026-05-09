@@ -56,12 +56,8 @@ struct BookProgressWidgetView: View {
     @Environment(\.widgetFamily) var family
 
     var body: some View {
-        if let book = entry.book {
-            ZStack(alignment: .bottomLeading) {
-                LinearGradient(
-                    colors: [Color.accentColor.opacity(0.8), Color.black.opacity(0.6)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing
-                )
+        Group {
+            if let book = entry.book {
                 VStack(alignment: .leading, spacing: 4) {
                     Spacer()
                     Text(book.title)
@@ -80,17 +76,25 @@ struct BookProgressWidgetView: View {
                         .foregroundColor(.white.opacity(0.7))
                 }
                 .padding(12)
+                .containerBackground(
+                    LinearGradient(
+                        colors: [Color.accentColor.opacity(0.8), Color.black.opacity(0.6)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ),
+                    for: .widget
+                )
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "books.vertical.fill")
+                        .font(.system(size: 28))
+                        .foregroundColor(.secondary)
+                    Text("尚無閱讀記錄")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .containerBackground(.fill.tertiary, for: .widget)
             }
-        } else {
-            VStack(spacing: 8) {
-                Image(systemName: "books.vertical.fill")
-                    .font(.system(size: 28))
-                    .foregroundColor(.secondary)
-                Text("尚無閱讀記錄")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
