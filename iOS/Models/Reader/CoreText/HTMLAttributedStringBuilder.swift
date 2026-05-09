@@ -422,9 +422,6 @@ final class HTMLAttributedStringBuilder {
             // 避免它們被 CoreText 歸入下一個 paragraph，污染該段落的 paragraphStyle
             if rendered.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                !containsRenderableMetadata(rendered) {
-                if case .element(let el) = node, el.tag == "hr" {
-                    print("[HR] renderBlockChildren SKIPPED hr despite containsRenderableMetadata=false, len=\(rendered.length)")
-                }
                 continue
             }
             appendNode(rendered, to: output)
@@ -558,8 +555,8 @@ final class HTMLAttributedStringBuilder {
 
     private func makeHRDivider(style: ResolvedStyle, config: Config) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.paragraphSpacingBefore = style.fontSize * 0.5
-        paragraph.paragraphSpacing = style.fontSize * 0.5
+        paragraph.paragraphSpacingBefore = style.fontSize * 0.25
+        paragraph.paragraphSpacing = style.fontSize * 0.25
         paragraph.minimumLineHeight = style.fontSize
         paragraph.maximumLineHeight = style.fontSize
 
@@ -574,7 +571,6 @@ final class HTMLAttributedStringBuilder {
             ? style.borderTopWidth
             : (style.height.flatMap { $0 > 0 ? $0 : nil } ?? 0.5)
         let hrStyle = HRDividerStyle(color: hrColor, lineWidth: hrLineWidth)
-        print("[HR] makeHRDivider color=\(hrColor) lineWidth=\(hrLineWidth) borderTop=\(style.borderTopWidth)")
 
         return NSAttributedString(
             string: "\n",
@@ -593,7 +589,6 @@ final class HTMLAttributedStringBuilder {
     ) async -> NSAttributedString {
         // hr: 回傳帶有 hrDividerAttribute 的分隔線佔位
         if element.tag == "hr" {
-            print("[HR] renderBlockElement tag=hr isBlock=\(element.resolvedStyle.isBlock)")
             return makeHRDivider(style: element.resolvedStyle, config: config)
         }
 
@@ -1914,14 +1909,22 @@ final class HTMLAttributedStringBuilder {
         }
         if let left = resolved.left {
             if left.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "auto" {
-                style.isHorizontallyCentered = true
+                // Only center when BOTH left AND right are auto
+                if let right = resolved.right, right.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "auto" {
+                    style.isHorizontallyCentered = true
+                }
             } else if let leftValue = resolveBoxValue(left, currentFontSize: currentFontSize, rootFontSize: rootFontSize) {
                 style.marginLeft = max(0, leftValue)
             }
         }
         if let right = resolved.right {
             if right.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "auto" {
-                style.isHorizontallyCentered = true
+                // Only center when BOTH left AND right are auto
+                if let left = resolved.left, left.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "auto" {
+                    // already handled above
+                } else {
+                    // right-only auto: don't center, just skip margin-right
+                }
             } else if let rightValue = resolveBoxValue(right, currentFontSize: currentFontSize, rootFontSize: rootFontSize) {
                 style.marginRight = max(0, rightValue)
             }

@@ -147,14 +147,12 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
         ctx.scaleBy(x: scaleX, y: scaleY)
 
         if layout.pageKinds[pageIndex] == .image {
-            print("[draw] pageKind=image pageIndex=\(pageIndex) — skipping drawLines, drawing \(layout.blockAttachments[pageIndex]?.count ?? 0) attachments")
             for attachment in layout.blockAttachments[pageIndex] ?? [] {
                 attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
             }
             ctx.restoreGState()
             return
         }
-        print("[draw] pageKind=text pageIndex=\(pageIndex) stringLen=\(layout.attributedString.length) pages=\(layout.pageRanges.count)")
 
         if let backgroundImage = layout.pageBackgroundImage {
             drawPageBackground(backgroundImage, in: canonicalBounds)
@@ -280,20 +278,6 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
         in ctx: CGContext
     ) {
         let lines = CTFrameGetLines(frame) as! [CTLine]
-
-        // Count HR attributes in the full string for debugging
-        var hrCount = 0
-        attrStr.enumerateAttribute(
-            HTMLAttributedStringBuilder.hrDividerAttribute,
-            in: NSRange(location: 0, length: attrStr.length),
-            options: []
-        ) { value, _, _ in
-            if value != nil { hrCount += 1 }
-        }
-        if hrCount > 0 {
-            print("[HR] drawLines entry: \(hrCount) HR attributes found in attrStr(len=\(attrStr.length)), lines.count=\(lines.count)")
-        }
-
         guard !lines.isEmpty else { return }
 
         var origins = [CGPoint](repeating: .zero, count: lines.count)
@@ -364,7 +348,6 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
                 let hrStyle = hrValue as? HTMLAttributedStringBuilder.HRDividerStyle
                 let hrColor = hrStyle?.color ?? UIColor.separator
                 let hrWidth = hrStyle?.lineWidth ?? 0.5
-                print("[HR] drawing at origin=\(origin) contentWidth=\(contentWidth) color=\(hrColor) width=\(hrWidth)")
                 ctx.saveGState()
                 ctx.setStrokeColor(hrColor.cgColor)
                 ctx.setLineWidth(hrWidth)
