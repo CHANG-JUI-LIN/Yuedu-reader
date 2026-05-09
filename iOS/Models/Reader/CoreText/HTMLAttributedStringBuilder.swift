@@ -87,6 +87,8 @@ final class HTMLAttributedStringBuilder {
         var backgroundFillColor: UIColor?
         var width: CGFloat?
         var height: CGFloat?
+        var rawWidthPercent: CGFloat?
+        var rawHeightPercent: CGFloat?
         var marginRight: CGFloat
         var paddingLeft: CGFloat
         var paddingRight: CGFloat
@@ -747,7 +749,10 @@ final class HTMLAttributedStringBuilder {
         let image = src.isEmpty ? nil : await imageLoader?(src)
 
         var attachmentStyle = element.resolvedStyle
-        if let width = imageElement.resolvedStyle.width {
+        if let widthValue = imageElement.resolvedStyle.rawWidthPercent {
+            // Re-resolve percentage widths relative to render width, not font size
+            attachmentStyle.width = config.renderWidth * widthValue / 100.0
+        } else if let width = imageElement.resolvedStyle.width {
             attachmentStyle.width = width
         }
         if let height = imageElement.resolvedStyle.height {
@@ -1220,11 +1225,19 @@ final class HTMLAttributedStringBuilder {
         displayMode: ImageRunInfo.DisplayMode = .inline,
         precomputedMetrics: ImageMetrics? = nil
     ) -> NSAttributedString {
+        var correctedStyle = style
+        if let pct = style.rawWidthPercent {
+            correctedStyle.width = config.renderWidth * pct / 100.0
+        }
+        if let pct = style.rawHeightPercent {
+            correctedStyle.height = config.renderWidth * pct / 100.0
+        }
+
         let metrics: ImageMetrics
         if let precomputedMetrics {
             metrics = precomputedMetrics
         } else {
-            metrics = resolvedImageMetrics(image: image, config: config, style: style)
+            metrics = resolvedImageMetrics(image: image, config: config, style: correctedStyle)
         }
 
         return RunDelegateProvider.makeImagePlaceholder(
@@ -1530,6 +1543,10 @@ final class HTMLAttributedStringBuilder {
                 relativeBase: style.fontSize
            ) {
             style.width = max(0, value)
+            let trimmed = width.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasSuffix("%"), let pct = Double(trimmed.dropLast()) {
+                style.rawWidthPercent = CGFloat(pct)
+            }
         }
         if let height = declarations["height"],
            let value = resolveLength(
@@ -1539,6 +1556,10 @@ final class HTMLAttributedStringBuilder {
                 relativeBase: style.fontSize
            ) {
             style.height = max(0, value)
+            let trimmed = height.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasSuffix("%"), let pct = Double(trimmed.dropLast()) {
+                style.rawHeightPercent = CGFloat(pct)
+            }
         }
         if let textIndent = declarations["text-indent"],
            let value = resolveLength(
