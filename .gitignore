@@ -11,3 +11,14 @@ scripts/logs/*.txt
 scripts/logs/*.html
 
 docs/superpowers/
+
+# OAuth / credentials
+*.plist
+!Info.plist
+
+# Xcode build artifacts
+.derivedData/
+*.xcworkspace/xcuserdata/
+
+# CocoaPods (if added later)
+Pods/
