@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 import WebKit
 
-// MARK: - 搜尋引擎
+// MARK: - Search Engines
 enum SearchEngine: String, CaseIterable, Identifiable {
     case google = "Google"
     case baidu = "百度"
@@ -47,7 +47,7 @@ enum SearchEngine: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - 章節連結（瀏覽器目錄用）
+// MARK: - Chapter Links
 struct WebChapterItem: Identifiable, Codable {
     var id = UUID()
     var title: String
@@ -190,10 +190,10 @@ private func parseChineseChapterNumber(_ raw: String) -> Int? {
     return consumed ? total : nil
 }
 
-// MARK: - 正文提取 JS（Readability.js 優先，CSS 選擇器 fallback）
-/// 載入 Mozilla Readability.js 作為主提取方案；若失敗則退回 CSS 選擇器 + 啟發式評分
+// MARK: - Content Extraction JS
+/// Uses Mozilla Readability.js as the primary extraction method; falls back to CSS selectors with heuristic scoring.
 private let contentExtractJS: String = {
-    // 嘗試從 Bundle 載入 Readability.js（位於 Assets/Readability.js）
+    // Try to load Readability.js from the bundle (located at Assets/Readability.js)
     let readabilityURL =
         Bundle.main.url(forResource: "Readability", withExtension: "js", subdirectory: "Assets")
         ?? Bundle.main.url(forResource: "Readability", withExtension: "js")
@@ -236,8 +236,8 @@ private let contentExtractJS: String = {
 
     guard !readabilityScript.isEmpty else { return fallback }
 
-    // Readability 優先，失敗時用 fallback；直接回傳 article.content（含 HTML 標籤）
-    // TXTChapterParser.splitIntoParagraphs 會在 Swift 端處理 HTML→段落
+    // Prefer Readability; fall back if it fails. Returns article.content (with HTML tags).
+    // TXTChapterParser.splitIntoParagraphs handles HTML-to-paragraph conversion in Swift.
     return readabilityScript + """
     ;(function(){
         if(typeof Readability!=='undefined'){
@@ -344,7 +344,7 @@ private struct ExtractedPagePayload: Decodable {
     let html: String
 }
 
-/// 偵測頁面類型：章節連結 ≥5 → 9999（目錄頁），否則回傳文字長度
+/// Detects page type: >=5 chapter links -> 9999 (TOC page), otherwise returns text length.
 private let detectPageJS = """
 (function(){
     var txt=document.body?document.body.innerText.replace(/\\s+/g,' ').trim():'';
@@ -358,7 +358,7 @@ private let detectPageJS = """
 })()
 """
 
-/// 提取所有章節連結
+/// Extracts all chapter links.
 private let extractChaptersJS = """
 (function(){
     var links=document.querySelectorAll('a');
@@ -379,7 +379,7 @@ private let extractChaptersJS = """
 })()
 """
 
-// MARK: - 瀏覽器狀態（對齊 Legado BackstageWebView 的動態提取策略）
+// MARK: - Browser State
 class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
     let webView: WKWebView
 
@@ -426,9 +426,9 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
     func goForward() { webView.goForward() }
     func reload() { webView.reload() }
 
-    // MARK: - 核心：從當前 WebView 直接提取正文（不另發 HTTP 請求）
+    // MARK: - Extract content directly from the current WebView
 
-    /// 從使用者正在瀏覽的頁面直接用 JS 提取正文 + 標題
+    /// Extract content and title directly from the currently displayed page using JS.
     func extractContent(completion: @escaping (String, String) -> Void) {
         extractTextContent { title, text in
             completion(title, text)
@@ -487,7 +487,7 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
         }
     }
 
-    /// 提取章節目錄連結（先同步 Cookie 到 URLSession 再解析）
+    /// Extract chapter links (syncs cookies to URLSession before parsing).
     func extractChapterLinks(completion: @escaping ([WebChapterItem]) -> Void) {
         syncCookiesToURLSession {
             self.webView.evaluateJavaScript(extractChaptersJS) { result, _ in
@@ -503,8 +503,8 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
         }
     }
 
-    /// 在背景 WebView 載入指定 URL 並提取正文（用於目錄轉碼時各章節的懶加載）
-    /// 共用使用者瀏覽器的 Cookie（已同步到 HTTPCookieStorage + WKWebsiteDataStore）
+    /// Loads a URL in a background WebView and extracts content (for lazy-loading chapters during TOC transcoding).
+    /// Shares the user browser's cookies (synced to HTTPCookieStorage + WKWebsiteDataStore).
     func fetchChapterContent(url: URL, completion: @escaping (String) -> Void) {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
@@ -523,24 +523,23 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
         bgWebView.load(URLRequest(url: url))
     }
 
-    /// 用主 WebView 導航到指定 URL 並提取完整正文（下載模式專用）
-    /// 加入 15 秒硬限制超時；失敗時最多重試 2 次
+    /// Navigates the main WebView to a URL and extracts full content (download mode only).
+    /// Enforces a 15-second hard timeout; retries up to 2 times on failure.
     func navigateAndExtract(url: URL, retryCount: Int = 0) async -> String {
-        // 硬限制：15 秒超時（用 withThrowingTaskGroup 實現）
         let result = await withTaskGroup(of: String.self) { group in
             group.addTask { @MainActor in
                 self.webView.load(URLRequest(url: url))
 
-                // 等待頁面載入完成（最多 12 秒）
+                // Wait for page load (max 12 seconds)
                 for _ in 0..<24 {
                     try? await Task.sleep(nanoseconds: 500_000_000)
                     if !self.webView.isLoading { break }
                 }
 
-                // JS 渲染等待
+                // Allow JS rendering to settle
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
 
-                // 滾動觸發懶加載
+                // Scroll to trigger lazy loading
                 _ = try? await self.webView.evaluateJavaScript(
                     "window.scrollTo(0,document.body.scrollHeight);")
                 try? await Task.sleep(nanoseconds: 800_000_000)
@@ -549,7 +548,7 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
 
                 return (try? await self.webView.evaluateJavaScript(contentExtractJS)) as? String ?? ""
             }
-            // 超時任務（15 秒）
+            // Timeout task (15 seconds)
             group.addTask {
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
                 return ""
@@ -562,7 +561,7 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
 
         let cleaned = BookSourceFetcher.cleanChapterContent(result)
 
-        // 內容太少，自動重試（最多 2 次）
+        // Auto-retry if content is too short (up to 2 retries)
         if cleaned.count < 100 && retryCount < 2 {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             return await navigateAndExtract(url: url, retryCount: retryCount + 1)
@@ -571,7 +570,7 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
         return cleaned
     }
 
-    /// 同步 Cookie
+    /// Syncs cookies to URLSession.
     func syncCookiesToURLSession(completion: @escaping () -> Void) {
         WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
             for cookie in cookies {
@@ -610,7 +609,7 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
     }
 }
 
-// MARK: - 背景 WebView 載入 Handler（用於目錄轉碼各章節抓取）
+// MARK: - Background WebView Handler
 private class BackgroundWebViewHandler: NSObject, WKNavigationDelegate {
     let targetWebView: WKWebView
     let js: String
@@ -653,14 +652,14 @@ private class BackgroundWebViewHandler: NSObject, WKNavigationDelegate {
     }
 }
 
-// MARK: - WKWebView 包裝
+// MARK: - WKWebView Wrapper
 struct WebViewRepresentable: UIViewRepresentable {
     let webView: WKWebView
     func makeUIView(context: Context) -> WKWebView { webView }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
-// MARK: - 瀏覽器主視圖
+// MARK: - Browser Main View
 struct BrowserView: View {
     @EnvironmentObject var store: BookStore
     @StateObject private var browser = BrowserState()
@@ -671,7 +670,7 @@ struct BrowserView: View {
     @State private var addressText = ""
     @State private var isExtracting = false
 
-    // 用 Identifiable item 驅動 fullScreenCover，避免 Bool + UUID 兩條 state 競爭。
+    // Use an Identifiable item to drive fullScreenCover, avoiding race conditions between Bool and UUID states.
     private struct ReaderPresentation: Identifiable {
         let id: UUID
     }
@@ -680,8 +679,8 @@ struct BrowserView: View {
     @State private var extractedChapters: [WebChapterItem] = []
     @State private var showTOCSheet = false
     @State private var tocBookTitle = ""
-    // 延後 present Reader 直到 TOC sheet 真正 dismiss 結束。
-    // 在 sheet 還在收起動畫時呼叫 fullScreenCover SwiftUI 會靜默忽略。
+    // Delay presenting Reader until the TOC sheet dismiss animation has fully completed.
+    // Calling fullScreenCover while the sheet is still animating out causes SwiftUI to silently ignore it.
     @State private var pendingChapterStart: (chapters: [WebChapterItem], title: String, startIndex: Int)?
 
     @State private var errorMsg: String?
@@ -732,7 +731,6 @@ struct BrowserView: View {
                 .environmentObject(store)
         }
         .sheet(isPresented: $showTOCSheet, onDismiss: {
-            // onDismiss 在 sheet 動畫完全結束後觸發，此時才 present Reader 不會 crash。
             guard let pending = pendingChapterStart else { return }
             pendingChapterStart = nil
             startChapterDownload(
@@ -766,7 +764,7 @@ struct BrowserView: View {
         }
     }
 
-    // MARK: - 建立線上書 → 按需懶加載章節（不預下載全部）
+    // MARK: - Create Online Book with Lazy Chapter Loading
     private func startChapterDownload(chapters: [WebChapterItem], title: String, startIndex: Int) {
         print("[BrowserView] startChapterDownload chapters=\(chapters.count) startIndex=\(startIndex)")
         let refs = chapters.enumerated().map { idx, ch in
@@ -786,8 +784,8 @@ struct BrowserView: View {
             store.updatePosition(bookId: book.id, position: pos)
         }
 
-        // 搶先觸發起始章節的網路抓取：ReaderView 開啟後 fetchChapterIfNeeded
-        // 會在 ChapterFetchManager 找到同 key 的 Task 並共用，縮短等待時間。
+        // Pre-fetch the starting chapter: after ReaderView opens, fetchChapterIfNeeded
+        // will find the same key in ChapterFetchManager and share the task, reducing wait time.
         let prefetchBook = book
         let prefetchStore = store
         Task {
@@ -799,24 +797,23 @@ struct BrowserView: View {
             )
         }
 
-        // 把瀏覽器的登入 cookies 同步到 HTTPCookieStorage.shared，
-        // 後續 ChapterFetchManager 透過 URLSession / WebViewFetcher 抓章節時才能帶著登入狀態。
+        // Sync browser login cookies to HTTPCookieStorage.shared so ChapterFetchManager
+        // can carry the auth state when fetching chapters via URLSession / WebViewFetcher.
         browser.syncCookiesToURLSession {
             print("[BrowserView] cookies synced, presenting Reader")
             readerPresentation = ReaderPresentation(id: book.id)
         }
     }
 
-    // MARK: 首頁
+    // MARK: Home Page
     private var homePageView: some View {
-        let iconGray = Color(red: 174/255, green: 174/255, blue: 178/255)   // #AEAEB2
-        let labelDark = Color(red: 60/255, green: 60/255, blue: 67/255)     // #3C3C43
+        let iconGray = Color(red: 174/255, green: 174/255, blue: 178/255)
+        let labelDark = Color(red: 60/255, green: 60/255, blue: 67/255)
         return VStack(alignment: .leading, spacing: 0) {
             if browser.isLoading {
                 ProgressView().progressViewStyle(.linear).frame(height: 2)
             }
 
-            // 搜尋欄
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(iconGray)
@@ -853,7 +850,6 @@ struct BrowserView: View {
 
             Spacer().frame(height: 16)
 
-            // 快捷搜尋列
             HStack(alignment: .top, spacing: 20) {
                 ForEach(SearchEngine.allCases) { engine in
                     Button {
@@ -887,7 +883,6 @@ struct BrowserView: View {
 
             Spacer().frame(height: 20)
 
-            // 提示文字
             HStack(spacing: 4) {
                 Image(systemName: "info.circle")
                     .font(.system(size: 13))
@@ -905,7 +900,7 @@ struct BrowserView: View {
         .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
     }
 
-    // MARK: 轉碼浮動按鈕
+    // MARK: Extract FAB
     private var extractFAB: some View {
         Button {
             guard !isExtracting else { return }
@@ -935,7 +930,7 @@ struct BrowserView: View {
                             title: title.isEmpty ? "網頁書籍" : title,
                             author: "網路",
                             sourceURL: browser.currentURL,
-                            format: .plainText  // 一律存 .txt；TXTChapterParser.splitIntoParagraphs 會在 Swift 端解析 HTML 標籤
+                            format: .plainText  // Always save as .txt; TXTChapterParser.splitIntoParagraphs handles HTML tag parsing in Swift
                         )
                         isExtracting = false
                         readerPresentation = ReaderPresentation(id: book.id)
@@ -976,7 +971,7 @@ struct BrowserView: View {
         .padding(.bottom, 28)
     }
 
-    // MARK: 地址欄
+    // MARK: Address Bar
     private var addressBar: some View {
         HStack(spacing: 8) {
             Button { browser.goBack() } label: {
@@ -1022,7 +1017,7 @@ struct BrowserView: View {
         .background(Color(UIColor.systemBackground))
     }
 
-    // MARK: 搜尋引擎快捷列
+    // MARK: Search Engine Shortcuts
     private var engineShortcuts: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
@@ -1054,7 +1049,7 @@ struct BrowserView: View {
     }
 }
 
-// MARK: - 目錄選章 Sheet
+// MARK: - TOC Chapter Picker Sheet
 struct WebTOCSheet: View {
     let title: String
     let chapters: [WebChapterItem]

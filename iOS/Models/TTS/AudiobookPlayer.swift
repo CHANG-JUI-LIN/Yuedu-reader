@@ -2,13 +2,13 @@ import AVFoundation
 import Combine
 import Foundation
 
-// MARK: - 有聲書播放器（AVPlayer 封裝）
+// MARK: - Audiobook Player (AVPlayer wrapper)
 
 final class AudiobookPlayer: NSObject, ObservableObject {
 
     static let shared = AudiobookPlayer()
 
-    // MARK: - 已發佈狀態
+    // MARK: - Published State
 
     @Published var isPlaying: Bool = false
     @Published var currentTime: TimeInterval = 0
@@ -18,7 +18,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     @Published var currentTitle: String = ""
     @Published var playbackRate: Float = 1.0
 
-    // MARK: - 私有成員
+    // MARK: - Private Members
 
     private var player: AVPlayer?
     private var timeObserverToken: Any?
@@ -28,26 +28,26 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         super.init()
     }
 
-    // MARK: - 播放
+    // MARK: - Playback
 
     func play(url: URL, title: String) {
         error = nil
         currentTitle = title
         isLoading = true
 
-        // 啟用音頻會話（背景播放）
+        // Activate audio session for background playback
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(true)
 
-        // 停止舊的播放器
+        // Stop existing player
         stopInternal()
 
         let item = AVPlayerItem(url: url)
         let newPlayer = AVPlayer(playerItem: item)
-        newPlayer.rate = 0  // 等 readyToPlay 後再播放
+        newPlayer.rate = 0  // Wait for readyToPlay before playing
         player = newPlayer
 
-        // 監聽 status 以偵測 readyToPlay 和 error
+        // Observe status to detect readyToPlay and error
         item.publisher(for: \.status)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status in
@@ -60,7 +60,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
                     self.isPlaying = true
                 case .failed:
                     self.isLoading = false
-                    self.error = item.error?.localizedDescription ?? "播放失敗"
+                    self.error = item.error?.localizedDescription ?? "Playback failed"
                     self.isPlaying = false
                 default:
                     break
@@ -68,7 +68,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
             }
             .store(in: &cancellables)
 
-        // 定期更新播放進度（0.5 秒）
+        // Periodic playback progress update (0.5s interval)
         let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
         timeObserverToken = newPlayer.addPeriodicTimeObserver(
             forInterval: interval,
@@ -79,7 +79,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
             self.updateDuration()
         }
 
-        // 播放完畢通知
+        // Playback finished notification
         NotificationCenter.default.publisher(
             for: AVPlayerItem.didPlayToEndTimeNotification,
             object: item
@@ -92,7 +92,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         .store(in: &cancellables)
     }
 
-    // MARK: - 暫停 / 繼續
+    // MARK: - Pause / Resume
 
     func pause() {
         player?.pause()
@@ -104,7 +104,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         isPlaying = true
     }
 
-    // MARK: - 停止
+    // MARK: - Stop
 
     func stop() {
         stopInternal()
@@ -125,7 +125,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         player = nil
     }
 
-    // MARK: - 快進 / 快退
+    // MARK: - Seek
 
     func seek(to time: TimeInterval) {
         let target = CMTime(seconds: max(0, time), preferredTimescale: 600)
@@ -140,14 +140,14 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         seek(to: currentTime - seconds)
     }
 
-    // MARK: - 播放速率
+    // MARK: - Playback Rate
 
     func setRate(_ rate: Float) {
         playbackRate = rate
         if isPlaying { player?.rate = rate }
     }
 
-    // MARK: - 更新總時長
+    // MARK: - Duration Update
 
     private func updateDuration() {
         guard let item = player?.currentItem, item.status == .readyToPlay else { return }
@@ -155,5 +155,4 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         if d.isFinite && d > 0 { duration = d }
     }
 }
-
 

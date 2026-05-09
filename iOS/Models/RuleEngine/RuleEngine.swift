@@ -2,31 +2,32 @@ import Foundation
 import JavaScriptCore
 import SwiftUI  // withAnimation (SearchAggregator callers)
 
-// MARK: - 規則引擎（對齊 Legado https://github.com/gedoor/legado 書源解析）
-// 參考 app/model/analyzeRule/：AnalyzeRule, AnalyzeByJSoup, AnalyzeByXPath, AnalyzeByJSonPath, AnalyzeByRegex
-//   "div.content"         → CSS 選擇器，取 innerText
-//   "a.title@href"        → CSS 選擇器 + @href 屬性
-//   "@text"               → 從當前節點取文字
-//   "@href" / "@src"      → 取屬性
-//   "@attr(name)"         → 取任意屬性
-//   "@outerHtml"          → 取外層 HTML（保留標籤）
-//   "##pattern"           → Regex 提取第一個捕獲組
-//   "##pattern##replace"  → Regex 替換
-//   "@xpath://div[@class='x']" → XPath 解析
-//   "@css:div.content"    → 明確指定 CSS 選擇器
-//   "@json:$.data.list"   → 明確指定 JSONPath
+// MARK: - Rule Engine (aligned with Legado https://github.com/gedoor/legado book source parsing)
+// References app/model/analyzeRule/: AnalyzeRule, AnalyzeByJSoup, AnalyzeByXPath, AnalyzeByJSonPath, AnalyzeByRegex
+//   "div.content"         → CSS selector, get innerText
+//   "a.title@href"        → CSS selector + @href attribute
+//   "@text"               → Get text from current node
+//   "@href" / "@src"      → Get attribute value
+//   "@attr(name)"         → Get any attribute
+//   "@outerHtml"          → Get outer HTML (preserves tags)
+//   "##pattern"           → Regex extract first capture group
+//   "##pattern##replace"  → Regex replace
+//   "@xpath://div[@class='x']" → XPath parsing
+//   "@css:div.content"    → Explicit CSS selector
+//   "@json:$.data.list"   → Explicit JSONPath
 
 enum RuleEngine {
 
-    // MARK: - 執行緒安全 Regex 快取
+    // MARK: - Thread-safe Regex Cache
     //
-    // NSRegularExpression 的初始化涉及 NFA 編譯，在大量章節解析時（每個捕獲組、每條替換規則
-    // 各呼叫一次 applyRegex / extractRegexAllInOneMatches）會造成明顯的 CPU 峰值。
-    // NSCache 是執行緒安全的，且在記憶體壓力時會自動驅逐條目。
+    // NSRegularExpression initialization involves NFA compilation, which can cause
+    // significant CPU spikes during batch chapter parsing (each capture group and
+    // each replacement rule calls applyRegex / extractRegexAllInOneMatches).
+    // NSCache is thread-safe and auto-evicts entries under memory pressure.
     private static let regexCache = NSCache<NSString, NSRegularExpression>()
 
-    /// 取得已編譯的 NSRegularExpression，優先從快取讀取。
-    /// - Returns: 編譯後的實例，pattern 非法時回傳 nil。
+    /// Get a compiled NSRegularExpression, preferring the cache.
+    /// - Returns: Compiled instance, or nil if the pattern is invalid.
     static func cachedRegex(pattern: String, options: NSRegularExpression.Options = []) -> NSRegularExpression? {
         let cacheKey = "\(options.rawValue):\(pattern)" as NSString
         if let cached = regexCache.object(forKey: cacheKey) { return cached }
@@ -35,13 +36,13 @@ enum RuleEngine {
         return regex
     }
 
-    // MARK: - 括號感知的規則分割（Legado RuleAnalyzer.splitRule 對應）
+    // MARK: - Bracket-aware Rule Splitting (Legado RuleAnalyzer.splitRule counterpart)
 
-    /// 括號感知分割：在 `[...]` 和 `(...)` 內部不分割
-    /// 對應 Legado 的 RuleAnalyzer.splitRule("&&", "||", "%%")
-    /// - Returns: (type, parts)，type 是命中的分隔符（"||"/"&&"/"%%" 或 "" 表示無分隔），parts 是各段
+    /// Bracket-aware split: does not split inside `[...]` and `(...)`.
+    /// Corresponds to Legado's RuleAnalyzer.splitRule("&&", "||", "%%")
+    /// - Returns: (type, parts). type is the matched separator ("||"/"&&"/"%%" or "" for none), parts are the segments.
     static func splitRuleByOperators(_ rule: String) -> (type: String, parts: [String]) {
-        // 按優先級掃描：先找 ||，再找 &&，最後找 %%（與 Legado 一致）
+        // Scan by priority: check || first, then &&, then %% (consistent with Legado)
         for op in ["||", "&&", "%%"] {
             let parts = bracketAwareSplit(rule, separator: op)
             if parts.count > 1 {
@@ -51,11 +52,11 @@ enum RuleEngine {
         return ("", [rule])
     }
 
-    /// 用指定分隔符做括號感知分割
+    /// Perform a bracket-aware split using the given separator.
     static func bracketAwareSplit(_ rule: String, separator: String) -> [String] {
         guard !separator.isEmpty else { return [rule] }
         var parts: [String] = []
-        var depth = 0 // [] 和 () 的嵌套深度
+        var depth = 0 // Nesting depth for [] and ()
         var current = ""
         var i = rule.startIndex
         while i < rule.endIndex {
@@ -84,26 +85,26 @@ enum RuleEngine {
         return parts
     }
 
-    // MARK: - 解析器路由（自動偵測 CSS / XPath / JSONPath）
+    // MARK: - Parser Router (auto-detect CSS / XPath / JSONPath)
 
-    /// 路由提取列表：根據規則前綴自動選擇解析策略
+    /// Route extraction to return a list: automatically selects the parsing strategy based on rule prefix.
     static func routeExtractList(content: String, baseURL: String, rule: String) -> [HTMLNode] {
         var trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
-        // Legado：開頭 @@ 表示 Default，去掉 @@
+        // Legado: @@ prefix means Default, strip it
         if trimmed.hasPrefix("@@") {
             trimmed = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
         }
 
-        // 處理反轉語法：開頭 `-` 代表結果需要倒序（Legado 常見規範）
+        // Reverse syntax: leading `-` means reverse the result list (common Legado convention)
         var shouldReverse = false
         if trimmed.hasPrefix("-") {
             shouldReverse = true
             trimmed = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
         }
 
-        // 括號感知分割 ||、&&、%%（Legado RuleAnalyzer.splitRule 對應）
+        // Bracket-aware split for ||, &&, %% (Legado RuleAnalyzer.splitRule counterpart)
         let (opType, opParts) = splitRuleByOperators(trimmed)
         if opParts.count > 1 {
             switch opType {
@@ -138,41 +139,41 @@ enum RuleEngine {
             }
         }
 
-        // JSON 內容 → 外部直接呼叫 extractJSONArray
+        // JSON content → caller should use extractJSONArray directly
         if isJSON(content) { return [] }
 
         let nodes: [HTMLNode]
 
-        // @xpath: 前綴 或 // 開頭 → XPath
+        // @xpath: prefix or // opening → XPath
         if trimmed.hasPrefix("@xpath:") || trimmed.hasPrefix("@XPath:") {
             nodes = extractListByXPath(html: content, xpath: String(trimmed.dropFirst(7)))
         } else if trimmed.hasPrefix("//") && !trimmed.hasPrefix("//@") {
             nodes = extractListByXPath(html: content, xpath: trimmed)
         } else if trimmed.hasPrefix("@css:") || trimmed.hasPrefix("@CSS:") {
-            // @css: 前綴 → CSS
+            // @css: prefix → CSS
             nodes = extractList(html: content, baseURL: baseURL, rule: String(trimmed.dropFirst(5)))
         } else if isJsoupDefaultRule(trimmed) {
-            // Legado JSOUP Default：class.xxx@tag.li 等
+            // Legado JSOUP Default: class.xxx@tag.li, etc.
             nodes = extractListByJsoupDefault(html: content, baseURL: baseURL, rule: trimmed)
         } else {
-            // 預設 → CSS
+            // Default → CSS
             nodes = extractList(html: content, baseURL: baseURL, rule: trimmed)
         }
 
         return shouldReverse ? nodes.reversed() : nodes
     }
 
-    /// 路由提取值：根據規則前綴自動選擇解析策略
+    /// Route extraction to return a single value: automatically selects the parsing strategy based on rule prefix.
     static func routeExtractValue(content: String, baseURL: String, rule: String) -> String {
         var trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
-        // Legado：開頭 @@ 表示 Default，去掉 @@
+        // Legado: @@ prefix means Default, strip it
         if trimmed.hasPrefix("@@") {
             trimmed = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
         }
 
-        // 括號感知分割 ||、&&（Legado RuleAnalyzer 對應）
+        // Bracket-aware split for ||, && (Legado RuleAnalyzer counterpart)
         let (opType, opParts) = splitRuleByOperators(trimmed)
         if opParts.count > 1 {
             switch opType {
@@ -192,18 +193,18 @@ enum RuleEngine {
             }
         }
 
-        // JSON 內容 → JSONPath
+        // JSON content → JSONPath
         if isJSON(content) {
             return extractValueFromJSON(content, rule: trimmed, baseURL: baseURL)
         }
 
-        // @json: 前綴（不區分大小寫）
+        // @json: prefix (case-insensitive)
         if trimmed.lowercased().hasPrefix("@json:") {
             return extractValueFromJSON(
                 content, rule: String(trimmed.dropFirst(6)), baseURL: baseURL)
         }
 
-        // @xpath: 前綴 或 // 開頭 → XPath
+        // @xpath: prefix or // opening → XPath
         if trimmed.hasPrefix("@xpath:") || trimmed.hasPrefix("@XPath:") {
             return extractValueByXPath(
                 html: content, xpath: String(trimmed.dropFirst(7)), baseURL: baseURL)
@@ -212,7 +213,7 @@ enum RuleEngine {
             return extractValueByXPath(html: content, xpath: trimmed, baseURL: baseURL)
         }
 
-        // @css: 前綴
+        // @css: prefix
         if trimmed.hasPrefix("@css:") || trimmed.hasPrefix("@CSS:") {
             return extractValue(
                 fromHTML: content, rule: String(trimmed.dropFirst(5)), baseURL: baseURL)
@@ -228,21 +229,21 @@ enum RuleEngine {
             return extractValueByJsoupDefault(html: content, baseURL: baseURL, rule: trimmed)
         }
 
-        // 預設 → CSS
+        // Default → CSS
         return extractValue(fromHTML: content, rule: trimmed, baseURL: baseURL)
     }
 
-    /// 從節點路由提取（帶上下文節點）
+    /// Route extraction from a node (with context node).
     static func routeExtractValue(from node: HTMLNode, rule: String, baseURL: String) -> String {
         var trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return node.innerText }
 
-        // Legado：開頭 @@ 去掉
+        // Legado: @@ prefix means Default, strip it
         if trimmed.hasPrefix("@@") {
             trimmed = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
         }
 
-        // 括號感知分割 ||、&&
+        // Bracket-aware split for ||, &&
         let (opType, opParts) = splitRuleByOperators(trimmed)
         if opParts.count > 1 {
             switch opType {
@@ -262,30 +263,31 @@ enum RuleEngine {
             }
         }
 
-        // @xpath: → XPath（從節點的 outerHTML 重新解析）
+        // @xpath: → XPath (re-parse from node's outerHTML)
         if trimmed.hasPrefix("@xpath:") || trimmed.hasPrefix("@XPath:") {
             let html = buildOuterHTML(node)
             return extractValueByXPath(
                 html: html, xpath: String(trimmed.dropFirst(7)), baseURL: baseURL)
         }
 
-        // @css: 前綴
+        // @css: prefix
         if trimmed.hasPrefix("@css:") || trimmed.hasPrefix("@CSS:") {
             return extractValue(from: node, rule: String(trimmed.dropFirst(5)), baseURL: baseURL)
         }
 
-        // Legado JSOUP Default（從當前節點往下）
+        // Legado JSOUP Default (from current node downward)
         if isJsoupDefaultRule(trimmed) {
             return extractValueByJsoupDefault(from: node, rule: trimmed, baseURL: baseURL)
         }
 
-        // 預設 → CSS
+        // Default → CSS
         return extractValue(from: node, rule: trimmed, baseURL: baseURL)
     }
 
-    // MARK: - Legado JSOUP Default（type.name.index@type.name.index@content）
+    // MARK: - Legado JSOUP Default (type.name.index@type.name.index@content)
 
-    /// 是否為 JSOUP Default 規則：至少一段為 type.name 或 type.name.index（type = class/id/tag），或純標籤名（如 dl@dt@a）
+    /// Whether the rule uses JSOUP Default syntax: at least one segment is
+    /// type.name or type.name.index (type = class/id/tag), or a plain tag name (e.g., dl@dt@a).
     static func isJsoupDefaultRule(_ rule: String) -> Bool {
         let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         let lowered = trimmed.lowercased()
@@ -301,7 +303,7 @@ enum RuleEngine {
         for seg in segments {
             let s = seg.trimmingCharacters(in: .whitespacesAndNewlines)
             if s.isEmpty { continue }
-            // 純標籤名（無點號）如 dl, dt, a → 視為 JSOUP
+            // Plain tag name (no dot) such as dl, dt, a → treat as JSOUP
             if !s.contains(".") && s.allSatisfy({ $0.isLetter || $0.isNumber }) {
                 return true
             }
@@ -315,22 +317,22 @@ enum RuleEngine {
         return false
     }
 
-    /// Legado 索引描述：支持 [0,2,-1] 選擇、[!0,2] 排除、[0:2] 範圍、tag.div.0 舊式索引
+    /// Legado index spec: supports [0,2,-1] select, [!0,2] exclude, [0:2] range, tag.div.0 legacy index
     private enum JsoupIndexSpec {
-        case none                                     // 不篩選
-        case select([Int])                            // [0,2,-1] 選擇指定索引
-        case exclude([Int])                           // [!0,2] 排除指定索引
-        case range(start: Int?, end: Int?, step: Int) // [0:2] 或 [0:10:2] 範圍
-        case single(Int)                              // 舊式 class.name.0
+        case none                                     // No filtering
+        case select([Int])                            // [0,2,-1] select specific indices
+        case exclude([Int])                           // [!0,2] exclude specific indices
+        case range(start: Int?, end: Int?, step: Int) // [0:2] or [0:10:2] range
+        case single(Int)                              // Legacy class.name.0
     }
 
-    /// 解析 JSOUP 段：class.xxx / tag.li / text.下一页
-    /// 完整 Legado 索引語法：[0,2,-1]、[!0,2]、[0:2]、[0:10:2]、tag.div.0
+    /// Parse a JSOUP segment: class.xxx / tag.li / text.next_page
+    /// Full Legado index syntax: [0,2,-1], [!0,2], [0:2], [0:10:2], tag.div.0
     private static func parseJsoupSegment(_ segment: String) -> (css: String?, indexSpec: JsoupIndexSpec, text: String?, directChildren: Bool)? {
         var s = segment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !s.isEmpty else { return nil }
 
-        // 先提取尾部 [...] 索引
+        // Extract trailing [...] index first
         var indexSpec: JsoupIndexSpec = .none
         if s.hasSuffix("]"), let bracketStart = s.lastIndex(of: "[") {
             let inside = String(s[s.index(after: bracketStart)..<s.index(before: s.endIndex)])
@@ -339,20 +341,18 @@ enum RuleEngine {
             indexSpec = parseIndexExpression(inside)
         }
 
-        // Legado 舊式排除語法：p!0、p!-1、p!0:-1（tag 名後直接跟 ! 和索引）
+        // Legado legacy exclude syntax: p!0, p!-1, p!0:-1 (tag name followed by ! and index)
         if case .none = indexSpec, let bangIdx = s.firstIndex(of: "!"), !s.hasPrefix("!") {
             let tagPart = String(s[s.startIndex..<bangIdx]).trimmingCharacters(in: .whitespaces)
             let idxPart = String(s[s.index(after: bangIdx)...]).trimmingCharacters(in: .whitespaces)
             if !tagPart.isEmpty, !idxPart.isEmpty {
-                // 解析排除索引
+                // Parse exclude index
                 if idxPart.contains(":") {
-                    // 範圍排除 p!0:-1
+                    // Range exclude p!0:-1
                     let colonParts = idxPart.components(separatedBy: ":").map { $0.trimmingCharacters(in: .whitespaces) }
                     let start = colonParts.count > 0 && !colonParts[0].isEmpty ? Int(colonParts[0]) : nil
                     let end = colonParts.count > 1 && !colonParts[1].isEmpty ? Int(colonParts[1]) : nil
                     indexSpec = .range(start: start, end: end, step: 1)
-                    // 注意：Legado 中 p!0:-1 是「排除索引 0 到 -1」，用 exclude 更準確
-                    // 但實際使用中 p!0 更常見，range 在此只做兼容
                 } else if idxPart.contains(",") {
                     let indices = idxPart.components(separatedBy: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
                     indexSpec = .exclude(indices)
@@ -364,14 +364,14 @@ enum RuleEngine {
         }
 
         let parts = s.components(separatedBy: ".")
-        // 無點號的單詞（dl, dt, a）→ tag 選擇器
-        // 也支持 CSS 格式：#id、.class（無點號分隔但有前綴）
+        // Single word without dots (dl, dt, a) → tag selector
+        // Also supports CSS format: #id, .class (with prefix but no dot separator)
         if parts.count == 1 {
             let tag = s.lowercased()
             if tag.allSatisfy({ $0.isLetter || $0.isNumber }) {
                 return (tag, indexSpec, nil, false)
             }
-            // #id 格式 → CSS 選擇器
+            // #id format → CSS selector
             if s.hasPrefix("#") {
                 return (s, indexSpec, nil, false)
             }
@@ -381,7 +381,7 @@ enum RuleEngine {
         let type = parts[0].lowercased()
         let name = parts[1]
 
-        // 舊式 Legado 索引：class.name.0 或 class.name.0:2（如果沒有 [] 索引）
+        // Legacy Legado index: class.name.0 or class.name.0:2 (when there's no [] index)
         if case .none = indexSpec, parts.count >= 3 {
             let tail = parts[2...].joined(separator: ".")
             indexSpec = parseLegacyIndex(tail)
@@ -390,8 +390,8 @@ enum RuleEngine {
         var css: String
         switch type {
         case "class":
-            // Legado 格式 class.name1 name2 表示同時具有多個 class（如 class.lb_mulu chapterList）
-            // 需轉為 CSS .name1.name2 而非 .name1 name2（後代選擇器）
+            // Legado format class.name1 name2 means multiple classes (e.g., class.lb_mulu chapterList)
+            // Must convert to CSS .name1.name2, not .name1 name2 (which would be a descendant selector)
             let classNames = name.components(separatedBy: " ").filter { !$0.isEmpty }
             css = classNames.map { "." + $0 }.joined()
         case "id":    css = "#" + name
@@ -399,28 +399,28 @@ enum RuleEngine {
         case "text":  return (nil, indexSpec, name, false)
         case "children": return (nil, indexSpec, nil, true)
         case "":
-            // .className 格式（split by "." 後 parts[0] 為空）→ CSS class 選擇器
+            // .className format (split by "." gives empty parts[0]) → CSS class selector
             css = "." + name
         default:
-            // 不認識的 type → 嘗試用原始段作為 CSS 選擇器
+            // Unknown type → try using the original segment as a CSS selector
             css = s
         }
         return (css, indexSpec, nil, false)
     }
 
-    /// 解析 [...] 內的索引表達式
+    /// Parse the index expression inside [...].
     private static func parseIndexExpression(_ expr: String) -> JsoupIndexSpec {
         let trimmed = expr.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return .none }
 
-        // [!...] 排除模式
+        // [!...] exclude pattern
         if trimmed.hasPrefix("!") {
             let inner = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
             let indices = inner.components(separatedBy: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
             return indices.isEmpty ? .none : .exclude(indices)
         }
 
-        // 包含 : → 範圍模式 [start:end] 或 [start:end:step]
+        // Contains : → range pattern [start:end] or [start:end:step]
         if trimmed.contains(":") {
             let colonParts = trimmed.components(separatedBy: ":").map { $0.trimmingCharacters(in: .whitespaces) }
             let start = colonParts.count > 0 && !colonParts[0].isEmpty ? Int(colonParts[0]) : nil
@@ -429,13 +429,13 @@ enum RuleEngine {
             return .range(start: start, end: end, step: max(step, 1))
         }
 
-        // 包含 , → 多索引選擇 [0,2,-1]
+        // Contains , → multi-index select [0,2,-1]
         if trimmed.contains(",") {
             let indices = trimmed.components(separatedBy: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
             return indices.isEmpty ? .none : .select(indices)
         }
 
-        // 單數字
+        // Single number
         if let idx = Int(trimmed) {
             return .single(idx)
         }
@@ -443,9 +443,9 @@ enum RuleEngine {
         return .none
     }
 
-    /// 解析舊式 Legado 索引：.0 或 .0:2（點號後的數字部分）
+    /// Parse legacy Legado index: .0 or .0:2 (numeric part after a dot)
     private static func parseLegacyIndex(_ tail: String) -> JsoupIndexSpec {
-        // 範圍 0:2 或 0:10:2
+        // Range 0:2 or 0:10:2
         if tail.contains(":") {
             let colonParts = tail.components(separatedBy: ":").map { $0.trimmingCharacters(in: .whitespaces) }
             let start = colonParts.count > 0 && !colonParts[0].isEmpty ? Int(colonParts[0]) : nil
@@ -453,18 +453,18 @@ enum RuleEngine {
             let step = colonParts.count > 2 && !colonParts[2].isEmpty ? (Int(colonParts[2]) ?? 1) : 1
             return .range(start: start, end: end, step: max(step, 1))
         }
-        // 排除 !0
+        // Exclude !0
         if tail.hasPrefix("!"), let idx = Int(String(tail.dropFirst())) {
             return .exclude([idx])
         }
-        // 單索引
+        // Single index
         if let idx = Int(tail) {
             return .single(idx)
         }
         return .none
     }
 
-    /// 根據索引規則從候選列表中篩選元素
+    /// Filter candidate elements according to an index spec.
     private static func applyIndexSpec(_ spec: JsoupIndexSpec, to elements: [HTMLNode]) -> [HTMLNode] {
         let len = elements.count
         guard len > 0 else { return [] }
@@ -496,7 +496,7 @@ enum RuleEngine {
             start = max(0, min(start, len - 1))
             end = max(0, min(end, len - 1))
             guard start <= end else {
-                // 反向範圍
+                // Reverse range
                 var result: [HTMLNode] = []
                 var i = start
                 while i >= end {
@@ -515,14 +515,14 @@ enum RuleEngine {
         }
     }
 
-    /// 是否為「取內容」段：text, href, src, html, all, ownText, textNodes
+    /// Whether a segment is a "content specifier": text, href, src, html, all, ownText, textNodes
     private static func isJsoupContentSpec(_ segment: String) -> Bool {
         let s = segment.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return s == "text" || s == "href" || s == "src" || s == "html" || s == "all"
             || s == "owntext" || s == "textnodes"
     }
 
-    /// 從節點列表依 JSOUP 段取下一層節點（含完整索引篩選）
+    /// Apply one JSOUP segment to a node list, getting the next level of nodes (with full index filtering).
     static func applyJsoupSegment(nodes: [HTMLNode], segment: String) -> [HTMLNode] {
         guard let parsed = parseJsoupSegment(segment) else { return [] }
         var list: [HTMLNode] = []
@@ -546,7 +546,7 @@ enum RuleEngine {
         return list
     }
 
-    /// Legado JSOUP Default 列表：class.update_con@tag.li → 先 .update_con 再每個取 li
+    /// Legado JSOUP Default list: class.update_con@tag.li → select .update_con first, then li within each
     static func extractListByJsoupDefault(html: String, baseURL: String, rule: String) -> [HTMLNode] {
         let (mainRule, _) = splitRuleAndRegex(rule)
         let segments = mainRule.components(separatedBy: "@")
@@ -568,7 +568,7 @@ enum RuleEngine {
         return result
     }
 
-    /// Legado JSOUP Default 單值（從 HTML）
+    /// Legado JSOUP Default single value (from HTML).
     static func extractValueByJsoupDefault(html: String, baseURL: String, rule: String) -> String {
         let (mainRule, regexParts) = splitRuleAndRegex(rule)
         let segments = mainRule.components(separatedBy: "@")
@@ -587,7 +587,7 @@ enum RuleEngine {
             if current.isEmpty { break }
         }
         guard let first = current.first else { return "" }
-        // Legado 行為：如果沒有指定 contentSpec 且目標節點是 <a>，預設取 href
+        // Legado behavior: if no contentSpec is specified and the target node is <a>, default to href
         let contentSpecFinal: String
         if let spec = contentSpec {
             contentSpecFinal = spec
@@ -610,7 +610,7 @@ enum RuleEngine {
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Legado JSOUP Default 單值（從節點）
+    /// Legado JSOUP Default single value (from a node).
     static func extractValueByJsoupDefault(from node: HTMLNode, rule: String, baseURL: String) -> String {
         let (mainRule, regexParts) = splitRuleAndRegex(rule)
         let segments = mainRule.components(separatedBy: "@")
@@ -628,7 +628,7 @@ enum RuleEngine {
             if current.isEmpty { break }
         }
         guard let first = current.first else { return "" }
-        // Legado 行為：如果沒有指定 contentSpec 且目標節點是 <a>，預設取 href
+        // Legado behavior: if no contentSpec is specified and the target node is <a>, default to href
         let contentSpecFinal: String
         if let spec = contentSpec {
             contentSpecFinal = spec
@@ -651,15 +651,15 @@ enum RuleEngine {
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    // MARK: - 從 HTML 提取節點列表（用於 bookList、chapterList）
+    // MARK: - Extract node list from HTML (for bookList, chapterList)
     static func extractList(html: String, baseURL: String, rule: String) -> [HTMLNode] {
         let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
-        // 拆出 CSS 部分（list 規則通常不帶 regex 後處理）
+        // Split off CSS portion (list rules typically don't have regex post-processing)
         let (cssRule, _) = splitRuleAndRegex(trimmed)
 
-        // 支援 Legado @@ 多步選擇器："A@@B" 先選 A，再從每個結果中選 B
+        // Support Legado @@ multi-step selector: "A@@B" selects A first, then B from each result
         let steps = cssRule.components(separatedBy: "@@")
         guard let firstStep = steps.first else { return [] }
         let (firstSelector, _) = splitSelectorAndAttr(
@@ -682,16 +682,16 @@ enum RuleEngine {
         return nodes
     }
 
-    // MARK: - 從節點提取字串值
+    // MARK: - Extract string value from a node
     static func extractValue(from node: HTMLNode, rule: String, baseURL: String) -> String {
         let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return node.innerText }
 
-        // 分離 CSS 選擇器 + 屬性提取 + regex 後處理
+        // Separate CSS selector + attribute extraction + regex post-processing
         let (cssAndAttr, regexParts) = splitRuleAndRegex(trimmed)
         let (selector, attrName) = splitSelectorAndAttr(cssAndAttr)
 
-        // 1. 用 CSS 選擇器找節點（若 selector 為空則用當前節點）
+        // 1. Find target node via CSS selector (use current node if selector is empty)
         let targetNode: HTMLNode
         if selector.isEmpty {
             targetNode = node
@@ -700,28 +700,29 @@ enum RuleEngine {
             targetNode = found
         }
 
-        // 2. 提取屬性或文字
+        // 2. Extract attribute or text
         var value = extractAttr(from: targetNode, attr: attrName)
 
-        // 3. URL 拼接（href/src 類）
+        // 3. URL resolution (for href/src types)
         if attrName == "href" || attrName == "src" || attrName.hasPrefix("data-") {
             if !value.isEmpty {
                 value = resolveURL(value, base: baseURL)
             }
         }
 
-        // 4. Regex 後處理
+        // 4. Regex post-processing
         value = applyRegex(to: value, parts: regexParts)
 
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    // MARK: - 從 HTML 字串提取單個值（自動解析 HTML）
+    // MARK: - Extract single value from HTML string (auto-parse HTML)
     static func extractValue(fromHTML html: String, rule: String, baseURL: String) -> String {
         let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
-        // Legado JSOUP Default 規則（如 class.read-content@text）不是合法 CSS，需路由到專用解析器
+        // Legado JSOUP Default rules (e.g., class.read-content@text) are not valid CSS,
+        // must be routed to the dedicated parser
         let (mainPart, _) = splitRuleAndRegex(trimmed)
         let (selectorPart, _) = splitSelectorAndAttr(mainPart)
         if isJsoupDefaultRule(selectorPart) {
@@ -737,7 +738,7 @@ enum RuleEngine {
             targetNode = doc
         } else {
             guard let found = doc.selectFirst(selector) else {
-                // 只有帶 ##regex 規則才回退到原始 html 處理，否則直接回傳空字串
+                // Only fall back to raw HTML processing when ##regex is present; otherwise return empty
                 guard !regexParts.isEmpty else { return "" }
                 var raw = html
                 raw = applyRegex(to: raw, parts: regexParts)
@@ -768,7 +769,7 @@ enum RuleEngine {
         let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
-        // 對含 @css: / @xpath: / @json: / || / && 前綴的規則，走 routeExtractValue（統一路由）
+        // For rules with @css: / @xpath: / @json: / || / && prefixes, route through the unified router
         if trimmed.hasPrefix("@css:") || trimmed.hasPrefix("@CSS:")
             || trimmed.hasPrefix("@xpath:") || trimmed.hasPrefix("@XPath:")
             || trimmed.hasPrefix("@json:") || trimmed.hasPrefix("@Json:")
@@ -898,7 +899,7 @@ enum RuleEngine {
         }
     }
 
-    // MARK: - 從節點提取屬性
+    // MARK: - Extract attribute from node
     static func extractAttr(from node: HTMLNode, attr: String) -> String {
         switch attr.lowercased() {
         case "", "text", "innertext":
@@ -922,7 +923,7 @@ enum RuleEngine {
         }
     }
 
-    // MARK: - URL 拼接
+    // MARK: - URL Resolution
     static func resolveURL(_ raw: String, base: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
@@ -947,18 +948,18 @@ enum RuleEngine {
             let host = (baseURL.scheme ?? "https") + "://" + (baseURL.host ?? "")
             return host + urlPart + optionSuffix
         }
-        // 相對路徑
+        // Relative path
         if let resolved = URL(string: urlPart, relativeTo: baseURL)?.absoluteString {
             return resolved + optionSuffix
         }
         return trimmed
     }
 
-    /// 清理提取到的 URL：若包含 HTML 標籤（如 `<a href="...">第1章</a>`），嘗試提取 href 屬性
-    /// 同時處理 percent-encoded HTML（如 `%3Ca%20href=%22...%22%3E`）
+    /// Clean extracted URL: if it contains HTML tags (e.g., `<a href="...">Ch1</a>`),
+    /// attempt to extract the href attribute. Also handles percent-encoded HTML.
     static func sanitizeExtractedURL(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        // 先嘗試 percent-decode 後再檢查
+        // Try percent-decode first, then check
         let decoded = trimmed.removingPercentEncoding ?? trimmed
         let workingStr: String
         let needsDecode: Bool
@@ -972,17 +973,17 @@ enum RuleEngine {
             return trimmed
         }
 
-        // 嘗試從 href="..." 或 href='...' 提取
+        // Try extracting from href="..." or href='...'
         if let hrefRegex = cachedRegex(pattern: #"href\s*=\s*["']([^"']+)["']"#, options: .caseInsensitive) {
             let nsRange = NSRange(workingStr.startIndex..., in: workingStr)
             if let match = hrefRegex.firstMatch(in: workingStr, range: nsRange),
                let urlRange = Range(match.range(at: 1), in: workingStr) {
                 let extracted = String(workingStr[urlRange])
-                // 若原始 URL 有 base（如 https://domain.com/path/<a>），需要保留 base
+                // If the original URL had a base path, preserve it
                 if needsDecode, let hrefStart = decoded.range(of: "<") {
                     let basePart = String(decoded[..<hrefStart.lowerBound])
                     if !basePart.isEmpty && extracted.hasPrefix("/") {
-                        // href 是相對路徑，直接返回 href（resolveURL 會處理）
+                        // href is a relative path, return as-is (resolveURL will handle it)
                         return extracted
                     }
                     if !basePart.isEmpty && !extracted.hasPrefix("http") {
@@ -992,7 +993,7 @@ enum RuleEngine {
                 return extracted
             }
         }
-        // 嘗試從 src="..." 提取
+        // Try extracting from src="..."
         if let srcRegex = cachedRegex(pattern: #"src\s*=\s*["']([^"']+)["']"#, options: .caseInsensitive) {
             let nsRange = NSRange(workingStr.startIndex..., in: workingStr)
             if let match = srcRegex.firstMatch(in: workingStr, range: nsRange),
@@ -1000,13 +1001,14 @@ enum RuleEngine {
                 return String(workingStr[urlRange])
             }
         }
-        // 去掉所有 HTML 標籤作為最後手段
+        // Strip all HTML tags as a last resort
         let stripped = workingStr.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return stripped.isEmpty ? trimmed : stripped
     }
 
-    /// Legado 正則 AllInOne：用正則從全文匹配，返回每筆 [完整匹配, 捕獲組1, 捕獲組2, ...]
+    /// Legado Regex AllInOne: match regex against full text, return each match
+    /// as [fullMatch, group1, group2, ...]
     static func extractRegexAllInOneMatches(html: String, pattern: String) -> [[String]] {
         let p = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !p.isEmpty, let regex = cachedRegex(pattern: p) else { return [] }
@@ -1020,7 +1022,7 @@ enum RuleEngine {
         }
     }
 
-    /// 將模板中的 $1, $2, ... 替換為 groups[1], groups[2], ...（Legado 目錄正則用）
+    /// Substitute $1, $2, ... in a template with groups[1], groups[2], ... (Legado TOC regex usage)
     static func substituteGroupRefs(template: String, groups: [String]) -> String {
         var s = template
         for i in 1..<groups.count {
@@ -1029,16 +1031,16 @@ enum RuleEngine {
         return s
     }
 
-    // MARK: - XPath 解析
+    // MARK: - XPath Parsing
 
-    /// 從 HTML 用 XPath 提取節點列表
+    /// Extract node list from HTML via XPath.
     static func extractListByXPath(html: String, xpath: String) -> [HTMLNode] {
         let (xpathClean, _) = splitRuleAndRegex(xpath)
         let doc = parseHTML(html)
         return evaluateXPath(node: doc, xpath: xpathClean)
     }
 
-    /// 從 HTML 用 XPath 提取單個值
+    /// Extract single value from HTML via XPath.
     static func extractValueByXPath(html: String, xpath: String, baseURL: String) -> String {
         let (xpathClean, regexParts) = splitRuleAndRegex(xpath)
         let doc = parseHTML(html)
@@ -1059,8 +1061,8 @@ enum RuleEngine {
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 簡易 XPath 求值引擎
-    /// 支援：/html/body/div, //div, //div[@class='x'], //div[@id='y'], /text(), /@attr, [n]
+    /// Simple XPath evaluation engine.
+    /// Supports: /html/body/div, //div, //div[@class='x'], //div[@id='y'], /text(), /@attr, [n]
     static func evaluateXPath(node: HTMLNode, xpath: String) -> [HTMLNode] {
         let trimmed = xpath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [node] }
@@ -1078,7 +1080,7 @@ enum RuleEngine {
         return current
     }
 
-    // MARK: - 私有 XPath 工具
+    // MARK: - Private XPath Utilities
 
     private struct XPathStep {
         var axis: XPathAxis
@@ -1096,7 +1098,7 @@ enum RuleEngine {
         var value: String
     }
 
-    /// 解析 XPath 字串為步驟列表
+    /// Parse an XPath string into a list of steps.
     private static func parseXPathSteps(_ xpath: String) -> [XPathStep] {
         var result: [XPathStep] = []
         var remaining = xpath
@@ -1166,7 +1168,7 @@ enum RuleEngine {
         return result
     }
 
-    /// 解析單一 XPath 段
+    /// Parse a single XPath segment.
     private static func parseXPathSegment(_ segment: String, axis: XPathAxis) -> XPathStep {
         var tag = ""
         var predicates: [XPathPredicate] = []
@@ -1221,7 +1223,7 @@ enum RuleEngine {
         return XPathStep(axis: axis, tag: tag.lowercased(), predicates: predicates)
     }
 
-    /// 應用單一 XPath 步驟到節點
+    /// Apply a single XPath step to a node.
     private static func applyXPathStep(node: HTMLNode, step: XPathStep) -> [HTMLNode] {
         let candidates: [HTMLNode] = step.axis == .child ? node.elements : node.allDescendants
 
@@ -1251,7 +1253,7 @@ enum RuleEngine {
         return matched
     }
 
-    /// 分離 XPath 末尾的屬性提取（/text() 或 /@href）
+    /// Split trailing attribute extraction from XPath (/text() or /@href)
     private static func splitXPathAttr(_ xpath: String) -> (String, String) {
         if xpath.hasSuffix("/text()") {
             return (String(xpath.dropLast(7)), "text")
@@ -1267,9 +1269,9 @@ enum RuleEngine {
         return (xpath, "text")
     }
 
-    // MARK: - 私有工具
+    // MARK: - Private Utilities
 
-    // 分離規則中的 "cssSelector@attr" 部分和 "##regex##replace" 部分
+    /// Separate "cssSelector@attr" from "##regex##replace" portions of a rule.
     private static func splitRuleAndRegex(_ rule: String) -> (String, [String]) {
         let parts = rule.components(separatedBy: "##")
         let cssAndAttr = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1277,9 +1279,9 @@ enum RuleEngine {
         return (cssAndAttr, regexParts)
     }
 
-    // 分離 "div.title@href" → ("div.title", "href")
+    /// Split "div.title@href" → ("div.title", "href")
     private static func splitSelectorAndAttr(_ s: String) -> (String, String) {
-        // 從最後一個 @ 分割
+        // Split at the last @
         if let atRange = s.range(of: "@", options: .backwards) {
             let selector = String(s[s.startIndex..<atRange.lowerBound])
             let attr = String(s[atRange.upperBound...])
@@ -1288,14 +1290,14 @@ enum RuleEngine {
         return (s, "text")
     }
 
-    // 應用 regex：["pattern"] 或 ["pattern", "replacement"]
+    /// Apply regex: ["pattern"] or ["pattern", "replacement"]
     private static func applyRegex(to text: String, parts: [String]) -> String {
         guard !parts.isEmpty else { return text }
         let pattern = parts[0]
         guard !pattern.isEmpty else { return text }
 
         if parts.count >= 2 {
-            // 替換模式
+            // Replacement mode
             let replacement = parts[1]
             if let regex = cachedRegex(pattern: pattern) {
                 let range = NSRange(text.startIndex..., in: text)
@@ -1303,7 +1305,7 @@ enum RuleEngine {
                     in: text, range: range, withTemplate: replacement)
             }
         } else {
-            // Legado 相容：單 ##pattern 為移除模式（全部替換為空字串）
+            // Legado compatible: single ##pattern is removal mode (replace all with empty string)
             if let regex = cachedRegex(pattern: pattern, options: .caseInsensitive) {
                 let range = NSRange(text.startIndex..., in: text)
                 return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
@@ -1312,12 +1314,13 @@ enum RuleEngine {
         return text
     }
 
-    // 清理文字：去除行首行尾 ASCII 空白，但保留全形空格（　U+3000）縮進
+    /// Clean text: strip leading/trailing ASCII whitespace per line,
+    /// but preserve fullwidth spaces (U+3000) for Japanese/Chinese indentation.
     private static func cleanText(_ text: String) -> String {
         text.components(separatedBy: .newlines)
             .map { line -> String in
                 var s = line
-                // 只去除行首 ASCII 空白（空格/Tab），不動全形空格
+                // Only strip ASCII whitespace (space/tab), leave fullwidth spaces alone
                 while let f = s.first, f == " " || f == "\t" || f == "\r" { s.removeFirst() }
                 while let l = s.last, l == " " || l == "\t" || l == "\r" { s.removeLast() }
                 return s
@@ -1326,7 +1329,7 @@ enum RuleEngine {
             .joined(separator: "\n")
     }
 
-    // 重建外層 HTML（簡化版）
+    /// Reconstruct outer HTML (simplified).
     static func buildOuterHTML(_ node: HTMLNode) -> String {
         if node.tag == "#text" { return node.rawText }
         var attrStr = node.attrs.map { key, val in "\(key)=\"\(val)\"" }.joined(separator: " ")
@@ -1416,15 +1419,15 @@ enum RuleEngine {
         }
     }
 
-    // MARK: - JSON 支援
+    // MARK: - JSON Support
 
-    /// 偵測字串是否為 JSON 回應
+    /// Detect whether a string is a JSON response.
     static func isJSON(_ text: String) -> Bool {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.hasPrefix("{") || t.hasPrefix("[")
     }
 
-    /// 從 JSON 回應提取列表（rule 為 JSONPath，如 $.data.list）
+    /// Extract a list from a JSON response (rule is a JSONPath, e.g., $.data.list).
     static func extractJSONArray(jsonStr: String, rule: String) -> [Any] {
         guard let data = jsonStr.data(using: .utf8),
             let root = try? JSONSerialization.jsonObject(with: data)
@@ -1450,7 +1453,7 @@ enum RuleEngine {
         return result
     }
 
-    /// 從 JSON item（Any）提取字串值（item 為 Array 中的單個元素或 root）
+    /// Extract a string value from a JSON item (item is a single element from an array, or the root).
     static func extractJSONValue(fromJSON item: Any, rule: String, baseURL: String) -> String {
         let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return jsonToString(item) }
@@ -1462,10 +1465,10 @@ enum RuleEngine {
         let raw: Any?
         if isRecursive && !path.isEmpty {
             let leafKey = path.components(separatedBy: ".").last ?? path
-            // Legado $.. 語義：收集所有匹配的值，用換行連接
+            // Legado $.. semantics: collect all matching values, join with newlines
             let allMatches = jsonSearchAll(item, key: leafKey)
             if allMatches.count > 1 {
-                // 多結果：逐個轉字串後合併
+                // Multiple results: convert each to string and join
                 raw = allMatches.map { jsonToString($0) }.filter { !$0.isEmpty }.joined(separator: "\n") as Any
             } else {
                 raw = allMatches.first
@@ -1475,7 +1478,7 @@ enum RuleEngine {
         }
         var value = jsonToString(raw)
 
-        // URL 欄位自動拼接絕對路徑
+        // Auto-resolve URL fields to absolute paths
         let lower = pathPart.lowercased()
         if lower.hasSuffix("url") || lower.hasSuffix("href") || lower.hasSuffix("link")
             || lower.hasSuffix("cover") || lower.hasSuffix("img")
@@ -1487,7 +1490,7 @@ enum RuleEngine {
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 從 JSON 字串回應中提取單個值（整個回應為 JSON 時使用）
+    /// Extract a single value from a JSON string response (when the entire response is JSON).
     static func extractValueFromJSON(_ jsonStr: String, rule: String, baseURL: String) -> String {
         guard let data = jsonStr.data(using: .utf8),
             let root = try? JSONSerialization.jsonObject(with: data)
@@ -1495,7 +1498,7 @@ enum RuleEngine {
         return extractJSONValue(fromJSON: root, rule: rule, baseURL: baseURL)
     }
 
-    // MARK: - 私有 JSON 工具
+    // MARK: - Private JSON Utilities
 
     private static func normalizeJSONPath(_ rule: String) -> String {
         var path = rule.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1514,7 +1517,7 @@ enum RuleEngine {
         return path
     }
 
-    /// 簡化 JSONPath 求值（支援 .key、[idx]、[*] 萬用字元）
+    /// Simplified JSONPath evaluation (supports .key, [idx], [*] wildcard).
     private static func jsonGet(_ root: Any, path: String) -> Any? {
         if path.isEmpty { return root }
         var frontier: [Any] = [root]
@@ -1569,7 +1572,7 @@ enum RuleEngine {
         return frontier.count == 1 ? frontier[0] : frontier
     }
 
-    /// 遞歸搜索 JSON 樹中第一個匹配指定 key 的值（支援 $.. 遞歸 JSONPath）
+    /// Recursively search a JSON tree for the first value matching a given key (supports $.. recursive JSONPath).
     private static func jsonSearch(_ node: Any, key: String) -> Any? {
         if let dict = node as? [String: Any] {
             if let val = dict[key] { return val }
@@ -1584,7 +1587,7 @@ enum RuleEngine {
         return nil
     }
 
-    /// 遞歸搜索 JSON 樹中所有匹配指定 key 的值（Legado $.. 語義：收集全部匹配）
+    /// Recursively search a JSON tree for all values matching a given key (Legado $.. semantics: collect all).
     private static func jsonSearchAll(_ node: Any, key: String) -> [Any] {
         var results: [Any] = []
         if let dict = node as? [String: Any] {
@@ -1600,7 +1603,7 @@ enum RuleEngine {
         return results
     }
 
-    /// 分割 JSONPath（處理 a.b[0].c 格式）
+    /// Split a JSONPath (handles a.b[0].c format).
     private static func splitJSONPath(_ path: String) -> [String] {
         var components: [String] = []
         var current = ""
@@ -1650,4 +1653,4 @@ enum RuleEngine {
     }
 }
 
-// MARK: - 搜尋 URL 模板渲染
+// MARK: - Search URL Template Rendering

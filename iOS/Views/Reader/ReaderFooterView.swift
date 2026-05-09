@@ -122,3 +122,77 @@ struct ReaderInlineFooter: View {
         .accessibilityLabel("第\(pageInfo)頁，進度\(progress)，\(clock.displayTime)")
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+private struct FooterPreview: View {
+    @State private var bottomInset: CGFloat = 20
+    @State private var footerVisualPadding: CGFloat = -14
+    @State private var footerHeight: CGFloat = 16
+    @State private var footerBottomGap: CGFloat = 4
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Simulated page content
+            ZStack {
+                Color(.systemGray6)
+                VStack(spacing: 0) {
+                    Text("第 42 頁")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                        .padding(.top, 20)
+                    Text("這是一段模擬的正文內容。")
+                        .foregroundColor(.primary)
+                        .padding(.top, 8)
+                    Spacer()
+                }
+            }
+
+            // Footer overlay
+            ZStack(alignment: .bottom) {
+                Color(.systemGray6)
+                ReaderOverlayFooter(
+                    pageInfo: "42 / 156",
+                    progress: "26.9%",
+                    textColor: .primary,
+                    bottomInset: bottomInset
+                )
+            }
+            .frame(height: max(40, bottomInset + footerHeight + 4))
+
+            Divider()
+
+            // Controls
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Footer 參數").font(.headline).padding(.top, 8)
+
+                HStack {
+                    Text("bottomInset: \(Int(bottomInset))")
+                    Slider(value: $bottomInset, in: 0...60, step: 2)
+                }
+                HStack {
+                    Text("footerVisualPadding: \(Int(footerVisualPadding))")
+                    Slider(value: $footerVisualPadding, in: -30...10, step: 1)
+                }
+                HStack {
+                    Text("footerHeight: \(Int(footerHeight))")
+                    Slider(value: $footerHeight, in: 8...32, step: 2)
+                }
+                HStack {
+                    Text("footerBottomGap: \(Int(footerBottomGap))")
+                    Slider(value: $footerBottomGap, in: 0...20, step: 1)
+                }
+
+                Text("即時預覽上面 footer 位置").font(.caption).foregroundColor(.secondary)
+            }
+            .padding(.horizontal)
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+#Preview("Footer Position Tester") {
+    FooterPreview()
+}
+#endif
