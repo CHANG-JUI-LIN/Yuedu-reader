@@ -410,7 +410,14 @@ final class HTMLAttributedStringBuilder {
                 nodeToRender = node
             }
             let rendered = await renderNode(nodeToRender, inheritedStyle: parentStyle, config: config)
-            if rendered.length == 0 { continue }
+            if rendered.length == 0 {
+                // HR 分隔線可能產生空長度的 attributed string
+                if case .element(let el) = node, el.tag == "hr" {
+                    let fallback = makeHRDivider(style: el.resolvedStyle, config: config)
+                    output.append(fallback)
+                }
+                continue
+            }
             // 跳過 block 頂層的純空白 text node（body 與 block 元素之間的縮排空白），
             // 避免它們被 CoreText 歸入下一個 paragraph，污染該段落的 paragraphStyle
             if rendered.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
