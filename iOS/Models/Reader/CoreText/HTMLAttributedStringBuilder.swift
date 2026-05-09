@@ -862,8 +862,9 @@ final class HTMLAttributedStringBuilder {
             while trimmed.length > 0,
                   let scalar = trimmed.string.unicodeScalars.first,
                   CharacterSet.whitespacesAndNewlines.contains(scalar) {
-                // Never delete a character that carries block render metadata
+                // Never delete a character that carries block render metadata or HR divider
                 if trimmed.attribute(Self.blockRenderStyleAttribute, at: 0, effectiveRange: nil) != nil { break }
+                if trimmed.attribute(Self.hrDividerAttribute, at: 0, effectiveRange: nil) != nil { break }
                 trimmed.deleteCharacters(in: NSRange(location: 0, length: 1))
             }
             output.append(trimmed)
