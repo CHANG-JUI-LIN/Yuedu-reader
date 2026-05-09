@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - 線上書籍詳情 + 目錄
+// MARK: - Online Book Detail + TOC
 
 struct OnlineBookView: View {
     let book: OnlineBook
@@ -19,13 +19,11 @@ struct OnlineBookView: View {
     @State private var showReader = false
     @State private var alreadyInShelf = false
     @State private var temporaryReaderBookId: UUID? = nil
-    /// 從詳情頁抓取的完整資訊（作者等），優先於搜尋結果
     @State private var detailInfo: OnlineBook? = nil
     private var source: BookSource? {
         sourceStore.sources.first(where: { $0.id == book.sourceId })
     }
 
-    /// 顯示用書名：詳情頁有則用詳情，否則用搜尋結果
     private var displayName: String {
         let d = detailInfo?.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let b = book.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -33,13 +31,11 @@ struct OnlineBookView: View {
         return b.isEmpty ? localized("未知書名") : b
     }
 
-    /// 顯示用作者：詳情頁有則用詳情，否則用搜尋結果；若皆空則從 intro/kind 提取「作者:XXX」
     private var displayAuthor: String {
         let d = detailInfo?.author.trimmingCharacters(in: .whitespacesAndNewlines)
         let b = book.author.trimmingCharacters(in: .whitespacesAndNewlines)
         if let d = d, !d.isEmpty { return d }
         if !b.isEmpty { return b }
-        // 備援：從 intro 或 kind 提取「作者:XXX」或「作者：XXX」
         let candidates = [
             detailInfo?.intro ?? "",
             book.intro,
@@ -52,7 +48,6 @@ struct OnlineBookView: View {
         return localized("未知作者")
     }
 
-    /// 從文字中提取「作者:XXX」或「作者：XXX」格式
     private static func extractAuthorFromText(_ text: String) -> String? {
         guard !text.isEmpty else { return nil }
         let pattern = "作者[：:]\\s*([^\\s|、，,]+)"
@@ -63,7 +58,6 @@ struct OnlineBookView: View {
         return String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 顯示用封面：詳情頁優先
     private var displayCoverUrl: String {
         let d = detailInfo?.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         let b = book.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -71,7 +65,6 @@ struct OnlineBookView: View {
         return b
     }
 
-    /// 顯示用簡介：詳情頁優先
     private var displayIntro: String {
         let d = detailInfo?.intro.trimmingCharacters(in: .whitespacesAndNewlines)
         let b = book.intro.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -91,19 +84,16 @@ struct OnlineBookView: View {
             AdaptiveSheetContainer(maxWidth: 920) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        // 書籍頭部資訊
                         bookHeader
                             .padding()
 
                         Divider()
 
-                        // 操作按鈕
                         actionButtons
                             .padding()
 
                         Divider()
 
-                        // 目錄
                         tocSection
                     }
                 }
@@ -138,11 +128,10 @@ struct OnlineBookView: View {
         }
     }
 
-    // MARK: 書籍頭部
+    // MARK: Book Header
     private var bookHeader: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 16) {
-                // 封面
                 AsyncImage(url: URL(string: displayCoverUrl)) { phase in
                     switch phase {
                     case .success(let img):
@@ -171,7 +160,6 @@ struct OnlineBookView: View {
                         Text(book.sourceName)
                             .font(DSFont.caption).foregroundColor(DSColor.accent)
                     }
-                    // 僅當 intro 為空時顯示 wordCount/lastChapter，避免與 intro 重複
                     if displayIntro.isEmpty {
                         if !book.wordCount.isEmpty {
                             Label(book.wordCount, systemImage: "text.word.spacing")
@@ -194,7 +182,7 @@ struct OnlineBookView: View {
         }
     }
 
-    // MARK: 操作按鈕
+    // MARK: Action Buttons
     private var actionButtons: some View {
         HStack(spacing: 12) {
             Button {
@@ -238,7 +226,7 @@ struct OnlineBookView: View {
         .environment(\.locale, Locale(identifier: gs.localeIdentifier))
     }
 
-    // MARK: 目錄區
+    // MARK: TOC Section
     private var tocSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -270,7 +258,6 @@ struct OnlineBookView: View {
             } else if chapters.isEmpty {
                 Text(localized("目錄為空")).font(DSFont.caption).foregroundColor(DSColor.textSecondary).padding()
             } else {
-                // 顯示前 50 章預覽，點擊章節直接進入閱讀
                 let preview = Array(chapters.prefix(50))
                 ForEach(preview) { ch in
                     Button {
@@ -300,7 +287,7 @@ struct OnlineBookView: View {
         }
     }
 
-    // MARK: 邏輯
+    // MARK: Logic
 
     private func checkAlreadyInShelf() {
         alreadyInShelf = bookStore.books.contains(where: { $0.bookInfoURL == book.bookUrl })
@@ -322,7 +309,7 @@ struct OnlineBookView: View {
             do {
                 var finalTocURL = book.bookUrl
                 var currentRuntimeVariables = book.runtimeVariables
-                // 始終抓取詳情頁：取得作者、書名等完整資訊，並提取真正的目錄 URL
+                // Always fetch the detail page to get full info (author, title, etc.) and extract the real TOC URL
                 if !book.bookUrl.isEmpty {
                     let infoPackage = try await dependencies.bookSourceFetcher.fetchBookInfoPackage(
                         url: book.bookUrl,
@@ -340,7 +327,7 @@ struct OnlineBookView: View {
                     source: source,
                     runtimeVariables: currentRuntimeVariables,
                     onFirstPageReady: { firstChapters in
-                        // 第一頁就緒 → 立即顯示，不等多頁抓取完成
+                        // First page ready — show immediately, don't wait for multi-page fetch
                         Task { @MainActor in
                             if self.chapters.isEmpty {
                                 self.chapters = firstChapters
@@ -355,7 +342,6 @@ struct OnlineBookView: View {
                 await MainActor.run {
                     chapters = tocPackage.chapters
                     loadingTOC = false
-                    // 如果已加入書架，同步更新儲存的完整目錄
                     if let bookId = addedBookId {
                         bookStore.updateOnlineChapters(bookId: bookId, chapters: tocPackage.chapters)
                     }
@@ -369,7 +355,7 @@ struct OnlineBookView: View {
         }
     }
 
-    /// 僅加入書架，不開啟閱讀器
+    /// Add to shelf without opening the reader.
     private func addToShelfOnly() {
         guard !alreadyInShelf, !chapters.isEmpty, let source else { return }
         addingToShelf = true
@@ -387,7 +373,7 @@ struct OnlineBookView: View {
         alreadyInShelf = true
     }
 
-    /// 閱讀前確保已在書架，避免閱讀器沒有 bookId 可用
+    /// Ensure the book is on the shelf before opening, so the reader has a valid bookId.
     private func openReader() {
         guard !chapters.isEmpty, let source, !openingReader else { return }
         openingReader = true
@@ -417,7 +403,7 @@ struct OnlineBookView: View {
         showReader = true
     }
 
-    // MARK: 封面佔位
+    // MARK: Cover Placeholder
     private func placeholderCover(size: CGSize) -> some View {
         Text(displayName)
             .font(.system(size: 13, weight: .medium))

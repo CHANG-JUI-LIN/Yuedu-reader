@@ -16,7 +16,6 @@ struct yuedu_appApp: App {
                         await WebFetcher.shared.setCloudflareChallengeHandler { url in
                             try await CloudflareChallengePresenter.present(url: url)
                         }
-                        // App 啟動時自動更新線上書籍目錄
                         await ChapterUpdater.refreshAll(bookStore: bookStore)
                     }
                 }
@@ -24,15 +23,14 @@ struct yuedu_appApp: App {
     }
 }
 
-// MARK: - 自動更新最新章節
+// MARK: - Auto-Update Latest Chapters
 
 enum ChapterUpdater {
-    /// 掃描書架所有線上書籍，刷新目錄（新增章節）
+    /// Scans all online books on the bookshelf and refreshes their table of contents (adds new chapters).
     static func refreshAll(bookStore: BookStore) async {
         let onlineBooks = bookStore.books.filter { $0.isOnline }
         guard !onlineBooks.isEmpty else { return }
 
-        // Limit concurrency to avoid network request storms on startup that trigger Rate Limiting/Cloudflare
         let maxConcurrentTasks = AppConfig.startupRefreshMaxConcurrentTasks
         await withTaskGroup(of: Void.self) { group in
             for i in 0..<min(maxConcurrentTasks, onlineBooks.count) {
@@ -64,7 +62,7 @@ enum ChapterUpdater {
             )
         } catch {
             AppLogger.network(
-                "自動更新書籍目錄失敗",
+                "Failed to auto-update book TOC",
                 error: error,
                 context: ["bookId": book.id.uuidString, "title": book.title]
             )

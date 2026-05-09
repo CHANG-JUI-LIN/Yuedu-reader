@@ -223,7 +223,7 @@ class ModernParserBridge {
         let tocUrl = tocUrlRaw.isEmpty ? bookUrl : tocUrlRaw
 
         return OnlineBook(
-            name: name.isEmpty ? "未知書名" : name,
+            name: name.isEmpty ? "Unknown Title" : name,
             author: author,
             intro: intro,
             coverUrl: coverUrl,
@@ -258,7 +258,7 @@ class ModernParserBridge {
 
         var chapters: [OnlineChapterRef] = []
         chapters.reserveCapacity(elements.count)
-        // 每 200 個元素清理一次 autoreleasepool，防止 SwiftSoup DOM 物件堆積導致 OOM
+        // Drain autorelease pool every 200 elements to prevent OOM from SwiftSoup DOM accumulation
         let batchSize = 200
         for batchStart in stride(from: 0, to: elements.count, by: batchSize) {
             let batchEnd = min(batchStart + batchSize, elements.count)

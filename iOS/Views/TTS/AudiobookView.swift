@@ -1,7 +1,7 @@
 import AVFoundation
 import SwiftUI
 
-// MARK: - 有聲書播放器介面
+// MARK: - Audiobook Player Interface
 
 struct AudiobookView: View {
 
@@ -19,7 +19,7 @@ struct AudiobookView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 拖曳把手
+            // Drag handle
             Capsule()
                 .fill(DSColor.textSecondary.opacity(0.4))
                 .frame(width: 36, height: 4)
@@ -28,7 +28,7 @@ struct AudiobookView: View {
 
             VStack(spacing: 20) {
 
-                // 章節標題
+                // Chapter title
                 Text(chapterTitle)
                     .font(.headline)
                     .foregroundColor(DSColor.textPrimary)
@@ -36,7 +36,7 @@ struct AudiobookView: View {
                     .lineLimit(2)
                     .padding(.horizontal)
 
-                // 錯誤提示
+                // Error prompt
                 if let errMsg = player.error {
                     VStack(spacing: 8) {
                         Text(errMsg)
@@ -52,7 +52,7 @@ struct AudiobookView: View {
                     .padding(.horizontal)
                 }
 
-                // 進度條
+                // Progress bar
                 VStack(spacing: 4) {
                     Slider(
                         value: $sliderValue,
@@ -79,7 +79,7 @@ struct AudiobookView: View {
                 }
                 .padding(.horizontal, 24)
 
-                // 播放控制列
+                // Playback controls
                 HStack {
                     Button {
                         player.skipBack(15)
@@ -92,7 +92,7 @@ struct AudiobookView: View {
 
                     Spacer()
 
-                    // 播放 / 暫停（48pt）
+                    // Play / Pause (48pt)
                     Button {
                         if player.isLoading { return }
                         if player.isPlaying {
@@ -124,7 +124,7 @@ struct AudiobookView: View {
                 }
                 .padding(.horizontal, 40)
 
-                // 播放速率選擇器
+                // Playback rate selector
                 Picker(localized("速度"), selection: Binding(
                     get: { player.playbackRate },
                     set: { player.setRate($0) }
@@ -153,7 +153,7 @@ struct AudiobookView: View {
         }
     }
 
-    // MARK: - 輔助
+    // MARK: - Helpers
 
     private func formatTime(_ t: TimeInterval) -> String {
         let seconds = max(0, Int(t))

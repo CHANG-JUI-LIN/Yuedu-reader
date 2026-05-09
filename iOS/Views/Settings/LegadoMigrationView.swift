@@ -39,18 +39,18 @@ struct LegadoMigrationView: View {
                 case .success(let url):
                     Task {
                         guard url.startAccessingSecurityScopedResource() else {
-                            manager.appendLog("❌ 無法取得檔案存取權限")
+                            manager.appendLog("Failed to obtain file access permission")
                             return
                         }
                         defer { url.stopAccessingSecurityScopedResource() }
                         guard let data = try? Data(contentsOf: url) else {
-                            manager.appendLog("❌ 無法讀取檔案內容")
+                            manager.appendLog("Failed to read file content")
                             return
                         }
                         await manager.importFromJSON(data: data, bookStore: bookStore)
                     }
                 case .failure(let error):
-                    manager.appendLog("❌ 選擇檔案失敗：\(error.localizedDescription)")
+                    manager.appendLog("File selection failed: \(error.localizedDescription)")
                 }
             }
         }

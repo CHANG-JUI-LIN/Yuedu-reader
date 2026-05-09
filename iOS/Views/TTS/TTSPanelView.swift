@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - TTS 控制面板
+// MARK: - TTS Control Panel
 
 struct TTSPanelView: View {
     @ObservedObject var tts: TTSCoordinator
@@ -42,7 +42,6 @@ struct TTSPanelView: View {
     var body: some View {
         NavigationView {
             List {
-                // 語音設定
                 Section {
                     NavigationLink(destination: TTSSettingsView()) {
                         HStack {
@@ -62,7 +61,6 @@ struct TTSPanelView: View {
                     }
                 }
 
-                // 播放控制
                 Section {
                     VStack(spacing: 16) {
                         if tts.playbackState != .stopped, tts.totalSegments > 0 {
@@ -89,7 +87,6 @@ struct TTSPanelView: View {
 
                             Spacer()
 
-                            // 播放 / 暫停
                             Button {
                                 ttsLog("[TTS][Panel] playButton tapped coordinatorPlaying=\(tts.isPlaying) state=\(tts.playbackState) chapter=\(controlChapterIndex)")
                                 if hasAudioSource {
@@ -178,7 +175,6 @@ struct TTSPanelView: View {
                     }
                 }
 
-                // 語速
                 Section(header: Text(localized("語速"))) {
                     HStack {
                         Image(systemName: "speedometer")
@@ -199,7 +195,6 @@ struct TTSPanelView: View {
                         .foregroundColor(DSColor.textSecondary)
                 }
 
-                // 定時停止
                 Section(header: Text(localized("定時停止"))) {
                     ForEach([0, 15, 30, 60, 90], id: \.self) { min in
                         Button {
@@ -261,7 +256,7 @@ struct TTSPanelView: View {
     }
 }
 
-// MARK: - 自動閱讀控制面板
+// MARK: - Auto Read Control Panel
 
 struct AutoReadPanelView: View {
     @ObservedObject var autoReader: AutoReadController
@@ -271,7 +266,6 @@ struct AutoReadPanelView: View {
     var body: some View {
         NavigationView {
             List {
-                // 播放控制
                 Section {
                     HStack {
                         Spacer()
@@ -295,7 +289,6 @@ struct AutoReadPanelView: View {
                     .padding(.vertical, 8)
                 }
 
-                // 速度
                 Section(header: Text(localized("翻頁速度"))) {
                     HStack {
                         Image(systemName: "speedometer")

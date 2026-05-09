@@ -40,10 +40,11 @@ enum WebNovelParser {
         options: [.caseInsensitive]
     )
 
-    /// 「下一頁」連結的文字 pattern。
-    /// 注意：故意不收「下一章/下一节/下一節」 — 那是換章連結，把它當成「下一頁」
-    /// 會讓 fetchWebContent 的 while 迴圈把後續整章接到當章內容後面，
-    /// 造成單章 cache 串成 10 章、頁數爆到 100+。
+    /// Text patterns for "next page" links.
+    /// Excludes "next chapter" (下一章/下一节/下一節) — that links to a different
+    /// chapter, not a continuation of the current one. Including it would cause
+    /// fetchWebContent's while loop to concatenate the next entire chapter onto
+    /// the current one, inflating single-chapter caches to 10+ chapters and 100+ pages.
     private static let nextPageTitleRegex = try? NSRegularExpression(
         pattern: "^(下一页|下一頁|下页|下頁|next|next page)$",
         options: [.caseInsensitive]
@@ -175,7 +176,7 @@ enum WebNovelParser {
     }
 
     private static func extractedText(from element: Element) -> String? {
-        // 優先：找 <p> 段落（標準結構站點）
+        // Prefer <p> paragraphs (standard structured sites)
         let paragraphs = ((try? element.select("p").array()) ?? [])
             .compactMap { try? $0.text() }
             .map { normalizeWhitespace($0) }
@@ -185,17 +186,18 @@ enum WebNovelParser {
             return paragraphs.joined(separator: "\n")
         }
 
-        // 中文小說常用 <br> 分段：把 outerHTML 做 block→\n 轉換再提取
+        // Web novels commonly use <br> for paragraph breaks:
+        // convert outerHTML with block → \n transformations before extracting
         if let html = try? element.outerHtml() {
             var raw = html
-            // 將 block-level 結束標籤和 <br> 轉成換行
+            // Convert block-level closing tags and <br> to newlines
             raw = raw.replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
             raw = raw.replacingOccurrences(
                 of: "</(?:p|div|li|blockquote|section|article|dt|dd|h[1-6]|tr)>",
                 with: "\n", options: .regularExpression)
-            // 移除剩餘標籤
+            // Remove remaining tags
             raw = raw.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            // HTML 實體
+            // HTML entities
             raw = raw.replacingOccurrences(of: "&nbsp;", with: " ")
                 .replacingOccurrences(of: "&amp;", with: "&")
                 .replacingOccurrences(of: "&lt;", with: "<")
