@@ -1,7 +1,6 @@
 import Combine
 import SwiftUI
 
-// UI 回饋動畫時長（主題、書籤、目錄高亮等）
 private let uiFeedbackDuration: Double = 0.25
 
 private struct RoundedCornerShape: Shape {
@@ -18,7 +17,7 @@ private struct RoundedCornerShape: Shape {
     }
 }
 
-// MARK: - 閱讀器主視圖
+// MARK: - Main Reader View
 struct ReaderView: View {
     let bookId: UUID
     @EnvironmentObject var store: BookStore
@@ -29,20 +28,16 @@ struct ReaderView: View {
     @ObservedObject private var settings = GlobalSettings.shared
     @StateObject private var readerConfig = ReaderConfig.shared
 
-    // MARK: - 跨章節的極致：推測性預佈局 (Speculative Pre-Layout)
+    // MARK: - Speculative Pre-Layout for Cross-Chapter Scrolling
     @State private var scrollVelocity: CGFloat = 0.0
     @State private var isGhostModeActive: Bool = false
     
     private func updateScrollVelocity(_ newVelocity: CGFloat) {
         scrollVelocity = newVelocity
-        // 高速滑動 > 1000：進入 Ghost Mode (不解析全章節，僅顯示標題)
         if abs(scrollVelocity) > 1000 && !isGhostModeActive {
             isGhostModeActive = true
-            // 暫停 NSAttributedString 解析
         } else if abs(scrollVelocity) < 500 && isGhostModeActive {
             isGhostModeActive = false
-            // 離開幽靈模式，開始優先佇列 (Priority Queue) 插隊解析當前落點章節
-            // 並預佈局 (Layout) 下一章的前 3 頁
             speculativePreLayoutNextChapter()
         }
     }
@@ -50,7 +45,6 @@ struct ReaderView: View {
     private func speculativePreLayoutNextChapter() {
         Task { @MainActor in
             guard currentChapterIndex + 1 < chapters.count else { return }
-            // 利用 engine.warmUpNext 排版下一章
             epubRenderer.engine?.warmUpNext(currentGlobalPage: currentPage + 1)
         }
     }
@@ -63,18 +57,16 @@ struct ReaderView: View {
     @State private var showSettings = false
     @State private var showTOC = false
 
-    // 線上章節懶加載
+    // Online chapter lazy loading
     @StateObject private var readerViewModel = ReaderViewModel()
     @State private var observedChapterStates: [Int: ChapterLoadState] = [:]
 
-    /// 頂部 safe area（pt），傳給 EPUB 引擎讓 margin-top 至少為此值
+    /// Top safe area (points), passed to EPUB engine as minimum margin-top.
     @State private var readerSafeAreaTop: CGFloat = 59
     @State private var readerViewportSize: CGSize = UIScreen.main.bounds.size
-    // 音量翻頁
     @StateObject private var volumeHandler = VolumeKeyHandler()
 
-    // 自動閱讀 + TTS
-    @StateObject private var autoReader = AutoReadController()  // TTS
+    @StateObject private var autoReader = AutoReadController()
     @StateObject private var ttsCoordinator = TTSCoordinator()
 
     private func syncReaderBrightnessFromSystem() {
@@ -85,13 +77,10 @@ struct ReaderView: View {
 
     private func restoreReaderDisplayStateAfterResume() {
         guard let engine = epubRenderer.engine, isEPUB, engine.totalPages > 0 else { return }
-        // engine.currentPage is not updated by page turns (only set during start()),
-        // so we use the already-correct currentPage @State to sync currentChapterIndex only.
         let (spineIndex, _) = engine.charOffset(forPage: currentPage)
         currentChapterIndex = spineIndex
     }
 
-    // EPUB 渲染器（CoreText）
     @StateObject private var epubRenderer = EPUBPageRenderer()
 
     @State private var showTTSPanel = false
@@ -100,16 +89,13 @@ struct ReaderView: View {
     @State private var showTTSJumpPrompt = false
     @State private var ttsJumpPromptChapterIndex: Int? = nil
 
-    // EPUB 章節導航狀態
     @State private var currentChapterIndex = 0
 
-    // 捲動模式進度追蹤
+    // Scroll mode progress tracking
     @State private var scrollVisibleChapter = 0
     @State private var scrollResliceToken: UInt = 0
 
-    // 防止載入期間 TabView 重置 selection 導致進度被覆寫為 0
-
-    // 換源
+    // Source change
     @State private var showChangeSourceSheet = false
     @State private var runtimeState = ReaderRuntimeState()
     @State private var bookDocument: (any BookDocument)? = nil
@@ -117,7 +103,7 @@ struct ReaderView: View {
     @State private var readerCapabilities: ReaderCapabilities = .reflowableText
     private let progressManager = ReaderProgressManager.shared
 
-    // 換源狀態由 ViewModel 管理，此處透過計算屬性橋接，避免 View 持有重複狀態
+    // Source change state managed by ViewModel, exposed via computed properties to avoid duplicate state in the view.
     private var changeSourceOrigins: [BookOrigin] { readerViewModel.changeSourceOrigins }
     private var changeSourceLoading: Bool { readerViewModel.changeSourceLoading }
     private var changeSourceError: String? { readerViewModel.changeSourceError }
@@ -199,10 +185,9 @@ struct ReaderView: View {
         ReaderLayoutMetrics.minimumVerticalPadding
     }
 
-    // ── 衍生屬性 ──
+    // ── Derived Properties ──
     var book: ReadingBook? { store.books.first(where: { $0.id == bookId }) }
 
-    // 核心判斷：是否為 EPUB / TXT
     var isEPUB: Bool {
         book?.resolvedPipelineKind == .epub
     }
@@ -300,7 +285,7 @@ struct ReaderView: View {
         return (spineIndex, charOffset)
     }
 
-    /// EPUB 字型資源目錄（Documents/{uuid}_epub_assets/）
+    /// EPUB font asset directory (Documents/{uuid}_epub_assets/).
     var epubAssetsURL: URL? {
         guard let b = book, b.isLegacyParsedEPUB else { return nil }
         let assetsDir = b.contentFilename.replacingOccurrences(
@@ -310,7 +295,7 @@ struct ReaderView: View {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
-    /// 當前章節的 baseURL：assets 根 + 章節所在子目錄（用於解析 CSS 內的相對字型路徑）
+    /// Base URL for the current chapter: assets root + chapter subdirectory (for resolving relative font paths in CSS).
     var epubBaseURL: URL? {
         guard let assetsURL = epubAssetsURL else { return nil }
         if isEPUB {
@@ -341,7 +326,7 @@ struct ReaderView: View {
     var canGoPrevChapter: Bool { currentChapterIndex > 0 }
     var canGoNextChapter: Bool { currentChapterIndex < chapters.count - 1 }
 
-    /// Footer 文字區本體高度（pt），不含 safe area bottom
+    /// Footer intrinsic height (points), excluding safe area bottom.
     private let footerOverlayHeight: CGFloat = ReaderLayoutMetrics.footerHeight
 
     private var currentTopBarBookmarkPosition: CoreTextReadingPosition? {
@@ -358,7 +343,7 @@ struct ReaderView: View {
         return .chapterStart(currentChapterIndex)
     }
 
-    /// 當前章節是否有 topbar 書籤
+    /// Whether the current chapter has a topbar bookmark.
     var isCurrentPageBookmarked: Bool {
         guard let position = currentTopBarBookmarkPosition else { return false }
         return store.isChapterStartBookmarked(bookId: bookId, chapterIndex: position.spineIndex)
@@ -374,7 +359,7 @@ struct ReaderView: View {
         return currentChapterTitle
     }
 
-    /// 當前頁摘錄（前 30 字）
+    /// Current page excerpt (first 30 characters).
     var currentPageExcerpt: String {
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             return String(engine.plainText(forPage: currentPage).prefix(30))
@@ -406,7 +391,7 @@ struct ReaderView: View {
         syncCoreTextTextAnnotations()
     }
 
-    /// 閱讀總進度百分比
+    /// Overall reading progress percentage.
     var totalProgressPercent: String {
         if usesCoreTextEPUB, let engine = epubRenderer.engine {
             let (spine, offset) = engine.charOffset(forPage: currentPage)
@@ -418,7 +403,7 @@ struct ReaderView: View {
         return String(format: "%.2f%%", pct)
     }
 
-    /// 章節頁碼資訊
+    /// Chapter page info.
     var chapterPageInfo: String {
         if book?.isOnline == true && readerViewModel.chapterState(for: currentChapterIndex) == .loading {
             return ""
@@ -437,7 +422,7 @@ struct ReaderView: View {
         return "\(page.pageInChapter + 1)/\(total)"
     }
 
-    /// 當前頁內容（給 TTS 用）
+    /// Current page text (for TTS).
     var currentPageText: String {
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             return engine.plainText(forPage: currentPage)
@@ -452,7 +437,7 @@ struct ReaderView: View {
         return chapters[index].title
     }
 
-    // ── 主體 ──
+    // ── Body ──
     var body: some View {
         buildBody()
     }
@@ -475,8 +460,7 @@ struct ReaderView: View {
                 scrollBody
                     .transition(.opacity.animation(.easeOut(duration: 0.25)))
             } else if let ctEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
-                // 在 EPUB 渲染區塊，当 engine 已就緒時改用 CoreText
-                let _ = { print("[ReaderView] ✅ 使用 CoreText 引擎") }()
+                let _ = { print("[ReaderView] Using CoreText engine") }()
                 CoreTextPageEngineView(
                     engine: ctEngine,
                     pageTurnStyle: settings.pageTurnStyle,
@@ -490,7 +474,6 @@ struct ReaderView: View {
                         let chapterChanged = newChapter != currentChapterIndex
                         currentChapterIndex = newChapter
                         progressTrace("onPageChanged page=\(newPage) chapter=\(currentChapterIndex)")
-                        // Lazy loading: 翻頁換章時自動抓取
                         if chapterChanged {
                             ensureChapterReady(chapterIndex: newChapter)
                         }
@@ -538,18 +521,18 @@ struct ReaderView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
 
-            // 網路抓取狀態覆蓋層已停用（使用者要求不顯示任何抓取中 / 載入失敗 UI）。
-            // 業務邏輯保留在 `currentChapterOverlayState` + `refreshCurrentChapter()`，
-            // 未來要恢復 UI 時把下列 switch 搬回來即可：
+            // Network fetch status overlay is disabled per user request.
+            // Logic is preserved in currentChapterOverlayState + refreshCurrentChapter().
+            // To restore the UI, uncomment the switch block below:
             //
             //   if !showBars {
             //       switch currentChapterOverlayState {
             //       case .hidden, .loading: EmptyView()
-            //       case .failed(let message): /* 錯誤提示 + 點擊重試按鈕 */
+            //       case .failed(let message): /* error tip + retry button */
             //       }
             //   }
 
-            // 頂/底欄
+            // Top/Bottom bars
             if !showBars && !settings.scrollMode && !chapters.isEmpty {
                 VStack {
                     Spacer()
@@ -617,7 +600,6 @@ struct ReaderView: View {
             } else {
                 UIScreen.main.brightness = CGFloat(settings.readerBrightness)
             }
-            // 音量翻頁
             volumeHandler.onPageTurn = { dir in
                 switch dir {
                 case .prev: goToPrevPage()
@@ -685,7 +667,6 @@ struct ReaderView: View {
         .onReceive(
             NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)
         ) { _ in
-            // Use stored viewport size (not UIScreen) to avoid mismatch in split view.
             performUnifiedRelayout(targetSize: readerViewportSize)
         }
         .onChange(of: settings.readerBrightness) { val in
@@ -717,7 +698,6 @@ struct ReaderView: View {
             handleChapterStateChanges(states)
         }
         .onChange(of: settings.pageTurnStyle) { _ in
-            // 翻頁樣式變更不需重建頁面，body 會自動切換視圖
             if settings.pageTurnStyle == .curl {
                 beginCurlStartupTrace(reason: "style_changed")
             } else {
@@ -842,7 +822,7 @@ struct ReaderView: View {
             return
         }
 
-        // 書架有章節 → 秒開閱讀器，背景修復元資料
+        // Bookshelf has chapters: open reader immediately, repair metadata in background.
         if currentBook.onlineChapters?.isEmpty == false {
             loadContent()
             Task {
@@ -853,7 +833,7 @@ struct ReaderView: View {
                 )
             }
         } else {
-            // 無章節 → 第一頁 TOC 一到就先開書，不等完整目錄返回
+            // No chapters: open as soon as the first batch of TOC arrives, without waiting for the full TOC.
             Task {
                 _ = try? await store.refreshOnlineBookMetadata(
                     bookId: currentBook.id,
@@ -903,7 +883,7 @@ struct ReaderView: View {
             progressTrace(
                 "applyInitialProgress start enginePage=\(currentEnginePage) totalPages=\(engine.totalPages) savedPct=\(String(format: "%.6f", savedPositionSnapshot)) target=\(savedCoreTextRestoreTarget.map { "(\($0.chapterIndex),\($0.charOffset))" } ?? "nil")"
             )
-            // 優先信任引擎（CharOffsetStore）恢復結果，不受 snapshot=0 影響。
+            // Prefer the engine (CharOffsetStore) restore result, unaffected by snapshot=0.
             if ReaderProgressSyncPolicy.shouldUseEnginePageDirectly(
                 enginePage: currentEnginePage,
                 totalPages: engine.totalPages,
@@ -1043,14 +1023,13 @@ struct ReaderView: View {
         )
     }
 
-    // MARK: - 底部頁腳資訊（slide / cover / tab 模式用的 overlay）
+    // MARK: - Bottom Footer (overlay for slide/cover/tab modes)
     private var bottomFooter: some View {
         ReaderOverlayFooter(
             pageInfo: chapterPageInfo,
             progress: totalProgressPercent,
             textColor: readerTheme.textColor,
-            bottomInset: windowSafeBottom,
-            footerPadding: windowSafeBottom + ReaderLayoutMetrics.footerVisualBottomPadding
+            footerPadding: windowSafeBottom + ReaderLayoutMetrics.footerPadding
         )
     }
 
@@ -1062,7 +1041,7 @@ struct ReaderView: View {
             .safeAreaInsets.top) ?? readerSafeAreaTop
     }
 
-    /// 讀取 key window 的底部 safe area inset（全螢幕閱讀模式下手動補償）
+    /// Returns the key window's bottom safe area inset (used for manual compensation in full-screen reading).
     private var windowSafeBottom: CGFloat {
         (UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
@@ -1075,19 +1054,18 @@ struct ReaderView: View {
         max(readerSafeAreaTop, windowSafeTop)
     }
 
-    // MARK: - 頁內 footer（curl 模式：footer 烘進頁面紋理，跟隨翻頁一起移動）
+    // MARK: - Inline Footer (curl mode: baked into page texture, moves with the page)
     private func inlineFooter(forPage idx: Int) -> some View {
         let info = pageFooterInfo(forPage: idx)
         return ReaderInlineFooter(
             pageInfo: info.pageInfo,
             progress: info.progress,
             textColor: readerTheme.textColor,
-            bottomInset: windowSafeBottom,
-            footerPadding: windowSafeBottom + ReaderLayoutMetrics.footerVisualBottomPadding
+            footerPadding: windowSafeBottom + ReaderLayoutMetrics.footerPadding
         )
     }
 
-    /// 計算指定頁的 footer 資訊（章節頁碼 + 進度百分比）
+    /// Computes footer info (chapter page + progress percentage) for the given page.
     private func pageFooterInfo(forPage idx: Int) -> (pageInfo: String, progress: String) {
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let (spineIndex, charOffset) = engine.charOffset(forPage: idx)
@@ -1106,7 +1084,7 @@ struct ReaderView: View {
         }
     }
 
-    // MARK: - TXT 上下滾動模式
+    // MARK: - TXT Vertical Scroll Mode
     @ViewBuilder
     private var scrollBody: some View {
         if let scrollEngine = epubRenderer.scrollEngine {
@@ -1132,7 +1110,7 @@ struct ReaderView: View {
                         percentage: pct
                     )
                     store.updatePosition(bookId: bookId, position: pct)
-                    // 同步 paged 引擎當前頁，下次切回左右翻頁時不會跑掉
+                    // Sync the paged engine's current page so switching back to paged mode preserves position.
                     if let pagedEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
                         let page = pagedEngine.pageIndex(forSpine: chapter, charOffset: charOffset)
                         if page >= 0 { currentPage = page }
@@ -1159,10 +1137,10 @@ struct ReaderView: View {
         scrollResliceToken &+= 1
     }
 
-    /// 捲動模式起點優先序：
-    /// 1) paged engine ready → 用當前頁的 (spine, charOffset)（同 session 切換）
-    /// 2) 持久化 snapshot (mode == .scroll) → 用回前次離開位置（冷啟動回復）
-    /// 3) 退回 currentChapterIndex / 0
+    /// Scroll mode starting position priority:
+    /// 1) Paged engine ready → use current page's (spine, charOffset) (same-session switch)
+    /// 2) Persisted snapshot (mode == .scroll) → restore from last exit position (cold start)
+    /// 3) Fallback to currentChapterIndex / 0
     private func computeScrollInitialPosition() -> (chapter: Int, charOffset: Int) {
         if let pagedEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
             let (spine, offset) = pagedEngine.charOffset(forPage: currentPage)
@@ -1175,9 +1153,7 @@ struct ReaderView: View {
     }
 
     private func buildRenderSettings() -> ReaderRenderSettings {
-        let topInset = ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
-        let bottomInset = ReaderLayoutMetrics.bottomInset(safeBottom: windowSafeBottom)
-        return ReaderRenderSettings(
+        ReaderRenderSettings(
             theme: readerTheme.rawValue,
             textColor: UIColor(readerTheme.textColor),
             backgroundColor: UIColor(readerTheme.backgroundColor),
@@ -1190,9 +1166,9 @@ struct ReaderView: View {
             marginV: readerConfig.pageMarginV,
             footerHeight: ReaderLayoutMetrics.footerHeight,
             contentInsets: UIEdgeInsets(
-                top: topInset,
+                top: readerConfig.pageMarginV,
                 left: effectivePageMarginH,
-                bottom: bottomInset,
+                bottom: readerConfig.pageMarginV,
                 right: effectivePageMarginH
             ),
             writingMode: effectiveWritingMode
@@ -1308,7 +1284,7 @@ struct ReaderView: View {
         }
     }
 
-    // MARK: - 頂部欄
+    // MARK: - Top Bar
     private var topBar: some View {
         ReaderTopBar(
             theme: readerTheme,
@@ -1334,7 +1310,7 @@ struct ReaderView: View {
         )
     }
 
-    // MARK: - 底部欄
+    // MARK: - Bottom Bar
     private var bottomBar: some View {
         ReaderBottomControlBar(
             readerTheme: Binding(
@@ -1400,7 +1376,7 @@ struct ReaderView: View {
         let footerBandBottomFromBottom = max(
             0,
             windowSafeBottom
-            + ReaderLayoutMetrics.footerVisualBottomPadding
+            + ReaderLayoutMetrics.footerPadding
         )
         let footerBandCenterFromBottom = footerBandBottomFromBottom
             + ReaderLayoutMetrics.footerHeight / 2
@@ -1418,7 +1394,7 @@ struct ReaderView: View {
         )
     }
 
-    // MARK: - 換源 Sheet
+    // MARK: - Source Change Sheet
     private var changeSourceSheetContent: AnyView {
         AnyView(NavigationView {
             Group {
@@ -1508,7 +1484,7 @@ struct ReaderView: View {
         }
     }
 
-    /// 根據進度值（0–1）反查對應的章節標題，用於拖動 HUD
+    /// Looks up the chapter title for a given progress value (0–1), used for the drag HUD.
     private func chapterTitle(forProgress value: Double) -> String {
         let totalChapters = book?.onlineChapters?.count ?? chapters.count
         if book?.isOnline == true && totalChapters > 0 {
@@ -1532,7 +1508,7 @@ struct ReaderView: View {
     }
 
     private func chapterSliderProgressValue() -> Double {
-        // 捲動模式：用章節索引近似（chunk 還沒全部載完，沒有可靠的全書字元數）
+        // Scroll mode: approximate using chapter index (chunks may not be fully loaded, no reliable character count).
         if settings.scrollMode {
             let total = max(chapters.count - 1, 1)
             return Double(min(scrollVisibleChapter, total)) / Double(total)
@@ -1551,7 +1527,7 @@ struct ReaderView: View {
     }
 
     private func applyChapterSliderProgress(_ value: Double) {
-        // 捲動模式：四捨五入到最近章節 → reslice 引擎
+        // Scroll mode: round to nearest chapter, then reslice the engine.
         if settings.scrollMode, let scrollEngine = epubRenderer.scrollEngine {
             let total = max(chapters.count - 1, 1)
             let target = max(0, min(Int(round(value * Double(total))), total))
@@ -1740,7 +1716,7 @@ struct ReaderView: View {
         return textForTTSChapter(chapterIndex)
     }
 
-    // MARK: - 邏輯
+    // MARK: - Logic
     private func findChapterFirstPage(_ chapterIdx: Int) -> Int? {
         return allPages.firstIndex(where: { $0.chapterIndex == chapterIdx })
     }
@@ -1764,16 +1740,16 @@ struct ReaderView: View {
             Task { @MainActor in
                 engine.cancelPendingWork()
                 await engine.preloadChapter(at: idx)
-                // 背景預載鄰域章節，確保前後翻頁時 layout 已就緒
+                // Preload adjacent chapters so layouts are ready when flipping pages.
                 if idx > 0 { Task { await engine.preloadChapter(at: idx - 1) } }
                 if idx < chapters.count - 1 { Task { await engine.preloadChapter(at: idx + 1) } }
                 let targetPage = engine.pageIndex(forSpine: idx, charOffset: charOffset)
                 currentChapterIndex = idx
                 currentPage = targetPage
                 epubRenderer.currentEpubPage = targetPage
-                // 在 ensureChapterReady 之前捕捉狀態：若章節已是 .ready，
-                // ensureChapterReady 不會觸發 handleChapterStateChanges，
-                // engine 可能持有跳頁前預讀的佔位符 layout（資料未到磁碟時建立），需強制重建。
+                // Before ensureChapterReady, capture whether the chapter is already .ready.
+                // If it is, ensureChapterReady won't trigger handleChapterStateChanges,
+                // but the engine may hold a stale placeholder layout from pre-reading. Force rebuild.
                 let alreadyReady = readerViewModel.chapterState(for: idx) == .ready
                 ensureChapterReady(chapterIndex: idx, priority: .jump)
                 if alreadyReady, isChapterContentAvailable(at: idx) {
@@ -1823,10 +1799,10 @@ struct ReaderView: View {
             )
             store.updatePosition(bookId: bookId, position: normalized)
         } else if !settings.scrollMode && !allPages.isEmpty {
-            // TXT：使用 allPages
+            // TXT: use allPages
             let page = allPages[min(currentPage, allPages.count - 1)]
             currentChapterIndex = page.chapterIndex
-            // 接近章節末尾時提前預加載下一章
+            // Prefetch the next chapter early when near the end of the current chapter.
             maybeEarlyPrefetchIfNearChapterEnd()
             let progress = Double(currentPage) / Double(max(allPages.count - 1, 1))
             let normalized = min(1.0, max(0.0, progress))
@@ -1841,7 +1817,7 @@ struct ReaderView: View {
             )
             store.updatePosition(bookId: bookId, position: normalized)
         } else {
-            // 滾動模式
+            // Scroll mode
             let progress = Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
             let normalized = min(1.0, max(0.0, progress))
             progressTrace(
@@ -1857,7 +1833,7 @@ struct ReaderView: View {
     }
 
     private func saveProgress() {
-        // onDisappear 時強制保存，不受 isRestoringPosition 限制
+        // Force save on onDisappear, bypassing isRestoringPosition.
         let wasRestoring = isRestoringPosition
         progressTrace("saveProgress begin wasRestoring=\(wasRestoring)")
         isRestoringPosition = false
@@ -1875,15 +1851,16 @@ struct ReaderView: View {
         guard let b = book, let refs = b.onlineChapters, !refs.isEmpty else { return }
         let idx = currentChapterIndex
         print("[StateDebug] refreshCurrentChapter ch=\(idx) ← clearing ENTIRE book cache and restarting fetch")
-        // 整本書清快取：因為「下一章誤判為下一頁」的 bug 會把後續多章串接到當章 cache 裡，
-        // 只清當前章不夠，必須整本書一次清掉，否則跨章污染還在。
+        // Clear all cached chapters for the entire book since the "next chapter misdetected as next page"
+        // bug contaminates subsequent chapters into the current chapter's cache. Clearing just the current
+        // chapter is insufficient; the whole book must be purged.
         dependencies.bookSourceFetcher.clearAllChapterCache(bookId: b.id)
         store.clearAllCachedChapterFilenames(bookId: b.id)
         for ref in refs {
             readerViewModel.resetChapterState(for: ref.index)
         }
-        // 立即把當前章 layout 失效並換成 PlaceholderVC（loading UI），
-        // 不要讓使用者繼續看著舊的（被 concat 過的）正文等到重抓完成。
+        // Immediately invalidate the current chapter's layout and show loading UI
+        // so the user doesn't continue seeing the old (concatenated) content while the refetch completes.
         if let engine = epubRenderer.engine {
             Task { await engine.notifyChapterDataChanged(at: idx) }
         }
@@ -1911,7 +1888,7 @@ struct ReaderView: View {
         readerViewModel.handleDownloadAction(book: b, store: store)
     }
 
-    /// 換源搜尋已移至 ReaderViewModel.loadOtherOrigins，此處只負責觸發並傳入所需資料
+    /// Source change search has been moved to ReaderViewModel.loadOtherOrigins. This method only triggers it and passes required data.
     private func loadOtherOrigins() {
         guard let b = book, let currentSourceId = b.bookSourceId else { return }
         readerViewModel.loadOtherOrigins(
@@ -1922,7 +1899,7 @@ struct ReaderView: View {
         )
     }
 
-    // MARK: - 線上章節懶加載
+    // MARK: - Online Chapter Lazy Loading
     private func ensureChapterReady(
         chapterIndex: Int,
         priority: ChapterFetchPriority = .immediate
@@ -1992,8 +1969,8 @@ struct ReaderView: View {
         readerViewModel.prefetchAround(book: b, center: chapterIndex, store: store)
     }
 
-    /// 當使用者翻到當前章節最後 25% 時，提前觸發下一章預加載，
-    /// 比等到章節末頁才觸發早幾頁，讓下一章有更多緩衝時間。
+    /// When the user scrolls past the last 25% of the current chapter, trigger next chapter prefetch early.
+    /// This provides more buffer time compared to waiting until the last page.
     private func maybeEarlyPrefetchIfNearChapterEnd() {
         guard let b = book, b.isOnline,
               let refs = b.onlineChapters else { return }
@@ -2001,12 +1978,12 @@ struct ReaderView: View {
         let nextIdx = chIdx + 1
         guard refs.indices.contains(nextIdx) else { return }
 
-        // 下一章已快取則無需預加載
+        // Skip if the next chapter is already cached.
         guard !dependencies.bookSourceFetcher.isChapterCached(
             bookId: b.id, chapterIndex: nextIdx,
             expectedSourceURL: nil, expectedTOCTitle: nil) else { return }
 
-        // 計算當前章節的頁數，判斷是否已超過 75%
+        // Check if we're past 75% of the current chapter's pages.
         let pagesInChapter = allPages.filter { $0.chapterIndex == chIdx }
         guard !pagesInChapter.isEmpty else { return }
         let currentPageInChapter = allPages.indices.contains(currentPage)
@@ -2016,7 +1993,7 @@ struct ReaderView: View {
         readerViewModel.prefetchAround(book: b, center: chIdx, store: store)
     }
 
-    // MARK: - 載入 & 建頁
+    // MARK: - Loading & Page Building
     private func currentRenderSettings(marginH: CGFloat) -> ReaderRenderSettings {
         let topInset = ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
         let bottomInset = max(20, ReaderLayoutMetrics.bottomInset(safeBottom: windowSafeBottom))
@@ -2101,7 +2078,7 @@ struct ReaderView: View {
                 }
             } catch {
                 await MainActor.run {
-                    print("Readium 解析失敗：\(error)")
+                    print("Readium parsing failed: \(error)")
                     self.applyDocument(nil)
                     self.isLoadingPipeline = false
                     self.isRestoringPosition = false
@@ -2156,7 +2133,7 @@ struct ReaderView: View {
         isLoadingPipeline = false
         isRestoringPosition = false
 
-        // Lazy loading: 自動抓取初始章節（存檔位置或第 0 章）
+        // Lazy loading: auto-fetch the initial chapter (saved position or chapter 0).
         let initialChapter = OnlineInitialChapterResolver.preferredInitialChapter(
             chapterCount: refs.count,
             savedPositionSnapshot: savedPositionSnapshot,
@@ -2340,7 +2317,6 @@ struct ReaderView: View {
         }
 
         guard b.resolvedPipelineKind == .epub else {
-            // HTML: temporarily disabled pending CoreText migration
             applyDocument(nil)
             isLoadingPipeline = false
             isRestoringPosition = false
@@ -2398,7 +2374,7 @@ struct ReaderView: View {
     }
 }
 
-// MARK: - 書籤view和目錄view合併面板
+// MARK: - Combined Bookmarks & TOC Panel
 enum ReaderMenuTab: String, CaseIterable {
     case toc
     case bookmarks
@@ -2442,7 +2418,7 @@ struct ReaderMenuView: View {
                     }
                 }
             }
-            .navigationTitle(localized("目錄") + " / " + localized("書籤")) //這裡要改成書名
+            .navigationTitle(localized("目錄") + " / " + localized("書籤"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -2600,7 +2576,7 @@ struct ReaderMenuView: View {
         }
     }
 }
-// MARK: - 隱藏 TabBar
+// MARK: - Hide TabBar
 private struct HideTabBarModifier: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 16.0, *) {
@@ -2625,7 +2601,7 @@ private struct HideTabBarModifier: ViewModifier {
     }
 }
 
-// MARK: - CoreText UIPageViewController 橋接
+// MARK: - CoreText UIPageViewController Bridge
 
 private struct CoreTextPageEngineView: UIViewControllerRepresentable {
     let engine: any PageRenderingProvider
@@ -2647,7 +2623,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             navigationOrientation: .horizontal
         )
 
-        // cover / none 模式：停用內建滑動手勢（靠自訂 pan 或 tap 翻頁）
+        // cover / none mode: disable built-in swipe gesture (use custom pan or tap for page turns).
         if pageTurnStyle == .cover || pageTurnStyle == .none {
             pvc.dataSource = nil
             for case let sv as UIScrollView in pvc.view.subviews {
@@ -2658,7 +2634,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
         pvc.delegate = context.coordinator
 
-        // 優先用 SwiftUI binding 的 currentPage，避免切換翻頁樣式重建時跳回舊座標。
+        // Prefer SwiftUI binding's currentPage to avoid jumping back to old coordinates when switching page styles.
         let initialPage = engine.totalPages > 0
             ? max(0, min(currentPage, engine.totalPages - 1))
             : 0
@@ -2666,7 +2642,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         context.coordinator.applyPlaybackHighlight(to: initialVC)
         context.coordinator.captureStablePosition(from: initialVC)
         pvc.setViewControllers([initialVC], direction: .forward, animated: false)
-        // 同步 binding，讓 ReaderView.currentPage 對齊 engine 恢復的位置
+        // Sync the binding so ReaderView.currentPage aligns with the engine-restored position.
         if initialPage != currentPage {
             context.coordinator.suppressNextTransition = true
             DispatchQueue.main.async {
@@ -2683,7 +2659,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         tap.cancelsTouchesInView = false
         pvc.view.addGestureRecognizer(tap)
 
-        // cover 模式：加自訂 pan gesture + overlay
+        // cover mode: add custom pan gesture + overlay
         if pageTurnStyle == .cover {
             context.coordinator.setupCoverOverlay(on: pvc.view)
             context.coordinator.coverPageViewController = pvc
@@ -2725,7 +2701,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let direction: UIPageViewController.NavigationDirection =
                 clampedPage >= visible.globalPageIndex ? .forward : .reverse
 
-            // 消耗 makeUIViewController 設置的抑制 flag：首次對齊時強制瞬切
+            // Suppress flag from makeUIViewController: force instant transition on first alignment.
             if context.coordinator.suppressNextTransition {
                 context.coordinator.suppressNextTransition = false
                 let targetVC = engine.pageViewController(at: clampedPage)
@@ -2735,7 +2711,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return
             }
 
-            // 核心修復：非相鄰跳頁（目錄跳轉、offset 重算）一律瞬切，避免 cover 連環 reverse。
+            // Non-adjacent page jumps (TOC navigation, offset recalculation) use instant transition to avoid cover chain reverse.
             let isAdjacent = abs(clampedPage - visible.globalPageIndex) == 1
             let shouldAnimate = (pageTurnStyle != .none) && isAdjacent
 
@@ -2810,16 +2786,16 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         let onPageChanged: (Int) -> Void
         let onTapZone: (String) -> Void
 
-        // cover 動畫 overlay 元件
+        // Cover animation overlay components
         private let coverOverlayView = UIView()
         private let coverCurrentImageView = UIImageView()
-        private let coverDimView = UIView()          // backward：舊頁漸暗遮罩
-        private let coverShadowView = UIView()        // 滑動頁邊緣投影
+        private let coverDimView = UIView()
+        private let coverShadowView = UIView()
         private let coverIncomingImageView = UIImageView()
         private var coverTargetPage: Int?
         private var coverDirection: Int = 0  // 1 = forward, -1 = backward
-        /// makeUIViewController 已設定初始頁後，suppressNextTransition = true
-        /// 讓緊跟的 updateUIViewController 跳過多餘的 backward 動畫（binding 尚未同步）
+        /// Set to true after makeUIViewController has set the initial page,
+        /// so the subsequent updateUIViewController skips redundant backward animation (binding not yet synced).
         fileprivate var suppressNextTransition = false
         fileprivate var currentCoreTextPosition: CoreTextReadingPosition?
         weak var coverPageViewController: UIPageViewController?
@@ -3074,7 +3050,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return nextVC
             }
             let nextIndex = vc.globalPageIndex + 1
-            // 快照接力：若下一頁是新章節且快照已就緒，回傳靜態圖 VC 供動畫用
+            // Snapshot handoff: if the next page is a new chapter and the snapshot is ready, return the static VC for animation.
             if let snapVC = currentEngine.snapshotViewController(at: nextIndex) {
                 return snapVC
             }
@@ -3105,7 +3081,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return
             }
 
-            // 若落地的是快照 VC，立即換成真正的渲染 VC（佈局已就緒，視覺上無縫）
+            // If the landing VC is a snapshot, immediately replace it with the real rendered VC (layout is ready, visually seamless).
             if let snapVC = pvc.viewControllers?.first as? SnapshotPageViewController {
                 let realVC: UIViewController
                 if let position = snapVC.coreTextReadingPosition {
@@ -3161,7 +3137,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let screenCornerRadius = (UIScreen.main.value(forKey: "displayCornerRadius") as? CGFloat) ?? 0
             let radius = screenCornerRadius > 0 ? screenCornerRadius : 12
 
-            // 投影 view：在 incoming 下方，不 clip，讓陰影能溢出
+            // Shadow view: placed below the incoming view, not clipped, allowing shadow overflow.
             coverShadowView.backgroundColor = .clear
             coverShadowView.layer.shadowColor = UIColor.black.cgColor
             coverShadowView.layer.shadowOpacity = 0.3
@@ -3174,7 +3150,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             coverIncomingImageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             coverOverlayView.addSubview(coverIncomingImageView)
 
-            // 暗色遮罩（backward 用）：疊在舊頁上，隨上一頁蓋入漸暗
+            // Dimming overlay (backward): overlaid on the old page, gradually darkens as the previous page covers in.
             coverDimView.backgroundColor = .black
             coverDimView.alpha = 0
             coverDimView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -3184,15 +3160,10 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         // MARK: - Cover pan gesture
         
         private enum GestureConstants {
-            /// The minimum horizontal translation (in points) required to trigger the cover animation.
             static let initialTranslationThreshold: CGFloat = 18.0
-            /// The threshold ratio (0.0 to 1.0) of the screen width that must be crossed to commit the page turn.
             static let commitProgressRatio: CGFloat = 0.34
-            /// The minimum flick velocity (in points per second) to commit the page turn even if the progress ratio is not reached.
             static let commitVelocityThreshold: CGFloat = 560.0
-            /// The duration (in seconds) of the settling animation when the user releases their finger.
             static let settleAnimationDuration: TimeInterval = 0.22
-            /// The maximum alpha value for the dimming overlay during the cover animation.
             static let maxDimmingAlpha: CGFloat = 0.35
         }
 
@@ -3210,7 +3181,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             case .began:
                 coverTargetPage = nil
                 coverDirection = 0
-                // 取消前一次可能還在播的動畫，不在此顯示 overlay（等方向確認後才顯示）
+                // Cancel any previous in-flight animation; don't show overlay until direction is confirmed.
                 coverOverlayView.layer.removeAllAnimations()
                 coverIncomingImageView.layer.removeAllAnimations()
                 coverDimView.layer.removeAllAnimations()
@@ -3219,7 +3190,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             case .changed:
                 if coverTargetPage == nil {
                     if translationX < -GestureConstants.initialTranslationThreshold, currentPage < currentEngine.totalPages - 1 {
-                        // Forward uncover：當前頁往左滑走，新頁在底下
+                        // Forward uncover: current page slides left, new page underneath.
                         coverDirection = 1
                         let target = currentPage + 1
                         coverTargetPage = target
@@ -3228,9 +3199,9 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         coverOverlayView.isHidden = false
                         setupForwardOutgoing(currentPageSnapshot: currentPage, newPage: target, in: view)
                     } else if translationX > GestureConstants.initialTranslationThreshold, currentPage > 0 {
-                        // Backward cover：上一頁從左側蓋入
+                        // Backward cover: previous page covers in from the left.
                         let target = currentPage - 1
-                        // 若 snapshot 尚未就緒（章節未載入），不啟動動畫
+                        // Don't start animation if snapshot is not ready (chapter not loaded).
                         guard let targetSnapshot = currentEngine.renderSnapshot(forPage: target) else { return }
                         coverDirection = -1
                         coverTargetPage = target
@@ -3278,7 +3249,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     }
                 } completion: { _ in
                     if shouldCommit {
-                        // 先把真正的 VC 設上去，讓 updateUIViewController 進來時早返回，避免二次動畫
+                        // Set the real VC immediately so updateUIViewController returns early, avoiding double animation.
                         if let pvc = self.coverPageViewController {
                             let realVC = self.currentEngine.pageViewController(at: targetPage)
                             self.applyPlaybackHighlight(to: realVC)
@@ -3312,7 +3283,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             guard !isTransitioning else { return }
             guard let view = pvc.view else { return }
             
-            // 邊界保護
+            // Boundary protection
             let total = currentEngine.totalPages
             guard targetPage >= 0, total == 0 || targetPage < total else {
                 resetCoverOverlay()
@@ -3322,7 +3293,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             isTransitioning = true
             let width = max(view.bounds.width, 1)
 
-            // 清理可能殘留的動畫狀態
+            // Clean up any lingering animation state.
             coverOverlayView.layer.removeAllAnimations()
             coverIncomingImageView.layer.removeAllAnimations()
             coverShadowView.layer.removeAllAnimations()
@@ -3340,11 +3311,12 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     self.coverShadowView.frame.origin.x = -width
                     self.coverDimView.alpha = 0
                 } completion: { _ in
-                    let latestPage = self.currentPage // 抓取最新的 binding 值
+                    // Capture the latest binding value.
+                    let latestPage = self.currentPage
                     let realVC = self.currentEngine.pageViewController(at: latestPage)
                     self.applyPlaybackHighlight(to: realVC)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
-                    pvc.view.layoutIfNeeded() // 強制佈局，避免 scroll 偏移殘留
+                    pvc.view.layoutIfNeeded()
                     
                     self.captureStablePosition(from: realVC)
                     self.onPageChanged(latestPage)
@@ -3354,7 +3326,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     self.isTransitioning = false
                 }
             } else {
-                // Backward cover
+                // Backward cover: previous page covers in from the left, right rounded corners, shadow falls left onto the old page.
                 guard let targetSnapshot = currentEngine.renderSnapshot(forPage: targetPage) else {
                     let latestPage = self.currentPage
                     let realVC = currentEngine.pageViewController(at: latestPage)
@@ -3401,10 +3373,10 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private func setupForwardOutgoing(currentPageSnapshot: Int, newPage: Int, in view: UIView) {
             let width = max(view.bounds.width, 1)
             let h = view.bounds.height
-            // 新頁作為靜態背景
+            // New page as static background.
             coverCurrentImageView.image = currentEngine.renderSnapshot(forPage: newPage)
             coverCurrentImageView.frame = CGRect(x: 0, y: 0, width: width, height: h)
-            // 當前頁從 x=0 往左滑走，右側圓角（最後消失的邊緣），投影往右落在新頁
+            // Current page slides left from x=0, right rounded corners (the last visible edge), shadow falls right onto new page.
             coverIncomingImageView.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
             coverIncomingImageView.image = currentEngine.renderSnapshot(forPage: currentPageSnapshot)
             coverIncomingImageView.frame = CGRect(x: 0, y: 0, width: width, height: h)
@@ -3413,13 +3385,11 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             coverShadowView.frame = CGRect(x: 0, y: 0, width: width, height: h)
             coverShadowView.layer.shadowPath = UIBezierPath(rect: CGRect(x: 0, y: 0, width: width, height: h)).cgPath
             coverDimView.frame = CGRect(x: 0, y: 0, width: width, height: h)
-            // alpha 不在此設定，由呼叫方依 context 決定（pan 從 rawProgress 算，tap 由動畫起點設）
         }
 
         private func setupIncomingView(for targetPage: Int, snapshot: UIImage?, in view: UIView) {
             let width = max(view.bounds.width, 1)
             let h = view.bounds.height
-            // Backward cover：上一頁從左滑入，右側圓角，投影往左落在舊頁
             coverIncomingImageView.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
             coverIncomingImageView.image = snapshot
             coverIncomingImageView.frame = CGRect(x: -width, y: 0, width: width, height: h)

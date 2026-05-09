@@ -557,12 +557,9 @@ extension ReadingBook {
 
 enum ReaderLayoutMetrics {
     static let footerHeight: CGFloat = 16
-    static let footerBottomGap: CGFloat = 4
-    /// Negative value pulls the footer closer to the screen bottom.
-    /// A value of 0 leaves the footer at safeAreaBottom (≈34pt on notch devices),
-    /// which sits higher than desired. -14 places it just above the home indicator
-    /// (≈20pt), for a tighter visual fit without overlapping.
-    static let footerVisualBottomPadding: CGFloat = -14
+    /// Extra space below the footer text to the screen bottom edge.
+    /// Text area bottom = safeBottom + footerHeight + footerPadding.
+    static let footerPadding: CGFloat = 4
     static let minimumVerticalPadding: CGFloat = 24
     static let topSafeAreaExtra: CGFloat = 10
 
@@ -571,7 +568,7 @@ enum ReaderLayoutMetrics {
     }
 
     static func bottomInset(safeBottom: CGFloat, footerHeight: CGFloat = footerHeight) -> CGFloat {
-        safeBottom + footerHeight + footerBottomGap
+        safeBottom + footerHeight + footerPadding
     }
 }
 

@@ -21,15 +21,12 @@ final class ClockBatteryModel: ObservableObject {
         UIDevice.current.isBatteryMonitoringEnabled = true
         refreshTime()
         refreshBattery()
-
         timerCancellable = Timer.publish(every: 60, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in self?.refreshTime() }
-
         batteryLevelCancellable = NotificationCenter.default
             .publisher(for: UIDevice.batteryLevelDidChangeNotification)
             .sink { [weak self] _ in self?.refreshBattery() }
-
         batteryStateCancellable = NotificationCenter.default
             .publisher(for: UIDevice.batteryStateDidChangeNotification)
             .sink { [weak self] _ in self?.refreshBattery() }
@@ -56,7 +53,6 @@ struct ReaderOverlayFooter: View {
     let pageInfo: String
     let progress: String
     let textColor: Color
-    let bottomInset: CGFloat
     let footerPadding: CGFloat
     @StateObject private var clock = ClockBatteryModel()
 
@@ -87,7 +83,6 @@ struct ReaderInlineFooter: View {
     let pageInfo: String
     let progress: String
     let textColor: Color
-    let bottomInset: CGFloat
     let footerPadding: CGFloat
     @StateObject private var clock = ClockBatteryModel()
 
@@ -123,52 +118,44 @@ private struct FooterPreview: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Simulated page — the text ends at contentBottomInset above the bottom
             ZStack(alignment: .bottom) {
                 Color(.systemGray6)
-
-                // Last line of text
                 VStack {
                     Text("第 42 頁").font(.system(size: 14)).foregroundColor(.secondary)
-                    Text("這是一段模擬的正文內容。").foregroundColor(.primary)
+                    Text("正文最後一行").foregroundColor(.primary)
                 }
-                .padding(.bottom, contentBottomInset + 16) // 16 = footer height
+                .padding(.bottom, contentBottomInset)
             }
 
-            // Footer band
             ZStack(alignment: .bottom) {
                 Color(.systemGray5)
-                Rectangle()
-                    .frame(height: 1)
-                    .foregroundColor(.red.opacity(0.5))
-                    .alignmentGuide(.bottom) { d in d[.bottom] }
+                Rectangle().frame(height: 1).foregroundColor(.red.opacity(0.5))
 
                 ReaderOverlayFooter(
                     pageInfo: "42 / 156",
                     progress: "26.9%",
                     textColor: .white,
-                    bottomInset: contentBottomInset,
                     footerPadding: footerPadding
                 )
             }
-            .frame(height: max(30, contentBottomInset + 20))
+            .frame(height: max(30, contentBottomInset + 4))
 
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Footer 位置控制").font(.headline).padding(.top, 8)
+                Text("參數").font(.headline).padding(.top, 8)
 
                 HStack {
                     Text("文字底部留白: \(Int(contentBottomInset))pt")
                     Slider(value: $contentBottomInset, in: 0...80, step: 2)
                 }
                 HStack {
-                    Text("footer 離底距離: \(Int(footerPadding))pt")
+                    Text("footer 離底: \(Int(footerPadding))pt")
                     Slider(value: $footerPadding, in: 0...40, step: 1)
                 }
 
-                Text("紅線 = 內容區域底部").font(.caption).foregroundColor(.red.opacity(0.5))
-                Text("文字最後一行到 footer 的間距 = contentBottomInset + 16pt(footer高度)").font(.caption).foregroundColor(.secondary)
+                Text("紅線 = 排版區域底部").font(.caption).foregroundColor(.red.opacity(0.5))
+                Text("contentInsets.bottom = safeBottom + 16(footerHeight) + footerPadding").font(.caption).foregroundColor(.secondary)
             }
             .padding(.horizontal)
         }

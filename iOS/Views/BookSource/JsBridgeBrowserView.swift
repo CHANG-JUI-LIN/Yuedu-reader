@@ -94,10 +94,10 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
                 guard !cookies.isEmpty else { completion?(); return }
 
-                // ① Push into URLSession's shared cookie storage
+                // (1) Push into URLSession's shared cookie storage
                 cookies.forEach { HTTPCookieStorage.shared.setCookie($0) }
 
-                // ② Group by domain and push into CookieStore (for JS bridge access)
+                // (2) Group by domain and push into CookieStore (for JS bridge access)
                 var byDomain: [String: [HTTPCookie]] = [:]
                 for cookie in cookies {
                     let domain = cookie.domain.hasPrefix(".")

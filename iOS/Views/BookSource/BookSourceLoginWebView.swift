@@ -12,8 +12,8 @@ struct BookSourceLoginWebView: View {
     let onDismiss: () -> Void
 
     private let gs = GlobalSettings.shared
-    /// Bridge object shared with the UIViewRepresentable; wires the "完成" button to the
-    /// cookie sync routine running inside the Coordinator.
+/// Bridge object shared with the UIViewRepresentable; wires the "Done" button to the
+/// cookie sync routine running inside the Coordinator.
     @StateObject private var bridge = LoginWebBridge()
     @State private var isSyncing = false
 
@@ -91,7 +91,7 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
         // Give the Coordinator a weak reference so the bridge closure can reach it
         context.coordinator.webView = wv
 
-        // Wire the "完成" button to the Coordinator's authoritative sync
+        // Wire the "Done" button to the Coordinator's authoritative sync
         let coordinator = context.coordinator
         bridge.syncCookiesAndDismiss = { completion in
             guard let wv = coordinator.webView else { completion(); return }
@@ -155,19 +155,19 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
             webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [source] cookies in
                 guard !cookies.isEmpty else { completion?(); return }
 
-                // ① Push every cookie into HTTPCookieStorage for URLSession auto-handling
+                // (1) Push every cookie into HTTPCookieStorage for URLSession auto-handling
                 cookies.forEach { HTTPCookieStorage.shared.setCookie($0) }
 
                 let cookieString = cookies
                     .map { "\($0.name)=\($0.value)" }
                     .joined(separator: "; ")
 
-                // ② CookieStore keyed by loginUrl (JS bridge access)
+                // (2) CookieStore keyed by loginUrl (JS bridge access)
                 if let baseURL = BookSourceLoginWebViewRepresentable.effectiveURL(source: source) {
                     CookieStore.shared.set(url: baseURL.absoluteString, cookie: cookieString)
                 }
 
-                // ③ LoginManager keyed by bookSourceUrl — read by applyLoginHeaders()
+                // (3) LoginManager keyed by bookSourceUrl — read by applyLoginHeaders()
                 //    when constructing every URLRequest in the rule engine.
                 var headers = LoginManager.shared.getLoginHeaders(sourceUrl: source.bookSourceUrl)
                 headers["Cookie"] = cookieString

@@ -4,17 +4,20 @@ func ttsLog(_ message: String) {
     NSLog("%@", message)
 }
 
-/// TTS 引擎的統一介面。
-/// TTSCoordinator 透過此 protocol 與底層引擎溝通，不感知具體實作。
+/// Unified interface for TTS engines.
+/// TTSCoordinator communicates with the underlying engine through this protocol
+/// without knowledge of the concrete implementation.
 protocol TTSPlayable: AnyObject {
     var isPlaying: Bool { get }
-    /// 朗讀完當前段落後，呼叫此 closure 取得下一段文字。回傳 nil 表示結束。
+    /// After finishing the current segment, call this closure to get the next text.
+    /// Return nil to indicate the end.
     var onPageFinished: (() -> String?)? { get set }
     var onStop: (() -> Void)? { get set }
     var onPlaybackStarted: ((TimeInterval) -> Void)? { get set }
     var onSegmentChanged: ((Int, Int, String) -> Void)? { get set }
 
-    /// 開始朗讀指定文字。rate 由 HTTP TTS 服務解讀，目前 UI 使用 0.10–0.65。
+    /// Start reading the given text. Rate is interpreted by the HTTP TTS service,
+    /// currently using a 0.10–0.65 range in the UI.
     func speak(text: String, title: String, rate: Float)
     func configureAudioSessionOwnership(_ enabled: Bool)
     func pause()

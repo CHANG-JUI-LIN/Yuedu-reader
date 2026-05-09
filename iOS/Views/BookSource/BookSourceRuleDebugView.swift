@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Full per-rule book source debugger.
-/// Shows 4 parsing stages: 搜索 / 詳情 / 目錄 / 正文.
+/// Shows 4 parsing stages: Search / Detail / TOC / Content.
 /// Each stage lets you enter the relevant input, run it against the real engine,
 /// and see timestamped, color-coded log entries with expandable detail.
 struct BookSourceRuleDebugView: View {
