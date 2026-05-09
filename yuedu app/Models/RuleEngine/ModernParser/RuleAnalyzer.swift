@@ -53,7 +53,102 @@ final class RuleAnalyzer {
     /// Split rule string by operators, handling nested brackets.
     /// Accepts one or more operator strings (e.g. "||", "&&", "%%").
     func splitRule(_ split: String...) -> [String] {
-        return splitRulePhase1(split)
+        let operators = split.filter { !$0.isEmpty }
+        guard !operators.isEmpty else {
+            elementsType = ""
+            pos = queue.count
+            return [substringFrom(startX)]
+        }
+
+        var parts: [String] = []
+        var partStart = startX
+        var index = startX
+        var squareDepth = 0
+        var parenDepth = 0
+        var braceDepth = 0
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        var escaped = false
+        var chosenOperator: String?
+
+        while index < queue.count {
+            let character = queue[index]
+
+            if escaped {
+                escaped = false
+                index += 1
+                continue
+            }
+
+            if character == Self.ESC, isCode || (!inSingleQuote && !inDoubleQuote) {
+                escaped = true
+                index += 1
+                continue
+            }
+
+            if character == "'" && !inDoubleQuote {
+                inSingleQuote.toggle()
+                index += 1
+                continue
+            }
+            if character == "\"" && !inSingleQuote {
+                inDoubleQuote.toggle()
+                index += 1
+                continue
+            }
+
+            if !inSingleQuote && !inDoubleQuote {
+                switch character {
+                case "[":
+                    squareDepth += 1
+                    index += 1
+                    continue
+                case "]":
+                    squareDepth = max(0, squareDepth - 1)
+                    index += 1
+                    continue
+                case "(":
+                    parenDepth += 1
+                    index += 1
+                    continue
+                case ")":
+                    parenDepth = max(0, parenDepth - 1)
+                    index += 1
+                    continue
+                case "{":
+                    if isCode { braceDepth += 1 }
+                    index += 1
+                    continue
+                case "}":
+                    if isCode { braceDepth = max(0, braceDepth - 1) }
+                    index += 1
+                    continue
+                default:
+                    break
+                }
+
+                if squareDepth == 0, parenDepth == 0, braceDepth == 0 {
+                    let activeOperators = chosenOperator.map { [$0] } ?? operators
+                    if let matched = activeOperators.first(where: { matchesOperator($0, at: index) }) {
+                        chosenOperator = matched
+                        parts.append(substring(partStart, index))
+                        index += matched.count
+                        partStart = index
+                        continue
+                    }
+                }
+            }
+
+            index += 1
+        }
+
+        elementsType = chosenOperator ?? ""
+        pos = queue.count
+        guard chosenOperator != nil else {
+            return [substringFrom(startX)]
+        }
+        parts.append(substringFrom(partStart))
+        return parts
     }
 
     /// Replace inner rules using brace-balanced extraction.
@@ -147,6 +242,15 @@ final class RuleAnalyzer {
             p += 1
         }
         return false
+    }
+
+    private func matchesOperator(_ op: String, at index: Int) -> Bool {
+        let opChars = Array(op)
+        guard index + opChars.count <= queue.count else { return false }
+        for offset in opChars.indices where queue[index + offset] != opChars[offset] {
+            return false
+        }
+        return true
     }
 
     /// Find position of any char from current position. Returns -1 if not found.

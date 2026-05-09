@@ -56,11 +56,17 @@ struct CssExtractor: RuleExtractor {
     func canHandle(rule: String) -> Bool {
         let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.lowercased().hasPrefix("@css:") { return true }
+        if trimmed.contains("||") || trimmed.contains("&&") || trimmed.contains("%%") {
+            return false
+        }
         return looksLikeCssSelector(trimmed)
     }
 
     func extractList(from content: String, rule: String, baseURL: String) throws -> [String] {
         let normalizedRule = normalizeRule(rule)
+        if normalizedRule.contains("@@") {
+            return try extractChainedList(from: content, rule: normalizedRule, baseURL: baseURL)
+        }
         let (selector, accessor) = splitSelectorAndAccessor(normalizedRule)
         guard !selector.isEmpty else { return [] }
 
@@ -81,6 +87,9 @@ struct CssExtractor: RuleExtractor {
 
     func extractValue(from content: String, rule: String, baseURL: String) throws -> String {
         let normalizedRule = normalizeRule(rule)
+        if normalizedRule.contains("@@") {
+            return try extractChainedList(from: content, rule: normalizedRule, baseURL: baseURL).first ?? ""
+        }
         let (selector, accessor) = splitSelectorAndAccessor(normalizedRule)
         guard !selector.isEmpty else { return "" }
 
@@ -96,6 +105,43 @@ struct CssExtractor: RuleExtractor {
 
         guard let first = elements.first else { return "" }
         return resolvedValue(from: first, accessor: accessor, baseURL: baseURL) ?? ""
+    }
+
+    private func extractChainedList(from content: String, rule: String, baseURL: String) throws -> [String] {
+        let steps = rule.components(separatedBy: "@@")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard let firstStep = steps.first else { return [] }
+
+        let document = try SwiftSoup.parse(content)
+        var current = try document.select(firstStep).array()
+        guard !current.isEmpty else { return [] }
+
+        for step in steps.dropFirst().dropLast() {
+            current = try current.flatMap { try $0.select(step).array() }
+            if current.isEmpty { return [] }
+        }
+
+        let finalRule = steps.last ?? firstStep
+        let (selector, accessor) = splitSelectorAndAccessor(finalRule)
+        let elements: [Element]
+        if steps.count == 1 {
+            elements = current
+        } else if selector.isEmpty {
+            elements = current
+        } else {
+            elements = try current.flatMap { try $0.select(selector).array() }
+        }
+
+        if let acc = accessor, acc.lowercased() == "all" {
+            let combined = elements.compactMap { try? $0.outerHtml() }
+                .joined(separator: "\n")
+            return combined.isEmpty ? [] : [combined]
+        }
+
+        return elements.compactMap { element in
+            resolvedValue(from: element, accessor: accessor, baseURL: baseURL)
+        }
     }
 
     // MARK: - Rule Normalization
@@ -157,15 +203,29 @@ struct CssExtractor: RuleExtractor {
         // CSS-specific patterns not used in Legado JSOUP Default syntax
         if rule.hasPrefix("#") { return true }              // #id
         if rule.hasPrefix("[") { return true }              // [attr=value]
-        if rule.contains(" > ") { return true }             // child combinator
+        if rule.contains(">") { return true }               // child combinator
         if rule.contains(" + ") { return true }             // adjacent sibling
         if rule.contains(" ~ ") { return true }             // general sibling
         if rule.contains(":not(") { return true }           // :not() pseudo-class
         if rule.contains(":nth-") { return true }           // :nth-child / :nth-of-type
         if rule.contains(":first-") { return true }         // :first-child / :first-of-type
         if rule.contains(":last-") { return true }          // :last-child / :last-of-type
+        if looksLikeTagQualifiedSelector(rule) { return true } // div.item / a.title
 
         return false
+    }
+
+    private func looksLikeTagQualifiedSelector(_ rule: String) -> Bool {
+        let mainRule = rule.split(separator: "@", maxSplits: 1).first.map(String.init) ?? rule
+        let trimmed = mainRule.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let firstDot = trimmed.firstIndex(where: { $0 == "." || $0 == "#" }) else {
+            return false
+        }
+        let prefix = String(trimmed[..<firstDot]).lowercased()
+        guard !["class", "id", "tag", "text", "children"].contains(prefix) else {
+            return false
+        }
+        return !prefix.isEmpty && prefix.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
     }
 
     // MARK: - Value Resolution

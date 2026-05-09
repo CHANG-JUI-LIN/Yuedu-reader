@@ -195,6 +195,15 @@ struct XPathExtractor: RuleExtractor {
     /// an XPath attribute selector (e.g. `[@class='foo']` stays intact).
     private func splitXPathAndAccessor(_ rule: String) -> (xpath: String, accessor: String?) {
         let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let attrRange = trimmed.range(of: #"/@[A-Za-z_][A-Za-z0-9_:-]*$"#, options: .regularExpression) {
+            let path = String(trimmed[..<attrRange.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let attr = String(trimmed[attrRange].dropFirst(2))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !path.isEmpty, !attr.isEmpty {
+                return (path, attr)
+            }
+        }
 
         // Walk to find `@` that is an accessor (outside brackets/quotes, at depth 0).
         var depth = 0

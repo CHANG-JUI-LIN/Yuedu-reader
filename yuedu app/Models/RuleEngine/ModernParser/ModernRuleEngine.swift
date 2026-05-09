@@ -679,12 +679,13 @@ final class ModernRuleEngine {
     // MARK: - Private: Extractor Routing
 
     private func extractStringViaExtractor(content: Any, rule: String) -> Any? {
-        let contentStr = Self.toString(content)
         guard let extractor = extractors.first(where: {
             $0.canHandle(rule: rule)
         }) else {
+            let contentStr = Self.toString(content)
             return contentStr
         }
+        let contentStr = extractorContentString(content, usesJSON: extractor is JsonExtractor)
         return try? extractor.extractValue(
             from: contentStr, rule: rule, baseURL: baseUrl
         )
@@ -693,12 +694,13 @@ final class ModernRuleEngine {
     private func extractStringListViaExtractor(
         content: Any, rule: String
     ) -> Any? {
-        let contentStr = Self.toString(content)
         guard let extractor = extractors.first(where: {
             $0.canHandle(rule: rule)
         }) else {
+            let contentStr = Self.toString(content)
             return [contentStr]
         }
+        let contentStr = extractorContentString(content, usesJSON: extractor is JsonExtractor)
         return try? extractor.extractList(
             from: contentStr, rule: rule, baseURL: baseUrl
         )
@@ -707,15 +709,55 @@ final class ModernRuleEngine {
     private func extractElementsViaExtractor(
         content: Any, rule: String
     ) -> Any? {
-        let contentStr = Self.toString(content)
         guard let extractor = extractors.first(where: {
             $0.canHandle(rule: rule)
         }) else {
+            let contentStr = Self.toString(content)
             return [contentStr]
         }
+        let contentStr = extractorContentString(content, usesJSON: extractor is JsonExtractor)
+        let elementRule = elementExtractionRule(rule, extractor: extractor)
         return try? extractor.extractList(
-            from: contentStr, rule: rule, baseURL: baseUrl
+            from: contentStr, rule: elementRule, baseURL: baseUrl
         )
+    }
+
+    private func elementExtractionRule(_ rule: String, extractor: RuleExtractor) -> String {
+        guard extractor is CssExtractor, !cssRuleHasAccessor(rule) else {
+            return rule
+        }
+        return rule + "@outerHtml"
+    }
+
+    private func cssRuleHasAccessor(_ rule: String) -> Bool {
+        guard let atIndex = rule.lastIndex(of: "@") else {
+            return false
+        }
+        let selectorPart = String(rule[..<atIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let accessorPart = String(rule[rule.index(after: atIndex)...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selectorPart.isEmpty, !accessorPart.isEmpty else {
+            return false
+        }
+        let lowered = accessorPart.lowercased()
+        return [
+            "text", "textnodes", "owntext",
+            "html", "outerhtml", "all",
+            "href", "src",
+        ].contains(lowered)
+        || lowered.hasPrefix("data-")
+        || lowered.hasPrefix("attr(")
+        || accessorPart.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+    }
+
+    private func extractorContentString(_ content: Any, usesJSON: Bool) -> String {
+        if usesJSON,
+           JSONSerialization.isValidJSONObject(content),
+           let data = try? JSONSerialization.data(withJSONObject: content),
+           let string = String(data: data, encoding: .utf8) {
+            return string
+        }
+        return Self.toString(content)
     }
 
     /// Regex-based element extraction (matching Legado AnalyzeByRegex.getElements).

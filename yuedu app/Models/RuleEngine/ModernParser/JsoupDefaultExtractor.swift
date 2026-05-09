@@ -42,6 +42,9 @@ struct JsoupDefaultExtractor: RuleExtractor {
     func extractList(from content: String, rule: String, baseURL: String) throws -> [String] {
         guard !rule.isEmpty else { return [] }
         let doc = try SwiftSoup.parse(content, baseURL)
+        if shouldExtractValuesForList(rule: rule) {
+            return try getStringList(from: doc, rule: rule, baseURL: baseURL)
+        }
         let elements = try getElements(from: doc, rule: rule)
         return try elements.array().compactMap { el in
             let html = try el.outerHtml()
@@ -54,7 +57,7 @@ struct JsoupDefaultExtractor: RuleExtractor {
         let doc = try SwiftSoup.parse(content, baseURL)
         let results = try getStringList(from: doc, rule: rule, baseURL: baseURL)
         if results.isEmpty { return "" }
-        return results.count == 1 ? results[0] : results.joined(separator: "\n")
+        return results[0]
     }
 
     // MARK: - Rule Detection
@@ -388,6 +391,23 @@ struct JsoupDefaultExtractor: RuleExtractor {
         }
 
         return results
+    }
+
+    private func shouldExtractValuesForList(rule: String) -> Bool {
+        let analyzer = RuleAnalyzer(data: rule)
+        analyzer.trim()
+        let steps = analyzer.splitRule("@")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard let last = steps.last else { return false }
+        let lowered = last.lowercased()
+        return [
+            "text", "textnodes", "owntext",
+            "html", "innerhtml", "all", "outerhtml",
+            "href", "src",
+        ].contains(lowered)
+        || lowered.hasPrefix("data-")
+        || (lowered.hasPrefix("attr(") && lowered.hasSuffix(")"))
     }
 
     // MARK: - Rule Parsing Types

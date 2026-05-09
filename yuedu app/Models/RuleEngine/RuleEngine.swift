@@ -287,7 +287,17 @@ enum RuleEngine {
 
     /// 是否為 JSOUP Default 規則：至少一段為 type.name 或 type.name.index（type = class/id/tag），或純標籤名（如 dl@dt@a）
     static func isJsoupDefaultRule(_ rule: String) -> Bool {
-        let segments = rule.components(separatedBy: "@")
+        let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowered = trimmed.lowercased()
+        if lowered.hasPrefix("@css:")
+            || lowered.hasPrefix("@xpath:")
+            || lowered.hasPrefix("@json:")
+            || lowered.hasPrefix("@js:")
+        {
+            return false
+        }
+
+        let segments = trimmed.components(separatedBy: "@")
         for seg in segments {
             let s = seg.trimmingCharacters(in: .whitespacesAndNewlines)
             if s.isEmpty { continue }
@@ -861,6 +871,10 @@ enum RuleEngine {
         }
         if trimmed.hasPrefix("//") && !trimmed.hasPrefix("//@") {
             return extractValueListByXPath(html: html, xpath: trimmed, baseURL: baseURL)
+        }
+
+        if trimmed.lowercased().hasPrefix("@css:") {
+            trimmed = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
         let (mainPart, _) = splitRuleAndRegex(trimmed)
@@ -1637,4 +1651,3 @@ enum RuleEngine {
 }
 
 // MARK: - 搜尋 URL 模板渲染
-
