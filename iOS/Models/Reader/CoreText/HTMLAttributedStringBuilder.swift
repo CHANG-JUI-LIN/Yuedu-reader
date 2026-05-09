@@ -499,10 +499,12 @@ final class HTMLAttributedStringBuilder {
             if element.tag == "img" || element.tag == "image" {
                 let src = imageSource(from: element)
                 let image = src.isEmpty ? nil : await imageLoader?(src)
+                var imgStyle = element.resolvedStyle
+                resolveSVGPresentationAttributes(element, style: &imgStyle, config: config)
                 return makeImagePlaceholder(
                     image: image,
                     config: config,
-                    style: element.resolvedStyle,
+                    style: imgStyle,
                     imageSource: src
                 )
             }
@@ -749,13 +751,14 @@ final class HTMLAttributedStringBuilder {
         let image = src.isEmpty ? nil : await imageLoader?(src)
 
         var attachmentStyle = element.resolvedStyle
-        if let widthValue = imageElement.resolvedStyle.rawWidthPercent {
+        resolveSVGPresentationAttributes(imageElement, style: &attachmentStyle, config: config)
+        if let widthValue = attachmentStyle.rawWidthPercent {
             // Re-resolve percentage widths relative to render width, not font size
             attachmentStyle.width = config.renderWidth * widthValue / 100.0
-        } else if let width = imageElement.resolvedStyle.width {
+        } else if let width = imageElement.resolvedStyle.width ?? attachmentStyle.width {
             attachmentStyle.width = width
         }
-        if let height = imageElement.resolvedStyle.height {
+        if let height = imageElement.resolvedStyle.height ?? attachmentStyle.height {
             attachmentStyle.height = height
         }
         attachmentStyle.paddingLeft += imageElement.resolvedStyle.paddingLeft
@@ -971,6 +974,28 @@ final class HTMLAttributedStringBuilder {
             ?? element.attributes["xlink:href"]
             ?? element.attributes["href"]
             ?? ""
+    }
+
+    private func resolveSVGPresentationAttributes(
+        _ element: ElementNode,
+        style: inout ResolvedStyle,
+        config: Config
+    ) {
+        // SVG width/height presentation attributes (not CSS)
+        if style.width == nil, let svgW = element.attributes["width"],
+           let w = resolveLength(svgW, currentFontSize: style.fontSize, rootFontSize: config.fontSize, relativeBase: config.renderWidth) {
+            style.width = w
+            if svgW.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("%"), let pct = Double(svgW.trimmingCharacters(in: .whitespacesAndNewlines).dropLast()) {
+                style.rawWidthPercent = CGFloat(pct)
+            }
+        }
+        if style.height == nil, let svgH = element.attributes["height"],
+           let h = resolveLength(svgH, currentFontSize: style.fontSize, rootFontSize: config.fontSize, relativeBase: config.renderWidth) {
+            style.height = h
+            if svgH.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("%"), let pct = Double(svgH.trimmingCharacters(in: .whitespacesAndNewlines).dropLast()) {
+                style.rawHeightPercent = CGFloat(pct)
+            }
+        }
     }
 
     private func baseTextAttributes(style: ResolvedStyle, config: Config) -> [NSAttributedString.Key: Any] {
