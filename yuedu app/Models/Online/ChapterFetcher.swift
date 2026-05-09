@@ -35,13 +35,9 @@ struct ChapterFetcher {
     static let shared = ChapterFetcher()
 
     func buildNormalizedHTML(title: String, content: String) -> String {
-        let paragraphLines = content
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
         return ReaderHTMLUtilities.normalizedChapterHTML(
             title: title,
-            paragraphs: paragraphLines
+            paragraphs: ReaderHTMLUtilities.paragraphs(fromPlainText: content)
         )
     }
 

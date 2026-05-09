@@ -951,7 +951,8 @@ final class SnapshotPageViewController: UIViewController {
         self.coreTextReadingPosition = readingPosition
         super.init(nibName: nil, bundle: nil)
         imageView.image = image
-        imageView.contentMode = .scaleAspectFit
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
         view.backgroundColor = backgroundColor
     }
 

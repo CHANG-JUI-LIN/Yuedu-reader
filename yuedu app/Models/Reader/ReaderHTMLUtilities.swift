@@ -1,6 +1,31 @@
 import Foundation
 
 enum ReaderHTMLUtilities {
+    static func paragraphs(fromPlainText text: String) -> [String] {
+        let normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: #"[ \t\f\v]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !normalized.isEmpty else { return [] }
+
+        let explicitParagraphs = normalized
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard explicitParagraphs.count <= 1,
+              let onlyParagraph = explicitParagraphs.first,
+              onlyParagraph.count >= 420 else {
+            return explicitParagraphs
+        }
+
+        return sentenceChunks(from: onlyParagraph)
+    }
+
     static func normalizedChapterHTML(
         title: String,
         paragraphs: [String],
@@ -42,5 +67,34 @@ enum ReaderHTMLUtilities {
         result = result.replacingOccurrences(of: ">", with: "&gt;")
         result = result.replacingOccurrences(of: "\"", with: "&quot;")
         return result
+    }
+
+    private static func sentenceChunks(from text: String) -> [String] {
+        var chunks: [String] = []
+        var current = ""
+        let strongBreaks = Set("。！？!?；;")
+        let weakBreaks = Set("，,、")
+
+        func flush() {
+            let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                chunks.append(trimmed)
+            }
+            current = ""
+        }
+
+        for character in text {
+            current.append(character)
+            if strongBreaks.contains(character), current.count >= 180 {
+                flush()
+            } else if weakBreaks.contains(character), current.count >= 260 {
+                flush()
+            } else if current.count >= 360 {
+                flush()
+            }
+        }
+
+        flush()
+        return chunks.isEmpty ? [text] : chunks
     }
 }

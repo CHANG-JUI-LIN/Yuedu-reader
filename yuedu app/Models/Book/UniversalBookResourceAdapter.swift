@@ -155,13 +155,9 @@ final class UniversalBookResourceAdapter: BookResourceProvider {
             return rewriteResourceReferences(in: renderHTML, baseURLString: baseURL)
         }
 
-        let paragraphs = payload.content
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
         return ReaderHTMLUtilities.normalizedChapterHTML(
             title: payload.title,
-            paragraphs: paragraphs
+            paragraphs: ReaderHTMLUtilities.paragraphs(fromPlainText: payload.content)
         )
     }
 

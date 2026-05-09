@@ -70,8 +70,8 @@ struct FileImportTab: View {
         ScrollView {
             VStack(spacing: 24) {
                 HintCard(
-                    icon: "doc.text", title: localized("支援格式：TXT / Markdown / EPUB"),
-                    detail: localized("支援純文字（.txt / .md / .markdown）與電子書（.epub）格式。選取後系統自動識別章節結構。"))
+                    icon: "doc.text", title: localized("支援格式：TXT / Markdown / JSON / EPUB"),
+                    detail: localized("支援純文字（.txt / .md / .markdown / .json）與電子書（.epub）格式。選取後系統自動識別章節結構。"))
 
                 if let content = pendingContent {
                     VStack(alignment: .leading, spacing: 12) {
@@ -238,6 +238,7 @@ struct FileImportTab: View {
                 UTType.plainText,
                 UTType(filenameExtension: "md") ?? .plainText,
                 UTType(filenameExtension: "markdown") ?? .plainText,
+                .json,
                 UTType.epub,
             ]
         ) { result in
@@ -331,7 +332,7 @@ struct FileImportTab: View {
                     titleInput = parsedTitle.isEmpty ? name : parsedTitle
                     authorInput = parsed?.author == "未知作者" ? "" : (parsed?.author ?? "")
                 } else {
-                    errorMsg = localized("無法讀取文件，請確認格式為 TXT / Markdown")
+                    errorMsg = localized("無法讀取文件，請確認格式為 TXT / Markdown / JSON")
                 }
             }
         }

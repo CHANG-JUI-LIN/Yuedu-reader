@@ -1312,7 +1312,7 @@ final class HTMLAttributedStringBuilder {
             isItalic: parent.isItalic,
             textColor: parent.textColor,
             textAlign: parent.textAlign,
-            textIndent: tag == "p" ? parent.textIndent : 0,
+            textIndent: parent.textIndent,
             lineHeight: parent.lineHeight,
             lineHeightExplicit: parent.lineHeightExplicit,
             paragraphSpacing: parent.paragraphSpacing,

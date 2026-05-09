@@ -192,10 +192,7 @@ struct OnlineNodeAttributedStringBuilder: AttributedStringBuilding {
             fetcher.clearChapterCache(bookId: bookId, chapterIndex: index)
             throw AttributedStringBuildingError.contentNotCached(index)
         }
-        let paragraphs = content
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let paragraphs = ReaderHTMLUtilities.paragraphs(fromPlainText: content)
 
         let chapter = UnifiedChapter(
             index: index,
