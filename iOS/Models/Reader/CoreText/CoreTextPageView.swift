@@ -348,6 +348,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate {
                 let hrStyle = hrValue as? HTMLAttributedStringBuilder.HRDividerStyle
                 let hrColor = hrStyle?.color ?? UIColor.separator
                 let hrWidth = hrStyle?.lineWidth ?? 0.5
+                print("[HR] drawing at origin=\(origin) contentWidth=\(contentWidth) color=\(hrColor) width=\(hrWidth)")
                 ctx.saveGState()
                 ctx.setStrokeColor(hrColor.cgColor)
                 ctx.setLineWidth(hrWidth)
