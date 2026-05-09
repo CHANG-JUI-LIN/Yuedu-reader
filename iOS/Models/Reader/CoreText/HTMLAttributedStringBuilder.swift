@@ -422,6 +422,9 @@ final class HTMLAttributedStringBuilder {
             // 避免它們被 CoreText 歸入下一個 paragraph，污染該段落的 paragraphStyle
             if rendered.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                !containsRenderableMetadata(rendered) {
+                if case .element(let el) = node, el.tag == "hr" {
+                    print("[HR] renderBlockChildren SKIPPED hr despite containsRenderableMetadata=false, len=\(rendered.length)")
+                }
                 continue
             }
             appendNode(rendered, to: output)
@@ -571,6 +574,7 @@ final class HTMLAttributedStringBuilder {
             ? style.borderTopWidth
             : (style.height.flatMap { $0 > 0 ? $0 : nil } ?? 0.5)
         let hrStyle = HRDividerStyle(color: hrColor, lineWidth: hrLineWidth)
+        print("[HR] makeHRDivider color=\(hrColor) lineWidth=\(hrLineWidth) borderTop=\(style.borderTopWidth)")
 
         return NSAttributedString(
             string: "\n",
@@ -589,6 +593,7 @@ final class HTMLAttributedStringBuilder {
     ) async -> NSAttributedString {
         // hr: 回傳帶有 hrDividerAttribute 的分隔線佔位
         if element.tag == "hr" {
+            print("[HR] renderBlockElement tag=hr isBlock=\(element.resolvedStyle.isBlock)")
             return makeHRDivider(style: element.resolvedStyle, config: config)
         }
 
