@@ -129,6 +129,13 @@ final class HTMLAttributedStringBuilder {
     struct HRDividerStyle {
         let color: UIColor?
         let lineWidth: CGFloat?
+        let ruleWidth: CGFloat?
+        let ruleWidthPercent: CGFloat?
+        let marginLeft: CGFloat
+        let marginRight: CGFloat
+        let inheritedBlockMarginLeft: CGFloat
+        let alignment: NSTextAlignment
+        let isHorizontallyCentered: Bool
     }
 
     struct BlockRenderStyle {
@@ -592,7 +599,20 @@ final class HTMLAttributedStringBuilder {
         let hrLineWidth = style.borderTopWidth > 0
             ? style.borderTopWidth
             : (style.height.flatMap { $0 > 0 ? $0 : nil } ?? 0.5)
-        let hrStyle = HRDividerStyle(color: hrColor, lineWidth: hrLineWidth)
+        // Rule width: explicit width, percentage of content width, or nil (full width)
+        let ruleWidth: CGFloat? = style.width
+        let ruleWidthPercent: CGFloat? = style.rawWidthPercent
+        let hrStyle = HRDividerStyle(
+            color: hrColor,
+            lineWidth: hrLineWidth,
+            ruleWidth: ruleWidth,
+            ruleWidthPercent: ruleWidthPercent,
+            marginLeft: style.marginLeft,
+            marginRight: style.marginRight,
+            inheritedBlockMarginLeft: style.inheritedBlockMarginLeft,
+            alignment: style.textAlign,
+            isHorizontallyCentered: style.isHorizontallyCentered
+        )
 
         return NSAttributedString(
             string: "\n",
@@ -1127,10 +1147,10 @@ final class HTMLAttributedStringBuilder {
 
         for family in familyCandidates {
             if let font = exactFont(named: family, size: style.fontSize, weight: style.fontWeight, italic: style.isItalic) {
-                return font
+                return wrapCJKFont(font, size: style.fontSize)
             }
             if let font = familyFont(named: family, size: style.fontSize, weight: style.fontWeight, italic: style.isItalic) {
-                return font
+                return wrapCJKFont(font, size: style.fontSize)
             }
         }
 
@@ -1143,6 +1163,27 @@ final class HTMLAttributedStringBuilder {
             }
         }
         return UIFont(descriptor: system.fontDescriptor.addingAttributes(cascadeAttributes()), size: style.fontSize)
+    }
+
+    /// When the primary font is a CJK font, swap the primary to Georgia so Latin glyphs
+    /// (curly quotes, punctuation, letters) render with proper serif shapes. The CJK font
+    /// is preserved in the cascade list so Chinese / Japanese / Korean text still uses it.
+    private func wrapCJKFont(_ font: UIFont, size: CGFloat) -> UIFont {
+        guard isCJKFont(font) else { return font }
+        guard let georgia = UIFont(name: "Georgia", size: size) else { return font }
+        var desc = georgia.fontDescriptor
+        let cjkDesc = font.fontDescriptor
+        let fallbackDescs = [cjkDesc]
+            + ["PingFangSC-Regular", "STHeitiSC-Light", "AppleColorEmoji"]
+                .compactMap { UIFontDescriptor(name: $0, size: 0) }
+        desc = desc.addingAttributes([.cascadeList: fallbackDescs])
+        return UIFont(descriptor: desc, size: size)
+    }
+
+    private func isCJKFont(_ font: UIFont) -> Bool {
+        var ch: UniChar = 0x4E2D
+        var glyph: CGGlyph = 0
+        return CTFontGetGlyphsForCharacters(font as CTFont, &ch, &glyph, 1) && glyph != 0
     }
 
     private func exactFont(named name: String, size: CGFloat, weight: Int, italic: Bool) -> UIFont? {

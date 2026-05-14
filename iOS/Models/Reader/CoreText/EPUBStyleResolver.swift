@@ -108,7 +108,8 @@ final class EPUBStyleResolver {
                 descriptor = styledDescriptor
             }
             descriptor = descriptor.addingAttributes([.cascadeList: fontCascadeDescriptors()])
-            return UIFont(descriptor: descriptor, size: size)
+            let result = UIFont(descriptor: descriptor, size: size)
+            return wrapCJKFont(result, size: size)
         }
 
         return nil
@@ -333,5 +334,23 @@ final class EPUBStyleResolver {
     private func fontCascadeDescriptors() -> [UIFontDescriptor] {
         ["Georgia", "PingFangSC-Regular", "STHeitiSC-Light", "AppleColorEmoji"]
             .compactMap { UIFontDescriptor(name: $0, size: 0) }
+    }
+
+    private func wrapCJKFont(_ font: UIFont, size: CGFloat) -> UIFont {
+        guard isCJKFont(font) else { return font }
+        guard let georgia = UIFont(name: "Georgia", size: size) else { return font }
+        var desc = georgia.fontDescriptor
+        let cjkDesc = font.fontDescriptor
+        let fallbackDescs = [cjkDesc]
+            + ["PingFangSC-Regular", "STHeitiSC-Light", "AppleColorEmoji"]
+                .compactMap { UIFontDescriptor(name: $0, size: 0) }
+        desc = desc.addingAttributes([.cascadeList: fallbackDescs])
+        return UIFont(descriptor: desc, size: size)
+    }
+
+    private func isCJKFont(_ font: UIFont) -> Bool {
+        var ch: UniChar = 0x4E2D
+        var glyph: CGGlyph = 0
+        return CTFontGetGlyphsForCharacters(font as CTFont, &ch, &glyph, 1) && glyph != 0
     }
 }

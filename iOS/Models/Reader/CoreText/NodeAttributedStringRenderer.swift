@@ -358,14 +358,16 @@ struct NodeAttributedStringRenderer {
         let bold = weight >= 600
         let candidateFamilies = families + (config.fontFamily.map { [$0] } ?? [])
         if let resolved = config.resolvedFont?(candidateFamilies, weight, italic, size) {
-            return resolved
+            return wrapCJKFont(resolved, size: size)
         }
 
         for family in candidateFamilies {
             let trimmed = family.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "'\"")))
             guard !trimmed.isEmpty else { continue }
             if let font = UIFont(name: trimmed, size: size) {
-                return applyTraits(to: font, bold: bold, italic: italic, size: size)
+                let withTraits = applyTraits(to: font, bold: bold, italic: italic, size: size)
+                let descriptor = withTraits.fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes())
+                return wrapCJKFont(UIFont(descriptor: descriptor, size: size), size: size)
             }
         }
 
@@ -374,15 +376,15 @@ struct NodeAttributedStringRenderer {
             var traits = system.fontDescriptor.symbolicTraits
             traits.insert(.traitItalic)
             if let descriptor = system.fontDescriptor.withSymbolicTraits(traits) {
-                return UIFont(descriptor: descriptor, size: size)
+                return UIFont(descriptor: descriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
             }
-            return system
+            return UIFont(descriptor: system.fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
         } else if bold {
-            return UIFont.systemFont(ofSize: size, weight: .bold)
+            return UIFont(descriptor: UIFont.systemFont(ofSize: size, weight: .bold).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
         } else if italic {
-            return UIFont.italicSystemFont(ofSize: size)
+            return UIFont(descriptor: UIFont.italicSystemFont(ofSize: size).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
         } else {
-            return UIFont.systemFont(ofSize: size)
+            return UIFont(descriptor: UIFont.systemFont(ofSize: size).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
         }
     }
 
@@ -397,15 +399,40 @@ struct NodeAttributedStringRenderer {
         if bold && italic {
             let system = UIFont.systemFont(ofSize: size, weight: .bold)
             if let desc = system.fontDescriptor.withSymbolicTraits([.traitBold, .traitItalic]) {
-                return UIFont(descriptor: desc, size: size)
+                return UIFont(descriptor: desc.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
             }
-            return system
+            return UIFont(descriptor: system.fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
         } else if bold {
-            return UIFont.systemFont(ofSize: size, weight: .bold)
+            return UIFont(descriptor: UIFont.systemFont(ofSize: size, weight: .bold).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
         } else if italic {
-            return UIFont.italicSystemFont(ofSize: size)
+            return UIFont(descriptor: UIFont.italicSystemFont(ofSize: size).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
         }
-        return UIFont(descriptor: font.fontDescriptor, size: size)
+        return UIFont(descriptor: font.fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
+    }
+
+    private static func cascadeAttributes() -> [UIFontDescriptor.AttributeName: Any] {
+        let fallbacks = ["Georgia", "PingFangSC-Regular", "STHeitiSC-Light", "AppleColorEmoji"]
+            .compactMap { UIFontDescriptor(name: $0, size: 0) }
+        guard !fallbacks.isEmpty else { return [:] }
+        return [.cascadeList: fallbacks]
+    }
+
+    private func wrapCJKFont(_ font: UIFont, size: CGFloat) -> UIFont {
+        guard isCJKFont(font) else { return font }
+        guard let georgia = UIFont(name: "Georgia", size: size) else { return font }
+        var desc = georgia.fontDescriptor
+        let cjkDesc = font.fontDescriptor
+        let fallbackDescs = [cjkDesc]
+            + ["PingFangSC-Regular", "STHeitiSC-Light", "AppleColorEmoji"]
+                .compactMap { UIFontDescriptor(name: $0, size: 0) }
+        desc = desc.addingAttributes([.cascadeList: fallbackDescs])
+        return UIFont(descriptor: desc, size: size)
+    }
+
+    private func isCJKFont(_ font: UIFont) -> Bool {
+        var ch: UniChar = 0x4E2D
+        var glyph: CGGlyph = 0
+        return CTFontGetGlyphsForCharacters(font as CTFont, &ch, &glyph, 1) && glyph != 0
     }
 
     // MARK: - Images / Block Decoration
