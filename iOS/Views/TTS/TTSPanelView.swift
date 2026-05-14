@@ -247,7 +247,7 @@ struct TTSPanelView: View {
                     }
                 }
             }
-            .onChange(of: tts.currentSegmentIndex) { _ in
+            .onChange(of: tts.currentSegmentIndex) { _, _ in
                 if !isScrubbing {
                     scrubProgress = playbackProgress
                 }

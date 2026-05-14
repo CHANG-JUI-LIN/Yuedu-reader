@@ -642,7 +642,7 @@ struct ReaderView: View {
             autoReader.pause()
             setTTSFloatingOverlayVisible(false)
         }
-        .onChange(of: scenePhase) { phase in
+        .onChanged(of: scenePhase) { phase in
             ttsLog("[TTS][Reader] scenePhase=\(String(describing: phase)) ttsPlaying=\(ttsCoordinator.isPlaying)")
             if phase == .background || phase == .inactive {
                 ttsCoordinator.refreshNowPlayingForSystemSurfaces()
@@ -669,10 +669,10 @@ struct ReaderView: View {
         ) { _ in
             performUnifiedRelayout(targetSize: readerViewportSize)
         }
-        .onChange(of: settings.readerBrightness) { val in
+        .onChanged(of: settings.readerBrightness) { val in
             if !settings.followSystemBrightness { UIScreen.main.brightness = CGFloat(val) }
         }
-        .onChange(of: settings.followSystemBrightness) { follow in
+        .onChanged(of: settings.followSystemBrightness) { follow in
             if follow {
                 syncReaderBrightnessFromSystem()
             } else {
@@ -697,7 +697,7 @@ struct ReaderView: View {
         .onReceive(readerViewModel.$chapterStates) { states in
             handleChapterStateChanges(states)
         }
-        .onChange(of: settings.pageTurnStyle) { _ in
+        .onChanged(of: settings.pageTurnStyle) { _ in
             if settings.pageTurnStyle == .curl {
                 beginCurlStartupTrace(reason: "style_changed")
             } else {
@@ -705,22 +705,22 @@ struct ReaderView: View {
                 hasLoggedCurlInteractiveReady = false
             }
         }
-        .onChange(of: settings.readerWritingMode) { _ in
+        .onChanged(of: settings.readerWritingMode) { _ in
             handleReaderConfigRefresh(.layout)
         }
-        .onChange(of: book?.bookmarks ?? []) { _ in
+        .onChanged(of: book?.bookmarks ?? []) { _ in
             syncCoreTextTextAnnotations()
         }
-        .onChange(of: showBars) { visible in
+        .onChanged(of: showBars) { visible in
             setTTSFloatingOverlayVisible(visible)
         }
-        .onChange(of: currentChapterIndex) { newChapter in
+        .onChanged(of: currentChapterIndex) { newChapter in
             handleReaderChapterChangedForTTS(newChapter)
         }
         .onReceive(NotificationCenter.default.publisher(for: .ttsFloatingPlayerOpenPanel)) { _ in
             showTTSPanel = true
         }
-        .onChange(of: scrollVisibleChapter) { _ in
+        .onChanged(of: scrollVisibleChapter) { _ in
             autoSaveProgress()
         }
         .sheet(isPresented: $showSettings) {
@@ -784,19 +784,19 @@ struct ReaderView: View {
                 changeSourceSheetContent
             }
         }
-        .onChange(of: showChangeSourceSheet) { show in
+        .onChanged(of: showChangeSourceSheet) { show in
             if show { loadOtherOrigins() }
         }
-        .onChange(of: epubRenderer.isCoreTextReady) { ready in
+        .onChanged(of: epubRenderer.isCoreTextReady) { ready in
             if ready {
                 syncCoreTextTextAnnotations()
                 applyInitialProgressIfNeeded()
             }
         }
-        .onChange(of: allPages.count) { _ in
+        .onChanged(of: allPages.count) { _ in
             applyInitialProgressIfNeeded()
         }
-        .onChange(of: chapters.count) { _ in
+        .onChanged(of: chapters.count) { _ in
             applyInitialProgressIfNeeded()
         }
         )
@@ -1119,15 +1119,7 @@ struct ReaderView: View {
             )
             .background(readerTheme.backgroundColor)
             .ignoresSafeArea()
-            .onChange(of: readerConfig.fontSize) { _ in scheduleScrollReslice() }
-            .onChange(of: readerConfig.lineHeightMultiple) { _ in scheduleScrollReslice() }
-            .onChange(of: readerConfig.letterSpacing) { _ in scheduleScrollReslice() }
-            .onChange(of: readerConfig.paragraphSpacingMultiplier) { _ in scheduleScrollReslice() }
-            .onChange(of: readerConfig.pageMarginH) { _ in scheduleScrollReslice() }
-            .onChange(of: readerConfig.pageMarginV) { _ in scheduleScrollReslice() }
-            .onChange(of: readerConfig.footerBottomPadding) { _ in scheduleScrollReslice() }
-            .onChange(of: readerConfig.footerTextGap) { _ in scheduleScrollReslice() }
-            .onChange(of: readerTheme) { _ in scheduleScrollReslice() }
+            .modifier(ScrollConfigObserver(readerConfig: readerConfig, readerTheme: readerTheme) { scheduleScrollReslice() })
         } else {
             legacyScrollBody
         }
@@ -2034,25 +2026,55 @@ struct ReaderView: View {
         let document = BookDocumentFactory.makeEPUBDocument(book: book, session: session)
         applyDocument(document)
 
-        let tocLevelMap: [String: Int] = Dictionary(
-            session.tocEntries.map { ($0.href, $0.level) },
-            uniquingKeysWith: { first, _ in first }
-        )
-
-        chapters = session.chapters.map { chapter in
-            let level =
-                tocLevelMap[chapter.href]
-                ?? tocLevelMap.first(where: {
-                    chapter.href.hasSuffix($0.key) || $0.key.hasSuffix(chapter.href)
-                })?.value
-                ?? 0
-            return BookChapter(
-                index: chapter.index,
-                title: chapter.title,
-                content: "",
-                href: chapter.href,
-                level: level
+        // Prefer EPUB toc.ncx / nav.xhtml entries. Only fall back to spine when TOC is missing.
+        if !session.tocEntries.isEmpty {
+            let spineIndexByHref: [String: Int] = Dictionary(
+                session.chapters.map { ($0.href, $0.index) },
+                uniquingKeysWith: { first, _ in first }
             )
+
+            var seenTitles: Set<String> = []
+            chapters = session.tocEntries.compactMap { entry -> BookChapter? in
+                // Strip fragment from TOC href for spine matching (e.g. "part0005.html#anchor" → "part0005.html")
+                let hrefWithoutFragment: String
+                if let hashIndex = entry.href.firstIndex(of: "#") {
+                    hrefWithoutFragment = String(entry.href[..<hashIndex])
+                } else {
+                    hrefWithoutFragment = entry.href
+                }
+
+                let resolvedIndex = spineIndexByHref[hrefWithoutFragment]
+                    ?? spineIndexByHref.first(where: {
+                        hrefWithoutFragment.hasSuffix($0.key) || $0.key.hasSuffix(hrefWithoutFragment)
+                    })?.value
+                    ?? 0
+
+                // Dedupe consecutive identically-titled entries (e.g. multiple Contents pages)
+                let normalizedTitle = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                if normalizedTitle.isEmpty { return nil }
+                let dedupeKey = "\(resolvedIndex):\(normalizedTitle)"
+                if seenTitles.contains(dedupeKey) { return nil }
+                seenTitles.insert(dedupeKey)
+
+                return BookChapter(
+                    index: resolvedIndex,
+                    title: entry.title,
+                    content: "",
+                    href: hrefWithoutFragment,
+                    level: entry.level
+                )
+            }
+        } else {
+            // Fallback: spine-only
+            chapters = session.chapters.map { chapter in
+                BookChapter(
+                    index: chapter.index,
+                    title: chapter.title,
+                    content: "",
+                    href: chapter.href,
+                    level: 0
+                )
+            }
         }
         if chapters.isEmpty {
             chapters = [BookChapter(index: 0, title: session.bookTitle, content: "")]
@@ -2587,6 +2609,27 @@ struct ReaderMenuView: View {
         }
     }
 }
+// MARK: - Scroll Config Observer
+
+private struct ScrollConfigObserver: ViewModifier {
+    let readerConfig: ReaderConfig
+    let readerTheme: ReaderTheme
+    let onChanged: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChanged(of: readerConfig.fontSize) { _ in onChanged() }
+            .onChanged(of: readerConfig.lineHeightMultiple) { _ in onChanged() }
+            .onChanged(of: readerConfig.letterSpacing) { _ in onChanged() }
+            .onChanged(of: readerConfig.paragraphSpacingMultiplier) { _ in onChanged() }
+            .onChanged(of: readerConfig.pageMarginH) { _ in onChanged() }
+            .onChanged(of: readerConfig.pageMarginV) { _ in onChanged() }
+            .onChanged(of: readerConfig.footerBottomPadding) { _ in onChanged() }
+            .onChanged(of: readerConfig.footerTextGap) { _ in onChanged() }
+            .onChanged(of: readerTheme) { _ in onChanged() }
+    }
+}
+
 // MARK: - Hide TabBar
 private struct HideTabBarModifier: ViewModifier {
     func body(content: Content) -> some View {
@@ -3422,5 +3465,13 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             coverTargetPage = nil
             coverDirection = 0
         }
+    }
+}
+
+// MARK: - onChange helper
+
+extension View {
+    func onChanged<V: Equatable>(of value: V, _ action: @escaping (V) -> Void) -> some View {
+        self.onChange(of: value) { _, newValue in action(newValue) }
     }
 }

@@ -155,7 +155,7 @@ struct HomeView: View {
                         .environmentObject(store)
                 }
             }
-            .onChange(of: showAddSheet) { isPresented in
+            .onChange(of: showAddSheet) { _, isPresented in
                 if isPresented {
                     addSheetSessionID = UUID()
                 }

@@ -42,7 +42,7 @@ struct BookSourceRuleDebugView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 8)
                 .background(Color(.systemGray6))
-                .onChange(of: selectedTab) { _ in engine.clear() }
+                .onChange(of: selectedTab) { _, _ in engine.clear() }
 
                 // Input area
                 VStack(spacing: 8) {

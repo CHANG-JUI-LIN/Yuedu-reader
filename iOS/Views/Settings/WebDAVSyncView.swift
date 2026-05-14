@@ -39,7 +39,7 @@ struct WebDAVSyncView: View {
             } message: {
                 Text(alertMessage)
             }
-            .onChange(of: manager.pendingConflict != nil) { hasConflict in
+            .onChange(of: manager.pendingConflict != nil) { _, hasConflict in
                 if hasConflict { showConflictAlert = true }
             }
             .alert(localized("偵測到備份衝突"), isPresented: $showConflictAlert) {

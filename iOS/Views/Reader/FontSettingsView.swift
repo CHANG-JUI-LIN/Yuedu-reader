@@ -167,7 +167,7 @@ struct FontSettingsView: View {
                         Image(systemName: "sun.min").foregroundColor(DSColor.textSecondary)
                         Slider(value: $settings.readerBrightness, in: 0.05...1.0, step: 0.05)
                             .disabled(settings.followSystemBrightness)
-                            .onChange(of: settings.readerBrightness) { val in
+                            .onChange(of: settings.readerBrightness) { _, val in
                                 if !settings.followSystemBrightness {
                                     UIScreen.main.brightness = CGFloat(val)
                                 }

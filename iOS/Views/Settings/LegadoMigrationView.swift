@@ -158,7 +158,7 @@ struct LegadoMigrationView: View {
                     .padding(.vertical, 4)
                 }
                 .frame(maxHeight: 200)
-                .onChange(of: manager.statusLog.count) { count in
+                .onChange(of: manager.statusLog.count) { _, count in
                     let lastIndex = min(count, 20) - 1
                     if lastIndex >= 0 {
                         withAnimation { proxy.scrollTo(lastIndex, anchor: .bottom) }
