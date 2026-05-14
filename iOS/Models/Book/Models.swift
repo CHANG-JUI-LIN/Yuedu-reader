@@ -557,9 +557,12 @@ extension ReadingBook {
 
 enum ReaderLayoutMetrics {
     static let footerHeight: CGFloat = 16
+    static let defaultFooterBottomPadding: CGFloat = 4
+    static let defaultFooterTextGap: CGFloat = 0
+
     /// Extra space below the footer text to the screen bottom edge.
-    /// Text area bottom = safeBottom + footerHeight + footerPadding.
-    static let footerPadding: CGFloat = 4
+    /// Text area bottom = safeBottom + footerBottomPadding + footerHeight + footerTextGap.
+    static let footerPadding: CGFloat = defaultFooterBottomPadding
     static let minimumVerticalPadding: CGFloat = 24
     static let topSafeAreaExtra: CGFloat = 10
 
@@ -567,8 +570,13 @@ enum ReaderLayoutMetrics {
         max(minimumVerticalPadding, safeTop + topSafeAreaExtra)
     }
 
-    static func bottomInset(safeBottom: CGFloat, footerHeight: CGFloat = footerHeight) -> CGFloat {
-        safeBottom + footerHeight + footerPadding
+    static func bottomInset(
+        safeBottom: CGFloat,
+        footerHeight: CGFloat = footerHeight,
+        footerBottomPadding: CGFloat = defaultFooterBottomPadding,
+        footerTextGap: CGFloat = defaultFooterTextGap
+    ) -> CGFloat {
+        safeBottom + footerBottomPadding + footerHeight + footerTextGap
     }
 }
 

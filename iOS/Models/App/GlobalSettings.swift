@@ -90,6 +90,8 @@ final class ReaderConfig: ObservableObject {
     @Published var paragraphSpacingMultiplier: CGFloat
     @Published var pageMarginH: CGFloat
     @Published var pageMarginV: CGFloat
+    @Published var footerBottomPadding: CGFloat
+    @Published var footerTextGap: CGFloat
     @Published var theme: ReaderTheme
 
     var lineSpacing: CGFloat {
@@ -113,6 +115,8 @@ final class ReaderConfig: ObservableObject {
         paragraphSpacingMultiplier = CGFloat(gs.paragraphSpacingMultiplier)
         pageMarginH = CGFloat(gs.pageMarginH)
         pageMarginV = CGFloat(gs.pageMarginV)
+        footerBottomPadding = CGFloat(gs.footerBottomPadding)
+        footerTextGap = CGFloat(gs.footerTextGap)
         theme = ReaderTheme.loadPersisted()
         setupBindings()
     }
@@ -126,6 +130,8 @@ final class ReaderConfig: ObservableObject {
         paragraphSpacingMultiplier = CGFloat(gs.paragraphSpacingMultiplier)
         pageMarginH = CGFloat(gs.pageMarginH)
         pageMarginV = CGFloat(gs.pageMarginV)
+        footerBottomPadding = CGFloat(gs.footerBottomPadding)
+        footerTextGap = CGFloat(gs.footerTextGap)
         theme = ReaderTheme.loadPersisted()
         suppressRefresh = false
     }
@@ -133,12 +139,14 @@ final class ReaderConfig: ObservableObject {
     private func setupBindings() {
         let layoutPublisher = Publishers.CombineLatest4($fontSize, $lineHeightMultiple, $letterSpacing, $paragraphSpacingMultiplier)
             .combineLatest($pageMarginH, $pageMarginV)
+            .combineLatest($footerBottomPadding, $footerTextGap)
             .debounce(for: .milliseconds(120), scheduler: RunLoop.main)
 
         layoutPublisher
             .dropFirst()
-            .sink { [weak self] combined, marginH, marginV in
+            .sink { [weak self] layout, footerBottomPadding, footerTextGap in
                 guard let self else { return }
+                let (combined, marginH, marginV) = layout
                 let (fontSize, lineHeightMultiple, letterSpacing, paragraphSpacingMultiplier) = combined
                 let gs = GlobalSettings.shared
                 gs.readerFontSize = Double(fontSize)
@@ -147,6 +155,8 @@ final class ReaderConfig: ObservableObject {
                 gs.paragraphSpacingMultiplier = Double(paragraphSpacingMultiplier)
                 gs.pageMarginH = Double(marginH)
                 gs.pageMarginV = Double(marginV)
+                gs.footerBottomPadding = Double(footerBottomPadding)
+                gs.footerTextGap = Double(footerTextGap)
                 guard !self.suppressRefresh else { return }
                 self.refresh.send(.layout)
             }
@@ -239,6 +249,12 @@ class GlobalSettings: ObservableObject {
     }
     @Published var pageMarginV: Double {
         didSet { UserDefaults.standard.set(pageMarginV, forKey: "yd_page_margin_v") }
+    }
+    @Published var footerBottomPadding: Double {
+        didSet { UserDefaults.standard.set(footerBottomPadding, forKey: "yd_footer_bottom_padding") }
+    }
+    @Published var footerTextGap: Double {
+        didSet { UserDefaults.standard.set(footerTextGap, forKey: "yd_footer_text_gap") }
     }
     @Published var pageTurnStyle: PageTurnStyle {
         didSet { UserDefaults.standard.set(pageTurnStyle.rawValue, forKey: "yd_page_turn_style") }
@@ -359,6 +375,12 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_page_margin_h") as? Double) ?? 24.0
         pageMarginV =
             (UserDefaults.standard.object(forKey: "yd_page_margin_v") as? Double) ?? 16.0
+        footerBottomPadding =
+            (UserDefaults.standard.object(forKey: "yd_footer_bottom_padding") as? Double)
+            ?? Double(ReaderLayoutMetrics.defaultFooterBottomPadding)
+        footerTextGap =
+            (UserDefaults.standard.object(forKey: "yd_footer_text_gap") as? Double)
+            ?? Double(ReaderLayoutMetrics.defaultFooterTextGap)
         let rawPageTurn = UserDefaults.standard.string(forKey: "yd_page_turn_style") ?? ""
         pageTurnStyle = PageTurnStyle(rawValue: rawPageTurn) ?? .slide
         let rawWritingMode = UserDefaults.standard.string(forKey: "yd_reader_writing_mode") ?? ""

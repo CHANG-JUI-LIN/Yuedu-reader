@@ -70,7 +70,7 @@ struct ReaderOverlayFooter: View {
                 }
                 .foregroundColor(textColor.opacity(0.4))
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 16)
             .padding(.bottom, footerPadding)
         }
         .allowsHitTesting(false)
@@ -108,78 +108,3 @@ struct ReaderInlineFooter: View {
         .accessibilityLabel("第\(pageInfo)頁，進度\(progress)，\(clock.displayTime)")
     }
 }
-
-// MARK: - Previews
-
-#if DEBUG
-private struct FooterPreview: View {
-    @State private var footerPadding: CGFloat = 4
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Simulated page
-            GeometryReader { geo in
-                ZStack(alignment: .bottom) {
-                    Color(.systemGray6)
-
-                    // Simulated text content
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(0..<15, id: \.self) { i in
-                            Text("這是模擬的第 \(i + 1) 行正文內容，用來展示排版區底部到 footer 之間的距離關係。")
-                                .font(.system(size: 12))
-                                .foregroundColor(.primary.opacity(0.7))
-                                .lineLimit(1)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, ReaderLayoutMetrics.footerHeight + footerPadding)
-
-                    // Footer area boundary
-                    Rectangle()
-                        .fill(.clear)
-                        .frame(height: ReaderLayoutMetrics.footerHeight + 2)
-                        .overlay(alignment: .top) {
-                            Rectangle().frame(height: 1).foregroundColor(.red.opacity(0.5))
-                        }
-                        .overlay(alignment: .bottom) {
-                            Rectangle().frame(height: 1).foregroundColor(.red.opacity(0.5))
-                        }
-                        .padding(.bottom, footerPadding)
-
-                    // Footer
-                    VStack {
-                        Spacer()
-                        ReaderOverlayFooter(
-                            pageInfo: "42 / 156",
-                            progress: "26.9%",
-                            textColor: .white,
-                            footerPadding: footerPadding
-                        )
-                    }
-                }
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("footerPadding").font(.headline)
-                HStack {
-                    Text("\(Int(footerPadding))pt")
-                        .font(.system(size: 24, weight: .bold, design: .monospaced))
-                        .frame(width: 50, alignment: .trailing)
-                    Slider(value: $footerPadding, in: 0...24, step: 1)
-                }
-
-                Text("紅框 = footer 區域 (高度 16pt)").font(.caption).foregroundColor(.red.opacity(0.5))
-                Text("文字結束位置 = footer頂部，下方空白 = footerPadding").font(.caption).foregroundColor(.secondary)
-            }
-            .padding(12)
-        }
-        .preferredColorScheme(.dark)
-    }
-}
-
-#Preview("Footer") {
-    FooterPreview()
-}
-#endif

@@ -1029,7 +1029,7 @@ struct ReaderView: View {
             pageInfo: chapterPageInfo,
             progress: totalProgressPercent,
             textColor: readerTheme.textColor,
-            footerPadding: windowSafeBottom + ReaderLayoutMetrics.footerPadding
+            footerPadding: readerConfig.footerBottomPadding
         )
     }
 
@@ -1061,7 +1061,7 @@ struct ReaderView: View {
             pageInfo: info.pageInfo,
             progress: info.progress,
             textColor: readerTheme.textColor,
-            footerPadding: windowSafeBottom + ReaderLayoutMetrics.footerPadding
+            footerPadding: readerConfig.footerBottomPadding
         )
     }
 
@@ -1125,6 +1125,8 @@ struct ReaderView: View {
             .onChange(of: readerConfig.paragraphSpacingMultiplier) { _ in scheduleScrollReslice() }
             .onChange(of: readerConfig.pageMarginH) { _ in scheduleScrollReslice() }
             .onChange(of: readerConfig.pageMarginV) { _ in scheduleScrollReslice() }
+            .onChange(of: readerConfig.footerBottomPadding) { _ in scheduleScrollReslice() }
+            .onChange(of: readerConfig.footerTextGap) { _ in scheduleScrollReslice() }
             .onChange(of: readerTheme) { _ in scheduleScrollReslice() }
         } else {
             legacyScrollBody
@@ -1154,7 +1156,11 @@ struct ReaderView: View {
 
     private func buildRenderSettings() -> ReaderRenderSettings {
         let topInset = ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
-        let bottomInset = ReaderLayoutMetrics.bottomInset(safeBottom: windowSafeBottom)
+        let bottomInset = ReaderLayoutMetrics.bottomInset(
+            safeBottom: 0,
+            footerBottomPadding: readerConfig.footerBottomPadding,
+            footerTextGap: readerConfig.footerTextGap
+        )
         return ReaderRenderSettings(
             theme: readerTheme.rawValue,
             textColor: UIColor(readerTheme.textColor),
@@ -1377,8 +1383,7 @@ struct ReaderView: View {
     private var ttsJumpPromptCollapsedBottomPadding: CGFloat {
         let footerBandBottomFromBottom = max(
             0,
-            windowSafeBottom
-            + ReaderLayoutMetrics.footerPadding
+            readerConfig.footerBottomPadding
         )
         let footerBandCenterFromBottom = footerBandBottomFromBottom
             + ReaderLayoutMetrics.footerHeight / 2
@@ -1998,7 +2003,11 @@ struct ReaderView: View {
     // MARK: - Loading & Page Building
     private func currentRenderSettings(marginH: CGFloat) -> ReaderRenderSettings {
         let topInset = ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
-        let bottomInset = ReaderLayoutMetrics.bottomInset(safeBottom: windowSafeBottom)
+        let bottomInset = ReaderLayoutMetrics.bottomInset(
+            safeBottom: 0,
+            footerBottomPadding: readerConfig.footerBottomPadding,
+            footerTextGap: readerConfig.footerTextGap
+        )
         let lineHeightMultiple = max(1.0, readerConfig.lineHeightMultiple)
         return ReaderRenderSettings(
             theme: readerTheme.epubJSName,

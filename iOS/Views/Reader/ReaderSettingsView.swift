@@ -36,6 +36,8 @@ struct ReaderSettingsView: View {
     private let defaultLetterSpacing: CGFloat = 0
     private let defaultParagraphSpacingMultiplier: CGFloat = 0.8
     private let defaultPageMarginH: CGFloat = 24
+    private let defaultFooterBottomPadding = ReaderLayoutMetrics.defaultFooterBottomPadding
+    private let defaultFooterTextGap = ReaderLayoutMetrics.defaultFooterTextGap
 
     private enum PageTurnOption: String, CaseIterable, Hashable {
         case slide
@@ -319,6 +321,26 @@ struct ReaderSettingsView: View {
                             range: 8...48,
                             step: 2
                         )
+
+                        SettingsDivider()
+                        LayoutSliderRow(
+                            title: localized("底欄離底"),
+                            icon: .footerBottom,
+                            valueText: "\(Int(readerConfig.footerBottomPadding)) pt",
+                            value: $readerConfig.footerBottomPadding,
+                            range: 0...36,
+                            step: 1
+                        )
+
+                        SettingsDivider()
+                        LayoutSliderRow(
+                            title: localized("正文到底欄"),
+                            icon: .footerTextGap,
+                            valueText: "\(Int(readerConfig.footerTextGap)) pt",
+                            value: $readerConfig.footerTextGap,
+                            range: 0...48,
+                            step: 1
+                        )
                     }
                 }
             }
@@ -370,7 +392,9 @@ struct ReaderSettingsView: View {
         abs(readerConfig.lineHeightMultiple - defaultLineHeightMultiple) > 0.001 ||
             abs(readerConfig.letterSpacing - defaultLetterSpacing) > 0.001 ||
             abs(readerConfig.paragraphSpacingMultiplier - defaultParagraphSpacingMultiplier) > 0.001 ||
-            abs(readerConfig.pageMarginH - defaultPageMarginH) > 0.001
+            abs(readerConfig.pageMarginH - defaultPageMarginH) > 0.001 ||
+            abs(readerConfig.footerBottomPadding - defaultFooterBottomPadding) > 0.001 ||
+            abs(readerConfig.footerTextGap - defaultFooterTextGap) > 0.001
     }
 
     private func resetLayoutDefaults() {
@@ -378,6 +402,8 @@ struct ReaderSettingsView: View {
         readerConfig.letterSpacing = defaultLetterSpacing
         readerConfig.paragraphSpacingMultiplier = defaultParagraphSpacingMultiplier
         readerConfig.pageMarginH = defaultPageMarginH
+        readerConfig.footerBottomPadding = defaultFooterBottomPadding
+        readerConfig.footerTextGap = defaultFooterTextGap
     }
 
     private var pageTurnOptionBinding: Binding<PageTurnOption> {
@@ -478,6 +504,8 @@ private enum LayoutMetricIconKind {
     case characterSpacing
     case paragraphSpacing
     case pageMargin
+    case footerBottom
+    case footerTextGap
 }
 
 private struct SettingsSection<Content: View>: View {
@@ -606,6 +634,19 @@ private struct LayoutMetricIcon: View {
                         .padding(3)
                 }
                 .frame(width: 24, height: 24)
+        case .footerBottom:
+            VStack(spacing: 3) {
+                iconLine(width: 22)
+                Image(systemName: "arrow.down.to.line")
+                    .font(.system(size: 12, weight: .bold))
+            }
+        case .footerTextGap:
+            VStack(spacing: 3) {
+                iconLine(width: 22)
+                Image(systemName: "arrow.up.and.down")
+                    .font(.system(size: 12, weight: .bold))
+                iconLine(width: 14)
+            }
         }
     }
 

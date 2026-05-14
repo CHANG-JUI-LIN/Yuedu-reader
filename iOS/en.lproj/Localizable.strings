@@ -362,6 +362,8 @@
 "關閉" = "Close";
 "雲端備份來自裝置「\\(c.remote.deviceName)」（\\(remoteDate)）。本裝置上次同步：\\(localDate)。請選擇要使用哪個版本。" = "The cloud backup came from device \"\\(c.remote.deviceName)\" (\\(remoteDate)). This device last synced at \\(localDate). Choose which version to use.";
 "頁面留白" = "Page Margin";
+"底欄離底" = "Footer Bottom";
+"正文到底欄" = "Text to Footer";
 "點擊右上角 + 手動新增\\n或 ↓ 貼上 Legado 書源 JSON 匯入" = "Tap + in the top-right to add one manually\\nor use ↓ to paste Legado source JSON for import";
 "點擊選取 TXT / EPUB 文件" = "Tap to Select a TXT / EPUB File";
 

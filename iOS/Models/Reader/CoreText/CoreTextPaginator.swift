@@ -155,6 +155,7 @@ final class CoreTextPaginator {
                                anchorOffsets: anchorOffsets,
                                renderSize: renderSize,
                                fontSize: fontSize,
+                               lineSpacing: lineSpacing,
                                contentInsets: contentInsets,
                                writingMode: writingMode)
         }.value
@@ -183,10 +184,18 @@ final class CoreTextPaginator {
         anchorOffsets: [String: Int],
         renderSize: CGSize,
         fontSize: CGFloat,
+        lineSpacing: CGFloat,
         contentInsets: UIEdgeInsets,
         writingMode: ReaderWritingMode
     ) -> ChapterLayout {
         let attrStr = preparedAttributedString(attrStr, writingMode: writingMode)
+        let contentInsets = gridAlignedContentInsets(
+            contentInsets,
+            renderSize: renderSize,
+            fontSize: fontSize,
+            lineSpacing: lineSpacing,
+            writingMode: writingMode
+        )
         // Effective content area (UIKit coordinates: top-left origin)
         let contentRect = CGRect(
             x: contentInsets.left,
@@ -249,14 +258,6 @@ final class CoreTextPaginator {
             pageRanges.append(CFRangeMake(currentLocation, advance))
             currentLocation += advance
         }
-
-        applyOrphanControl(
-            framesetter: framesetter,
-            pageRanges: &pageRanges,
-            attrStr: attrStr,
-            contentPathRect: contentPathRect,
-            writingMode: writingMode
-        )
 
         let (inlineAttachments, blockAttachments, pageKinds) = extractImages(
             framesetter: framesetter,
@@ -327,6 +328,28 @@ final class CoreTextPaginator {
             range: NSRange(location: 0, length: mutable.length)
         )
         return mutable
+    }
+
+    private static func gridAlignedContentInsets(
+        _ contentInsets: UIEdgeInsets,
+        renderSize: CGSize,
+        fontSize: CGFloat,
+        lineSpacing: CGFloat,
+        writingMode: ReaderWritingMode
+    ) -> UIEdgeInsets {
+        guard !writingMode.isVertical else { return contentInsets }
+        let rawHeight = renderSize.height - contentInsets.top - contentInsets.bottom
+        let lineHeight = max(1, fontSize + lineSpacing)
+        let lineCount = floor(rawHeight / lineHeight)
+        guard lineCount >= 1 else { return contentInsets }
+
+        let alignedHeight = lineCount * lineHeight
+        let alignedBottom = renderSize.height - contentInsets.top - alignedHeight
+        guard alignedBottom.isFinite else { return contentInsets }
+
+        var insets = contentInsets
+        insets.bottom = max(contentInsets.bottom, alignedBottom)
+        return insets
     }
 
     /// Orphan and widow control:

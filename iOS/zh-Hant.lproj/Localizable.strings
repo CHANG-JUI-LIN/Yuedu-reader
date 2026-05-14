@@ -373,6 +373,8 @@
 "關閉" = "關閉";
 "雲端備份來自裝置「\\(c.remote.deviceName)」（\\(remoteDate)）。本裝置上次同步：\\(localDate)。請選擇要使用哪個版本。" = "雲端備份來自裝置「\\(c.remote.deviceName)」（\\(remoteDate)）。本裝置上次同步：\\(localDate)。請選擇要使用哪個版本。";
 "頁面留白" = "頁面留白";
+"底欄離底" = "底欄離底";
+"正文到底欄" = "正文到底欄";
 "點擊右上角 + 手動新增\\n或 ↓ 貼上 Legado 書源 JSON 匯入" = "點擊右上角 + 手動新增\\n或 ↓ 貼上 Legado 書源 JSON 匯入";
 "點擊選取 TXT / EPUB 文件" = "點擊選取 TXT / EPUB 文件";
 
