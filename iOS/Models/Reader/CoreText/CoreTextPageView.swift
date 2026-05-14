@@ -368,14 +368,38 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
                    HTMLAttributedStringBuilder.hrDividerAttribute,
                    at: lineRange.location, effectiveRange: nil
                ) {
-                let hrStyle = hrValue as? HTMLAttributedStringBuilder.HRDividerStyle
-                let hrColor = hrStyle?.color ?? UIColor.separator
-                let hrWidth = hrStyle?.lineWidth ?? 0.5
+                let hr = hrValue as? HTMLAttributedStringBuilder.HRDividerStyle
+                let hrColor = hr?.color ?? UIColor.separator
+                let hrLineWidth = hr?.lineWidth ?? 0.5
+
+                // Compute available draw width respecting margins
+                let leftMargin = (hr?.marginLeft ?? 0) + (hr?.inheritedBlockMarginLeft ?? 0)
+                let rightMargin = hr?.marginRight ?? 0
+                let availableWidth = max(1, contentWidth - leftMargin - rightMargin)
+
+                // Rule width: explicit px, percentage of available width, or fill available
+                let ruleWidth: CGFloat
+                if let w = hr?.ruleWidth { ruleWidth = w }
+                else if let pct = hr?.ruleWidthPercent { ruleWidth = availableWidth * pct / 100.0 }
+                else { ruleWidth = availableWidth }
+
+                // Horizontal position respecting alignment
+                let alignment = hr?.alignment ?? .natural
+                let isCentered = hr?.isHorizontallyCentered ?? false
+                let startX: CGFloat
+                if isCentered || alignment == .center {
+                    startX = contentMinX + leftMargin + (availableWidth - ruleWidth) / 2
+                } else if alignment == .right {
+                    startX = contentMinX + leftMargin + (availableWidth - ruleWidth)
+                } else {
+                    startX = contentMinX + leftMargin
+                }
+
                 ctx.saveGState()
                 ctx.setStrokeColor(hrColor.cgColor)
-                ctx.setLineWidth(hrWidth)
-                ctx.move(to: CGPoint(x: origin.x, y: origin.y))
-                ctx.addLine(to: CGPoint(x: origin.x + contentWidth, y: origin.y))
+                ctx.setLineWidth(hrLineWidth)
+                ctx.move(to: CGPoint(x: startX, y: origin.y))
+                ctx.addLine(to: CGPoint(x: startX + ruleWidth, y: origin.y))
                 ctx.strokePath()
                 ctx.restoreGState()
                 continue

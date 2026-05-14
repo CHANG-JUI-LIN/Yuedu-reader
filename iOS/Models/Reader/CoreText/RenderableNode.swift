@@ -88,6 +88,10 @@ public struct RenderStyle: Sendable {
     public var lineHeightMultiplier: CGFloat
     /// CSS margin-left (blockquote, list indent)
     public var marginLeft: CGFloat
+    /// CSS margin-right
+    public var marginRight: CGFloat
+    /// CSS raw width percentage (before resolution to points), used by hr dividers
+    public var rawWidthPercent: CGFloat?
     /// CSS padding-left
     public var paddingLeft: CGFloat
     /// CSS padding-right
@@ -131,6 +135,8 @@ public struct RenderStyle: Sendable {
         textAlign: RenderTextAlignment = .natural,
         lineHeightMultiplier: CGFloat = 1.0,
         marginLeft: CGFloat = 0,
+        marginRight: CGFloat = 0,
+        rawWidthPercent: CGFloat? = nil,
         paddingLeft: CGFloat = 0,
         paddingRight: CGFloat = 0,
         paragraphSpacingBefore: CGFloat = 0,
@@ -164,6 +170,8 @@ public struct RenderStyle: Sendable {
         self.textAlign = textAlign
         self.lineHeightMultiplier = lineHeightMultiplier
         self.marginLeft = marginLeft
+        self.marginRight = marginRight
+        self.rawWidthPercent = rawWidthPercent
         self.paddingLeft = paddingLeft
         self.paddingRight = paddingRight
         self.paragraphSpacingBefore = paragraphSpacingBefore

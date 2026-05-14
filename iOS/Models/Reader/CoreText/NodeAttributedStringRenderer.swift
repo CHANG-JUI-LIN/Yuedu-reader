@@ -84,7 +84,22 @@ struct NodeAttributedStringRenderer {
                     ?? style.color?.uiColor
                     ?? style.backgroundColor?.uiColor,
                 lineWidth: style.borderTopWidth > 0 ? style.borderTopWidth
-                    : style.height.flatMap { $0 > 0 ? $0 : nil }
+                    : style.height.flatMap { $0 > 0 ? $0 : nil },
+                ruleWidth: style.width,
+                ruleWidthPercent: style.rawWidthPercent,
+                marginLeft: style.marginLeft,
+                marginRight: style.marginRight,
+                inheritedBlockMarginLeft: ctx.inheritedBlockMarginLeft,
+                alignment: {
+                    switch style.textAlign {
+                    case .left: return .left
+                    case .center: return .center
+                    case .right: return .right
+                    case .justify: return .justified
+                    case .natural: return .natural
+                    }
+                }(),
+                isHorizontallyCentered: style.isHorizontallyCentered
             )
             attrs[HTMLAttributedStringBuilder.hrDividerAttribute] = hrStyle
             let fontSize = ctx.font.pointSize

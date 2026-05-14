@@ -85,6 +85,8 @@ private extension RenderStyle {
                 ? max(1.0, s.lineHeight / max(s.fontSize, 1))
                 : 1.0,
             marginLeft: s.marginLeft,
+            marginRight: s.marginRight,
+            rawWidthPercent: s.rawWidthPercent,
             paddingLeft: s.paddingLeft,
             paddingRight: s.paddingRight,
             paragraphSpacingBefore: s.paragraphSpacingBefore,
