@@ -67,7 +67,8 @@ struct ChapterFetcher {
             return buildNormalizedHTML(title: title, content: plainTextContent)
         }
 
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: title)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let escapedTitle = ReaderHTMLUtilities.escapeHTML(trimmedTitle.isEmpty ? "Untitled" : trimmedTitle)
         let heading = trimmedTitle.isEmpty
             ? ""
@@ -435,18 +436,35 @@ struct ChapterFetcher {
 
     func extractWebContentSinglePage(html: String, pageURL: String) async -> String {
         let parserContent = WebNovelParser.extractContent(html: html, pageURL: pageURL)
-        if parserContent.count >= 120 {
+        let parserContentIsCollapsed = ReaderHTMLUtilities.isLikelyCollapsedChapterText(parserContent)
+        if parserContent.count >= 120,
+           !parserContentIsCollapsed {
             return parserContent
+        }
+
+        let localHTMLContent = Self.extractLocalHTMLContent(html: html, pageURL: pageURL)
+        if parserContentIsCollapsed, localHTMLContent.count >= 80 {
+            return localHTMLContent
         }
 
         let articleTask = Task { @MainActor in
             try? await WebViewFetcher.shared.extractArticle(html: html, baseURL: pageURL)
         }
         let article = await articleTask.value
-        if let text = article, text.count >= 200 {
+        if let text = article,
+           text.count >= 200,
+           !ReaderHTMLUtilities.isLikelyCollapsedChapterText(text) {
             return text
         }
 
+        if localHTMLContent.count >= 80 {
+            return localHTMLContent
+        }
+
+        return localHTMLContent.isEmpty ? html.strippedHTML : localHTMLContent
+    }
+
+    private static func extractLocalHTMLContent(html: String, pageURL: String) -> String {
         let knownSelectors = [
             "#chaptercontent", "#chapter-content", "#chapterContent",
             ".chapter-content", ".read-content", "#readcontent",
@@ -461,17 +479,18 @@ struct ChapterFetcher {
 
         var bestSelector = ""
         for selector in knownSelectors {
-            let text = RuleEngine.extractValue(
-                fromHTML: html, rule: selector + "@text", baseURL: pageURL
+            let selectorHTML = RuleEngine.extractValue(
+                fromHTML: html, rule: selector + "@html", baseURL: pageURL
             )
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = Self.stripHtmlToText(selectorHTML).trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.count > bestSelector.count { bestSelector = trimmed }
         }
-        if bestSelector.count >= 200 {
+        if bestSelector.count >= 80 {
             return bestSelector
         }
 
-        return html.strippedHTML
+        let fallback = Self.stripHtmlToText(html).trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallback
     }
 
     func extractNextPageURL(html: String, currentURL: String, baseURL: String) -> String {

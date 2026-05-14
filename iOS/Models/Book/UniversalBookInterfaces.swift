@@ -410,7 +410,7 @@ struct BookDocumentContentProviderAdapter: BookContentProvider {
 
     func chapterTitle(at index: Int) -> String {
         guard chapters.indices.contains(index) else { return "" }
-        return chapters[index].title
+        return ReaderHTMLUtilities.displayText(fromHTMLFragment: chapters[index].title)
     }
 
     func contentForChapter(index: Int) async throws -> ChapterContentPayload {

@@ -117,7 +117,7 @@ struct OnlineHTMLContentProviderAdapter: BookContentProvider {
 
     func chapterTitle(at index: Int) -> String {
         guard refs.indices.contains(index) else { return "" }
-        return refs[index].title
+        return ReaderHTMLUtilities.displayText(fromHTMLFragment: refs[index].title)
     }
 
     func contentForChapter(index: Int) async throws -> ChapterContentPayload {
@@ -136,9 +136,9 @@ struct OnlineHTMLContentProviderAdapter: BookContentProvider {
         ), cached.state == .cached, !cached.content.isEmpty {
             return ChapterContentPayload(
                 index: index,
-                title: ref.title,
+                title: ReaderHTMLUtilities.displayText(fromHTMLFragment: ref.title),
                 content: cached.content,
-                renderHTML: resolveNormalizedHTML(
+                renderHTML: book.bookSourceId == nil ? nil : resolveNormalizedHTML(
                     for: book.id,
                     chapterIndex: index,
                     tocTitle: ref.title,
@@ -159,9 +159,9 @@ struct OnlineHTMLContentProviderAdapter: BookContentProvider {
 
         return ChapterContentPayload(
             index: index,
-            title: ref.title,
+            title: ReaderHTMLUtilities.displayText(fromHTMLFragment: ref.title),
             content: pkg.content,
-            renderHTML: resolveNormalizedHTML(
+            renderHTML: book.bookSourceId == nil ? nil : resolveNormalizedHTML(
                 for: book.id,
                 chapterIndex: index,
                 tocTitle: ref.title,

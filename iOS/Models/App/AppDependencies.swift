@@ -44,6 +44,13 @@ protocol BookSourceFetching {
         expectedSourceURL: String?,
         expectedTOCTitle: String?
     ) -> ChapterPackage?
+
+    func loadNormalizedChapterHTMLSync(
+        bookId: UUID,
+        chapterIndex: Int,
+        expectedSourceURL: String?,
+        expectedTOCTitle: String?
+    ) -> String?
 }
 
 extension BookSourceFetching {
@@ -169,6 +176,20 @@ struct LiveBookSourceFetcher: BookSourceFetching {
         expectedTOCTitle: String?
     ) -> ChapterPackage? {
         bookSourceFetcher.loadChapterPackageSync(
+            bookId: bookId,
+            chapterIndex: chapterIndex,
+            expectedSourceURL: expectedSourceURL,
+            expectedTOCTitle: expectedTOCTitle
+        )
+    }
+
+    func loadNormalizedChapterHTMLSync(
+        bookId: UUID,
+        chapterIndex: Int,
+        expectedSourceURL: String?,
+        expectedTOCTitle: String?
+    ) -> String? {
+        bookSourceFetcher.loadNormalizedChapterHTMLSync(
             bookId: bookId,
             chapterIndex: chapterIndex,
             expectedSourceURL: expectedSourceURL,

@@ -159,6 +159,15 @@ struct yuedu_appTests {
         ) -> ChapterPackage? {
             nil
         }
+
+        func loadNormalizedChapterHTMLSync(
+            bookId: UUID,
+            chapterIndex: Int,
+            expectedSourceURL: String?,
+            expectedTOCTitle: String?
+        ) -> String? {
+            nil
+        }
     }
 
     private final class StubPaginatedURLProtocol: URLProtocol {

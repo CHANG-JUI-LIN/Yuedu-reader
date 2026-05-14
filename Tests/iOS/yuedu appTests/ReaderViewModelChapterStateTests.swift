@@ -413,4 +413,13 @@ private struct StubBookSourceFetcher: BookSourceFetching {
     ) -> ChapterPackage? {
         nil
     }
+
+    func loadNormalizedChapterHTMLSync(
+        bookId: UUID,
+        chapterIndex: Int,
+        expectedSourceURL: String?,
+        expectedTOCTitle: String?
+    ) -> String? {
+        nil
+    }
 }

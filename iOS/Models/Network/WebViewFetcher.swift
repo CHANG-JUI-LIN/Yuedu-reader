@@ -515,7 +515,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
             var opts = { charThreshold: 0, maxElemsToParse: 0 };
             var r = new Readability(document, opts);
             var a = r.parse();
-            return (a && a.textContent) ? a.textContent : '';
+            return (a && a.content) ? a.content : '';
           } catch(e) { return ''; }
         })();
         """

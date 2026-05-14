@@ -267,7 +267,9 @@ class ModernParserBridge {
                     let element = elements[index]
                     engine.setContent(element, baseUrl: baseURL)
 
-                    var title = engine.getString(ruleStr: source.ruleToc.chapterName)
+                    var title = ReaderHTMLUtilities.displayText(
+                        fromHTMLFragment: engine.getString(ruleStr: source.ruleToc.chapterName)
+                    )
                     let url = engine.getString(ruleStr: source.ruleToc.chapterUrl, isUrl: true)
                     guard !title.isEmpty || !url.isEmpty else { continue }
 
@@ -288,7 +290,7 @@ class ModernParserBridge {
                             formatJs,
                             bindings: ["index": index, "title": title, "chapter": chapterDict]
                         ), !formatted.isEmpty {
-                            title = formatted
+                            title = ReaderHTMLUtilities.displayText(fromHTMLFragment: formatted)
                         }
                     }
 

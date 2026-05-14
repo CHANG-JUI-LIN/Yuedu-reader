@@ -37,6 +37,12 @@ enum TXTChapterParser {
         let paragraphs: [String]
     }
 
+    private static func sanitizedTitle(_ title: String) -> String {
+        let cleaned = ReaderHTMLUtilities.displayText(fromHTMLFragment: title)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? title.trimmingCharacters(in: .whitespacesAndNewlines) : cleaned
+    }
+
     static func parseUnifiedChapters(_ text: String, bookTitle: String) -> [UnifiedChapter] {
         parseChapters(text, bookTitle: bookTitle)
             .enumerated()
@@ -54,7 +60,7 @@ enum TXTChapterParser {
         let nsText = text as NSString
         let totalLength = nsText.length
         guard totalLength > 0 else {
-            return [TXTChapterIndex(index: 0, title: bookTitle, contentRange: NSRange(location: 0, length: 0))]
+            return [TXTChapterIndex(index: 0, title: sanitizedTitle(bookTitle), contentRange: NSRange(location: 0, length: 0))]
         }
 
         let titleMatches = detectTitleMatches(in: text)
@@ -86,14 +92,14 @@ enum TXTChapterParser {
                 indexes.append(
                     TXTChapterIndex(
                         index: indexes.count,
-                        title: match.title,
+                        title: sanitizedTitle(match.title),
                         contentRange: chapterRange
                     )
                 )
             }
 
             if indexes.isEmpty {
-                return [TXTChapterIndex(index: 0, title: bookTitle, contentRange: NSRange(location: 0, length: totalLength))]
+                return [TXTChapterIndex(index: 0, title: sanitizedTitle(bookTitle), contentRange: NSRange(location: 0, length: totalLength))]
             }
             return indexes
         }
@@ -104,7 +110,7 @@ enum TXTChapterParser {
     static func parseMappedChapterIndexes(_ mappedTextFile: TXTMappedTextFile, bookTitle: String) -> [TXTMappedChapterIndex] {
         let totalBytes = mappedTextFile.byteCount
         guard totalBytes > 0 else {
-            return [TXTMappedChapterIndex(index: 0, title: bookTitle, byteRange: 0..<0)]
+            return [TXTMappedChapterIndex(index: 0, title: sanitizedTitle(bookTitle), byteRange: 0..<0)]
         }
 
         let titleMatches = detectMappedTitleMatches(in: mappedTextFile)
@@ -135,14 +141,14 @@ enum TXTChapterParser {
                 indexes.append(
                     TXTMappedChapterIndex(
                         index: indexes.count,
-                        title: titleMatches[i].title,
+                        title: sanitizedTitle(titleMatches[i].title),
                         byteRange: start..<end
                     )
                 )
             }
 
             if indexes.isEmpty {
-                return [TXTMappedChapterIndex(index: 0, title: bookTitle, byteRange: 0..<totalBytes)]
+                return [TXTMappedChapterIndex(index: 0, title: sanitizedTitle(bookTitle), byteRange: 0..<totalBytes)]
             }
             return indexes
         }
@@ -154,13 +160,13 @@ enum TXTChapterParser {
         let cacheURL = Self.cacheURL(for: bookId)
         guard let data = try? Data(contentsOf: cacheURL),
               let cache = try? JSONDecoder().decode(TXTChapterIndexCache.self, from: data),
-              cache.version == 3,
+              cache.version == 4,
               cache.fileSize == fileSize,
               cache.fingerprint == fingerprint,
               cache.encodingRawValue == encoding.rawValue
         else { return nil }
         return cache.indexes.map {
-            TXTMappedChapterIndex(index: $0.index, title: $0.title, byteRange: $0.lower..<$0.upper)
+            TXTMappedChapterIndex(index: $0.index, title: sanitizedTitle($0.title), byteRange: $0.lower..<$0.upper)
         }
     }
 
@@ -168,7 +174,7 @@ enum TXTChapterParser {
         let cacheDir = cacheDirectoryURL()
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         let codable = indexes.map { CodableChapterIndex(index: $0.index, title: $0.title, lower: $0.byteRange.lowerBound, upper: $0.byteRange.upperBound) }
-        let cache = TXTChapterIndexCache(version: 3, fileSize: fileSize, fingerprint: fingerprint, encodingRawValue: encoding.rawValue, indexes: codable)
+        let cache = TXTChapterIndexCache(version: 4, fileSize: fileSize, fingerprint: fingerprint, encodingRawValue: encoding.rawValue, indexes: codable)
         guard let data = try? JSONEncoder().encode(cache) else { return }
         try? data.write(to: Self.cacheURL(for: bookId))
     }
@@ -219,7 +225,7 @@ enum TXTChapterParser {
         return indexes.map { idx in
             let body = chapterText(text, range: idx.contentRange)
             return ParsedChapter(
-                title: idx.title,
+                title: sanitizedTitle(idx.title),
                 paragraphs: splitIntoParagraphs(body)
             )
         }
@@ -243,7 +249,7 @@ enum TXTChapterParser {
     private static func splitIntoBlocks(_ text: String, blockSize: Int, bookTitle: String) -> [ParsedChapter] {
         let paragraphs = splitIntoParagraphs(text)
         if paragraphs.isEmpty {
-            return [ParsedChapter(title: bookTitle, paragraphs: [text])]
+            return [ParsedChapter(title: sanitizedTitle(bookTitle), paragraphs: [text])]
         }
 
         var chapters: [ParsedChapter] = []
@@ -264,7 +270,7 @@ enum TXTChapterParser {
 
         if !current.isEmpty {
             chapterNum += 1
-            let title = chapterNum == 1 ? bookTitle : "Section \(chapterNum)"
+            let title = chapterNum == 1 ? sanitizedTitle(bookTitle) : "Section \(chapterNum)"
             chapters.append(ParsedChapter(title: title, paragraphs: current))
         }
 
@@ -275,7 +281,7 @@ enum TXTChapterParser {
         let nsText = text as NSString
         let totalLength = nsText.length
         guard totalLength > 0 else {
-            return [TXTChapterIndex(index: 0, title: bookTitle, contentRange: NSRange(location: 0, length: 0))]
+            return [TXTChapterIndex(index: 0, title: sanitizedTitle(bookTitle), contentRange: NSRange(location: 0, length: 0))]
         }
 
         var result: [TXTChapterIndex] = []
@@ -291,7 +297,7 @@ enum TXTChapterParser {
                 }
             }
             let range = NSRange(location: cursor, length: max(0, end - cursor))
-            let title = result.isEmpty ? bookTitle : "Section \(result.count + 1)"
+            let title = result.isEmpty ? sanitizedTitle(bookTitle) : "Section \(result.count + 1)"
             result.append(TXTChapterIndex(index: result.count, title: title, contentRange: range))
             cursor = max(end, cursor + 1)
         }
@@ -320,7 +326,7 @@ enum TXTChapterParser {
                 let raw = nsText.substring(with: match.range)
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return nil }
-                return TitleMatch(range: match.range, title: trimmed)
+                return TitleMatch(range: match.range, title: sanitizedTitle(trimmed))
             }
             if mapped.count == 1, singleMatchFallback.isEmpty {
                 singleMatchFallback = mapped
@@ -340,7 +346,7 @@ enum TXTChapterParser {
                 let raw = nsText.substring(with: match.range)
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return nil }
-                return TitleMatch(range: match.range, title: trimmed)
+                return TitleMatch(range: match.range, title: sanitizedTitle(trimmed))
             }
             selected.append(contentsOf: special)
         }
@@ -381,7 +387,7 @@ enum TXTChapterParser {
                       let range = Range(match.range, in: lineText) else { continue }
                 let title = String(lineText[range]).trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !title.isEmpty else { continue }
-                buckets[i].append(MappedTitleMatch(lineByteRange: lineByteRange, title: title))
+                buckets[i].append(MappedTitleMatch(lineByteRange: lineByteRange, title: sanitizedTitle(title)))
             }
 
             if let specialRegex = specialTitlePattern {
@@ -389,7 +395,7 @@ enum TXTChapterParser {
                       let range = Range(match.range, in: lineText) else { return }
                 let title = String(lineText[range]).trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !title.isEmpty else { return }
-                specialMatches.append(MappedTitleMatch(lineByteRange: lineByteRange, title: title))
+                specialMatches.append(MappedTitleMatch(lineByteRange: lineByteRange, title: sanitizedTitle(title)))
             }
         }
 
@@ -513,7 +519,7 @@ enum TXTChapterParser {
         let data = mappedTextFile.data
         let total = data.count
         guard total > 0 else {
-            return [TXTMappedChapterIndex(index: 0, title: bookTitle, byteRange: 0..<0)]
+            return [TXTMappedChapterIndex(index: 0, title: sanitizedTitle(bookTitle), byteRange: 0..<0)]
         }
 
         var result: [TXTMappedChapterIndex] = []
@@ -535,7 +541,7 @@ enum TXTChapterParser {
                 end = min(cursor + 1, total)
             }
 
-            let title = result.isEmpty ? bookTitle : "Section \(result.count + 1)"
+            let title = result.isEmpty ? sanitizedTitle(bookTitle) : "Section \(result.count + 1)"
             result.append(
                 TXTMappedChapterIndex(
                     index: result.count,

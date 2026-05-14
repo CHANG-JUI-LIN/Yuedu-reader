@@ -67,7 +67,8 @@ private func normalizeDetectedChapters(_ items: [WebChapterItem]) -> [WebChapter
     var seenTitleURLs = Set<String>()
 
     for (index, item) in items.enumerated() {
-        let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = ReaderHTMLUtilities.displayText(fromHTMLFragment: item.title)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let url = item.url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, !url.isEmpty else { continue }
 
@@ -115,7 +116,7 @@ private func normalizeChapterURL(_ raw: String) -> String {
 }
 
 private func normalizeChapterTitleKey(_ title: String) -> String {
-    title
+    ReaderHTMLUtilities.displayText(fromHTMLFragment: title)
         .lowercased()
         .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
 }
@@ -460,16 +461,20 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
                 .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 .joined(separator: "\n")
             let content = BookSourceFetcher.cleanChapterContent(rawText)
-            let title = payload.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? fallbackTitle
-                : payload.title
+            let title = ReaderHTMLUtilities.displayText(
+                fromHTMLFragment: payload.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? fallbackTitle
+                    : payload.title
+            )
             completion(title, content, payload.html)
         }
     }
 
     private func extractTextContent(completion: @escaping (String, String) -> Void) {
         webView.evaluateJavaScript("document.title") { [weak self] t, _ in
-            let title = (t as? String) ?? (self?.pageTitle ?? "未知書名")
+            let title = ReaderHTMLUtilities.displayText(
+                fromHTMLFragment: (t as? String) ?? (self?.pageTitle ?? "未知書名")
+            )
             self?.webView.evaluateJavaScript(contentExtractJS) { text, _ in
                 let raw = ((text as? String) ?? "")
                     .components(separatedBy: .newlines)
@@ -766,18 +771,21 @@ struct BrowserView: View {
 
     // MARK: - Create Online Book with Lazy Chapter Loading
     private func startChapterDownload(chapters: [WebChapterItem], title: String, startIndex: Int) {
-        print("[BrowserView] startChapterDownload chapters=\(chapters.count) startIndex=\(startIndex)")
         let refs = chapters.enumerated().map { idx, ch in
-            OnlineChapterRef(index: idx, title: ch.title, url: ch.url)
+            OnlineChapterRef(
+                index: idx,
+                title: ReaderHTMLUtilities.displayText(fromHTMLFragment: ch.title),
+                url: ch.url
+            )
         }
-        let bookTitle = title.isEmpty ? "網頁書籍" : title
+        let displayTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: title)
+        let bookTitle = displayTitle.isEmpty ? "網頁書籍" : displayTitle
         let book = store.addWebBrowsedBook(
             name: bookTitle,
             author: "網路",
             sourceURL: browser.currentURL,
             chapters: refs
         )
-        print("[BrowserView] book created id=\(book.id)")
 
         if startIndex > 0, chapters.count > 1 {
             let pos = Double(startIndex) / Double(max(chapters.count - 1, 1))
@@ -800,7 +808,6 @@ struct BrowserView: View {
         // Sync browser login cookies to HTTPCookieStorage.shared so ChapterFetchManager
         // can carry the auth state when fetching chapters via URLSession / WebViewFetcher.
         browser.syncCookiesToURLSession {
-            print("[BrowserView] cookies synced, presenting Reader")
             readerPresentation = ReaderPresentation(id: book.id)
         }
     }
@@ -912,7 +919,7 @@ struct BrowserView: View {
                     if items.isEmpty {
                         errorMsg = "無法識別章節連結，請直接進入章節頁面再轉碼"
                     } else {
-                        tocBookTitle = browser.pageTitle
+                        tocBookTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: browser.pageTitle)
                         extractedChapters = items
                         showTOCSheet = true
                     }
@@ -924,13 +931,16 @@ struct BrowserView: View {
                         errorMsg = "抓取到的內容太少，請嘗試進入具體章節頁面"
                         return
                     }
+                    let displayTitle = title.isEmpty
+                        ? "網頁書籍"
+                        : ReaderHTMLUtilities.displayText(fromHTMLFragment: title)
                     do {
                         let book = try store.importWeb(
                             content: html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? content : html,
-                            title: title.isEmpty ? "網頁書籍" : title,
+                            title: displayTitle,
                             author: "網路",
                             sourceURL: browser.currentURL,
-                            format: .plainText  // Always save as .txt; TXTChapterParser.splitIntoParagraphs handles HTML tag parsing in Swift
+                            format: .plainText
                         )
                         isExtracting = false
                         readerPresentation = ReaderPresentation(id: book.id)
@@ -1111,7 +1121,9 @@ struct WebTOCSheet: View {
                     let refs = chapters.enumerated().map { i, ch in
                         OnlineChapterRef(
                             index: i,
-                            title: ch.title.isEmpty ? localized("第") + " \(i + 1) " + localized("章") : ch.title,
+                            title: ch.title.isEmpty
+                                ? localized("第") + " \(i + 1) " + localized("章")
+                                : ReaderHTMLUtilities.displayText(fromHTMLFragment: ch.title),
                             url: ch.url
                         )
                     }

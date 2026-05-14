@@ -63,7 +63,8 @@ extension BookSourceFetcher {
         sourceURL: String? = nil,
         tocTitle: String? = nil,
         extractedTitle: String? = nil,
-        rawHTML: String? = nil
+        rawHTML: String? = nil,
+        storeNormalizedHTML: Bool = true
     ) -> String {
         Self.chapterCacheRepository.saveToCache(
             content: content,
@@ -72,7 +73,8 @@ extension BookSourceFetcher {
             sourceURL: sourceURL,
             tocTitle: tocTitle,
             extractedTitle: extractedTitle,
-            rawHTML: rawHTML
+            rawHTML: rawHTML,
+            storeNormalizedHTML: storeNormalizedHTML
         )
     }
 
@@ -80,7 +82,7 @@ extension BookSourceFetcher {
     nonisolated func saveChapterPackageToCache(
         _ package: ChapterPackage,
         rawHTML: String?,
-        normalizedHTML: String
+        normalizedHTML: String?
     ) -> String {
         Self.chapterCacheRepository.saveChapterPackageToCache(
             package,

@@ -110,7 +110,10 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             ]
         ))
 
-        let paragraphs = ReaderHTMLUtilities.paragraphs(fromPlainText: payload.content)
+        let paragraphs = ReaderHTMLUtilities.bodyParagraphs(
+            fromPlainText: payload.content,
+            excludingLeadingTitle: payload.title
+        )
 
         for para in paragraphs {
             let line = "\u{3000}\u{3000}" + para + "\n"

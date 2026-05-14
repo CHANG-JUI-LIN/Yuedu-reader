@@ -71,7 +71,9 @@ enum WebNovelParser {
 
         for anchor in anchors {
             guard let hrefRaw = try? anchor.attr("href"), !hrefRaw.isEmpty else { continue }
-            let titleRaw = ((try? anchor.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let titleRaw = ReaderHTMLUtilities.displayText(
+                fromHTMLFragment: ((try? anchor.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            )
             guard !titleRaw.isEmpty, titleRaw.count <= 120 else { continue }
 
             let resolved = normalizedURL(try? anchor.attr("abs:href"), hrefRaw: hrefRaw, baseURL: pageURL)
@@ -176,7 +178,6 @@ enum WebNovelParser {
     }
 
     private static func extractedText(from element: Element) -> String? {
-        // Prefer <p> paragraphs (standard structured sites)
         let paragraphs = ((try? element.select("p").array()) ?? [])
             .compactMap { try? $0.text() }
             .map { normalizeWhitespace($0) }
@@ -186,18 +187,13 @@ enum WebNovelParser {
             return paragraphs.joined(separator: "\n")
         }
 
-        // Web novels commonly use <br> for paragraph breaks:
-        // convert outerHTML with block → \n transformations before extracting
         if let html = try? element.outerHtml() {
             var raw = html
-            // Convert block-level closing tags and <br> to newlines
             raw = raw.replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
             raw = raw.replacingOccurrences(
                 of: "</(?:p|div|li|blockquote|section|article|dt|dd|h[1-6]|tr)>",
                 with: "\n", options: .regularExpression)
-            // Remove remaining tags
             raw = raw.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            // HTML entities
             raw = raw.replacingOccurrences(of: "&nbsp;", with: " ")
                 .replacingOccurrences(of: "&amp;", with: "&")
                 .replacingOccurrences(of: "&lt;", with: "<")

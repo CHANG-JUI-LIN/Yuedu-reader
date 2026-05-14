@@ -84,23 +84,31 @@ struct ChapterCacheRepository {
         sourceURL: String? = nil,
         tocTitle: String? = nil,
         extractedTitle: String? = nil,
-        rawHTML: String? = nil
+        rawHTML: String? = nil,
+        storeNormalizedHTML: Bool = true
     ) -> String {
-        let canonicalTitle = extractedTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedHTML = ChapterFetcher.shared.buildNormalizedHTML(
-            title: canonicalTitle?.isEmpty == false ? canonicalTitle! : (tocTitle ?? ""),
-            content: content
-        )
+        let canonicalTitle = extractedTitle.map {
+            ReaderHTMLUtilities.displayText(fromHTMLFragment: $0)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let displayTOCTitle = tocTitle.map {
+            ReaderHTMLUtilities.displayText(fromHTMLFragment: $0)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let effectiveTitle = canonicalTitle?.isEmpty == false ? canonicalTitle! : (displayTOCTitle ?? "")
+        let normalizedHTML = storeNormalizedHTML
+            ? ChapterFetcher.shared.buildNormalizedHTML(title: effectiveTitle, content: content)
+            : nil
         let package = ChapterPackage(
             bookId: bookId,
             chapterIndex: chapterIndex,
             sourceURL: sourceURL,
-            tocTitle: tocTitle,
+            tocTitle: displayTOCTitle?.isEmpty == false ? displayTOCTitle : nil,
             canonicalTitle: canonicalTitle?.isEmpty == false ? canonicalTitle : nil,
             content: content,
             contentChecksum: cacheChecksum(for: content),
             rawHTMLFilename: rawHTML?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? "\(chapterIndex).raw.html" : nil,
-            normalizedHTMLFilename: "\(chapterIndex).normalized.xhtml",
+            normalizedHTMLFilename: storeNormalizedHTML ? "\(chapterIndex).normalized.xhtml" : nil,
             savedAt: Date(),
             state: .cached,
             failureReason: nil
@@ -117,7 +125,7 @@ struct ChapterCacheRepository {
     func saveChapterPackageToCache(
         _ package: ChapterPackage,
         rawHTML: String?,
-        normalizedHTML: String
+        normalizedHTML: String?
     ) -> String {
         let dir = cacheDir(for: package.bookId)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -333,7 +341,7 @@ struct ChapterCacheRepository {
     }
 
     private func normalizeCacheTitle(_ title: String) -> String {
-        title
+        ReaderHTMLUtilities.displayText(fromHTMLFragment: title)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
             .lowercased()
@@ -400,14 +408,21 @@ struct ChapterCacheRepository {
     private func saveChapterArtifact(
         package: ChapterPackage,
         rawHTML: String?,
-        normalizedHTML: String
+        normalizedHTML: String?
     ) {
         let rawPath = chapterRawHTMLPath(bookId: package.bookId, chapterIndex: package.chapterIndex)
         let normalizedPath = chapterNormalizedHTMLPath(bookId: package.bookId, chapterIndex: package.chapterIndex)
         let packagePath = chapterPackagePath(bookId: package.bookId, chapterIndex: package.chapterIndex)
 
         let rawFilename = rawStorage.persistRawHTML(rawHTML, at: rawPath)
-        rawStorage.persistNormalizedHTML(normalizedHTML, at: normalizedPath)
+        let normalizedFilename: String?
+        if let normalizedHTML {
+            rawStorage.persistNormalizedHTML(normalizedHTML, at: normalizedPath)
+            normalizedFilename = normalizedPath.lastPathComponent
+        } else {
+            try? FileManager.default.removeItem(at: normalizedPath)
+            normalizedFilename = nil
+        }
 
         let artifact = ChapterPackageArtifact(
             sourceURL: package.sourceURL,
@@ -415,7 +430,7 @@ struct ChapterCacheRepository {
             canonicalTitle: package.canonicalTitle,
             contentChecksum: package.contentChecksum,
             rawHTMLFilename: rawFilename,
-            normalizedHTMLFilename: normalizedPath.lastPathComponent,
+            normalizedHTMLFilename: normalizedFilename,
             savedAt: package.savedAt
         )
         if let data = try? JSONEncoder().encode(artifact) {

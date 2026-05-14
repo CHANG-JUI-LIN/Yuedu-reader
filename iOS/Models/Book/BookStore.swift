@@ -614,7 +614,11 @@ class BookStore: ObservableObject, BookProvider {
         book.bookInfoURL = bookInfoURL
         book.tocURL = tocURL
         book.runtimeVariables = runtimeVariables
-        book.onlineChapters = chapters
+        book.onlineChapters = chapters.map { chapter in
+            var sanitized = chapter
+            sanitized.title = ReaderHTMLUtilities.displayText(fromHTMLFragment: chapter.title)
+            return sanitized
+        }
         books.insert(book, at: 0)
         saveMeta()
         return book
@@ -633,7 +637,11 @@ class BookStore: ObservableObject, BookProvider {
         book.contentPipelineKind = .html
         book.bookSourceId = nil  // nil indicates browser-converted book, independent of book sources
         book.bookInfoURL = sourceURL
-        book.onlineChapters = chapters
+        book.onlineChapters = chapters.map { chapter in
+            var sanitized = chapter
+            sanitized.title = ReaderHTMLUtilities.displayText(fromHTMLFragment: chapter.title)
+            return sanitized
+        }
         books.insert(book, at: 0)
         saveMeta()
         return book
@@ -1055,7 +1063,7 @@ class BookStore: ObservableObject, BookProvider {
     }
 
     private func normalizeChapterTitle(_ title: String) -> String {
-        title
+        ReaderHTMLUtilities.displayText(fromHTMLFragment: title)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
     }

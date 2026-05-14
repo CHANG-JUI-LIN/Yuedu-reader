@@ -232,6 +232,147 @@ struct CrossParserCompatibilityTests {
     }
 }
 
+@Suite("Browser Import Plain Text Regression")
+struct BrowserImportPlainTextRegressionTests {
+    @Test("web novel toc titles strip escaped break tags")
+    func webNovelTOCTitlesStripEscapedBreakTags() throws {
+        let html = """
+        <html><body>
+          <div id="list">
+            <a href="/chapter-1">第1章&lt;br&gt;初遇</a>
+            <a href="/chapter-2">第2章&lt;br /&gt;暗潮</a>
+            <a href="/chapter-3">第3章<br>归来</a>
+          </div>
+        </body></html>
+        """
+
+        let chapters = WebNovelParser.parseTOC(html: html, pageURL: "https://example.com/book/")
+
+        #expect(chapters.map(\.title) == ["第1章 初遇", "第2章 暗潮", "第3章 归来"])
+        #expect(chapters.allSatisfy { !$0.title.localizedCaseInsensitiveContains("<br") })
+    }
+
+    @Test("toc extracted chapter content is plain text paragraphs")
+    func tocExtractedChapterContentIsPlainTextParagraphs() async {
+        let html = """
+        <html><body>
+          <div class="chapter-content">
+            <h1>第1章 1：伦敦孤儿</h1>
+            <p>2025-12-10 作者：林曦遇鹿</p>
+            <p>第1章 1：伦敦孤儿</p>
+            <p>“要是你坚持去那什么霍格沃茨上学的话，那就自己出学杂费吧！孤儿院不可能给你掏一颗子儿！”</p>
+            <p>“我知道了，安娜护工。”</p>
+            <p>希恩看着安娜护工走进公共休息室，轻轻关上了门。</p>
+            <p>走廊里的灯光摇晃了一下，他把那封皱巴巴的录取通知重新塞进口袋，确认羊皮纸上的字迹没有被汗水弄花。</p>
+          </div>
+        </body></html>
+        """
+
+        let extracted = await ChapterFetcher.shared.extractWebContentSinglePage(
+            html: html,
+            pageURL: "https://example.com/chapter-1"
+        )
+        let cleaned = ChapterFetcher.shared.cleanChapterContent(extracted)
+        let paragraphs = ReaderHTMLUtilities.bodyParagraphs(
+            fromPlainText: cleaned,
+            excludingLeadingTitle: "第1章 1：伦敦孤儿"
+        )
+
+        #expect(!extracted.localizedCaseInsensitiveContains("<p"))
+        #expect(!cleaned.localizedCaseInsensitiveContains("<p"))
+        #expect(paragraphs.count >= 3)
+        #expect(!paragraphs.contains("第1章 1：伦敦孤儿"))
+        #expect(paragraphs.contains("“要是你坚持去那什么霍格沃茨上学的话，那就自己出学杂费吧！孤儿院不可能给你掏一颗子儿！”"))
+        #expect(paragraphs.contains("“我知道了，安娜护工。”"))
+        #expect(paragraphs.contains("希恩看着安娜护工走进公共休息室，轻轻关上了门。"))
+        #expect(paragraphs.contains("走廊里的灯光摇晃了一下，他把那封皱巴巴的录取通知重新塞进口袋，确认羊皮纸上的字迹没有被汗水弄花。"))
+    }
+
+    @Test("toc body fallback preserves br paragraph breaks")
+    func tocBodyFallbackPreservesBRParagraphBreaks() async {
+        let html = """
+        <html><body>
+        <h1>第1章 我和荒古圣体踢足球</h1>
+        “上古之人，春秋皆度百岁，而动作不衰。”<br><br>
+        看着《黄帝内经》上记载的这句话，秦胜微微一笑。<br><br>
+        已知叶天帝看《黄帝内经》，我也看，所以可得：我=叶天帝。<br><br>
+        “不，我现在比叶凡要强，毕竟我已经快修完轮海秘境了。”<br><br>
+        我已经超了叶天帝！<br><br>
+        内视己身，在秦胜脐下，也即人体黄金分割线的位置，苦海已开。<br><br>
+        不过他的苦海是漆黑色，死气沉沉。<br><br>
+        金色的苦海，浪花滔天、澎湃无比的景象，那是圣体专属。<br><br>
+        特效？那不是凡体能奢望的东西。<br><br>
+        苦海中心位置，一口生命神泉汩汩而涌，神力如潮，霞光满天。<br><br>
+        这是命泉。看向上方，一道璀璨的彩虹高挂，以此岸为起点。
+        </body></html>
+        """
+
+        let extracted = await ChapterFetcher.shared.extractWebContentSinglePage(
+            html: html,
+            pageURL: "https://example.com/chapter-1"
+        )
+        let cleaned = ChapterFetcher.shared.cleanChapterContent(extracted)
+        let paragraphs = ReaderHTMLUtilities.bodyParagraphs(
+            fromPlainText: cleaned,
+            excludingLeadingTitle: "第1章 我和荒古圣体踢足球"
+        )
+
+        #expect(!ReaderHTMLUtilities.isLikelyCollapsedChapterText(cleaned))
+        #expect(paragraphs.count >= 6)
+        #expect(paragraphs.first == "“上古之人，春秋皆度百岁，而动作不衰。”")
+        #expect(!paragraphs.contains("第1章 我和荒古圣体踢足球"))
+        #expect(paragraphs.contains("看着《黄帝内经》上记载的这句话，秦胜微微一笑。"))
+        #expect(paragraphs.contains("我已经超了叶天帝！"))
+        #expect(paragraphs.contains("特效？那不是凡体能奢望的东西。"))
+        #expect(paragraphs.contains("这是命泉。看向上方，一道璀璨的彩虹高挂，以此岸为起点。"))
+    }
+
+    @Test("browser imported collapsed toc cache is rejected")
+    func browserImportedCollapsedTOCCacheIsRejected() {
+        let paragraphed = """
+        “上古之人，春秋皆度百岁，而动作不衰。”
+        看着《黄帝内经》上记载的这句话，秦胜微微一笑。
+        已知叶天帝看《黄帝内经》，我也看，所以可得：我=叶天帝。
+        “不，我现在比叶凡要强，毕竟我已经快修完轮海秘境了。”
+        我已经超了叶天帝！
+        内视己身，在秦胜脐下，也即人体黄金分割线的位置，苦海已开。
+        不过他的苦海是漆黑色，死气沉沉。
+        金色的苦海，浪花滔天、澎湃无比的景象，那是圣体专属，如秦胜这样的凡体，苦海基本都是乌漆嘛黑的。
+        特效？那不是凡体能奢望的东西。
+        苦海中心位置，一口生命神泉汩汩而涌，神力如潮，霞光满天。
+        """
+        let collapsed = paragraphed
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        #expect(ReaderHTMLUtilities.isLikelyCollapsedChapterText(collapsed))
+        #expect(!ReaderHTMLUtilities.isLikelyCollapsedChapterText(paragraphed))
+        #expect(ChapterFetchManager.isCollapsedBrowserImportedChapterContent(collapsed))
+        #expect(!ChapterFetchManager.isCollapsedBrowserImportedChapterContent(paragraphed))
+    }
+
+    @Test("single chapter html import keeps txt paragraph shape")
+    func singleChapterHTMLImportKeepsTXTParagraphShape() {
+        let html = """
+        <h1>第1章 1：伦敦孤儿</h1>
+        <p>2025-12-10 作者：林曦遇鹿</p>
+        <p>第1章 1：伦敦孤儿</p>
+        <p>“要是你坚持去那什么霍格沃茨上学的话，那就自己出学杂费吧！孤儿院不可能给你掏一颗子儿！”</p>
+        <p>“我知道了，安娜护工。”</p>
+        <p>希恩看着安娜护工走进公共休息室，轻轻关上了门。</p>
+        <p>走廊里的灯光摇晃了一下，他把那封皱巴巴的录取通知重新塞进口袋，确认羊皮纸上的字迹没有被汗水弄花。</p>
+        """
+
+        let paragraphs = TXTChapterParser.paragraphsForChapterContent(html)
+
+        #expect(paragraphs.count == 7)
+        #expect(paragraphs.first == "第1章 1：伦敦孤儿")
+        #expect(!paragraphs.joined(separator: "\n").contains("<"))
+    }
+}
+
 // MARK: - 3. BookSource Model Tests
 
 @Suite("BookSource Model Compatibility")

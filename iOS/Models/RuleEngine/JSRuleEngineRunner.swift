@@ -408,7 +408,7 @@ final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
         return arr.enumerated().map { i, c in
             OnlineChapterRef(
                 index: i,
-                title: c.title,
+                title: ReaderHTMLUtilities.displayText(fromHTMLFragment: c.title),
                 url: c.url,
                 isVolume: c.isVolume ?? false,
                 isVip: c.isVip ?? false,

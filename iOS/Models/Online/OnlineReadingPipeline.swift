@@ -92,6 +92,19 @@ actor ChapterFetchManager {
         return chapterHeadingRegex.numberOfMatches(in: content, range: range) >= suspiciousChapterHeadingThreshold
     }
 
+    static func isCollapsedBrowserImportedChapterContent(_ content: String) -> Bool {
+        ReaderHTMLUtilities.isLikelyCollapsedChapterText(content)
+    }
+
+    private func isReusableCachedPackage(_ package: ChapterPackage, for book: ReadingBook) -> Bool {
+        guard package.state == .cached, !package.content.isEmpty else { return false }
+        if Self.isSuspiciousChapterContent(package.content) { return false }
+        if book.bookSourceId == nil, Self.isCollapsedBrowserImportedChapterContent(package.content) {
+            return false
+        }
+        return true
+    }
+
     func chapterState(bookId: UUID, chapterIndex: Int) -> OnlineChapterLoadState {
         if bookSourceFetcher.isChapterCached(bookId: bookId, chapterIndex: chapterIndex) {
             return .cached
@@ -105,14 +118,23 @@ actor ChapterFetchManager {
         }
 
         let sanitizedURL = RuleEngine.sanitizeExtractedURL(refs[chapterIndex].url)
+        var shouldClearCachedChapter = false
+
         if let cached = bookSourceFetcher.loadChapterPackageSync(
             bookId: book.id,
             chapterIndex: chapterIndex,
             expectedSourceURL: sanitizedURL,
             expectedTOCTitle: refs[chapterIndex].title
-        ), cached.state == .cached, !cached.content.isEmpty {
+        ), isReusableCachedPackage(cached, for: book) {
             states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
             return true
+        } else if bookSourceFetcher.loadChapterPackageSync(
+            bookId: book.id,
+            chapterIndex: chapterIndex,
+            expectedSourceURL: sanitizedURL,
+            expectedTOCTitle: refs[chapterIndex].title
+        ) != nil {
+            shouldClearCachedChapter = true
         }
 
         if sanitizedURL != refs[chapterIndex].url,
@@ -121,10 +143,22 @@ actor ChapterFetchManager {
                 chapterIndex: chapterIndex,
                 expectedSourceURL: refs[chapterIndex].url,
                 expectedTOCTitle: refs[chapterIndex].title
-            ), cached.state == .cached, !cached.content.isEmpty
+            ), isReusableCachedPackage(cached, for: book)
         {
             states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
             return true
+        } else if sanitizedURL != refs[chapterIndex].url,
+                  bookSourceFetcher.loadChapterPackageSync(
+                    bookId: book.id,
+                    chapterIndex: chapterIndex,
+                    expectedSourceURL: refs[chapterIndex].url,
+                    expectedTOCTitle: refs[chapterIndex].title
+                  ) != nil {
+            shouldClearCachedChapter = true
+        }
+
+        if shouldClearCachedChapter {
+            bookSourceFetcher.clearChapterCache(bookId: book.id, chapterIndex: chapterIndex)
         }
 
         return false
@@ -145,16 +179,24 @@ actor ChapterFetchManager {
         // Clean up HTML fragment URLs that may remain from old caches (e.g. <a href="...">Chapter 1</a>)
         let sanitizedURL = RuleEngine.sanitizeExtractedURL(refs[chapterIndex].url)
 
+        var shouldClearCachedChapter = false
+
         if let cached = bookSourceFetcher.loadChapterPackageSync(
             bookId: book.id,
             chapterIndex: chapterIndex,
             expectedSourceURL: sanitizedURL,
             expectedTOCTitle: refs[chapterIndex].title
-        ), cached.state == .cached, !cached.content.isEmpty,
-           !Self.isSuspiciousChapterContent(cached.content)
+        ), isReusableCachedPackage(cached, for: book)
         {
             states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
             return cached
+        } else if bookSourceFetcher.loadChapterPackageSync(
+            bookId: book.id,
+            chapterIndex: chapterIndex,
+            expectedSourceURL: sanitizedURL,
+            expectedTOCTitle: refs[chapterIndex].title
+        ) != nil {
+            shouldClearCachedChapter = true
         }
         // Also accept caches stored under the original URL (legacy path)
         if sanitizedURL != refs[chapterIndex].url,
@@ -163,11 +205,22 @@ actor ChapterFetchManager {
             chapterIndex: chapterIndex,
             expectedSourceURL: refs[chapterIndex].url,
             expectedTOCTitle: refs[chapterIndex].title
-        ), cached.state == .cached, !cached.content.isEmpty,
-           !Self.isSuspiciousChapterContent(cached.content)
+        ), isReusableCachedPackage(cached, for: book)
         {
             states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
             return cached
+        } else if sanitizedURL != refs[chapterIndex].url,
+                  bookSourceFetcher.loadChapterPackageSync(
+                    bookId: book.id,
+                    chapterIndex: chapterIndex,
+                    expectedSourceURL: refs[chapterIndex].url,
+                    expectedTOCTitle: refs[chapterIndex].title
+                  ) != nil {
+            shouldClearCachedChapter = true
+        }
+
+        if shouldClearCachedChapter {
+            bookSourceFetcher.clearChapterCache(bookId: book.id, chapterIndex: chapterIndex)
         }
 
         let taskKey = key(bookId: book.id, chapterIndex: chapterIndex)
@@ -255,12 +308,10 @@ actor ChapterFetchManager {
             let bsf = bookSourceFetcher
             let capturedStore = store
             let selfRef = self
-            print("[FetchTrace] fetchBrowserImportedChapter start ch=\(chapterIndex) url=\(ref.url)")
             let content = await fetchBrowserImportedChapter(
                 urlString: ref.url,
                 referer: book.bookInfoURL ?? book.source,
                 progressHandler: { @MainActor partial in
-                    // Generation token gate: if this task was preempted/invalidated, do not contaminate cache
                     Task {
                         guard await selfRef.isTokenValid(taskKey: taskKey, token: myToken) else { return }
                         _ = bsf.saveToCache(
@@ -268,7 +319,8 @@ actor ChapterFetchManager {
                             bookId: bookId,
                             chapterIndex: chapterIndex,
                             sourceURL: ref.url,
-                            tocTitle: ref.title
+                            tocTitle: ref.title,
+                            storeNormalizedHTML: false
                         )
                         await MainActor.run {
                             capturedStore?.updateCachedChapter(
@@ -285,14 +337,14 @@ actor ChapterFetchManager {
                     }
                 }
             )
-            print("[FetchTrace] fetchBrowserImportedChapter done ch=\(chapterIndex) contentLen=\(content.count)")
             if !content.isEmpty {
                 _ = bookSourceFetcher.saveToCache(
                     content: content,
                     bookId: book.id,
                     chapterIndex: chapterIndex,
                     sourceURL: ref.url,
-                    tocTitle: ref.title
+                    tocTitle: ref.title,
+                    storeNormalizedHTML: false
                 )
                 return bookSourceFetcher.loadChapterPackageSync(
                     bookId: book.id,
@@ -347,7 +399,8 @@ actor ChapterFetchManager {
                     bookId: book.id,
                     chapterIndex: chapterIndex,
                     sourceURL: ref.url,
-                    tocTitle: ref.title
+                    tocTitle: ref.title,
+                    storeNormalizedHTML: book.bookSourceId != nil
                 )
                 await MainActor.run {
                     store?.updateCachedChapter(
@@ -507,8 +560,6 @@ actor ChapterFetchManager {
         referer: String?,
         progressHandler: (@MainActor (String) -> Void)? = nil
     ) async -> String {
-        print("[FetchTrace]   strategy1 fetchWebContent start url=\(urlString)")
-        let startT = CFAbsoluteTimeGetCurrent()
         do {
             let direct = try await bookSourceFetcher.fetchWebContent(
                 url: urlString,
@@ -519,12 +570,8 @@ actor ChapterFetchManager {
                     }
                 }
             )
-            let ms = Int((CFAbsoluteTimeGetCurrent() - startT) * 1000)
-            print("[FetchTrace]   strategy1 done len=\(direct.count) elapsedMs=\(ms)")
             if !direct.isEmpty { return direct }
         } catch {
-            let ms = Int((CFAbsoluteTimeGetCurrent() - startT) * 1000)
-            print("[FetchTrace]   strategy1 threw error=\(error) elapsedMs=\(ms)")
         }
 
         guard let firstURL = URL(string: urlString) else { return "" }
@@ -729,7 +776,8 @@ final class OnlineBookCoordinator {
     }
 
     private static func makePlaceholderPackage(for book: ReadingBook) throws -> BookPackage {
-        let title = book.title.isEmpty ? "網頁書籍" : book.title
+        let displayBookTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: book.title)
+        let title = displayBookTitle.isEmpty ? "網頁書籍" : displayBookTitle
         let converted = try XHTMLBookBuilder.convert(
             xhtmlChapters: [
                 XHTMLBookBuilder.XHTMLChapterInput(
@@ -994,11 +1042,12 @@ final class OnlineBookCoordinator {
     }
 
     private static func resolvedDisplayTitle(tocTitle: String, artifactTitle: String?) -> String {
-        let cleanedTOC = tocTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard
-            let artifactTitle = artifactTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !artifactTitle.isEmpty
-        else {
+        let cleanedTOC = ReaderHTMLUtilities.displayText(fromHTMLFragment: tocTitle)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let artifactTitle = artifactTitle.map({
+            ReaderHTMLUtilities.displayText(fromHTMLFragment: $0)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }), !artifactTitle.isEmpty else {
             return cleanedTOC
         }
 

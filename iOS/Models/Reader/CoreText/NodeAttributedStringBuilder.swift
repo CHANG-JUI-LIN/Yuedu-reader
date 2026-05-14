@@ -25,7 +25,7 @@ struct NodeAttributedStringBuilder: AttributedStringBuilding {
 
     func chapterTitle(at index: Int) -> String {
         guard chapters.indices.contains(index) else { return "" }
-        return chapters[index].title
+        return ReaderHTMLUtilities.displayText(fromHTMLFragment: chapters[index].title)
     }
 
     func chapterSourceHref(at index: Int) -> String? {
@@ -85,6 +85,7 @@ struct NodeAttributedStringBuilder: AttributedStringBuilding {
         components.queryItems = components.queryItems?.sorted { $0.name < $1.name }
         return (components.string ?? raw).lowercased()
     }
+
 }
 
 // MARK: - TXTRenderableNodeConverter
@@ -143,7 +144,7 @@ struct OnlineNodeAttributedStringBuilder: AttributedStringBuilding {
 
     func chapterTitle(at index: Int) -> String {
         guard refs.indices.contains(index) else { return "" }
-        return refs[index].title
+        return ReaderHTMLUtilities.displayText(fromHTMLFragment: refs[index].title)
     }
 
     func chapterSourceHref(at index: Int) -> String? {
@@ -192,11 +193,16 @@ struct OnlineNodeAttributedStringBuilder: AttributedStringBuilding {
             fetcher.clearChapterCache(bookId: bookId, chapterIndex: index)
             throw AttributedStringBuildingError.contentNotCached(index)
         }
-        let paragraphs = ReaderHTMLUtilities.paragraphs(fromPlainText: content)
+
+        let displayTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: ref.title)
+        let paragraphs = ReaderHTMLUtilities.bodyParagraphs(
+            fromPlainText: content,
+            excludingLeadingTitle: displayTitle
+        )
 
         let chapter = UnifiedChapter(
             index: index,
-            title: ref.title,
+            title: displayTitle,
             paragraphs: paragraphs,
             sourceHref: sanitizedURL
         )
@@ -219,4 +225,5 @@ struct OnlineNodeAttributedStringBuilder: AttributedStringBuilding {
         components.queryItems = components.queryItems?.sorted { $0.name < $1.name }
         return (components.string ?? raw).lowercased()
     }
+
 }
