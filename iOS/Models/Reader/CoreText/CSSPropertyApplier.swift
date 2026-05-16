@@ -56,6 +56,8 @@ final class HTMLCSSPropertyApplierRegistry {
         BackgroundImageApplier(),
         BackgroundColorApplier(),
         LetterSpacingApplier(),
+        WritingModeApplier(),
+        WebkitWritingModeApplier(),
     ])
 }
 
@@ -208,6 +210,36 @@ private struct LetterSpacingApplier: HTMLCSSPropertyApplier {
         }
         if let resolved = context.resolveLength(trimmed, style.fontSize, context.rootFontSize, style.fontSize) {
             style.letterSpacing = resolved
+        }
+    }
+}
+
+private struct WritingModeApplier: HTMLCSSPropertyApplier {
+    let key = "writing-mode"
+
+    func apply(
+        value: String,
+        style: inout HTMLAttributedStringBuilder.ResolvedStyle,
+        context: HTMLCSSApplyContext
+    ) {
+        let v = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if v.contains("vertical-rl") || v.contains("vertical-rl") {
+            style.isVerticalWritingMode = true
+        }
+    }
+}
+
+private struct WebkitWritingModeApplier: HTMLCSSPropertyApplier {
+    let key = "-webkit-writing-mode"
+
+    func apply(
+        value: String,
+        style: inout HTMLAttributedStringBuilder.ResolvedStyle,
+        context: HTMLCSSApplyContext
+    ) {
+        let v = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if v.contains("vertical-rl") || v.contains("vertical-rl") {
+            style.isVerticalWritingMode = true
         }
     }
 }

@@ -19,6 +19,11 @@ final class EPUBPageRenderer: ObservableObject {
 
     @Published var isCoreTextReady: Bool = false
 
+    /// True when CSS writing-mode: vertical-rl is detected from EPUB stylesheets.
+    var cssDetectedVerticalWritingMode: Bool {
+        epubBuilder?.cssDetectedVerticalWritingMode ?? false
+    }
+
     /// Tracks the current global page index (kept in sync by ReaderView / CoreTextPageEngineView).
     var currentEpubPage: Int = 0
 

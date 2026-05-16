@@ -408,7 +408,7 @@ final class CoreTextPaginator {
         return CTFramesetterCreateFrame(framesetter, range, path, frameAttributes)
     }
 
-    /// Vertical mode: normalization → font cascade → paragraph style → vertical forms → ASCII exceptions.
+    /// Vertical mode: glyph-aware normalization → font cascade → paragraph style → vertical forms → ASCII exceptions.
     /// Horizontal mode: returns unchanged.
     private static func preparedAttributedString(
         _ attrStr: NSAttributedString,
@@ -419,18 +419,32 @@ final class CoreTextPaginator {
         let mutable = NSMutableAttributedString(attributedString: attrStr)
         let fullRange = NSRange(location: 0, length: mutable.length)
 
-        // Step 1: Normalize punctuation for vertical layout.
-        //         Phase 1: half-width brackets → full-width.
-        //         Phase 2: full-width → vertical presentation forms (U+FE10 block).
-        //         1:1 UTF-16 replacements preserve attribute ranges.
-        let normalizedText = mutable.string.normalizedForVerticalLayout()
-        if normalizedText != mutable.string {
-            mutable.mutableString.setString(normalizedText)
-        }
+        // Step 1: Build per-font vertical substitution map from the primary font.
+        //         Only substitutes characters the font truly lacks vert alternates for.
+        let primaryFont = (attrStr.attribute(.font, at: 0, effectiveRange: nil) as? UIFont) ?? UIFont.systemFont(ofSize: fontSize)
+        let verticalConfig = VerticalLayoutConfig(font: primaryFont as CTFont)
+        let verticalMap = verticalConfig.substitutionMap
 
-        // Step 2: Font cascade list for rare / supplemented CJK characters.
+        // Step 2: Normalize punctuation in-place on mutableString to preserve attributes.
+        //         Phase 1: half-width brackets → full-width (always).
+        //         Phase 2: full-width → vertical presentation forms (only where font lacks vert glyphs).
+        let halfToFullMap: [String: String] = [
+            "(": "（", ")": "）",
+            "[": "〔", "]": "〕",
+            "{": "｛", "}": "｝",
+            "<": "〈", ">": "〉",
+        ]
+        for (half, full) in halfToFullMap {
+            mutable.mutableString.replaceOccurrences(of: half, with: full, options: [], range: fullRange)
+        }
+        let map = verticalMap
+        for (horizontal, vertical) in map {
+            mutable.mutableString.replaceOccurrences(of: horizontal, with: vertical, options: [], range: fullRange)
+        }
+        mutable.mutableString.replaceOccurrences(of: "——", with: "︱︱", options: [], range: fullRange)
+        mutable.mutableString.replaceOccurrences(of: "……", with: "︙︙", options: [], range: fullRange)
+        // Step 3: Font cascade list for rare / supplemented CJK characters.
         //         PingFang → Songti → Kaiti → Heiti fallback chain.
-        //         Preserves per-range font size and traits.
         mutable.enumerateAttribute(.font, in: fullRange, options: []) { value, range, _ in
             guard let font = value as? UIFont else { return }
             let ctFont = font as CTFont
@@ -447,7 +461,7 @@ final class CoreTextPaginator {
             mutable.addAttribute(.font, value: finalCTFont, range: range)
         }
 
-        // Step 3: Ensure every range has a paragraph style with CJK-vertical defaults.
+        // Step 4: Ensure every range has a paragraph style with CJK-vertical defaults.
         mutable.enumerateAttribute(.paragraphStyle, in: fullRange, options: []) { value, range, _ in
             if let existing = value as? NSParagraphStyle {
                 let updated = existing.mutableCopy() as! NSMutableParagraphStyle
@@ -470,13 +484,12 @@ final class CoreTextPaginator {
             }
         }
 
-        // Step 4: Apply vertical forms globally.
+        // Step 5: Apply vertical forms globally.
         let verticalFormsKey = NSAttributedString.Key(kCTVerticalFormsAttributeName as String)
         mutable.addAttribute(verticalFormsKey, value: true, range: fullRange)
 
-        // Step 5: Remove vertical forms from ASCII / Latin / numeric ranges
+        // Step 6: Remove vertical forms from ASCII / Latin / numeric ranges
         //         so English and URLs rotate 90° clockwise (lying flat).
-        //         Punctuation is already handled by Step 1 — regex covers only letters and digits.
         let latinPattern = "[a-zA-Z0-9\\s]+"
         if let regex = try? NSRegularExpression(pattern: latinPattern, options: []) {
             let matches = regex.matches(in: mutable.string, options: [], range: fullRange)
@@ -484,7 +497,6 @@ final class CoreTextPaginator {
                 mutable.removeAttribute(verticalFormsKey, range: match.range)
             }
         }
-
         return mutable
     }
 
@@ -592,6 +604,7 @@ final class CoreTextPaginator {
         var blockAttachments: [Int: [RenderedAttachment]] = [:]
         var kinds = Array(repeating: PageKind.text, count: pageRanges.count)
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        let isVertical = writingMode.isVertical
 
         for (pageIdx, range) in pageRanges.enumerated() { autoreleasepool {
             let frame = makeFrame(framesetter: framesetter, range: range, path: pagePath, writingMode: writingMode)
@@ -644,17 +657,34 @@ final class CoreTextPaginator {
                         let rect: CGRect
                         switch info.displayMode {
                         case .inline:
-                            let xOffset = CTLineGetOffsetForStringIndex(
-                                line,
-                                CTRunGetStringRange(run).location,
-                                nil
-                            )
-                            rect = CGRect(
-                                x: contentPathRect.origin.x + lineOrigin.x + penOffset + xOffset + info.paddingLeft,
-                                y: uiY,
-                                width: info.drawWidth,
-                                height: info.drawHeight
-                            )
+                            if isVertical {
+                                // Vertical-rl manual rect. lineOrigin.x is the vertical
+                                // baseline (glyph center), not left edge — subtract half
+                                // width to center the image on the baseline.
+                                let textAdvance = CTLineGetOffsetForStringIndex(
+                                    line,
+                                    CTRunGetStringRange(run).location,
+                                    nil
+                                )
+                                rect = CGRect(
+                                    x: contentPathRect.origin.x + lineOrigin.x - (info.drawWidth / 2) + info.paddingLeft,
+                                    y: renderSize.height - lineOrigin.y + textAdvance + penOffset - info.drawHeight,
+                                    width: info.drawWidth,
+                                    height: info.drawHeight
+                                )
+                            } else {
+                                let textAdvance = CTLineGetOffsetForStringIndex(
+                                    line,
+                                    CTRunGetStringRange(run).location,
+                                    nil
+                                )
+                                rect = CGRect(
+                                    x: contentPathRect.origin.x + lineOrigin.x + penOffset + textAdvance + info.paddingLeft,
+                                    y: uiY,
+                                    width: info.drawWidth,
+                                    height: info.drawHeight
+                                )
+                            }
                         case .block:
                             let leftInset = min(paragraphStyle?.headIndent ?? 0, paragraphStyle?.firstLineHeadIndent ?? 0)
                             let rightInset = (paragraphStyle?.tailIndent ?? 0) < 0 ? -(paragraphStyle?.tailIndent ?? 0) : 0
@@ -1251,6 +1281,7 @@ final class CoreTextPaginator {
             height: size.height
         )
     }
+
 }
 
 // MARK: - Binary Search Extension

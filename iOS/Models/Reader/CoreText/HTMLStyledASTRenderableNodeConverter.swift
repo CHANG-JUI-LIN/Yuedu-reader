@@ -3,27 +3,28 @@ import UIKit
 
 enum HTMLStyledASTRenderableNodeConverter {
     static func convert(body: HTMLAttributedStringBuilder.ElementNode) -> [RenderableNode] {
-        body.children.map { $0.asRenderableNode() }
+        body.children.map { $0.asRenderableNode(parentFontSize: body.resolvedStyle.fontSize) }
     }
 }
 
 private extension HTMLAttributedStringBuilder.ASTNode {
-    func asRenderableNode() -> RenderableNode {
+    func asRenderableNode(parentFontSize: CGFloat) -> RenderableNode {
         switch self {
         case .text(let node):
             return .text(node.text)
         case .lineBreak:
             return .lineBreak
         case .element(let node):
-            return node.asRenderableNode()
+            return node.asRenderableNode(parentFontSize: parentFontSize)
         }
     }
 }
 
 private extension HTMLAttributedStringBuilder.ElementNode {
-    func asRenderableNode() -> RenderableNode {
-        let mappedChildren = children.map { $0.asRenderableNode() }
-        let style = RenderStyle.from(resolvedStyle: resolvedStyle)
+    func asRenderableNode(parentFontSize: CGFloat) -> RenderableNode {
+        let myFontSize = resolvedStyle.fontSize
+        let mappedChildren = children.map { $0.asRenderableNode(parentFontSize: myFontSize) }
+        let style = RenderStyle.from(resolvedStyle: resolvedStyle, parentFontSize: parentFontSize)
         let node: RenderableNode
 
         switch tag {
@@ -70,9 +71,10 @@ private extension HTMLAttributedStringBuilder.ElementNode {
 }
 
 private extension RenderStyle {
-    static func from(resolvedStyle s: HTMLAttributedStringBuilder.ResolvedStyle) -> RenderStyle {
-        RenderStyle(
-            fontSizeMultiplier: 1.0,
+    static func from(resolvedStyle s: HTMLAttributedStringBuilder.ResolvedStyle, parentFontSize: CGFloat) -> RenderStyle {
+        let multiplier: CGFloat = parentFontSize > 0 ? s.fontSize / parentFontSize : 1.0
+        return RenderStyle(
+            fontSizeMultiplier: multiplier,
             fontFamilies: s.fontFamilies,
             fontWeight: s.fontWeight,
             bold: s.fontWeight >= 700,

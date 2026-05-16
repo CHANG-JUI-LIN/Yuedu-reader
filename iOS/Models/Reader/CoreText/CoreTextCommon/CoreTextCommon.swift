@@ -11,6 +11,7 @@ import CoreText
 //   CoreTextCommon/                                ← you are here
 //   ├── CoreTextCommon.swift                       ← architecture docs
 //   ├── String+VerticalNormalization.swift          ← vertical punctuation normalization
+//   ├── VerticalLayoutConfig.swift                  ← per-font vert-glyph detection + substitution map cache
 //
 //   CoreTextHorizontal/
 //   └── CoreTextHorizontalLineDrawer.swift

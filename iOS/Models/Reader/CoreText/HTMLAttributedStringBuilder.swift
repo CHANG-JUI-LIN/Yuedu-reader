@@ -123,6 +123,8 @@ final class HTMLAttributedStringBuilder {
         /// Accumulated margin-left from ancestor block containers.
         /// CoreText uses a single frame so parent block margins must be added to child paragraph indents.
         var inheritedBlockMarginLeft: CGFloat
+        /// Detected from CSS `writing-mode: vertical-rl` on this element.
+        var isVerticalWritingMode: Bool = false
     }
 
     /// Visual style for HR dividers (stored in hrDividerAttribute).
@@ -226,6 +228,8 @@ final class HTMLAttributedStringBuilder {
     var cssLoader: ((String) async -> String?)?
     var resolvedFontFamily: ((String) -> String?)?
     var resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)?
+    /// Set to true after buildStyledAST if CSS writing-mode: vertical-rl is detected on the body element.
+    var detectedVerticalWritingMode = false
 
     private let domParser = HTMLBuilderDOMParser()
     private let styleResolver = HTMLBuilderStyleResolver()
@@ -306,7 +310,7 @@ final class HTMLAttributedStringBuilder {
         var mergedConfig = config
         mergedConfig.firstLetterRules = parsed.firstLetterRules
 
-        return await styleResolver.buildAST(
+        let ast = await styleResolver.buildAST(
             from: parsed,
             config: mergedConfig,
             makeRootStyle: { config in
@@ -336,6 +340,11 @@ final class HTMLAttributedStringBuilder {
                 self.makeAttributeMap(for: element)
             }
         )
+
+        if ast.resolvedStyle.isVerticalWritingMode {
+            detectedVerticalWritingMode = true
+        }
+        return ast
     }
 
     func imagePage(from body: ElementNode) async -> ImagePage? {
@@ -356,7 +365,10 @@ final class HTMLAttributedStringBuilder {
             let styleTags = (try? head.select("style").array()) ?? []
             for styleTag in styleTags {
                 let css = (try? styleTag.html()) ?? ""
-                if !css.isEmpty { styles.append(css) }
+                if !css.isEmpty {
+                    scanCSSForVerticalWritingMode(css)
+                    styles.append(css)
+                }
             }
 
             let links = (try? head.select("link[rel=stylesheet]").array()) ?? []
@@ -370,10 +382,20 @@ final class HTMLAttributedStringBuilder {
                     continue
                 }
                 print("[HTMLBuilder] injectLinkedCSS: injected CSS len=\(cssText.count) for href=\(href)")
+                scanCSSForVerticalWritingMode(cssText)
                 styles.append(cssText)
             }
         }
         return styles
+    }
+
+    private func scanCSSForVerticalWritingMode(_ css: String) {
+        guard !detectedVerticalWritingMode else { return }
+        let pattern = #"(?:-webkit-)?writing-mode\s*:\s*vertical-rl"#
+        if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+           regex.firstMatch(in: css, range: NSRange(css.startIndex..., in: css)) != nil {
+            detectedVerticalWritingMode = true
+        }
     }
 
     private func buildChildren(
@@ -1605,7 +1627,8 @@ final class HTMLAttributedStringBuilder {
             firstLetterColor: nil,
             underline: parent.underline,
             strikethrough: parent.strikethrough,
-            inheritedBlockMarginLeft: parent.inheritedBlockMarginLeft
+            inheritedBlockMarginLeft: parent.inheritedBlockMarginLeft,
+            isVerticalWritingMode: false  // writing-mode detected per-element, not inherited to avoid false positives
         )
     }
 
@@ -2410,13 +2433,12 @@ final class HTMLAttributedStringBuilder {
 
     private func debugLog(result: NSAttributedString) {
         print("[HTMLBuilder] build: rawAttrStr.length=\(result.length)")
-        if result.length > 0 {
-            let attrs = result.attributes(at: 0, effectiveRange: nil)
-            let font = attrs[.font] as? UIFont
-            let paragraph = attrs[.paragraphStyle] as? NSParagraphStyle
-            print("[HTMLBuilder] build: first-char font=\(font?.fontName ?? "nil") size=\(font?.pointSize ?? 0)")
-            print("[HTMLBuilder] build: first-char alignment=\(paragraph?.alignment.rawValue ?? -999)")
-        }
+        guard result.length > 0 else { return }
+        let attrs = result.attributes(at: 0, effectiveRange: nil)
+        let font = attrs[.font] as? UIFont
+        let paragraph = attrs[.paragraphStyle] as? NSParagraphStyle
+        print("[HTMLBuilder] build: first-char font=\(font?.fontName ?? "nil") size=\(font?.pointSize ?? 0)")
+        print("[HTMLBuilder] build: first-char alignment=\(paragraph?.alignment.rawValue ?? -999)")
     }
 
     private func collectAnchorOffsets(in attributedString: NSAttributedString) -> [String: Int] {

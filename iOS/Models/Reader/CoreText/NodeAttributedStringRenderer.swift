@@ -27,6 +27,7 @@ struct NodeAttributedStringRenderer {
         let renderWidth: CGFloat?
         let resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)?
         let imageLoader: ((String) async -> UIImage?)?
+        let writingMode: ReaderWritingMode
 
         init(
             from settings: ReaderRenderSettings,
@@ -45,6 +46,7 @@ struct NodeAttributedStringRenderer {
             self.renderWidth = renderWidth
             self.resolvedFont = resolvedFont
             self.imageLoader = imageLoader
+            self.writingMode = settings.writingMode
         }
     }
 
@@ -319,7 +321,15 @@ struct NodeAttributedStringRenderer {
         para.paragraphSpacing = style.paragraphSpacingAfter > 0
             ? style.paragraphSpacingAfter
             : (isHeading ? config.paragraphSpacing * 0.6 : config.paragraphSpacing)
-        para.paragraphSpacingBefore = style.paragraphSpacingBefore
+        // In vertical mode, CSS margin-top (→ paragraphSpacingBefore) adds space
+        // in the block-progression direction (right-to-left for vertical-rl).
+        // Large values (e.g. 10em on .normalp1) were authored for horizontal layout
+        // and would push content off-screen; cap at 1em to prevent this.
+        if config.writingMode.isVertical {
+            para.paragraphSpacingBefore = min(style.paragraphSpacingBefore, newCtx.font.pointSize)
+        } else {
+            para.paragraphSpacingBefore = style.paragraphSpacingBefore
+        }
         let cumulativeMarginLeft = ctx.inheritedBlockMarginLeft + style.marginLeft
         para.firstLineHeadIndent = cumulativeMarginLeft + style.paddingLeft + style.textIndent
         para.headIndent = cumulativeMarginLeft + style.paddingLeft
@@ -343,12 +353,15 @@ struct NodeAttributedStringRenderer {
 
     private func applyInlineStyle(_ style: RenderStyle, to ctx: RenderContext) -> RenderContext {
         guard style.bold || style.italic || style.color != nil || !style.fontFamilies.isEmpty
-                || style.underline || style.strikethrough else { return ctx }
+                || style.underline || style.strikethrough || style.fontSizeMultiplier != 1.0 else { return ctx }
         var newCtx = ctx
         let families = style.fontFamilies.isEmpty ? ctx.fontFamilies : style.fontFamilies
         let bold = style.bold || ctx.font.isBold
         let weight = bold ? max(style.fontWeight, max(ctx.fontWeight, 700)) : max(style.fontWeight, ctx.fontWeight)
-        newCtx.font = makeFont(families: families, size: ctx.font.pointSize, weight: weight, italic: style.italic || ctx.font.isItalic)
+        let fontSize = style.fontSizeMultiplier != 1.0
+            ? ctx.font.pointSize * style.fontSizeMultiplier
+            : ctx.font.pointSize
+        newCtx.font = makeFont(families: families, size: fontSize, weight: weight, italic: style.italic || ctx.font.isItalic)
         newCtx.fontFamilies = families
         newCtx.fontWeight = weight
         if let c = style.color { newCtx.textColor = c.uiColor; newCtx.hasCSSColor = true }
@@ -515,7 +528,7 @@ struct NodeAttributedStringRenderer {
         attachmentStyle.paddingRight += payload.style.paddingRight
         attachmentStyle.opacity = payload.style.opacity
 
-        let imageMetrics = resolvedImageMetrics(image: image, style: attachmentStyle, font: blockCtx.font)
+        let imageMetrics = resolvedImageMetrics(image: image, style: attachmentStyle, font: blockCtx.font, displayMode: .block)
         let blockImage = HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage(
             image: image,
             source: payload.src,
@@ -565,7 +578,7 @@ struct NodeAttributedStringRenderer {
         displayMode: ImageRunInfo.DisplayMode,
         precomputedMetrics: ImageMetrics? = nil
     ) -> NSAttributedString {
-        let metrics = precomputedMetrics ?? resolvedImageMetrics(image: image, style: style, font: ctx.font)
+        let metrics = precomputedMetrics ?? resolvedImageMetrics(image: image, style: style, font: ctx.font, displayMode: displayMode)
         let placeholder = NSMutableAttributedString(
             attributedString: RunDelegateProvider.makeImagePlaceholder(
                 image: image,
@@ -589,15 +602,22 @@ struct NodeAttributedStringRenderer {
         return placeholder
     }
 
-    private func resolvedImageMetrics(image: UIImage?, style: RenderStyle, font: UIFont) -> ImageMetrics {
+    private func resolvedImageMetrics(image: UIImage?, style: RenderStyle, font: UIFont, displayMode: ImageRunInfo.DisplayMode = .inline) -> ImageMetrics {
         let availableWidth = max(1, (config.renderWidth ?? UIScreen.main.bounds.width) - style.paddingLeft - style.paddingRight)
         let maxDrawHeight = max(1, (config.renderWidth ?? UIScreen.main.bounds.width) * 1.5)
+        let isVertical = config.writingMode.isVertical
 
         var drawWidth: CGFloat
         var drawHeight: CGFloat
 
         if let image {
-            if let explicitWidth = style.width, let explicitHeight = style.height {
+            // In vertical mode, CSS width/height were authored for horizontal layout.
+            // For block images: ignore explicit width so the image fills the column.
+            // For inline images (font_patch etc.): keep the 1em constraint so they stay character-sized.
+            if isVertical, displayMode == .block, style.width != nil {
+                drawWidth = min(image.size.width, availableWidth)
+                drawHeight = image.size.height * (drawWidth / max(image.size.width, 1))
+            } else if let explicitWidth = style.width, let explicitHeight = style.height {
                 drawWidth = explicitWidth
                 drawHeight = explicitHeight
             } else if let explicitWidth = style.width {

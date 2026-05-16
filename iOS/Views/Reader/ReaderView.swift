@@ -470,6 +470,7 @@ struct ReaderView: View {
                     playbackHighlightText: ttsCoordinator.playbackState == .stopped
                         ? nil
                         : ttsCoordinator.currentSegmentText,
+                    isRTL: effectiveWritingMode.isVertical,
                     currentPage: $currentPage,
                     onPageChanged: { newPage in
                         let newChapter = ctEngine.charOffset(forPage: newPage).spineIndex
@@ -791,6 +792,9 @@ struct ReaderView: View {
         }
         .onChanged(of: epubRenderer.isCoreTextReady) { ready in
             if ready {
+                if !isVerticalEPUB && epubRenderer.cssDetectedVerticalWritingMode {
+                    isVerticalEPUB = true
+                }
                 syncCoreTextTextAnnotations()
                 applyInitialProgressIfNeeded()
             }
@@ -2667,6 +2671,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
     let pageTurnStyle: PageTurnStyle
     let theme: ReaderTheme
     let playbackHighlightText: String?
+    let isRTL: Bool
     @Binding var currentPage: Int
     let onPageChanged: (Int) -> Void
     let onTapZone: (String) -> Void
@@ -2692,6 +2697,15 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             pvc.dataSource = context.coordinator
         }
         pvc.delegate = context.coordinator
+
+        // RTL books: reverse swipe direction so left-to-right swipe = next page.
+        if isRTL {
+            pvc.view.semanticContentAttribute = .forceRightToLeft
+            for subview in pvc.view.subviews {
+                guard let scrollView = subview as? UIScrollView else { continue }
+                scrollView.semanticContentAttribute = .forceRightToLeft
+            }
+        }
 
         // Prefer SwiftUI binding's currentPage to avoid jumping back to old coordinates when switching page styles.
         let initialPage = engine.totalPages > 0
@@ -2757,8 +2771,12 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 context.coordinator.applyPlaybackHighlight(to: visible)
                 return
             }
-            let direction: UIPageViewController.NavigationDirection =
+            var direction: UIPageViewController.NavigationDirection =
                 clampedPage >= visible.globalPageIndex ? .forward : .reverse
+            // RTL books have swapped data source methods; navigation direction must match.
+            if isRTL {
+                direction = direction == .forward ? .reverse : .forward
+            }
 
             // Suppress flag from makeUIViewController: force instant transition on first alignment.
             if context.coordinator.suppressNextTransition {
@@ -2827,6 +2845,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             pageTurnStyle: pageTurnStyle,
             theme: theme,
             playbackHighlightText: playbackHighlightText,
+            isRTL: isRTL,
             currentPage: $currentPage,
             onPageChanged: onPageChanged,
             onTapZone: onTapZone
@@ -2844,6 +2863,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         @Binding var currentPage: Int
         let onPageChanged: (Int) -> Void
         let onTapZone: (String) -> Void
+        let isRTL: Bool
 
         // Cover animation overlay components
         private let coverOverlayView = UIView()
@@ -2867,6 +2887,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
              pageTurnStyle: PageTurnStyle,
              theme: ReaderTheme,
              playbackHighlightText: String?,
+             isRTL: Bool,
              currentPage: Binding<Int>,
              onPageChanged: @escaping (Int) -> Void,
              onTapZone: @escaping (String) -> Void) {
@@ -2874,6 +2895,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             self.pageTurnStyle = pageTurnStyle
             self.currentTheme = theme
             self.currentPlaybackHighlightText = playbackHighlightText
+            self.isRTL = isRTL
             self._currentPage = currentPage
             self.onPageChanged = onPageChanged
             self.onTapZone = onTapZone
@@ -2927,6 +2949,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             callbackEngineIdentifier = nil
         }
 
+
         private func handleChapterReady(on pageViewController: UIPageViewController) {
             let engine = currentEngine
             let fallbackPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
@@ -2947,12 +2970,13 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             print(prepareLine)
             NSLog("%@", prepareLine)
 
-            let direction: UIPageViewController.NavigationDirection
+            var direction: UIPageViewController.NavigationDirection
             if let first = pageViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController) {
                 direction = targetPage >= first.globalPageIndex ? .forward : .reverse
             } else {
                 direction = .forward
             }
+            if isRTL { direction = direction == .forward ? .reverse : .forward }
 
             pageViewController.setViewControllers([freshVC], direction: direction, animated: false)
             applyPlaybackHighlight(to: freshVC)
@@ -2974,8 +2998,9 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             showing visiblePage: Int
         ) {
             guard let queuedPage = transitionQueue.transitionFinished(showing: visiblePage) else { return }
-            let direction: UIPageViewController.NavigationDirection =
+            var direction: UIPageViewController.NavigationDirection =
                 queuedPage >= visiblePage ? .forward : .reverse
+            if isRTL { direction = direction == .forward ? .reverse : .forward }
             let shouldAnimate = (pageTurnStyle != .none) && abs(queuedPage - visiblePage) == 1
             performProgrammaticTransition(
                 on: pageViewController,
@@ -3020,7 +3045,14 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                   let view = recognizer.view else { return }
             let x = recognizer.location(in: view).x
             let w = view.bounds.width
-            let zone = x < w * 0.3 ? "left" : x > w * 0.7 ? "right" : "center"
+            // RTL books: swap tap zones. Left (away from spine) → next, right (near spine) → prev.
+            let rawZone = x < w * 0.3 ? "left" : x > w * 0.7 ? "right" : "center"
+            let zone: String
+            if isRTL {
+                zone = rawZone == "left" ? "right" : rawZone == "right" ? "left" : "center"
+            } else {
+                zone = rawZone
+            }
             DispatchQueue.main.async { self.onTapZone(zone) }
         }
 
@@ -3077,6 +3109,25 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             _ pvc: UIPageViewController,
             viewControllerBefore viewController: UIViewController
         ) -> UIViewController? {
+            // RTL: swipe left-to-right = "before" in physical gesture, but should go to NEXT page.
+            // So swap Before↔After for RTL books so the swipe direction matches the reading direction.
+            if isRTL {
+                return pageForward(from: viewController)
+            }
+            return pageBackward(from: viewController)
+        }
+
+        func pageViewController(
+            _ pvc: UIPageViewController,
+            viewControllerAfter viewController: UIViewController
+        ) -> UIViewController? {
+            if isRTL {
+                return pageBackward(from: viewController)
+            }
+            return pageForward(from: viewController)
+        }
+
+        private func pageBackward(from viewController: UIViewController) -> UIViewController? {
             guard let vc = viewController as? any PageIndexProviding & UIViewController,
                   vc.globalPageIndex > 0 else { return nil }
             let (currentSpine, currentLocal) = currentEngine.localPosition(for: vc.globalPageIndex)
@@ -3090,10 +3141,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             return previousVC
         }
 
-        func pageViewController(
-            _ pvc: UIPageViewController,
-            viewControllerAfter viewController: UIViewController
-        ) -> UIViewController? {
+        private func pageForward(from viewController: UIViewController) -> UIViewController? {
             guard let vc = viewController as? any PageIndexProviding & UIViewController,
                   vc.globalPageIndex < currentEngine.totalPages - 1 else { return nil }
             let (currentSpine, _) = currentEngine.localPosition(for: vc.globalPageIndex)
@@ -3109,7 +3157,6 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return nextVC
             }
             let nextIndex = vc.globalPageIndex + 1
-            // Snapshot handoff: if the next page is a new chapter and the snapshot is ready, return the static VC for animation.
             if let snapVC = currentEngine.snapshotViewController(at: nextIndex) {
                 return snapVC
             }

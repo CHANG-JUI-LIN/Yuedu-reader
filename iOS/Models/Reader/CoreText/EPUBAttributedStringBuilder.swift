@@ -23,6 +23,8 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
     private let styleResolver: EPUBStyleResolver
     /// Current render area size (injected by EPUBPageRenderer during load / notifyViewportSize).
     var renderSize: CGSize
+    /// Set to true when CSS writing-mode: vertical-rl is detected from any chapter's stylesheet or body element.
+    var cssDetectedVerticalWritingMode = false
 
     // MARK: - Initialization
 
@@ -168,6 +170,10 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                 }
             )
         )
+        if localBuilder.detectedVerticalWritingMode {
+            cssDetectedVerticalWritingMode = true
+        }
+
         let attributedString = await renderer.render(nodes)
         let pageBackgroundImage = await localBuilder.pageBackgroundImage(from: ast)
         let anchorOffsets = localBuilder.anchorOffsets(in: attributedString)

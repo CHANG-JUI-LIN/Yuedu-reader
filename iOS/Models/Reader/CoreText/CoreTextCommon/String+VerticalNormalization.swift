@@ -1,20 +1,19 @@
 import Foundation
 
 extension String {
+
     /// Normalizes punctuation for vertical-right-to-left CoreText layout.
     ///
-    /// Phase 1: half-width ASCII brackets → full-width CJK equivalents.
-    ///   These replacements are 1:1 at the UTF-16 level so attribute ranges are preserved
-    ///   when applied to an NSMutableAttributedString.
+    /// Phase 1: half-width ASCII brackets → full-width CJK equivalents (always).
+    ///   These have no vertical alternates in any CJK font, so unconditional
+    ///   1:1 UTF-16 replacement is safe and preserves attribute ranges.
     ///
-    /// Phase 2: full-width horizontal punctuation → vertical presentation forms.
-    ///   These codepoints (U+FE10–U+FE1F block and neighbors) are dedicated vertical
-    ///   glyphs that render correctly even in fonts without OpenType vertical alternates.
-    ///
-    /// Phase 2 note: CoreText with kCTVerticalFormsAttributeName already handles many
-    ///   CJK punctuation marks via internal glyph substitution. This mapping covers
-    ///   the remaining cases where fonts lack vertical form tables.
-    func normalizedForVerticalLayout() -> String {
+    /// Phase 2: full-width → vertical presentation forms, using a per-font
+    ///   substitution map built by `VerticalLayoutConfig`.  Characters the
+    ///   font already handles via `kCTVerticalFormsAttributeName` are skipped;
+    ///   only truly missing ones get a presentation-form fallback.  This keeps
+    ///   searchability and copy-paste working for natively-supported punctuation.
+    func normalizedForVerticalLayout(using verticalMap: [String: String]? = nil) -> String {
         var processed = self
 
         // ── Phase 1: half-width → full-width brackets ──
@@ -28,25 +27,31 @@ extension String {
             processed = processed.replacingOccurrences(of: half, with: full)
         }
 
-        // ── Phase 2: full-width → vertical presentation forms ──
-        let verticalPunctuationMap: [String: String] = [
-            "《": "︽", "》": "︾",
-            "〈": "︿", "〉": "﹀",
-            "「": "﹁", "」": "﹂",
-            "『": "﹃", "』": "﹄",
-            "（": "︵", "）": "︶",
-            "〔": "︹", "〕": "︺",
-            "【": "︻", "】": "︼",
-            "｛": "︷", "｝": "︸",
-            "、": "︑", "。": "︒",
-            "，": "︐", "：": "︓", "；": "︔",
-            "？": "︖", "！": "︕",
-            "——": "︱︱", "……": "︙︙",
-        ]
-        for (horizontal, vertical) in verticalPunctuationMap {
+        // ── Phase 2: full-width → vertical presentation forms (per-font) ──
+        let map = verticalMap ?? Self.staticVerticalMap
+        for (horizontal, vertical) in map {
             processed = processed.replacingOccurrences(of: horizontal, with: vertical)
         }
 
+        // Dashes and ellipsis are multi-char and font-agnostic.
+        processed = processed.replacingOccurrences(of: "——", with: "︱︱")
+        processed = processed.replacingOccurrences(of: "……", with: "︙︙")
+
         return processed
     }
+
+    /// Fallback used when no per-font map is available.
+    private static let staticVerticalMap: [String: String] = [
+        "《": "︽", "》": "︾",
+        "〈": "︿", "〉": "﹀",
+        "「": "﹁", "」": "﹂",
+        "『": "﹃", "』": "﹄",
+        "（": "︵", "）": "︶",
+        "〔": "︹", "〕": "︺",
+        "【": "︻", "】": "︼",
+        "｛": "︷", "｝": "︸",
+        "、": "︑", "。": "︒",
+        "，": "︐", "：": "︓", "；": "︔",
+        "？": "︖", "！": "︕",
+    ]
 }
