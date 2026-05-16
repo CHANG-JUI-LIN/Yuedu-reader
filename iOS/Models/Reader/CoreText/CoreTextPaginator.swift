@@ -408,9 +408,7 @@ final class CoreTextPaginator {
         return CTFramesetterCreateFrame(framesetter, range, path, frameAttributes)
     }
 
-    /// Vertical mode: half-width→full-width punctuation, paragraph style for CJK vertical,
-    /// kCTVerticalFormsAttributeName = true globally with ASCII/latin exceptions so
-    /// English/URLs rotate 90° instead of stacking upright.
+    /// Vertical mode: normalization → font cascade → paragraph style → vertical forms → ASCII exceptions.
     /// Horizontal mode: returns unchanged.
     private static func preparedAttributedString(
         _ attrStr: NSAttributedString,
@@ -421,16 +419,35 @@ final class CoreTextPaginator {
         let mutable = NSMutableAttributedString(attributedString: attrStr)
         let fullRange = NSRange(location: 0, length: mutable.length)
 
-        // Step 1: Replace half-width brackets with full-width so CJK fonts
-        //         provide vertical glyph variants (︵ ︶ etc.) via kCTVerticalFormsAttributeName.
-        var text = mutable.string
-        text = replaceHalfWidthPunctuation(text)
-        if text != mutable.string {
-            mutable.mutableString.setString(text)
+        // Step 1: Normalize punctuation for vertical layout.
+        //         Phase 1: half-width brackets → full-width.
+        //         Phase 2: full-width → vertical presentation forms (U+FE10 block).
+        //         1:1 UTF-16 replacements preserve attribute ranges.
+        let normalizedText = mutable.string.normalizedForVerticalLayout()
+        if normalizedText != mutable.string {
+            mutable.mutableString.setString(normalizedText)
         }
 
-        // Step 2: Ensure every range has a paragraph style with CJK-vertical defaults.
-        //         firstLineHeadIndent → top indent in vertical-rl (2em paragraph start).
+        // Step 2: Font cascade list for rare / supplemented CJK characters.
+        //         PingFang → Songti → Kaiti → Heiti fallback chain.
+        //         Preserves per-range font size and traits.
+        mutable.enumerateAttribute(.font, in: fullRange, options: []) { value, range, _ in
+            guard let font = value as? UIFont else { return }
+            let ctFont = font as CTFont
+            let descriptor = CTFontCopyFontDescriptor(ctFont)
+            let fallbackNames = ["Songti TC", "Kaiti TC", "Heiti TC"]
+            let fallbackDescriptors = fallbackNames.map { name in
+                CTFontDescriptorCreateWithNameAndSize(name as CFString, font.pointSize)
+            }
+            let cascadeAttributes = [kCTFontCascadeListAttribute: fallbackDescriptors]
+            let descriptorWithFallback = CTFontDescriptorCreateCopyWithAttributes(
+                descriptor, cascadeAttributes as CFDictionary
+            )
+            let finalCTFont = CTFontCreateWithFontDescriptor(descriptorWithFallback, font.pointSize, nil)
+            mutable.addAttribute(.font, value: finalCTFont, range: range)
+        }
+
+        // Step 3: Ensure every range has a paragraph style with CJK-vertical defaults.
         mutable.enumerateAttribute(.paragraphStyle, in: fullRange, options: []) { value, range, _ in
             if let existing = value as? NSParagraphStyle {
                 let updated = existing.mutableCopy() as! NSMutableParagraphStyle
@@ -453,14 +470,14 @@ final class CoreTextPaginator {
             }
         }
 
-        // Step 3: Apply vertical forms globally so CJK characters use upright glyphs.
+        // Step 4: Apply vertical forms globally.
         let verticalFormsKey = NSAttributedString.Key(kCTVerticalFormsAttributeName as String)
         mutable.addAttribute(verticalFormsKey, value: true, range: fullRange)
 
-        // Step 4: Remove vertical forms from ASCII / Latin / numeric ranges.
-        //         Without the attribute CoreText rotates these 90° clockwise (lying flat)
-        //         instead of stacking characters upright.
-        let latinPattern = "[a-zA-Z0-9\\s\\.\\,\\:\\;\\/\\\\\\-\\_@&\\#\\?\\!\\+\\=\\*\\^\\%\\$\\~\\`\\|\\<\\>\\{\\}'\"]+"
+        // Step 5: Remove vertical forms from ASCII / Latin / numeric ranges
+        //         so English and URLs rotate 90° clockwise (lying flat).
+        //         Punctuation is already handled by Step 1 — regex covers only letters and digits.
+        let latinPattern = "[a-zA-Z0-9\\s]+"
         if let regex = try? NSRegularExpression(pattern: latinPattern, options: []) {
             let matches = regex.matches(in: mutable.string, options: [], range: fullRange)
             for match in matches {
@@ -469,21 +486,6 @@ final class CoreTextPaginator {
         }
 
         return mutable
-    }
-
-    /// Replaces half-width punctuation that lacks vertical-form glyphs with full-width equivalents.
-    /// All replacements are 1:1 at the UTF-16 level so attribute ranges are preserved.
-    private static func replaceHalfWidthPunctuation(_ text: String) -> String {
-        var result = text
-        result = result.replacingOccurrences(of: "(", with: "（")
-        result = result.replacingOccurrences(of: ")", with: "）")
-        result = result.replacingOccurrences(of: "[", with: "〔")
-        result = result.replacingOccurrences(of: "]", with: "〕")
-        result = result.replacingOccurrences(of: "<", with: "〈")
-        result = result.replacingOccurrences(of: ">", with: "〉")
-        result = result.replacingOccurrences(of: "{", with: "｛")
-        result = result.replacingOccurrences(of: "}", with: "｝")
-        return result
     }
 
     /// Horizontal mode: snaps bottom inset to integer line grid for clean page fill.

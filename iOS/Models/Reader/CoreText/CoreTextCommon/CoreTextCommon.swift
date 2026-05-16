@@ -8,8 +8,9 @@ import CoreText
 //
 // Directory layout:
 //
-//   CoreTextCommon/           ← you are here
-//   ├── CoreTextCommon.swift  ← this file (architecture docs)
+//   CoreTextCommon/                                ← you are here
+//   ├── CoreTextCommon.swift                       ← architecture docs
+//   ├── String+VerticalNormalization.swift          ← vertical punctuation normalization
 //
 //   CoreTextHorizontal/
 //   └── CoreTextHorizontalLineDrawer.swift
@@ -27,7 +28,7 @@ import CoreText
 //
 //   CoreTextPaginator.swift:
 //     • frameAttributes(for:)     → vertical: kCTFrameProgression.rightToLeft
-//     • preparedAttributedString  → vertical: half→full-width punct + paragraph style + kCTVerticalFormsAttributeName with ASCII exceptions
+//     • preparedAttributedString  → vertical: normalizedForVerticalLayout() + CTFont cascade + paragraph style + kCTVerticalFormsAttributeName with ASCII exceptions
 //     • gridAlignedContentInsets  → vertical: skip; horizontal: snap to line grid
 //     • makeFrame(…)              → shared: creates CTFrame from framesetter
 //     • computeLayout()           → shared: pagination loop
