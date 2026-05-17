@@ -17,6 +17,8 @@ final class HTMLAttributedStringBuilder {
     static let containerBlockRenderIDAttribute = NSAttributedString.Key("ReaderContainerBlockRenderID")
     /// Marker attribute for CSS-explicit foreground color. Ranges with this attribute are not overwritten by withUpdatedColors().
     static let cssSpecifiedForegroundColorAttribute = NSAttributedString.Key("ReaderCSSSpecifiedForegroundColor")
+    /// Marker attribute for vertical spacer runs (CTRunDelegate that are NOT image placeholders).
+    static let spacerRunAttribute = NSAttributedString.Key("ReaderSpacerRun")
     private static let paragraphSeparator = "\n"
     private static let lineSeparator = "\u{2028}"
 
@@ -30,6 +32,7 @@ final class HTMLAttributedStringBuilder {
         var backgroundColor: UIColor
         var fontFamilyName: String?
         var renderWidth: CGFloat
+        var writingMode: ReaderWritingMode = .horizontal
         var firstLetterRules: [CSSRule] = []
     }
 
@@ -1410,14 +1413,18 @@ final class HTMLAttributedStringBuilder {
         
         let drawWidth = dWidth
         let drawHeight = dHeight
-        let totalWidth = drawWidth + style.paddingLeft + style.paddingRight
+        let isVertical = config.writingMode.isVertical
+        let totalWidth = isVertical ? drawHeight : drawWidth + style.paddingLeft + style.paddingRight
         
         let font = makeFont(from: style, config: config)
         let lineHeight = max(style.fontSize, font.lineHeight)
         
         let ascent: CGFloat
         let descent: CGFloat
-        if drawHeight > lineHeight {
+        if isVertical {
+            ascent = drawWidth / 2
+            descent = drawWidth / 2
+        } else if drawHeight > lineHeight {
             ascent = drawHeight
             descent = 0
         } else {

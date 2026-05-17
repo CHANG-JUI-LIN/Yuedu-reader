@@ -208,6 +208,15 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             path: path,
             writingMode: layout.writingMode
         )
+        // ── Diagnostics: log all text/image positions for problem pages ──
+        logPageDiagnostics(
+            layout: layout,
+            pageIndex: pageIndex,
+            frame: frame,
+            contentPathRect: contentPathRect,
+            layoutSize: layoutSize
+        )
+
         // Collect ranges that will be redrawn by drawBlockRenderableText so drawLines can skip them.
         let suppressedRanges = (layout.blockRenderables[pageIndex] ?? [])
             .flatMap { $0.attributedText != nil ? $0.sourceRanges : [] }
@@ -278,6 +287,117 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     ///   - contentMinX: Left edge of the content area (CoreText coordinates), used for drawing HR line start points
     ///   - contentMinY: Bottom of the content area (CoreText coordinates), used for calculating last-page remaining space
     ///   - isLastPage: Whether this is the last page of the chapter; last pages do not apply vertical justification
+    // MARK: - Page Diagnostics (page-level text/image position logging)
+
+    /// Logs every text line, image, and block renderable position for pages
+    /// matching keywords like "版權", "整理說明", etc.
+    private nonisolated static func logPageDiagnostics(
+        layout: CoreTextPaginator.ChapterLayout,
+        pageIndex: Int,
+        frame: CTFrame,
+        contentPathRect: CGRect,
+        layoutSize: CGSize
+    ) {
+        let range = layout.pageRanges[pageIndex]
+        guard range.length > 0 else { return }
+        let nsRange = NSRange(location: range.location, length: min(range.length, layout.attributedString.length - range.location))
+        guard nsRange.length > 0 else { return }
+        let pageText = (layout.attributedString.string as NSString).substring(with: nsRange)
+
+        let keywords = ["版權", "Copyright", "BookDNA", "經典復刻", "浙版數媒", "書名頁", "曹雪芹著 脂硯齋評"]
+        let matched = keywords.filter { pageText.contains($0) }
+        let inlineImgs = layout.inlineAttachments[pageIndex] ?? []
+        guard !matched.isEmpty || !inlineImgs.isEmpty else { return }
+
+        print("[PageDiag] ===============================================================")
+        print("[PageDiag] PAGE \(pageIndex) spine=\(layout.spineIndex) matched=\(matched)")
+        print("[PageDiag] writingMode=\(layout.writingMode.isVertical ? "vertical-rl" : "horizontal")")
+        print("[PageDiag] renderSize=\(layout.renderSize) layoutSize=\(layoutSize)")
+        print("[PageDiag] contentInsets=\(layout.contentInsets)")
+        print("[PageDiag] contentPathRect=\(contentPathRect)")
+        print("[PageDiag] pageRange=(\(range.location), \(range.length))")
+        let preview = String(pageText.replacingOccurrences(of: "\n", with: "\\n").prefix(300))
+        print("[PageDiag] pageText prefix: \"\(preview)\"")
+
+        // ── Text lines ──
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        print("[PageDiag] --- Text Lines: \(lines.count) ---")
+        for (i, line) in lines.enumerated() {
+            let lineRange = CTLineGetStringRange(line)
+            let origin = origins[i]
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            var leading: CGFloat = 0
+            let lineWidth = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+            let baselineX = contentPathRect.minX + origin.x
+            let typographicCenterX = baselineX + (ascent - descent) / 2
+            // CoreText rect
+            let coreTextRect = CGRect(
+                x: baselineX,
+                y: contentPathRect.minY + origin.y - descent,
+                width: max(0, lineWidth),
+                height: max(0, ascent + descent)
+            )
+            // UIKit rect
+            let uiRect = CGRect(
+                x: coreTextRect.minX,
+                y: layoutSize.height - coreTextRect.maxY,
+                width: coreTextRect.width,
+                height: coreTextRect.height
+            )
+            var lineText = ""
+            if lineRange.location < layout.attributedString.length {
+                let end = min(lineRange.location + lineRange.length, layout.attributedString.length)
+                if end > lineRange.location {
+                    let t = (layout.attributedString.string as NSString)
+                        .substring(with: NSRange(location: lineRange.location, length: min(end - lineRange.location, 60)))
+                    lineText = t.replacingOccurrences(of: "\n", with: "\\n")
+                }
+            }
+            // Paragraph style for this line
+            var psInfo = "ps=nil"
+            if lineRange.location < layout.attributedString.length {
+                if let ps = layout.attributedString.attribute(.paragraphStyle, at: lineRange.location, effectiveRange: nil) as? NSParagraphStyle {
+                    psInfo = "ps.firstLineHeadIndent=\(String(format: "%.1f", ps.firstLineHeadIndent)) headIndent=\(String(format: "%.1f", ps.headIndent)) tailIndent=\(String(format: "%.1f", ps.tailIndent)) paraSpacingBefore=\(String(format: "%.1f", ps.paragraphSpacingBefore)) paraSpacing=\(String(format: "%.1f", ps.paragraphSpacing)) lineSpacing=\(String(format: "%.1f", ps.lineSpacing)) alignment=\(ps.alignment.rawValue) minLineHeight=\(String(format: "%.1f", ps.minimumLineHeight)) maxLineHeight=\(String(format: "%.1f", ps.maximumLineHeight))"
+                }
+            }
+            print("[PageDiag]   L[\(i)] origin=(\(String(format: "%.1f", origin.x)), \(String(format: "%.1f", origin.y))) baselineX=\(String(format: "%.1f", baselineX)) typeCenterX=\(String(format: "%.1f", typographicCenterX)) centerDelta=\(String(format: "%.1f", typographicCenterX - baselineX)) w=\(String(format: "%.1f", lineWidth)) asc=\(String(format: "%.1f", ascent)) desc=\(String(format: "%.1f", descent)) ctRect=\(String(format: "%.1f", coreTextRect.minX)),\(String(format: "%.1f", coreTextRect.minY)),\(String(format: "%.1f", coreTextRect.width)),\(String(format: "%.1f", coreTextRect.height)) uiRect=\(String(format: "%.1f", uiRect.minX)),\(String(format: "%.1f", uiRect.minY)),\(String(format: "%.1f", uiRect.width)),\(String(format: "%.1f", uiRect.height)) range=(\(lineRange.location),\(lineRange.length)) \"\(lineText)\"")
+            print("[PageDiag]          \(psInfo)")
+        }
+
+        // ── Inline attachments ──
+        print("[PageDiag] --- Inline Images: \(inlineImgs.count) ---")
+        for (i, img) in inlineImgs.enumerated() {
+            print("[PageDiag]   IMG-inline[\(i)] rect=(\(String(format: "%.1f", img.rect.minX)), \(String(format: "%.1f", img.rect.minY)), \(String(format: "%.1f", img.rect.width)), \(String(format: "%.1f", img.rect.height))) drawSize=\(img.originalSize) src=\(img.sourceHref ?? "nil") alt=\(img.alt ?? "nil")")
+        }
+
+        // ── Block attachments ──
+        let blockImgs = layout.blockAttachments[pageIndex] ?? []
+        print("[PageDiag] --- Block Images: \(blockImgs.count) ---")
+        for (i, img) in blockImgs.enumerated() {
+            print("[PageDiag]   IMG-block[\(i)] rect=(\(String(format: "%.1f", img.rect.minX)), \(String(format: "%.1f", img.rect.minY)), \(String(format: "%.1f", img.rect.width)), \(String(format: "%.1f", img.rect.height))) drawSize=\(img.originalSize) src=\(img.sourceHref ?? "nil")")
+        }
+
+        // ── Block renderables ──
+        let renderables = layout.blockRenderables[pageIndex] ?? []
+        print("[PageDiag] --- Block Renderables: \(renderables.count) ---")
+        for (i, br) in renderables.enumerated() {
+            let imgInfo: String
+            if let img = br.imageAttachment {
+                imgInfo = "img=(\(String(format: "%.1f", img.rect.minX)),\(String(format: "%.1f", img.rect.minY)),\(String(format: "%.1f", img.rect.width)),\(String(format: "%.1f", img.rect.height))) src=\(img.sourceHref ?? "nil")"
+            } else {
+                imgInfo = "no-image"
+            }
+            let textInfo = br.attributedText != nil ? "hasText len=\(br.attributedText!.length)" : "no-text"
+            let styleInfo = "bg=\(br.style.backgroundFillColor != nil ? "Y" : "N") borderTop=\(br.style.borderTopWidth) borderBot=\(br.style.borderBottomWidth) w=\(br.style.width?.description ?? "nil")"
+            print("[PageDiag]   BLOCK[\(i)] rect=(\(String(format: "%.1f", br.rect.minX)), \(String(format: "%.1f", br.rect.minY)), \(String(format: "%.1f", br.rect.width)), \(String(format: "%.1f", br.rect.height))) \(imgInfo) \(textInfo) \(styleInfo)")
+        }
+
+        print("[PageDiag] ===============================================================")
+    }
+
     // MARK: - Phase 2a: Vertical text rendering
 
     /// Draw a CTFrame in vertical-rl mode.

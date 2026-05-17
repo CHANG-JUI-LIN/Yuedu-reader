@@ -488,16 +488,30 @@ final class CoreTextPaginator {
         let verticalFormsKey = NSAttributedString.Key(kCTVerticalFormsAttributeName as String)
         mutable.addAttribute(verticalFormsKey, value: true, range: fullRange)
 
-        // Step 6: Remove vertical forms from ASCII / Latin / numeric ranges
-        //         so English and URLs rotate 90° clockwise (lying flat).
-        let latinPattern = "[a-zA-Z0-9\\s]+"
+        // Step 6: Remove vertical forms from non-CJK Latin / numeric / ASCII
+        // punctuation ranges so mixed English IDs stay in one sideways run.
+        let latinPattern = "[^\\p{Han}\u{3000}-\u{303F}\u{FF00}-\u{FFEF}\u{FE30}-\u{FE4F}\u{FE10}-\u{FE1F}]+"
         if let regex = try? NSRegularExpression(pattern: latinPattern, options: []) {
             let matches = regex.matches(in: mutable.string, options: [], range: fullRange)
             for match in matches {
                 mutable.removeAttribute(verticalFormsKey, range: match.range)
+                applyVerticalLatinBaselineAlignment(to: mutable, range: match.range)
             }
         }
         return mutable
+    }
+
+    /// Keep sideways Latin centered on the same ideographic baseline axis as
+    /// neighboring full-width CJK glyphs in vertical frames.
+    private static func applyVerticalLatinBaselineAlignment(
+        to attributedString: NSMutableAttributedString,
+        range: NSRange
+    ) {
+        attributedString.addAttribute(
+            NSAttributedString.Key(kCTBaselineClassAttributeName as String),
+            value: kCTBaselineClassIdeographicCentered,
+            range: range
+        )
     }
 
     /// Horizontal mode: snaps bottom inset to integer line grid for clean page fill.
@@ -618,6 +632,8 @@ final class CoreTextPaginator {
                 for run in runs {
                     let attrs = CTRunGetAttributes(run) as! [NSAttributedString.Key: Any]
                     guard let delegate = attrs[delegateKey] else { continue }
+                    // Skip spacer runs (not image placeholders)
+                    guard attrs[HTMLAttributedStringBuilder.spacerRunAttribute] == nil else { continue }
                     // CTRunDelegate is a CoreFoundation type; unconditional cast is correct
                     let ctDelegate = delegate as! CTRunDelegate
                     let ptr = CTRunDelegateGetRefCon(ctDelegate)
@@ -661,17 +677,61 @@ final class CoreTextPaginator {
                                 // Vertical-rl manual rect. lineOrigin.x is the vertical
                                 // baseline (glyph center), not left edge — subtract half
                                 // width to center the image on the baseline.
+                                let runLocation = CTRunGetStringRange(run).location
                                 let textAdvance = CTLineGetOffsetForStringIndex(
                                     line,
-                                    CTRunGetStringRange(run).location,
+                                    runLocation,
                                     nil
                                 )
+                                let columnBaselineX = contentPathRect.origin.x + lineOrigin.x
+                                let lineTypographicCenterX = columnBaselineX + (lineAscent - lineDescent) / 2
                                 rect = CGRect(
-                                    x: contentPathRect.origin.x + lineOrigin.x - (info.drawWidth / 2) + info.paddingLeft,
-                                    y: renderSize.height - lineOrigin.y + textAdvance + penOffset - info.drawHeight,
+                                    x: lineTypographicCenterX - (info.drawWidth / 2),
+                                    y: renderSize.height - lineOrigin.y + textAdvance,
                                     width: info.drawWidth,
                                     height: info.drawHeight
                                 )
+                                let runBounds = CTRunGetImageBounds(run, nil, CFRangeMake(0, 0))
+                                var firstRunPosition = CGPoint.zero
+                                if CTRunGetGlyphCount(run) > 0 {
+                                    CTRunGetPositions(run, CFRangeMake(0, 1), &firstRunPosition)
+                                }
+                                let coreTextRunBounds = CGRect(
+                                    x: contentPathRect.origin.x + lineOrigin.x + runBounds.minX,
+                                    y: contentPathRect.origin.y + lineOrigin.y + runBounds.minY,
+                                    width: runBounds.width,
+                                    height: runBounds.height
+                                )
+                                let debugLines = [
+                                    "[IMG DEBUG] lineOrigin=\(lineOrigin)",
+                                    "[IMG DEBUG] contentPathRect=\(contentPathRect)",
+                                    "[IMG DEBUG] columnBaselineX=\(columnBaselineX)",
+                                    "[IMG DEBUG] lineAscent=\(lineAscent)",
+                                    "[IMG DEBUG] lineDescent=\(lineDescent)",
+                                    "[IMG DEBUG] lineTypographicCenterX=\(lineTypographicCenterX)",
+                                    "[IMG DEBUG] lineTypographicCenterX-columnBaselineX=\(lineTypographicCenterX - columnBaselineX)",
+                                    "[IMG DEBUG] textAdvance=\(textAdvance)",
+                                    "[IMG DEBUG] runPosition[0]=\(firstRunPosition)",
+                                    "[IMG DEBUG] runImageBounds=\(runBounds)",
+                                    "[IMG DEBUG] coreTextRunBounds=\(coreTextRunBounds)",
+                                    "[IMG DEBUG] renderSize.height=\(renderSize.height)",
+                                    "[IMG DEBUG] computedY=\(renderSize.height - lineOrigin.y + textAdvance)",
+                                    "[IMG DEBUG] drawHeight=\(info.drawHeight)",
+                                    "[IMG DEBUG] drawWidth=\(info.drawWidth)",
+                                    "[IMG DEBUG] ascent=\(info.ascent)",
+                                    "[IMG DEBUG] descent=\(info.descent)",
+                                    "[IMG DEBUG] paddingLeft=\(info.paddingLeft)",
+                                    "[IMG DEBUG] paddingRight=\(info.paddingRight)",
+                                    "[IMG DEBUG] widthAdvance=\(info.width)",
+                                    "[IMG DEBUG] finalRect.midX=\(rect.midX)",
+                                    "[IMG DEBUG] finalRect.midX-columnBaselineX=\(rect.midX - columnBaselineX)",
+                                    "[IMG DEBUG] finalRect.midX-lineTypographicCenterX=\(rect.midX - lineTypographicCenterX)",
+                                    "[IMG DEBUG] finalRect=\(rect)",
+                                ]
+                                for line in debugLines {
+                                    print(line)
+                                    NSLog("%@", line)
+                                }
                             } else {
                                 let textAdvance = CTLineGetOffsetForStringIndex(
                                     line,
@@ -883,7 +943,8 @@ final class CoreTextPaginator {
 
                 var lineAscent: CGFloat = 0
                 var lineDescent: CGFloat = 0
-                _ = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
+                var lineWidth: CGFloat = 0
+                lineWidth = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
 
                 let lineOrigin = origins[lineIdx]
                 let adjustedOrigin = CGPoint(
@@ -940,17 +1001,37 @@ final class CoreTextPaginator {
                             blockX = contentPathRect.minX + leftInset
                         }
                     }
-                    let lineHeight = max(paragraphStyle.minimumLineHeight, lineAscent + lineDescent)
-                    let blockHeight = max(
-                        lineHeight,
-                        groups[groupIndex].style.blockImage?.drawSize.height ?? groups[groupIndex].style.height ?? 0
-                    )
-                    let inferredTopY = renderSize.height - (adjustedOrigin.y + lineAscent)
-                    let uiY = inferredTopY
+                    let lineHeight: CGFloat
+                    let blockHeight: CGFloat
+                    let uiY: CGFloat
+                    let rectX: CGFloat
+                    let rectW: CGFloat
+                    if writingMode.isVertical {
+                        // blockImage.drawSize: .width = physical width (X), .height = physical height (Y)
+                        // lineWidth = inline (Y) extent; ascent/descent = block (X) extent
+                        let blockExtent = lineAscent + abs(lineDescent)
+                        lineHeight = lineWidth
+                        blockHeight = max(lineWidth,
+                            groups[groupIndex].style.blockImage?.drawSize.height
+                            ?? groups[groupIndex].style.height ?? 0)
+                        rectW = max(preferredWidth,
+                            groups[groupIndex].style.blockImage?.drawSize.width
+                            ?? blockExtent)
+                        rectX = adjustedOrigin.x - rectW / 2   // center on column baseline
+                        uiY = renderSize.height - adjustedOrigin.y
+                    } else {
+                        lineHeight = max(paragraphStyle.minimumLineHeight, lineAscent + lineDescent)
+                        blockHeight = max(lineHeight,
+                            groups[groupIndex].style.blockImage?.drawSize.height
+                            ?? groups[groupIndex].style.height ?? 0)
+                        uiY = renderSize.height - (adjustedOrigin.y + lineAscent)
+                        rectX = blockX
+                        rectW = preferredWidth
+                    }
                     let rect = CGRect(
-                        x: blockX,
+                        x: rectX,
                         y: uiY,
-                        width: preferredWidth,
+                        width: rectW,
                         height: blockHeight
                     )
 
@@ -979,7 +1060,8 @@ final class CoreTextPaginator {
                             rect: group.rect,
                             style: group.style,
                             ranges: group.ranges,
-                            attrStr: attrStr
+                            attrStr: attrStr,
+                            isVertical: writingMode.isVertical
                         )
                     )
                 }
@@ -1085,7 +1167,8 @@ final class CoreTextPaginator {
         rect: CGRect,
         style: HTMLAttributedStringBuilder.BlockRenderStyle,
         ranges: [NSRange],
-        attrStr: NSAttributedString
+        attrStr: NSAttributedString,
+        isVertical: Bool = false
     ) -> RenderedAttachment? {
         guard let blockImage = style.blockImage,
               let image = blockImage.image
@@ -1105,6 +1188,8 @@ final class CoreTextPaginator {
             let safeRange = NSRange(location: safeLocation, length: safeEnd - safeLocation)
             attrStr.enumerateAttribute(delegateKey, in: safeRange, options: []) { value, effectiveRange, stop in
                 guard let delegate = value else { return }
+                // Skip spacer runs (not image placeholders)
+                guard attrStr.attribute(HTMLAttributedStringBuilder.spacerRunAttribute, at: effectiveRange.location, effectiveRange: nil) == nil else { return }
                 let ctDelegate = delegate as! CTRunDelegate
                 let ptr = CTRunDelegateGetRefCon(ctDelegate)
                 let info = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
@@ -1127,7 +1212,7 @@ final class CoreTextPaginator {
             }
         }
 
-        let imageRect = blockImageRect(in: rect, blockImage: blockImage)
+        let imageRect = blockImageRect(in: rect, blockImage: blockImage, isVertical: isVertical)
         return RenderedAttachment(
             rect: imageRect,
             image: image,
@@ -1141,19 +1226,24 @@ final class CoreTextPaginator {
 
     static func blockImageRect(
         in availableRect: CGRect,
-        blockImage: HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage
+        blockImage: HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage,
+        isVertical: Bool = false
     ) -> CGRect {
         let contentWidth = max(1, availableRect.width - blockImage.paddingLeft - blockImage.paddingRight)
         let drawWidth = min(blockImage.drawSize.width, contentWidth)
         let drawHeight = blockImage.drawSize.height
         let imgX: CGFloat
-        switch blockImage.alignment {
-        case .center:
-            imgX = availableRect.minX + blockImage.paddingLeft + max(0, (contentWidth - drawWidth) / 2)
-        case .right:
-            imgX = availableRect.minX + blockImage.paddingLeft + max(0, contentWidth - drawWidth)
-        default:
-            imgX = availableRect.minX + blockImage.paddingLeft
+        if isVertical {
+            imgX = availableRect.minX + max(0, (availableRect.width - drawWidth) / 2)
+        } else {
+            switch blockImage.alignment {
+            case .center:
+                imgX = availableRect.minX + blockImage.paddingLeft + max(0, (contentWidth - drawWidth) / 2)
+            case .right:
+                imgX = availableRect.minX + blockImage.paddingLeft + max(0, contentWidth - drawWidth)
+            default:
+                imgX = availableRect.minX + blockImage.paddingLeft
+            }
         }
         let imgY = availableRect.minY + max(0, (availableRect.height - drawHeight) / 2)
         return CGRect(x: imgX, y: imgY, width: drawWidth, height: drawHeight)

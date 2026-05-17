@@ -1289,7 +1289,8 @@ _layouts[spineIndex] = _layouts[spineIndex]?.withUpdatedColors(textColor: textCo
             textColor: currentTextColor(),
             backgroundColor: currentBackgroundColor(),
             fontFamilyName: nil,
-            renderWidth: max(1, renderSize.width - horizontalInsets)
+            renderWidth: max(1, renderSize.width - horizontalInsets),
+            writingMode: renderSettings.writingMode
         )
     }
 

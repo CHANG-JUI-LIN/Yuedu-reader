@@ -63,7 +63,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 textColor: themeTextColor,
                 backgroundColor: themeBackgroundColor,
                 fontFamilyName: UserReaderFontResolver.selectedPostScriptName,
-                renderWidth: max(0, renderSize.width)
+                renderWidth: max(0, renderSize.width),
+                writingMode: settings.writingMode
             )
             let builder = HTMLAttributedStringBuilder()
             let result = await builder.build(html: html, config: cfg)

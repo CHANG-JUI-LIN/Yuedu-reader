@@ -649,11 +649,14 @@ struct NodeAttributedStringRenderer {
             drawWidth *= scale
         }
 
-        let totalWidth = drawWidth + style.paddingLeft + style.paddingRight
+        let totalWidth = isVertical ? drawHeight : drawWidth + style.paddingLeft + style.paddingRight
         let lineHeight = max(font.lineHeight, font.pointSize)
         let ascent: CGFloat
         let descent: CGFloat
-        if drawHeight > lineHeight {
+        if isVertical {
+            ascent = drawWidth / 2
+            descent = drawWidth / 2
+        } else if drawHeight > lineHeight {
             ascent = drawHeight
             descent = 0
         } else {

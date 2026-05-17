@@ -225,7 +225,8 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             textColor: textColor,
             backgroundColor: backgroundColor,
             fontFamilyName: nil,
-            renderWidth: max(1, effectiveWidth - horizontalInsets)
+            renderWidth: max(1, effectiveWidth - horizontalInsets),
+            writingMode: settings.writingMode
         )
     }
 }
