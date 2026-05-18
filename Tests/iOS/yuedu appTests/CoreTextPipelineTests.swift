@@ -238,7 +238,10 @@ struct CSSPropertyApplierTests {
             firstLetterColor: nil,
             underline: false,
             strikethrough: false,
-            inheritedBlockMarginLeft: 0
+            inheritedBlockMarginLeft: 0,
+            isVerticalWritingMode: false,
+            pageBreakBefore: false,
+            pageBreakAfter: false
         )
     }
 

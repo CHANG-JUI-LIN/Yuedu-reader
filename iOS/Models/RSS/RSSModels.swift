@@ -34,6 +34,42 @@ struct RSSSource: Codable, Identifiable {
     var displayFaviconURL: String? { faviconURL ?? sourceIcon }
 }
 
+struct RSSFolder: Codable, Identifiable, Equatable {
+    var id: String = UUID().uuidString
+    var name: String
+    var sortOrder: Int = 0
+}
+
+enum RSSSmartFeedKind: String, CaseIterable, Identifiable, Codable {
+    case today
+    case allUnread
+    case starred
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .today:
+            return localized("今天")
+        case .allUnread:
+            return localized("所有未讀")
+        case .starred:
+            return localized("已加星號")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .today:
+            return "calendar"
+        case .allUnread:
+            return "tray.full"
+        case .starred:
+            return "star.fill"
+        }
+    }
+}
+
 struct RSSItem: Codable, Identifiable {
     var id: String = UUID().uuidString
     var title: String

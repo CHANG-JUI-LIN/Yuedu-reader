@@ -7,6 +7,86 @@ import UIKit
 @Suite("CoreText writing mode")
 struct CoreTextWritingModeTests {
 
+    @Test("EPUB CSS page-break styles become forced CoreText page boundaries")
+    func epubCSSPageBreakStylesForceCoreTextPageBoundaries() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.0,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            fontFamilyName: nil,
+            renderWidth: 320,
+            writingMode: .horizontal
+        )
+
+        let ast = try #require(await builder.buildStyledAST(
+            html: """
+            <html>
+            <head>
+            <style>
+            .after { page-break-after: always; }
+            .before { break-before: page; }
+            </style>
+            </head>
+            <body>
+              <p class="after">First forced page.</p>
+              <p>Second forced page.</p>
+              <p class="before">Third forced page.</p>
+            </body>
+            </html>
+            """,
+            config: config
+        ))
+        let nodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
+        #expect(nodes.contains { if case .pageBreak = $0 { return true }; return false })
+
+        let settings = ReaderRenderSettings(
+            theme: "test",
+            textColor: .black,
+            backgroundColor: .white,
+            fontSize: 18,
+            lineHeightMultiple: 1.0,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            letterSpacing: 0,
+            marginH: 0,
+            marginV: 0,
+            footerHeight: 0,
+            contentInsets: .zero,
+            writingMode: .horizontal
+        )
+        let renderer = NodeAttributedStringRenderer(config: NodeAttributedStringRenderer.Config(
+            from: settings,
+            textColor: .black,
+            renderWidth: 320
+        ))
+        let attr = await renderer.render(nodes)
+        let breakLocations = forcedPageBreakLocations(in: attr)
+        #expect(breakLocations.count == 2)
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 2026,
+            attrStr: attr,
+            renderSize: CGSize(width: 320, height: 720),
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16),
+            writingMode: .horizontal
+        )
+
+        #expect(layout.pageRanges.count == 3)
+        #expect(pageText(at: 0, in: layout).contains("First forced page."))
+        #expect(pageText(at: 1, in: layout).contains("Second forced page."))
+        #expect(pageText(at: 2, in: layout).contains("Third forced page."))
+        for range in layout.pageRanges {
+            #expect(!breakLocations.contains(range.location))
+            #expect(!breakLocations.contains(range.location + range.length - 1))
+        }
+    }
+
     @Test("CSS body writing-mode inherits into paragraph style")
     func cssBodyWritingModeInheritsIntoParagraphStyle() async throws {
         let builder = HTMLAttributedStringBuilder()
@@ -142,6 +222,108 @@ struct CoreTextWritingModeTests {
         #expect(layout.attributedString.attribute(spacerKey, at: markerRange.location + 1, effectiveRange: nil) != nil)
         #expect(layout.attributedString.attribute(spacerKey, at: markerRange.location + 2, effectiveRange: nil) != nil)
         #expect(layout.attributedString.attribute(spacerKey, at: markerRange.location + 3, effectiveRange: nil) == nil)
+    }
+
+    @Test("vertical title page margin-top does not force publisher onto a second page")
+    func verticalTitlePageMarginTopDoesNotForcePublisherOntoSecondPage() async throws {
+        let titleImage = await MainActor.run {
+            UIGraphicsImageRenderer(size: CGSize(width: 129, height: 689)).image { context in
+                UIColor.black.setFill()
+                context.cgContext.fill(CGRect(x: 0, y: 0, width: 129, height: 689))
+            }
+        }
+
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { _ in titleImage }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.0,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            fontFamilyName: nil,
+            renderWidth: 392,
+            writingMode: .verticalRTL
+        )
+
+        let result = await builder.build(
+            html: """
+            <html>
+            <head>
+            <style>
+            .calibre { writing-mode: vertical-rl; -epub-writing-mode: vertical-rl; -webkit-writing-mode: vertical-rl; font-size: 1em; text-align: left; margin: 0 5pt; }
+            .calibre1 { display: block; line-height: 1.2; }
+            .calibre2 { display: block; line-height: 1.2; margin-left: 0.8em; margin-right: 1.2em; margin-top: 1em; width: 4em; }
+            .calibre3 { height: auto; line-height: 1.2; width: 4em; }
+            .calibre4 { display: block; }
+            .normalp { display: block; line-height: 160%; text-indent: 0; margin: 0; padding: 0; }
+            .normalp1 { display: block; line-height: 160%; text-indent: 0; margin: 10em 0 0; padding: 0; }
+            .right { display: block; line-height: 160%; text-align: right; margin: 0; padding: 0; }
+            </style>
+            </head>
+            <body class="calibre">
+            <div class="calibre1">
+              <p class="normalp">BookDNA 經典復刻系列</p>
+              <div class="calibre2"><img src="../images/00001.gif" alt="" class="calibre3"/></div>
+              <p class="normalp1">曹雪芹著 脂硯齋評 吳銘恩匯校</p>
+              <br class="calibre1"/>
+              <br class="calibre1"/>
+              <br class="calibre1"/>
+              <p class="right">浙江出版聯合集團&nbsp;&nbsp;<br class="calibre4"/>浙版數媒&nbsp;&nbsp;</p>
+            </div>
+            </body>
+            </html>
+            """,
+            config: config
+        )
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 1000,
+            attrStr: result.attributedString,
+            renderSize: CGSize(width: 440, height: 956),
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 72, left: 24, bottom: 32, right: 24),
+            writingMode: .verticalRTL
+        )
+
+        #expect(layout.attributedString.string.contains("浙江出版聯合集團"))
+        #expect(layout.attributedString.string.contains("浙版數媒"))
+        #expect(layout.pageRanges.count == 1)
+
+        let nsString = layout.attributedString.string as NSString
+        let imageLocation = nsString.range(of: "\u{FFFC}").location
+        let authorLocation = nsString.range(of: "曹雪芹").location
+        try #require(imageLocation != NSNotFound)
+        try #require(authorLocation != NSNotFound)
+
+        let contentPathRect = CGRect(x: 24, y: 32, width: 392, height: 852)
+        let pagePath = CGPath(rect: contentPathRect, transform: nil)
+        let framesetter = CTFramesetterCreateWithAttributedString(layout.attributedString as CFAttributedString)
+        let frame = CoreTextPaginator.makeFrame(
+            framesetter: framesetter,
+            range: layout.pageRanges[0],
+            path: pagePath,
+            writingMode: .verticalRTL
+        )
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+
+        func topY(for location: Int) -> CGFloat? {
+            for (index, line) in lines.enumerated() {
+                let range = CTLineGetStringRange(line)
+                guard location >= range.location,
+                      location < range.location + range.length else { continue }
+                return layout.renderSize.height - (contentPathRect.minY + origins[index].y)
+            }
+            return nil
+        }
+
+        let imageTop = try #require(topY(for: imageLocation))
+        let authorTop = try #require(topY(for: authorLocation))
+        #expect(authorTop > imageTop + 100)
     }
 
     @Test("vertical RTL pagination stores writing mode and vertical glyph attribute")
@@ -354,6 +536,63 @@ struct CoreTextWritingModeTests {
         )
         let annotation = try #require(layout.inlineAnnotations.values.flatMap { $0 }.first)
         #expect(annotation.attributedString.string.contains("夾注﹁之﹂別︒"))
+    }
+
+    @Test("vertical EPUB ruby tags become CoreText ruby annotations")
+    func verticalEPUBRubyTagsBecomeCoreTextRubyAnnotations() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.0,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            fontFamilyName: nil,
+            renderWidth: 240,
+            writingMode: .verticalRTL
+        )
+
+        let result = await builder.build(
+            html: """
+            <html>
+            <head><style>body { writing-mode: vertical-rl; } p { margin: 0; padding: 0; }</style></head>
+            <body><p>甲<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>乙</p></body>
+            </html>
+            """,
+            config: config
+        )
+
+        #expect(result.attributedString.string.contains("甲漢字乙"))
+        #expect(!result.attributedString.string.contains("かん"))
+        #expect(!result.attributedString.string.contains("じ"))
+
+        let hanLocation = try location(of: "漢", in: result.attributedString.string)
+        let jiLocation = try location(of: "字", in: result.attributedString.string)
+        let hanRuby = try #require(rubyAnnotation(in: result.attributedString, at: hanLocation))
+        let jiRuby = try #require(rubyAnnotation(in: result.attributedString, at: jiLocation))
+        #expect(rubyText(hanRuby) == "かん")
+        #expect(rubyText(jiRuby) == "じ")
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: result.attributedString,
+            renderSize: CGSize(width: 240, height: 320),
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16),
+            writingMode: .verticalRTL
+        )
+
+        let laidOutHanLocation = try location(of: "漢", in: layout.attributedString.string)
+        let laidOutRuby = try #require(rubyAnnotation(in: layout.attributedString, at: laidOutHanLocation))
+        let verticalForm = layout.attributedString.attribute(
+            NSAttributedString.Key(kCTVerticalFormsAttributeName as String),
+            at: laidOutHanLocation,
+            effectiveRange: nil
+        ) as? Bool
+        #expect(rubyText(laidOutRuby) == "かん")
+        #expect(verticalForm == true)
     }
 
     @Test("vertical inline annotation strips flow metrics before manual drawing")
@@ -652,6 +891,19 @@ struct CoreTextWritingModeTests {
         return result
     }
 
+    private func rubyAnnotation(in attributedString: NSAttributedString, at location: Int) -> CTRubyAnnotation? {
+        guard let raw = attributedString.attribute(
+            HTMLAttributedStringBuilder.rubyAnnotationAttribute,
+            at: location,
+            effectiveRange: nil
+        ) else { return nil }
+        return raw as! CTRubyAnnotation
+    }
+
+    private func rubyText(_ annotation: CTRubyAnnotation) -> String? {
+        CTRubyAnnotationGetTextForPosition(annotation, .before) as String?
+    }
+
     private func paragraphStyle(firstLineIndent: CGFloat) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.firstLineHeadIndent = firstLineIndent
@@ -867,6 +1119,28 @@ struct CoreTextWritingModeTests {
         Issue.record("Unable to find line containing inline image placeholder")
         return (attachment.rect.midX, attachment.rect.midX, attachment.rect.midX)
     }
+}
+
+private func forcedPageBreakLocations(in attributedString: NSAttributedString) -> [Int] {
+    guard attributedString.length > 0 else { return [] }
+    var locations: [Int] = []
+    attributedString.enumerateAttribute(
+        HTMLAttributedStringBuilder.pageBreakAttribute,
+        in: NSRange(location: 0, length: attributedString.length),
+        options: []
+    ) { value, range, _ in
+        if value != nil {
+            locations.append(range.location)
+        }
+    }
+    return locations
+}
+
+private func pageText(at index: Int, in layout: CoreTextPaginator.ChapterLayout) -> String {
+    let range = layout.pageRanges[index]
+    return layout.attributedString.attributedSubstring(
+        from: NSRange(location: range.location, length: range.length)
+    ).string
 }
 
 @Suite("CJK line break policy")

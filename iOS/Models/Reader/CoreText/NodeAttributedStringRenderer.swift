@@ -1,3 +1,4 @@
+import CoreText
 import Foundation
 import UIKit
 
@@ -114,7 +115,7 @@ struct NodeAttributedStringRenderer {
             return NSAttributedString(string: "\n", attributes: attrs)
 
         case .pageBreak:
-            return NSAttributedString(string: "\n", attributes: ctx.baseAttributes)
+            return HTMLAttributedStringBuilder.makePageBreakMarker(attributes: ctx.baseAttributes)
 
         case .rawHTML(let html):
             #if DEBUG
@@ -162,7 +163,7 @@ struct NodeAttributedStringRenderer {
         case .inline(_, let children, let style):
             let childCtx = applyInlineStyle(style, to: ctx)
             let rendered = await renderInlineChildren(children, ctx: childCtx)
-            if config.writingMode.isVertical, style.isInlineAnnotation {
+            if isVertical(style), style.isInlineAnnotation {
                 CoreTextPaginator.debugVerticalLog("EPUBFLOW render.inlineAnnotation.node renderedLen=\(rendered.length) placeholderFont=\(ctx.font.pointSize) annotationFont=\(childCtx.font.pointSize) preview=\"\(debugTextPreview(rendered.string))\"")
                 return makeInlineAnnotationPlaceholder(
                     rendered,
@@ -176,6 +177,12 @@ struct NodeAttributedStringRenderer {
             var childCtx = ctx
             childCtx.linkHref = href
             return await renderInlineChildren(children, ctx: childCtx)
+
+        case .ruby(let base, let text, let style):
+            let childCtx = applyInlineStyle(style, to: ctx)
+            let rendered = NSMutableAttributedString(attributedString: await renderInlineChildren(base, ctx: childCtx))
+            addRubyAnnotation(text, to: rendered)
+            return rendered
 
         case .anchorTarget(let id, let child):
             let rendered = NSMutableAttributedString(attributedString: await render(node: child, ctx: ctx))
@@ -208,21 +215,27 @@ struct NodeAttributedStringRenderer {
             )
         }
 
+        let hasBlockChildren = children.contains { child in
+            if case .block = child { return true }
+            if case .heading = child { return true }
+            if case .blockquote = child { return true }
+            if case .listItem = child { return true }
+            if case .horizontalRule = child { return true }
+            return false
+        }
+
         let childCtx = applyBlockStyle(style, to: ctx, isHeading: isHeading, headingLevel: headingLevel)
         let result = NSMutableAttributedString()
+        if isVertical(style),
+           !hasBlockChildren,
+           style.visualOffsetBefore > 0 {
+            result.append(verticalInlineSpacer(advance: style.visualOffsetBefore, ctx: childCtx))
+        }
         for child in children {
             result.append(await render(node: child, ctx: childCtx))
         }
         let contentLength = result.length
         if contentLength > 0 {
-            let hasBlockChildren = children.contains { child in
-                if case .block = child { return true }
-                if case .heading = child { return true }
-                if case .blockquote = child { return true }
-                if case .listItem = child { return true }
-                if case .horizontalRule = child { return true }
-                return false
-            }
             if hasBlockChildren {
                 applyContainerDecorationAttributes(style: style, to: result, range: NSRange(location: 0, length: contentLength))
             } else {
@@ -327,15 +340,18 @@ struct NodeAttributedStringRenderer {
         let para = NSMutableParagraphStyle()
         para.minimumLineHeight = targetLineHeight(ctx: newCtx)
         para.maximumLineHeight = targetLineHeight(ctx: newCtx)
-        para.paragraphSpacing = style.paragraphSpacingAfter > 0
+        let resolvedParagraphSpacing = style.paragraphSpacingAfter > 0
             ? style.paragraphSpacingAfter
             : (isHeading ? config.paragraphSpacing * 0.6 : config.paragraphSpacing)
+        para.paragraphSpacing = isVertical(style)
+            ? min(resolvedParagraphSpacing, newCtx.font.pointSize)
+            : resolvedParagraphSpacing
         // In vertical mode, CSS margin-top (→ paragraphSpacingBefore) adds space
         // in the block-progression direction (right-to-left for vertical-rl).
         // Large values (e.g. 10em on .normalp1) were authored for horizontal layout
         // and would push content off-screen; cap at 1em to prevent this.
-        if config.writingMode.isVertical {
-            para.paragraphSpacingBefore = min(style.paragraphSpacingBefore, newCtx.font.pointSize)
+        if isVertical(style) {
+            para.paragraphSpacingBefore = 0
         } else {
             para.paragraphSpacingBefore = style.paragraphSpacingBefore
         }
@@ -638,6 +654,16 @@ struct NodeAttributedStringRenderer {
         return placeholder
     }
 
+    private func addRubyAnnotation(_ text: String, to attributedString: NSMutableAttributedString) {
+        let rubyText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rubyText.isEmpty, attributedString.length > 0 else { return }
+        attributedString.addAttribute(
+            HTMLAttributedStringBuilder.rubyAnnotationAttribute,
+            value: HTMLAttributedStringBuilder.makeRubyAnnotation(text: rubyText),
+            range: NSRange(location: 0, length: attributedString.length)
+        )
+    }
+
     private func debugTextPreview(_ text: String, limit: Int = 60) -> String {
         let normalized = text
             .replacingOccurrences(of: "\n", with: "\\n")
@@ -651,7 +677,7 @@ struct NodeAttributedStringRenderer {
     private func resolvedImageMetrics(image: UIImage?, style: RenderStyle, font: UIFont, displayMode: ImageRunInfo.DisplayMode = .inline) -> ImageMetrics {
         let availableWidth = max(1, (config.renderWidth ?? UIScreen.main.bounds.width) - style.paddingLeft - style.paddingRight)
         let maxDrawHeight = max(1, (config.renderWidth ?? UIScreen.main.bounds.width) * 1.5)
-        let isVertical = config.writingMode.isVertical
+        let isVertical = self.isVertical(style)
 
         var drawWidth: CGFloat
         var drawHeight: CGFloat
@@ -718,6 +744,10 @@ struct NodeAttributedStringRenderer {
             ascent: ascent,
             descent: descent
         )
+    }
+
+    private func isVertical(_ style: RenderStyle) -> Bool {
+        config.writingMode.isVertical || style.isVerticalWritingMode
     }
 
     private func singleImagePayload(from children: [RenderableNode]) -> SingleImagePayload? {
@@ -817,12 +847,24 @@ struct NodeAttributedStringRenderer {
             textAlign: nsTextAlignment(from: style.textAlign),
             isHorizontallyCentered: style.isHorizontallyCentered,
             paragraphSpacingBefore: style.paragraphSpacingBefore,
-            visualOffsetBefore: 0,
+            visualOffsetBefore: style.visualOffsetBefore,
             paddingLeft: style.paddingLeft,
             paddingRight: style.paddingRight,
             blockImage: blockImage
         )
         return renderStyle.hasVisualDecoration ? renderStyle : nil
+    }
+
+    private func verticalInlineSpacer(advance: CGFloat, ctx: RenderContext) -> NSAttributedString {
+        let spacer = NSMutableAttributedString(attributedString: RunDelegateProvider.makeVerticalSpacerPlaceholder(
+            advance: advance,
+            font: ctx.font,
+            textColor: ctx.textColor
+        ))
+        let range = NSRange(location: 0, length: spacer.length)
+        spacer.addAttributes(ctx.baseAttributes, range: range)
+        spacer.addAttribute(HTMLAttributedStringBuilder.spacerRunAttribute, value: true, range: range)
+        return spacer
     }
 
     private func nsTextAlignment(from align: RenderTextAlignment) -> NSTextAlignment {

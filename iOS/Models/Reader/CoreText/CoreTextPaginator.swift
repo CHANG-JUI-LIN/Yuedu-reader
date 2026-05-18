@@ -235,6 +235,7 @@ final class CoreTextPaginator {
 
             hasher.combine(attrs[HTMLAttributedStringBuilder.spacerRunAttribute] != nil)
             hasher.combine(attrs[HTMLAttributedStringBuilder.inlineAnnotationRunAttribute] != nil)
+            hasher.combine(attrs[HTMLAttributedStringBuilder.pageBreakAttribute] != nil)
             hasher.combine(attrs[verticalFormsKey] as? Bool ?? false)
 
             if let delegate = attrs[delegateKey] {
@@ -406,21 +407,34 @@ final class CoreTextPaginator {
 
         var pageRanges: [CFRange] = []
         var currentLocation = 0
+        let forcedPageBreakRanges = forcedPageBreakRanges(in: attrStr)
 
         while currentLocation < attrStr.length {
-            let searchRange = CFRangeMake(currentLocation, 0)
+            if let breakRange = forcedPageBreakRanges.first(where: { $0.location <= currentLocation && currentLocation < $0.location + $0.length }) {
+                currentLocation = breakRange.location + breakRange.length
+                continue
+            }
+
+            let nextForcedBreak = forcedPageBreakRanges.first { $0.location > currentLocation }?.location ?? attrStr.length
+            let remainingLength = nextForcedBreak - currentLocation
+            guard remainingLength > 0 else {
+                currentLocation = min(attrStr.length, currentLocation + 1)
+                continue
+            }
+
+            let searchRange = CFRangeMake(currentLocation, remainingLength)
             let frame = makeFrame(framesetter: framesetter, range: searchRange, path: pagePath, writingMode: writingMode)
             let visibleRange = CTFrameGetVisibleStringRange(frame)
 
             // Prevent infinite loop: if visibleRange.length == 0, force advance by one character
-            let proposedAdvance = visibleRange.length > 0 ? visibleRange.length : 1
+            let proposedAdvance = min(visibleRange.length > 0 ? visibleRange.length : 1, remainingLength)
             let proposedEnd = currentLocation + proposedAdvance
             let protectedEnd = CJKTypographyProcessor.protectedLineBreakOffset(
                 proposedEnd,
                 in: attrStr.string,
                 lowerBound: currentLocation
             )
-            let advance = max(1, protectedEnd - currentLocation)
+            let advance = min(remainingLength, max(1, protectedEnd - currentLocation))
             pageRanges.append(CFRangeMake(currentLocation, advance))
             currentLocation += advance
         }
@@ -478,6 +492,21 @@ final class CoreTextPaginator {
             contentInsets: contentInsets,
             writingMode: writingMode
         )
+    }
+
+    private static func forcedPageBreakRanges(in attrStr: NSAttributedString) -> [NSRange] {
+        guard attrStr.length > 0 else { return [] }
+        var ranges: [NSRange] = []
+        attrStr.enumerateAttribute(
+            HTMLAttributedStringBuilder.pageBreakAttribute,
+            in: NSRange(location: 0, length: attrStr.length),
+            options: []
+        ) { value, range, _ in
+            if value != nil {
+                ranges.append(range)
+            }
+        }
+        return ranges
     }
 
     /// Returns CoreText frame attributes for the given writing mode.

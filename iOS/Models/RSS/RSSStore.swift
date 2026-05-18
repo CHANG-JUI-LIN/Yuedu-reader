@@ -6,17 +6,20 @@ final class RSSStore: ObservableObject {
     static let shared = RSSStore()
 
     @Published var sources: [RSSSource] = []
+    @Published var folders: [RSSFolder] = []
     @Published private var cachedArticlesBySource: [String: [RSSArticleRecord]] = [:]
     @Published private var articleStatuses: [String: RSSArticleStatus] = [:]
     @Published private var feedMetadataBySource: [String: RSSFeedFetchMetadata] = [:]
 
     private let sourceStorageURL: URL
+    private let folderStorageURL: URL
     private let articleStorageURL: URL
     private let statusStorageURL: URL
     private let feedMetadataStorageURL: URL
 
     init(storageDirectory: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!) {
         sourceStorageURL = storageDirectory.appendingPathComponent("rss_sources.json")
+        folderStorageURL = storageDirectory.appendingPathComponent("rss_folders.json")
         articleStorageURL = storageDirectory.appendingPathComponent("rss_articles.json")
         statusStorageURL = storageDirectory.appendingPathComponent("rss_article_status.json")
         feedMetadataStorageURL = storageDirectory.appendingPathComponent("rss_feed_metadata.json")
@@ -24,6 +27,9 @@ final class RSSStore: ObservableObject {
     }
 
     func addSource(_ source: RSSSource) {
+        if let groupName = normalizedFolderName(source.sourceGroup) {
+            ensureFolderExists(named: groupName)
+        }
         sources.append(source)
         save()
     }
@@ -31,12 +37,15 @@ final class RSSStore: ObservableObject {
     func addSources(_ newSources: [RSSSource]) -> Int {
         guard !newSources.isEmpty else { return 0 }
         var existingURLs = Set(sources.map(\.url))
-        var nextSortOrder = (sources.map(\.sortOrder).max() ?? -1) + 1
         var added = 0
 
         for var source in newSources where !existingURLs.contains(source.url) {
-            source.sortOrder = nextSortOrder
-            nextSortOrder += 1
+            let groupName = normalizedFolderName(source.sourceGroup)
+            source.sourceGroup = groupName
+            if let groupName {
+                ensureFolderExists(named: groupName)
+            }
+            source.sortOrder = nextSourceSortOrder(inFolderNamed: groupName)
             sources.append(source)
             existingURLs.insert(source.url)
             added += 1
@@ -74,9 +83,89 @@ final class RSSStore: ObservableObject {
 
     func updateSource(_ source: RSSSource) {
         if let index = sources.firstIndex(where: { $0.id == source.id }) {
-            sources[index] = source
+            var normalized = source
+            normalized.sourceGroup = normalizedFolderName(source.sourceGroup)
+            if let groupName = normalized.sourceGroup {
+                ensureFolderExists(named: groupName)
+            }
+            sources[index] = normalized
             save()
         }
+    }
+
+    func addFolder(named name: String) -> Bool {
+        guard let name = normalizedFolderName(name),
+              !folders.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
+            return false
+        }
+
+        folders.append(RSSFolder(name: name, sortOrder: nextFolderSortOrder()))
+        save()
+        return true
+    }
+
+    func updateFolder(_ folder: RSSFolder) {
+        guard let index = folders.firstIndex(where: { $0.id == folder.id }),
+              let newName = normalizedFolderName(folder.name) else {
+            return
+        }
+
+        let oldName = folders[index].name
+        folders[index].name = newName
+        for sourceIndex in sources.indices where sourceGroup(sources[sourceIndex].sourceGroup, matches: oldName) {
+            sources[sourceIndex].sourceGroup = newName
+        }
+        save()
+    }
+
+    func removeFolder(_ folder: RSSFolder, deleteSources: Bool = true) {
+        guard let index = folders.firstIndex(where: { $0.id == folder.id }) else { return }
+        folders.remove(at: index)
+        if deleteSources {
+            let ids = sources.filter { sourceGroup($0.sourceGroup, matches: folder.name) }.map(\.id)
+            if ids.isEmpty {
+                save()
+            } else {
+                removeSources(ids: ids)
+            }
+        } else {
+            for sourceIndex in sources.indices where sourceGroup(sources[sourceIndex].sourceGroup, matches: folder.name) {
+                sources[sourceIndex].sourceGroup = nil
+            }
+            save()
+        }
+    }
+
+    func rootSources() -> [RSSSource] {
+        sources(inFolderNamed: nil)
+    }
+
+    func sources(in folder: RSSFolder) -> [RSSSource] {
+        sources(inFolderNamed: folder.name)
+    }
+
+    func moveSources(inFolderNamed folderName: String?, fromOffsets sourceOffsets: IndexSet, toOffset destination: Int) {
+        var ordered = sources(inFolderNamed: normalizedFolderName(folderName))
+        ordered.move(fromOffsets: sourceOffsets, toOffset: destination)
+
+        for (sortOrder, source) in ordered.enumerated() {
+            guard let index = sources.firstIndex(where: { $0.id == source.id }) else { continue }
+            sources[index].sortOrder = sortOrder
+        }
+        save()
+    }
+
+    func orderedFolders() -> [RSSFolder] {
+        folders.sorted { lhs, rhs in
+            if lhs.sortOrder == rhs.sortOrder {
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+            return lhs.sortOrder < rhs.sortOrder
+        }
+    }
+
+    func nextSourceSortOrder(in folder: RSSFolder?) -> Int {
+        nextSourceSortOrder(inFolderNamed: folder?.name)
     }
 
     func mergeFetchedItems(_ items: [RSSItem], for sourceID: String) {
@@ -124,6 +213,27 @@ final class RSSStore: ObservableObject {
             }
     }
 
+    func articles(for smartFeed: RSSSmartFeedKind) -> [RSSArticleRecord] {
+        allArticles().filter { article in
+            switch smartFeed {
+            case .today:
+                return Calendar.current.isDateInToday(article.pubDate ?? article.fetchedAt)
+            case .allUnread:
+                return !article.isRead
+            case .starred:
+                return article.isFavorite
+            }
+        }
+    }
+
+    func allArticles() -> [RSSArticleRecord] {
+        sources
+            .flatMap { articles(for: $0.id) }
+            .sorted { lhs, rhs in
+                (lhs.pubDate ?? lhs.fetchedAt) > (rhs.pubDate ?? rhs.fetchedAt)
+            }
+    }
+
     func status(for articleID: String) -> RSSArticleStatus? {
         articleStatuses[articleID]
     }
@@ -157,8 +267,54 @@ final class RSSStore: ObservableObject {
         save()
     }
 
+    func markAllRead(sourceID: String? = nil, isRead: Bool = true) {
+        let articles = sourceID.map { self.articles(for: $0) } ?? allArticles()
+        markAllRead(articleIDs: articles.map(\.id), isRead: isRead)
+    }
+
+    func markAllRead(in folder: RSSFolder, isRead: Bool = true) {
+        let ids = sources(in: folder).flatMap { articles(for: $0.id).map(\.id) }
+        markAllRead(articleIDs: ids, isRead: isRead)
+    }
+
+    func markAllRead(smartFeed: RSSSmartFeedKind, isRead: Bool = true) {
+        markAllRead(articleIDs: articles(for: smartFeed).map(\.id), isRead: isRead)
+    }
+
+    func markAllRead(articleIDs: [String], isRead: Bool = true) {
+        guard !articleIDs.isEmpty else { return }
+
+        let now = Date()
+        for articleID in articleIDs {
+            var status = articleStatuses[articleID] ?? RSSArticleStatus(articleId: articleID)
+            status.isRead = isRead
+            if isRead {
+                status.lastOpenedAt = now
+            }
+            articleStatuses[articleID] = status
+            updateCachedArticle(articleId: articleID, status: status)
+        }
+        save()
+    }
+
     func unreadCount(for sourceID: String) -> Int {
         articles(for: sourceID).filter { !$0.isRead }.count
+    }
+
+    func unreadCount(for folder: RSSFolder) -> Int {
+        sources(in: folder).reduce(0) { partial, source in
+            partial + unreadCount(for: source.id)
+        }
+    }
+
+    func unreadCount(for smartFeed: RSSSmartFeedKind) -> Int {
+        articles(for: smartFeed).filter { !$0.isRead }.count
+    }
+
+    func totalUnreadCount() -> Int {
+        sources.reduce(0) { partial, source in
+            partial + unreadCount(for: source.id)
+        }
     }
 
     func lastFetchedAt(for sourceID: String) -> Date? {
@@ -191,6 +347,10 @@ final class RSSStore: ObservableObject {
             }
         }
         return nil
+    }
+
+    func source(id sourceID: String) -> RSSSource? {
+        sources.first { $0.id == sourceID }
     }
 
     func updateFullText(articleId: String, text: String, html: String? = nil, fetchedAt: Date = Date()) {
@@ -266,15 +426,82 @@ final class RSSStore: ObservableObject {
         return trimmed.isEmpty || trimmed == url
     }
 
+    private func sources(inFolderNamed folderName: String?) -> [RSSSource] {
+        let normalizedName = normalizedFolderName(folderName)
+        return sources
+            .filter { sourceGroup($0.sourceGroup, matches: normalizedName) }
+            .sorted { lhs, rhs in
+                if lhs.sortOrder == rhs.sortOrder {
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                }
+                return lhs.sortOrder < rhs.sortOrder
+            }
+    }
+
+    private func normalizedFolderName(_ value: String?) -> String? {
+        guard let name = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty else {
+            return nil
+        }
+        return name
+    }
+
+    private func sourceGroup(_ sourceGroup: String?, matches folderName: String?) -> Bool {
+        switch (normalizedFolderName(sourceGroup), normalizedFolderName(folderName)) {
+        case (nil, nil):
+            return true
+        case let (lhs?, rhs?):
+            return lhs.caseInsensitiveCompare(rhs) == .orderedSame
+        default:
+            return false
+        }
+    }
+
+    @discardableResult
+    private func ensureFolderExists(named name: String) -> Bool {
+        guard let name = normalizedFolderName(name),
+              !folders.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
+            return false
+        }
+        folders.append(RSSFolder(name: name, sortOrder: nextFolderSortOrder()))
+        return true
+    }
+
+    private func nextFolderSortOrder() -> Int {
+        (folders.map(\.sortOrder).max() ?? -1) + 1
+    }
+
+    private func nextSourceSortOrder(inFolderNamed folderName: String?) -> Int {
+        let normalizedName = normalizedFolderName(folderName)
+        return (sources
+            .filter { normalizedFolderName($0.sourceGroup) == normalizedName }
+            .map(\.sortOrder)
+            .max() ?? -1) + 1
+    }
+
+    private func backfillFoldersFromSources() {
+        var didChange = false
+        for source in sources {
+            guard let groupName = normalizedFolderName(source.sourceGroup) else { continue }
+            didChange = ensureFolderExists(named: groupName) || didChange
+        }
+        if didChange {
+            save()
+        }
+    }
+
     private func load() {
         sources = load([RSSSource].self, from: sourceStorageURL) ?? []
+        folders = load([RSSFolder].self, from: folderStorageURL) ?? []
         cachedArticlesBySource = load([String: [RSSArticleRecord]].self, from: articleStorageURL) ?? [:]
         articleStatuses = load([String: RSSArticleStatus].self, from: statusStorageURL) ?? [:]
         feedMetadataBySource = load([String: RSSFeedFetchMetadata].self, from: feedMetadataStorageURL) ?? [:]
+        backfillFoldersFromSources()
     }
 
     private func save() {
         save(sources, to: sourceStorageURL)
+        save(folders, to: folderStorageURL)
         save(cachedArticlesBySource, to: articleStorageURL)
         save(articleStatuses, to: statusStorageURL)
         save(feedMetadataBySource, to: feedMetadataStorageURL)

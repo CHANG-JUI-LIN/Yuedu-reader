@@ -14,6 +14,8 @@ private extension HTMLAttributedStringBuilder.ASTNode {
             return .text(node.text)
         case .lineBreak:
             return .lineBreak
+        case .pageBreak:
+            return .pageBreak
         case .element(let node):
             return node.asRenderableNode(parentFontSize: parentFontSize)
         }
@@ -56,6 +58,13 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             let href = attributes["href"] ?? ""
             node = .anchor(href: href, children: mappedChildren)
 
+        case "ruby":
+            node = .ruby(
+                base: rubyBaseChildren(parentFontSize: myFontSize),
+                text: rubyAnnotationText,
+                style: style
+            )
+
         case "img", "image":
             let src = attributes["src"] ?? attributes["xlink:href"] ?? attributes["href"] ?? ""
             let alt = attributes["alt"] ?? ""
@@ -71,6 +80,47 @@ private extension HTMLAttributedStringBuilder.ElementNode {
 
         guard !id.isEmpty else { return node }
         return .anchorTarget(id: id, child: node)
+    }
+
+    private func rubyBaseChildren(parentFontSize: CGFloat) -> [RenderableNode] {
+        children.compactMap { child in
+            guard case .element(let element) = child,
+                  element.isRubyAnnotationElement
+            else {
+                return child.asRenderableNode(parentFontSize: parentFontSize)
+            }
+            return nil
+        }
+    }
+
+    private var rubyAnnotationText: String {
+        children.compactMap { child -> String? in
+            guard case .element(let element) = child,
+                  element.isRubyAnnotationElement
+            else { return nil }
+            return element.plainText
+        }
+        .joined(separator: " ")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var plainText: String {
+        children.map { child -> String in
+            switch child {
+            case .text(let node):
+                return node.text
+            case .lineBreak:
+                return " "
+            case .pageBreak:
+                return ""
+            case .element(let element):
+                return element.plainText
+            }
+        }.joined()
+    }
+
+    private var isRubyAnnotationElement: Bool {
+        tag == "rt" || tag == "rp"
     }
 
     private var isInlineAnnotationElement: Bool {
@@ -103,6 +153,7 @@ private extension RenderStyle {
             paddingLeft: s.paddingLeft,
             paddingRight: s.paddingRight,
             paragraphSpacingBefore: s.paragraphSpacingBefore,
+            visualOffsetBefore: s.visualOffsetBefore,
             paragraphSpacingAfter: s.paragraphSpacing,
             width: s.width,
             height: s.height,
@@ -120,7 +171,8 @@ private extension RenderStyle {
             firstLetterFontWeight: s.firstLetterFontWeight,
             firstLetterColor: s.firstLetterColor.flatMap { RenderColor(uiColor: $0) },
             underline: s.underline,
-            strikethrough: s.strikethrough
+            strikethrough: s.strikethrough,
+            isVerticalWritingMode: s.isVerticalWritingMode
         )
     }
 }

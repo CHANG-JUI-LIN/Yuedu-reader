@@ -21,8 +21,12 @@ final class HTMLAttributedStringBuilder {
     static let spacerRunAttribute = NSAttributedString.Key("ReaderSpacerRun")
     /// Marker attribute for vertical inline annotation runs (e.g. span.small notes).
     static let inlineAnnotationRunAttribute = NSAttributedString.Key("ReaderInlineAnnotationRun")
+    /// Marker attribute for EPUB CSS-forced page boundaries.
+    static let pageBreakAttribute = NSAttributedString.Key("ReaderForcedPageBreak")
+    static let rubyAnnotationAttribute = NSAttributedString.Key(kCTRubyAnnotationAttributeName as String)
     private static let paragraphSeparator = "\n"
     private static let lineSeparator = "\u{2028}"
+    static let pageBreakMarker = "\u{200B}"
 
     struct Config {
         var fontSize: CGFloat
@@ -130,6 +134,8 @@ final class HTMLAttributedStringBuilder {
         var inheritedBlockMarginLeft: CGFloat
         /// Detected from CSS `writing-mode: vertical-rl` on this element.
         var isVerticalWritingMode: Bool = false
+        var pageBreakBefore: Bool = false
+        var pageBreakAfter: Bool = false
     }
 
     /// Visual style for HR dividers (stored in hrDividerAttribute).
@@ -209,6 +215,7 @@ final class HTMLAttributedStringBuilder {
     indirect enum ASTNode {
         case text(TextNode)
         case lineBreak(BreakNode)
+        case pageBreak
         case element(ElementNode)
     }
 
@@ -513,6 +520,9 @@ final class HTMLAttributedStringBuilder {
                 parentElement: parentElement,
                 config: config
             )
+            if style.pageBreakBefore {
+                result.append(.pageBreak)
+            }
             let children = await buildChildren(
                 from: element.getChildNodes(),
                 parentStyle: style,
@@ -533,6 +543,9 @@ final class HTMLAttributedStringBuilder {
                     )
                 )
             )
+            if style.pageBreakAfter {
+                result.append(.pageBreak)
+            }
         }
         return result
     }
@@ -606,6 +619,19 @@ final class HTMLAttributedStringBuilder {
         )
     }
 
+    private func verticalInlineSpacer(advance: CGFloat, style: ResolvedStyle, config: Config) -> NSAttributedString {
+        let font = makeFont(from: style, config: config)
+        let spacer = NSMutableAttributedString(attributedString: RunDelegateProvider.makeVerticalSpacerPlaceholder(
+            advance: advance,
+            font: font,
+            textColor: style.textColor
+        ))
+        let range = NSRange(location: 0, length: spacer.length)
+        spacer.addAttributes(baseTextAttributes(style: style, config: config), range: range)
+        spacer.addAttribute(Self.spacerRunAttribute, value: true, range: range)
+        return spacer
+    }
+
     private func containsRenderableMetadata(_ string: NSAttributedString) -> Bool {
         guard string.length > 0 else { return false }
         let range = NSRange(location: 0, length: string.length)
@@ -614,6 +640,7 @@ final class HTMLAttributedStringBuilder {
             Self.blockRenderStyleAttribute,
             Self.blockRenderIDAttribute,
             Self.hrDividerAttribute,
+            Self.pageBreakAttribute,
             NSAttributedString.Key(kCTRunDelegateAttributeName as String),
         ]
         for key in keys {
@@ -635,6 +662,8 @@ final class HTMLAttributedStringBuilder {
         config: Config
     ) async -> NSAttributedString {
         switch node {
+        case .pageBreak:
+            return Self.makePageBreakMarker(attributes: baseTextAttributes(style: inheritedStyle, config: config))
         case .lineBreak(let breakNode):
             let breakStyle = breakNode.resolvedStyle
             let separator = breakStyle.isBlock ? Self.paragraphSeparator : Self.lineSeparator
@@ -664,6 +693,10 @@ final class HTMLAttributedStringBuilder {
                     imageSource: src,
                     imageAlt: element.attributes["alt"]
                 )
+            }
+
+            if element.tag == "ruby" {
+                return await renderRubyElement(element, inheritedStyle: inheritedStyle, config: config)
             }
 
             if config.writingMode.isVertical, isInlineAnnotationElement(element) {
@@ -730,6 +763,83 @@ final class HTMLAttributedStringBuilder {
 
             return childResult
         }
+    }
+
+    static func makePageBreakMarker(attributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
+        let marker = NSMutableAttributedString(string: pageBreakMarker, attributes: attributes)
+        marker.addAttribute(pageBreakAttribute, value: true, range: NSRange(location: 0, length: marker.length))
+        marker.addAttribute(.foregroundColor, value: UIColor.clear, range: NSRange(location: 0, length: marker.length))
+        return marker
+    }
+
+    static func makeRubyAnnotation(text: String) -> CTRubyAnnotation {
+        let attributes: [CFString: Any] = [
+            kCTRubyAnnotationSizeFactorAttributeName: 0.5,
+            kCTRubyAnnotationScaleToFitAttributeName: true,
+        ]
+        return CTRubyAnnotationCreateWithAttributes(
+            .auto,
+            .auto,
+            .before,
+            text as CFString,
+            attributes as CFDictionary
+        )
+    }
+
+    private func renderRubyElement(
+        _ element: ElementNode,
+        inheritedStyle: ResolvedStyle,
+        config: Config
+    ) async -> NSAttributedString {
+        let base = NSMutableAttributedString()
+        var pendingBase: [ASTNode] = []
+
+        func renderPendingBase(with annotationText: String?) async {
+            guard !pendingBase.isEmpty else { return }
+            let segment = NSMutableAttributedString()
+            for child in pendingBase {
+                let childString = await renderNode(child, inheritedStyle: element.resolvedStyle, config: config)
+                if childString.length == 0 { continue }
+                appendNode(childString, to: segment)
+            }
+            if let annotationText {
+                addRubyAnnotation(annotationText, to: segment)
+            }
+            appendNode(segment, to: base)
+            pendingBase.removeAll()
+        }
+
+        for child in element.children {
+            if case .element(let rubyChild) = child,
+               isRubyAnnotationElement(rubyChild) {
+                await renderPendingBase(with: rubyPlainText(from: rubyChild))
+            } else {
+                pendingBase.append(child)
+            }
+        }
+        await renderPendingBase(with: nil)
+
+        if base.length == 0 {
+            return NSAttributedString()
+        }
+        if !element.id.isEmpty {
+            base.addAttribute(
+                Self.anchorIDAttribute,
+                value: element.id,
+                range: NSRange(location: 0, length: min(1, base.length))
+            )
+        }
+        return base
+    }
+
+    private func addRubyAnnotation(_ text: String, to attributedString: NSMutableAttributedString) {
+        let rubyText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rubyText.isEmpty, attributedString.length > 0 else { return }
+        attributedString.addAttribute(
+            Self.rubyAnnotationAttribute,
+            value: Self.makeRubyAnnotation(text: rubyText),
+            range: NSRange(location: 0, length: attributedString.length)
+        )
     }
 
     private func makeHRDivider(style: ResolvedStyle, config: Config) -> NSAttributedString {
@@ -818,6 +928,11 @@ final class HTMLAttributedStringBuilder {
                 paragraphIndex: paragraphIndex,
                 isLast: isLast
             )
+            if segmentStyle.isVerticalWritingMode || config.writingMode.isVertical,
+               paragraphIndex == 0,
+               segmentStyle.visualOffsetBefore > 0 {
+                segment.insert(verticalInlineSpacer(advance: segmentStyle.visualOffsetBefore, style: segmentStyle, config: config), at: 0)
+            }
             let paragraphRange = NSRange(location: 0, length: segment.length)
             segment.addAttribute(
                 .paragraphStyle,
@@ -867,6 +982,10 @@ final class HTMLAttributedStringBuilder {
 
         for child in element.children {
             switch child {
+            case .pageBreak:
+                appendSegment(isLast: false)
+                let marker = Self.makePageBreakMarker(attributes: baseTextAttributes(style: element.resolvedStyle, config: config))
+                appendNode(marker, to: output)
             case .lineBreak(let breakNode) where breakNode.resolvedStyle.isBlock:
                 appendSegment(isLast: false)
             case .element(let childElement) where childElement.resolvedStyle.isBlock:
@@ -1084,6 +1203,7 @@ final class HTMLAttributedStringBuilder {
                 // Never delete a character that carries block render metadata or HR divider
                 if trimmed.attribute(Self.blockRenderStyleAttribute, at: 0, effectiveRange: nil) != nil { break }
                 if trimmed.attribute(Self.hrDividerAttribute, at: 0, effectiveRange: nil) != nil { break }
+                if trimmed.attribute(Self.pageBreakAttribute, at: 0, effectiveRange: nil) != nil { break }
                 trimmed.deleteCharacters(in: NSRange(location: 0, length: 1))
             }
             output.append(trimmed)
@@ -1116,6 +1236,17 @@ final class HTMLAttributedStringBuilder {
             return false
         }
         return true
+    }
+
+    private func isForcedPageBreakValue(_ rawValue: String?) -> Bool {
+        guard let rawValue else { return false }
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return value == "always"
+            || value == "page"
+            || value == "left"
+            || value == "right"
+            || value == "recto"
+            || value == "verso"
     }
 
     private func paragraphSegmentStyle(
@@ -1168,7 +1299,7 @@ final class HTMLAttributedStringBuilder {
 
     private func containsSemanticBlock(_ node: ASTNode) -> Bool {
         switch node {
-        case .text, .lineBreak:
+        case .text, .lineBreak, .pageBreak:
             return false
         case .element(let element):
             return element.resolvedStyle.isBlock
@@ -1210,6 +1341,8 @@ final class HTMLAttributedStringBuilder {
                     result.append(node)
                 }
             case .lineBreak:
+                continue
+            case .pageBreak:
                 continue
             case .element(let element):
                 if element.tag == "div" || element.tag == "body" || element.tag == "svg" {
@@ -1421,8 +1554,14 @@ final class HTMLAttributedStringBuilder {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = style.textAlign
         paragraph.lineBreakMode = .byWordWrapping
-        paragraph.paragraphSpacing = style.paragraphSpacing
-        paragraph.paragraphSpacingBefore = style.paragraphSpacingBefore
+        let isVertical = style.isVerticalWritingMode || config.writingMode.isVertical
+        if isVertical {
+            paragraph.paragraphSpacing = min(style.paragraphSpacing, style.fontSize)
+            paragraph.paragraphSpacingBefore = 0
+        } else {
+            paragraph.paragraphSpacing = style.paragraphSpacing
+            paragraph.paragraphSpacingBefore = style.paragraphSpacingBefore
+        }
 
         if let bullet = style.listBullet {
             // List item: hanging indent (bullet at marginLeft, continuation lines indented by bullet width)
@@ -1629,6 +1768,27 @@ final class HTMLAttributedStringBuilder {
         }
     }
 
+    private func isRubyAnnotationElement(_ element: ElementNode) -> Bool {
+        element.tag == "rt" || element.tag == "rp"
+    }
+
+    private func rubyPlainText(from element: ElementNode) -> String {
+        element.children.map { node -> String in
+            switch node {
+            case .text(let text):
+                return text.text
+            case .lineBreak:
+                return " "
+            case .pageBreak:
+                return ""
+            case .element(let child):
+                return rubyPlainText(from: child)
+            }
+        }
+        .joined()
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func resolvedStyle(
         for element: Element,
         parent: ResolvedStyle,
@@ -1795,7 +1955,9 @@ final class HTMLAttributedStringBuilder {
             underline: parent.underline,
             strikethrough: parent.strikethrough,
             inheritedBlockMarginLeft: parent.inheritedBlockMarginLeft,
-            isVerticalWritingMode: parent.isVerticalWritingMode
+            isVerticalWritingMode: parent.isVerticalWritingMode,
+            pageBreakBefore: false,
+            pageBreakAfter: false
         )
     }
 
@@ -1847,7 +2009,10 @@ final class HTMLAttributedStringBuilder {
             firstLetterColor: nil,
             underline: false,
             strikethrough: false,
-            inheritedBlockMarginLeft: 0
+            inheritedBlockMarginLeft: 0,
+            isVerticalWritingMode: false,
+            pageBreakBefore: false,
+            pageBreakAfter: false
         )
     }
 
@@ -2028,6 +2193,12 @@ final class HTMLAttributedStringBuilder {
                 style.lineHeight = resolved
                 style.lineHeightExplicit = true
             }
+        }
+        if isForcedPageBreakValue(declarations["page-break-before"] ?? declarations["break-before"]) {
+            style.pageBreakBefore = true
+        }
+        if isForcedPageBreakValue(declarations["page-break-after"] ?? declarations["break-after"]) {
+            style.pageBreakAfter = true
         }
         if let paragraphSpacing = declarations["margin-bottom"] ?? declarations["paragraph-spacing"],
            let value = resolveLength(

@@ -51,6 +51,9 @@ public indirect enum RenderableNode: Sendable {
     /// Link (<a>), href is the target URL or anchor ID.
     case anchor(href: String, children: [RenderableNode])
 
+    /// Ruby annotation (<ruby>base<rt>annotation</rt></ruby>).
+    case ruby(base: [RenderableNode], text: String, style: RenderStyle = .none)
+
     /// Anchor target (corresponds to any element's id). The Renderer marks the anchor offset on the output.
     case anchorTarget(id: String, child: RenderableNode)
 
@@ -98,6 +101,8 @@ public struct RenderStyle: Sendable {
     public var paddingRight: CGFloat
     /// Paragraph spacing before (multiplied by baseFontSize at render time)
     public var paragraphSpacingBefore: CGFloat
+    /// Physical top offset. In vertical writing this is inline advance, not column spacing.
+    public var visualOffsetBefore: CGFloat
     /// Paragraph spacing after
     public var paragraphSpacingAfter: CGFloat
     /// Explicit width/height (common for images / card blocks)
@@ -123,6 +128,7 @@ public struct RenderStyle: Sendable {
     public var underline: Bool
     public var strikethrough: Bool
     public var isInlineAnnotation: Bool
+    public var isVerticalWritingMode: Bool
 
     public init(
         fontSizeMultiplier: CGFloat = 1.0,
@@ -141,6 +147,7 @@ public struct RenderStyle: Sendable {
         paddingLeft: CGFloat = 0,
         paddingRight: CGFloat = 0,
         paragraphSpacingBefore: CGFloat = 0,
+        visualOffsetBefore: CGFloat = 0,
         paragraphSpacingAfter: CGFloat = 0,
         width: CGFloat? = nil,
         height: CGFloat? = nil,
@@ -159,7 +166,8 @@ public struct RenderStyle: Sendable {
         firstLetterColor: RenderColor? = nil,
         underline: Bool = false,
         strikethrough: Bool = false,
-        isInlineAnnotation: Bool = false
+        isInlineAnnotation: Bool = false,
+        isVerticalWritingMode: Bool = false
     ) {
         self.fontSizeMultiplier = fontSizeMultiplier
         self.fontFamilies = fontFamilies
@@ -177,6 +185,7 @@ public struct RenderStyle: Sendable {
         self.paddingLeft = paddingLeft
         self.paddingRight = paddingRight
         self.paragraphSpacingBefore = paragraphSpacingBefore
+        self.visualOffsetBefore = visualOffsetBefore
         self.paragraphSpacingAfter = paragraphSpacingAfter
         self.width = width
         self.height = height
@@ -196,6 +205,7 @@ public struct RenderStyle: Sendable {
         self.underline = underline
         self.strikethrough = strikethrough
         self.isInlineAnnotation = isInlineAnnotation
+        self.isVerticalWritingMode = isVerticalWritingMode
     }
 
     /// No style override (default for inline cases).

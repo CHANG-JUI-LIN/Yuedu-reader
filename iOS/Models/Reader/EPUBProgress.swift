@@ -141,6 +141,75 @@ struct ReaderLocator: Codable, Equatable {
 typealias SnapshotLocator = ReaderLocator
 typealias LocatorRecord = ReaderLocator
 
+// MARK: - CoreText EPUB CFI
+
+enum EPUBPartialCFI {
+    private static let spineAssertionPrefix = "yuedu-spine-"
+
+    static func make(spineIndex: Int, charOffset: Int) -> String {
+        let clampedSpine = max(0, spineIndex)
+        let clampedOffset = max(0, charOffset)
+        let spineStep = (clampedSpine + 1) * 2
+        return "/6/\(spineStep)[\(spineAssertionPrefix)\(clampedSpine)]!/4/1:\(clampedOffset)"
+    }
+
+    static func readingPosition(
+        from partialCFI: String?,
+        fallbackSpineIndex: Int
+    ) -> CoreTextReadingPosition? {
+        guard let partialCFI else { return nil }
+        let normalized = unwrapCFI(partialCFI.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard let charOffset = textOffset(in: normalized) else { return nil }
+        let spineIndex = embeddedSpineIndex(in: normalized) ?? max(0, fallbackSpineIndex)
+        return CoreTextReadingPosition(
+            spineIndex: max(0, spineIndex),
+            charOffset: max(0, charOffset)
+        )
+    }
+
+    private static func unwrapCFI(_ value: String) -> String {
+        let lowercased = value.lowercased()
+        guard lowercased.hasPrefix("epubcfi("), value.hasSuffix(")") else {
+            return value
+        }
+        let start = value.index(value.startIndex, offsetBy: "epubcfi(".count)
+        let end = value.index(before: value.endIndex)
+        return String(value[start..<end])
+    }
+
+    private static func textOffset(in value: String) -> Int? {
+        guard let colon = value.lastIndex(of: ":") else { return nil }
+        let tail = value[value.index(after: colon)...]
+        let digits = tail.prefix { $0.isNumber }
+        guard !digits.isEmpty else { return nil }
+        return Int(digits)
+    }
+
+    private static func embeddedSpineIndex(in value: String) -> Int? {
+        guard let marker = value.range(of: spineAssertionPrefix) else { return nil }
+        let tail = value[marker.upperBound...]
+        let digits = tail.prefix { $0.isNumber }
+        guard !digits.isEmpty else { return nil }
+        return Int(digits)
+    }
+}
+
+extension ReaderLocator {
+    func cfiReadingPosition(resolvedChapterIndex: Int? = nil) -> CoreTextReadingPosition? {
+        guard let position = EPUBPartialCFI.readingPosition(
+            from: partialCFI,
+            fallbackSpineIndex: resolvedChapterIndex ?? chapterIndex
+        ) else {
+            return nil
+        }
+        guard let resolvedChapterIndex else { return position }
+        return CoreTextReadingPosition(
+            spineIndex: max(0, resolvedChapterIndex),
+            charOffset: position.charOffset
+        )
+    }
+}
+
 // MARK: - Progress Storage
 
 final class EPUBProgressStore {

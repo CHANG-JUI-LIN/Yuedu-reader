@@ -234,6 +234,8 @@ enum MarkdownRenderableNodeConverter {
             return flatten(children)
         case .anchor(_, let children):
             return flatten(children)
+        case .ruby(let base, let text, _):
+            return flatten(base) + text
         case .anchorTarget(_, let child):
             return topLevelText(for: child)
         case .image(_, let alt, _):

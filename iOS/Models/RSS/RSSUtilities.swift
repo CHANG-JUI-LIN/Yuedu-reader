@@ -79,6 +79,7 @@ enum RSSOPMLParser {
 private final class RSSOPMLXMLParser: NSObject, XMLParserDelegate {
     private var sources: [RSSSource] = []
     private var seenURLs = Set<String>()
+    private var folderStack: [String?] = []
 
     func parse(data: Data) -> [RSSSource] {
         let parser = XMLParser(data: data)
@@ -94,22 +95,40 @@ private final class RSSOPMLXMLParser: NSObject, XMLParserDelegate {
         qualifiedName qName: String?,
         attributes attributeDict: [String: String] = [:]
     ) {
-        guard elementName.lowercased() == "outline",
-              let xmlURL = firstAttribute(["xmlUrl", "xmlurl", "url"], in: attributeDict),
-              !xmlURL.isEmpty,
-              !seenURLs.contains(xmlURL) else {
-            return
+        guard elementName.lowercased() == "outline" else { return }
+
+        let xmlURL = firstAttribute(["xmlUrl", "xmlurl", "url"], in: attributeDict)
+        let text = firstAttribute(["title", "text"], in: attributeDict)
+
+        if let xmlURL, !xmlURL.isEmpty, !seenURLs.contains(xmlURL) {
+            let name = text ?? xmlURL
+            let htmlURL = firstAttribute(["htmlUrl", "htmlurl"], in: attributeDict)
+            let currentFolder = folderStack.reversed().first(where: { $0 != nil }) ?? nil
+            sources.append(RSSSource(
+                name: RSSContentSanitizer.cleanText(name),
+                url: xmlURL,
+                homepageURL: htmlURL,
+                sortOrder: sources.count,
+                sourceGroup: currentFolder
+            ))
+            seenURLs.insert(xmlURL)
         }
 
-        let name = firstAttribute(["title", "text"], in: attributeDict) ?? xmlURL
-        let htmlURL = firstAttribute(["htmlUrl", "htmlurl"], in: attributeDict)
-        sources.append(RSSSource(
-            name: RSSContentSanitizer.cleanText(name),
-            url: xmlURL,
-            homepageURL: htmlURL,
-            sortOrder: sources.count
-        ))
-        seenURLs.insert(xmlURL)
+        if let text, !text.isEmpty, xmlURL == nil || xmlURL!.isEmpty {
+            folderStack.append(RSSContentSanitizer.cleanText(text))
+        } else {
+            folderStack.append(nil)
+        }
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didEndElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
+        guard elementName.lowercased() == "outline", !folderStack.isEmpty else { return }
+        folderStack.removeLast()
     }
 
     private func firstAttribute(_ names: [String], in attributes: [String: String]) -> String? {
@@ -126,17 +145,24 @@ private final class RSSOPMLXMLParser: NSObject, XMLParserDelegate {
 
 enum RSSOPMLExporter {
     static func export(sources: [RSSSource]) -> String {
-        let outlines = sources.map { source in
-            let attrs = [
-                #"text="\#(escape(source.name))""#,
-                #"title="\#(escape(source.name))""#,
-                #"type="rss""#,
-                #"xmlUrl="\#(escape(source.url))""#,
-                source.homepageURL.map { #"htmlUrl="\#(escape($0))""# }
-            ].compactMap { $0 }.joined(separator: " ")
-            return "    <outline \(attrs) />"
-        }.joined(separator: "\n")
-
+        let groups = Dictionary(grouping: sources.sorted(by: { $0.sortOrder < $1.sortOrder })) { source in
+            source.sourceGroup?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? source.sourceGroup!
+                : nil
+        }
+        var outlines: [String] = []
+        if let rootSources = groups[nil] {
+            for source in rootSources {
+                outlines.append("    \(outlineXML(for: source))")
+            }
+        }
+        for (folderName, folderSources) in groups where folderName != nil {
+            outlines.append("    <outline text=\"\(escape(folderName!))\" title=\"\(escape(folderName!))\">")
+            for source in folderSources {
+                outlines.append("      \(outlineXML(for: source))")
+            }
+            outlines.append("    </outline>")
+        }
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
@@ -144,10 +170,21 @@ enum RSSOPMLExporter {
             <title>yuedu RSS</title>
           </head>
           <body>
-        \(outlines)
+        \(outlines.joined(separator: "\n"))
           </body>
         </opml>
         """
+    }
+
+    private static func outlineXML(for source: RSSSource) -> String {
+        let attrs = [
+            #"text="\#(escape(source.name))""#,
+            #"title="\#(escape(source.name))""#,
+            #"type="rss""#,
+            #"xmlUrl="\#(escape(source.url))""#,
+            source.homepageURL.map { #"htmlUrl="\#(escape($0))""# }
+        ].compactMap { $0 }.joined(separator: " ")
+        return "<outline \(attrs) />"
     }
 
     private static func escape(_ value: String) -> String {

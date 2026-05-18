@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct RSSOPMLDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.xml, .data, .plainText, UTType(filenameExtension: "opml")].compactMap { $0 } }
+    static var readableContentTypes: [UTType] { [UTType(tag: "opml", tagClass: .filenameExtension, conformingTo: .xml), .xml, .data].compactMap { $0 } }
     static var writableContentTypes: [UTType] { [.xml] }
 
     var text: String

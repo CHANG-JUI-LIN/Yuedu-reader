@@ -13,6 +13,160 @@ struct SafariView: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }
 
+// MARK: - RSSSmartFeedView
+
+struct RSSSmartFeedView: View {
+    let kind: RSSSmartFeedKind
+
+    @StateObject private var store = RSSStore.shared
+
+    @State private var filter: RSSArticleTimelineFilter = .all
+    @State private var searchText = ""
+    @State private var selectedArticleID: String?
+
+    private let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .none
+        f.timeStyle = .short
+        return f
+    }()
+
+    private var articles: [RSSArticleRecord] {
+        filter.apply(to: store.articles(for: kind), query: searchText)
+    }
+
+    private var unreadCount: Int {
+        store.unreadCount(for: kind)
+    }
+
+    var body: some View {
+        Group {
+            if articles.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: kind.systemImage)
+                        .font(.largeTitle)
+                        .foregroundColor(DSColor.textSecondary)
+
+                    Text(emptyMessage)
+                        .foregroundColor(DSColor.textSecondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(articles) { article in
+                        if let source = store.source(id: article.sourceId) {
+                            Button {
+                                store.markRead(articleId: article.id, isRead: true)
+                                selectedArticleID = article.id
+                            } label: {
+                                RSSArticleRow(
+                                    source: source,
+                                    article: article,
+                                    timeFormatter: timeFormatter
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    store.toggleFavorite(articleId: article.id)
+                                } label: {
+                                    Label(
+                                        article.isFavorite ? localized("取消收藏") : localized("收藏"),
+                                        systemImage: article.isFavorite ? "star.slash" : "star"
+                                    )
+                                }
+                                .tint(.yellow)
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button {
+                                    store.markRead(articleId: article.id, isRead: !article.isRead)
+                                } label: {
+                                    Label(
+                                        article.isRead ? localized("標為未讀") : localized("標為已讀"),
+                                        systemImage: article.isRead ? "envelope.badge" : "envelope.open"
+                                    )
+                                }
+                                .tint(.blue)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
+        .navigationDestination(item: $selectedArticleID) { articleID in
+            RSSArticleReaderView(articleID: articleID)
+        }
+        .rssFeedSearchBarIfAvailable(searchText: $searchText)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 1) {
+                    Text(kind.title)
+                        .font(.headline.weight(.semibold))
+                        .foregroundColor(DSColor.textPrimary)
+                        .lineLimit(1)
+
+                    Text("\(unreadCount) \(localized("未讀"))")
+                        .font(.caption)
+                        .foregroundColor(DSColor.textSecondary)
+                }
+            }
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Picker("", selection: $filter) {
+                        ForEach(RSSArticleTimelineFilter.allCases) { filter in
+                            Label(filter.title, systemImage: filter.systemImage)
+                                .tag(filter)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+
+                    Divider()
+
+                    Button {
+                        store.markAllRead(smartFeed: kind)
+                    } label: {
+                        Label(localized("標記全部已讀"), systemImage: "checkmark.circle")
+                    }
+                    .disabled(unreadCount == 0)
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(DSFont.toolbarIcon)
+                }
+                .foregroundColor(DSColor.textPrimary)
+                .id("\(Locale.autoupdatingCurrent.identifier)_rss_smart_filter")
+            }
+        }
+    }
+
+    private var emptyMessage: String {
+        switch filter {
+        case .all:
+            switch kind {
+            case .today:
+                return localized("沒有今日文章")
+            case .allUnread:
+                return localized("沒有未讀文章")
+            case .starred:
+                return localized("沒有加星文章")
+            }
+        case .unread:
+            return localized("沒有未讀文章")
+        case .read:
+            return localized("沒有已讀文章")
+        case .favorite:
+            return localized("沒有收藏文章")
+        }
+    }
+}
+
 // MARK: - RSSFeedView
 
 struct RSSFeedView: View {
