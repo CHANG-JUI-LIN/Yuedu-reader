@@ -803,6 +803,106 @@ struct yuedu_appTests {
         #expect(color != UIColor.black)
     }
 
+    @Test func htmlBuilderStylesInternalLinks() async {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
+        )
+        let result = await builder.build(
+            html: "<p>Go to <a href='#chapter-2'>Chapter 2</a></p>",
+            config: config
+        ).attributedString
+        let linkRange = (result.string as NSString).range(of: "Chapter 2")
+        #expect(linkRange.location != NSNotFound)
+
+        let link = result.attribute(
+            HTMLAttributedStringBuilder.internalLinkAttribute,
+            at: linkRange.location,
+            effectiveRange: nil
+        ) as? String
+        let foreground = result.attribute(.foregroundColor, at: linkRange.location, effectiveRange: nil) as? UIColor
+        let preservedForeground = result.attribute(
+            HTMLAttributedStringBuilder.cssSpecifiedForegroundColorAttribute,
+            at: linkRange.location,
+            effectiveRange: nil
+        ) as? UIColor
+        let underline = result.attribute(.underlineStyle, at: linkRange.location, effectiveRange: nil) as? Int
+
+        #expect(link == "#chapter-2")
+        #expect(foreground.map { colorsApproximatelyEqual($0, .systemBlue) } == true)
+        #expect(preservedForeground.map { colorsApproximatelyEqual($0, .systemBlue) } == true)
+        #expect(underline == NSUnderlineStyle.single.rawValue)
+    }
+
+    @Test func renderableNodeRendererStylesInternalLinks() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 375
+        )
+        let ast = try #require(await builder.buildStyledAST(
+            html: "<p>Go to <a href='#chapter-2'>Chapter 2</a></p>",
+            config: config
+        ))
+        let nodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
+        let settings = ReaderRenderSettings(
+            theme: "test",
+            textColor: .black,
+            backgroundColor: .white,
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            letterSpacing: 0,
+            marginH: 0,
+            marginV: 0,
+            footerHeight: 0,
+            contentInsets: .zero,
+            writingMode: .horizontal
+        )
+        let renderer = NodeAttributedStringRenderer(
+            config: NodeAttributedStringRenderer.Config(
+                from: settings,
+                textColor: .black,
+                renderWidth: 375
+            )
+        )
+        let result = await renderer.render(nodes)
+        let linkRange = (result.string as NSString).range(of: "Chapter 2")
+        #expect(linkRange.location != NSNotFound)
+
+        let link = result.attribute(
+            HTMLAttributedStringBuilder.internalLinkAttribute,
+            at: linkRange.location,
+            effectiveRange: nil
+        ) as? String
+        let foreground = result.attribute(.foregroundColor, at: linkRange.location, effectiveRange: nil) as? UIColor
+        let preservedForeground = result.attribute(
+            HTMLAttributedStringBuilder.cssSpecifiedForegroundColorAttribute,
+            at: linkRange.location,
+            effectiveRange: nil
+        ) as? UIColor
+        let underline = result.attribute(.underlineStyle, at: linkRange.location, effectiveRange: nil) as? Int
+
+        #expect(link == "#chapter-2")
+        #expect(foreground.map { colorsApproximatelyEqual($0, .systemBlue) } == true)
+        #expect(preservedForeground.map { colorsApproximatelyEqual($0, .systemBlue) } == true)
+        #expect(underline == NSUnderlineStyle.single.rawValue)
+    }
+
     @Test func htmlBuilderDelegatesFontSelectionWithWeightAndItalic() async {
         let builder = HTMLAttributedStringBuilder()
         var capturedFamilies: [String] = []

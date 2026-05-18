@@ -928,11 +928,14 @@ struct NodeAttributedStringRenderer {
                 .baselineOffset: baselineOffset as NSNumber,
                 .paragraphStyle: paragraphStyle
             ]
-            if let href = linkHref {
-                attrs[HTMLAttributedStringBuilder.internalLinkAttribute] = href
-            }
             if hasCSSColor {
                 attrs[HTMLAttributedStringBuilder.cssSpecifiedForegroundColorAttribute] = textColor
+            }
+            if let href = linkHref {
+                attrs[HTMLAttributedStringBuilder.internalLinkAttribute] = href
+                attrs[.foregroundColor] = UIColor.systemBlue
+                attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                attrs[HTMLAttributedStringBuilder.cssSpecifiedForegroundColorAttribute] = UIColor.systemBlue
             }
             if underline {
                 attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue

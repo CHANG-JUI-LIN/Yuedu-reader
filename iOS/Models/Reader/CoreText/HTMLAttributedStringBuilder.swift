@@ -746,10 +746,26 @@ final class HTMLAttributedStringBuilder {
             if element.tag == "a",
                let href = element.attributes["href"],
                !href.isEmpty {
+                let range = NSRange(location: 0, length: childResult.length)
                 childResult.addAttribute(
                     Self.internalLinkAttribute,
                     value: href,
-                    range: NSRange(location: 0, length: childResult.length)
+                    range: range
+                )
+                childResult.addAttribute(
+                    .foregroundColor,
+                    value: UIColor.systemBlue,
+                    range: range
+                )
+                childResult.addAttribute(
+                    .underlineStyle,
+                    value: NSUnderlineStyle.single.rawValue,
+                    range: range
+                )
+                childResult.addAttribute(
+                    Self.cssSpecifiedForegroundColorAttribute,
+                    value: UIColor.systemBlue,
+                    range: range
                 )
             }
 
