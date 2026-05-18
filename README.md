@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/banner.svg" alt="Yuedu Reader" width="600">
+</p>
+
 # Yuedu Reader
 
 [English](README.md) | [简体中文](README.zh-Hans.md) | [繁體中文](README.zh-Hant.md)
