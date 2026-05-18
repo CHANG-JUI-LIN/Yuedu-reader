@@ -803,6 +803,9 @@ final class CoreTextPaginator {
         } else if attrs[.font] != nil {
             flags.append("fontType=\(String(describing: type(of: attrs[.font]!)))")
         }
+        if let baselineOffset = baselineOffsetValue(attrs[.baselineOffset]) {
+            flags.append("baselineOffset=\(String(format: "%.2f", baselineOffset))")
+        }
         if let paragraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle {
             flags.append("firstIndent=\(String(format: "%.1f", paragraphStyle.firstLineHeadIndent))")
             flags.append("lineSpacing=\(String(format: "%.1f", paragraphStyle.lineSpacing))")
@@ -849,6 +852,28 @@ final class CoreTextPaginator {
             value: kCTBaselineClassIdeographicCentered,
             range: range
         )
+        attributedString.enumerateAttribute(.font, in: range, options: []) { value, fontRange, _ in
+            guard let offset = verticalLatinCenteringOffset(for: value) else { return }
+            attributedString.addAttribute(.baselineOffset, value: offset, range: fontRange)
+        }
+    }
+
+    private static func verticalLatinCenteringOffset(for fontValue: Any?) -> CGFloat? {
+        let correctionFactor: CGFloat = 0.5
+        if let font = fontValue as? UIFont {
+            return -((font.ascender + font.descender) / 2) * correctionFactor
+        }
+        guard let fontValue,
+              CFGetTypeID(fontValue as CFTypeRef) == CTFontGetTypeID()
+        else { return nil }
+        let font = fontValue as! CTFont
+        return -((CTFontGetAscent(font) - CTFontGetDescent(font)) / 2) * correctionFactor
+    }
+
+    private static func baselineOffsetValue(_ value: Any?) -> CGFloat? {
+        if let value = value as? CGFloat { return value }
+        if let value = value as? NSNumber { return CGFloat(truncating: value) }
+        return nil
     }
 
     /// Horizontal mode: snaps bottom inset to integer line grid for clean page fill.

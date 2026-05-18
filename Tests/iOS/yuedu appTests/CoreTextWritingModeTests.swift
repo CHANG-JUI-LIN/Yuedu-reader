@@ -176,7 +176,7 @@ struct CoreTextWritingModeTests {
         #expect(verticalForm == true)
     }
 
-    @Test("vertical Latin ranges remove vertical forms and use ideographic centered baseline")
+    @Test("vertical Latin ranges remove vertical forms and apply centering offset")
     func verticalLatinRangesUseIdeographicCenteredBaseline() async throws {
         let font = UIFont.systemFont(ofSize: 18)
         let text = "版DNA-BN N00004905校"
@@ -235,6 +235,25 @@ struct CoreTextWritingModeTests {
             at: latinLocation,
             effectiveRange: nil
         )
+        let hyphenBaselineOffset = layout.attributedString.attribute(
+            .baselineOffset,
+            at: hyphenLocation,
+            effectiveRange: nil
+        )
+        let numericBaselineOffset = layout.attributedString.attribute(
+            .baselineOffset,
+            at: numericLocation,
+            effectiveRange: nil
+        )
+        let latinFont = layout.attributedString.attribute(
+            .font,
+            at: latinLocation,
+            effectiveRange: nil
+        )
+        let expectedLatinOffset = try #require(verticalLatinCenteringOffset(for: latinFont))
+        let actualLatinOffset = try #require(cgFloatValue(latinBaselineOffset))
+        let actualHyphenOffset = try #require(cgFloatValue(hyphenBaselineOffset))
+        let actualNumericOffset = try #require(cgFloatValue(numericBaselineOffset))
 
         #expect(cjkVerticalForm == true)
         #expect(latinVerticalForm != true)
@@ -243,7 +262,10 @@ struct CoreTextWritingModeTests {
         #expect(latinBaselineClass == (kCTBaselineClassIdeographicCentered as String))
         #expect(hyphenBaselineClass == (kCTBaselineClassIdeographicCentered as String))
         #expect(numericBaselineClass == (kCTBaselineClassIdeographicCentered as String))
-        #expect(latinBaselineOffset == nil)
+        #expect(actualLatinOffset < 0)
+        #expect(abs(actualLatinOffset - expectedLatinOffset) < 0.1)
+        #expect(abs(actualHyphenOffset - expectedLatinOffset) < 0.1)
+        #expect(abs(actualNumericOffset - expectedLatinOffset) < 0.1)
     }
 
     @Test("vertical image placeholders use vertical run delegate metrics")
@@ -577,6 +599,24 @@ struct CoreTextWritingModeTests {
         style.minimumLineHeight = 28.8
         style.maximumLineHeight = 28.8
         return style
+    }
+
+    private func cgFloatValue(_ value: Any?) -> CGFloat? {
+        if let value = value as? CGFloat { return value }
+        if let value = value as? NSNumber { return CGFloat(truncating: value) }
+        return nil
+    }
+
+    private func verticalLatinCenteringOffset(for fontValue: Any?) -> CGFloat? {
+        let correctionFactor: CGFloat = 0.5
+        if let font = fontValue as? UIFont {
+            return -((font.ascender + font.descender) / 2) * correctionFactor
+        }
+        guard let fontValue,
+              CFGetTypeID(fontValue as CFTypeRef) == CTFontGetTypeID()
+        else { return nil }
+        let font = fontValue as! CTFont
+        return -((CTFontGetAscent(font) - CTFontGetDescent(font)) / 2) * correctionFactor
     }
 
     private func containsNonWhitePixel(in rect: CGRect, image: UIImage) -> Bool {
