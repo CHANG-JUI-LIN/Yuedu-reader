@@ -1,0 +1,45 @@
+body {
+  margin: 0;
+}
+
+.quote {
+  display: block;
+  font-weight: bold;
+  text-align: center;
+  text-indent: 0;
+}
+
+.codex {
+  display: block;
+  font-weight: bold;
+  text-align: center;
+  text-indent: 0;
+}
+
+.logo-block {
+  display: block;
+  font-style: italic;
+  text-align: center;
+  text-indent: 0;
+}
+
+.logo {
+  height: auto;
+  width: 24.03%;
+}
+
+.chapter-heading {
+  display: block;
+  font-size: 1.5em;
+  font-weight: bold;
+  line-height: 1.2;
+  text-align: center;
+  text-indent: 0;
+  margin: 0 0 0.704225em;
+}
+
+.body {
+  display: block;
+  text-indent: 1em;
+}
+
