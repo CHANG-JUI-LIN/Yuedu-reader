@@ -18,17 +18,17 @@
     <td width="33.3%" align="center" style="border: none; vertical-align: top;">
       <br>
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#6d28d9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Book icon"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-      <h3>CJK 豎排閱讀</h3>
-      <img src="docs/screenshots/cjk-vertical.png" width="220" style="border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);" alt="CJK 豎排閱讀截圖">
-      <p style="font-size: 0.9em; color: #666; margin-top: 10px;">《紅樓夢》(脂評本): 豎排文本、行間注釋和緊湊標注。</p>
-    </td>
-    <td width="33.3%" align="center" style="border: none; vertical-align: top;">
+      <h3>直排閱讀</h3>
+      <img src="docs/screenshots/cjk-vertical.png" width="220" style="border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);" alt="CJK 直排閱讀截圖">
+      <p style="font-size: 0.9em; color: #666; margin-top: 10px;">《紅樓夢》(脂評本): 直排文本、行間注釋和緊湊標注。</p>
+      </td>
+      <td width="33.3%" align="center" style="border: none; vertical-align: top;">
       <br>
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Text icon"><path d="M3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2z"></path><path d="M7 15l3-6 3 6"></path><path d="M8 13h4"></path></svg>
       <h3>英文 EPUB</h3>
       <img src="docs/screenshots/english-epub.png" width="220" style="border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);" alt="英文 EPUB 渲染截圖">
-      <p style="font-size: 0.9em; color: #666; margin-top: 10px;">出版商 CSS 支持: 首字母下沉、嵌套邊距和字體級聯。</p>
-    </td>
+      <p style="font-size: 0.9em; color: #666; margin-top: 10px;">出版商 CSS 支援: 首字放大、巢狀邊距和字體層疊。</p>
+      </td>
     <td width="33.3%" align="center" style="border: none; vertical-align: top;">
       <br>
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="List icon"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
@@ -50,7 +50,7 @@
       <strong>規範優先的保真度</strong><br>
       忠實實現 EPUB 和 CSS 規範，確保渲染效果的一致性和可預測性。
       <ul>
-        <li><strong>手動解析 CSS</strong>: 出版商樣式表被解析並解析為自定義級聯，將 <code>text-indent</code>、<code>font-size</code> 和 <code>:first-letter</code> 等屬性轉換為 <code>NSAttributedString</code> 屬性。</li>
+        <li><strong>手動解析 CSS</strong>: 出版商樣式表被解析並解析為自定義層疊，將 <code>text-indent</code>、<code>font-size</code> 和 <code>:first-letter</code> 等屬性轉換為 <code>NSAttributedString</code> 屬性。</li>
         <li><strong>精確解析</strong>: 處理簡寫屬性、百分比值和繼承屬性，不依賴系統佈局引擎。</li>
       </ul>
     </td>
@@ -61,10 +61,10 @@
     </td>
     <td style="border: none; vertical-align: top;">
       <strong>高級佈局</strong><br>
-      豎排、紅寶石 (Ruby)、腳注、註釋、首字母放大和嵌套邊距。
+      直排、旁注 (Ruby)、腳注、註釋、首字放大和巢狀邊距。
       <ul>
-        <li><strong>CJK 豎排</strong>: 具備軸向感知能力的渲染，處理從欄頂開始的行間進程和塊方向範圍。拉丁字符被選擇性地解除豎排並重新居中。</li>
-        <li><strong>行內注釋</strong>: 通過保留欄寬佔位符並手動繪製注釋，支持密集的豎排注釋（例如脂評本），並將長注釋跨頁拆分。</li>
+        <li><strong>CJK 直排</strong>: 具備軸向感知能力的渲染，處理從欄頂開始的行間進程和塊方向範圍。拉丁字符被選擇性地解除直排並重新居中。</li>
+        <li><strong>行內注釋</strong>: 通過保留欄寬佔位符並手動繪製注釋，支援密集的直排注釋（例如脂評本），並將長注釋跨頁拆分。</li>
       </ul>
     </td>
   </tr>
