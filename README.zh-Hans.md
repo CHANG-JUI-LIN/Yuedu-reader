@@ -6,9 +6,43 @@
   <img src="iOS/Assets.xcassets/AppIcon.appiconset/ios_app_icon_novel_reader_1024_no_alpha.png" alt="Yuedu Reader 图标" width="128">
 </p>
 
-`阅读` 是一款以 SwiftUI 和 CoreText 打造的 iOS 原生阅读 App，专注于 CJK 长文阅读，支持本地 EPUB/TXT 书库、在线文章正规化、RSS 订阅、TTS 朗读、WebDAV 同步，以及高度可调的字体排版。
+<p align="center">
+  <strong>一个用 SwiftUI 和 CoreText 打造的 iOS 原生 EPUB/TXT 阅读器。</strong><br>
+  不以 WebView 作为主阅读面。CJK 优先，重视排版，面向长篇阅读。
+</p>
 
-> 目前重心：CJK 优先。中文阅读、CJK/拉丁混排、长篇小说场景为主要标的。英文 EPUB/TXT 渲染可运作，但尚未是主力验证路径。
+`阅读` 是一款 iOS 原生阅读 App，支持本地书库、在线文章、RSS 订阅、TTS 朗读与 WebDAV 同步。它的主阅读面由 CoreText 渲染，而不是交给 WebView，因此分页、连续滚动、EPUB CSS、中文竖排、CJK/拉丁混排、阅读位置恢复等能力都由应用自己的渲染管线处理。
+
+> 目前重心：CJK 优先。中文阅读、CJK/拉丁混排、长篇小说场景为主要目标。英文 EPUB/TXT 渲染也已支持，并包含 EPUB 排版能力，例如首字放大、出版者 CSS、章节版式和目录导航。
+
+## 展示
+
+> 宣传仓库前建议先补截图。推荐放：
+>
+> - 中文竖排与行内批注
+> - 英文 EPUB 首字放大
+> - 目录导航
+> - 阅读设置 / 主题
+
+<p align="center">
+  <img src="docs/screenshots/cjk-vertical.png" width="220" alt="CJK vertical writing">
+  <img src="docs/screenshots/english-epub.png" width="220" alt="English EPUB typography">
+  <img src="docs/screenshots/toc.png" width="220" alt="Table of contents">
+</p>
+
+## 渲染亮点
+
+* **原生 CoreText 渲染**：左右翻页和连续滚动都不以 WebView 作为主阅读面。
+* **CJK 竖排**：支持繁简中文竖排、CJK 标点处理、CJK/拉丁混排和长篇小说阅读。
+* **复杂 CJK EPUB 处理**：已用竖排中文 EPUB 结构测试，包括行内批注、彩色注解、小字批语和大量行内来源标记。
+* **英文 EPUB 排版**：支持出版者 CSS、章节标题、段落缩排、`:first-letter` 首字放大、嵌套区块边距、分隔线、字体样式层叠和目录导航。
+* **稳定阅读位置**：阅读进度基于稳定内容坐标，而不是容易随排版变化漂移的临时页码。
+
+## 为什么用 CoreText？
+
+很多 EPUB 阅读器可以直接把排版交给 WebView。`阅读` 刻意使用 CoreText 作为主阅读面，是为了让应用直接控制分页、滚动布局、字体排版、主题、阅读位置和 CJK 特有行为。
+
+这会让渲染器更难实现，但也让这个项目更像一个原生 iOS 阅读引擎实验，尤其适合 CJK 排版和长篇小说场景。
 
 ## 功能
 

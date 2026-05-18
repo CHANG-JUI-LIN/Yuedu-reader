@@ -6,9 +6,43 @@
   <img src="iOS/Assets.xcassets/AppIcon.appiconset/ios_app_icon_novel_reader_1024_no_alpha.png" alt="Yuedu Reader app icon" width="128">
 </p>
 
-Yuedu Reader, named `閱讀` in Traditional Chinese and `阅读` in Simplified Chinese, is a native iOS reading app built with SwiftUI and CoreText. It is designed for CJK long-form reading, local EPUB/TXT libraries, online article normalization, RSS subscriptions, TTS playback, WebDAV sync, and highly configurable typography.
+<p align="center">
+  <strong>A native iOS EPUB/TXT reader built with SwiftUI and CoreText.</strong><br>
+  No WebView as the main reading surface. CJK-first, typography-heavy, and designed for long-form reading.
+</p>
 
-> Status: CJK-first. Chinese reading, mixed CJK/Latin text, and long novel scenarios are the primary targets. English EPUB/TXT rendering is supported, but it is not the main validation path yet.
+Yuedu Reader, named `閱讀` in Traditional Chinese and `阅读` in Simplified Chinese, is a native iOS reader for local books, online articles, RSS feeds, TTS playback, and WebDAV sync. Its main reading surface is rendered with CoreText instead of WebView, so pagination, continuous scrolling, EPUB CSS, CJK vertical writing, mixed CJK/Latin text, and reading-position restoration are handled by the app's own rendering pipeline.
+
+> Status: CJK-first. Chinese reading, mixed CJK/Latin text, and long novel scenarios are the primary targets. English EPUB/TXT rendering is supported and includes EPUB typography features such as drop caps, publisher CSS, chapter layout, and table-of-contents navigation.
+
+## Showcase
+
+> Add screenshots here before promoting the repository. Recommended layout:
+>
+> - CJK vertical writing with inline commentary
+> - English EPUB typography with drop cap
+> - Table of contents
+> - Reader settings / themes
+
+<p align="center">
+  <img src="docs/screenshots/cjk-vertical.png" width="220" alt="CJK vertical writing">
+  <img src="docs/screenshots/english-epub.png" width="220" alt="English EPUB typography">
+  <img src="docs/screenshots/toc.png" width="220" alt="Table of contents">
+</p>
+
+## Rendering Highlights
+
+* **Native CoreText rendering**: paged reading and continuous scrolling without using WebView as the main reader.
+* **CJK vertical writing**: vertical Traditional/Simplified Chinese layouts, CJK punctuation handling, mixed CJK/Latin text, and long-form novel reading.
+* **Complex CJK EPUB handling**: tested against vertical Chinese EPUB structures with inline commentary, colored annotations, small-font notes, and large numbers of inline source markers.
+* **English EPUB typography**: publisher CSS, chapter titles, paragraph indentation, `:first-letter` drop caps, nested block margins, dividers, font style cascade, and table-of-contents navigation.
+* **Stable reading position**: reading progress is based on durable content coordinates instead of transient page numbers.
+
+## Why CoreText?
+
+Most EPUB readers can delegate layout to WebView. Yuedu Reader intentionally uses CoreText as the main reading surface so the app can control pagination, scroll layout, typography, themes, reading position, and CJK-specific behavior directly.
+
+This makes the renderer harder to build, but it also makes the project useful as a native iOS reading-engine experiment, especially for CJK typography and long novel scenarios.
 
 ## What It Does
 
