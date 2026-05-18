@@ -274,76 +274,88 @@ private struct RSSArticleRow: View {
     let timeFormatter: DateFormatter
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            statusIndicator
-                .frame(width: 16, height: 16)
-                .padding(.top, 18)
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 10) {
+                statusIndicator
+                    .frame(width: 12, height: 12)
+                    .padding(.top, 4)
 
-            RSSFaviconView(source: source, size: 36)
-                .padding(.top, 10)
-
-            VStack(spacing: 0) {
-                Divider()
-                    .opacity(0.3)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    articleContentText
-                        .lineLimit(3)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(article.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? localized("暫無資料") : article.title.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(DSColor.textPrimary)
+                        .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    if !article.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(article.summary.trimmingCharacters(in: .whitespacesAndNewlines))
+                            .font(.subheadline)
+                            .foregroundColor(DSColor.textSecondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+
+                    HStack(alignment: .center, spacing: 6) {
+                        RSSFaviconView(source: source, size: 16)
+                        
                         Text(metadataText)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(DSColor.textSecondary)
                             .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
+                        
                         if let pubDate = article.pubDate {
+                            Text("•")
+                                .font(.caption)
+                                .foregroundColor(DSColor.textSecondary)
                             Text(timeFormatter.string(from: pubDate))
+                                .font(.caption)
+                                .foregroundColor(DSColor.textSecondary)
                                 .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
-                    .font(.caption)
-                    .foregroundColor(DSColor.textSecondary)
+                    .padding(.top, 2)
                 }
-                .padding(.top, 7)
-                .padding(.trailing, 12)
-                .padding(.bottom, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                if let imageURL = article.imageURL, let url = URL(string: imageURL) {
+                    AsyncImage(url: url) { phase in
+                        if let image = phase.image {
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } else if phase.error != nil {
+                            Color.clear
+                        } else {
+                            Color.gray.opacity(0.1)
+                        }
+                    }
+                    .frame(width: 60, height: 60)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .padding(.leading, 4)
+                }
             }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            
+            Divider()
+                .padding(.leading, 38)
+                .opacity(0.5)
         }
-        .padding(.leading, 12)
-        .frame(minHeight: 72, alignment: .top)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-    }
-
-    private var articleContentText: Text {
-        let title = article.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let summary = article.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        let titleText = Text(title.isEmpty ? localized("暫無資料") : title)
-            .font(.headline)
-            .foregroundColor(DSColor.textPrimary)
-
-        guard !summary.isEmpty else {
-            return titleText
-        }
-
-        return titleText
-            + Text("\n\(summary)")
-                .font(.body)
-                .foregroundColor(DSColor.textSecondary)
     }
 
     @ViewBuilder
     private var statusIndicator: some View {
         if article.isFavorite {
             Image(systemName: "star.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.yellow)
         } else if !article.isRead {
             Circle()
                 .fill(DSColor.accent)
-                .frame(width: 14, height: 14)
         } else {
             Color.clear
         }
@@ -351,7 +363,7 @@ private struct RSSArticleRow: View {
 
     private var metadataText: String {
         if let author = article.author?.trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty {
-            return author
+            return "\(source.name) - \(author)"
         }
         return source.name
     }

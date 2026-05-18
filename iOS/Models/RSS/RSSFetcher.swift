@@ -180,6 +180,20 @@ final class RSSXMLParser: NSObject, XMLParserDelegate {
             currentLinkHref = nil
             currentLinkRel = nil
 
+        case "media:thumbnail", "media:content":
+            if insideItem, currentItem["imageURL"] == nil {
+                if let url = attributeDict["url"] {
+                    currentItem["imageURL"] = url
+                }
+            }
+
+        case "enclosure":
+            if insideItem, currentItem["imageURL"] == nil {
+                if let type = attributeDict["type"]?.lowercased(), type.hasPrefix("image/"), let url = attributeDict["url"] {
+                    currentItem["imageURL"] = url
+                }
+            }
+
         case "link":
             if isAtom {
                 let rel = (attributeDict["rel"] ?? "alternate").lowercased()
@@ -355,11 +369,11 @@ final class RSSXMLParser: NSObject, XMLParserDelegate {
         )
     }
 
-    private func contentMetadata(from html: String) -> (author: String?, dateString: String?) {
+    private func contentMetadata(from html: String) -> (author: String?, dateString: String?, imageURL: String?) {
         guard !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let document = try? SwiftSoup.parseBodyFragment(html),
               let body = document.body() else {
-            return (nil, nil)
+            return (nil, nil, nil)
         }
 
         let author = cleanOptionalText((try? body.select("address").first()?.text()) ?? nil)
@@ -370,7 +384,8 @@ final class RSSXMLParser: NSObject, XMLParserDelegate {
             ?? (try? timeElement?.text())
             ?? nil
         )
-        return (author, dateString)
+        let imageURL = cleanOptionalText((try? body.select("img[src]").first()?.attr("src")) ?? nil)
+        return (author, dateString, imageURL)
     }
 
     private func cleanOptionalText(_ text: String?) -> String? {

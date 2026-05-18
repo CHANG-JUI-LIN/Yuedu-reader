@@ -156,7 +156,7 @@ struct RSSListView: View {
         }
         .fileImporter(
             isPresented: $showOPMLImporter,
-            allowedContentTypes: [.xml, .data],
+            allowedContentTypes: [.xml, .data, .plainText, UTType(filenameExtension: "opml")].compactMap { $0 },
             allowsMultipleSelection: false,
             onCompletion: importOPML
         )
@@ -449,12 +449,13 @@ private struct AddRSSSourceSheet: View {
 
     @State private var name = ""
     @State private var url = ""
+    @State private var isLoading = false
 
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text(localized("來源名稱"))) {
-                    TextField(localized("例如：科技新聞"), text: $name)
+                Section(header: Text(localized("來源名稱（選填）"))) {
+                    TextField(localized("留空將自動從 RSS 抓取"), text: $name)
                 }
                 Section(header: Text(localized("RSS 網址"))) {
                     TextField("https://", text: $url)
@@ -474,23 +475,56 @@ private struct AddRSSSourceSheet: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(localized("新增")) {
-                        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !trimmedName.isEmpty, !trimmedURL.isEmpty else { return }
-                        let source = RSSSource(
-                            name: trimmedName,
-                            url: trimmedURL,
-                            sortOrder: store.sources.count
-                        )
-                        store.addSource(source)
-                        isPresented = false
+                        Task { await addSource() }
                     }
                     .foregroundColor(DSColor.accent)
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                              url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
+                }
+            }
+            .overlay {
+                if isLoading {
+                    ProgressView(localized("正在抓取 RSS 資訊…"))
+                        .padding()
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }
             }
         }
+    }
+
+    @MainActor
+    private func addSource() async {
+        let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedURL.isEmpty else { return }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var finalName = trimmedName
+
+        if finalName.isEmpty {
+            let tempSource = RSSSource(name: "Temp", url: trimmedURL, sortOrder: 0)
+            let fetcher = RSSFetcher()
+            await fetcher.fetchItems(from: tempSource, metadata: nil)
+
+            if case let .updated(_, _, feedInfo) = fetcher.response, let feedTitle = feedInfo?.title, !feedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                finalName = feedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            } else if let firstItemTitle = fetcher.items.first?.title, !firstItemTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                finalName = firstItemTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            } else if let host = URL(string: trimmedURL)?.host {
+                finalName = host
+            } else {
+                finalName = "RSS Source"
+            }
+        }
+
+        let source = RSSSource(
+            name: finalName,
+            url: trimmedURL,
+            sortOrder: store.sources.count
+        )
+        store.addSource(source)
+        isPresented = false
     }
 }
 

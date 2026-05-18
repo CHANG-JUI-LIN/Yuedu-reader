@@ -62,6 +62,7 @@ struct RSSArticleRecord: Codable, Identifiable, Equatable {
     var contentHTML: String
     var pubDate: Date?
     var author: String?
+    var imageURL: String?
     var fetchedAt: Date
     var fullText: String?
     var fullTextHTML: String?
@@ -80,6 +81,7 @@ struct RSSArticleRecord: Codable, Identifiable, Equatable {
         case contentHTML
         case pubDate
         case author
+        case imageURL
         case fetchedAt
         case fullText
         case fullTextHTML
@@ -100,6 +102,7 @@ struct RSSArticleRecord: Codable, Identifiable, Equatable {
         contentHTML = try container.decodeIfPresent(String.self, forKey: .contentHTML) ?? ""
         pubDate = try container.decodeIfPresent(Date.self, forKey: .pubDate)
         author = try container.decodeIfPresent(String.self, forKey: .author)
+        imageURL = try container.decodeIfPresent(String.self, forKey: .imageURL)
         fetchedAt = try container.decode(Date.self, forKey: .fetchedAt)
         fullText = try container.decodeIfPresent(String.self, forKey: .fullText)
         fullTextHTML = try container.decodeIfPresent(String.self, forKey: .fullTextHTML)
