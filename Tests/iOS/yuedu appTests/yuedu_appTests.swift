@@ -67,6 +67,7 @@ struct yuedu_appTests {
             framesetter: framesetter,
             pageRanges: ranges,
             inlineAttachments: [:],
+            inlineAnnotations: [:],
             blockAttachments: [:],
             blockRenderables: [:],
             pageKinds: Array(repeating: .text, count: max(ranges.count, 1)),
@@ -2113,13 +2114,12 @@ struct yuedu_appTests {
         let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
         let titleRenderable = try #require(layout.blockRenderables[0]?.first)
         let range = layout.pageRanges[0]
-        let insets = layout.contentInsets
         let bounds = CGRect(x: 0, y: 0, width: 390, height: 844)
-        let contentPathRect = CGRect(
-            x: insets.left,
-            y: insets.bottom,
-            width: max(1, bounds.width - insets.left - insets.right),
-            height: max(1, bounds.height - insets.top - insets.bottom)
+        let contentPathRect = CoreTextPaginator.coreTextContentPathRect(
+            renderSize: bounds.size,
+            contentInsets: layout.contentInsets,
+            fontSize: layout.fontSize,
+            writingMode: layout.writingMode
         )
         let path = CGPath(rect: contentPathRect, transform: nil)
         let frame = CTFramesetterCreateFrame(layout.framesetter, range, path, nil)
@@ -2556,13 +2556,12 @@ struct yuedu_appTests {
         let decoration = try #require(layout.blockAttachments[0]?.first(where: { $0.rect.width > 150 }))
 
         let range = layout.pageRanges[0]
-        let insets = layout.contentInsets
         let bounds = CGRect(origin: .zero, size: layout.renderSize)
-        let contentPathRect = CGRect(
-            x: insets.left,
-            y: insets.bottom,
-            width: max(1, bounds.width - insets.left - insets.right),
-            height: max(1, bounds.height - insets.top - insets.bottom)
+        let contentPathRect = CoreTextPaginator.coreTextContentPathRect(
+            renderSize: bounds.size,
+            contentInsets: layout.contentInsets,
+            fontSize: layout.fontSize,
+            writingMode: layout.writingMode
         )
         let path = CGPath(rect: contentPathRect, transform: nil)
         let frame = CTFramesetterCreateFrame(layout.framesetter, range, path, nil)

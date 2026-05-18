@@ -19,6 +19,8 @@ final class HTMLAttributedStringBuilder {
     static let cssSpecifiedForegroundColorAttribute = NSAttributedString.Key("ReaderCSSSpecifiedForegroundColor")
     /// Marker attribute for vertical spacer runs (CTRunDelegate that are NOT image placeholders).
     static let spacerRunAttribute = NSAttributedString.Key("ReaderSpacerRun")
+    /// Marker attribute for vertical inline annotation runs (e.g. span.small notes).
+    static let inlineAnnotationRunAttribute = NSAttributedString.Key("ReaderInlineAnnotationRun")
     private static let paragraphSeparator = "\n"
     private static let lineSeparator = "\u{2028}"
 
@@ -238,6 +240,7 @@ final class HTMLAttributedStringBuilder {
     private let styleResolver = HTMLBuilderStyleResolver()
     private let coreTextRenderer = HTMLBuilderCoreTextRenderer()
     private let cssPropertyRegistry = HTMLCSSPropertyApplierRegistry.defaultRegistry
+    private var epubFlowLogCounts: [String: Int] = [:]
     private static let dirtyCJKSpaceRegex: NSRegularExpression? = {
         // Clean up spaces (including NBSP / &nbsp;) between CJK characters that may come from conversion artifacts, preventing excessive justified spacing.
         let pattern = "(?<=\\p{Han})(?:[\\s\\u{00A0}]+|&nbsp;+|&#160;+)+(?=\\p{Han})"
@@ -300,6 +303,7 @@ final class HTMLAttributedStringBuilder {
     }
 
     func buildStyledAST(html: String, config: Config) async -> ElementNode? {
+        epubFlowLog("buildStyledAST.begin htmlLen=\(html.count) configWritingMode=\(config.writingMode) fontSize=\(config.fontSize) renderWidth=\(config.renderWidth)")
         let sanitizedHTML = cleanDirtySpacesInHTML(html)
         guard let parsed = await domParser.parse(
             html: sanitizedHTML,
@@ -347,6 +351,7 @@ final class HTMLAttributedStringBuilder {
         if ast.resolvedStyle.isVerticalWritingMode {
             detectedVerticalWritingMode = true
         }
+        epubFlowLog("buildStyledAST.done bodyClass=\(ast.classes.joined(separator: ".")) bodyVertical=\(ast.resolvedStyle.isVerticalWritingMode) cssDetectedVertical=\(detectedVerticalWritingMode) childCount=\(ast.children.count)")
         return ast
     }
 
@@ -366,24 +371,32 @@ final class HTMLAttributedStringBuilder {
         var styles: [String] = []
         if let head = document.head() {
             let styleTags = (try? head.select("style").array()) ?? []
+            if !styleTags.isEmpty {
+                epubFlowLog("css.inlineStyleTags count=\(styleTags.count)")
+            }
             for styleTag in styleTags {
                 let css = (try? styleTag.html()) ?? ""
                 if !css.isEmpty {
+                    epubFlowLog("css.inline len=\(css.count) hasVertical=\(cssContainsVerticalWritingMode(css))")
                     scanCSSForVerticalWritingMode(css)
                     styles.append(css)
                 }
             }
 
             let links = (try? head.select("link[rel=stylesheet]").array()) ?? []
+            epubFlowLog("css.links count=\(links.count)")
             print("[HTMLBuilder] injectLinkedCSS: found \(links.count) stylesheet link(s)")
             for link in links {
                 let href = (try? link.attr("href")) ?? ""
                 guard !href.isEmpty else { continue }
+                epubFlowLog("css.fetch href=\(href)")
                 print("[HTMLBuilder] injectLinkedCSS: fetching CSS href=\(href)")
                 guard let cssText = await cssLoader?(href), !cssText.isEmpty else {
+                    epubFlowLog("css.failed href=\(href)")
                     print("[HTMLBuilder] injectLinkedCSS: FAILED or empty CSS for href=\(href)")
                     continue
                 }
+                epubFlowLog("css.loaded href=\(href) len=\(cssText.count) hasVertical=\(cssContainsVerticalWritingMode(cssText))")
                 print("[HTMLBuilder] injectLinkedCSS: injected CSS len=\(cssText.count) for href=\(href)")
                 scanCSSForVerticalWritingMode(cssText)
                 styles.append(cssText)
@@ -394,11 +407,66 @@ final class HTMLAttributedStringBuilder {
 
     private func scanCSSForVerticalWritingMode(_ css: String) {
         guard !detectedVerticalWritingMode else { return }
-        let pattern = #"(?:-webkit-)?writing-mode\s*:\s*vertical-rl"#
-        if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
-           regex.firstMatch(in: css, range: NSRange(css.startIndex..., in: css)) != nil {
-            detectedVerticalWritingMode = true
+        guard let matchedProperty = firstVerticalWritingModeProperty(in: css) else { return }
+        epubFlowLog("css.verticalWritingModeDetected property=\(matchedProperty)")
+        detectedVerticalWritingMode = true
+    }
+
+    private func cssContainsVerticalWritingMode(_ css: String) -> Bool {
+        firstVerticalWritingModeProperty(in: css) != nil
+    }
+
+    private func firstVerticalWritingModeProperty(in css: String) -> String? {
+        let patterns: [(String, String)] = [
+            ("-epub-writing-mode", #"-epub-writing-mode\s*:\s*vertical-rl"#),
+            ("-webkit-writing-mode", #"-webkit-writing-mode\s*:\s*vertical-rl"#),
+            ("writing-mode", #"(^|[;\s{])writing-mode\s*:\s*vertical-rl"#),
+        ]
+        for (property, pattern) in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+               regex.firstMatch(in: css, range: NSRange(css.startIndex..., in: css)) != nil {
+                return property
+            }
         }
+        return nil
+    }
+
+    private func epubFlowLog(_ message: @autoclosure () -> String) {
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW \(message())")
+    }
+
+    private func shouldLogEPUBFlow(key: String, limit: Int = 3) -> Bool {
+        let current = epubFlowLogCounts[key, default: 0]
+        epubFlowLogCounts[key] = current + 1
+        return current < limit
+    }
+
+    private func debugTextPreview(_ text: String, limit: Int = 60) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{FFFC}", with: "OBJ")
+            .replacingOccurrences(of: "\u{3000}", with: "IDEOSPACE")
+        return String(normalized.prefix(limit))
+    }
+
+    private func styleProbeKey(tag: String, classes: [String], style: ResolvedStyle) -> String? {
+        let classSet = Set(classes)
+        if tag == "body" && classSet.contains("calibre") { return "style.body.calibre" }
+        if tag == "p" && classSet.contains("calibre7") { return "style.p.calibre7" }
+        if tag == "p" && classSet.contains("msonormal") { return "style.p.msonormal" }
+        if (tag == "h2" || tag == "h3") && classSet.contains("calibre6") { return "style.heading.calibre6" }
+        if tag == "span" && classSet.contains(where: { $0 == "small" || $0.hasPrefix("small") }) { return "style.span.small" }
+        if tag == "img" && classSet.contains("font_patch") { return "style.img.font_patch" }
+        if style.isVerticalWritingMode { return "style.vertical.\(tag)" }
+        return nil
+    }
+
+    private func styleProbeSummary(_ style: ResolvedStyle) -> String {
+        let width = style.width.map { "\($0)" } ?? "nil"
+        let height = style.height.map { "\($0)" } ?? "nil"
+        return "fontSize=\(style.fontSize) lineHeight=\(style.lineHeight) lineHeightExplicit=\(style.lineHeightExplicit) textIndent=\(style.textIndent) paraBefore=\(style.paragraphSpacingBefore) paraAfter=\(style.paragraphSpacing) paddingL=\(style.paddingLeft) paddingR=\(style.paddingRight) width=\(width) height=\(height) block=\(style.isBlock) vertical=\(style.isVerticalWritingMode)"
     }
 
     private func buildChildren(
@@ -585,6 +653,10 @@ final class HTMLAttributedStringBuilder {
                 let image = src.isEmpty ? nil : await imageLoader?(src)
                 var imgStyle = element.resolvedStyle
                 resolveSVGPresentationAttributes(element, style: &imgStyle, config: config)
+                if element.classes.contains("font_patch"),
+                   shouldLogEPUBFlow(key: "render.img.font_patch", limit: 8) {
+                    epubFlowLog("render.img.font_patch src=\(src) alt=\(element.attributes["alt"] ?? "nil") imageLoaded=\(image != nil) style=\(styleProbeSummary(imgStyle))")
+                }
                 return makeImagePlaceholder(
                     image: image,
                     config: config,
@@ -592,6 +664,35 @@ final class HTMLAttributedStringBuilder {
                     imageSource: src,
                     imageAlt: element.attributes["alt"]
                 )
+            }
+
+            if config.writingMode.isVertical, isInlineAnnotationElement(element) {
+                let annotationContent = NSMutableAttributedString()
+                for child in element.children {
+                    let childString = await renderNode(child, inheritedStyle: element.resolvedStyle, config: config)
+                    if childString.length == 0 { continue }
+                    appendNode(childString, to: annotationContent)
+                }
+                if shouldLogEPUBFlow(key: "render.inlineAnnotation.legacy", limit: 10) {
+                    epubFlowLog("render.inlineAnnotation.legacy class=\(element.classes.joined(separator: ".")) contentLen=\(annotationContent.length) preview=\"\(debugTextPreview(annotationContent.string))\"")
+                }
+
+                let placeholder = NSMutableAttributedString(attributedString: makeInlineAnnotationPlaceholder(
+                    annotationContent,
+                    placeholderStyle: inheritedStyle,
+                    annotationStyle: element.resolvedStyle,
+                    config: config
+                ))
+
+                if !element.id.isEmpty, placeholder.length > 0 {
+                    placeholder.addAttribute(
+                        Self.anchorIDAttribute,
+                        value: element.id,
+                        range: NSRange(location: 0, length: min(1, placeholder.length))
+                    )
+                }
+
+                return placeholder
             }
 
             if element.resolvedStyle.isBlock {
@@ -974,12 +1075,12 @@ final class HTMLAttributedStringBuilder {
         if output.length > 0,
            let last = output.string.unicodeScalars.last,
            let first = node.string.unicodeScalars.first,
-           CharacterSet.whitespacesAndNewlines.contains(last),
-           CharacterSet.whitespacesAndNewlines.contains(first) {
+           isCollapsibleHTMLWhitespace(last),
+           isCollapsibleHTMLWhitespace(first) {
             let trimmed = NSMutableAttributedString(attributedString: node)
             while trimmed.length > 0,
                   let scalar = trimmed.string.unicodeScalars.first,
-                  CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                  isCollapsibleHTMLWhitespace(scalar) {
                 // Never delete a character that carries block render metadata or HR divider
                 if trimmed.attribute(Self.blockRenderStyleAttribute, at: 0, effectiveRange: nil) != nil { break }
                 if trimmed.attribute(Self.hrDividerAttribute, at: 0, effectiveRange: nil) != nil { break }
@@ -988,6 +1089,15 @@ final class HTMLAttributedStringBuilder {
             output.append(trimmed)
         } else {
             output.append(node)
+        }
+    }
+
+    private func isCollapsibleHTMLWhitespace(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar {
+        case " ", "\n", "\r", "\t", "\u{000C}", "\u{00A0}":
+            return true
+        default:
+            return false
         }
     }
 
@@ -1484,6 +1594,41 @@ final class HTMLAttributedStringBuilder {
         )
     }
 
+    private func makeInlineAnnotationPlaceholder(
+        _ content: NSAttributedString,
+        placeholderStyle: ResolvedStyle,
+        annotationStyle: ResolvedStyle,
+        config: Config
+    ) -> NSAttributedString {
+        guard content.length > 0 else { return NSAttributedString() }
+        let annotation = NSMutableAttributedString(attributedString: content)
+        annotation.normalizeForVerticalLayoutInPlace()
+        annotation.addAttribute(
+            NSAttributedString.Key(kCTVerticalFormsAttributeName as String),
+            value: true,
+            range: NSRange(location: 0, length: annotation.length)
+        )
+        if shouldLogEPUBFlow(key: "annotation.placeholder.legacy", limit: 10) {
+            epubFlowLog("annotation.placeholder.legacy len=\(annotation.length) placeholderFont=\(makeFont(from: placeholderStyle, config: config).pointSize) annotationFont=\(makeFont(from: annotationStyle, config: config).pointSize) preview=\"\(debugTextPreview(annotation.string))\"")
+        }
+        let placeholder = NSMutableAttributedString(attributedString: RunDelegateProvider.makeInlineAnnotationPlaceholder(
+            attributedString: annotation,
+            placeholderFont: makeFont(from: placeholderStyle, config: config),
+            textColor: annotationStyle.textColor
+        ))
+        let range = NSRange(location: 0, length: placeholder.length)
+        placeholder.addAttribute(Self.inlineAnnotationRunAttribute, value: true, range: range)
+        placeholder.addAttribute(Self.spacerRunAttribute, value: true, range: range)
+        return placeholder
+    }
+
+    private func isInlineAnnotationElement(_ element: ElementNode) -> Bool {
+        guard element.tag == "span" else { return false }
+        return element.classes.contains { className in
+            className == "small" || className.hasPrefix("small")
+        }
+    }
+
     private func resolvedStyle(
         for element: Element,
         parent: ResolvedStyle,
@@ -1587,6 +1732,21 @@ final class HTMLAttributedStringBuilder {
             style.inheritedBlockMarginLeft = style.inheritedBlockMarginLeft + style.marginLeft
         }
 
+        let tag = element.tagName().lowercased()
+        let classes = Array((try? element.classNames()) ?? [])
+        if let key = styleProbeKey(tag: tag, classes: classes, style: style),
+           shouldLogEPUBFlow(key: key, limit: key == "style.span.small" ? 8 : 4) {
+            let matchedDeclarationKeys = matchedRules
+                .flatMap { $0.declarations.keys }
+                .sorted()
+                .joined(separator: ",")
+            let inlineKeys = inlineStyle.keys.sorted().joined(separator: ",")
+            let textPreview = key == "style.span.small"
+                ? " text=\"\(debugTextPreview((try? element.text()) ?? ""))\""
+                : ""
+            epubFlowLog("style tag=\(tag) class=\(classes.joined(separator: ".")) matchedRules=\(matchedRules.count) declKeys=[\(matchedDeclarationKeys)] inlineKeys=[\(inlineKeys)] \(styleProbeSummary(style))\(textPreview)")
+        }
+
         return style
     }
 
@@ -1635,7 +1795,7 @@ final class HTMLAttributedStringBuilder {
             underline: parent.underline,
             strikethrough: parent.strikethrough,
             inheritedBlockMarginLeft: parent.inheritedBlockMarginLeft,
-            isVerticalWritingMode: false  // writing-mode detected per-element, not inherited to avoid false positives
+            isVerticalWritingMode: parent.isVerticalWritingMode
         )
     }
 

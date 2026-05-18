@@ -24,6 +24,7 @@ enum CoreTextChunkAttachmentExtractor {
             for run in runs {
                 let attrs = CTRunGetAttributes(run) as! [NSAttributedString.Key: Any]
                 guard let delegate = attrs[delegateKey] else { continue }
+                guard attrs[HTMLAttributedStringBuilder.spacerRunAttribute] == nil else { continue }
                 let ctDelegate = delegate as! CTRunDelegate
                 let ptr = CTRunDelegateGetRefCon(ctDelegate)
                 let info = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()

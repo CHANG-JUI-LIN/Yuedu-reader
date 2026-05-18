@@ -24,7 +24,11 @@ private extension HTMLAttributedStringBuilder.ElementNode {
     func asRenderableNode(parentFontSize: CGFloat) -> RenderableNode {
         let myFontSize = resolvedStyle.fontSize
         let mappedChildren = children.map { $0.asRenderableNode(parentFontSize: myFontSize) }
-        let style = RenderStyle.from(resolvedStyle: resolvedStyle, parentFontSize: parentFontSize)
+        var style = RenderStyle.from(resolvedStyle: resolvedStyle, parentFontSize: parentFontSize)
+        style.isInlineAnnotation = isInlineAnnotationElement
+        if style.isInlineAnnotation {
+            CoreTextPaginator.debugVerticalLog("EPUBFLOW converter.inlineAnnotation tag=\(tag) class=\(classes.joined(separator: ".")) fontMultiplier=\(style.fontSizeMultiplier) childCount=\(mappedChildren.count)")
+        }
         let node: RenderableNode
 
         switch tag {
@@ -67,6 +71,13 @@ private extension HTMLAttributedStringBuilder.ElementNode {
 
         guard !id.isEmpty else { return node }
         return .anchorTarget(id: id, child: node)
+    }
+
+    private var isInlineAnnotationElement: Bool {
+        guard tag == "span" else { return false }
+        return classes.contains { className in
+            className == "small" || className.hasPrefix("small")
+        }
     }
 }
 

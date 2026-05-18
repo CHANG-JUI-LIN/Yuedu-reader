@@ -126,6 +126,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             textColor: themeTextColor,
             backgroundColor: themeBackgroundColor
         )
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.chapter.begin index=\(index) href=\(chapterHref) htmlLen=\(html.count) settingsWritingMode=\(settings.writingMode) configWritingMode=\(config.writingMode) renderWidth=\(config.renderWidth)")
 
         guard let ast = await localBuilder.buildStyledAST(html: html, config: config) else {
             return AttributedChapterBuildResult(
@@ -173,8 +174,10 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         if localBuilder.detectedVerticalWritingMode {
             cssDetectedVerticalWritingMode = true
         }
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.ast index=\(index) href=\(chapterHref) bodyClass=\(ast.classes.joined(separator: ".")) bodyVertical=\(ast.resolvedStyle.isVerticalWritingMode) cssDetectedVertical=\(localBuilder.detectedVerticalWritingMode) nodeCount=\(nodes.count)")
 
         let attributedString = await renderer.render(nodes)
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.rendered index=\(index) href=\(chapterHref) attrLen=\(attributedString.length) cssDetectedVerticalGlobal=\(cssDetectedVerticalWritingMode) prefix=\"\(debugTextPreview(attributedString.string))\"")
         let pageBackgroundImage = await localBuilder.pageBackgroundImage(from: ast)
         let anchorOffsets = localBuilder.anchorOffsets(in: attributedString)
 
@@ -198,12 +201,41 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
     private func loadCSS(href: String, chapterHref: String) async -> String? {
         let resolved = EPUBStyleResolver.resolveImageHref(href, chapterHref: chapterHref)
         let url = resourceProvider.resourceURL(for: resolved)
-        guard let response = try? await resourceProvider.response(for: url) else { return nil }
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.css.fetch href=\(href) chapter=\(chapterHref) resolved=\(resolved)")
+        guard let response = try? await resourceProvider.response(for: url) else {
+            CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.css.failed href=\(href) resolved=\(resolved)")
+            return nil
+        }
         let cssText = String(data: response.data, encoding: .utf8) ?? ""
         let processed = await styleResolver.processStylesheet(
             cssText, cssHref: resolved, chapterHref: chapterHref
         )
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.css.loaded href=\(href) resolved=\(resolved) rawLen=\(cssText.count) processedLen=\(processed.count) hasVertical=\(Self.cssContainsVerticalWritingMode(processed))")
         return processed.isEmpty ? nil : processed
+    }
+
+    private static func cssContainsVerticalWritingMode(_ css: String) -> Bool {
+        let patterns = [
+            #"-epub-writing-mode\s*:\s*vertical-rl"#,
+            #"-webkit-writing-mode\s*:\s*vertical-rl"#,
+            #"(^|[;\s{])writing-mode\s*:\s*vertical-rl"#,
+        ]
+        return patterns.contains { pattern in
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                return false
+            }
+            return regex.firstMatch(in: css, range: NSRange(css.startIndex..., in: css)) != nil
+        }
+    }
+
+    private func debugTextPreview(_ text: String, limit: Int = 80) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{FFFC}", with: "OBJ")
+            .replacingOccurrences(of: "\u{3000}", with: "IDEOSPACE")
+        return String(normalized.prefix(limit))
     }
 
     private func makeConfig(
@@ -221,7 +253,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             lineHeightMultiple: settings.lineHeightMultiple,
             lineSpacing: settings.lineSpacing,
             paragraphSpacing: settings.paragraphSpacing,
-            firstLineIndent: fontSize * 2,
+            firstLineIndent: 0,
             textColor: textColor,
             backgroundColor: backgroundColor,
             fontFamilyName: nil,

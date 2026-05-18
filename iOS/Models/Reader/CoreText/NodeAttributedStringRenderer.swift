@@ -161,7 +161,16 @@ struct NodeAttributedStringRenderer {
 
         case .inline(_, let children, let style):
             let childCtx = applyInlineStyle(style, to: ctx)
-            return await renderInlineChildren(children, ctx: childCtx)
+            let rendered = await renderInlineChildren(children, ctx: childCtx)
+            if config.writingMode.isVertical, style.isInlineAnnotation {
+                CoreTextPaginator.debugVerticalLog("EPUBFLOW render.inlineAnnotation.node renderedLen=\(rendered.length) placeholderFont=\(ctx.font.pointSize) annotationFont=\(childCtx.font.pointSize) preview=\"\(debugTextPreview(rendered.string))\"")
+                return makeInlineAnnotationPlaceholder(
+                    rendered,
+                    placeholderCtx: ctx,
+                    annotationCtx: childCtx
+                )
+            }
+            return rendered
 
         case .anchor(let href, let children):
             var childCtx = ctx
@@ -497,6 +506,7 @@ struct NodeAttributedStringRenderer {
         }
 
         let image = src.isEmpty ? nil : await config.imageLoader?(src)
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW render.inlineImage.node src=\(src) alt=\(alt) imageLoaded=\(image != nil) writingMode=\(config.writingMode) fontSize=\(ctx.font.pointSize) styleWidth=\(style.width.map { "\($0)" } ?? "nil") styleHeight=\(style.height.map { "\($0)" } ?? "nil")")
         return makeImagePlaceholder(
             image: image,
             style: style,
@@ -600,6 +610,42 @@ struct NodeAttributedStringRenderer {
         let range = NSRange(location: 0, length: placeholder.length)
         placeholder.addAttributes(ctx.baseAttributes, range: range)
         return placeholder
+    }
+
+    private func makeInlineAnnotationPlaceholder(
+        _ content: NSAttributedString,
+        placeholderCtx: RenderContext,
+        annotationCtx: RenderContext
+    ) -> NSAttributedString {
+        guard content.length > 0 else { return NSAttributedString() }
+        let annotation = NSMutableAttributedString(attributedString: content)
+        annotation.normalizeForVerticalLayoutInPlace()
+        annotation.addAttribute(
+            NSAttributedString.Key(kCTVerticalFormsAttributeName as String),
+            value: true,
+            range: NSRange(location: 0, length: annotation.length)
+        )
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW annotation.placeholder.node len=\(annotation.length) placeholderFont=\(placeholderCtx.font.pointSize) annotationFont=\(annotationCtx.font.pointSize) preview=\"\(debugTextPreview(annotation.string))\"")
+        let placeholder = NSMutableAttributedString(attributedString: RunDelegateProvider.makeInlineAnnotationPlaceholder(
+            attributedString: annotation,
+            placeholderFont: placeholderCtx.font,
+            textColor: annotationCtx.textColor
+        ))
+        let range = NSRange(location: 0, length: placeholder.length)
+        placeholder.addAttributes(placeholderCtx.baseAttributes, range: range)
+        placeholder.addAttribute(HTMLAttributedStringBuilder.inlineAnnotationRunAttribute, value: true, range: range)
+        placeholder.addAttribute(HTMLAttributedStringBuilder.spacerRunAttribute, value: true, range: range)
+        return placeholder
+    }
+
+    private func debugTextPreview(_ text: String, limit: Int = 60) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{FFFC}", with: "OBJ")
+            .replacingOccurrences(of: "\u{3000}", with: "IDEOSPACE")
+        return String(normalized.prefix(limit))
     }
 
     private func resolvedImageMetrics(image: UIImage?, style: RenderStyle, font: UIFont, displayMode: ImageRunInfo.DisplayMode = .inline) -> ImageMetrics {

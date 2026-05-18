@@ -189,17 +189,16 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         drawBlockRenderables(layout.blockRenderables[pageIndex] ?? [], in: ctx, boundsHeight: layoutSize.height)
 
         let range = layout.pageRanges[pageIndex]
-        let insets = layout.contentInsets
 
         ctx.textMatrix = .identity
         ctx.translateBy(x: 0, y: layoutSize.height)
         ctx.scaleBy(x: 1.0, y: -1.0)
 
-        let contentPathRect = CGRect(
-            x: insets.left,
-            y: insets.bottom,
-            width: max(1, layoutSize.width - insets.left - insets.right),
-            height: max(1, layoutSize.height - insets.top - insets.bottom)
+        let contentPathRect = CoreTextPaginator.coreTextContentPathRect(
+            renderSize: layoutSize,
+            contentInsets: layout.contentInsets,
+            fontSize: layout.fontSize,
+            writingMode: layout.writingMode
         )
         let path = CGPath(rect: contentPathRect, transform: nil)
         let frame = CoreTextPaginator.makeFrame(
@@ -243,22 +242,31 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         ctx.scaleBy(x: 1.0, y: -1.0)
         ctx.translateBy(x: 0, y: -layoutSize.height)
 
-        // 3a. Block attachments (block images without blockRenderStyle)
+        // 3a. Inline annotations (span.small notes). The main frame only
+        // reserves their space through CTRunDelegate placeholders.
+        let pageAnnotations = layout.inlineAnnotations[pageIndex] ?? []
+        let pageInlineImages = layout.inlineAttachments[pageIndex] ?? []
+        if !pageAnnotations.isEmpty || !pageInlineImages.isEmpty {
+            CoreTextPaginator.debugVerticalLog("EPUBFLOW pageView.drawOverlays page=\(pageIndex) inlineAnnotations=\(pageAnnotations.count) inlineImages=\(pageInlineImages.count)")
+        }
+        drawInlineAnnotations(pageAnnotations)
+
+        // 3b. Block attachments (block images without blockRenderStyle)
         Self.drawAttachments(layout.blockAttachments[pageIndex] ?? [])
 
-        // 3b. Inline attachments (inline images)
-        for attachment in layout.inlineAttachments[pageIndex] ?? [] {
+        // 3c. Inline attachments (inline images)
+        for attachment in pageInlineImages {
             attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
         }
 
-        // 3c. Block images (decorative images with blockRenderStyle, e.g. watermarks)
+        // 3d. Block images (decorative images with blockRenderStyle, e.g. watermarks)
         for item in layout.blockRenderables[pageIndex] ?? [] {
             if let attachment = item.imageAttachment {
                 attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
             }
         }
 
-        // 3d. Explicit block text (page/card-level geometry text, independent of the main text frame)
+        // 3e. Explicit block text (page/card-level geometry text, independent of the main text frame)
         for item in layout.blockRenderables[pageIndex] ?? [] {
             guard let text = item.attributedText else { continue }
             drawBlockRenderableText(
@@ -278,6 +286,120 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         for attachment in attachments {
             attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
         }
+    }
+
+    nonisolated static func drawInlineAnnotations(
+        _ annotations: [CoreTextPaginator.RenderedInlineAnnotation]
+    ) {
+        guard !annotations.isEmpty else { return }
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW drawInlineAnnotations count=\(annotations.count)")
+        for (index, annotation) in annotations.enumerated() where annotation.attributedString.length > 0 {
+            CoreTextPaginator.debugVerticalLog("EPUBFLOW drawInlineAnnotation[\(index)] uiRect=\(annotation.uiRect) len=\(annotation.attributedString.length) text=\"\(inlineAnnotationDebugPreview(annotation.attributedString.string, limit: 80))\"")
+            drawInlineAnnotationContent(annotation.attributedString, in: annotation.uiRect)
+        }
+    }
+
+    private nonisolated static func drawInlineAnnotationContent(
+        _ attributedString: NSAttributedString,
+        in rect: CGRect
+    ) {
+        let items = inlineAnnotationItems(from: attributedString)
+        guard !items.isEmpty else { return }
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW drawInlineAnnotationContent rect=\(rect) itemCount=\(items.count) centerX=\(rect.midX) topY=\(rect.minY) maxY=\(rect.maxY)")
+        drawInlineAnnotationColumn(items, centerX: rect.midX, topY: rect.minY, maxY: rect.maxY)
+    }
+
+    private struct InlineAnnotationItem {
+        enum Content {
+            case image(UIImage, CGSize, CGFloat)
+            case text(NSAttributedString)
+        }
+
+        let content: Content
+        let advance: CGFloat
+    }
+
+    private nonisolated static func inlineAnnotationItems(from attributedString: NSAttributedString) -> [InlineAnnotationItem] {
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        let nsString = attributedString.string as NSString
+        var result: [InlineAnnotationItem] = []
+        var index = 0
+
+        while index < attributedString.length {
+            var effectiveRange = NSRange(location: 0, length: 0)
+            if let delegate = attributedString.attribute(delegateKey, at: index, effectiveRange: &effectiveRange) {
+                let ctDelegate = delegate as! CTRunDelegate
+                let ptr = CTRunDelegateGetRefCon(ctDelegate)
+                let info = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
+                if let image = info.image {
+                    result.append(InlineAnnotationItem(
+                        content: .image(image, CGSize(width: info.drawWidth, height: info.drawHeight), info.opacity),
+                        advance: max(1, info.width)
+                    ))
+                }
+                index = max(index + 1, effectiveRange.location + effectiveRange.length)
+                continue
+            }
+
+            let characterRange = nsString.rangeOfComposedCharacterSequence(at: index)
+            let char = NSMutableAttributedString(attributedString: attributedString.attributedSubstring(from: characterRange))
+            if !char.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                result.append(InlineAnnotationItem(
+                    content: .text(char),
+                    advance: verticalAnnotationAdvance(for: char)
+                ))
+            }
+            index = characterRange.location + characterRange.length
+        }
+
+        return result
+    }
+
+    private nonisolated static func drawInlineAnnotationColumn(
+        _ items: [InlineAnnotationItem],
+        centerX: CGFloat,
+        topY: CGFloat,
+        maxY: CGFloat
+    ) {
+        var cursorY = topY
+        for item in items where cursorY < maxY {
+            switch item.content {
+            case .image(let image, let size, let opacity):
+                let y = cursorY + max(0, (item.advance - size.height) / 2)
+                let imageRect = CGRect(
+                    x: centerX - size.width / 2,
+                    y: y,
+                    width: size.width,
+                    height: size.height
+                )
+                image.draw(in: imageRect, blendMode: .normal, alpha: opacity)
+            case .text(let text):
+                let drawRect = CGRect(
+                    x: centerX - item.advance / 2,
+                    y: cursorY,
+                    width: item.advance,
+                    height: item.advance
+                )
+                text.draw(with: drawRect, options: [.usesLineFragmentOrigin], context: nil)
+            }
+            cursorY += item.advance
+        }
+    }
+
+    private nonisolated static func verticalAnnotationAdvance(for attributedString: NSAttributedString) -> CGFloat {
+        if let font = attributedString.attribute(.font, at: 0, effectiveRange: nil) as? UIFont {
+            return max(1, font.pointSize)
+        }
+        return 1
+    }
+
+    private nonisolated static func inlineAnnotationDebugPreview(_ text: String, limit: Int) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+            .replacingOccurrences(of: "\u{FFFC}", with: "OBJ")
+            .replacingOccurrences(of: "\u{3000}", with: "IDEOSPACE")
+        return String(normalized.prefix(limit))
     }
 
     /// Draws all text lines of a CTFrame line-by-line, applying CTLineCreateJustifiedLine for justified non-last lines.
@@ -307,7 +429,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         let keywords = ["版權", "Copyright", "BookDNA", "經典復刻", "浙版數媒", "書名頁", "曹雪芹著 脂硯齋評"]
         let matched = keywords.filter { pageText.contains($0) }
         let inlineImgs = layout.inlineAttachments[pageIndex] ?? []
-        guard !matched.isEmpty || !inlineImgs.isEmpty else { return }
+        let inlineAnnotations = layout.inlineAnnotations[pageIndex] ?? []
+        let oversizedAnnotations = inlineAnnotations.filter { $0.uiRect.height > contentPathRect.height }
+        guard !matched.isEmpty || !inlineImgs.isEmpty || !oversizedAnnotations.isEmpty else { return }
 
         print("[PageDiag] ===============================================================")
         print("[PageDiag] PAGE \(pageIndex) spine=\(layout.spineIndex) matched=\(matched)")
@@ -371,6 +495,11 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         print("[PageDiag] --- Inline Images: \(inlineImgs.count) ---")
         for (i, img) in inlineImgs.enumerated() {
             print("[PageDiag]   IMG-inline[\(i)] rect=(\(String(format: "%.1f", img.rect.minX)), \(String(format: "%.1f", img.rect.minY)), \(String(format: "%.1f", img.rect.width)), \(String(format: "%.1f", img.rect.height))) drawSize=\(img.originalSize) src=\(img.sourceHref ?? "nil") alt=\(img.alt ?? "nil")")
+        }
+
+        print("[PageDiag] --- Inline Annotations: \(inlineAnnotations.count) ---")
+        for (i, annotation) in inlineAnnotations.enumerated() {
+            print("[PageDiag]   ANNO-inline[\(i)] uiRect=(\(String(format: "%.1f", annotation.uiRect.minX)), \(String(format: "%.1f", annotation.uiRect.minY)), \(String(format: "%.1f", annotation.uiRect.width)), \(String(format: "%.1f", annotation.uiRect.height))) len=\(annotation.attributedString.length) text=\"\(inlineAnnotationDebugPreview(annotation.attributedString.string, limit: 100))\"")
         }
 
         // ── Block attachments ──
@@ -866,12 +995,11 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             width: max(1, layout.renderSize.width),
             height: max(1, layout.renderSize.height)
         )
-        let insets = layout.contentInsets
-        let contentPathRect = CGRect(
-            x: insets.left,
-            y: insets.bottom,
-            width: max(1, layoutSize.width - insets.left - insets.right),
-            height: max(1, layoutSize.height - insets.top - insets.bottom)
+        let contentPathRect = CoreTextPaginator.coreTextContentPathRect(
+            renderSize: layoutSize,
+            contentInsets: layout.contentInsets,
+            fontSize: layout.fontSize,
+            writingMode: layout.writingMode
         )
         let range = layout.pageRanges[localPageIndex]
         let path = CGPath(rect: contentPathRect, transform: nil)

@@ -122,6 +122,7 @@ public struct RenderStyle: Sendable {
     public var firstLetterColor: RenderColor?
     public var underline: Bool
     public var strikethrough: Bool
+    public var isInlineAnnotation: Bool
 
     public init(
         fontSizeMultiplier: CGFloat = 1.0,
@@ -157,7 +158,8 @@ public struct RenderStyle: Sendable {
         firstLetterFontWeight: Int? = nil,
         firstLetterColor: RenderColor? = nil,
         underline: Bool = false,
-        strikethrough: Bool = false
+        strikethrough: Bool = false,
+        isInlineAnnotation: Bool = false
     ) {
         self.fontSizeMultiplier = fontSizeMultiplier
         self.fontFamilies = fontFamilies
@@ -193,6 +195,7 @@ public struct RenderStyle: Sendable {
         self.firstLetterColor = firstLetterColor
         self.underline = underline
         self.strikethrough = strikethrough
+        self.isInlineAnnotation = isInlineAnnotation
     }
 
     /// No style override (default for inline cases).
@@ -242,4 +245,3 @@ public struct RenderColor: Sendable {
         UIColor(red: red, green: green, blue: blue, alpha: alpha)
     }
 }
-

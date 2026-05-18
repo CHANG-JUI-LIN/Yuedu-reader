@@ -2,6 +2,17 @@ import CoreText
 import UIKit
 
 final class CoreTextPaginator {
+    private static let verboseVerticalDebugLogging = false
+
+    static func debugVerticalLog(_ message: @autoclosure () -> String, verbose: Bool = false) {
+        #if DEBUG
+        guard !verbose || verboseVerticalDebugLogging else { return }
+        let line = "[YDEBUG-CTVERT] \(message())"
+        print(line)
+        NSLog("%@", line)
+        #endif
+    }
+
 
     struct RenderedAttachment {
         let rect: CGRect
@@ -41,6 +52,12 @@ final class CoreTextPaginator {
         let imageAttachment: RenderedAttachment?
     }
 
+    struct RenderedInlineAnnotation {
+        /// Drawing rectangle in UIKit coordinates (origin top-left, Y downward).
+        let uiRect: CGRect
+        let attributedString: NSAttributedString
+    }
+
     enum PageKind {
         case text
         case image
@@ -57,6 +74,8 @@ final class CoreTextPaginator {
         let pageRanges: [CFRange]
         /// pageIndex → inline attachments
         let inlineAttachments: [Int: [RenderedAttachment]]
+        /// pageIndex → inline annotation placeholders
+        let inlineAnnotations: [Int: [RenderedInlineAnnotation]]
         /// pageIndex → block-level attachments / decorative images
         let blockAttachments: [Int: [RenderedAttachment]]
         /// pageIndex → block-level renderables (background / border / decorative images)
@@ -137,6 +156,7 @@ final class CoreTextPaginator {
                 framesetter: newFramesetter,
                 pageRanges: pageRanges,
                 inlineAttachments: inlineAttachments,
+                inlineAnnotations: inlineAnnotations,
                 blockAttachments: blockAttachments,
                 blockRenderables: recoloredBlockRenderables,
                 pageKinds: pageKinds,
@@ -169,6 +189,75 @@ final class CoreTextPaginator {
         let paragraphSpacing: CGFloat
         let letterSpacing: CGFloat
         let writingMode: ReaderWritingMode
+        let contentFingerprint: Int
+    }
+
+    private static func layoutFingerprint(for attributedString: NSAttributedString) -> Int {
+        var hasher = Hasher()
+        hasher.combine(attributedString.length)
+        hasher.combine(attributedString.string)
+
+        let fullRange = NSRange(location: 0, length: attributedString.length)
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        let verticalFormsKey = NSAttributedString.Key(kCTVerticalFormsAttributeName as String)
+
+        attributedString.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
+            hasher.combine(range.location)
+            hasher.combine(range.length)
+
+            if let font = attrs[.font] as? UIFont {
+                hasher.combine(font.fontName)
+                hasher.combine(Double(font.pointSize))
+            } else if let rawFont = attrs[.font] {
+                let rawObject = rawFont as AnyObject
+                if CFGetTypeID(rawObject) == CTFontGetTypeID() {
+                    let font = unsafeBitCast(rawObject, to: CTFont.self)
+                    hasher.combine(CTFontCopyPostScriptName(font) as String)
+                    hasher.combine(Double(CTFontGetSize(font)))
+                } else {
+                    hasher.combine(String(describing: type(of: rawFont)))
+                }
+            } else {
+                hasher.combine(attrs[.font] != nil)
+            }
+
+            if let paragraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle {
+                hasher.combine(Double(paragraphStyle.firstLineHeadIndent))
+                hasher.combine(Double(paragraphStyle.headIndent))
+                hasher.combine(Double(paragraphStyle.tailIndent))
+                hasher.combine(Double(paragraphStyle.lineSpacing))
+                hasher.combine(Double(paragraphStyle.paragraphSpacing))
+                hasher.combine(Double(paragraphStyle.paragraphSpacingBefore))
+                hasher.combine(Double(paragraphStyle.minimumLineHeight))
+                hasher.combine(Double(paragraphStyle.maximumLineHeight))
+                hasher.combine(paragraphStyle.alignment.rawValue)
+            }
+
+            hasher.combine(attrs[HTMLAttributedStringBuilder.spacerRunAttribute] != nil)
+            hasher.combine(attrs[HTMLAttributedStringBuilder.inlineAnnotationRunAttribute] != nil)
+            hasher.combine(attrs[verticalFormsKey] as? Bool ?? false)
+
+            if let delegate = attrs[delegateKey] {
+                let ctDelegate = delegate as! CTRunDelegate
+                let ptr = CTRunDelegateGetRefCon(ctDelegate)
+                let info = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
+                hasher.combine(Double(info.width))
+                hasher.combine(Double(info.ascent))
+                hasher.combine(Double(info.descent))
+                hasher.combine(Double(info.drawWidth))
+                hasher.combine(Double(info.drawHeight))
+                hasher.combine(info.source)
+                hasher.combine(info.alt)
+                hasher.combine(info.opacity)
+                hasher.combine(info is InlineAnnotationRunInfo)
+                if let annotation = info as? InlineAnnotationRunInfo {
+                    hasher.combine(annotation.attributedString.length)
+                    hasher.combine(annotation.attributedString.string)
+                }
+            }
+        }
+
+        return hasher.finalize()
     }
 
     // MARK: - Public API
@@ -196,8 +285,20 @@ final class CoreTextPaginator {
                            lineSpacing: lineSpacing,
                            paragraphSpacing: paragraphSpacing,
                            letterSpacing: letterSpacing,
-                           writingMode: writingMode)
-        if let cached = cache[key] { return cached }
+                           writingMode: writingMode,
+                           contentFingerprint: Self.layoutFingerprint(for: attrStr))
+        Self.debugVerticalLog("EPUBFLOW paginator.request spine=\(spineIndex) writingMode=\(writingMode) isVertical=\(writingMode.isVertical) size=\(renderSize) fontSize=\(fontSize) insets=\(contentInsets) attrLen=\(attrStr.length) fingerprint=\(key.contentFingerprint)")
+        if let cached = cache[key] {
+            Self.debugVerticalLog("EPUBFLOW paginator.cacheHit spine=\(spineIndex) fingerprint=\(key.contentFingerprint)")
+            if writingMode.isVertical {
+                Self.debugVerticalLog("paginate cacheHit spine=\(spineIndex) size=\(renderSize) fontSize=\(fontSize) insets=\(contentInsets) attrLen=\(attrStr.length)", verbose: true)
+            }
+            return cached
+        }
+        Self.debugVerticalLog("EPUBFLOW paginator.cacheMiss spine=\(spineIndex) fingerprint=\(key.contentFingerprint)")
+        if writingMode.isVertical {
+            Self.debugVerticalLog("paginate cacheMiss spine=\(spineIndex) size=\(renderSize) fontSize=\(fontSize) insets=\(contentInsets) attrLen=\(attrStr.length)", verbose: true)
+        }
 
         let layout = await Task.detached(priority: .userInitiated) {
             Self.computeLayout(spineIndex: spineIndex,
@@ -240,7 +341,6 @@ final class CoreTextPaginator {
         contentInsets: UIEdgeInsets,
         writingMode: ReaderWritingMode
     ) -> ChapterLayout {
-        let attrStr = preparedAttributedString(attrStr, writingMode: writingMode, fontSize: fontSize)
         let contentInsets = gridAlignedContentInsets(
             contentInsets,
             renderSize: renderSize,
@@ -248,20 +348,32 @@ final class CoreTextPaginator {
             lineSpacing: lineSpacing,
             writingMode: writingMode
         )
-        // Effective content area (UIKit coordinates: top-left origin)
-        let contentRect = CGRect(
-            x: contentInsets.left,
-            y: contentInsets.top,
-            width: max(1, renderSize.width - contentInsets.left - contentInsets.right),
-            height: max(1, renderSize.height - contentInsets.top - contentInsets.bottom)
+        let contentRect = uiContentRect(
+            renderSize: renderSize,
+            contentInsets: contentInsets,
+            fontSize: fontSize,
+            writingMode: writingMode
         )
-        // CoreText coordinates (y from bottom upward): y = bottom inset
-        let contentPathRect = CGRect(
-            x: contentInsets.left,
-            y: contentInsets.bottom,
-            width: contentRect.width,
-            height: contentRect.height
+        let contentPathRect = coreTextContentPathRect(
+            renderSize: renderSize,
+            contentInsets: contentInsets,
+            fontSize: fontSize,
+            writingMode: writingMode
         )
+        let maxInlineAnnotationAdvance = writingMode.isVertical
+            ? max(fontSize * 4, contentPathRect.height - fontSize * 2)
+            : nil
+        let attrStr = preparedAttributedString(
+            attrStr,
+            writingMode: writingMode,
+            fontSize: fontSize,
+            maxInlineAnnotationAdvance: maxInlineAnnotationAdvance
+        )
+        if writingMode.isVertical {
+            debugVerticalLog("computeLayout spine=\(spineIndex) renderSize=\(renderSize) fontSize=\(fontSize) contentInsets=\(contentInsets) ctPathRect=\(contentPathRect) maxAnnotationAdvance=\(maxInlineAnnotationAdvance ?? 0) attrLen=\(attrStr.length)", verbose: true)
+            debugAttributedPrefix(attrStr, label: "computeLayout.attrPrefix", limit: 24)
+        }
+        debugVerticalLog("EPUBFLOW paginator.compute spine=\(spineIndex) writingMode=\(writingMode) isVertical=\(writingMode.isVertical) contentRect=\(contentRect) ctPathRect=\(contentPathRect) maxAnnotationAdvance=\(maxInlineAnnotationAdvance ?? 0) preparedLen=\(attrStr.length)")
 
         if let imagePage {
             let framesetter = CTFramesetterCreateWithAttributedString(attrStr)
@@ -275,6 +387,7 @@ final class CoreTextPaginator {
                 framesetter: framesetter,
                 pageRanges: [CFRangeMake(0, max(attrStr.length, 1))],
                 inlineAttachments: [:],
+                inlineAnnotations: [:],
                 blockAttachments: imagePage.image.map { [0: [RenderedAttachment(rect: imageRect, image: $0, opacity: 1)]] } ?? [:],
                 blockRenderables: [:],
                 pageKinds: [.image],
@@ -311,6 +424,12 @@ final class CoreTextPaginator {
             pageRanges.append(CFRangeMake(currentLocation, advance))
             currentLocation += advance
         }
+        if writingMode.isVertical {
+            let rangePreview = pageRanges.prefix(6).map { "(\($0.location),\($0.length))" }.joined(separator: ",")
+            debugVerticalLog("pageRanges count=\(pageRanges.count) first=\(rangePreview)", verbose: true)
+        }
+        let rangePreview = pageRanges.prefix(6).map { "(\($0.location),\($0.length))" }.joined(separator: ",")
+        debugVerticalLog("EPUBFLOW paginator.pageRanges spine=\(spineIndex) count=\(pageRanges.count) first=\(rangePreview)")
 
         let (inlineAttachments, blockAttachments, pageKinds) = extractImages(
             framesetter: framesetter,
@@ -318,6 +437,13 @@ final class CoreTextPaginator {
             renderSize: renderSize,
             contentPathRect: contentPathRect,
             attrStr: attrStr,
+            writingMode: writingMode
+        )
+        let inlineAnnotations = extractInlineAnnotations(
+            framesetter: framesetter,
+            pageRanges: pageRanges,
+            renderSize: renderSize,
+            contentPathRect: contentPathRect,
             writingMode: writingMode
         )
         let blockRenderables = extractBlockRenderables(
@@ -328,6 +454,11 @@ final class CoreTextPaginator {
             attrStr: attrStr,
             writingMode: writingMode
         )
+        let inlineAttachmentCount = inlineAttachments.values.reduce(0) { $0 + $1.count }
+        let inlineAnnotationCount = inlineAnnotations.values.reduce(0) { $0 + $1.count }
+        let blockAttachmentCount = blockAttachments.values.reduce(0) { $0 + $1.count }
+        let blockRenderableCount = blockRenderables.values.reduce(0) { $0 + $1.count }
+        debugVerticalLog("EPUBFLOW paginator.extracted spine=\(spineIndex) inlineImages=\(inlineAttachmentCount) inlineAnnotations=\(inlineAnnotationCount) blockImages=\(blockAttachmentCount) blockRenderables=\(blockRenderableCount)")
 
         return ChapterLayout(
             spineIndex: spineIndex,
@@ -335,6 +466,7 @@ final class CoreTextPaginator {
             framesetter: framesetter,
             pageRanges: pageRanges,
             inlineAttachments: inlineAttachments,
+            inlineAnnotations: inlineAnnotations,
             blockAttachments: blockAttachments,
             blockRenderables: blockRenderables,
             pageKinds: pageKinds,
@@ -413,11 +545,14 @@ final class CoreTextPaginator {
     private static func preparedAttributedString(
         _ attrStr: NSAttributedString,
         writingMode: ReaderWritingMode,
-        fontSize: CGFloat
+        fontSize: CGFloat,
+        maxInlineAnnotationAdvance: CGFloat?
     ) -> NSAttributedString {
         guard writingMode.isVertical, attrStr.length > 0 else { return attrStr }
         let mutable = NSMutableAttributedString(attributedString: attrStr)
         let fullRange = NSRange(location: 0, length: mutable.length)
+        debugVerticalLog("prepare.begin len=\(mutable.length) rawPrefix=\"\(debugTextPreview(mutable.string, limit: 80))\"", verbose: true)
+        debugAttributedPrefix(mutable, label: "prepare.before", limit: 18)
 
         // Step 1: Build per-font vertical substitution map from the primary font.
         //         Only substitutes characters the font truly lacks vert alternates for.
@@ -428,21 +563,26 @@ final class CoreTextPaginator {
         // Step 2: Normalize punctuation in-place on mutableString to preserve attributes.
         //         Phase 1: half-width brackets → full-width (always).
         //         Phase 2: full-width → vertical presentation forms (only where font lacks vert glyphs).
-        let halfToFullMap: [String: String] = [
-            "(": "（", ")": "）",
-            "[": "〔", "]": "〕",
-            "{": "｛", "}": "｝",
-            "<": "〈", ">": "〉",
-        ]
-        for (half, full) in halfToFullMap {
-            mutable.mutableString.replaceOccurrences(of: half, with: full, options: [], range: fullRange)
+        mutable.normalizeForVerticalLayoutInPlace(using: verticalMap)
+
+        // Step 2b: CoreText trims or collapses leading whitespace at line starts.
+        // In vertical books, EPUBs often encode first-line indent literally as
+        // leading ideographic spaces. Preserve their advance with invisible spacer runs.
+        let spacerCount = replaceLeadingIdeographicSpacesWithVerticalSpacers(in: mutable, fontSize: fontSize)
+        debugVerticalLog("EPUBFLOW prepare.leadingIdeographicSpaceSpacers count=\(spacerCount) afterPrefix=\"\(debugTextPreview(mutable.string, limit: 80))\"")
+        debugVerticalLog("prepare.leadingIdeographicSpaceSpacers count=\(spacerCount) afterPrefix=\"\(debugTextPreview(mutable.string, limit: 80))\"", verbose: true)
+        debugAttributedPrefix(mutable, label: "prepare.afterSpacers", limit: 18)
+
+        if let maxInlineAnnotationAdvance {
+            let splitCount = splitOversizedInlineAnnotations(
+                in: mutable,
+                fontSize: fontSize,
+                maxAdvance: maxInlineAnnotationAdvance
+            )
+            debugVerticalLog("prepare.splitOversizedInlineAnnotations count=\(splitCount) maxAdvance=\(maxInlineAnnotationAdvance)", verbose: splitCount == 0)
+            debugAttributedPrefix(mutable, label: "prepare.afterAnnotationSplit", limit: 24)
         }
-        let map = verticalMap
-        for (horizontal, vertical) in map {
-            mutable.mutableString.replaceOccurrences(of: horizontal, with: vertical, options: [], range: fullRange)
-        }
-        mutable.mutableString.replaceOccurrences(of: "——", with: "︱︱", options: [], range: fullRange)
-        mutable.mutableString.replaceOccurrences(of: "……", with: "︙︙", options: [], range: fullRange)
+
         // Step 3: Font cascade list for rare / supplemented CJK characters.
         //         PingFang → Songti → Kaiti → Heiti fallback chain.
         mutable.enumerateAttribute(.font, in: fullRange, options: []) { value, range, _ in
@@ -465,21 +605,20 @@ final class CoreTextPaginator {
         mutable.enumerateAttribute(.paragraphStyle, in: fullRange, options: []) { value, range, _ in
             if let existing = value as? NSParagraphStyle {
                 let updated = existing.mutableCopy() as! NSMutableParagraphStyle
-                if updated.firstLineHeadIndent < fontSize {
-                    updated.firstLineHeadIndent = fontSize * 2
-                }
                 if updated.paragraphSpacing <= 0 {
                     updated.paragraphSpacing = fontSize * 0.8
                 }
                 if updated.lineSpacing <= 0 {
                     updated.lineSpacing = fontSize * 0.3
                 }
+                debugVerticalLog("EPUBFLOW prepare.paragraphStyle.existing range=(\(range.location),\(range.length)) firstIndent=\(updated.firstLineHeadIndent) headIndent=\(updated.headIndent) lineSpacing=\(updated.lineSpacing) paraSpacing=\(updated.paragraphSpacing)", verbose: range.location > 256)
                 mutable.addAttribute(.paragraphStyle, value: updated, range: range)
             } else {
                 let style = NSMutableParagraphStyle()
                 style.firstLineHeadIndent = fontSize * 2
                 style.paragraphSpacing = fontSize * 0.8
                 style.lineSpacing = fontSize * 0.3
+                debugVerticalLog("EPUBFLOW prepare.paragraphStyle.fallback range=(\(range.location),\(range.length)) firstIndent=\(style.firstLineHeadIndent) headIndent=\(style.headIndent) lineSpacing=\(style.lineSpacing) paraSpacing=\(style.paragraphSpacing)", verbose: range.location > 256)
                 mutable.addAttribute(.paragraphStyle, value: style, range: range)
             }
         }
@@ -497,8 +636,206 @@ final class CoreTextPaginator {
                 mutable.removeAttribute(verticalFormsKey, range: match.range)
                 applyVerticalLatinBaselineAlignment(to: mutable, range: match.range)
             }
+            debugVerticalLog("prepare.latinRuns count=\(matches.count)", verbose: true)
         }
+        debugAttributedPrefix(mutable, label: "prepare.final", limit: 24)
         return mutable
+    }
+
+    private static func replaceLeadingIdeographicSpacesWithVerticalSpacers(
+        in mutable: NSMutableAttributedString,
+        fontSize: CGFloat
+    ) -> Int {
+        guard mutable.length > 0 else { return 0 }
+        let nsString = mutable.string as NSString
+        var ranges: [NSRange] = []
+        var index = 0
+        var atParagraphStart = true
+
+        while index < mutable.length {
+            let range = nsString.rangeOfComposedCharacterSequence(at: index)
+            let unit = nsString.substring(with: range)
+            if atParagraphStart, unit == "\u{3000}" {
+                ranges.append(range)
+                index = range.location + range.length
+                continue
+            }
+
+            atParagraphStart = unit == "\n" || unit == "\u{2029}"
+            index = range.location + range.length
+        }
+
+        for range in ranges.reversed() {
+            let attrs = mutable.attributes(at: range.location, effectiveRange: nil)
+            let font = verticalSpacerFont(from: attrs[.font], fallbackSize: fontSize)
+            let textColor = attrs[.foregroundColor] as? UIColor ?? .clear
+            let spacer = NSMutableAttributedString(attributedString: RunDelegateProvider.makeVerticalSpacerPlaceholder(
+                advance: font.pointSize,
+                font: font,
+                textColor: textColor
+            ))
+            let spacerRange = NSRange(location: 0, length: spacer.length)
+            spacer.addAttributes(attrs, range: spacerRange)
+            spacer.addAttribute(HTMLAttributedStringBuilder.spacerRunAttribute, value: true, range: spacerRange)
+            mutable.replaceCharacters(in: range, with: spacer)
+        }
+        return ranges.count
+    }
+
+    private static func verticalSpacerFont(from value: Any?, fallbackSize: CGFloat) -> UIFont {
+        if let font = value as? UIFont {
+            return font
+        }
+        return .systemFont(ofSize: fallbackSize)
+    }
+
+    private static func splitOversizedInlineAnnotations(
+        in mutable: NSMutableAttributedString,
+        fontSize: CGFloat,
+        maxAdvance: CGFloat
+    ) -> Int {
+        guard mutable.length > 0, maxAdvance > 0 else { return 0 }
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        var replacements: [(range: NSRange, replacement: NSAttributedString, oldAdvance: CGFloat, chunks: Int)] = []
+        let fullRange = NSRange(location: 0, length: mutable.length)
+
+        mutable.enumerateAttribute(SelfPlaceholderKeys.inlineAnnotation, in: fullRange, options: []) { value, range, _ in
+            guard value != nil,
+                  let delegate = mutable.attribute(delegateKey, at: range.location, effectiveRange: nil)
+            else { return }
+
+            let ctDelegate = delegate as! CTRunDelegate
+            let pointer = CTRunDelegateGetRefCon(ctDelegate)
+            let info = Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue()
+            guard let annotation = info as? InlineAnnotationRunInfo,
+                  annotation.width > maxAdvance
+            else { return }
+
+            var baseAttributes = mutable.attributes(at: range.location, effectiveRange: nil)
+            baseAttributes.removeValue(forKey: delegateKey)
+            baseAttributes.removeValue(forKey: SelfPlaceholderKeys.inlineAnnotation)
+            baseAttributes.removeValue(forKey: SelfPlaceholderKeys.spacer)
+
+            let font = verticalSpacerFont(from: baseAttributes[.font], fallbackSize: fontSize)
+            let textColor = baseAttributes[.foregroundColor] as? UIColor ?? .label
+            let replacement = NSMutableAttributedString(attributedString: RunDelegateProvider.makeInlineAnnotationPlaceholders(
+                attributedString: annotation.attributedString,
+                placeholderFont: font,
+                textColor: textColor,
+                maxAdvance: maxAdvance
+            ))
+            guard replacement.length > 0, replacement.length > range.length else { return }
+
+            let replacementRange = NSRange(location: 0, length: replacement.length)
+            replacement.addAttributes(baseAttributes, range: replacementRange)
+            replacement.addAttribute(SelfPlaceholderKeys.inlineAnnotation, value: true, range: replacementRange)
+            replacement.addAttribute(SelfPlaceholderKeys.spacer, value: true, range: replacementRange)
+            replacements.append((range, replacement, annotation.width, replacement.length))
+        }
+
+        for item in replacements.reversed() {
+            mutable.replaceCharacters(in: item.range, with: item.replacement)
+            debugVerticalLog("splitInlineAnnotation loc=\(item.range.location) oldAdvance=\(item.oldAdvance) maxAdvance=\(maxAdvance) chunks=\(item.chunks)")
+        }
+        return replacements.count
+    }
+
+    private enum SelfPlaceholderKeys {
+        static let inlineAnnotation = HTMLAttributedStringBuilder.inlineAnnotationRunAttribute
+        static let spacer = HTMLAttributedStringBuilder.spacerRunAttribute
+    }
+
+    private static func debugAttributedPrefix(
+        _ attributedString: NSAttributedString,
+        label: String,
+        limit: Int
+    ) {
+        #if DEBUG
+        guard attributedString.length > 0 else {
+            debugVerticalLog("\(label) empty", verbose: true)
+            return
+        }
+        let nsString = attributedString.string as NSString
+        var parts: [String] = []
+        var index = 0
+        var seen = 0
+        while index < attributedString.length, seen < limit {
+            let range = nsString.rangeOfComposedCharacterSequence(at: index)
+            let unit = nsString.substring(with: range)
+            let attrs = attributedString.attributes(at: index, effectiveRange: nil)
+            parts.append(debugUnitDescription(unit, attrs: attrs, location: index))
+            index = range.location + range.length
+            seen += 1
+        }
+        debugVerticalLog("\(label) \(parts.joined(separator: " | "))", verbose: true)
+        #endif
+    }
+
+    private static func debugUnitDescription(
+        _ unit: String,
+        attrs: [NSAttributedString.Key: Any],
+        location: Int
+    ) -> String {
+        #if DEBUG
+        let scalarHex = unit.unicodeScalars
+            .map { String(format: "U+%04X", $0.value) }
+            .joined(separator: "+")
+        let visible: String
+        if unit == "\u{FFFC}" {
+            visible = "OBJ"
+        } else if unit == "\u{3000}" {
+            visible = "IDEOSPACE"
+        } else {
+            visible = unit
+                .replacingOccurrences(of: "\n", with: "\\n")
+                .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+        }
+
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        let verticalFormsKey = NSAttributedString.Key(kCTVerticalFormsAttributeName as String)
+        var flags: [String] = []
+        if attrs[delegateKey] != nil { flags.append("delegate") }
+        if attrs[HTMLAttributedStringBuilder.spacerRunAttribute] != nil { flags.append("spacer") }
+        if attrs[HTMLAttributedStringBuilder.inlineAnnotationRunAttribute] != nil { flags.append("annotation") }
+        if attrs[verticalFormsKey] != nil { flags.append("vertical") }
+        if let font = attrs[.font] as? UIFont {
+            flags.append("font=\(String(format: "%.1f", font.pointSize))")
+        } else if attrs[.font] != nil {
+            flags.append("fontType=\(String(describing: type(of: attrs[.font]!)))")
+        }
+        if let paragraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle {
+            flags.append("firstIndent=\(String(format: "%.1f", paragraphStyle.firstLineHeadIndent))")
+            flags.append("lineSpacing=\(String(format: "%.1f", paragraphStyle.lineSpacing))")
+        }
+        if let delegate = attrs[delegateKey] {
+            let ctDelegate = delegate as! CTRunDelegate
+            let ptr = CTRunDelegateGetRefCon(ctDelegate)
+            let info = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
+            if let annotation = info as? InlineAnnotationRunInfo {
+                flags.append("annW=\(String(format: "%.1f", annotation.width))")
+                flags.append("annDraw=\(String(format: "%.1f", annotation.drawWidth))x\(String(format: "%.1f", annotation.drawHeight))")
+                flags.append("annText=\"\(debugTextPreview(annotation.attributedString.string, limit: 28))\"")
+            } else {
+                flags.append("runW=\(String(format: "%.1f", info.width))")
+                flags.append("draw=\(String(format: "%.1f", info.drawWidth))x\(String(format: "%.1f", info.drawHeight))")
+                flags.append("img=\(info.image == nil ? "nil" : "Y")")
+                if !info.source.isEmpty { flags.append("src=\(info.source)") }
+                if let alt = info.alt { flags.append("alt=\(alt)") }
+            }
+        }
+        return "#\(location):\(visible){\(scalarHex)}[\(flags.joined(separator: ","))]"
+        #else
+        return ""
+        #endif
+    }
+
+    private static func debugTextPreview(_ text: String, limit: Int) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+            .replacingOccurrences(of: "\u{FFFC}", with: "OBJ")
+            .replacingOccurrences(of: "\u{3000}", with: "IDEOSPACE")
+        return String(normalized.prefix(limit))
     }
 
     /// Keep sideways Latin centered on the same ideographic baseline axis as
@@ -515,8 +852,8 @@ final class CoreTextPaginator {
     }
 
     /// Horizontal mode: snaps bottom inset to integer line grid for clean page fill.
-    /// Vertical mode: returns contentInsets unchanged — column-based layout
-    ///   doesn't use line-grid alignment.
+    /// Vertical mode returns contentInsets unchanged — column-based layout doesn't
+    /// use horizontal line-grid alignment.
     private static func gridAlignedContentInsets(
         _ contentInsets: UIEdgeInsets,
         renderSize: CGSize,
@@ -537,6 +874,42 @@ final class CoreTextPaginator {
         var insets = contentInsets
         insets.bottom = max(contentInsets.bottom, alignedBottom)
         return insets
+    }
+
+    static func uiContentRect(
+        renderSize: CGSize,
+        contentInsets: UIEdgeInsets,
+        fontSize: CGFloat,
+        writingMode: ReaderWritingMode
+    ) -> CGRect {
+        _ = fontSize
+        _ = writingMode
+        return CGRect(
+            x: contentInsets.left,
+            y: contentInsets.top,
+            width: max(1, renderSize.width - contentInsets.left - contentInsets.right),
+            height: max(1, renderSize.height - contentInsets.top - contentInsets.bottom)
+        )
+    }
+
+    static func coreTextContentPathRect(
+        renderSize: CGSize,
+        contentInsets: UIEdgeInsets,
+        fontSize: CGFloat,
+        writingMode: ReaderWritingMode
+    ) -> CGRect {
+        let contentRect = uiContentRect(
+            renderSize: renderSize,
+            contentInsets: contentInsets,
+            fontSize: fontSize,
+            writingMode: writingMode
+        )
+        return CGRect(
+            x: contentRect.minX,
+            y: contentInsets.bottom,
+            width: contentRect.width,
+            height: contentRect.height
+        )
     }
 
     /// Orphan and widow control:
@@ -633,7 +1006,17 @@ final class CoreTextPaginator {
                     let attrs = CTRunGetAttributes(run) as! [NSAttributedString.Key: Any]
                     guard let delegate = attrs[delegateKey] else { continue }
                     // Skip spacer runs (not image placeholders)
-                    guard attrs[HTMLAttributedStringBuilder.spacerRunAttribute] == nil else { continue }
+                    guard attrs[HTMLAttributedStringBuilder.spacerRunAttribute] == nil else {
+                        if isVertical {
+                            let runRange = CTRunGetStringRange(run)
+                            let textAdvance = CTLineGetOffsetForStringIndex(line, runRange.location, nil)
+                            let ctDelegate = delegate as! CTRunDelegate
+                            let ptr = CTRunDelegateGetRefCon(ctDelegate)
+                            let info = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
+                            debugVerticalLog("spacerRun page=\(pageIdx) line=\(lineIdx) loc=\(runRange.location) lineOrigin=\(lineOrigin) textAdvance=\(textAdvance) width=\(info.width) draw=\(info.drawWidth)x\(info.drawHeight) ascent=\(info.ascent) descent=\(info.descent)", verbose: true)
+                        }
+                        continue
+                    }
                     // CTRunDelegate is a CoreFoundation type; unconditional cast is correct
                     let ctDelegate = delegate as! CTRunDelegate
                     let ptr = CTRunDelegateGetRefCon(ctDelegate)
@@ -685,9 +1068,10 @@ final class CoreTextPaginator {
                                 )
                                 let columnBaselineX = contentPathRect.origin.x + lineOrigin.x
                                 let lineTypographicCenterX = columnBaselineX + (lineAscent - lineDescent) / 2
+                                let uiY = renderSize.height - (contentPathRect.origin.y + lineOrigin.y) + textAdvance
                                 rect = CGRect(
                                     x: lineTypographicCenterX - (info.drawWidth / 2),
-                                    y: renderSize.height - lineOrigin.y + textAdvance,
+                                    y: uiY,
                                     width: info.drawWidth,
                                     height: info.drawHeight
                                 )
@@ -702,36 +1086,7 @@ final class CoreTextPaginator {
                                     width: runBounds.width,
                                     height: runBounds.height
                                 )
-                                let debugLines = [
-                                    "[IMG DEBUG] lineOrigin=\(lineOrigin)",
-                                    "[IMG DEBUG] contentPathRect=\(contentPathRect)",
-                                    "[IMG DEBUG] columnBaselineX=\(columnBaselineX)",
-                                    "[IMG DEBUG] lineAscent=\(lineAscent)",
-                                    "[IMG DEBUG] lineDescent=\(lineDescent)",
-                                    "[IMG DEBUG] lineTypographicCenterX=\(lineTypographicCenterX)",
-                                    "[IMG DEBUG] lineTypographicCenterX-columnBaselineX=\(lineTypographicCenterX - columnBaselineX)",
-                                    "[IMG DEBUG] textAdvance=\(textAdvance)",
-                                    "[IMG DEBUG] runPosition[0]=\(firstRunPosition)",
-                                    "[IMG DEBUG] runImageBounds=\(runBounds)",
-                                    "[IMG DEBUG] coreTextRunBounds=\(coreTextRunBounds)",
-                                    "[IMG DEBUG] renderSize.height=\(renderSize.height)",
-                                    "[IMG DEBUG] computedY=\(renderSize.height - lineOrigin.y + textAdvance)",
-                                    "[IMG DEBUG] drawHeight=\(info.drawHeight)",
-                                    "[IMG DEBUG] drawWidth=\(info.drawWidth)",
-                                    "[IMG DEBUG] ascent=\(info.ascent)",
-                                    "[IMG DEBUG] descent=\(info.descent)",
-                                    "[IMG DEBUG] paddingLeft=\(info.paddingLeft)",
-                                    "[IMG DEBUG] paddingRight=\(info.paddingRight)",
-                                    "[IMG DEBUG] widthAdvance=\(info.width)",
-                                    "[IMG DEBUG] finalRect.midX=\(rect.midX)",
-                                    "[IMG DEBUG] finalRect.midX-columnBaselineX=\(rect.midX - columnBaselineX)",
-                                    "[IMG DEBUG] finalRect.midX-lineTypographicCenterX=\(rect.midX - lineTypographicCenterX)",
-                                    "[IMG DEBUG] finalRect=\(rect)",
-                                ]
-                                for line in debugLines {
-                                    print(line)
-                                    NSLog("%@", line)
-                                }
+                                debugVerticalLog("imageRun page=\(pageIdx) line=\(lineIdx) loc=\(runLocation) src=\(info.source) alt=\(info.alt ?? "nil") lineOrigin=\(lineOrigin) contentPathRect=\(contentPathRect) columnBaselineX=\(columnBaselineX) lineAscent=\(lineAscent) lineDescent=\(lineDescent) lineTypographicCenterX=\(lineTypographicCenterX) centerMinusBaseline=\(lineTypographicCenterX - columnBaselineX) textAdvance=\(textAdvance) runPosition0=\(firstRunPosition) runImageBounds=\(runBounds) coreTextRunBounds=\(coreTextRunBounds) computedY=\(uiY) draw=\(info.drawWidth)x\(info.drawHeight) ascent=\(info.ascent) descent=\(info.descent) widthAdvance=\(info.width) finalRect=\(rect) midXMinusCenter=\(rect.midX - lineTypographicCenterX)", verbose: true)
                             } else {
                                 let textAdvance = CTLineGetOffsetForStringIndex(
                                     line,
@@ -819,6 +1174,69 @@ final class CoreTextPaginator {
         }
 
         return (inlineAttachments, blockAttachments, kinds)
+    }
+
+    private static func extractInlineAnnotations(
+        framesetter: CTFramesetter,
+        pageRanges: [CFRange],
+        renderSize: CGSize,
+        contentPathRect: CGRect,
+        writingMode: ReaderWritingMode
+    ) -> [Int: [RenderedInlineAnnotation]] {
+        guard writingMode.isVertical else { return [:] }
+        let pagePath = CGPath(rect: contentPathRect, transform: nil)
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        var annotations: [Int: [RenderedInlineAnnotation]] = [:]
+
+        for (pageIdx, range) in pageRanges.enumerated() {
+            let frame = makeFrame(
+                framesetter: framesetter,
+                range: range,
+                path: pagePath,
+                writingMode: writingMode
+            )
+            let lines = CTFrameGetLines(frame) as! [CTLine]
+            var origins = [CGPoint](repeating: .zero, count: lines.count)
+            CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+
+            for (lineIdx, line) in lines.enumerated() {
+                let lineOrigin = origins[lineIdx]
+                let runs = CTLineGetGlyphRuns(line) as! [CTRun]
+                for run in runs {
+                    let attrs = CTRunGetAttributes(run) as! [NSAttributedString.Key: Any]
+                    guard attrs[HTMLAttributedStringBuilder.inlineAnnotationRunAttribute] != nil,
+                          let delegate = attrs[delegateKey]
+                    else { continue }
+
+                    let ctDelegate = delegate as! CTRunDelegate
+                    let ptr = CTRunDelegateGetRefCon(ctDelegate)
+                    let info = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
+                    guard let annotation = info as? InlineAnnotationRunInfo else { continue }
+
+                    let runLocation = CTRunGetStringRange(run).location
+                    let textAdvance = CTLineGetOffsetForStringIndex(line, runLocation, nil)
+                    var lineAscent: CGFloat = 0
+                    var lineDescent: CGFloat = 0
+                    _ = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
+                    let baselineX = contentPathRect.origin.x + lineOrigin.x
+                    let typographicCenterX = baselineX + (lineAscent - lineDescent) / 2
+                    let uiRect = CGRect(
+                        x: typographicCenterX - (annotation.drawWidth / 2),
+                        y: renderSize.height - (contentPathRect.origin.y + lineOrigin.y) + textAdvance,
+                        width: annotation.drawWidth,
+                        height: annotation.drawHeight
+                    )
+                    let isOversized = annotation.drawHeight > contentPathRect.height
+                    debugVerticalLog("annotationRun page=\(pageIdx) line=\(lineIdx) loc=\(runLocation) lineOrigin=\(lineOrigin) textAdvance=\(textAdvance) baselineX=\(baselineX) lineAscent=\(lineAscent) lineDescent=\(lineDescent) centerX=\(typographicCenterX) uiRect=\(uiRect) annWidth=\(annotation.width) draw=\(annotation.drawWidth)x\(annotation.drawHeight) text=\"\(debugTextPreview(annotation.attributedString.string, limit: 80))\"", verbose: !isOversized)
+                    annotations[pageIdx, default: []].append(RenderedInlineAnnotation(
+                        uiRect: uiRect,
+                        attributedString: annotation.attributedString
+                    ))
+                }
+            }
+        }
+
+        return annotations
     }
 
     private static func extractBlockRenderables(

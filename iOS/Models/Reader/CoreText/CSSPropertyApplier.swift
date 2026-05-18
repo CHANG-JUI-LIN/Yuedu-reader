@@ -58,6 +58,7 @@ final class HTMLCSSPropertyApplierRegistry {
         LetterSpacingApplier(),
         WritingModeApplier(),
         WebkitWritingModeApplier(),
+        EPUBWritingModeApplier(),
     ])
 }
 
@@ -223,7 +224,7 @@ private struct WritingModeApplier: HTMLCSSPropertyApplier {
         context: HTMLCSSApplyContext
     ) {
         let v = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if v.contains("vertical-rl") || v.contains("vertical-rl") {
+        if v.contains("vertical-rl") || v.contains("vertical-lr") {
             style.isVerticalWritingMode = true
         }
     }
@@ -238,7 +239,22 @@ private struct WebkitWritingModeApplier: HTMLCSSPropertyApplier {
         context: HTMLCSSApplyContext
     ) {
         let v = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if v.contains("vertical-rl") || v.contains("vertical-rl") {
+        if v.contains("vertical-rl") || v.contains("vertical-lr") {
+            style.isVerticalWritingMode = true
+        }
+    }
+}
+
+private struct EPUBWritingModeApplier: HTMLCSSPropertyApplier {
+    let key = "-epub-writing-mode"
+
+    func apply(
+        value: String,
+        style: inout HTMLAttributedStringBuilder.ResolvedStyle,
+        context: HTMLCSSApplyContext
+    ) {
+        let v = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if v.contains("vertical-rl") || v.contains("vertical-lr") {
             style.isVerticalWritingMode = true
         }
     }

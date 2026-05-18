@@ -423,6 +423,7 @@ struct ChapterLayoutTests {
             framesetter: framesetter,
             pageRanges: [CFRangeMake(0, halfLen), CFRangeMake(halfLen, text.utf16.count - halfLen)],
             inlineAttachments: [:],
+            inlineAnnotations: [:],
             blockAttachments: [:],
             blockRenderables: [:],
             pageKinds: [.text, .text],

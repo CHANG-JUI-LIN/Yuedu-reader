@@ -782,19 +782,23 @@ _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backg
             guard let resourceProvider else { return nil }
             let resolved = EPUBStyleResolver.resolveImageHref(href, chapterHref: chapterHref)
             let url = resourceProvider.resourceURL(for: resolved)
+            CoreTextPaginator.debugVerticalLog("EPUBFLOW engine.css.fetch spine=\(spineIndex) href=\(href) chapter=\(chapterHref) resolved=\(resolved)")
             print("[CoreTextEngine] cssLoader href=\(href) → resolved=\(resolved) → url=\(url)")
             do {
                 let response = try await resourceProvider.response(for: url)
                 let cssText = String(data: response.data, encoding: .utf8) ?? ""
                 let processed = await self.styleResolver.processStylesheet(cssText, cssHref: resolved, chapterHref: chapterHref)
+                CoreTextPaginator.debugVerticalLog("EPUBFLOW engine.css.loaded spine=\(spineIndex) href=\(href) rawLen=\(cssText.count) processedLen=\(processed.count)")
                 print("[CoreTextEngine] cssLoader OK len=\(processed.count)")
                 return processed.isEmpty ? nil : processed
             } catch {
+                CoreTextPaginator.debugVerticalLog("EPUBFLOW engine.css.failed spine=\(spineIndex) href=\(href) error=\(error)")
                 print("[CoreTextEngine] cssLoader ERROR: \(error)")
                 return nil
             }
         }
         let config = currentBuilderConfig()
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW engine.preload.begin spine=\(spineIndex) href=\(chapterHref) htmlLen=\(html.count) configWritingMode=\(config.writingMode) fontSize=\(config.fontSize) renderWidth=\(config.renderWidth)")
         print("[CoreTextEngine] preloadChapter[\(spineIndex)] htmlLen=\(html.count) fontSize=\(config.fontSize) renderSize=\(renderSize)")
         let buildResult = await localBuilder.build(html: html, config: config)
         guard !shouldAbortPreload(generation: generation) else { return }
@@ -806,6 +810,7 @@ _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backg
         )
         guard !shouldAbortPreload(generation: generation) else { return }
         print("[CoreTextEngine] preloadChapter[\(spineIndex)] attrStrLen=\(attrStr.length)")
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW engine.preload.built spine=\(spineIndex) attrLen=\(attrStr.length) cssDetectedVertical=\(localBuilder.detectedVerticalWritingMode)")
         let request = PaginationRequest(
             spineIndex: spineIndex,
             attributedString: attrStr,
@@ -1285,7 +1290,7 @@ _layouts[spineIndex] = _layouts[spineIndex]?.withUpdatedColors(textColor: textCo
             lineHeightMultiple: renderSettings.lineHeightMultiple,
             lineSpacing: renderSettings.lineSpacing,
             paragraphSpacing: renderSettings.paragraphSpacing,
-            firstLineIndent: fontSize * 2,
+            firstLineIndent: 0,
             textColor: currentTextColor(),
             backgroundColor: currentBackgroundColor(),
             fontFamilyName: nil,

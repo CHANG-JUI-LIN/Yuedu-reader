@@ -7,6 +7,143 @@ import UIKit
 @Suite("CoreText writing mode")
 struct CoreTextWritingModeTests {
 
+    @Test("CSS body writing-mode inherits into paragraph style")
+    func cssBodyWritingModeInheritsIntoParagraphStyle() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.0,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            fontFamilyName: nil,
+            renderWidth: 240,
+            writingMode: .horizontal
+        )
+
+        let ast = try #require(await builder.buildStyledAST(
+            html: """
+            <html>
+            <head>
+            <style>
+            body.calibre { -epub-writing-mode: vertical-rl; writing-mode: vertical-rl; }
+            p.calibre7 { line-height: 160%; }
+            </style>
+            </head>
+            <body class="calibre"><p class="calibre7">正文</p></body>
+            </html>
+            """,
+            config: config
+        ))
+
+        guard case .element(let paragraph)? = ast.children.first else {
+            Issue.record("expected first body child to be paragraph element")
+            return
+        }
+        #expect(ast.resolvedStyle.isVerticalWritingMode == true)
+        #expect(paragraph.resolvedStyle.isVerticalWritingMode == true)
+        #expect(paragraph.resolvedStyle.lineHeightExplicit == true)
+    }
+
+    @Test("pagination cache differentiates paragraph style changes")
+    func paginationCacheDifferentiatesParagraphStyleChanges() async throws {
+        let paginator = CoreTextPaginator()
+        let first = NSAttributedString(
+            string: "正文測試",
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 18),
+                .paragraphStyle: paragraphStyle(firstLineIndent: 36),
+            ]
+        )
+        let second = NSAttributedString(
+            string: "正文測試",
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 18),
+                .paragraphStyle: paragraphStyle(firstLineIndent: 0),
+            ]
+        )
+
+        _ = await paginator.paginate(
+            spineIndex: 99,
+            attrStr: first,
+            renderSize: CGSize(width: 240, height: 320),
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16),
+            writingMode: .verticalRTL
+        )
+        let secondLayout = await paginator.paginate(
+            spineIndex: 99,
+            attrStr: second,
+            renderSize: CGSize(width: 240, height: 320),
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16),
+            writingMode: .verticalRTL
+        )
+
+        let style = try #require(secondLayout.attributedString.attribute(
+            .paragraphStyle,
+            at: 0,
+            effectiveRange: nil
+        ) as? NSParagraphStyle)
+        #expect(style.firstLineHeadIndent == 0)
+    }
+
+    @Test("vertical EPUB paragraph keeps leading ideographic spaces after previous block")
+    func verticalEPUBParagraphKeepsLeadingIdeographicSpacesAfterPreviousBlock() async throws {
+        let image = await MainActor.run {
+            UIGraphicsImageRenderer(size: CGSize(width: 18, height: 18)).image { context in
+                UIColor.black.setFill()
+                context.cgContext.fill(CGRect(x: 0, y: 0, width: 18, height: 18))
+            }
+        }
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { _ in image }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.0,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            fontFamilyName: nil,
+            renderWidth: 240,
+            writingMode: .verticalRTL
+        )
+
+        let result = await builder.build(
+            html: """
+            <html>
+            <head><style>.calibre7 { line-height: 160%; margin: 0; padding: 0; } .font_patch { width: 1em; height: auto; }</style></head>
+            <body class="calibre"><h2>第一回</h2><p class="calibre7">　　<img src="patch.gif" class="font_patch" alt="庚辰本">此開卷第一回也。</p></body>
+            </html>
+            """,
+            config: config
+        )
+
+        #expect(result.attributedString.string.contains("\n\u{3000}\u{3000}\u{FFFC}此開卷"))
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 101,
+            attrStr: result.attributedString,
+            renderSize: CGSize(width: 240, height: 320),
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16),
+            writingMode: .verticalRTL
+        )
+
+        #expect(layout.attributedString.string.contains("\n\u{FFFC}\u{FFFC}\u{FFFC}此開卷"))
+        let spacerKey = HTMLAttributedStringBuilder.spacerRunAttribute
+        let nsString = layout.attributedString.string as NSString
+        let markerRange = nsString.range(of: "\n\u{FFFC}\u{FFFC}\u{FFFC}此開卷")
+        try #require(markerRange.location != NSNotFound)
+        #expect(layout.attributedString.attribute(spacerKey, at: markerRange.location + 1, effectiveRange: nil) != nil)
+        #expect(layout.attributedString.attribute(spacerKey, at: markerRange.location + 2, effectiveRange: nil) != nil)
+        #expect(layout.attributedString.attribute(spacerKey, at: markerRange.location + 3, effectiveRange: nil) == nil)
+    }
+
     @Test("vertical RTL pagination stores writing mode and vertical glyph attribute")
     func verticalPaginationStoresWritingModeAndVerticalGlyphAttribute() async {
         let font = UIFont.systemFont(ofSize: 18)
@@ -23,6 +160,14 @@ struct CoreTextWritingModeTests {
         )
 
         #expect(layout.writingMode == .verticalRTL)
+        #expect(layout.contentInsets.top == 16)
+        let verticalContentRect = CoreTextPaginator.uiContentRect(
+            renderSize: layout.renderSize,
+            contentInsets: layout.contentInsets,
+            fontSize: layout.fontSize,
+            writingMode: layout.writingMode
+        )
+        #expect(verticalContentRect.minY == 16)
         let verticalForm = layout.attributedString.attribute(
             NSAttributedString.Key(kCTVerticalFormsAttributeName as String),
             at: 0,
@@ -134,6 +279,156 @@ struct CoreTextWritingModeTests {
         #expect(info.descent == 10)
     }
 
+    @Test("vertical small spans use inline annotation delegate")
+    func verticalSmallSpansUseInlineAnnotationDelegate() async throws {
+        let image = await MainActor.run {
+            UIGraphicsImageRenderer(size: CGSize(width: 42, height: 42)).image { context in
+                UIColor.black.setFill()
+                context.cgContext.fill(CGRect(x: 0, y: 0, width: 42, height: 42))
+            }
+        }
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { _ in image }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.0,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            fontFamilyName: nil,
+            renderWidth: 240,
+            writingMode: .verticalRTL
+        )
+
+        let result = await builder.build(
+            html: """
+            <html>
+            <head>
+            <style>
+            .small { font-size: 0.75em; }
+            .font_patch { width: 1em; height: auto; }
+            </style>
+            </head>
+            <body><p>甲<span class="small"><img src="patch.gif" class="font_patch" alt="側批">夾注「之」別。</span>乙</p></body>
+            </html>
+            """,
+            config: config
+        )
+
+        let annotationInfo = try #require(firstInlineAnnotationInfo(in: result.attributedString))
+        #expect(annotationInfo.attributedString.string.contains("夾注﹁之﹂別︒"))
+        let nestedImage = try #require(firstImageRunInfo(in: annotationInfo.attributedString))
+        #expect(nestedImage.alt == "側批")
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: result.attributedString,
+            renderSize: CGSize(width: 240, height: 320),
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16),
+            writingMode: .verticalRTL
+        )
+        let annotation = try #require(layout.inlineAnnotations.values.flatMap { $0 }.first)
+        #expect(annotation.attributedString.string.contains("夾注﹁之﹂別︒"))
+    }
+
+    @Test("vertical leading ideographic spaces reserve first line advance")
+    func verticalLeadingIdeographicSpacesReserveFirstLineAdvance() async throws {
+        let image = await MainActor.run {
+            UIGraphicsImageRenderer(size: CGSize(width: 42, height: 42)).image { context in
+                UIColor.black.setFill()
+                context.cgContext.fill(CGRect(x: 0, y: 0, width: 42, height: 42))
+            }
+        }
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { _ in image }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.0,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            fontFamilyName: nil,
+            renderWidth: 240,
+            writingMode: .verticalRTL
+        )
+        let result = await builder.build(
+            html: """
+            <html>
+            <head><style>.font_patch { width: 1em; height: auto; }</style></head>
+            <body><p>　　<img src="patch.gif" class="font_patch" alt="庚辰本">此開卷第一回也。</p></body>
+            </html>
+            """,
+            config: config
+        )
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: result.attributedString,
+            renderSize: CGSize(width: 240, height: 320),
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16),
+            writingMode: .verticalRTL
+        )
+        let nsString = layout.attributedString.string as NSString
+        let spacerKey = HTMLAttributedStringBuilder.spacerRunAttribute
+        #expect(nsString.substring(with: NSRange(location: 0, length: 3)) == "\u{FFFC}\u{FFFC}\u{FFFC}")
+        #expect(layout.attributedString.attribute(spacerKey, at: 0, effectiveRange: nil) != nil)
+        #expect(layout.attributedString.attribute(spacerKey, at: 1, effectiveRange: nil) != nil)
+        #expect(layout.attributedString.attribute(spacerKey, at: 2, effectiveRange: nil) == nil)
+
+        let attachment = try #require(layout.inlineAttachments.values.flatMap { $0 }.first)
+        let contentRect = CoreTextPaginator.uiContentRect(
+            renderSize: layout.renderSize,
+            contentInsets: layout.contentInsets,
+            fontSize: layout.fontSize,
+            writingMode: layout.writingMode
+        )
+        #expect(attachment.rect.minY >= contentRect.minY + 35)
+    }
+
+    @Test("vertical long small spans become split inline annotation delegates")
+    func verticalLongSmallSpansBecomeSplitInlineAnnotationDelegates() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.0,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            fontFamilyName: nil,
+            renderWidth: 240,
+            writingMode: .verticalRTL
+        )
+        let longAnnotation = String(repeating: "夾注文字", count: 120)
+        let result = await builder.build(
+            html: """
+            <html>
+            <head><style>.small { font-size: 0.75em; }</style></head>
+            <body><p>甲<span class="small">\(longAnnotation)</span>乙</p></body>
+            </html>
+            """,
+            config: config
+        )
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: result.attributedString,
+            renderSize: CGSize(width: 240, height: 320),
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16),
+            writingMode: .verticalRTL
+        )
+        #expect(layout.inlineAnnotations.values.flatMap { $0 }.count > 1)
+        #expect(layout.pageRanges.count > 1)
+    }
+
     @Test("vertical inline image padding-left does not shift column center")
     func verticalInlineImagePaddingLeftDoesNotShiftColumnCenter() async throws {
         let image = await MainActor.run {
@@ -217,6 +512,77 @@ struct CoreTextWritingModeTests {
         return result
     }
 
+    private func firstInlineAnnotationInfo(in attributedString: NSAttributedString) -> InlineAnnotationRunInfo? {
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        var result: InlineAnnotationRunInfo?
+        attributedString.enumerateAttribute(
+            HTMLAttributedStringBuilder.inlineAnnotationRunAttribute,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, range, stop in
+            guard value != nil,
+                  let delegate = attributedString.attribute(delegateKey, at: range.location, effectiveRange: nil)
+            else { return }
+            let ctDelegate = delegate as! CTRunDelegate
+            let pointer = CTRunDelegateGetRefCon(ctDelegate)
+            result = Unmanaged<InlineAnnotationRunInfo>.fromOpaque(pointer).takeUnretainedValue()
+            stop.pointee = true
+        }
+        return result
+    }
+
+    private func paragraphStyle(firstLineIndent: CGFloat) -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.firstLineHeadIndent = firstLineIndent
+        style.minimumLineHeight = 28.8
+        style.maximumLineHeight = 28.8
+        return style
+    }
+
+    private func containsNonWhitePixel(in rect: CGRect, image: UIImage) -> Bool {
+        guard let cgImage = image.cgImage,
+              let data = cgImage.dataProvider?.data,
+              let bytes = CFDataGetBytePtr(data)
+        else { return false }
+
+        let minX = max(0, Int(floor(rect.minX)))
+        let maxX = min(cgImage.width, Int(ceil(rect.maxX)))
+        let minY = max(0, Int(floor(rect.minY)))
+        let maxY = min(cgImage.height, Int(ceil(rect.maxY)))
+        guard minX < maxX, minY < maxY else { return false }
+
+        let bytesPerPixel = max(1, cgImage.bitsPerPixel / 8)
+        let bytesPerRow = cgImage.bytesPerRow
+        for y in minY..<maxY {
+            for x in minX..<maxX {
+                let offset = y * bytesPerRow + x * bytesPerPixel
+                let r = bytes[offset]
+                let g = bytes[offset + min(1, bytesPerPixel - 1)]
+                let b = bytes[offset + min(2, bytesPerPixel - 1)]
+                if r < 245 || g < 245 || b < 245 {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private func renderPageImage(
+        layout: CoreTextPaginator.ChapterLayout,
+        pageIndex: Int
+    ) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: layout.renderSize, format: format).image { context in
+            CoreTextPageView.renderPage(
+                layout: layout,
+                pageIndex: pageIndex,
+                in: context.cgContext,
+                bounds: CGRect(origin: .zero, size: layout.renderSize)
+            )
+        }
+    }
+
     private func location(of substring: String, in text: String) throws -> Int {
         let range = (text as NSString).range(of: substring)
         try #require(range.location != NSNotFound)
@@ -295,11 +661,11 @@ struct CoreTextWritingModeTests {
         let attachment = try #require(layout.inlineAttachments.values.flatMap { $0 }.first)
 
         let imageRangeLocation = 1
-        let contentPathRect = CGRect(
-            x: layout.contentInsets.left,
-            y: layout.contentInsets.bottom,
-            width: max(1, layout.renderSize.width - layout.contentInsets.left - layout.contentInsets.right),
-            height: max(1, layout.renderSize.height - layout.contentInsets.top - layout.contentInsets.bottom)
+        let contentPathRect = CoreTextPaginator.coreTextContentPathRect(
+            renderSize: layout.renderSize,
+            contentInsets: layout.contentInsets,
+            fontSize: layout.fontSize,
+            writingMode: layout.writingMode
         )
         let frame = CoreTextPaginator.makeFrame(
             framesetter: layout.framesetter,

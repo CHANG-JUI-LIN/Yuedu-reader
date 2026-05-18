@@ -41,7 +41,7 @@ extension String {
     }
 
     /// Fallback used when no per-font map is available.
-    private static let staticVerticalMap: [String: String] = [
+    static let staticVerticalMap: [String: String] = [
         "《": "︽", "》": "︾",
         "〈": "︿", "〉": "﹀",
         "「": "﹁", "」": "﹂",
@@ -54,4 +54,26 @@ extension String {
         "，": "︐", "：": "︓", "；": "︔",
         "？": "︖", "！": "︕",
     ]
+}
+
+extension NSMutableAttributedString {
+    func normalizeForVerticalLayoutInPlace(using verticalMap: [String: String]? = nil) {
+        guard length > 0 else { return }
+        let fullRange = NSRange(location: 0, length: length)
+        let halfToFullMap: [String: String] = [
+            "(": "（", ")": "）",
+            "[": "〔", "]": "〕",
+            "{": "｛", "}": "｝",
+            "<": "〈", ">": "〉",
+        ]
+        for (half, full) in halfToFullMap {
+            mutableString.replaceOccurrences(of: half, with: full, options: [], range: fullRange)
+        }
+        let map = verticalMap ?? String.staticVerticalMap
+        for (horizontal, vertical) in map {
+            mutableString.replaceOccurrences(of: horizontal, with: vertical, options: [], range: fullRange)
+        }
+        mutableString.replaceOccurrences(of: "——", with: "︱︱", options: [], range: fullRange)
+        mutableString.replaceOccurrences(of: "……", with: "︙︙", options: [], range: fullRange)
+    }
 }

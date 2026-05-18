@@ -91,8 +91,9 @@ enum CoreTextChunkSlicer {
               nsRange.location + nsRange.length <= attrStr.length else { return 0 }
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
         var maxHeight: CGFloat = 0
-        attrStr.enumerateAttribute(delegateKey, in: nsRange, options: []) { value, _, _ in
+        attrStr.enumerateAttribute(delegateKey, in: nsRange, options: []) { value, effectiveRange, _ in
             guard let v = value else { return }
+            guard attrStr.attribute(HTMLAttributedStringBuilder.spacerRunAttribute, at: effectiveRange.location, effectiveRange: nil) == nil else { return }
             let ctDelegate = v as! CTRunDelegate
             let ptr = CTRunDelegateGetRefCon(ctDelegate)
             let info = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
