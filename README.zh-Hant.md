@@ -88,14 +88,6 @@ open Yuedu-Reader.xcodeproj
 
 選擇 `Yuedu-Reader` scheme，建置至 iOS 模擬器或實機。
 
-> [!NOTE]
-> **背景播放設定指南 (TTS)**
-> 若要在實機上正常運作背景 TTS 聽書功能，請確保開啟了音訊權限：
-> 1. 在 Xcode 中選取專案根目錄。
-> 2. 選擇 **Signing & Capabilities** 標籤頁。
-> 3. 點擊 **+ Capability** 並新增 **Background Modes**。
-> 4. 勾選 **Audio, AirPlay, and Picture in Picture**。
-
 ```bash
 ./scripts/build.sh
 ```

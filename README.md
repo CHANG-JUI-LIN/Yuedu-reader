@@ -88,14 +88,6 @@ open Yuedu-Reader.xcodeproj
 
 Select the `Yuedu-Reader` scheme and build for an iOS simulator or device.
 
-> [!NOTE]
-> **Background Audio Setup (TTS)**
-> To enable background TTS playback on a physical device, ensure you have enabled the required capabilities:
-> 1. Select the project root in Xcode.
-> 2. Go to the **Signing & Capabilities** tab.
-> 3. Click **+ Capability** and add **Background Modes**.
-> 4. Check **Audio, AirPlay, and Picture in Picture**.
-
 You can also run the app-target build script:
 
 ```bash
