@@ -2682,11 +2682,16 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         case .curl:              transitionStyle = .pageCurl
         case .slide, .cover, .none: transitionStyle = .scroll
         }
+        let options: [UIPageViewController.OptionsKey: Any] = [
+            .spineLocation: isRTL && pageTurnStyle == .curl
+                ? UIPageViewController.SpineLocation.max.rawValue
+                : UIPageViewController.SpineLocation.min.rawValue
+        ]
         let pvc = UIPageViewController(
             transitionStyle: transitionStyle,
-            navigationOrientation: .horizontal
+            navigationOrientation: .horizontal,
+            options: options
         )
-
         // cover / none mode: disable built-in swipe gesture (use custom pan or tap for page turns).
         if pageTurnStyle == .cover || pageTurnStyle == .none {
             pvc.dataSource = nil
@@ -2976,7 +2981,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             } else {
                 direction = .forward
             }
-            if isRTL && pageTurnStyle != .curl { direction = direction == .forward ? .reverse : .forward }
+            if isRTL { direction = direction == .forward ? .reverse : .forward }
 
             pageViewController.setViewControllers([freshVC], direction: direction, animated: false)
             applyPlaybackHighlight(to: freshVC)
@@ -3000,7 +3005,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             guard let queuedPage = transitionQueue.transitionFinished(showing: visiblePage) else { return }
             var direction: UIPageViewController.NavigationDirection =
                 queuedPage >= visiblePage ? .forward : .reverse
-            if isRTL && pageTurnStyle != .curl { direction = direction == .forward ? .reverse : .forward }
+            if isRTL { direction = direction == .forward ? .reverse : .forward }
             let shouldAnimate = (pageTurnStyle != .none) && abs(queuedPage - visiblePage) == 1
             performProgrammaticTransition(
                 on: pageViewController,
@@ -3109,8 +3114,9 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             _ pvc: UIPageViewController,
             viewControllerBefore viewController: UIViewController
         ) -> UIViewController? {
-            // For RTL with .slide, we swap. For .curl, spineLocation=.max handles it natively.
-            if isRTL && pageTurnStyle != .curl {
+            // RTL: swipe left-to-right = "before" in physical gesture, but should go to NEXT page.
+            // So swap Before↔After for RTL books so the swipe direction matches the reading direction.
+            if isRTL {
                 return pageForward(from: viewController)
             }
             return pageBackward(from: viewController)
@@ -3120,7 +3126,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             _ pvc: UIPageViewController,
             viewControllerAfter viewController: UIViewController
         ) -> UIViewController? {
-            if isRTL && pageTurnStyle != .curl {
+            if isRTL {
                 return pageBackward(from: viewController)
             }
             return pageForward(from: viewController)
