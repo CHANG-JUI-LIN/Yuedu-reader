@@ -44,6 +44,15 @@ struct yuedu_appTests {
             && abs(la - ra) <= 0.01
     }
 
+    private func imageAttachments(
+        in layout: CoreTextPaginator.ChapterLayout,
+        pageIndex: Int
+    ) -> [CoreTextPaginator.RenderedAttachment] {
+        (layout.inlineAttachments[pageIndex] ?? [])
+            + (layout.blockAttachments[pageIndex] ?? [])
+            + (layout.blockRenderables[pageIndex] ?? []).compactMap(\.imageAttachment)
+    }
+
     private func loadSource(named name: String) throws -> BookSource {
         let json = try String(contentsOfFile: testBookSourcePath, encoding: .utf8)
         let sources = try JSONDecoder().decode([BookSource].self, from: Data(json.utf8))
@@ -525,8 +534,7 @@ struct yuedu_appTests {
             writingMode: .horizontal
         )
 
-        let attachments = (layout.inlineAttachments[0] ?? []) + (layout.blockAttachments[0] ?? [])
-        let attachment = try #require(attachments.first)
+        let attachment = try #require(imageAttachments(in: layout, pageIndex: 0).first)
         #expect(attachment.sourceHref == "../images/00005.jpeg")
         #expect(attachment.alt == "cover art")
         #expect(attachment.linkHref == "https://example.com/full")
@@ -569,7 +577,7 @@ struct yuedu_appTests {
             contentInsets: UIEdgeInsets(top: 20, left: 30, bottom: 20, right: 30),
             writingMode: .horizontal
         )
-        let attachment = try #require(((layout.inlineAttachments[0] ?? []) + (layout.blockAttachments[0] ?? [])).first)
+        let attachment = try #require(imageAttachments(in: layout, pageIndex: 0).first)
 
         let rendered = UIGraphicsImageRenderer(size: layout.renderSize).image { context in
             CoreTextPageView.renderPage(
@@ -1166,6 +1174,150 @@ struct yuedu_appTests {
             #expect(abs(captured.drawWidth - 220) < 1.0)
             #expect(abs(captured.drawHeight - (220.0 * 74.0 / 452.0)) < 1.0)
         }
+    }
+
+    @Test func epubNodeRendererReservesHeightForFourthWingChapterLogo() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let logo = UIGraphicsImageRenderer(size: CGSize(width: 135, height: 134)).image { ctx in
+            UIColor.systemPurple.setFill()
+            ctx.cgContext.fill(CGRect(x: 0, y: 0, width: 135, height: 134))
+        }
+        builder.imageLoader = { _ in logo }
+        let htmlConfig = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.2,
+            lineSpacing: 4,
+            paragraphSpacing: 4,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 260
+        )
+        let html = """
+        <html><head><style>
+        .class_sxf { display: block; text-align: center; text-indent: 0; }
+        .class_sxe { width: 24.03%; height: auto; }
+        .class_sxh { display: block; font-size: 1.5em; font-weight: bold; line-height: 1.2; text-align: center; text-indent: 0; margin: 0 0 0.704225em; }
+        </style></head><body>
+        <div class="class_sxf">
+            <img src="logo.png" alt="publisher logo" class="class_sxe"/>
+        </div>
+        <p class="class_sxh">CHAPTER <br/>ONE</p>
+        </body></html>
+        """
+
+        let ast = try #require(await builder.buildStyledAST(html: html, config: htmlConfig))
+        let renderer = NodeAttributedStringRenderer(
+            config: NodeAttributedStringRenderer.Config(
+                from: ReaderRenderSettings(
+                    theme: "test",
+                    textColor: .black,
+                    backgroundColor: .white,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.2,
+                    lineSpacing: 4,
+                    paragraphSpacing: 4,
+                    letterSpacing: 0,
+                    marginH: 30,
+                    marginV: 20,
+                    footerHeight: 0,
+                    contentInsets: UIEdgeInsets(top: 20, left: 30, bottom: 20, right: 30),
+                    writingMode: .horizontal
+                ),
+                textColor: .black,
+                renderWidth: 260,
+                imageLoader: { _ in logo }
+            )
+        )
+        let attributedString = await renderer.render(HTMLStyledASTRenderableNodeConverter.convert(body: ast))
+
+        var captured: ImageRunInfo?
+        attributedString.enumerateAttribute(
+            NSAttributedString.Key(kCTRunDelegateAttributeName as String),
+            in: NSRange(location: 0, length: attributedString.length),
+            options: []
+        ) { value, _, stop in
+            guard let value else { return }
+            let delegate = value as! CTRunDelegate
+            let ptr = CTRunDelegateGetRefCon(delegate)
+            captured = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
+            stop.pointee = true
+        }
+        let info = try #require(captured)
+        #expect(info.displayMode == .block)
+        #expect(abs(info.drawWidth - (260 * 0.2403)) < 1.0)
+        #expect(abs(info.drawHeight - ((260 * 0.2403) * 134 / 135)) < 1.0)
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: attributedString,
+            renderSize: CGSize(width: 320, height: 360),
+            fontSize: 18,
+            lineSpacing: 4,
+            paragraphSpacing: 4,
+            letterSpacing: 0,
+            contentInsets: UIEdgeInsets(top: 20, left: 30, bottom: 20, right: 30),
+            writingMode: .horizontal
+        )
+        let renderable = try #require(layout.blockRenderables[0]?.first(where: { $0.imageAttachment != nil }))
+        let attachment = try #require(renderable.imageAttachment)
+        #expect(attachment.sourceHref == "logo.png")
+        #expect(attachment.alt == "publisher logo")
+        #expect(renderable.rect.height >= attachment.rect.height)
+        #expect(abs(attachment.rect.midX - 160) < 1.0)
+
+        let chapterLineRect = try #require(firstLineRect(
+            containing: "CHAPTER",
+            in: layout,
+            pageIndex: 0
+        ))
+        #expect(!attachment.rect.intersects(chapterLineRect))
+        #expect(chapterLineRect.minY >= attachment.rect.maxY - 0.5)
+    }
+
+    private func firstLineRect(
+        containing needle: String,
+        in layout: CoreTextPaginator.ChapterLayout,
+        pageIndex: Int
+    ) -> CGRect? {
+        guard pageIndex < layout.pageRanges.count else { return nil }
+        let range = layout.pageRanges[pageIndex]
+        let contentPathRect = CoreTextPaginator.coreTextContentPathRect(
+            renderSize: layout.renderSize,
+            contentInsets: layout.contentInsets,
+            fontSize: layout.fontSize,
+            writingMode: layout.writingMode
+        )
+        let frame = CTFramesetterCreateFrame(
+            layout.framesetter,
+            range,
+            CGPath(rect: contentPathRect, transform: nil),
+            nil
+        )
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        for (index, line) in lines.enumerated() {
+            let lineRange = CTLineGetStringRange(line)
+            guard lineRange.location >= 0,
+                  lineRange.location + lineRange.length <= layout.attributedString.length
+            else { continue }
+            let text = (layout.attributedString.string as NSString).substring(
+                with: NSRange(location: lineRange.location, length: lineRange.length)
+            )
+            guard text.contains(needle) else { continue }
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            let width = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+            let origin = origins[index]
+            return CGRect(
+                x: contentPathRect.minX + origin.x,
+                y: layout.renderSize.height - (contentPathRect.minY + origin.y + ascent),
+                width: width,
+                height: ascent + descent
+            )
+        }
+        return nil
     }
 
     @Test func htmlBuilderDetectsSingleImagePage() async {

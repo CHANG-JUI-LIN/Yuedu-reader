@@ -1088,14 +1088,11 @@ final class HTMLAttributedStringBuilder {
         _ element: ElementNode,
         config: Config
     ) async -> NSAttributedString? {
-        let renderables = flattenRenderableNodes(element.children)
-        guard renderables.count == 1,
-              case .element(let imageElement) = renderables[0],
-              imageElement.tag == "img" || imageElement.tag == "image"
-        else {
+        guard let payload = imageOnlyBlockPayload(from: element.children) else {
             return nil
         }
 
+        let imageElement = payload.imageElement
         let src = imageSource(from: imageElement)
         let image = src.isEmpty ? nil : await imageLoader?(src)
 
@@ -1143,13 +1140,23 @@ final class HTMLAttributedStringBuilder {
         let range = NSRange(location: 0, length: placeholder.length)
         placeholder.addAttribute(
             .paragraphStyle,
-            value: makeParagraphStyle(for: segmentStyle, config: config),
+            value: imageBlockParagraphStyle(
+                base: makeParagraphStyle(for: segmentStyle, config: config),
+                metrics: imageMetrics
+            ),
             range: range
         )
         if let backgroundFillColor = segmentStyle.backgroundFillColor {
             placeholder.addAttribute(
                 Self.blockBackgroundColorAttribute,
                 value: backgroundFillColor,
+                range: range
+            )
+        }
+        if let linkHref = payload.linkHref, !linkHref.isEmpty {
+            placeholder.addAttribute(
+                Self.internalLinkAttribute,
+                value: linkHref,
                 range: range
             )
         }
@@ -1307,14 +1314,11 @@ final class HTMLAttributedStringBuilder {
     }
 
     private func extractImagePage(from body: ElementNode) async -> ImagePage? {
-        let candidates = flattenRenderableNodes(body.children)
-        guard candidates.count == 1,
-              case .element(let imageNode) = candidates[0],
-              imageNode.tag == "img" || imageNode.tag == "image"
-        else {
+        guard let payload = imagePagePayload(from: body.children) else {
             return nil
         }
 
+        let imageNode = payload.imageElement
         let src = imageSource(from: imageNode)
         guard !src.isEmpty else { return nil }
         let image = await imageLoader?(src)
@@ -1345,7 +1349,7 @@ final class HTMLAttributedStringBuilder {
             case .pageBreak:
                 continue
             case .element(let element):
-                if element.tag == "div" || element.tag == "body" || element.tag == "svg" {
+                if element.tag == "div" || element.tag == "body" || element.tag == "svg" || element.tag == "a" {
                     result.append(contentsOf: flattenRenderableNodes(element.children))
                 } else {
                     result.append(node)
@@ -1353,6 +1357,95 @@ final class HTMLAttributedStringBuilder {
             }
         }
         return result
+    }
+
+    private struct ImageOnlyBlockPayload {
+        let imageElement: ElementNode
+        let linkHref: String?
+    }
+
+    private func imageOnlyBlockPayload(
+        from nodes: [ASTNode],
+        inheritedLinkHref: String? = nil
+    ) -> ImageOnlyBlockPayload? {
+        let renderables = nonWhitespaceNodes(from: nodes)
+        guard renderables.count == 1,
+              case .element(let element) = renderables[0]
+        else {
+            return nil
+        }
+
+        if element.tag == "img" || element.tag == "image" {
+            return ImageOnlyBlockPayload(imageElement: element, linkHref: inheritedLinkHref)
+        }
+
+        if element.tag == "a" {
+            return imageOnlyBlockPayload(
+                from: element.children,
+                inheritedLinkHref: element.attributes["href"] ?? inheritedLinkHref
+            )
+        }
+
+        if element.tag == "div" || element.tag == "body" || element.tag == "svg" {
+            return imageOnlyBlockPayload(
+                from: element.children,
+                inheritedLinkHref: inheritedLinkHref
+            )
+        }
+
+        return nil
+    }
+
+    private func imagePagePayload(
+        from nodes: [ASTNode],
+        inheritedLinkHref: String? = nil
+    ) -> ImageOnlyBlockPayload? {
+        let renderables = nonWhitespaceNodes(from: nodes)
+        guard renderables.count == 1,
+              case .element(let element) = renderables[0]
+        else {
+            return nil
+        }
+
+        if element.tag == "img" || element.tag == "image" {
+            return ImageOnlyBlockPayload(imageElement: element, linkHref: inheritedLinkHref)
+        }
+
+        if element.tag == "a" {
+            return imagePagePayload(
+                from: element.children,
+                inheritedLinkHref: element.attributes["href"] ?? inheritedLinkHref
+            )
+        }
+
+        if element.tag == "body" || element.tag == "svg" || isPlainImagePageWrapper(element) {
+            return imagePagePayload(
+                from: element.children,
+                inheritedLinkHref: inheritedLinkHref
+            )
+        }
+
+        return nil
+    }
+
+    private func nonWhitespaceNodes(from nodes: [ASTNode]) -> [ASTNode] {
+        nodes.compactMap { node in
+            switch node {
+            case .text(let textNode):
+                return textNode.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : node
+            case .lineBreak, .pageBreak:
+                return nil
+            case .element:
+                return node
+            }
+        }
+    }
+
+    private func isPlainImagePageWrapper(_ element: ElementNode) -> Bool {
+        guard element.tag == "div" else { return false }
+        return element.id.isEmpty
+            && element.classes.isEmpty
+            && element.attributes["style"] == nil
     }
 
     private func imageSource(from element: ElementNode) -> String {
@@ -1609,6 +1702,14 @@ final class HTMLAttributedStringBuilder {
         let totalWidth: CGFloat
         let ascent: CGFloat
         let descent: CGFloat
+    }
+
+    private func imageBlockParagraphStyle(base: NSParagraphStyle, metrics: ImageMetrics) -> NSParagraphStyle {
+        let paragraph = base.mutableCopy() as! NSMutableParagraphStyle
+        let reservedLineHeight = ceil(max(paragraph.minimumLineHeight, metrics.ascent + metrics.descent))
+        paragraph.minimumLineHeight = reservedLineHeight
+        paragraph.maximumLineHeight = reservedLineHeight
+        return paragraph
     }
 
     private func resolvedImageMetrics(

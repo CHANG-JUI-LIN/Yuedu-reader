@@ -216,6 +216,7 @@ struct NodeAttributedStringRenderer {
         }
 
         let hasBlockChildren = children.contains { child in
+            if case .paragraph = child { return true }
             if case .block = child { return true }
             if case .heading = child { return true }
             if case .blockquote = child { return true }
@@ -577,7 +578,11 @@ struct NodeAttributedStringRenderer {
             )
         )
         let range = NSRange(location: 0, length: placeholder.length)
-        placeholder.addAttribute(.paragraphStyle, value: blockCtx.paragraphStyle, range: range)
+        placeholder.addAttribute(
+            .paragraphStyle,
+            value: imageBlockParagraphStyle(base: blockCtx.paragraphStyle, metrics: imageMetrics),
+            range: range
+        )
         if let href = payload.href {
             placeholder.addAttribute(HTMLAttributedStringBuilder.internalLinkAttribute, value: href, range: range)
         }
@@ -626,6 +631,14 @@ struct NodeAttributedStringRenderer {
         let range = NSRange(location: 0, length: placeholder.length)
         placeholder.addAttributes(ctx.baseAttributes, range: range)
         return placeholder
+    }
+
+    private func imageBlockParagraphStyle(base: NSParagraphStyle, metrics: ImageMetrics) -> NSParagraphStyle {
+        let paragraph = base.mutableCopy() as! NSMutableParagraphStyle
+        let reservedLineHeight = ceil(max(paragraph.minimumLineHeight, metrics.ascent + metrics.descent))
+        paragraph.minimumLineHeight = reservedLineHeight
+        paragraph.maximumLineHeight = reservedLineHeight
+        return paragraph
     }
 
     private func makeInlineAnnotationPlaceholder(
@@ -751,8 +764,18 @@ struct NodeAttributedStringRenderer {
     }
 
     private func singleImagePayload(from children: [RenderableNode]) -> SingleImagePayload? {
-        guard children.count == 1 else { return nil }
-        return unwrapSingleImage(from: children[0])
+        let renderableChildren = children.filter { child in
+            switch child {
+            case .text(let text):
+                return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            case .lineBreak, .pageBreak:
+                return false
+            default:
+                return true
+            }
+        }
+        guard renderableChildren.count == 1 else { return nil }
+        return unwrapSingleImage(from: renderableChildren[0])
     }
 
     private func unwrapSingleImage(
