@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <package version="2.0" unique-identifier="bookid" xmlns="http://www.idpf.org/2007/opf">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-    <dc:identifier id="bookid">urn:uuid:block-image-reserves-height</dc:identifier>
-    <dc:title>Block Image Reserves Height</dc:title>
+    <dc:identifier id="bookid">urn:uuid:centered-percent-image</dc:identifier>
+    <dc:title>Centered Percent Image</dc:title>
     <dc:language>en</dc:language>
     <dc:creator>Yuedu Regression Fixtures</dc:creator>
   </metadata>
@@ -10,7 +10,7 @@
     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
     <item id="style" href="Styles/style.css" media-type="text/css"/>
     <item id="chapter" href="Text/chapter.xhtml" media-type="application/xhtml+xml"/>
-    <item id="logo" href="Images/logo.png" media-type="image/png"/>
+    <item id="image" href="Images/marker.png" media-type="image/png"/>
   </manifest>
   <spine toc="ncx">
     <itemref idref="chapter"/>

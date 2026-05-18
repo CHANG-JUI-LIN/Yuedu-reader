@@ -1,0 +1,20 @@
+body {
+  margin: 0;
+}
+
+h1 {
+  text-align: center;
+}
+
+.image-block {
+  display: block;
+  text-align: center;
+  text-indent: 0;
+  margin: 1em 0;
+}
+
+.percent-image {
+  width: 40%;
+  height: auto;
+}
+

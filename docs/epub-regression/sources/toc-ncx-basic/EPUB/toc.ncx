@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ncx version="2005-1" xmlns="http://www.daisy.org/z3986/2005/ncx/">
+  <head>
+    <meta name="dtb:uid" content="urn:uuid:toc-ncx-basic"/>
+    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:totalPageCount" content="0"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+  </head>
+  <docTitle><text>TOC NCX Basic</text></docTitle>
+  <navMap>
+    <navPoint id="chapter1" playOrder="1">
+      <navLabel><text>Chapter One</text></navLabel>
+      <content src="Text/chapter-1.xhtml"/>
+    </navPoint>
+    <navPoint id="chapter2" playOrder="2">
+      <navLabel><text>Chapter Two</text></navLabel>
+      <content src="Text/chapter-2.xhtml"/>
+    </navPoint>
+  </navMap>
+</ncx>

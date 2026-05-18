@@ -1,0 +1,11 @@
+body {
+  margin: 0;
+}
+
+.narrow-divider {
+  display: block;
+  border-top: 2px solid #444444;
+  width: 45%;
+  margin: 1.25em auto;
+}
+

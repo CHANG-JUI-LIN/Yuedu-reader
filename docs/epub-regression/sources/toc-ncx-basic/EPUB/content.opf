@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package version="2.0" unique-identifier="bookid" xmlns="http://www.idpf.org/2007/opf">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+    <dc:identifier id="bookid">urn:uuid:toc-ncx-basic</dc:identifier>
+    <dc:title>TOC NCX Basic</dc:title>
+    <dc:language>en</dc:language>
+    <dc:creator>Yuedu Regression Fixtures</dc:creator>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="style" href="Styles/style.css" media-type="text/css"/>
+    <item id="chapter1" href="Text/chapter-1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="chapter2" href="Text/chapter-2.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="chapter1"/>
+    <itemref idref="chapter2"/>
+  </spine>
+</package>
