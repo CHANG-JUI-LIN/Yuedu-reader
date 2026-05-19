@@ -41,6 +41,9 @@ struct DSSettingsRow: View {
             HStack {
                 Label(title, systemImage: icon)
                     .foregroundColor(DSColor.textPrimary)
+                    .labelStyle(
+                            IconConsistentLabelStyle()
+                        )
                 Spacer()
                 if let detail {
                     Text(detail)
@@ -51,6 +54,18 @@ struct DSSettingsRow: View {
                     .font(DSFont.caption)
                     .foregroundColor(DSColor.textSecondary)
             }
+        }
+    }
+}
+
+//😉
+struct IconConsistentLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.icon
+                .font(.system(size: 17, weight: .medium))
+                .frame(width: 28, height: 28)
+            configuration.title
         }
     }
 }
