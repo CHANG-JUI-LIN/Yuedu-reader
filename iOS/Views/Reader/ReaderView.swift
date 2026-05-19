@@ -2547,7 +2547,7 @@ private struct VerticalTOCView: View {
                                     ? .accentColor
                                     : (chapter.level == 0 ? .primary : .secondary)
                                 )
-                                .lineLimit(6)
+                                .lineLimit(1)
 
                             Spacer()
 
@@ -2584,7 +2584,6 @@ private struct VerticalTOCView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 8)
             }
-            .environment(\.layoutDirection, .rightToLeft)
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     if chapters.first(where: { $0.index == currentIndex }) != nil {
