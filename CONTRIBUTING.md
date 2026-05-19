@@ -8,7 +8,7 @@ Thanks for contributing! Here is how to get started.
 2. Make your changes. Follow the project conventions below.
 3. Build and verify locally:
    ```bash
-   xcodebuild -project "yuedu app.xcodeproj" -scheme "yuedu app" -destination 'platform=iOS Simulator' build
+   xcodebuild -project Yuedu-Reader.xcodeproj -scheme "yuedu app" -destination 'platform=iOS Simulator' build
    ```
 4. Open a PR with a clear title and description.
 5. Keep PRs focused — one logical change per PR.
