@@ -2484,33 +2484,60 @@ private struct TOCBookHeader: View {
     let bookTitle: String
     let currentPage: Int
     let totalPages: Int
+    let tocLayoutMode: TOCLayoutMode
     let onClose: () -> Void
 
+    private var isVertical: Bool { tocLayoutMode == .verticalRTLColumns }
+
+    private var coverSize: CGSize {
+        isVertical ? CGSize(width: 48, height: 72) : CGSize(width: 56, height: 84)
+    }
+
+    private var titleFont: Font {
+        .system(size: isVertical ? 18 : 20, weight: .semibold)
+    }
+
+    private var progressFont: Font {
+        .system(size: isVertical ? 15 : 16, weight: .regular)
+    }
+
+    private var headerTopPadding: CGFloat {
+        isVertical ? 18 : 24
+    }
+
+    private var headerBottomPadding: CGFloat {
+        isVertical ? 12 : 18
+    }
+
+    private var closeSize: CGFloat {
+        isVertical ? 52 : 54
+    }
+
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .center, spacing: 14) {
             if let coverPath = coverImagePath,
                let image = loadCoverImage(filename: coverPath) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 56, height: 84)
+                    .frame(width: coverSize.width, height: coverSize.height)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                     .shadow(color: .black.opacity(0.16), radius: 6, x: 0, y: 3)
             } else {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(Color.secondary.opacity(0.15))
-                    .frame(width: 56, height: 84)
+                    .frame(width: coverSize.width, height: coverSize.height)
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(bookTitle)
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(titleFont)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
                 if totalPages > 0 {
                     Text(String(format: localized("第%d頁 / 共%d頁"), currentPage + 1, totalPages))
-                        .font(.system(size: 17, weight: .regular))
+                        .font(progressFont)
                         .foregroundColor(.secondary)
                 }
             }
@@ -2519,17 +2546,17 @@ private struct TOCBookHeader: View {
 
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: 22, weight: .regular))
                     .foregroundColor(.secondary)
-                    .frame(width: 40, height: 40)
-                    .background(.ultraThinMaterial)
+                    .frame(width: closeSize, height: closeSize)
+                    .background(Color.primary.opacity(0.06))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 30)
-        .padding(.top, 24)
-        .padding(.bottom, 18)
+        .padding(.top, headerTopPadding)
+        .padding(.bottom, headerBottomPadding)
     }
 
     private func loadCoverImage(filename: String) -> UIImage? {
@@ -2543,7 +2570,7 @@ private struct TOCBookHeader: View {
 // MARK: - Combined Bookmarks & TOC Panel
 
 private enum VerticalTOCLayout {
-    static let columnWidth: CGFloat = 48
+    static let columnWidth: CGFloat = 46
     static let textWidth: CGFloat = 24
     static let fontSize: CGFloat = 17
     static let glyphHeight: CGFloat = 21
@@ -2656,7 +2683,7 @@ private struct VerticalTOCColumn: View {
                         cornerRadius: VerticalTOCLayout.selectedCornerRadius,
                         style: .continuous
                     )
-                    .fill(isSelected ? Color.primary.opacity(0.06) : Color.clear)
+                    .fill(isSelected ? Color.primary.opacity(0.07) : Color.clear)
                 }
             }
             .overlay(alignment: .leading) {
@@ -2757,6 +2784,7 @@ struct ReaderMenuView: View {
                     bookTitle: bookTitle,
                     currentPage: currentPage,
                     totalPages: totalPages,
+                    tocLayoutMode: tocLayoutMode,
                     onClose: { isPresented = false }
                 )
 
@@ -2801,10 +2829,10 @@ struct ReaderMenuView: View {
                     }
                 } label: {
                     Text(tab.title)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(selectedTab == tab ? .white : .primary)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 9)
                         .background(
                             selectedTab == tab ? Color.accentColor : Color.secondary.opacity(0.10)
                         )
@@ -2816,7 +2844,7 @@ struct ReaderMenuView: View {
             Spacer()
         }
         .padding(.horizontal, 30)
-        .padding(.vertical, 8)
+        .padding(.vertical, 12)
     }
 
     private var tocContent: some View {
@@ -2838,25 +2866,21 @@ struct ReaderMenuView: View {
                                 ? .system(size: 19, weight: .semibold)
                                 : .system(size: 16, weight: .regular)
                             )
-                            .foregroundColor(chapter.level == 0 ? .primary : .secondary)
+                            .foregroundColor(.primary)
                             .lineLimit(2)
 
                         Spacer()
 
                         Text("\(chapter.index + 1)")
                             .font(.system(size: 18, weight: .regular, design: .monospaced))
-                            .foregroundColor(
-                                chapter.index == currentIndex
-                                ? Color.accentColor
-                                : Color.secondary
-                            )
+                            .foregroundColor(.secondary)
                     }
-                    .frame(height: 66)
+                    .frame(height: 64)
                     .padding(.horizontal, 30)
                     .background {
                         if chapter.index == currentIndex {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.primary.opacity(0.06))
+                                .fill(Color.primary.opacity(0.07))
                         }
                     }
                 }
