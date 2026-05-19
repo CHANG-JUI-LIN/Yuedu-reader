@@ -2525,83 +2525,79 @@ private struct TOCBookHeader: View {
 
 // MARK: - Combined Bookmarks & TOC Panel
 
-private struct VerticalChapterText: View {
-    let text: String
-    let font: Font
-    let color: Color
-
-    var body: some View {
-        VStack(spacing: 1) {
-            ForEach(Array(text.enumerated()), id: \.offset) { _, char in
-                Text(String(char))
-                    .font(font)
-                    .foregroundColor(color)
-            }
-        }
-    }
-}
-
 private struct VerticalTOCView: View {
     let chapters: [BookChapter]
     let currentIndex: Int
     let onSelectChapter: (Int) -> Void
 
+    private var reversedChapters: [BookChapter] {
+        Array(chapters.reversed())
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 0) {
-                    ForEach(chapters.reversed()) { chapter in
-                        let isSelected = chapter.index == currentIndex
-                        VStack(spacing: 0) {
-                            VerticalChapterText(
-                                text: chapter.title,
-                                font: chapter.level == 0
-                                    ? .system(size: 16, weight: .medium)
-                                    : .system(size: 14),
-                                color: isSelected
-                                    ? .accentColor
-                                    : (chapter.level == 0 ? .primary : .secondary)
-                            )
-
-                            Spacer(minLength: 12)
-
-                            Text("\(chapter.index + 1)")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(isSelected ? .accentColor : .secondary)
-                        }
-                        .padding(.vertical, 16)
-                        .padding(.horizontal, 10)
-                        .frame(minHeight: 0)
-                        .background(
-                            isSelected ? DSColor.accentLight : Color.clear
-                        )
-                        .overlay(alignment: .leading) {
-                            if isSelected {
-                                Rectangle()
-                                    .fill(Color.accentColor)
-                                    .frame(width: 3)
-                            }
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            onSelectChapter(chapter.index)
-                        }
-                        .id(chapter.index)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
+                columnsView
+                .padding(.horizontal, 24)
             }
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     if chapters.first(where: { $0.index == currentIndex }) != nil {
                         withAnimation {
-                            proxy.scrollTo(currentIndex, anchor: .center)
+                            proxy.scrollTo(currentIndex, anchor: .trailing)
                         }
                     }
                 }
             }
+        }
+    }
+
+    private var columnsView: some View {
+        HStack(spacing: 8) {
+            ForEach(reversedChapters) { chapter in
+                chapterColumn(chapter)
+                    .id(chapter.index)
+            }
+        }
+    }
+
+    private func chapterColumn(_ chapter: BookChapter) -> some View {
+        let isSelected = chapter.index == currentIndex
+        let fontSize: CGFloat = chapter.level == 0 ? 22 : 18
+        let weight: UIFont.Weight = isSelected ? .bold : .regular
+        let color: UIColor = isSelected ? .systemBlue : .label
+
+        return VStack(spacing: 12) {
+            CoreTextVerticalLabel(
+                text: chapter.title,
+                fontSize: fontSize,
+                weight: weight,
+                textColor: color,
+                maxCharacters: 28
+            )
+            .frame(width: 56)
+
+            Text("\(chapter.index + 1)")
+                .font(.system(size: 14, design: .monospaced))
+                .foregroundColor(isSelected ? .accentColor : .secondary)
+        }
+        .frame(width: 76)
+        .padding(.vertical, 18)
+        .padding(.horizontal, 6)
+        .background(
+            isSelected ? DSColor.accentLight : Color.clear
+        )
+        .overlay(alignment: .leading) {
+            if isSelected {
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(width: 4)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onSelectChapter(chapter.index)
         }
     }
 }
