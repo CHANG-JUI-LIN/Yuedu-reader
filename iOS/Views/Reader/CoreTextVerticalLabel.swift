@@ -49,39 +49,33 @@ final class CoreTextVerticalLabelView: UIView {
         let font = UIFont.systemFont(ofSize: fontSize, weight: weight)
         let ctFont = font as CTFont
 
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.lineBreakMode = .byCharWrapping
-
         let attr = NSMutableAttributedString(
             string: text,
             attributes: [
-                .font: ctFont,
-                .foregroundColor: textColor.cgColor,
-                .paragraphStyle: paragraph
+                kCTFontAttributeName as NSAttributedString.Key: ctFont,
+                kCTForegroundColorAttributeName as NSAttributedString.Key: textColor.cgColor,
+                kCTVerticalFormsAttributeName as NSAttributedString.Key: true
             ]
-        )
-
-        attr.addAttribute(
-            kCTVerticalFormsAttributeName as NSAttributedString.Key,
-            value: true,
-            range: NSRange(location: 0, length: attr.length)
         )
 
         let framesetter = CTFramesetterCreateWithAttributedString(attr)
 
-        let path = CGMutablePath()
-        path.addRect(bounds)
+        let columnWidth = fontSize + 8
+        let drawRect = CGRect(
+            x: bounds.width - columnWidth,
+            y: 0,
+            width: columnWidth,
+            height: bounds.height
+        )
 
-        let frameAttributes: CFDictionary = [
-            kCTFrameProgressionAttributeName: CTFrameProgression.rightToLeft.rawValue
-        ] as CFDictionary
+        let path = CGMutablePath()
+        path.addRect(drawRect)
 
         let frame = CTFramesetterCreateFrame(
             framesetter,
             CFRange(location: 0, length: attr.length),
             path,
-            frameAttributes
+            nil
         )
 
         CTFrameDraw(frame, context)

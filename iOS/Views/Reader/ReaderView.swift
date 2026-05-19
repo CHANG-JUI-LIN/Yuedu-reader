@@ -2539,6 +2539,7 @@ private struct VerticalTOCView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 columnsView
                 .padding(.horizontal, 24)
+                .padding(.top, 28)
             }
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -2553,7 +2554,7 @@ private struct VerticalTOCView: View {
     }
 
     private var columnsView: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .top, spacing: 8) {
             ForEach(reversedChapters) { chapter in
                 chapterColumn(chapter)
                     .id(chapter.index)
@@ -2567,7 +2568,7 @@ private struct VerticalTOCView: View {
         let weight: UIFont.Weight = isSelected ? .bold : .regular
         let color: UIColor = isSelected ? .systemBlue : .label
 
-        return VStack(spacing: 12) {
+        return VStack(alignment: .center, spacing: 0) {
             CoreTextVerticalLabel(
                 text: chapter.title,
                 fontSize: fontSize,
@@ -2575,15 +2576,17 @@ private struct VerticalTOCView: View {
                 textColor: color,
                 maxCharacters: 28
             )
-            .frame(width: 56)
+            .frame(width: 40, height: 420, alignment: .top)
+
+            Spacer(minLength: 8)
 
             Text("\(chapter.index + 1)")
                 .font(.system(size: 14, design: .monospaced))
                 .foregroundColor(isSelected ? .accentColor : .secondary)
         }
-        .frame(width: 76)
-        .padding(.vertical, 18)
-        .padding(.horizontal, 6)
+        .frame(minWidth: 76, maxHeight: .infinity, alignment: .top)
+        .padding(.top, 24)
+        .padding(.bottom, 20)
         .background(
             isSelected ? DSColor.accentLight : Color.clear
         )
