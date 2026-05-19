@@ -1502,11 +1502,12 @@ final class CoreTextPaginator {
                         // lineWidth = inline (Y) extent; ascent/descent = block (X) extent
                         let blockExtent = lineAscent + abs(lineDescent)
                         lineHeight = lineWidth
-                        blockHeight = max(lineWidth,
-                            (groups[groupIndex].style.blockImage?.drawSize.height
-                                ?? groups[groupIndex].style.height ?? 0)
-                                + groups[groupIndex].style.paddingTop
-                                + groups[groupIndex].style.paddingBottom)
+                        blockHeight = max(
+                            lineWidth,
+                            groups[groupIndex].style.blockImage?.drawSize.height
+                                ?? groups[groupIndex].style.height
+                                ?? lineWidth
+                        )
                         rectW = max(preferredWidth,
                             groups[groupIndex].style.blockImage?.drawSize.width
                             ?? blockExtent)
@@ -1514,14 +1515,15 @@ final class CoreTextPaginator {
                         uiY = renderSize.height - adjustedOrigin.y
                     } else {
                         lineHeight = max(paragraphStyle.minimumLineHeight, lineAscent + lineDescent)
-                        blockHeight = max(lineHeight,
-                            (groups[groupIndex].style.blockImage?.drawSize.height
-                                ?? groups[groupIndex].style.height ?? 0)
-                                + groups[groupIndex].style.paddingTop
-                                + groups[groupIndex].style.paddingBottom)
-                        uiY = renderSize.height - (adjustedOrigin.y + lineAscent) - groups[groupIndex].style.paddingTop
+                        blockHeight = max(
+                            lineHeight,
+                            groups[groupIndex].style.blockImage?.drawSize.height
+                                ?? groups[groupIndex].style.height
+                                ?? lineHeight
+                        )
                         rectX = blockX
                         rectW = preferredWidth
+                        uiY = renderSize.height - (adjustedOrigin.y + lineAscent)
                     }
                     let rect = CGRect(
                         x: rectX,
@@ -1637,29 +1639,26 @@ final class CoreTextPaginator {
             }
         }
 
-        let constrainedWidth = max(1, preferredWidth - style.paddingLeft - style.paddingRight)
+        let constrainedWidth = max(1, preferredWidth)
         let blockHeight: CGFloat
         if let blockImage = style.blockImage {
             blockHeight = max(blockImage.drawSize.height, style.height ?? 0)
-                + style.paddingTop
-                + style.paddingBottom
         } else {
             let measured = measureHeight(
                 for: attrStr.attributedSubstring(from: mergedRange),
                 constrainedWidth: constrainedWidth
             )
             blockHeight = max(measured, style.height ?? 0)
-                + style.paddingTop
-                + style.paddingBottom
         }
 
         let uiTop = (renderSize.height - contentPathRect.maxY) + style.visualOffsetBefore
-        return CGRect(
+        let blockRect = CGRect(
             x: blockX,
             y: uiTop,
             width: preferredWidth,
             height: max(1, blockHeight)
         )
+        return blockRect
     }
 
     private static func makeBlockImageAttachment(
@@ -1813,10 +1812,9 @@ final class CoreTextPaginator {
         }
 
         let hasExplicitTextGeometry =
-            style.backgroundFillColor != nil
-            || style.width != nil
+            style.width != nil
             || style.isHorizontallyCentered
-            || style.visualOffsetBefore > 0
+            || style.height != nil
         return hasExplicitTextGeometry ? sanitized : nil
     }
 

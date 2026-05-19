@@ -238,7 +238,7 @@ enum MarkdownRenderableNodeConverter {
             return flatten(base) + text
         case .anchorTarget(_, let child):
             return topLevelText(for: child)
-        case .image(_, let alt, _):
+        case .image(_, let alt, _, _):
             return alt
         case .rawHTML(let html):
             return html

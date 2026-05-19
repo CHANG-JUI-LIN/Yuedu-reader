@@ -70,6 +70,15 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             let alt = attributes["alt"] ?? ""
             node = .image(src: src, alt: alt, style: style)
 
+        case "svg":
+            let alt = attributes["aria-label"] ?? attributes["alt"] ?? ""
+            let imageNode: RenderableNode = .image(src: "svg:", alt: alt, style: style, svgContent: svgContent)
+            if resolvedStyle.isBlock {
+                node = .block(tag: "svg", children: [imageNode], style: style)
+            } else {
+                node = imageNode
+            }
+
         default:
             if resolvedStyle.isBlock {
                 node = .block(tag: tag, children: mappedChildren, style: style)
@@ -169,11 +178,6 @@ private extension RenderStyle {
             borderLeftColor: s.borderLeftColor.flatMap { RenderColor(uiColor: $0) },
             borderRightColor: s.borderRightColor.flatMap { RenderColor(uiColor: $0) },
             isHorizontallyCentered: s.isHorizontallyCentered,
-            firstLetterFontSizeMultiplier: s.firstLetterFontSizeMultiplier,
-            firstLetterFontWeight: s.firstLetterFontWeight,
-            firstLetterColor: s.firstLetterColor.flatMap { RenderColor(uiColor: $0) },
-            underline: s.underline,
-            strikethrough: s.strikethrough,
             isVerticalWritingMode: s.isVerticalWritingMode
         )
     }

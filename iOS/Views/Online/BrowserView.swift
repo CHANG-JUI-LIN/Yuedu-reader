@@ -978,7 +978,7 @@ struct BrowserView: View {
         }
         .disabled(isExtracting)
         .padding(.trailing, 16)
-        .padding(.bottom, 28)
+        .padding(.bottom, 128)
     }
 
     // MARK: Address Bar

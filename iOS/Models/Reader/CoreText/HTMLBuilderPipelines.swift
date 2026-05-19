@@ -78,6 +78,15 @@ final class HTMLBuilderCoreTextRenderer {
                 value: config.backgroundColor,
                 range: NSRange(location: 0, length: mutable.length)
             )
+            mutable.enumerateAttribute(
+                HTMLAttributedStringBuilder.blockBackgroundColorAttribute,
+                in: NSRange(location: 0, length: mutable.length),
+                options: []
+            ) { value, range, _ in
+                if value != nil {
+                    mutable.removeAttribute(.backgroundColor, range: range)
+                }
+            }
         }
 
         let anchorOffsets = collectAnchorOffsets(mutable)

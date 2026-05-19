@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1E90D290C84CF7DFB61183AB /* yuedu_app_Widget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 4E4E1DDA4EE35F67778097F0 /* yuedu_app_Widget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		2EE60C00FD763A43CFCAC2A0 /* yuedu_app_ShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 81F92752186D8D0E971A17B9 /* yuedu_app_ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1E90D290C84CF7DFB61183AB /* yuedu_app_Widget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4E4E1DDA4EE35F67778097F0 /* yuedu_app_Widget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		2EE60C00FD763A43CFCAC2A0 /* yuedu_app_ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 81F92752186D8D0E971A17B9 /* yuedu_app_ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3021769152B9F41FC1F2CBA5 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 489E6E08B47AA3AC9F140CAD /* SwiftSoup */; };
 		460274852F710D7500486947 /* ReadiumAdapterLCPSQLite in Frameworks */ = {isa = PBXBuildFile; productRef = 460274842F710D7500486947 /* ReadiumAdapterLCPSQLite */; };
 		463C854D2FA4F48E008F9AD7 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 463C854C2FA4F48E008F9AD7 /* GoogleSignIn */; };
@@ -51,24 +51,24 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		5FFE0D9ED24A85A7ACED161A /* Embed App Extensions */ = {
+		5FFE0D9ED24A85A7ACED161A /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				1E90D290C84CF7DFB61183AB /* yuedu_app_Widget.appex in Embed App Extensions */,
-				2EE60C00FD763A43CFCAC2A0 /* yuedu_app_ShareExtension.appex in Embed App Extensions */,
+				1E90D290C84CF7DFB61183AB /* yuedu_app_Widget.appex in Embed Foundation Extensions */,
+				2EE60C00FD763A43CFCAC2A0 /* yuedu_app_ShareExtension.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		460D36592F51C5B8006E774C /* Yuedu-Reader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "Yuedu-Reader.app"; path = "yuedu app.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		460D36662F51C5B9006E774C /* Yuedu-ReaderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "Yuedu-ReaderTests.xctest"; path = "yuedu appTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		460D36702F51C5B9006E774C /* Yuedu-ReaderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = "Yuedu-ReaderUITests.xctest"; path = "yuedu appUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		460D36592F51C5B8006E774C /* yuedu app.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "yuedu app.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		460D36662F51C5B9006E774C /* yuedu appTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "yuedu appTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		460D36702F51C5B9006E774C /* yuedu appUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "yuedu appUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E4E1DDA4EE35F67778097F0 /* yuedu_app_Widget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = yuedu_app_Widget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		81F92752186D8D0E971A17B9 /* yuedu_app_ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = yuedu_app_ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -187,9 +187,9 @@
 		460D365A2F51C5B8006E774C /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				460D36592F51C5B8006E774C /* Yuedu-Reader.app */,
-				460D36662F51C5B9006E774C /* Yuedu-ReaderTests.xctest */,
-				460D36702F51C5B9006E774C /* Yuedu-ReaderUITests.xctest */,
+				460D36592F51C5B8006E774C /* yuedu app.app */,
+				460D36662F51C5B9006E774C /* yuedu appTests.xctest */,
+				460D36702F51C5B9006E774C /* yuedu appUITests.xctest */,
 				4E4E1DDA4EE35F67778097F0 /* yuedu_app_Widget.appex */,
 				81F92752186D8D0E971A17B9 /* yuedu_app_ShareExtension.appex */,
 			);
@@ -233,7 +233,7 @@
 				460D36552F51C5B8006E774C /* Sources */,
 				460D36562F51C5B8006E774C /* Frameworks */,
 				460D36572F51C5B8006E774C /* Resources */,
-				5FFE0D9ED24A85A7ACED161A /* Embed App Extensions */,
+				5FFE0D9ED24A85A7ACED161A /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -256,7 +256,7 @@
 				463C854E2FA4F493008F9AD7 /* GoogleSignInSwift */,
 			);
 			productName = "yuedu app";
-			productReference = 460D36592F51C5B8006E774C /* Yuedu-Reader.app */;
+			productReference = 460D36592F51C5B8006E774C /* yuedu app.app */;
 			productType = "com.apple.product-type.application";
 		};
 		460D36652F51C5B9006E774C /* yuedu appTests */ = {
@@ -277,7 +277,7 @@
 			);
 			name = "yuedu appTests";
 			productName = "yuedu appTests";
-			productReference = 460D36662F51C5B9006E774C /* Yuedu-ReaderTests.xctest */;
+			productReference = 460D36662F51C5B9006E774C /* yuedu appTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		460D366F2F51C5B9006E774C /* yuedu appUITests */ = {
@@ -298,7 +298,7 @@
 			);
 			name = "yuedu appUITests";
 			productName = "yuedu appUITests";
-			productReference = 460D36702F51C5B9006E774C /* Yuedu-ReaderUITests.xctest */;
+			productReference = 460D36702F51C5B9006E774C /* yuedu appUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		C7BCB242F4C3B08FEE1E0216 /* Yuedu-Reader ShareExtension */ = {
@@ -329,7 +329,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2620;
-				LastUpgradeCheck = 2630;
+				LastUpgradeCheck = 2650;
 				TargetAttributes = {
 					460D36582F51C5B8006E774C = {
 						CreatedOnToolsVersion = 26.2;
@@ -482,7 +482,6 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = "Widget/Yuedu-Reader-Widget.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 65DHH783G3;
 				EXECUTABLE_NAME = yuedu_app_Widget;
 				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/Widget/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -511,6 +510,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -541,6 +541,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -575,6 +576,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -605,6 +607,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -638,7 +641,6 @@
 				CODE_SIGN_ENTITLEMENTS = "iOS/Yuedu-Reader.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_APPINTENTS_DEPLOYMENT_AWARE_PROCESSING = NO;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -685,7 +687,6 @@
 				CODE_SIGN_ENTITLEMENTS = "iOS/Yuedu-Reader.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_APPINTENTS_DEPLOYMENT_AWARE_PROCESSING = NO;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -730,7 +731,6 @@
 				CODE_SIGN_ENTITLEMENTS = "iOS/Yuedu-Reader.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
@@ -757,7 +757,6 @@
 				CODE_SIGN_ENTITLEMENTS = "iOS/Yuedu-Reader.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
@@ -783,7 +782,6 @@
 				CODE_SIGN_ENTITLEMENTS = "iOS/Yuedu-Reader.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -812,7 +810,6 @@
 				CODE_SIGN_ENTITLEMENTS = "iOS/Yuedu-Reader.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -839,7 +836,6 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = "ShareExtension/Yuedu-Reader-ShareExtension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 65DHH783G3;
 				EXECUTABLE_NAME = yuedu_app_ShareExtension;
 				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/ShareExtension/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -869,7 +865,6 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = "ShareExtension/Yuedu-Reader-ShareExtension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 65DHH783G3;
 				EXECUTABLE_NAME = yuedu_app_ShareExtension;
 				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/ShareExtension/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -898,7 +893,6 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = "Widget/Yuedu-Reader-Widget.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 65DHH783G3;
 				EXECUTABLE_NAME = yuedu_app_Widget;
 				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/Widget/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";

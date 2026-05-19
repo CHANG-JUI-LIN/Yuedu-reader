@@ -60,7 +60,8 @@ public indirect enum RenderableNode: Sendable {
     // MARK: Media
 
     /// Image. src is a relative or absolute path; imageLoader handles async loading at the Renderer stage.
-    case image(src: String, alt: String, style: RenderStyle = .none)
+    /// svgContent carries inline SVG XML for rasterization instead of src loading.
+    case image(src: String, alt: String, style: RenderStyle = .none, svgContent: String? = nil)
 
     // MARK: Special
 
@@ -131,6 +132,7 @@ public struct RenderStyle: Sendable {
     public var firstLetterColor: RenderColor?
     public var underline: Bool
     public var strikethrough: Bool
+    public var borderRadius: CGFloat
     public var isInlineAnnotation: Bool
     public var isVerticalWritingMode: Bool
 
@@ -173,7 +175,8 @@ public struct RenderStyle: Sendable {
         underline: Bool = false,
         strikethrough: Bool = false,
         isInlineAnnotation: Bool = false,
-        isVerticalWritingMode: Bool = false
+        isVerticalWritingMode: Bool = false,
+        borderRadius: CGFloat = 0
     ) {
         self.fontSizeMultiplier = fontSizeMultiplier
         self.fontFamilies = fontFamilies
@@ -212,6 +215,7 @@ public struct RenderStyle: Sendable {
         self.firstLetterColor = firstLetterColor
         self.underline = underline
         self.strikethrough = strikethrough
+        self.borderRadius = borderRadius
         self.isInlineAnnotation = isInlineAnnotation
         self.isVerticalWritingMode = isVerticalWritingMode
     }

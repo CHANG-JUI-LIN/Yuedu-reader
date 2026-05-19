@@ -755,16 +755,8 @@ struct yuedu_appTests {
         let box = try #require(layout.blockRenderables[0]?.first(where: { $0.style.backgroundFillColor != nil }))
         let fillColor = try #require(box.style.backgroundFillColor)
         #expect(colorsApproximatelyEqual(fillColor, UIColor(red: 246.0 / 255.0, green: 246.0 / 255.0, blue: 246.0 / 255.0, alpha: 1)))
-        if let text = box.attributedText {
-            var hasLineBackground = false
-            text.enumerateAttribute(.backgroundColor, in: NSRange(location: 0, length: text.length)) { value, _, stop in
-                if value != nil {
-                    hasLineBackground = true
-                    stop.pointee = true
-                }
-            }
-            #expect(!hasLineBackground)
-        }
+        #expect(box.attributedText == nil)
+        #expect(!hasBackgroundColorInCSSBlockRanges(attributedString))
         #expect(box.style.borderTopWidth > 0)
         #expect(box.style.borderBottomWidth > 0)
         #expect(box.style.borderLeftWidth > 0)
@@ -785,6 +777,147 @@ struct yuedu_appTests {
         if let noteLine = firstLineRect(containing: "baseline", in: layout, pageIndex: 0) {
             #expect(noteLine.minY >= box.rect.maxY - 0.5)
         }
+    }
+
+    @Test func epubCalloutBlockHeightIncludesWrappedLines() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 4,
+            paragraphSpacing: 4,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 260
+        )
+        let html = """
+        <html><head><style>
+        body { font-family: -apple-system, serif; line-height: 1.65; margin: 1em; }
+        section { margin-bottom: 1.2em; }
+        h1 { text-align: center; }
+        ruby { ruby-position: over; }
+        .callout { border: 2px solid #333; padding: 0.8em; border-radius: 0.4em; background: #f7f7f7; }
+        svg { display: block; margin: 1em auto; width: 240px; height: 120px; }
+        </style></head><body>
+        <section>
+        <h1>EPUB 3：Nav + HTML5 + Ruby + SVG</h1>
+        <p>這個檔案是 EPUB 3.0 範例。它使用 <code>nav.xhtml</code> 當目錄，而不是 EPUB 2 的 NCX。</p>
+        <p>下面這個字使用 ruby：<ruby>漢<rt>ㄏㄢˋ</rt></ruby>。如果 reader 支援 EPUB 3 / HTML5 ruby，注音或註解應該會顯示在文字旁邊或上方。</p>
+        <div class="callout">觀察點：Apple Books 通常會處理 nav、ruby、HTML5 結構。你的 app 若只把 HTML 當普通文字或只走 EPUB 2 思路，這裡容易看出差異。</div>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" role="img" aria-label="Inline SVG demo">
+          <rect x="10" y="10" width="220" height="100" rx="12" fill="#e9eefc" stroke="#333" stroke-width="3"/>
+          <circle cx="70" cy="60" r="28" fill="#ffd966" stroke="#333" stroke-width="2"/>
+          <text x="120" y="68" font-size="20" text-anchor="middle">SVG</text>
+        </svg>
+        </section>
+        </body></html>
+        """
+        let attributedString = await builder.build(html: html, config: config).attributedString
+        #expect(attributedString.string.contains("EPUB 2 思路，這裡容易看出差異"))
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: attributedString,
+            renderSize: CGSize(width: 320, height: 720),
+            fontSize: 18,
+            lineSpacing: 4,
+            paragraphSpacing: 4,
+            letterSpacing: 0,
+            contentInsets: UIEdgeInsets(top: 20, left: 30, bottom: 20, right: 30),
+            writingMode: .horizontal
+        )
+
+        let finalLineMatch = try #require(firstLineRect(containing: "異", in: layout))
+        let callout = try #require(layout.blockRenderables[finalLineMatch.pageIndex]?.first(where: { renderable in
+            renderable.style.backgroundFillColor != nil
+        }))
+        #expect(callout.attributedText == nil)
+        #expect(!hasBackgroundColorInCSSBlockRanges(attributedString))
+        let finalLine = finalLineMatch.rect
+        #expect(finalLine.maxY <= callout.rect.maxY - callout.style.paddingBottom + 0.5)
+    }
+
+    @Test func renderableNodeCalloutBlockHeightIncludesWrappedLines() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 4,
+            paragraphSpacing: 4,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 260
+        )
+        let html = """
+        <html><head><style>
+        body { font-family: -apple-system, serif; line-height: 1.65; margin: 1em; }
+        section { margin-bottom: 1.2em; }
+        h1 { text-align: center; }
+        ruby { ruby-position: over; }
+        .callout { border: 2px solid #333; padding: 0.8em; border-radius: 0.4em; background: #f7f7f7; }
+        svg { display: block; margin: 1em auto; width: 240px; height: 120px; }
+        </style></head><body>
+        <section>
+        <h1>EPUB 3：Nav + HTML5 + Ruby + SVG</h1>
+        <p>這個檔案是 EPUB 3.0 範例。它使用 <code>nav.xhtml</code> 當目錄，而不是 EPUB 2 的 NCX。</p>
+        <p>下面這個字使用 ruby：<ruby>漢<rt>ㄏㄢˋ</rt></ruby>。如果 reader 支援 EPUB 3 / HTML5 ruby，注音或註解應該會顯示在文字旁邊或上方。</p>
+        <div class="callout">觀察點：Apple Books 通常會處理 nav、ruby、HTML5 結構。你的 app 若只把 HTML 當普通文字或只走 EPUB 2 思路，這裡容易看出差異。</div>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" role="img" aria-label="Inline SVG demo">
+          <rect x="10" y="10" width="220" height="100" rx="12" fill="#e9eefc" stroke="#333" stroke-width="3"/>
+          <circle cx="70" cy="60" r="28" fill="#ffd966" stroke="#333" stroke-width="2"/>
+          <text x="120" y="68" font-size="20" text-anchor="middle">SVG</text>
+        </svg>
+        </section>
+        </body></html>
+        """
+        let ast = try #require(await builder.buildStyledAST(html: html, config: config))
+        let nodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
+        let settings = ReaderRenderSettings(
+            theme: "test",
+            textColor: .black,
+            backgroundColor: .white,
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 4,
+            paragraphSpacing: 4,
+            letterSpacing: 0,
+            marginH: 0,
+            marginV: 0,
+            footerHeight: 0,
+            contentInsets: .zero,
+            writingMode: .horizontal
+        )
+        let renderer = NodeAttributedStringRenderer(
+            config: NodeAttributedStringRenderer.Config(
+                from: settings,
+                textColor: .black,
+                renderWidth: 260
+            )
+        )
+        let attributedString = await renderer.render(nodes)
+        #expect(attributedString.string.contains("EPUB 2 思路，這裡容易看出差異"))
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: attributedString,
+            renderSize: CGSize(width: 320, height: 720),
+            fontSize: 18,
+            lineSpacing: 4,
+            paragraphSpacing: 4,
+            letterSpacing: 0,
+            contentInsets: UIEdgeInsets(top: 20, left: 30, bottom: 20, right: 30),
+            writingMode: .horizontal
+        )
+
+        let finalLineMatch = try #require(firstLineRect(containing: "異", in: layout))
+        let callout = try #require(layout.blockRenderables[finalLineMatch.pageIndex]?.first(where: { renderable in
+            renderable.style.backgroundFillColor != nil
+        }))
+        #expect(callout.attributedText == nil)
+        let finalLine = finalLineMatch.rect
+        #expect(finalLine.maxY <= callout.rect.maxY - callout.style.paddingBottom + 0.5)
     }
 
     @Test func coreTextPaginatorCacheHandlesConcurrentPreloadRequests() async {
@@ -1517,6 +1650,37 @@ struct yuedu_appTests {
             )
         }
         return nil
+    }
+
+    private func firstLineRect(
+        containing needle: String,
+        in layout: CoreTextPaginator.ChapterLayout
+    ) -> (pageIndex: Int, rect: CGRect)? {
+        for pageIndex in layout.pageRanges.indices {
+            if let rect = firstLineRect(containing: needle, in: layout, pageIndex: pageIndex) {
+                return (pageIndex, rect)
+            }
+        }
+        return nil
+    }
+
+    private func hasBackgroundColorInCSSBlockRanges(_ attributedString: NSAttributedString) -> Bool {
+        guard attributedString.length > 0 else { return false }
+        var found = false
+        attributedString.enumerateAttribute(
+            HTMLAttributedStringBuilder.blockBackgroundColorAttribute,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, range, stop in
+            guard value != nil else { return }
+            attributedString.enumerateAttribute(.backgroundColor, in: range) { background, _, innerStop in
+                if background != nil {
+                    found = true
+                    innerStop.pointee = true
+                    stop.pointee = true
+                }
+            }
+        }
+        return found
     }
 
     @Test func htmlBuilderDetectsSingleImagePage() async {

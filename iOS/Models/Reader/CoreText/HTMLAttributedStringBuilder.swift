@@ -135,6 +135,7 @@ final class HTMLAttributedStringBuilder {
         /// CoreText uses a single frame so parent block margins must be added to child paragraph indents.
         var inheritedBlockMarginLeft: CGFloat
         var inheritedBlockMarginRight: CGFloat
+        var borderRadius: CGFloat
         /// Detected from CSS `writing-mode: vertical-rl` on this element.
         var isVerticalWritingMode: Bool = false
         var pageBreakBefore: Bool = false
@@ -188,6 +189,7 @@ final class HTMLAttributedStringBuilder {
         let paddingBottom: CGFloat
         let paddingRight: CGFloat
         let blockImage: BlockImage?
+        let borderRadius: CGFloat
 
         var hasVisualDecoration: Bool {
             backgroundFillColor != nil
@@ -217,7 +219,8 @@ final class HTMLAttributedStringBuilder {
                 paddingLeft: paddingLeft,
                 paddingBottom: paddingBottom,
                 paddingRight: paddingRight,
-                blockImage: blockImage
+                blockImage: blockImage,
+                borderRadius: borderRadius
             )
         }
     }
@@ -244,6 +247,7 @@ final class HTMLAttributedStringBuilder {
         let attributes: [String: String]
         let resolvedStyle: ResolvedStyle
         let children: [ASTNode]
+        var svgContent: String?
     }
 
     var imageLoader: ((String) async -> UIImage?)?
@@ -522,6 +526,37 @@ final class HTMLAttributedStringBuilder {
                 continue
             }
 
+            if tag == "svg" {
+                let svgString: String
+                do {
+                    svgString = try element.outerHtml()
+                } catch {
+                    svgString = ""
+                }
+                let style = resolvedStyle(
+                    for: element,
+                    parent: parentStyle,
+                    rules: rules,
+                    rootFontSize: rootFontSize,
+                    parentElement: parentElement,
+                    config: config
+                )
+                result.append(
+                    .element(
+                        ElementNode(
+                            tag: tag,
+                            id: element.id(),
+                            classes: Array((try? element.classNames()) ?? []),
+                            attributes: makeAttributeMap(for: element),
+                            resolvedStyle: style,
+                            children: [],
+                            svgContent: svgString
+                        )
+                    )
+                )
+                continue
+            }
+
             let style = resolvedStyle(
                 for: element,
                 parent: parentStyle,
@@ -702,6 +737,14 @@ final class HTMLAttributedStringBuilder {
                     style: imgStyle,
                     imageSource: src,
                     imageAlt: element.attributes["alt"]
+                )
+            }
+
+            if element.tag == "svg", let svgContent = element.svgContent, !svgContent.isEmpty {
+                return await makeSVGPlaceholder(
+                    svgContent: svgContent,
+                    element: element,
+                    config: config
                 )
             }
 
@@ -1332,7 +1375,8 @@ final class HTMLAttributedStringBuilder {
             paddingLeft: style.paddingLeft,
             paddingBottom: style.paddingBottom,
             paddingRight: style.paddingRight,
-            blockImage: blockImage
+            blockImage: blockImage,
+            borderRadius: style.borderRadius
         )
         return renderStyle.hasVisualDecoration ? renderStyle : nil
     }
@@ -1408,7 +1452,7 @@ final class HTMLAttributedStringBuilder {
             return nil
         }
 
-        if element.tag == "img" || element.tag == "image" {
+        if element.tag == "img" || element.tag == "image" || element.tag == "svg" {
             return ImageOnlyBlockPayload(imageElement: element, linkHref: inheritedLinkHref)
         }
 
@@ -1419,7 +1463,7 @@ final class HTMLAttributedStringBuilder {
             )
         }
 
-        if element.tag == "div" || element.tag == "body" || element.tag == "svg" {
+        if element.tag == "div" || element.tag == "body" {
             return imageOnlyBlockPayload(
                 from: element.children,
                 inheritedLinkHref: inheritedLinkHref
@@ -1440,7 +1484,7 @@ final class HTMLAttributedStringBuilder {
             return nil
         }
 
-        if element.tag == "img" || element.tag == "image" {
+        if element.tag == "img" || element.tag == "image" || element.tag == "svg" {
             return ImageOnlyBlockPayload(imageElement: element, linkHref: inheritedLinkHref)
         }
 
@@ -1451,7 +1495,7 @@ final class HTMLAttributedStringBuilder {
             )
         }
 
-        if element.tag == "body" || element.tag == "svg" || isPlainImagePageWrapper(element) {
+        if element.tag == "body" || isPlainImagePageWrapper(element) {
             return imagePagePayload(
                 from: element.children,
                 inheritedLinkHref: inheritedLinkHref
@@ -1704,8 +1748,8 @@ final class HTMLAttributedStringBuilder {
             } else {
                 widthInset = 0
             }
-            let leftInset = widthInset + style.marginLeft + style.paddingLeft + style.inheritedBlockMarginLeft
-            let rightInset = widthInset + style.marginRight + style.paddingRight + style.inheritedBlockMarginRight
+            let leftInset = widthInset + style.marginLeft + style.borderLeftWidth + style.paddingLeft + style.inheritedBlockMarginLeft
+            let rightInset = widthInset + style.marginRight + style.borderRightWidth + style.paddingRight + style.inheritedBlockMarginRight
             paragraph.headIndent = leftInset
             paragraph.firstLineHeadIndent = leftInset + style.textIndent
             paragraph.tailIndent = -rightInset
@@ -1823,6 +1867,63 @@ final class HTMLAttributedStringBuilder {
             ascent: ascent,
             descent: descent
         )
+    }
+
+    private func makeSVGPlaceholder(
+        svgContent: String,
+        element: ElementNode,
+        config: Config
+    ) async -> NSAttributedString {
+        var style = element.resolvedStyle
+        resolveSVGPresentationAttributes(element, style: &style, config: config)
+
+        let targetSize = await SVGWebViewRasterizer.shared.resolveSVGSize(
+            styleWidth: style.width,
+            styleHeight: style.height,
+            attributes: element.attributes,
+            renderWidth: config.renderWidth
+        )
+
+        let image = await SVGWebViewRasterizer.shared.render(
+            svgString: svgContent,
+            size: targetSize,
+            baseURL: nil
+        )
+
+        let alt = element.attributes["aria-label"] ?? element.attributes["alt"]
+        let displayMode: ImageRunInfo.DisplayMode = style.isBlock ? .block : .inline
+
+        if image == nil, let alt, !alt.isEmpty {
+            var attrs = baseTextAttributes(style: style, config: config)
+            attrs[.foregroundColor] = UIColor.secondaryLabel
+            return NSAttributedString(string: "[\(alt)]", attributes: attrs)
+        }
+
+        let metrics = resolvedImageMetrics(image: image, config: config, style: style)
+
+        let placeholder = NSMutableAttributedString(
+            attributedString: makeImagePlaceholder(
+                image: image,
+                config: config,
+                style: style,
+                imageSource: "",
+                imageAlt: alt,
+                displayMode: displayMode,
+                precomputedMetrics: metrics
+            )
+        )
+        let range = NSRange(location: 0, length: placeholder.length)
+        let paragraph = NSMutableParagraphStyle()
+        if style.isHorizontallyCentered {
+            paragraph.alignment = .center
+        }
+        let lineHeight = max(style.fontSize, metrics.ascent + metrics.descent)
+        paragraph.minimumLineHeight = lineHeight
+        paragraph.maximumLineHeight = lineHeight
+        paragraph.paragraphSpacingBefore = style.paragraphSpacingBefore
+        paragraph.paragraphSpacing = max(0, style.paragraphSpacing)
+        placeholder.addAttribute(.paragraphStyle, value: paragraph, range: range)
+        return placeholder
     }
 
     private func makeImagePlaceholder(
@@ -2093,6 +2194,7 @@ final class HTMLAttributedStringBuilder {
             strikethrough: parent.strikethrough,
             inheritedBlockMarginLeft: parent.inheritedBlockMarginLeft,
             inheritedBlockMarginRight: parent.inheritedBlockMarginRight,
+            borderRadius: parent.borderRadius,
             isVerticalWritingMode: parent.isVerticalWritingMode,
             pageBreakBefore: false,
             pageBreakAfter: false
@@ -2151,6 +2253,7 @@ final class HTMLAttributedStringBuilder {
             strikethrough: false,
             inheritedBlockMarginLeft: 0,
             inheritedBlockMarginRight: 0,
+            borderRadius: 0,
             isVerticalWritingMode: false,
             pageBreakBefore: false,
             pageBreakAfter: false
@@ -2515,6 +2618,9 @@ final class HTMLAttributedStringBuilder {
         }
         if let borderWidth = declarations["border-width"] {
             applyBorderWidthShorthand(borderWidth, to: &style, rootFontSize: rootFontSize)
+        }
+        if let borderRadius = declarations["border-radius"] {
+            style.borderRadius = max(0, resolveLength(borderRadius, currentFontSize: style.fontSize, rootFontSize: rootFontSize, relativeBase: style.fontSize) ?? 0)
         }
     }
 

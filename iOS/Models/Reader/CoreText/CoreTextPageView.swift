@@ -579,47 +579,75 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     ) {
         for item in renderables {
             ctx.saveGState()
-            if let fillColor = item.style.backgroundFillColor {
-                ctx.setFillColor(fillColor.cgColor)
-                ctx.fill(item.rect)
-            }
-            if item.style.borderTopWidth > 0 {
-                let lineW = item.style.borderTopWidth
-                let y = item.rect.minY + lineW / 2
-                ctx.setStrokeColor((item.style.borderTopColor ?? .label).cgColor)
-                ctx.setLineWidth(lineW)
-                let (bx, bw) = borderXAndWidth(for: item)
-                ctx.move(to: CGPoint(x: bx, y: y))
-                ctx.addLine(to: CGPoint(x: bx + bw, y: y))
-                ctx.strokePath()
-            }
-            if item.style.borderBottomWidth > 0 {
-                let lineW = item.style.borderBottomWidth
-                let y = item.rect.maxY - lineW / 2
-                ctx.setStrokeColor((item.style.borderBottomColor ?? .label).cgColor)
-                ctx.setLineWidth(lineW)
-                let (bx, bw) = borderXAndWidth(for: item)
-                ctx.move(to: CGPoint(x: bx, y: y))
-                ctx.addLine(to: CGPoint(x: bx + bw, y: y))
-                ctx.strokePath()
-            }
-            if item.style.borderLeftWidth > 0 {
-                let lineW = item.style.borderLeftWidth
-                let x = item.rect.minX + lineW / 2
-                ctx.setStrokeColor((item.style.borderLeftColor ?? .label).cgColor)
-                ctx.setLineWidth(lineW)
-                ctx.move(to: CGPoint(x: x, y: item.rect.minY))
-                ctx.addLine(to: CGPoint(x: x, y: item.rect.maxY))
-                ctx.strokePath()
-            }
-            if item.style.borderRightWidth > 0 {
-                let lineW = item.style.borderRightWidth
-                let x = item.rect.maxX - lineW / 2
-                ctx.setStrokeColor((item.style.borderRightColor ?? .label).cgColor)
-                ctx.setLineWidth(lineW)
-                ctx.move(to: CGPoint(x: x, y: item.rect.minY))
-                ctx.addLine(to: CGPoint(x: x, y: item.rect.maxY))
-                ctx.strokePath()
+            let s = item.style
+            let borderRect = CGRect(
+                x: item.rect.minX - s.borderLeftWidth - s.paddingLeft,
+                y: item.rect.minY - s.borderTopWidth - s.paddingTop,
+                width: item.rect.width + s.borderLeftWidth + s.borderRightWidth + s.paddingLeft + s.paddingRight,
+                height: item.rect.height + s.borderTopWidth + s.borderBottomWidth + s.paddingTop + s.paddingBottom
+            )
+            let radius = min(s.borderRadius, min(borderRect.width, borderRect.height) / 2)
+            let hasBorder = s.borderTopWidth > 0 || s.borderBottomWidth > 0 || s.borderLeftWidth > 0 || s.borderRightWidth > 0
+            if radius > 0 {
+                let path = UIBezierPath(roundedRect: borderRect, cornerRadius: radius)
+                if let fillColor = s.backgroundFillColor {
+                    ctx.setFillColor(fillColor.cgColor)
+                    ctx.addPath(path.cgPath)
+                    ctx.fillPath()
+                }
+                if hasBorder {
+                    if let borderColor = s.borderTopColor ?? s.borderLeftColor ?? s.borderRightColor ?? s.borderBottomColor {
+                        ctx.setStrokeColor(borderColor.cgColor)
+                    } else {
+                        ctx.setStrokeColor(UIColor.label.cgColor)
+                    }
+                    ctx.setLineWidth(s.borderTopWidth > 0 ? s.borderTopWidth : (s.borderBottomWidth > 0 ? s.borderBottomWidth : (s.borderLeftWidth > 0 ? s.borderLeftWidth : s.borderRightWidth)))
+                    ctx.addPath(path.cgPath)
+                    ctx.strokePath()
+                }
+            } else {
+                if let fillColor = s.backgroundFillColor {
+                    ctx.setFillColor(fillColor.cgColor)
+                    ctx.fill(borderRect)
+                }
+                if s.borderTopWidth > 0 {
+                    let lineW = s.borderTopWidth
+                    let y = borderRect.minY + lineW / 2
+                    ctx.setStrokeColor((s.borderTopColor ?? .label).cgColor)
+                    ctx.setLineWidth(lineW)
+                    let (bx, bw) = borderXAndWidth(for: item, borderRect: borderRect)
+                    ctx.move(to: CGPoint(x: bx, y: y))
+                    ctx.addLine(to: CGPoint(x: bx + bw, y: y))
+                    ctx.strokePath()
+                }
+                if s.borderBottomWidth > 0 {
+                    let lineW = s.borderBottomWidth
+                    let y = borderRect.maxY - lineW / 2
+                    ctx.setStrokeColor((s.borderBottomColor ?? .label).cgColor)
+                    ctx.setLineWidth(lineW)
+                    let (bx, bw) = borderXAndWidth(for: item, borderRect: borderRect)
+                    ctx.move(to: CGPoint(x: bx, y: y))
+                    ctx.addLine(to: CGPoint(x: bx + bw, y: y))
+                    ctx.strokePath()
+                }
+                if s.borderLeftWidth > 0 {
+                    let lineW = s.borderLeftWidth
+                    let x = borderRect.minX + lineW / 2
+                    ctx.setStrokeColor((s.borderLeftColor ?? .label).cgColor)
+                    ctx.setLineWidth(lineW)
+                    ctx.move(to: CGPoint(x: x, y: borderRect.minY))
+                    ctx.addLine(to: CGPoint(x: x, y: borderRect.maxY))
+                    ctx.strokePath()
+                }
+                if s.borderRightWidth > 0 {
+                    let lineW = s.borderRightWidth
+                    let x = borderRect.maxX - lineW / 2
+                    ctx.setStrokeColor((s.borderRightColor ?? .label).cgColor)
+                    ctx.setLineWidth(lineW)
+                    ctx.move(to: CGPoint(x: x, y: borderRect.minY))
+                    ctx.addLine(to: CGPoint(x: x, y: borderRect.maxY))
+                    ctx.strokePath()
+                }
             }
             // Block images are drawn uniformly in Phase 3 (after flip-back) using UIImage.draw()
             ctx.restoreGState()
@@ -627,19 +655,20 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     }
 
     // Calculates the starting x and width for border rendering based on style.width and textAlign
-    private nonisolated static func borderXAndWidth(for item: CoreTextPaginator.RenderedBlockRenderable) -> (CGFloat, CGFloat) {
+    private nonisolated static func borderXAndWidth(for item: CoreTextPaginator.RenderedBlockRenderable, borderRect: CGRect? = nil) -> (CGFloat, CGFloat) {
+        let rect = borderRect ?? item.rect
         guard let constrainedWidth = item.style.width else {
-            return (item.rect.minX, item.rect.width)
+            return (rect.minX, rect.width)
         }
-        let bw = min(constrainedWidth, item.rect.width)
+        let bw = min(constrainedWidth, rect.width)
         let bx: CGFloat
         switch item.style.textAlign {
         case .center:
-            bx = item.rect.minX + max(0, (item.rect.width - bw) / 2)
+            bx = rect.minX + max(0, (rect.width - bw) / 2)
         case .right:
-            bx = item.rect.minX + max(0, item.rect.width - bw)
+            bx = rect.minX + max(0, rect.width - bw)
         default:
-            bx = item.rect.minX
+            bx = rect.minX
         }
         return (bx, bw)
     }

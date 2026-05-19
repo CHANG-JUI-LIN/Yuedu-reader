@@ -128,8 +128,8 @@ struct NodeAttributedStringRenderer {
 
         // ──────────────── Image (fallback: show alt-text) ────────────────
 
-        case .image(let src, let alt, let style):
-            return await renderInlineImage(src: src, alt: alt, style: style, ctx: ctx)
+        case .image(let src, let alt, let style, let svgContent):
+            return await renderInlineImage(src: src, alt: alt, style: style, svgContent: svgContent, ctx: ctx)
 
         // ──────────────── Paragraph ────────────────
 
@@ -360,9 +360,9 @@ struct NodeAttributedStringRenderer {
         }
         let cumulativeMarginLeft = ctx.inheritedBlockMarginLeft + style.marginLeft
         let cumulativeMarginRight = ctx.inheritedBlockMarginRight + style.marginRight
-        para.firstLineHeadIndent = cumulativeMarginLeft + style.paddingLeft + style.textIndent
-        para.headIndent = cumulativeMarginLeft + style.paddingLeft
-        let rightInset = cumulativeMarginRight + style.paddingRight
+        para.firstLineHeadIndent = cumulativeMarginLeft + style.borderLeftWidth + style.paddingLeft + style.textIndent
+        para.headIndent = cumulativeMarginLeft + style.borderLeftWidth + style.paddingLeft
+        let rightInset = cumulativeMarginRight + style.borderRightWidth + style.paddingRight
         para.tailIndent = rightInset > 0 ? -rightInset : 0
         para.alignment = nsTextAlignment(from: style.textAlign)
         newCtx.paragraphStyle = para
@@ -502,6 +502,7 @@ struct NodeAttributedStringRenderer {
         let style: RenderStyle
         let anchorID: String?
         let href: String?
+        let svgContent: String?
     }
 
     private struct ImageMetrics {
@@ -516,8 +517,40 @@ struct NodeAttributedStringRenderer {
         src: String,
         alt: String,
         style: RenderStyle,
+        svgContent: String?,
         ctx: RenderContext
     ) async -> NSAttributedString {
+        if let svgContent, !svgContent.isEmpty {
+            let resolvedWidth = config.renderWidth ?? UIScreen.main.bounds.width
+            let targetSize = await SVGWebViewRasterizer.shared.resolveSVGSize(
+                styleWidth: style.width,
+                styleHeight: style.height,
+                svgString: svgContent,
+                renderWidth: resolvedWidth
+            )
+            let image = await SVGWebViewRasterizer.shared.render(
+                svgString: svgContent,
+                size: targetSize,
+                baseURL: nil
+            )
+            if image == nil {
+                guard !alt.isEmpty else { return NSAttributedString() }
+                var attrs = ctx.baseAttributes
+                attrs[.foregroundColor] = UIColor.secondaryLabel
+                return NSAttributedString(string: "[\(alt)]", attributes: attrs)
+            }
+            let metrics = resolvedImageMetrics(image: image, style: style, font: ctx.font, displayMode: .inline)
+            return makeImagePlaceholder(
+                image: image,
+                style: style,
+                ctx: ctx,
+                imageSource: "",
+                imageAlt: alt,
+                displayMode: .inline,
+                precomputedMetrics: metrics
+            )
+        }
+
         if config.imageLoader == nil {
             guard !alt.isEmpty else { return NSAttributedString() }
             var attrs = ctx.baseAttributes
@@ -547,7 +580,23 @@ struct NodeAttributedStringRenderer {
         headingLevel: Int
     ) async -> NSAttributedString {
         let blockCtx = applyBlockStyle(blockStyle, to: ctx, isHeading: isHeading, headingLevel: headingLevel)
-        let image = payload.src.isEmpty ? nil : await config.imageLoader?(payload.src)
+        let image: UIImage?
+        if let svgContent = payload.svgContent, !svgContent.isEmpty {
+            let resolvedWidth = config.renderWidth ?? UIScreen.main.bounds.width
+            let targetSize = await SVGWebViewRasterizer.shared.resolveSVGSize(
+                styleWidth: payload.style.width,
+                styleHeight: payload.style.height,
+                svgString: svgContent,
+                renderWidth: resolvedWidth
+            )
+            image = await SVGWebViewRasterizer.shared.render(
+                svgString: svgContent,
+                size: targetSize,
+                baseURL: nil
+            )
+        } else {
+            image = payload.src.isEmpty ? nil : await config.imageLoader?(payload.src)
+        }
 
         var attachmentStyle = blockStyle
         if let width = payload.style.width {
@@ -589,7 +638,11 @@ struct NodeAttributedStringRenderer {
         let range = NSRange(location: 0, length: placeholder.length)
         placeholder.addAttribute(
             .paragraphStyle,
-            value: imageBlockParagraphStyle(base: blockCtx.paragraphStyle, metrics: imageMetrics),
+            value: imageBlockParagraphStyle(
+                base: blockCtx.paragraphStyle,
+                metrics: imageMetrics,
+                isHorizontallyCentered: blockStyle.isHorizontallyCentered
+            ),
             range: range
         )
         if let href = payload.href {
@@ -642,11 +695,14 @@ struct NodeAttributedStringRenderer {
         return placeholder
     }
 
-    private func imageBlockParagraphStyle(base: NSParagraphStyle, metrics: ImageMetrics) -> NSParagraphStyle {
+    private func imageBlockParagraphStyle(base: NSParagraphStyle, metrics: ImageMetrics, isHorizontallyCentered: Bool = false) -> NSParagraphStyle {
         let paragraph = base.mutableCopy() as! NSMutableParagraphStyle
         let reservedLineHeight = ceil(max(paragraph.minimumLineHeight, metrics.ascent + metrics.descent))
         paragraph.minimumLineHeight = reservedLineHeight
         paragraph.maximumLineHeight = reservedLineHeight
+        if isHorizontallyCentered {
+            paragraph.alignment = .center
+        }
         return paragraph
     }
 
@@ -798,8 +854,8 @@ struct NodeAttributedStringRenderer {
         case .anchor(let target, let children):
             guard children.count == 1 else { return nil }
             return unwrapSingleImage(from: children[0], anchorID: anchorID, href: href ?? target)
-        case .image(let src, let alt, let style):
-            return SingleImagePayload(src: src, alt: alt, style: style, anchorID: anchorID, href: href)
+        case .image(let src, let alt, let style, let svgContent):
+            return SingleImagePayload(src: src, alt: alt, style: style, anchorID: anchorID, href: href, svgContent: svgContent)
         default:
             return nil
         }
@@ -884,7 +940,8 @@ struct NodeAttributedStringRenderer {
             paddingLeft: style.paddingLeft,
             paddingBottom: style.paddingBottom,
             paddingRight: style.paddingRight,
-            blockImage: blockImage
+            blockImage: blockImage,
+            borderRadius: style.borderRadius
         )
         return renderStyle.hasVisualDecoration ? renderStyle : nil
     }
