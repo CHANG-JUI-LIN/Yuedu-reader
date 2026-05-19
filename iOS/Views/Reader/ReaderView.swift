@@ -2567,25 +2567,41 @@ private struct VerticalTOCText: View {
 
     @ViewBuilder
     private func glyph(_ ch: String) -> some View {
-        if ["\u{FF0C}", "\u{3002}", "\u{3001}", "\u{FF0E}", ".", ","].contains(ch) {
-            Text(ch)
-                .font(.system(size: VerticalTOCLayout.fontSize * 0.82, weight: .semibold))
-                .frame(
-                    width: VerticalTOCLayout.textWidth,
-                    height: VerticalTOCLayout.glyphHeight * 0.55,
-                    alignment: .topTrailing
-                )
-                .offset(x: 3, y: -2)
-        } else if ch.unicodeScalars.allSatisfy({ $0.isASCII }) {
-            Text(ch)
-                .font(.system(size: 12, weight: .semibold))
-                .rotationEffect(.degrees(90))
-                .frame(width: VerticalTOCLayout.textWidth, height: VerticalTOCLayout.glyphHeight)
-        } else {
-            Text(ch)
-                .font(.system(size: VerticalTOCLayout.fontSize, weight: .semibold))
-                .frame(width: VerticalTOCLayout.textWidth, height: VerticalTOCLayout.glyphHeight)
+        switch VerticalGlyphClassifier.classify(Character(ch)) {
+        case .cjk(let s),
+             .verticalPunctuation(let s):
+            cjkGlyph(s)
+        case .compressedPunctuation(let s):
+            compressedGlyph(s)
+        case .rotatedLatin(let s):
+            rotatedLatinGlyph(s)
+        case .uprightLatin(let s):
+            cjkGlyph(s)
         }
+    }
+
+    private func cjkGlyph(_ s: String) -> some View {
+        Text(s)
+            .font(.system(size: VerticalTOCLayout.fontSize, weight: .semibold))
+            .frame(width: VerticalTOCLayout.textWidth, height: VerticalTOCLayout.glyphHeight)
+    }
+
+    private func compressedGlyph(_ s: String) -> some View {
+        Text(s)
+            .font(.system(size: VerticalTOCLayout.fontSize * 0.82, weight: .semibold))
+            .frame(
+                width: VerticalTOCLayout.textWidth,
+                height: VerticalTOCLayout.glyphHeight * 0.55,
+                alignment: .topTrailing
+            )
+            .offset(x: 3, y: -2)
+    }
+
+    private func rotatedLatinGlyph(_ s: String) -> some View {
+        Text(s)
+            .font(.system(size: 12, weight: .semibold))
+            .rotationEffect(.degrees(90))
+            .frame(width: VerticalTOCLayout.textWidth, height: VerticalTOCLayout.glyphHeight)
     }
 }
 
