@@ -584,3 +584,4 @@
 "來源名稱（選填）" = "Feed Name (Optional)";
 "留空將自動從 RSS 抓取" = "Leave blank to fetch from RSS";
 "正在抓取 RSS 資訊…" = "Fetching RSS info…";
+"Fixed-layout EPUB detected" = "Fixed-layout EPUB detected (in development)";

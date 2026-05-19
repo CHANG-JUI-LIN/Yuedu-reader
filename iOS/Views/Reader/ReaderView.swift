@@ -202,6 +202,14 @@ struct ReaderView: View {
         epubRenderer.engine != nil
     }
 
+    private var isFixedLayoutEPUB: Bool {
+        isEPUB && epubRenderer.layoutMode == .prePaginated
+    }
+
+    private var usesFixedLayoutRenderer: Bool {
+        isEPUB && isFixedLayoutEPUB
+    }
+
     private var usesPagedRenderer: Bool { usesCoreTextEPUB }
 
     private var renderedPageCount: Int {
@@ -285,6 +293,53 @@ struct ReaderView: View {
         let (spineIndex, charOffset) = engine.charOffset(forPage: page)
         guard engine.layouts[spineIndex] != nil else { return nil }
         return (spineIndex, charOffset)
+    }
+
+    private func scheduleCoreTextPageChanged(
+        _ newPage: Int,
+        engine: any PageRenderingProvider
+    ) {
+        DispatchQueue.main.async {
+            handleCoreTextPageChanged(newPage, engine: engine)
+        }
+    }
+
+    private func handleCoreTextPageChanged(
+        _ newPage: Int,
+        engine: any PageRenderingProvider
+    ) {
+        let newChapter = engine.charOffset(forPage: newPage).spineIndex
+        let chapterChanged = newChapter != currentChapterIndex
+
+        currentChapterIndex = newChapter
+
+        progressTrace("onPageChanged page=\(newPage) chapter=\(currentChapterIndex)")
+
+        if chapterChanged {
+            ensureChapterReady(chapterIndex: newChapter)
+        }
+
+        guard ReaderProgressSyncPolicy.shouldPersistOnPageChanged(
+            isCoreTextReady: epubRenderer.isCoreTextReady,
+            totalPages: engine.totalPages,
+            isRestoringPosition: isRestoringPosition
+        ) else {
+            progressTrace(
+                "onPageChanged skipPersist page=\(newPage) ready=\(epubRenderer.isCoreTextReady) totalPages=\(engine.totalPages) restoring=\(isRestoringPosition)"
+            )
+            return
+        }
+
+        guard coreTextPositionIfLayoutReady(engine: engine, page: newPage) != nil else {
+            progressTrace("onPageChanged skipPersist page=\(newPage) reason=layoutNotReady")
+            return
+        }
+
+        epubRenderer.updateCurrentPosition(globalPage: newPage, engine: engine)
+
+        if let progressBookId = localEPUBBookIdentifier {
+            epubRenderer.syncProgress(bookId: progressBookId)
+        }
     }
 
     /// EPUB font asset directory (Documents/{uuid}_epub_assets/).
@@ -458,6 +513,14 @@ struct ReaderView: View {
                     Spacer()
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            } else if usesFixedLayoutRenderer {
+                VStack {
+                    Spacer()
+                    Text(localized("Fixed-layout EPUB detected"))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else if settings.scrollMode {
                 scrollBody
                     .transition(.opacity.animation(.easeOut(duration: 0.25)))
@@ -473,31 +536,7 @@ struct ReaderView: View {
                     isRTL: effectiveWritingMode.isVertical,
                     currentPage: $currentPage,
                     onPageChanged: { newPage in
-                        let newChapter = ctEngine.charOffset(forPage: newPage).spineIndex
-                        let chapterChanged = newChapter != currentChapterIndex
-                        currentChapterIndex = newChapter
-                        progressTrace("onPageChanged page=\(newPage) chapter=\(currentChapterIndex)")
-                        if chapterChanged {
-                            ensureChapterReady(chapterIndex: newChapter)
-                        }
-                        guard ReaderProgressSyncPolicy.shouldPersistOnPageChanged(
-                            isCoreTextReady: epubRenderer.isCoreTextReady,
-                            totalPages: ctEngine.totalPages,
-                            isRestoringPosition: isRestoringPosition
-                        ) else {
-                            progressTrace(
-                                "onPageChanged skipPersist page=\(newPage) ready=\(epubRenderer.isCoreTextReady) totalPages=\(ctEngine.totalPages) restoring=\(isRestoringPosition)"
-                            )
-                            return
-                        }
-                        guard coreTextPositionIfLayoutReady(engine: ctEngine, page: newPage) != nil else {
-                            progressTrace("onPageChanged skipPersist page=\(newPage) reason=layoutNotReady")
-                            return
-                        }
-                        epubRenderer.updateCurrentPosition(globalPage: newPage, engine: ctEngine)
-                        if let progressBookId = localEPUBBookIdentifier {
-                            epubRenderer.syncProgress(bookId: progressBookId)
-                        }
+                        scheduleCoreTextPageChanged(newPage, engine: ctEngine)
                     },
                     onTapZone: { zone in
                         switch zone {
@@ -2992,10 +3031,25 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             NSLog("%@", resolvedLine)
         }
 
+        private func publishCurrentPage(_ page: Int, notify: Bool) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+
+                let didChange = self.currentPage != page
+
+                if didChange {
+                    self.currentPage = page
+                }
+
+                if notify, didChange {
+                    self.onPageChanged(page)
+                }
+            }
+        }
+
         private func handleNavigate(to page: Int) {
             let clamped = max(0, min(page, max(currentEngine.totalPages - 1, 0)))
-            currentPage = clamped
-            onPageChanged(clamped)
+            publishCurrentPage(clamped, notify: true)
         }
 
         private func continueQueuedTransitionIfNeeded(
@@ -3074,26 +3128,30 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         @discardableResult
         func syncStablePosition(afterShowing viewController: UIViewController, notifyFallback: Bool) -> Int? {
             let fallbackPage = (viewController as? any PageIndexProviding)?.globalPageIndex ?? currentPage
+
             if let position = readingPosition(from: viewController) {
                 currentCoreTextPosition = position
+
                 if let resolvedPage = currentEngine.pageIndex(for: position) {
-                    currentPage = resolvedPage
-                    onPageChanged(resolvedPage)
+                    publishCurrentPage(resolvedPage, notify: true)
                     return resolvedPage
                 }
-                currentPage = fallbackPage
+
+                publishCurrentPage(fallbackPage, notify: notifyFallback)
+
                 if notifyFallback {
-                    onPageChanged(fallbackPage)
                     return fallbackPage
                 }
+
                 return nil
             }
 
-            currentPage = fallbackPage
+            publishCurrentPage(fallbackPage, notify: notifyFallback)
+
             if notifyFallback {
-                onPageChanged(fallbackPage)
                 return fallbackPage
             }
+
             return nil
         }
 
@@ -3382,8 +3440,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                             pvc.view.layoutIfNeeded()
                             self.captureStablePosition(from: realVC)
                         }
-                        self.currentPage = targetPage
-                        self.onPageChanged(targetPage)
+                        self.publishCurrentPage(targetPage, notify: true)
                         Task { @MainActor in
                             self.currentEngine.warmUpNext(currentGlobalPage: targetPage)
                         }
@@ -3444,9 +3501,9 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     pvc.view.layoutIfNeeded()
                     
                     self.captureStablePosition(from: realVC)
-                    self.onPageChanged(latestPage)
+                    self.publishCurrentPage(latestPage, notify: true)
                     Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: latestPage) }
-                    
+
                     self.resetCoverOverlay()
                     self.isTransitioning = false
                 }
@@ -3459,7 +3516,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded()
                     self.captureStablePosition(from: realVC)
-                    self.onPageChanged(latestPage)
+                    self.publishCurrentPage(latestPage, notify: true)
                     Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: latestPage) }
                     self.resetCoverOverlay()
                     self.isTransitioning = false
@@ -3479,9 +3536,9 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     pvc.view.layoutIfNeeded()
                     
                     self.captureStablePosition(from: realVC)
-                    self.onPageChanged(latestPage)
+                    self.publishCurrentPage(latestPage, notify: true)
                     Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: latestPage) }
-                    
+
                     self.resetCoverOverlay()
                     self.isTransitioning = false
                 }

@@ -11,6 +11,23 @@ enum EPUBWritingMode: String, Sendable {
     case unspecified
 }
 
+enum EPUBLayoutMode: String, Sendable {
+    case reflowable
+    case prePaginated
+}
+
+enum EPUBFlowMode: String, Sendable {
+    case paginated
+    case scrolledContinuous
+    case scrolledDoc
+    case auto
+}
+
+struct FixedLayoutViewport: Sendable {
+    let defaultViewport: CGSize?
+    let pageViewports: [Int: CGSize]
+}
+
 struct PublicationChapterDescriptor: Equatable {
     let index: Int
     let href: String
@@ -184,6 +201,9 @@ final class PublicationSession {
     let chapters: [PublicationChapterDescriptor]
     let tocEntries: [EPUBTocEntry]
     let epubWritingMode: EPUBWritingMode
+    let layoutMode: EPUBLayoutMode
+    let flowMode: EPUBFlowMode
+    let fixedLayoutViewport: FixedLayoutViewport?
     /// Pre-scanned chapter byte sizes loaded from SpinesCache. nil = not yet available.
     let cachedChapterByteSizes: [Int]?
     private let obfuscationIdentifier: String?
@@ -201,6 +221,9 @@ final class PublicationSession {
         chapters: [PublicationChapterDescriptor],
         tocEntries: [EPUBTocEntry],
         epubWritingMode: EPUBWritingMode,
+        layoutMode: EPUBLayoutMode,
+        flowMode: EPUBFlowMode,
+        fixedLayoutViewport: FixedLayoutViewport?,
         cachedChapterByteSizes: [Int]?,
         obfuscationIdentifier: String?,
         encryptionAlgorithmsByHref: [String: String],
@@ -214,6 +237,9 @@ final class PublicationSession {
         self.chapters = chapters
         self.tocEntries = tocEntries
         self.epubWritingMode = epubWritingMode
+        self.layoutMode = layoutMode
+        self.flowMode = flowMode
+        self.fixedLayoutViewport = fixedLayoutViewport
         self.cachedChapterByteSizes = cachedChapterByteSizes
         self.obfuscationIdentifier = obfuscationIdentifier
         self.encryptionAlgorithmsByHref = encryptionAlgorithmsByHref
@@ -240,7 +266,8 @@ final class PublicationSession {
         }
 
         let publication = try await openPublication(sourceURL: sourceURL)
-        let epubWritingMode = await parseOPFWritingMode(from: sourceURL)
+        let opfMetadata = await parseOPFMetadata(from: sourceURL)
+        let epubWritingMode = opfMetadata.writingMode
         let tocEntries = flattenTableOfContents(publication.manifest.tableOfContents)
 
         let cacheURL = getCacheURL(for: sourceURL)
@@ -352,6 +379,12 @@ final class PublicationSession {
             chapters: chapters,
             tocEntries: tocEntries,
             epubWritingMode: epubWritingMode,
+            layoutMode: opfMetadata.layoutMode,
+            flowMode: opfMetadata.flowMode,
+            fixedLayoutViewport: FixedLayoutViewport(
+                defaultViewport: opfMetadata.defaultViewport,
+                pageViewports: [:]
+            ),
             cachedChapterByteSizes: cachedByteSizes,
             obfuscationIdentifier: obfuscationIdentifier,
             encryptionAlgorithmsByHref: encryptionAlgorithmsByHref,
@@ -748,28 +781,95 @@ final class PublicationSession {
         return (identifier, algorithmsByHref)
     }
 
-    private static func parseOPFWritingMode(from sourceURL: URL) async -> EPUBWritingMode {
-        guard let archive = try? await Archive(url: sourceURL, accessMode: .read) else { return .unspecified }
+    private struct OPFMetadataResult {
+        let writingMode: EPUBWritingMode
+        let layoutMode: EPUBLayoutMode
+        let flowMode: EPUBFlowMode
+        let defaultViewport: CGSize?
+    }
+
+    private static func parseOPFMetadata(from sourceURL: URL) async -> OPFMetadataResult {
+        let fallback = OPFMetadataResult(
+            writingMode: .unspecified,
+            layoutMode: .reflowable,
+            flowMode: .auto,
+            defaultViewport: nil
+        )
+        guard let archive = try? await Archive(url: sourceURL, accessMode: .read) else { return fallback }
         guard
             let containerXML = await readArchiveEntry("META-INF/container.xml", archive: archive),
             let opfPath = firstMatch(in: containerXML, pattern: #"full-path\s*=\s*"([^"]+)""#),
             let opfXML = await readArchiveEntry(opfPath, archive: archive)
-        else { return .unspecified }
+        else { return fallback }
+
+        var writingMode: EPUBWritingMode = .unspecified
 
         // <meta name="primary-writing-mode" content="vertical-rl"/>
         if let wm = firstMatch(in: opfXML, pattern: #"<meta[^>]*name\s*=\s*"primary-writing-mode"[^>]*content\s*=\s*"([^"]+)"[^>]*>"#)?.lowercased() {
-            if wm.contains("vertical") { return .verticalRL }
-            if wm.contains("horizontal") { return .horizontal }
+            if wm.contains("vertical") { writingMode = .verticalRL }
+            if wm.contains("horizontal") { writingMode = .horizontal }
         }
+
+        // EPUB3 rendition:layout
+        let layoutMode: EPUBLayoutMode
+        if let layout = firstMatch(in: opfXML, pattern: #"<meta[^>]*property\s*=\s*"rendition:layout"[^>]*content\s*=\s*"([^"]+)"[^>]*>"#)?.lowercased() {
+            layoutMode = layout.contains("pre-paginated") ? .prePaginated : .reflowable
+        } else {
+            layoutMode = .reflowable
+        }
+
         // EPUB3 rendition:flow
-        if let flow = firstMatch(in: opfXML, pattern: #"<meta[^>]*property\s*=\s*"rendition:flow"[^>]*>"#) {
-            if flow.lowercased().contains("scrolled-doc") || flow.lowercased().contains("pre-paginated") { return .horizontal }
+        let flowMode: EPUBFlowMode
+        if let flow = firstMatch(in: opfXML, pattern: #"<meta[^>]*property\s*=\s*"rendition:flow"[^>]*content\s*=\s*"([^"]+)"[^>]*>"#)?.lowercased() {
+            if flow.contains("scrolled-doc") {
+                flowMode = .scrolledDoc
+            } else if flow.contains("scrolled-continuous") {
+                flowMode = .scrolledContinuous
+            } else if flow.contains("pre-paginated") {
+                flowMode = .paginated
+            } else {
+                flowMode = .auto
+            }
+        } else {
+            flowMode = .auto
         }
+
         // spine page-progression-direction="rtl" → vertical
         if let ppd = firstMatch(in: opfXML, pattern: #"<spine[^>]*page-progression-direction\s*=\s*"([^"]+)"[^>]*>"#)?.lowercased(), ppd == "rtl" {
-            return .verticalRL
+            writingMode = .verticalRL
         }
-        return .unspecified
+
+        // EPUB3 rendition:viewport
+        let defaultViewport: CGSize?
+        if let vp = firstMatch(in: opfXML, pattern: #"<meta[^>]*property\s*=\s*"rendition:viewport"[^>]*content\s*=\s*"([^"]+)"[^>]*>"#) {
+            defaultViewport = parseViewportString(vp)
+        } else {
+            defaultViewport = nil
+        }
+
+        return OPFMetadataResult(
+            writingMode: writingMode,
+            layoutMode: layoutMode,
+            flowMode: flowMode,
+            defaultViewport: defaultViewport
+        )
+    }
+
+    private static func parseViewportString(_ raw: String) -> CGSize? {
+        let parts = raw.components(separatedBy: CharacterSet(charactersIn: ",; "))
+        var w: CGFloat?
+        var h: CGFloat?
+        for part in parts {
+            let kv = part.components(separatedBy: "=").map { $0.trimmingCharacters(in: .whitespaces) }
+            guard kv.count == 2 else { continue }
+            switch kv[0].lowercased() {
+            case "width": w = CGFloat(Double(kv[1]) ?? 0)
+            case "height": h = CGFloat(Double(kv[1]) ?? 0)
+            default: break
+            }
+        }
+        guard let w, let h, w > 0, h > 0 else { return nil }
+        return CGSize(width: w, height: h)
     }
 
     private static func readArchiveEntry(_ path: String, archive: Archive) async -> String? {

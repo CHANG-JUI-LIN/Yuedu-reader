@@ -9,6 +9,8 @@ final class EPUBPageRenderer: ObservableObject {
     // MARK: - CoreText engine
 
     private(set) var engine: (any PageRenderingProvider)?
+    @Published private(set) var layoutMode: EPUBLayoutMode = .reflowable
+    @Published private(set) var fixedLayoutViewport: FixedLayoutViewport?
     /// Holds the EPUB builder when useRenderableNodePipeline is enabled,
     /// so notifyViewportSize can update renderSize.
     private var epubBuilder: EPUBAttributedStringBuilder?
@@ -18,6 +20,10 @@ final class EPUBPageRenderer: ObservableObject {
     @Published private(set) var scrollEngine: CoreTextScrollEngine?
 
     @Published var isCoreTextReady: Bool = false
+
+    var isFixedLayout: Bool {
+        layoutMode == .prePaginated
+    }
 
     /// True when CSS writing-mode: vertical-rl is detected from EPUB stylesheets.
     var cssDetectedVerticalWritingMode: Bool {
@@ -77,6 +83,11 @@ final class EPUBPageRenderer: ObservableObject {
         renderSize: CGSize,
         settings: ReaderRenderSettings
     ) {
+        layoutMode = session.layoutMode
+        fixedLayoutViewport = session.fixedLayoutViewport
+
+        guard session.layoutMode != .prePaginated else { return }
+
         let docsURL = FileManager.default.urls(
             for: .documentDirectory, in: .userDomainMask
         ).first!
