@@ -2484,35 +2484,52 @@ private struct TOCBookHeader: View {
     let bookTitle: String
     let currentPage: Int
     let totalPages: Int
+    let onClose: () -> Void
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(alignment: .center, spacing: 16) {
             if let coverPath = coverImagePath,
                let image = loadCoverImage(filename: coverPath) {
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 60, height: 84)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .shadow(color: DSColor.shadow, radius: 4, y: 2)
+                    .scaledToFill()
+                    .frame(width: 56, height: 84)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .shadow(color: .black.opacity(0.16), radius: 6, x: 0, y: 3)
+            } else {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color.secondary.opacity(0.15))
+                    .frame(width: 56, height: 84)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(bookTitle)
-                    .font(.headline)
+                    .font(.system(size: 20, weight: .semibold))
                     .lineLimit(2)
+                    .multilineTextAlignment(.leading)
 
                 if totalPages > 0 {
                     Text(String(format: localized("第%d頁 / 共%d頁"), currentPage + 1, totalPages))
-                        .font(.caption)
+                        .font(.system(size: 17, weight: .regular))
                         .foregroundColor(.secondary)
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 12)
+
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .frame(width: 40, height: 40)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 30)
+        .padding(.top, 24)
+        .padding(.bottom, 18)
     }
 
     private func loadCoverImage(filename: String) -> UIImage? {
@@ -2739,7 +2756,8 @@ struct ReaderMenuView: View {
                     coverImagePath: coverImagePath,
                     bookTitle: bookTitle,
                     currentPage: currentPage,
-                    totalPages: totalPages
+                    totalPages: totalPages,
+                    onClose: { isPresented = false }
                 )
 
                 tabBar
@@ -2769,19 +2787,13 @@ struct ReaderMenuView: View {
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("關閉")) {
-                        isPresented = false
-                    }
-                }
-            }
+            .navigationBarHidden(true)
         }
         .navigationViewStyle(.stack)
     }
 
     private var tabBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             ForEach(ReaderMenuTab.allCases, id: \.self) { tab in
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -2789,12 +2801,12 @@ struct ReaderMenuView: View {
                     }
                 } label: {
                     Text(tab.title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundColor(selectedTab == tab ? .white : .primary)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 9)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
                         .background(
-                            selectedTab == tab ? Color.accentColor : Color.clear
+                            selectedTab == tab ? Color.accentColor : Color.secondary.opacity(0.10)
                         )
                         .clipShape(Capsule())
                 }
@@ -2803,8 +2815,8 @@ struct ReaderMenuView: View {
 
             Spacer()
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 30)
+        .padding(.vertical, 8)
     }
 
     private var tocContent: some View {
@@ -2823,35 +2835,34 @@ struct ReaderMenuView: View {
                         Text(chapter.title)
                             .font(
                                 chapter.level == 0
-                                ? .system(size: 15, weight: .medium)
-                                : .system(size: 13)
+                                ? .system(size: 19, weight: .semibold)
+                                : .system(size: 16, weight: .regular)
                             )
-                            .foregroundColor(
-                                chapter.index == currentIndex
-                                ? .accentColor
-                                : (chapter.level == 0 ? .primary : .secondary)
-                            )
+                            .foregroundColor(chapter.level == 0 ? .primary : .secondary)
                             .lineLimit(2)
 
                         Spacer()
 
                         Text("\(chapter.index + 1)")
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(.system(size: 18, weight: .regular, design: .monospaced))
                             .foregroundColor(
                                 chapter.index == currentIndex
-                                ? .accentColor
-                                : .secondary.opacity(0.6)
+                                ? Color.accentColor
+                                : Color.secondary
                             )
                     }
-                    .padding(.vertical, chapter.level == 0 ? 6 : 4)
+                    .frame(height: 66)
+                    .padding(.horizontal, 30)
+                    .background {
+                        if chapter.index == currentIndex {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.primary.opacity(0.06))
+                        }
+                    }
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(
-                    chapter.index == currentIndex
-                    ? DSColor.highlight
-                    : Color.clear
-                )
-                .animation(.easeInOut(duration: 0.2), value: currentIndex)
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
                 .id(chapter.index)
             }
             .listStyle(.plain)
