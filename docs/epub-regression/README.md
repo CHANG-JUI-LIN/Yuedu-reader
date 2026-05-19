@@ -5,6 +5,9 @@ navigation cases without copying text or assets from commercial books. The goal
 is to turn each real-world rendering bug into a repeatable fixture that can be
 opened manually, compared against Apple Books, or wired into automated tests.
 
+> **See also:** [EPUB Compatibility Checklist](../epub-compatibility-checklist.md) —
+> a structured guide for testing and reporting EPUB rendering issues.
+
 ## Directory Layout
 
 - `samples/`: packaged `.epub` files for manual and automated regression checks.
