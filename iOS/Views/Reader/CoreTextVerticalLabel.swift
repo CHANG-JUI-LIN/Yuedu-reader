@@ -43,49 +43,63 @@ final class CoreTextVerticalLabelView: UIView {
         defer { context.restoreGState() }
 
         context.textMatrix = .identity
+        context.translateBy(x: 0, y: bounds.height)
+        context.scaleBy(x: 1, y: -1)
 
         let font = UIFont.systemFont(ofSize: fontSize, weight: weight)
         let ctFont = font as CTFont
 
-        let x = bounds.midX
-        var y: CGFloat = 0
-        let advance = ceil(fontSize * 1.15)
+        let centerX = bounds.midX
+        var y = bounds.height - fontSize
 
-        for scalar in text.map(String.init) {
-            let advanceY = adjustedAdvance(for: scalar)
+        let normalAdvance = ceil(fontSize * 1.15)
+        let punctuationAdvance = ceil(fontSize * 0.65)
 
+        for ch in text.map(String.init) {
             let attr = NSAttributedString(
-                string: scalar,
+                string: ch,
                 attributes: [
                     kCTFontAttributeName as NSAttributedString.Key: ctFont,
-                    kCTForegroundColorAttributeName as NSAttributedString.Key: textColor.cgColor,
-                    kCTVerticalFormsAttributeName as NSAttributedString.Key: true
+                    kCTForegroundColorAttributeName as NSAttributedString.Key: textColor.cgColor
                 ]
             )
 
             let line = CTLineCreateWithAttributedString(attr)
-
             let lineBounds = CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds])
-            let drawX = x - lineBounds.width / 2 - lineBounds.origin.x
-            let drawY = bounds.height - y - fontSize
 
-            context.textPosition = CGPoint(x: drawX, y: drawY)
-            CTLineDraw(line, context)
+            let x = centerX - lineBounds.width / 2 - lineBounds.origin.x
 
-            y += advanceY
+            if isCornerPunctuation(ch) {
+                let px = centerX + fontSize * 0.15
+                let py = y + fontSize * 0.25
+                context.textPosition = CGPoint(x: px, y: py)
+                CTLineDraw(line, context)
+                y -= punctuationAdvance
+            } else if isASCII(ch) {
+                context.saveGState()
+                context.translateBy(x: centerX, y: y + fontSize * 0.35)
+                context.rotate(by: .pi / 2)
+                context.textPosition = CGPoint(x: -lineBounds.width / 2, y: 0)
+                CTLineDraw(line, context)
+                context.restoreGState()
+                y -= normalAdvance
+            } else {
+                context.textPosition = CGPoint(x: x, y: y)
+                CTLineDraw(line, context)
+                y -= normalAdvance
+            }
 
-            if y + fontSize > bounds.height {
+            if y < 0 {
                 break
             }
         }
     }
 
-    private func adjustedAdvance(for scalar: String) -> CGFloat {
-        switch scalar {
-        case "\u{3001}", "\u{3002}", "\u{FF0C}", "\u{FF0E}":  // 、。，．
-            return ceil(fontSize * 0.65)
-        default:
-            return ceil(fontSize * 1.15)
-        }
+    private func isCornerPunctuation(_ s: String) -> Bool {
+        ["\u{FF0C}", "\u{3002}", "\u{3001}", "\u{FF0E}", "\u{FF61}", "\u{FF64}"].contains(s)
+    }
+
+    private func isASCII(_ s: String) -> Bool {
+        s.unicodeScalars.allSatisfy { $0.isASCII }
     }
 }
