@@ -189,6 +189,13 @@ iOS/
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Architecture notes: [Technotes/Architecture.md](Technotes/Architecture.md).
 
+## EPUB Compatibility
+
+Yuedu Reader includes a small EPUB regression corpus and compatibility checklist for testing rendering behavior.
+
+- [EPUB compatibility checklist](docs/epub-compatibility-checklist.md)
+- [EPUB regression samples](docs/epub-regression/README.md)
+
 ## License
 
 MIT. See [LICENSE](LICENSE). Links against [Readium](https://github.com/readium) components (BSD-licensed).
