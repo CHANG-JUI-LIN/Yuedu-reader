@@ -788,6 +788,16 @@ final class PublicationSession {
         let defaultViewport: CGSize?
     }
 
+    private static func firstMetaPropertyValue(in xml: String, property: String) -> String? {
+        let escapedProperty = NSRegularExpression.escapedPattern(for: property)
+        // Form 1: content="value" attribute
+        let attrPattern = #"<meta[^>]*property\s*=\s*""# + escapedProperty + #""[^>]*content\s*=\s*"([^"]*)"[^>]*>"#
+        if let value = firstMatch(in: xml, pattern: attrPattern) { return value }
+        // Form 2: text content >value</meta>
+        let textPattern = #"<meta[^>]*property\s*=\s*""# + escapedProperty + #""[^>]*>\s*([^<]+)\s*</meta>"#
+        return firstMatch(in: xml, pattern: textPattern)
+    }
+
     private static func parseOPFMetadata(from sourceURL: URL) async -> OPFMetadataResult {
         let fallback = OPFMetadataResult(
             writingMode: .unspecified,
@@ -812,7 +822,7 @@ final class PublicationSession {
 
         // EPUB3 rendition:layout
         let layoutMode: EPUBLayoutMode
-        if let layout = firstMatch(in: opfXML, pattern: #"<meta[^>]*property\s*=\s*"rendition:layout"[^>]*content\s*=\s*"([^"]+)"[^>]*>"#)?.lowercased() {
+        if let layout = firstMetaPropertyValue(in: opfXML, property: "rendition:layout")?.lowercased() {
             layoutMode = layout.contains("pre-paginated") ? .prePaginated : .reflowable
         } else {
             layoutMode = .reflowable
@@ -820,7 +830,7 @@ final class PublicationSession {
 
         // EPUB3 rendition:flow
         let flowMode: EPUBFlowMode
-        if let flow = firstMatch(in: opfXML, pattern: #"<meta[^>]*property\s*=\s*"rendition:flow"[^>]*content\s*=\s*"([^"]+)"[^>]*>"#)?.lowercased() {
+        if let flow = firstMetaPropertyValue(in: opfXML, property: "rendition:flow")?.lowercased() {
             if flow.contains("scrolled-doc") {
                 flowMode = .scrolledDoc
             } else if flow.contains("scrolled-continuous") {
@@ -841,7 +851,7 @@ final class PublicationSession {
 
         // EPUB3 rendition:viewport
         let defaultViewport: CGSize?
-        if let vp = firstMatch(in: opfXML, pattern: #"<meta[^>]*property\s*=\s*"rendition:viewport"[^>]*content\s*=\s*"([^"]+)"[^>]*>"#) {
+        if let vp = firstMetaPropertyValue(in: opfXML, property: "rendition:viewport") {
             defaultViewport = parseViewportString(vp)
         } else {
             defaultViewport = nil
