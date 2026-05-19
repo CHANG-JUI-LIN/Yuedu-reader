@@ -2526,14 +2526,14 @@ private struct TOCBookHeader: View {
 // MARK: - Combined Bookmarks & TOC Panel
 
 private enum VerticalTOCLayout {
-    static let columnWidth: CGFloat = 54
-    static let textWidth: CGFloat = 28
-    static let fontSize: CGFloat = 18
-    static let glyphHeight: CGFloat = 22
+    static let columnWidth: CGFloat = 48
+    static let textWidth: CGFloat = 24
+    static let fontSize: CGFloat = 17
+    static let glyphHeight: CGFloat = 21
     static let glyphSpacing: CGFloat = 0
-    static let columnSpacing: CGFloat = 6
-    static let topPadding: CGFloat = 22
-    static let bottomPadding: CGFloat = 20
+    static let columnSpacing: CGFloat = 3
+    static let topPadding: CGFloat = 20
+    static let bottomPadding: CGFloat = 18
     static let selectedCornerRadius: CGFloat = 8
     static let selectedBarWidth: CGFloat = 3
 }
@@ -2610,7 +2610,7 @@ private struct VerticalTOCColumn: View {
                 Spacer(minLength: 8)
 
                 Text("\(page)")
-                    .font(.system(size: 16, weight: .regular))
+                    .font(.system(size: 15, weight: .regular))
                     .foregroundStyle(isSelected ? Color.primary : Color.secondary)
             }
             .frame(width: VerticalTOCLayout.columnWidth, alignment: .top)
@@ -2623,7 +2623,7 @@ private struct VerticalTOCColumn: View {
                         cornerRadius: VerticalTOCLayout.selectedCornerRadius,
                         style: .continuous
                     )
-                    .fill(Color.blue.opacity(0.12))
+                    .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear)
                 }
             }
             .overlay(alignment: .leading) {
