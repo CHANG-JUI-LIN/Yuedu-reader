@@ -2464,7 +2464,7 @@ private struct TOCBookHeader: View {
     var body: some View {
         HStack(spacing: 16) {
             if let coverPath = coverImagePath,
-               let image = UIImage(contentsOfFile: coverPath) {
+               let image = loadCoverImage(filename: coverPath) {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -2493,6 +2493,13 @@ private struct TOCBookHeader: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 12)
+    }
+
+    private func loadCoverImage(filename: String) -> UIImage? {
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(filename)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
     }
 }
 
