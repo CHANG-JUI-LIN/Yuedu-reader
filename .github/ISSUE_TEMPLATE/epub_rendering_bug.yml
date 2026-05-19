@@ -1,0 +1,60 @@
+name: EPUB rendering bug
+description: Report a rendering/layout issue with an EPUB file
+title: "[EPUB] "
+labels: ["epub", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an EPUB rendering issue.
+        Please do not upload copyrighted books publicly. A minimal sample EPUB is preferred.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What looks wrong?
+      placeholder: Text overlaps an image / ruby is misplaced / vertical writing is wrong...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should it look like?
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Add screenshots from Yuedu Reader and, if possible, Apple Books.
+
+  - type: dropdown
+    id: epub_type
+    attributes:
+      label: EPUB type
+      options:
+        - EPUB 2 reflow
+        - EPUB 3 reflow
+        - EPUB 3 fixed-layout
+        - Unknown
+
+  - type: input
+    id: location
+    attributes:
+      label: Affected location
+      placeholder: Chapter / page / spine item / TOC entry
+
+  - type: textarea
+    id: apple_books
+    attributes:
+      label: Apple Books comparison
+      description: Does Apple Books display it correctly?
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional notes
