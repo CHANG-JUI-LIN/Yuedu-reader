@@ -2506,10 +2506,6 @@ private struct TOCBookHeader: View {
                     Text(String(format: localized("第%d頁 / 共%d頁"), currentPage + 1, totalPages))
                         .font(.caption)
                         .foregroundColor(.secondary)
-                } else if totalPages == 0 {
-                    Text("第\(currentPage + 1)頁")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
             }
 
@@ -2588,7 +2584,6 @@ private struct VerticalTOCView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 8)
             }
-            .flipsForRightToLeftLayoutDirection(true)
             .environment(\.layoutDirection, .rightToLeft)
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
