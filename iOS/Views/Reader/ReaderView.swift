@@ -2794,7 +2794,7 @@ struct ReaderMenuView: View {
                                     Text(bm.chapterTitle)
                                         .font(.system(size: 15, weight: .medium))
                                         .foregroundColor(.primary)
-                                        .lineLimit(1)
+                                .fixedSize(horizontal: false, vertical: true)
 
                                     Spacer()
 
