@@ -2525,6 +2525,22 @@ private struct TOCBookHeader: View {
 
 // MARK: - Combined Bookmarks & TOC Panel
 
+private struct VerticalChapterText: View {
+    let text: String
+    let font: Font
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 1) {
+            ForEach(Array(text.enumerated()), id: \.offset) { _, char in
+                Text(String(char))
+                    .font(font)
+                    .foregroundColor(color)
+            }
+        }
+    }
+}
+
 private struct VerticalTOCView: View {
     let chapters: [BookChapter]
     let currentIndex: Int
@@ -2535,45 +2551,38 @@ private struct VerticalTOCView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 0) {
                     ForEach(chapters.reversed()) { chapter in
+                        let isSelected = chapter.index == currentIndex
                         VStack(spacing: 0) {
-                            Text(chapter.title)
-                                .font(
-                                    chapter.level == 0
-                                    ? .system(size: 13, weight: .medium)
-                                    : .system(size: 11)
-                                )
-                                .foregroundColor(
-                                    chapter.index == currentIndex
+                            VerticalChapterText(
+                                text: chapter.title,
+                                font: chapter.level == 0
+                                    ? .system(size: 16, weight: .medium)
+                                    : .system(size: 14),
+                                color: isSelected
                                     ? .accentColor
                                     : (chapter.level == 0 ? .primary : .secondary)
-                                )
-                                .lineLimit(1)
+                            )
 
-                            Spacer()
+                            Spacer(minLength: 12)
 
                             Text("\(chapter.index + 1)")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.secondary.opacity(0.6))
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(isSelected ? .accentColor : .secondary)
                         }
-                        .frame(width: 56)
-                        .padding(.vertical, 12)
-                        .padding(.horizontal, 8)
+                        .padding(.vertical, 16)
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 0)
                         .background(
-                            chapter.index == currentIndex
-                            ? DSColor.accentLight
-                            : Color.clear
+                            isSelected ? DSColor.accentLight : Color.clear
                         )
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(
-                            HStack(spacing: 0) {
-                                if chapter.index == currentIndex {
-                                    Rectangle()
-                                        .fill(Color.accentColor)
-                                        .frame(width: 3)
-                                    Spacer()
-                                }
+                        .overlay(alignment: .leading) {
+                            if isSelected {
+                                Rectangle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 3)
                             }
-                        )
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                         .contentShape(Rectangle())
                         .onTapGesture {
                             onSelectChapter(chapter.index)
