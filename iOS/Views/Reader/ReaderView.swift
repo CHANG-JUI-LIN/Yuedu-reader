@@ -2503,7 +2503,7 @@ private struct TOCBookHeader: View {
                     .lineLimit(2)
 
                 if totalPages > 0 {
-                    Text("第\(currentPage + 1)頁 / 共\(totalPages)頁")
+                    Text(String(format: localized("第%d頁 / 共%d頁"), currentPage + 1, totalPages))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 } else if totalPages == 0 {

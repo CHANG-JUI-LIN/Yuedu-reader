@@ -445,6 +445,7 @@
 "載入失敗：HTTP %d" = "Load failed: HTTP %d";
 "已載入 %d 個語音源" = "Loaded %d voice sources";
 "載入失敗：%@" = "Load failed: %@";
+"第%d頁 / 共%d頁" = "Page %d of %d";
 "無法讀取語音源檔案：%@" = "Unable to read voice source file: %@";
 "語音源 URL 模板" = "Voice Source URL Template";
 "目前沒有內建雲端 TTS。這裡需要填入能直接回傳音訊資料的接口。" = "There is no built-in cloud TTS yet. Enter an endpoint that directly returns audio data.";
