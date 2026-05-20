@@ -121,16 +121,53 @@ One of the biggest design shifts was moving away from page number as identity.
 
 Page numbers are output, not source truth. They change when the font size changes, when margins change, when an image finally loads, when CSS changes, or when a chapter is lazily loaded.
 
-Yuedu stores reading position as content coordinates:
+Yuedu stores reading position as content coordinates, then resolves it through the current layout:
 
 ```swift
-struct CoreTextReadingPosition: Hashable, Codable {
+struct CoreTextReadingPosition: Codable, Equatable {
     let spineIndex: Int
     let charOffset: Int
+
+    static func chapterStart(_ spineIndex: Int) -> Self {
+        Self(spineIndex: spineIndex, charOffset: 0)
+    }
+
+    static func chapterEnd(_ spineIndex: Int) -> Self {
+        Self(spineIndex: spineIndex, charOffset: .max)
+    }
+}
+
+enum CoreTextReadingPositionMapper {
+    static func pageIndex(
+        for position: CoreTextReadingPosition,
+        layouts: [Int: CoreTextPaginator.ChapterLayout],
+        spinePageOffsets: [Int]
+    ) -> Int? {
+        guard spinePageOffsets.indices.contains(position.spineIndex),
+              let layout = layouts[position.spineIndex] else {
+            return nil
+        }
+
+        let localPage = layout.pageIndex(
+            for: clampedCharOffset(for: position, in: layout)
+        )
+        return spinePageOffsets[position.spineIndex] + localPage
+    }
+
+    static func clampedCharOffset(
+        for position: CoreTextReadingPosition,
+        in layout: CoreTextPaginator.ChapterLayout
+    ) -> Int {
+        let upperBound = max(layout.attributedString.length, 0)
+        if position.charOffset == .max {
+            return upperBound
+        }
+        return min(max(position.charOffset, 0), upperBound)
+    }
 }
 ```
 
-The page index is derived after layout. It is not the durable state. That means the app can rebuild layout and then ask the engine to resolve the nearest page for the same content position.
+The page index is derived after layout. It is not the durable state. That means the app can rebuild layout and then ask the mapper to resolve the nearest page for the same content position.
 
 This matters for restoring progress, switching between paged and scroll modes, jumping from the table of contents, bookmarks, highlights, and TTS progress.
 
@@ -152,7 +189,33 @@ Horizontal Latin text is already complex. Vertical CJK text adds another set of 
 
 CoreText supports vertical text, but not as a complete EPUB reader. You still have to build the surrounding engine.
 
-Yuedu's vertical pages use CoreText's right-to-left frame progression and vertical glyph forms. Then the paginator prepares the attributed string so CJK text uses vertical forms while Latin, numbers, and ASCII runs can stay readable as sideways groups.
+In Yuedu, the vertical switch is split between frame creation and attributed-string preparation. The frame attributes only tell CoreText how columns should progress:
+
+```swift
+static func frameAttributes(for writingMode: ReaderWritingMode) -> [String: Any] {
+    switch writingMode {
+    case .horizontal:
+        return [:]
+    case .verticalRTL:
+        return [
+            kCTFrameProgressionAttributeName as String:
+                Int(CTFrameProgression.rightToLeft.rawValue)
+        ]
+    }
+}
+
+let attributes = frameAttributes(for: writingMode)
+let frameAttributes = attributes.isEmpty ? nil : attributes as CFDictionary
+
+return CTFramesetterCreateFrame(
+    framesetter,
+    range,
+    path,
+    frameAttributes
+)
+```
+
+That is not enough by itself. Before pagination, the paginator normalizes punctuation, applies font fallback, applies vertical forms globally, then removes vertical forms from non-CJK Latin and numeric runs so mixed English text can stay readable as sideways groups.
 
 The coordinate system also changes. In horizontal text, `CTLineGetOffsetForStringIndex` feels like an x-axis measurement. In vertical-rl, that same value behaves like inline progress from the top of the column.
 
@@ -190,9 +253,25 @@ This is where building a reader differs from building a document viewer. The UI 
 
 ## Pagination is a cache problem too
 
-CoreText pagination can be expensive. Yuedu caches chapter layouts, but the cache key has to include anything that can change layout: text content, writing mode, render size, content insets, font size, line spacing, paragraph spacing, image metrics, and layout-affecting attributes.
+CoreText pagination can be expensive. Yuedu caches chapter layouts, but the cache key has to include anything that can change layout. In the app, that key currently looks like this:
 
-This sounds obvious, but it is one of the places where reader engines fail quietly. If a setting changes and the cache key does not, the old page ranges survive. Then the UI looks like a rendering bug even though the bug is actually stale layout.
+```swift
+private struct CacheKey: Hashable {
+    let spineIndex: Int
+    let width: CGFloat
+    let height: CGFloat
+    let fontSize: CGFloat
+    let marginH: CGFloat
+    let marginV: CGFloat
+    let lineSpacing: CGFloat
+    let paragraphSpacing: CGFloat
+    let letterSpacing: CGFloat
+    let writingMode: ReaderWritingMode
+    let contentFingerprint: Int
+}
+```
+
+This sounds obvious, but it is one of the places where reader engines fail quietly. If any layout-affecting value is missing from this key, the bug does not look like a cache bug at first. It looks like wrong page counts, stale highlights, broken TOC page numbers, or a reader that ignores typography changes.
 
 The same issue appears with page offsets. A table of contents can only show useful page numbers if the engine can resolve real chapter offsets after layout.
 
