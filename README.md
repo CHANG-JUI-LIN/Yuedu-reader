@@ -28,8 +28,7 @@ Yuedu Reader is built for serious CJK reading, not just basic EPUB display.
 It supports vertical writing, right-to-left reading flow, CJK punctuation, inline commentary, vertical table of contents, and CoreText-based pagination.
 
 <p align="center">
-  <img src="docs/screenshots/cjk-vertical.png" width="260" alt="CJK vertical writing">
-  <img src="docs/screenshots/toc.png" width="260" alt="CJK vertical table of contents">
+  <img src="docs/screenshots/cjk-vertical.png" width="280" alt="CJK vertical writing">
 </p>
 
 Highlights:
@@ -45,7 +44,8 @@ Highlights:
 Yuedu is not limited to CJK books. Standard English EPUB rendering is also supported, including publisher CSS, chapter navigation, images, links, and pagination.
 
 <p align="center">
-  <img src="docs/screenshots/english-epub.png" width="280" alt="English EPUB rendering">
+  <img src="docs/screenshots/english-epub.png" width="260" alt="English EPUB rendering">
+  <img src="docs/screenshots/toc.png" width="260" alt="English EPUB table of contents">
 </p>
 
 Supported EPUB features include:

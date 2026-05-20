@@ -28,8 +28,7 @@
 它支援直排、由右至左閱讀流、CJK 標點、行內批註、直排目錄，以及 CoreText 分頁。
 
 <p align="center">
-  <img src="docs/screenshots/cjk-vertical.png" width="260" alt="CJK 直排閱讀">
-  <img src="docs/screenshots/toc.png" width="260" alt="CJK 直排目錄">
+  <img src="docs/screenshots/cjk-vertical.png" width="280" alt="CJK 直排閱讀">
 </p>
 
 亮點：
@@ -45,7 +44,8 @@
 閱讀不只支援中文書。標準英文 EPUB 也可以渲染，包括出版商 CSS、章節導航、圖片、連結和分頁。
 
 <p align="center">
-  <img src="docs/screenshots/english-epub.png" width="280" alt="英文 EPUB 渲染">
+  <img src="docs/screenshots/english-epub.png" width="260" alt="英文 EPUB 渲染">
+  <img src="docs/screenshots/toc.png" width="260" alt="英文 EPUB 目錄">
 </p>
 
 支援的 EPUB 能力包括：
