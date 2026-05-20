@@ -31,7 +31,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             AdaptiveContentContainer(maxWidth: 760) {
                 Form {
                     Section {
@@ -144,7 +144,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle(localized("設定"))
-            .navigationBarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inlineLarge)
             .sheet(isPresented: $showSourceList) {
                 AdaptiveSheetContainer(maxWidth: 820) {
                     BookSourceListView()
@@ -191,7 +191,6 @@ struct SettingsView: View {
                 }
             }
         }
-        .navigationViewStyle(.stack)
     }
 
     private var downloadedBooksCount: Int {

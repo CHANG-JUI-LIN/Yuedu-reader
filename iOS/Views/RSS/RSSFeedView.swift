@@ -473,7 +473,7 @@ private struct RSSArticleRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 
-                if let imageURL = article.imageURL, let url = URL(string: imageURL) {
+                if let imageURL = article.imageURL, let url = URL(string: imageURL)?.upgradedToHTTPS() {
                     AsyncImage(url: url) { phase in
                         if let image = phase.image {
                             image

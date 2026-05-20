@@ -73,6 +73,7 @@ enum LegadoRSSScraper {
                 description: finalDescription,
                 contentHTML: finalContentHTML,
                 author: author,
+                imageURL: imageURL,
                 sourceId: source.id
             )
         }
@@ -134,7 +135,7 @@ enum LegadoRSSScraper {
     }
 
     private static func fetchHTML(url: String, headerJSON: String?) async throws -> String {
-        guard let requestURL = URL(string: url) else {
+        guard let requestURL = URL(string: url)?.upgradedToHTTPS() else {
             throw ScraperError.invalidURL
         }
 

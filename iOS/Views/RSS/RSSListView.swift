@@ -29,6 +29,7 @@ struct RSSListView: View {
     @State private var deleteTarget: RSSDeleteTarget?
     @State private var isRefreshingAll = false
     @State private var refreshProgress = RSSRefreshProgress()
+    @State private var showSettings = false
 
     private var folders: [RSSFolder] {
         store.orderedFolders()
@@ -65,34 +66,38 @@ struct RSSListView: View {
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    RSSHomeTopMenu(
-                        hideReadFeeds: hideReadFeeds,
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    RSSHomeAddMenu(
                         isRefreshingAll: isRefreshingAll,
                         hasSources: !store.sources.isEmpty,
-                        hasUnreadArticles: store.totalUnreadCount() > 0,
-                        onToggleHideRead: { hideReadFeeds.toggle() },
                         onAddSource: { showAddSheet = true },
                         onAddFolder: { showAddFolderSheet = true },
                         onRefresh: { Task { await refreshAllSources() } },
-                        onMarkAllRead: { store.markAllRead() },
                         onImportOPML: { showOPMLImportSheet = true },
+                        onImportJSON: {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                showJSONImporter = true
+                            }
+                        }
+                    )
+
+                    RSSHomeTopMenu(
+                        hideReadFeeds: hideReadFeeds,
+                        hasSources: !store.sources.isEmpty,
+                        hasUnreadArticles: store.totalUnreadCount() > 0,
+                        onToggleHideRead: { hideReadFeeds.toggle() },
+                        onMarkAllRead: { store.markAllRead() },
                         onExportOPML: {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                                 showOPMLExporter = true
                             }
                         },
-                        onImportJSON: {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                showJSONImporter = true
-                            }
-                        },
-                        onImportJSONURL: { showJSONURLSheet = true },
                         onExportJSON: {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                                 showJSONExporter = true
                             }
-                        }
+                        },
+                        onSettings: { showSettings = true }
                     )
                 }
             }
@@ -156,6 +161,9 @@ struct RSSListView: View {
                 contentType: .json,
                 defaultFilename: "yuedu-rss-legado.json"
             ) { _ in }
+            .sheet(isPresented: $showSettings) {
+                RSSSettingsContentView(isPresented: $showSettings)
+            }
             .alert(localized("RSS 訂閱"), isPresented: $showImportResult) {
                 Button(localized("確定"), role: .cancel) {}
             } message: {
@@ -655,21 +663,14 @@ private struct RSSHomeDivider: View {
     }
 }
 
-private struct RSSHomeTopMenu: View {
-    let hideReadFeeds: Bool
+private struct RSSHomeAddMenu: View {
     let isRefreshingAll: Bool
     let hasSources: Bool
-    let hasUnreadArticles: Bool
-    let onToggleHideRead: () -> Void
     let onAddSource: () -> Void
     let onAddFolder: () -> Void
     let onRefresh: () -> Void
-    let onMarkAllRead: () -> Void
     let onImportOPML: () -> Void
-    let onExportOPML: () -> Void
     let onImportJSON: () -> Void
-    let onImportJSONURL: () -> Void
-    let onExportJSON: () -> Void
 
     var body: some View {
         Menu {
@@ -688,6 +689,52 @@ private struct RSSHomeTopMenu: View {
             Divider()
 
             Button {
+                onImportOPML()
+            } label: {
+                Label(localized("匯入 OPML"), systemImage: "square.and.arrow.down")
+            }
+
+            Button {
+                onImportJSON()
+            } label: {
+                Label(localized("匯入 Legado JSON"), systemImage: "doc.badge.plus")
+            }
+
+            Divider()
+
+            Button {
+                onRefresh()
+            } label: {
+                Label(localized("刷新全部訂閱"), systemImage: "arrow.clockwise")
+            }
+            .disabled(isRefreshingAll || !hasSources)
+        } label: {
+            Image(systemName: "plus.circle")
+        }
+        .accessibilityLabel(localized("新增或匯入"))
+    }
+}
+
+private struct RSSHomeTopMenu: View {
+    let hideReadFeeds: Bool
+    let hasSources: Bool
+    let hasUnreadArticles: Bool
+    let onToggleHideRead: () -> Void
+    let onMarkAllRead: () -> Void
+    let onExportOPML: () -> Void
+    let onExportJSON: () -> Void
+    let onSettings: () -> Void
+
+    var body: some View {
+        Menu {
+            Button {
+                onMarkAllRead()
+            } label: {
+                Label(localized("標記全部已讀"), systemImage: "checkmark.circle")
+            }
+            .disabled(!hasUnreadArticles)
+
+            Button {
                 onToggleHideRead()
             } label: {
                 Label(
@@ -696,87 +743,49 @@ private struct RSSHomeTopMenu: View {
                 )
             }
 
-            RSSHomeManagementMenuContent(
-                isRefreshingAll: isRefreshingAll,
-                hasSources: hasSources,
-                hasUnreadArticles: hasUnreadArticles,
-                onRefresh: onRefresh,
-                onMarkAllRead: onMarkAllRead,
-                onImportOPML: onImportOPML,
-                onExportOPML: onExportOPML,
-                onImportJSON: onImportJSON,
-                onImportJSONURL: onImportJSONURL,
-                onExportJSON: onExportJSON
-            )
+            Divider()
+
+            Button {
+                onExportOPML()
+            } label: {
+                Label(localized("匯出 OPML"), systemImage: "square.and.arrow.up")
+            }
+            .disabled(!hasSources)
+
+            Button {
+                onExportJSON()
+            } label: {
+                Label(localized("匯出 Legado JSON"), systemImage: "doc.badge.arrow.up")
+            }
+            .disabled(!hasSources)
+
+            Divider()
+
+            Button {
+                onSettings()
+            } label: {
+                Label(localized("設定"), systemImage: "gearshape")
+            }
         } label: {
             Image(systemName: "line.3.horizontal")
         }
-        .accessibilityLabel(localized("設定"))
+        .accessibilityLabel(localized("更多"))
     }
 }
 
-private struct RSSHomeManagementMenuContent: View {
-    let isRefreshingAll: Bool
-    let hasSources: Bool
-    let hasUnreadArticles: Bool
-    let onRefresh: () -> Void
-    let onMarkAllRead: () -> Void
-    let onImportOPML: () -> Void
-    let onExportOPML: () -> Void
-    let onImportJSON: () -> Void
-    let onImportJSONURL: () -> Void
-    let onExportJSON: () -> Void
+private struct RSSSettingsContentView: View {
+    @Binding var isPresented: Bool
 
     var body: some View {
-        Button {
-            onRefresh()
-        } label: {
-            Label(localized("刷新訂閱"), systemImage: "arrow.clockwise")
-        }
-        .disabled(isRefreshingAll || !hasSources)
-
-        Button {
-            onMarkAllRead()
-        } label: {
-            Label(localized("標記全部已讀"), systemImage: "checkmark.circle")
-        }
-        .disabled(!hasUnreadArticles)
-
-        Divider()
-
-        Button {
-            onImportOPML()
-        } label: {
-            Label(localized("匯入 OPML"), systemImage: "square.and.arrow.down")
-        }
-
-        Button {
-            onExportOPML()
-        } label: {
-            Label(localized("匯出 OPML"), systemImage: "square.and.arrow.up")
-        }
-        .disabled(!hasSources)
-
-        Divider()
-
-        Button {
-            onImportJSON()
-        } label: {
-            Label(localized("匯入 Legado JSON"), systemImage: "doc.badge.plus")
-        }
-
-        Button {
-            onImportJSONURL()
-        } label: {
-            Label(localized("從網址匯入 Legado JSON"), systemImage: "link.badge.plus")
-        }
-
-        Button {
-            onExportJSON()
-        } label: {
-            Label(localized("匯出 Legado JSON"), systemImage: "doc.badge.arrow.up")
-        }
-        .disabled(!hasSources)
+        SettingsView()
+            .environmentObject(BookStore())
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(localized("完成")) {
+                        isPresented = false
+                    }
+                }
+            }
     }
 }
 

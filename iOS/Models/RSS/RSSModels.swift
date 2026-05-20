@@ -78,6 +78,7 @@ struct RSSItem: Codable, Identifiable {
     var description: String
     var contentHTML: String = ""
     var author: String?
+    var imageURL: String?
     var sourceId: String
 }
 
@@ -158,6 +159,7 @@ struct RSSArticleRecord: Codable, Identifiable, Equatable {
         contentHTML = item.contentHTML
         pubDate = item.pubDate
         author = item.author
+        imageURL = item.imageURL
         self.fetchedAt = fetchedAt
         fullText = nil
         fullTextHTML = nil

@@ -64,8 +64,22 @@ final class RSSFetcher: ObservableObject {
                 error = localized("RSS 解析成功，但沒有找到文章。")
             }
         } catch {
-            self.error = error.localizedDescription
+            if isATSBlockedError(error) {
+                self.error = localized("此來源使用不安全的 HTTP 連線，已被 iOS 安全政策阻擋。")
+            } else {
+                self.error = error.localizedDescription
+            }
         }
+    }
+
+    private func isATSBlockedError(_ error: Error) -> Bool {
+        if let urlError = error as? URLError,
+           urlError.code == .appTransportSecurityRequiresSecureConnection {
+            return true
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain
+            && nsError.code == -1022
     }
 
     private func fetchWithLegadoRules(source: RSSSource) async {
@@ -79,7 +93,11 @@ final class RSSFetcher: ObservableObject {
                 error = localized("RSS 解析成功，但沒有找到文章。")
             }
         } catch {
-            self.error = error.localizedDescription
+            if isATSBlockedError(error) {
+                self.error = localized("此來源使用不安全的 HTTP 連線，已被 iOS 安全政策阻擋。")
+            } else {
+                self.error = error.localizedDescription
+            }
         }
     }
 }
@@ -357,6 +375,9 @@ final class RSSXMLParser: NSObject, XMLParserDelegate {
             .map { RSSContentSanitizer.cleanText($0) }
             ?? htmlMetadata.author
 
+        let rawImageURL = currentItem["imageURL"].flatMap { $0.isEmpty ? nil : $0 } ?? htmlMetadata.imageURL
+        let imageURL = rawImageURL.flatMap { URL(string: $0)?.upgradedToHTTPS().absoluteString }
+
         return RSSItem(
             id: stableID(title: cleanTitle, link: link),
             title: cleanTitle,
@@ -365,6 +386,7 @@ final class RSSXMLParser: NSObject, XMLParserDelegate {
             description: summary,
             contentHTML: rawDescription,
             author: author,
+            imageURL: imageURL,
             sourceId: sourceId
         )
     }

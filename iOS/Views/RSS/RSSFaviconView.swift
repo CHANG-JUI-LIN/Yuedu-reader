@@ -97,7 +97,7 @@ private actor RSSFaviconImageLoader {
     }
 
     private func downloadImage(from url: URL) async -> UIImage? {
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url.upgradedToHTTPS())
         request.timeoutInterval = 10
         request.cachePolicy = .returnCacheDataElseLoad
         request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")

@@ -20,7 +20,7 @@ enum RSSFeedResponse {
 
 enum RSSRequestFactory {
     static func feedRequest(for source: RSSSource, metadata: RSSFeedFetchMetadata?) -> URLRequest? {
-        guard let url = URL(string: source.url) else {
+        guard let url = URL(string: source.url)?.upgradedToHTTPS() else {
             return nil
         }
         var request = URLRequest(url: url)
@@ -100,7 +100,7 @@ enum RSSFaviconResolver {
     }
 
     private static func htmlIconURLs(for homepageURL: URL) async -> [URL] {
-        var request = URLRequest(url: homepageURL)
+        var request = URLRequest(url: homepageURL.upgradedToHTTPS())
         request.timeoutInterval = 10
         request.cachePolicy = .returnCacheDataElseLoad
         request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
@@ -122,27 +122,23 @@ enum RSSFaviconResolver {
 
     private static func homepageURL(for source: RSSSource, fallbackURL: URL?) -> URL? {
         if let homepageURL = source.homepageURL,
-           let url = URL(string: homepageURL),
+           let url = URL(string: homepageURL)?.upgradedToHTTPS(),
            url.scheme != nil,
            url.host != nil {
             return url
         }
 
-        let candidate = fallbackURL ?? URL(string: source.url)
+        let candidate = fallbackURL?.upgradedToHTTPS() ?? URL(string: source.url)?.upgradedToHTTPS()
         guard let url = candidate,
-              let scheme = url.scheme,
-              let host = url.host else {
+              url.host != nil else {
             return nil
         }
-        return URL(string: "\(scheme)://\(host)/")
+        return URL(string: "https://\(url.host!)/")
     }
 
     private static func defaultFaviconURL(for homepageURL: URL) -> URL? {
-        guard let scheme = homepageURL.scheme,
-              let host = homepageURL.host else {
-            return nil
-        }
-        return URL(string: "\(scheme)://\(host)/favicon.ico")
+        guard let host = homepageURL.host else { return nil }
+        return URL(string: "https://\(host)/favicon.ico")
     }
 
     private static func normalizedURL(_ value: String, relativeTo baseURL: URL?) -> URL? {
@@ -150,9 +146,9 @@ enum RSSFaviconResolver {
         guard !trimmed.isEmpty else { return nil }
 
         if let url = URL(string: trimmed), url.scheme != nil {
-            return url
+            return url.upgradedToHTTPS()
         }
-        return URL(string: trimmed, relativeTo: baseURL)?.absoluteURL
+        return URL(string: trimmed, relativeTo: baseURL)?.absoluteURL.upgradedToHTTPS()
     }
 
     private static func shouldUseIconURL(_ url: URL) -> Bool {
@@ -715,7 +711,7 @@ enum RSSArticleHTMLRenderer {
         let author = article.author?.trimmingCharacters(in: .whitespacesAndNewlines)
         let byline = author?.isEmpty == false ? author! : ""
 
-        let articleURL = URL(string: article.link)
+        let articleURL = URL(string: article.link)?.upgradedToHTTPS()
         let cleanFallback = fallbackText.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = RSSArticleHTMLSanitizer.articleBodyHTML(
             bodyHTML,
@@ -1033,7 +1029,7 @@ enum RSSArticleHTMLRenderer {
 
 enum RSSArticleContentLoader {
     static func loadFullText(for article: RSSArticleRecord) async throws -> RSSExtractedArticle {
-        guard let url = URL(string: article.link) else {
+        guard let url = URL(string: article.link)?.upgradedToHTTPS() else {
             throw URLError(.badURL)
         }
 
