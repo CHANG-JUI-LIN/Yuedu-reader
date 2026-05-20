@@ -155,7 +155,15 @@ enum LegadoRSSScraper {
             )
         }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            if isATSBlocked(error) {
+                throw ScraperError.atsBlocked
+            }
+            throw error
+        }
         guard let http = response as? HTTPURLResponse,
               (200...299).contains(http.statusCode) else {
             throw ScraperError.httpError
@@ -173,6 +181,15 @@ enum LegadoRSSScraper {
             return url.absoluteString
         }
         return URL(string: link, relativeTo: base)?.absoluteURL.absoluteString
+    }
+
+    private static func isATSBlocked(_ error: Error) -> Bool {
+        if let urlError = error as? URLError,
+           urlError.code == .appTransportSecurityRequiresSecureConnection {
+            return true
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == -1022
     }
 
     private static let dateFormatters: [DateFormatter] = {
@@ -215,6 +232,7 @@ enum ScraperError: LocalizedError {
     case httpError
     case encodingError
     case noArticlesFound
+    case atsBlocked
 
     var errorDescription: String? {
         switch self {
@@ -228,6 +246,8 @@ enum ScraperError: LocalizedError {
             return localized("網頁編碼錯誤")
         case .noArticlesFound:
             return localized("沒有找到文章")
+        case .atsBlocked:
+            return localized("此來源使用不安全的 HTTP 連線，已被 iOS 安全政策阻擋。")
         }
     }
 }

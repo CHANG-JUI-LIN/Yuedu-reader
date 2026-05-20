@@ -428,6 +428,7 @@ enum RSSArticleHTMLSanitizer {
             return removeAdMarkers(fromHTML: cleaned)
                 .replacingOccurrences(of: #"(?i)<p>\s*</p>"#, with: "", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+                .upgradingHTTPURLsInHTML()
         } catch {
             return paragraphsHTML(from: RSSContentSanitizer.cleanText(trimmed))
         }
@@ -701,6 +702,7 @@ enum RSSArticleHTMLRenderer {
         mode: RSSArticleReaderMode,
         bodyHTML: String,
         fallbackText: String,
+        sourceFaviconURLs: [URL] = [],
         isLoading: Bool,
         errorMessage: String?
     ) -> RSSArticleHTMLDocument {
@@ -729,7 +731,11 @@ enum RSSArticleHTMLRenderer {
         let feedLinkLine = #"<a class="feedlink"\#(sourceHref)>\#(sourceLabel)</a>"#
         let bylineHTML = byline.isEmpty ? "" : "<br />\(escape(byline))"
         let datelineHTML = dateText.isEmpty ? "" : #"<div class="articleDateline"><a\#(preferredLinkAttributes)>\#(escape(dateText))</a></div>"#
-        let avatarHTML = sourceAvatarHTML(for: source, fallbackURL: articleURL)
+        let avatarHTML = sourceAvatarHTML(
+            for: source,
+            fallbackURL: articleURL,
+            faviconURLs: sourceFaviconURLs
+        )
         let baseURL = articleURL?.deletingLastPathComponent()
         let baseTag = baseURL.map { #"<base href="\#(escape($0.absoluteString))">"# } ?? ""
 
@@ -790,12 +796,44 @@ enum RSSArticleHTMLRenderer {
         return #" href="\#(escape(urlString))""#
     }
 
-    private static func sourceAvatarHTML(for source: RSSSource?, fallbackURL: URL?) -> String {
-        guard let source,
-              let url = RSSFaviconResolver.faviconURL(for: source, fallbackURL: fallbackURL) else {
+    private static func sourceAvatarHTML(
+        for source: RSSSource?,
+        fallbackURL: URL?,
+        faviconURLs: [URL]
+    ) -> String {
+        guard let source else {
             return ""
         }
-        return #"<img id="nnwImageIcon" src="\#(escape(url.absoluteString))" height="48" width="48" />"#
+
+        var urls = faviconURLs
+        if let fallback = RSSFaviconResolver.faviconURL(for: source, fallbackURL: fallbackURL) {
+            urls.append(fallback)
+        }
+
+        let uniqueURLs = urls.reduce(into: [URL]()) { result, url in
+            guard !result.contains(where: { $0.absoluteString == url.absoluteString }) else { return }
+            result.append(url)
+        }
+
+        guard let firstURL = uniqueURLs.first else {
+            return ""
+        }
+
+        let fallbacks = uniqueURLs
+            .dropFirst()
+            .map { escapeJavaScriptString($0.absoluteString) }
+            .joined(separator: ",")
+        let fallbackJSON = "[\(fallbacks)]"
+        return #"<img id="nnwImageIcon" src="\#(escape(firstURL.absoluteString))" height="48" width="48" data-fallback-srcs="\#(escape(fallbackJSON))" onerror="window.yueduFallbackImage(this)" />"#
+    }
+
+    private static func escapeJavaScriptString(_ string: String) -> String {
+        let escaped = string
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+        return "\"\(escaped)\""
     }
 
     // Structure and class names follow NetNewsWire's MIT-licensed article renderer
@@ -1017,6 +1055,22 @@ enum RSSArticleHTMLRenderer {
             if (!query) { return false; }
             return window.find(query, false, !!backwards, true, false, false, false);
           };
+          window.yueduFallbackImage = function(image) {
+            if (!image) { return; }
+            var index = Number(image.getAttribute("data-fallback-index") || "0");
+            var candidates = [];
+            try {
+              candidates = JSON.parse(image.getAttribute("data-fallback-srcs") || "[]");
+            } catch (e) {
+              candidates = [];
+            }
+            if (index < candidates.length) {
+              image.setAttribute("data-fallback-index", String(index + 1));
+              image.src = candidates[index];
+              return;
+            }
+            image.style.display = "none";
+          };
         })();
         </script>
         """
@@ -1038,24 +1092,44 @@ enum RSSArticleContentLoader {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            throw RSSArticleContentLoaderError.httpStatus(http.statusCode)
-        }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                throw RSSArticleContentLoaderError.httpStatus(http.statusCode)
+            }
 
-        let extracted = RSSArticleExtractor.extract(from: data, baseURL: url)
-        let text = extracted.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let html = extracted.html.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !html.isEmpty else {
-            throw RSSArticleContentLoaderError.emptyContent
+            let extracted = RSSArticleExtractor.extract(from: data, baseURL: url)
+            let text = extracted.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let html = extracted.html.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty || !html.isEmpty else {
+                throw RSSArticleContentLoaderError.emptyContent
+            }
+            return extracted
+        } catch let error as RSSArticleContentLoaderError {
+            throw error
+        } catch {
+            if isATSBlocked(error) {
+                throw RSSArticleContentLoaderError.atsBlocked
+            }
+            throw error
         }
-        return extracted
+    }
+
+    private static func isATSBlocked(_ error: Error) -> Bool {
+        if let urlError = error as? URLError,
+           urlError.code == .appTransportSecurityRequiresSecureConnection {
+            return true
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain
+            && nsError.code == -1022
     }
 }
 
 enum RSSArticleContentLoaderError: LocalizedError, Equatable {
     case httpStatus(Int)
     case emptyContent
+    case atsBlocked
 
     var errorDescription: String? {
         switch self {
@@ -1063,6 +1137,8 @@ enum RSSArticleContentLoaderError: LocalizedError, Equatable {
             return "HTTP \(status)"
         case .emptyContent:
             return localized("沒有可讀全文")
+        case .atsBlocked:
+            return localized("此來源使用不安全的 HTTP 連線，已被 iOS 安全政策阻擋。")
         }
     }
 }

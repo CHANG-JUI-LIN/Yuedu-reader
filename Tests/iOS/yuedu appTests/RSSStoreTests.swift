@@ -212,6 +212,44 @@ struct RSSStoreTests {
         ])
     }
 
+    @Test("article renderer emits favicon fallbacks instead of a single breakable image")
+    func articleRendererEmitsFaviconFallbacks() throws {
+        let source = RSSSource(
+            id: "source-1",
+            name: "News",
+            url: "https://feed.example/rss",
+            homepageURL: "https://news.example"
+        )
+        let article = RSSArticleRecord(item: RSSItem(
+            id: "https://news.example/article",
+            title: "Article",
+            link: "https://news.example/article",
+            pubDate: nil,
+            description: "Summary",
+            author: nil,
+            sourceId: source.id
+        ))
+
+        let document = RSSArticleHTMLRenderer.render(
+            article: article,
+            source: source,
+            mode: .feed,
+            bodyHTML: "<p>Summary</p>",
+            fallbackText: "Summary",
+            sourceFaviconURLs: [
+                try #require(URL(string: "https://cdn.example/icon.png")),
+                try #require(URL(string: "https://news.example/favicon.ico"))
+            ],
+            isLoading: false,
+            errorMessage: nil
+        )
+
+        #expect(document.html.contains(#"src="https://cdn.example/icon.png""#))
+        #expect(document.html.contains("data-fallback-srcs"))
+        #expect(document.html.contains("https://news.example/favicon.ico"))
+        #expect(document.html.contains("window.yueduFallbackImage(this)"))
+    }
+
     @Test("feed response updates source homepage and icon metadata")
     func feedResponseUpdatesSourceHomepageAndIconMetadata() throws {
         let store = RSSStore(storageDirectory: try temporaryDirectory())

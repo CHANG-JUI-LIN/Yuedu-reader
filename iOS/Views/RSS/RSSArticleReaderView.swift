@@ -13,6 +13,7 @@ struct RSSArticleReaderView: View {
     @State private var showSearch = false
     @State private var searchText = ""
     @State private var searchCommand: RSSArticleSearchCommand?
+    @State private var sourceFaviconURLs: [URL] = []
 
     private var article: RSSArticleRecord? {
         store.article(id: articleID)
@@ -101,6 +102,9 @@ struct RSSArticleReaderView: View {
                     store.markRead(articleId: article.id, isRead: true)
                     await loadFullTextIfNeeded(article)
                 }
+                .task(id: sourceFaviconLoadKey(for: article)) {
+                    await loadSourceFaviconURLs()
+                }
                 .onChange(of: searchText) { _, newValue in
                     guard !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
                     submitSearch(.next)
@@ -143,6 +147,7 @@ struct RSSArticleReaderView: View {
             mode: readerMode,
             bodyHTML: bodyHTML(for: article),
             fallbackText: fallbackText(for: article),
+            sourceFaviconURLs: sourceFaviconURLs,
             isLoading: readerMode == .reader && isLoadingFullText,
             errorMessage: readerMode == .reader ? fullTextError : nil
         )
@@ -221,6 +226,26 @@ struct RSSArticleReaderView: View {
             article.contentHTML,
             fallbackText: article.summary
         )
+    }
+
+    private func sourceFaviconLoadKey(for article: RSSArticleRecord) -> String {
+        [
+            article.sourceId,
+            source?.url ?? "",
+            source?.homepageURL ?? "",
+            source?.displayFaviconURL ?? "",
+            article.link
+        ].joined(separator: "|")
+    }
+
+    @MainActor
+    private func loadSourceFaviconURLs() async {
+        guard let source else {
+            sourceFaviconURLs = []
+            return
+        }
+        let articleURL = article.flatMap { URL(string: $0.link)?.upgradedToHTTPS() }
+        sourceFaviconURLs = await RSSFaviconResolver.candidateURLs(for: source, fallbackURL: articleURL)
     }
 }
 
