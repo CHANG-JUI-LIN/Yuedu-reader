@@ -40,17 +40,133 @@ enum RSSRequestFactory {
 enum RSSFaviconResolver {
     static func faviconURL(for source: RSSSource, fallbackURL: URL? = nil) -> URL? {
         if let faviconURL = source.displayFaviconURL,
-           let url = URL(string: faviconURL) {
+           let url = normalizedURL(faviconURL, relativeTo: homepageURL(for: source, fallbackURL: fallbackURL)) {
             return url
         }
 
-        let candidate = source.homepageURL ?? fallbackURL?.absoluteString ?? source.url
-        guard let url = URL(string: candidate),
+        guard let homepageURL = homepageURL(for: source, fallbackURL: fallbackURL) else {
+            return nil
+        }
+        return defaultFaviconURL(for: homepageURL)
+    }
+
+    static func candidateURLs(for source: RSSSource, fallbackURL: URL? = nil) async -> [URL] {
+        var candidates: [URL] = []
+        let homepageURL = homepageURL(for: source, fallbackURL: fallbackURL)
+
+        if let explicit = source.displayFaviconURL,
+           let url = normalizedURL(explicit, relativeTo: homepageURL),
+           shouldUseIconURL(url) {
+            candidates.append(url)
+        }
+
+        if let homepageURL {
+            candidates.append(contentsOf: await htmlIconURLs(for: homepageURL))
+            if let defaultURL = defaultFaviconURL(for: homepageURL) {
+                candidates.append(defaultURL)
+            }
+        }
+
+        return deduplicate(candidates.filter(shouldUseIconURL))
+    }
+
+    static func htmlIconURLs(in html: String, pageURL: URL) -> [URL] {
+        guard let document = try? SwiftSoup.parse(html, pageURL.absoluteString),
+              let links = try? document.select("link[rel][href]") else {
+            return []
+        }
+
+        var standardIcons: [URL] = []
+        var touchIcons: [URL] = []
+
+        for link in links.array() {
+            let rel = ((try? link.attr("rel")) ?? "").lowercased()
+            let href = ((try? link.attr("href")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !href.isEmpty,
+                  let url = normalizedURL(href, relativeTo: pageURL),
+                  shouldUseIconURL(url) else {
+                continue
+            }
+
+            let relValues = Set(rel.split { $0 == " " || $0 == "\t" || $0 == "\n" }.map(String.init))
+            if relValues.contains("icon") || relValues.contains("shortcut") {
+                standardIcons.append(url)
+            } else if relValues.contains("apple-touch-icon") || relValues.contains("apple-touch-icon-precomposed") {
+                touchIcons.append(url)
+            }
+        }
+
+        return deduplicate(standardIcons + touchIcons)
+    }
+
+    private static func htmlIconURLs(for homepageURL: URL) async -> [URL] {
+        var request = URLRequest(url: homepageURL)
+        request.timeoutInterval = 10
+        request.cachePolicy = .returnCacheDataElseLoad
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse,
+               !(200...299).contains(httpResponse.statusCode) {
+                return []
+            }
+            guard let html = String(data: data, encoding: .utf8) else {
+                return []
+            }
+            return htmlIconURLs(in: html, pageURL: homepageURL)
+        } catch {
+            return []
+        }
+    }
+
+    private static func homepageURL(for source: RSSSource, fallbackURL: URL?) -> URL? {
+        if let homepageURL = source.homepageURL,
+           let url = URL(string: homepageURL),
+           url.scheme != nil,
+           url.host != nil {
+            return url
+        }
+
+        let candidate = fallbackURL ?? URL(string: source.url)
+        guard let url = candidate,
               let scheme = url.scheme,
               let host = url.host else {
             return nil
         }
+        return URL(string: "\(scheme)://\(host)/")
+    }
+
+    private static func defaultFaviconURL(for homepageURL: URL) -> URL? {
+        guard let scheme = homepageURL.scheme,
+              let host = homepageURL.host else {
+            return nil
+        }
         return URL(string: "\(scheme)://\(host)/favicon.ico")
+    }
+
+    private static func normalizedURL(_ value: String, relativeTo baseURL: URL?) -> URL? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let url = URL(string: trimmed), url.scheme != nil {
+            return url
+        }
+        return URL(string: trimmed, relativeTo: baseURL)?.absoluteURL
+    }
+
+    private static func shouldUseIconURL(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() != "svg"
+    }
+
+    private static func deduplicate(_ urls: [URL]) -> [URL] {
+        var seen = Set<String>()
+        return urls.filter { url in
+            let key = url.absoluteString
+            guard !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
     }
 }
 

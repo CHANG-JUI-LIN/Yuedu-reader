@@ -133,6 +133,33 @@ struct RSSStoreTests {
         #expect(exported.contains(#"text="BBC News""#))
     }
 
+    @Test("OPML parser imports Plenary country lists with category wrapper")
+    func opmlParserImportsPlenaryCountryList() throws {
+        let opml = """
+        <?xml version='1.0' encoding='UTF-8' ?>
+        <opml version="1.0">
+          <head>
+            <title>Export from Plenary</title>
+            <url>https://play.google.com/store/apps/details?id=com.spians.plenary</url>
+          </head>
+          <body>
+            <outline text="Australia" title="Australia">
+              <outline text="ABC News" title="ABC News" description="" xmlUrl="https://www.abc.net.au/news/feed/1948/rss.xml" type="rss" />
+              <outline text="Sydney Morning Herald - Latest News" title="Sydney Morning Herald - Latest News" xmlUrl="https://www.smh.com.au/rss/feed.xml" type="rss" />
+            </outline>
+          </body>
+        </opml>
+        """
+
+        let sources = try RSSOPMLParser.parse(data: Data(opml.utf8))
+        #expect(sources.map(\.name) == ["ABC News", "Sydney Morning Herald - Latest News"])
+        #expect(sources.map(\.url) == [
+            "https://www.abc.net.au/news/feed/1948/rss.xml",
+            "https://www.smh.com.au/rss/feed.xml"
+        ])
+        #expect(sources.allSatisfy { $0.sourceGroup == "Australia" })
+    }
+
     @Test("favicon resolver uses feed host and source favicon override")
     func faviconResolverUsesSourceOverrideAndHostFallback() throws {
         let withIcon = RSSSource(
@@ -159,6 +186,30 @@ struct RSSStoreTests {
             for: articleFallback,
             fallbackURL: URL(string: "https://www.bbc.com/news/articles/one")
         )?.absoluteString == "https://www.bbc.com/favicon.ico")
+    }
+
+    @Test("favicon resolver reads homepage icon metadata before default favicon")
+    func faviconResolverReadsHomepageIconMetadata() throws {
+        let html = """
+        <html>
+          <head>
+            <link rel="icon" type="image/svg+xml" href="/ignored.svg">
+            <link rel="shortcut icon" href="/graphics/favicon.ico?v=1">
+            <link rel="apple-touch-icon" sizes="120x120" href="/touch-120.png">
+          </head>
+          <body></body>
+        </html>
+        """
+
+        let urls = RSSFaviconResolver.htmlIconURLs(
+            in: html,
+            pageURL: try #require(URL(string: "https://example.com/articles/latest"))
+        )
+
+        #expect(urls.map(\.absoluteString) == [
+            "https://example.com/graphics/favicon.ico?v=1",
+            "https://example.com/touch-120.png"
+        ])
     }
 
     @Test("feed response updates source homepage and icon metadata")

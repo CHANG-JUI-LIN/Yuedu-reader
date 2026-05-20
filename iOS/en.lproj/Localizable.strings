@@ -524,6 +524,9 @@
 "沒有搜尋結果" = "No Search Results";
 "匯入 OPML" = "Import OPML";
 "匯出 OPML" = "Export OPML";
+"OPML 網址" = "OPML URL";
+"從網址匯入 OPML" = "Import OPML from URL";
+"選取 OPML 文件" = "Select OPML File";
 "已匯入 %d 個訂閱源" = "Imported %d subscriptions";
 "OPML 匯入失敗：%@" = "OPML import failed: %@";
 "OPML 中沒有找到 RSS 訂閱源" = "No RSS subscriptions found in OPML";
@@ -553,6 +556,7 @@
 "從網址匯入 Legado JSON" = "Import Legado JSON from URL";
 "Legado JSON 網址" = "Legado JSON URL";
 "個訂閱源" = " source(s)";
+"正在更新…" = "Updating…";
 "下劃線" = "Underline";
 "今天" = "Today";
 "所有未讀" = "All Unread";

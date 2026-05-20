@@ -14,12 +14,11 @@ struct RSSListView: View {
     @State private var didSeedExpandedFolders = false
     @State private var showAddSheet = false
     @State private var showAddFolderSheet = false
-    @State private var showOPMLImporter = false
+    @State private var showOPMLImportSheet = false
     @State private var showOPMLExporter = false
     @State private var showJSONImporter = false
     @State private var showJSONExporter = false
     @State private var showJSONURLSheet = false
-    @State private var searchText = ""
     @State private var importMessage = ""
     @State private var showImportResult = false
     @State private var didBackfillSourceMetadata = false
@@ -30,13 +29,6 @@ struct RSSListView: View {
     @State private var deleteTarget: RSSDeleteTarget?
     @State private var isRefreshingAll = false
     @State private var refreshProgress = RSSRefreshProgress()
-
-    private let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-        return formatter
-    }()
 
     private var folders: [RSSFolder] {
         store.orderedFolders()
@@ -52,126 +44,60 @@ struct RSSListView: View {
         visibleSources(store.rootSources())
     }
 
-    private var trimmedSearchText: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var searchResults: [RSSArticleRecord] {
-        store.searchArticles(query: trimmedSearchText)
-    }
-
     var body: some View {
         NavigationStack {
-            List {
-                if !trimmedSearchText.isEmpty {
-                    searchSection
+            ZStack {
+                DSColor.groupedBackground
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        smartFeedsSection
+                        localFeedsSection
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 36)
                 }
-                else {
-                    smartFeedsSection
-                    localFeedsSection
-                }
+                .scrollIndicators(.visible)
             }
-            .listStyle(.insetGrouped)
-            .navigationTitle(localized("RSS 訂閱"))
-            .searchable(text: $searchText, prompt: localized("搜尋訂閱與文章"))
-            .refreshable {
-                await refreshAllSources()
-            }
+            .navigationTitle(localized("RSS訂閱"))
+            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        hideReadFeeds.toggle()
-                    } label: {
-                        Image(systemName: hideReadFeeds ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                            .font(DSFont.toolbarIcon)
-                    }
-                    .tint(hideReadFeeds ? DSColor.accent : DSColor.textPrimary)
-                    .accessibilityLabel(hideReadFeeds ? localized("顯示已讀訂閱") : localized("隱藏已讀訂閱"))
-                }
-
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            showAddSheet = true
-                        } label: {
-                            Label(localized("新增 RSS 訂閱"), systemImage: "plus")
-                        }
-
-                        Button {
-                            showAddFolderSheet = true
-                        } label: {
-                            Label(localized("新增資料夾"), systemImage: "folder.badge.plus")
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(DSFont.toolbarIcon)
-                    }
-                    .tint(DSColor.accent)
-
-                    Menu {
-                        Button {
-                            Task { await refreshAllSources() }
-                        } label: {
-                            Label(localized("刷新訂閱"), systemImage: "arrow.clockwise")
-                        }
-                        .disabled(isRefreshingAll || store.sources.isEmpty)
-
-                        Button {
-                            store.markAllRead()
-                        } label: {
-                            Label(localized("標記全部已讀"), systemImage: "checkmark.circle")
-                        }
-                        .disabled(store.totalUnreadCount() == 0)
-
-                        Divider()
-
-                        Button {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                showOPMLImporter = true
-                            }
-                        } label: {
-                            Label(localized("匯入 OPML"), systemImage: "square.and.arrow.down")
-                        }
-
-                        Button {
+                ToolbarItem(placement: .topBarTrailing) {
+                    RSSHomeTopMenu(
+                        hideReadFeeds: hideReadFeeds,
+                        isRefreshingAll: isRefreshingAll,
+                        hasSources: !store.sources.isEmpty,
+                        hasUnreadArticles: store.totalUnreadCount() > 0,
+                        onToggleHideRead: { hideReadFeeds.toggle() },
+                        onAddSource: { showAddSheet = true },
+                        onAddFolder: { showAddFolderSheet = true },
+                        onRefresh: { Task { await refreshAllSources() } },
+                        onMarkAllRead: { store.markAllRead() },
+                        onImportOPML: { showOPMLImportSheet = true },
+                        onExportOPML: {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                                 showOPMLExporter = true
                             }
-                        } label: {
-                            Label(localized("匯出 OPML"), systemImage: "square.and.arrow.up")
-                        }
-                        .disabled(store.sources.isEmpty)
-
-                        Divider()
-
-                        Button {
+                        },
+                        onImportJSON: {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                                 showJSONImporter = true
                             }
-                        } label: {
-                            Label(localized("匯入 Legado JSON"), systemImage: "doc.badge.plus")
-                        }
-
-                        Button {
-                            showJSONURLSheet = true
-                        } label: {
-                            Label(localized("從網址匯入 Legado JSON"), systemImage: "link.badge.plus")
-                        }
-
-                        Button {
+                        },
+                        onImportJSONURL: { showJSONURLSheet = true },
+                        onExportJSON: {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                                 showJSONExporter = true
                             }
-                        } label: {
-                            Label(localized("匯出 Legado JSON"), systemImage: "doc.badge.arrow.up")
                         }
-                        .disabled(store.sources.isEmpty)
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(DSFont.toolbarIcon)
-                    }
-                    .tint(DSColor.accent)
+                    )
                 }
+            }
+            .refreshable {
+                await refreshAllSources()
             }
             .safeAreaInset(edge: .bottom) {
                 if isRefreshingAll {
@@ -192,6 +118,13 @@ struct RSSListView: View {
             .sheet(isPresented: $showJSONURLSheet) {
                 ImportLegadoJSONURLSheet(isPresented: $showJSONURLSheet, store: store)
             }
+            .sheet(isPresented: $showOPMLImportSheet) {
+                RSSOPMLImportSheet(
+                    isPresented: $showOPMLImportSheet,
+                    onFileCompletion: importOPML,
+                    onDataImport: importOPMLData
+                )
+            }
             .sheet(item: $safariURL) { url in
                 SafariView(url: url)
                     .ignoresSafeArea()
@@ -205,12 +138,6 @@ struct RSSListView: View {
             .sheet(item: $sourceForInfo) { source in
                 RSSSourceInfoSheet(source: source, store: store)
             }
-            .fileImporter(
-                isPresented: $showOPMLImporter,
-                allowedContentTypes: [UTType(tag: "opml", tagClass: .filenameExtension, conformingTo: .xml), .xml, .data].compactMap { $0 },
-                allowsMultipleSelection: false,
-                onCompletion: importOPML
-            )
             .fileExporter(
                 isPresented: $showOPMLExporter,
                 document: RSSOPMLDocument(sources: store.sources.sorted(by: { $0.sortOrder < $1.sortOrder })),
@@ -259,97 +186,74 @@ struct RSSListView: View {
         }
     }
 
-    private var searchSection: some View {
-        Section(localized("搜尋結果")) {
-            if searchResults.isEmpty {
-                ContentUnavailableView(
-                    localized("沒有搜尋結果"),
-                    systemImage: "magnifyingglass"
-                )
-            } else {
-                ForEach(searchResults) { article in
-                    NavigationLink(destination: RSSArticleReaderView(articleID: article.id)) {
-                        RSSSearchResultRow(
-                            article: article,
-                            source: source(for: article.sourceId),
-                            dateFormatter: dateFormatter
-                        )
-                    }
-                    .simultaneousGesture(TapGesture().onEnded {
-                        store.markRead(articleId: article.id, isRead: true)
-                    })
-                }
-            }
-        }
-    }
-
     private var smartFeedsSection: some View {
-        Section {
-            if smartFeedsExpanded {
-                ForEach(RSSSmartFeedKind.allCases) { smartFeed in
-                    NavigationLink(destination: RSSSmartFeedView(kind: smartFeed)) {
-                        RSSMainFeedRow(
-                            title: smartFeed.title,
-                            unreadCount: store.unreadCount(for: smartFeed),
-                            icon: .system(smartFeed.systemImage, tint: smartFeed.tintColor)
-                        )
-                    }
-                    .contextMenu {
-                        if store.unreadCount(for: smartFeed) > 0 {
-                            Button {
-                                store.markAllRead(smartFeed: smartFeed)
-                            } label: {
-                                Label(localized("標記全部已讀"), systemImage: "checkmark.circle")
-                            }
+        RSSHomeSection(
+            title: localized("訂閱"),
+            unreadCount: 0,
+            isExpanded: $smartFeedsExpanded
+        ) {
+            ForEach(RSSSmartFeedKind.allCases) { smartFeed in
+                NavigationLink(destination: RSSSmartFeedView(kind: smartFeed)) {
+                    RSSMainFeedRow(
+                        title: smartFeed.title,
+                        unreadCount: store.unreadCount(for: smartFeed),
+                        icon: .system(smartFeed.systemImage, tint: smartFeed.tintColor)
+                    )
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    if store.unreadCount(for: smartFeed) > 0 {
+                        Button {
+                            store.markAllRead(smartFeed: smartFeed)
+                        } label: {
+                            Label(localized("標記全部已讀"), systemImage: "checkmark.circle")
                         }
                     }
                 }
+                .overlay(alignment: .bottom) {
+                    RSSHomeDivider()
+                }
             }
-        } header: {
-            RSSMainFeedSectionHeader(
-                title: localized("智慧訂閱"),
-                unreadCount: 0,
-                isExpanded: $smartFeedsExpanded
-            )
         }
     }
 
     private var localFeedsSection: some View {
-        Section {
-            if localFeedsExpanded {
-                if hideReadFeeds && visibleFolders.isEmpty && rootSources.isEmpty && !store.sources.isEmpty {
-                    Text(localized("沒有未讀訂閱"))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 8)
-                }
+        RSSHomeSection(
+            title: localized("本機"),
+            unreadCount: store.totalUnreadCount(),
+            isExpanded: $localFeedsExpanded
+        ) {
+            if hideReadFeeds && visibleFolders.isEmpty && rootSources.isEmpty && !store.sources.isEmpty {
+                Text(localized("沒有未讀訂閱"))
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 26)
+                    .padding(.vertical, 14)
+            }
 
-                ForEach(visibleFolders) { folder in
-                    folderRow(folder)
+            ForEach(visibleFolders) { folder in
+                folderRow(folder)
+                    .overlay(alignment: .bottom) {
+                        RSSHomeDivider()
+                    }
 
-                    if expandedFolderIDs.contains(folder.id) {
-                        ForEach(visibleSources(store.sources(in: folder))) { source in
-                            sourceRow(source, indent: 16)
-                        }
-                        .onMove { offsets, destination in
-                            store.moveSources(inFolderNamed: folder.name, fromOffsets: offsets, toOffset: destination)
-                        }
+                if expandedFolderIDs.contains(folder.id) {
+                    ForEach(visibleSources(store.sources(in: folder))) { source in
+                        sourceRow(source, indent: 36)
+                            .overlay(alignment: .bottom) {
+                                RSSHomeDivider()
+                            }
                     }
                 }
-
-                ForEach(rootSources) { source in
-                    sourceRow(source, indent: 0)
-                }
-                .onMove { offsets, destination in
-                    store.moveSources(inFolderNamed: nil, fromOffsets: offsets, toOffset: destination)
-                }
             }
-        } header: {
-            RSSMainFeedSectionHeader(
-                title: localized("本機"),
-                unreadCount: store.totalUnreadCount(),
-                isExpanded: $localFeedsExpanded
-            )
+
+            ForEach(rootSources) { source in
+                sourceRow(source, indent: 0)
+                    .overlay(alignment: .bottom) {
+                        RSSHomeDivider()
+                    }
+            }
         }
     }
 
@@ -413,6 +317,8 @@ struct RSSListView: View {
                 indent: indent
             )
         }
+        .buttonStyle(.plain)
+        .tint(.primary)
         .contextMenu {
             Button {
                 sourceForInfo = source
@@ -603,6 +509,15 @@ struct RSSListView: View {
             }
 
             let data = try Data(contentsOf: url)
+            importOPMLData(data)
+        } catch {
+            importMessage = String(format: localized("OPML 匯入失敗：%@"), error.localizedDescription)
+            showImportResult = true
+        }
+    }
+
+    private func importOPMLData(_ data: Data) {
+        do {
             let sources = try RSSOPMLParser.parse(data: data)
             let addedCount = store.addSources(sources)
             importMessage = String(format: localized("已匯入 %d 個訂閱源"), addedCount)
@@ -656,6 +571,328 @@ private enum RSSDeleteTarget: Identifiable {
             return String(format: localized("確定要刪除「%@」訂閱源嗎？"), source.name)
         case .folder(let folder):
             return String(format: localized("確定要刪除「%@」資料夾以及其中的訂閱源嗎？"), folder.name)
+        }
+    }
+}
+
+private struct RSSHomeCard<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .background(Color(.systemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+}
+
+private struct RSSHomeSection<Content: View>: View {
+    let title: String
+    let unreadCount: Int
+    @Binding var isExpanded: Bool
+    let content: Content
+
+    init(
+        title: String,
+        unreadCount: Int,
+        isExpanded: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.unreadCount = unreadCount
+        self._isExpanded = isExpanded
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Text(title)
+                        .font(.system(size: 21, weight: .bold))
+                        .foregroundStyle(.primary)
+
+                    Spacer()
+
+                    if !isExpanded && unreadCount > 0 {
+                        Text(unreadCount.formatted())
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                }
+                .padding(.horizontal, 4)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                RSSHomeCard {
+                    VStack(spacing: 0) {
+                        content
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct RSSHomeDivider: View {
+    var body: some View {
+        Divider()
+            .padding(.leading, 58)
+    }
+}
+
+private struct RSSHomeTopMenu: View {
+    let hideReadFeeds: Bool
+    let isRefreshingAll: Bool
+    let hasSources: Bool
+    let hasUnreadArticles: Bool
+    let onToggleHideRead: () -> Void
+    let onAddSource: () -> Void
+    let onAddFolder: () -> Void
+    let onRefresh: () -> Void
+    let onMarkAllRead: () -> Void
+    let onImportOPML: () -> Void
+    let onExportOPML: () -> Void
+    let onImportJSON: () -> Void
+    let onImportJSONURL: () -> Void
+    let onExportJSON: () -> Void
+
+    var body: some View {
+        Menu {
+            Button {
+                onAddSource()
+            } label: {
+                Label(localized("新增 RSS 訂閱"), systemImage: "plus")
+            }
+
+            Button {
+                onAddFolder()
+            } label: {
+                Label(localized("新增資料夾"), systemImage: "folder.badge.plus")
+            }
+
+            Divider()
+
+            Button {
+                onToggleHideRead()
+            } label: {
+                Label(
+                    hideReadFeeds ? localized("顯示已讀訂閱") : localized("隱藏已讀訂閱"),
+                    systemImage: hideReadFeeds ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
+                )
+            }
+
+            RSSHomeManagementMenuContent(
+                isRefreshingAll: isRefreshingAll,
+                hasSources: hasSources,
+                hasUnreadArticles: hasUnreadArticles,
+                onRefresh: onRefresh,
+                onMarkAllRead: onMarkAllRead,
+                onImportOPML: onImportOPML,
+                onExportOPML: onExportOPML,
+                onImportJSON: onImportJSON,
+                onImportJSONURL: onImportJSONURL,
+                onExportJSON: onExportJSON
+            )
+        } label: {
+            Image(systemName: "line.3.horizontal")
+        }
+        .accessibilityLabel(localized("設定"))
+    }
+}
+
+private struct RSSHomeManagementMenuContent: View {
+    let isRefreshingAll: Bool
+    let hasSources: Bool
+    let hasUnreadArticles: Bool
+    let onRefresh: () -> Void
+    let onMarkAllRead: () -> Void
+    let onImportOPML: () -> Void
+    let onExportOPML: () -> Void
+    let onImportJSON: () -> Void
+    let onImportJSONURL: () -> Void
+    let onExportJSON: () -> Void
+
+    var body: some View {
+        Button {
+            onRefresh()
+        } label: {
+            Label(localized("刷新訂閱"), systemImage: "arrow.clockwise")
+        }
+        .disabled(isRefreshingAll || !hasSources)
+
+        Button {
+            onMarkAllRead()
+        } label: {
+            Label(localized("標記全部已讀"), systemImage: "checkmark.circle")
+        }
+        .disabled(!hasUnreadArticles)
+
+        Divider()
+
+        Button {
+            onImportOPML()
+        } label: {
+            Label(localized("匯入 OPML"), systemImage: "square.and.arrow.down")
+        }
+
+        Button {
+            onExportOPML()
+        } label: {
+            Label(localized("匯出 OPML"), systemImage: "square.and.arrow.up")
+        }
+        .disabled(!hasSources)
+
+        Divider()
+
+        Button {
+            onImportJSON()
+        } label: {
+            Label(localized("匯入 Legado JSON"), systemImage: "doc.badge.plus")
+        }
+
+        Button {
+            onImportJSONURL()
+        } label: {
+            Label(localized("從網址匯入 Legado JSON"), systemImage: "link.badge.plus")
+        }
+
+        Button {
+            onExportJSON()
+        } label: {
+            Label(localized("匯出 Legado JSON"), systemImage: "doc.badge.arrow.up")
+        }
+        .disabled(!hasSources)
+    }
+}
+
+private struct RSSOPMLImportSheet: View {
+    @Binding var isPresented: Bool
+    let onFileCompletion: (Result<[URL], Error>) -> Void
+    let onDataImport: (Data) -> Void
+
+    @State private var showFileImporter = false
+    @State private var urlString = ""
+    @State private var isLoading = false
+    @State private var message = ""
+    @State private var showMessage = false
+
+    private var opmlContentTypes: [UTType] {
+        var contentTypes: [UTType] = []
+        if let opmlByExtension = UTType(filenameExtension: "opml") {
+            contentTypes.append(opmlByExtension)
+        }
+        if let registeredOPML = UTType("org.opml.opml") {
+            contentTypes.append(registeredOPML)
+        }
+        contentTypes.append(.xml)
+        return contentTypes
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(header: Text(localized("OPML 網址"))) {
+                    TextField("https://example.com/subscriptions.opml", text: $urlString)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    Button {
+                        Task { await importFromURL() }
+                    } label: {
+                        Label(localized("從網址匯入 OPML"), systemImage: "link.badge.plus")
+                    }
+                    .disabled(urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
+                }
+
+                Section(header: Text(localized("本機文件"))) {
+                    Button {
+                        showFileImporter = true
+                    } label: {
+                        Label(localized("選取 OPML 文件"), systemImage: "doc.badge.plus")
+                    }
+                }
+
+                if showMessage {
+                    Section {
+                        Text(message)
+                            .foregroundColor(message.hasPrefix("❌") ? .red : DSColor.textPrimary)
+                    }
+                }
+            }
+            .navigationTitle(localized("匯入 OPML"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(localized("取消")) {
+                        isPresented = false
+                    }
+                }
+            }
+            .disabled(isLoading)
+            .overlay {
+                if isLoading {
+                    ProgressView(localized("匯入中，請稍候…"))
+                        .padding()
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
+            }
+            .fileImporter(
+                isPresented: $showFileImporter,
+                allowedContentTypes: opmlContentTypes,
+                allowsMultipleSelection: false
+            ) { result in
+                isPresented = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    onFileCompletion(result)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func importFromURL() async {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme) else {
+            message = "❌ \(localized("RSS URL 無效"))"
+            showMessage = true
+            return
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let httpResponse = response as? HTTPURLResponse,
+               !(200...299).contains(httpResponse.statusCode) {
+                throw URLError(.badServerResponse)
+            }
+
+            isPresented = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                onDataImport(data)
+            }
+        } catch {
+            message = "❌ \(String(format: localized("OPML 匯入失敗：%@"), error.localizedDescription))"
+            showMessage = true
         }
     }
 }
@@ -718,20 +955,14 @@ private struct RSSMainFeedFolderRow: View {
     let isExpanded: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "chevron.down")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .rotationEffect(.degrees(isExpanded ? 0 : -90))
-                .frame(width: 12)
-
+        HStack(spacing: 10) {
             Image(systemName: "folder")
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(DSColor.accent)
-                .frame(width: 24, height: 24)
+                .frame(width: 32, height: 32)
 
             Text(title)
-                .font(.body)
+                .font(.system(size: 18, weight: .regular))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
@@ -739,11 +970,18 @@ private struct RSSMainFeedFolderRow: View {
 
             if !isExpanded && unreadCount > 0 {
                 Text(unreadCount.formatted())
-                    .font(.body)
+                    .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(.secondary)
             }
+
+            Image(systemName: "chevron.down")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                .frame(width: 16)
         }
-        .padding(.vertical, 8)
+        .padding(.horizontal, 24)
+        .frame(minHeight: 56)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
@@ -756,11 +994,11 @@ private struct RSSMainFeedRow: View {
     var indent: CGFloat = 0
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             iconView
 
             Text(title)
-                .font(.body)
+                .font(.system(size: 18, weight: .regular))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
@@ -768,12 +1006,13 @@ private struct RSSMainFeedRow: View {
 
             if unreadCount > 0 {
                 Text(unreadCount.formatted())
-                    .font(.body)
+                    .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.leading, indent)
-        .padding(.vertical, 8)
+        .padding(.leading, 24 + indent)
+        .padding(.trailing, 24)
+        .frame(minHeight: 56)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
@@ -782,14 +1021,13 @@ private struct RSSMainFeedRow: View {
     private var iconView: some View {
         switch icon {
         case .source(let source):
-            RSSFaviconView(source: source, size: 24)
-                .frame(width: 28, height: 28)
+            RSSFaviconView(source: source, size: 26)
+                .frame(width: 32, height: 32)
         case .system(let imageName, let tint):
             Image(systemName: imageName)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 24, weight: .regular))
                 .foregroundStyle(tint)
-                .frame(width: 28, height: 28)
-                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .frame(width: 32, height: 32)
         }
     }
 }
@@ -809,48 +1047,6 @@ private struct RSSRefreshProgressBar: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.bar)
-    }
-}
-
-private struct RSSSearchResultRow: View {
-    let article: RSSArticleRecord
-    let source: RSSSource?
-    let dateFormatter: DateFormatter
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            if let source {
-                RSSFaviconView(source: source, size: 24)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(article.title)
-                    .font(.body)
-                    .fontWeight(article.isRead ? .regular : .semibold)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.leading)
-
-                HStack(spacing: 8) {
-                    if let source {
-                        Text(source.name)
-                    }
-                    if let pubDate = article.pubDate {
-                        Text(dateFormatter.string(from: pubDate))
-                    }
-                }
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-                if !article.summary.isEmpty {
-                    Text(article.summary)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-            .padding(.vertical, 4)
-        }
     }
 }
 
