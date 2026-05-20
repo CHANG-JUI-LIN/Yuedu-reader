@@ -1,109 +1,86 @@
 # 閱讀
 
-[English](README.md) | [简体中文](README.zh-Hans.md) | [繁體中文](README.zh-Hant.md)
-
 <p align="center">
-  <img src="iOS/Assets.xcassets/AppIcon.appiconset/ios_app_icon_novel_reader_1024_no_alpha.png" width="120">
+  <img src="iOS/Assets.xcassets/AppIcon.appiconset/ios_app_icon_novel_reader_1024_no_alpha.png" width="112" alt="閱讀 icon">
 </p>
 
 <p align="center">
-  <strong>一個用 CoreText 打造的 iOS 原生閱讀引擎，不是 WebView。</strong><br>
-  開源裡你能找到最好的原生 iOS 閱讀引擎。CoreText 渲染，零 WebView。
+  <strong>一個由 CoreText 驅動的 iOS 原生閱讀器。</strong><br>
+  EPUB / TXT / RSS / WebDAV / TTS / CJK 直排閱讀。
 </p>
 
-## 展示
+<p align="center">
+  <a href="README.zh-Hans.md">简体中文</a> ·
+  <a href="README.zh-Hant.md">繁體中文</a> ·
+  <a href="README.md">English</a>
+</p>
 
-<table width="100%">
-  <tr style="border: none;">
-    <td width="33.3%" align="center" style="border: none; vertical-align: top;">
-      <br>
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#6d28d9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Book icon"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-      <h3>直排閱讀</h3>
-      <img src="docs/screenshots/cjk-vertical.png" width="220" style="border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);" alt="CJK 直排閱讀截圖">
-      <p style="font-size: 0.9em; color: #666; margin-top: 10px;">《紅樓夢》(脂評本): 直排文本、行間注釋和緊湊標注。</p>
-      </td>
-      <td width="33.3%" align="center" style="border: none; vertical-align: top;">
-      <br>
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Text icon"><path d="M3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2z"></path><path d="M7 15l3-6 3 6"></path><path d="M8 13h4"></path></svg>
-      <h3>英文 EPUB</h3>
-      <img src="docs/screenshots/english-epub.png" width="220" style="border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);" alt="英文 EPUB 渲染截圖">
-      <p style="font-size: 0.9em; color: #666; margin-top: 10px;">出版商 CSS 支援: 首字放大、巢狀邊距和字體層疊。</p>
-      </td>
-    <td width="33.3%" align="center" style="border: none; vertical-align: top;">
-      <br>
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="List icon"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-      <h3>目錄導航</h3>
-      <img src="docs/screenshots/toc.png" width="220" style="border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);" alt="目錄導航截圖">
-      <p style="font-size: 0.9em; color: #666; margin-top: 10px;">優先使用 toc.ncx 和 nav.xhtml, 而非基於骨架的章節猜測。</p>
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/demo/cjk-vertical-toc.gif" width="320" alt="閱讀 CJK 直排演示">
+</p>
 
-## 為什麼 CoreText 渲染如此不同
+閱讀是一個使用 SwiftUI 和 CoreText 建構的 iOS 原生閱讀器，專注於長文本閱讀、CJK 排版、本地 EPUB/TXT 書庫、網頁內容轉碼、RSS、TTS、WebDAV 同步，以及不依賴 WebView 的原生閱讀介面。
 
-<table width="100%">
-  <tr style="border: none;">
-    <td width="50" style="border: none; vertical-align: top;">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Star icon"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-    </td>
-    <td style="border: none; vertical-align: top;">
-      <strong>規範優先的保真度</strong><br>
-      忠實實現 EPUB 和 CSS 規範，確保渲染效果的一致性和可預測性。
-      <ul>
-        <li><strong>手動解析 CSS</strong>: 出版商樣式表被解析並解析為自定義層疊，將 <code>text-indent</code>、<code>font-size</code> 和 <code>:first-letter</code> 等屬性轉換為 <code>NSAttributedString</code> 屬性。</li>
-        <li><strong>精確解析</strong>: 處理簡寫屬性、百分比值和繼承屬性，不依賴系統佈局引擎。</li>
-      </ul>
-    </td>
-  </tr>
-  <tr style="border: none;">
-    <td width="50" style="border: none; vertical-align: top;">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Layout icon"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
-    </td>
-    <td style="border: none; vertical-align: top;">
-      <strong>高級佈局</strong><br>
-      直排、旁注 (Ruby)、腳注、註釋、首字放大和巢狀邊距。
-      <ul>
-        <li><strong>CJK 直排</strong>: 具備軸向感知能力的渲染，處理從欄頂開始的行間進程和塊方向範圍。拉丁字符被選擇性地解除直排並重新居中。</li>
-        <li><strong>行內注釋</strong>: 通過保留欄寬佔位符並手動繪製注釋，支援密集的直排注釋（例如脂評本），並將長注釋跨頁拆分。</li>
-      </ul>
-    </td>
-  </tr>
-  <tr style="border: none;">
-    <td width="50" style="border: none; vertical-align: top;">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Navigation icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-    </td>
-    <td style="border: none; vertical-align: top;">
-      <strong>智能導航</strong><br>
-      在可用時使用 <code>toc.ncx</code> 和 <code>nav.xhtml</code> 以獲得精確的目錄和位置。
-      <ul>
-        <li><strong>持久的閱讀位置</strong>: 進度存儲為 <code>(spineIndex, charOffset)</code>，確保在字體大小更改、設備旋轉或章節加載後位置保持不變。</li>
-        <li><strong>目錄優先級</strong>: 優先考慮明確的導航清單，而非基於骨架的猜測，並自動對後備標題進行去重。</li>
-      </ul>
-    </td>
-  </tr>
-  <tr style="border: none;">
-    <td width="50" style="border: none; vertical-align: top;">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Design icon"><circle cx="12" cy="12" r="10"></circle><path d="M12 16a4 4 0 0 0 0-8"></path><line x1="12" y1="2" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="6.34" y2="6.34"></line><line x1="17.66" y1="17.66" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="6.34" y2="17.66"></line><line x1="17.66" y1="4.93" x2="19.07" y2="6.34"></line></svg>
-    </td>
-    <td style="border: none; vertical-align: top;">
-      <strong>默認優雅</strong><br>
-      精心調整的字體、間距和主題，營造優雅的閱讀體驗。
-      <ul>
-        <li><strong>原生保真度</strong>: 主閱讀器完全不依賴 WebView，實現對行高、字母間距和段落邊距的絕對控制。</li>
-      </ul>
-    </td>
-  </tr>
-</table>
+## CJK 直排閱讀
 
-## 技術亮點
+閱讀不是只做基本 EPUB 顯示，而是針對嚴肅 CJK 閱讀場景設計。
 
-- **原生 CoreText 渲染**：左右翻頁與連續滾動，不經 WebView。
-- **CJK 直排**：繁簡中文直排、CJK 標點處理、CJK/拉丁混排，已用含行內批註與彩色註解的複雜直排 EPUB 驗證。
-- **EPUB CSS 解析**：支援 `:first-letter` 首字放大、巢狀區塊邊距累加、`<hr>` 含 width/margin/alignment、`text-indent`（含負值 hanging indent）、字型層疊、百分比邊距/內距/寬度解析。
-- **穩定閱讀位置**：以 `(spineIndex, charOffset)` 儲存進度，而非會隨排版變化漂移的頁碼。
-- **大書處理**：數百萬字 TXT 與 EPUB 驗證通過。
-- **Legado 相容書源規則**：匯入並執行相容 [Legado](https://github.com/gedoor/legado) 格式的使用者書源。
-- **線上閱讀管線**：將網頁與規則型書源正規化為閱讀格式。
+它支援直排、由右至左閱讀流、CJK 標點、行內批註、直排目錄，以及 CoreText 分頁。
+
+<p align="center">
+  <img src="docs/screenshots/cjk-vertical.png" width="260" alt="CJK 直排閱讀">
+  <img src="docs/screenshots/toc.png" width="260" alt="CJK 直排目錄">
+</p>
+
+亮點：
+
+- CJK 直排文字渲染
+- 直排書籍的右至左目錄
+- CJK 標點處理
+- 行內批註與高密度註解 EPUB 測試
+- 基於 CoreText 分頁，不以 WebView 作為主要閱讀介面
+
+## 英文 EPUB 也正常
+
+閱讀不只支援中文書。標準英文 EPUB 也可以渲染，包括出版商 CSS、章節導航、圖片、連結和分頁。
+
+<p align="center">
+  <img src="docs/screenshots/english-epub.png" width="280" alt="英文 EPUB 渲染">
+</p>
+
+支援的 EPUB 能力包括：
+
+- Reflowable EPUB
+- 出版商 CSS cascade
+- Drop caps 和段落樣式
+- 圖片與 SVG rasterization
+- `toc.ncx` 和 `nav.xhtml` 導航
+- 高亮、書籤和 TTS
+
+## 功能
+
+- SwiftUI + CoreText 原生 iOS 閱讀器
+- EPUB / TXT / Markdown 本地閱讀
+- CJK 直排與右至左閱讀 UI
+- 分頁與滾動閱讀模式
+- 高亮、書籤、標註
+- TTS 與自動閱讀
+- WebDAV 同步
+- RSS / 網頁文章閱讀
+- Legado 相容書源規則
+- EPUB regression samples 用於渲染相容性檢查
+
+## 為什麼使用 CoreText？
+
+多數 EPUB 閱讀器使用 WebView。閱讀使用 CoreText 作為主要閱讀渲染層，所以可以更精準控制分頁、文字範圍、高亮、TTS 同步和 CJK 直排。
+
+這讓以下能力變得可控：
+
+- 基於 `(spineIndex, charOffset)` 的穩定閱讀位置
+- 精準頁面渲染
+- 原生文字選取與高亮
+- TTS 進度同步
+- 自訂 CJK 直排布局行為
 
 ## 渲染管線
 
@@ -111,37 +88,46 @@
   <img src="docs/banner.svg" alt="渲染管線架構圖" width="680">
 </p>
 
-兩條平行路徑產出 CoreText 屬性字串：
+兩條平行路徑都會產出 CoreText 屬性字串：
 
+```text
+舊路徑：      HTMLAttributedStringBuilder.build() -> NSAttributedString
+                       |                            |
+RenderableNode：HTMLStyledASTRenderableNodeConverter -> RenderableNode IR -> NodeAttributedStringRenderer
+                       |                            |
+                共享層：CSSParser -> ResolvedStyle -> CoreTextPageView.drawLines()
 ```
-舊路徑：    HTMLAttributedStringBuilder.build() → NSAttributedString
-                    ↓                            ↓
-RenderableNode：HTMLStyledASTRenderableNodeConverter → RenderableNode IR → NodeAttributedStringRenderer
-                    ↓                            ↓
-              共享層：CSSParser → ResolvedStyle → CoreTextPageView.drawLines()
-```
 
-任何 CSS 屬性變更必須同時更新兩條路徑。共享層負責 CSS 解析、ResolvedStyle，以及 `CoreTextPageView` 的畫面繪製。
+任何 CSS 屬性變更都必須更新兩條路徑。共享層負責 CSS 解析、`ResolvedStyle` 和 `CoreTextPageView` 的 frame 繪製。
 
-**翻頁 vs 滾動**：`EPUBPageRenderer` 將內容路由至 `CoreTextPageEngine`（翻頁）或 `CoreTextScrollEngine`（滾動）。`CoreTextPageView` 及區塊 Cell 繪製最終 CoreText 畫面。
+更多細節：
 
-**EPUB 目錄**：優先使用 `toc.ncx` / `nav.xhtml` 條目，優於 spine 章節清單。spine 非目錄項目（續頁、分割後記）會被排除。spine fallback 包含相同標題去重。
+- [架構筆記](Technotes/Architecture.md)
+- [CoreText 貢獻者筆記](docs/coretext/README.md)
+- [EPUB 相容性 checklist](docs/epub-compatibility-checklist.md)
+- [EPUB regression samples](docs/epub-regression/README.md)
 
-## 功能概覽
+## 專案邊界
 
-- CoreText 翻頁與滾動閱讀器
-- EPUB CSS 渲染（出版者樣式表、字型層疊、首字放大、邊距）
-- CJK 排版：直排、標點、段落縮排
-- 本機書庫：EPUB、TXT、Markdown 匯入，含快取、封面、書籤、註解
-- 線上閱讀：網頁正規化、規則型書源擷取
-- RSS 閱讀器：RSS/Atom 訂閱、規則型提取、OPML 匯入
-- TTS：AVSpeechSynthesizer 及 HTTP 自訂 TTS
-- WebDAV 同步：備份、還原、書庫與進度同步
-- 閱讀器自訂：字體、字級、行距、間距、邊距、主題、翻頁/滾動模式、直排
+閱讀是閱讀器引擎和應用外殼，不內建、不託管、不推薦、也不散布任何受版權保護的內容來源。
 
-## 系統需求
+使用者需要自行確保匯入檔案、RSS feed、網站、自訂規則、cookie、帳號和產生內容符合當地法律、版權要求和網站服務條款。
 
-- iOS 18.0+、Xcode 16+、Swift 5
+本專案不接受內建盜版源、DRM 繞過、付費牆繞過、私有 token 分享、cookie 擷取或反爬繞過邏輯等貢獻。
+
+Legado 相容性只代表書源規則格式相容；閱讀不內建第三方書源規則，也不是 [Legado](https://github.com/gedoor/legado) 專案的官方關聯產品。
+
+## AI 協同開發聲明
+
+本倉庫重度使用 AI 協同開發，包括程式碼生成、重構、文件撰寫和審查輔助。專案仍會保留人工審閱與維護責任，但 AI 輔助產出的程式碼會明確存在於專案中。
+
+如果你偏好完全由人手撰寫的程式碼，或對 AI 輔助開發有疑慮或排斥，請在使用或貢獻前自行評估，並請見諒。
+
+## 環境需求
+
+- iOS 18.0+
+- Xcode 16+
+- Xcode 專案目前使用 Swift 5 language mode
 
 ## 快速開始
 
@@ -155,6 +141,47 @@ open Yuedu-Reader.xcodeproj
 
 ```bash
 ./scripts/build.sh
+```
+
+## 演示素材
+
+README 演示素材建議放在：
+
+```text
+docs/demo/
+  cjk-vertical-toc.gif
+  reader-page-turn.gif
+  import-flow.gif
+docs/screenshots/
+  cjk-vertical.png
+  english-epub.png
+  toc.png
+```
+
+首屏 GIF 建議控制在 5-10 秒、寬度 300-360 px，最好不要超過 10 MB。如果 GIF 太大，可以把 MP4 放在 `docs/demo/` 或 release asset，README 用截圖連結過去。
+
+模擬器錄影：
+
+```bash
+xcrun simctl io booted recordVideo demo.mov
+```
+
+轉 GIF：
+
+```bash
+ffmpeg -i demo.mov -vf "fps=12,scale=640:-1:flags=lanczos" -loop 0 docs/demo/cjk-vertical-toc.gif
+```
+
+更小的 GIF：
+
+```bash
+ffmpeg -i demo.mov -vf "fps=10,scale=480:-1:flags=lanczos" -loop 0 docs/demo/cjk-vertical-toc.gif
+```
+
+MP4 fallback：
+
+```bash
+ffmpeg -i demo.mov -vf "scale=720:-2" -c:v libx264 -crf 28 -preset slow -pix_fmt yuv420p docs/demo/cjk-vertical-toc.mp4
 ```
 
 ## 目錄結構
@@ -182,13 +209,14 @@ iOS/
 
 - 使用者字串使用 `localized()`，更新三個 `.lproj` 檔案。
 - 閱讀位置以內容座標為準，不用頁碼。
-- UI 樣式使用設計 Token API：`DSColor`、`DSFont`、`DSSpacing`。
-- 新增或修改 View 時，加入 `#Preview`。
+- UI 樣式使用設計 token API：`DSColor`、`DSFont`、`DSSpacing`。
+- 新增或修改 View 時，盡量加入可編譯的 `#Preview` 或 `PreviewProvider`。
 - 新增 CSS 屬性至 `ResolvedStyle` 時，同步 `RenderStyle` 欄位、更新 `RenderStyle.from`，並處理兩條渲染路徑。
 - 巢狀區塊 CSS 邊距透過 `inheritedBlockMarginLeft` 累加。
+- 書源和規則引擎相關工作必須限定在合法、使用者自行提供內容的流程。
 
-請見 [CONTRIBUTING.md](CONTRIBUTING.md)。架構筆記：[Technotes/Architecture.md](Technotes/Architecture.md)。
+請見 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 授權
 
-MIT。詳見 [LICENSE](LICENSE)。連結 [Readium](https://github.com/readium) 元件（BSD 授權）。
+MIT。詳見 [LICENSE](LICENSE)。本專案連結 [Readium](https://github.com/readium) 元件，Readium 使用 BSD 授權。
