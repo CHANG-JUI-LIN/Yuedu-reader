@@ -57,9 +57,18 @@ Supported EPUB features include:
 - `toc.ncx` and `nav.xhtml` navigation
 - Highlights, bookmarks, and TTS
 
+## Reading Workflows
+
+Yuedu Reader is not only a local EPUB reader. It also includes RSS reading and web article normalization for online reading workflows.
+
+- **RSS Reader**: RSS / Atom feeds, article extraction, and reading inside the native reader.
+- **Web Article Normalization**: convert web pages into clean long-form reading content.
+
+Short workflow GIFs should live in `docs/demo/rss-reading.gif` and `docs/demo/web-normalization.gif`. They are intentionally kept out of the first screen so the README loads quickly and stays focused.
+
 ## Features
 
-- Native iOS reader built with SwiftUI and CoreText
+- SwiftUI + CoreText native iOS reader
 - EPUB / TXT / Markdown local reading
 - CJK vertical writing and right-to-left reading UI
 - Paged and scroll reading modes
@@ -84,44 +93,24 @@ This makes it possible to build:
 
 ## Rendering Pipeline
 
-<p align="center">
-  <img src="docs/banner.svg" alt="Rendering pipeline architecture" width="680">
-</p>
+Yuedu has two EPUB rendering paths that share the same CSS resolution and CoreText drawing layer:
 
-Two parallel paths both produce CoreText attributed strings:
+- Legacy HTML attributed-string builder
+- RenderableNode IR pipeline
 
-```text
-Legacy path:     HTMLAttributedStringBuilder.build() -> NSAttributedString
-                     |                            |
-RenderableNode:  HTMLStyledASTRenderableNodeConverter -> RenderableNode IR -> NodeAttributedStringRenderer
-                     |                            |
-               Shared: CSSParser -> ResolvedStyle -> CoreTextPageView.drawLines()
-```
+Most contributors do not need to understand the full engine before working on UI, docs, localization, EPUB testing, WebDAV, or source-rule features.
 
-Any CSS property change must update both paths. The shared layer handles CSS resolution, `ResolvedStyle`, and frame drawing in `CoreTextPageView`.
+For details, see:
 
-More detail:
-
-- [Architecture notes](Technotes/Architecture.md)
 - [CoreText contributor notes](docs/coretext/README.md)
+- [Architecture notes](Technotes/Architecture.md)
+
+## EPUB Compatibility
+
+Yuedu includes a small EPUB regression corpus and compatibility checklist for testing rendering behavior.
+
 - [EPUB compatibility checklist](docs/epub-compatibility-checklist.md)
 - [EPUB regression samples](docs/epub-regression/README.md)
-
-## Project Boundary
-
-Yuedu Reader is a reader engine and app shell. It does not include, host, recommend, or distribute copyrighted content sources.
-
-Users are responsible for making sure imported files, RSS feeds, websites, custom rules, cookies, accounts, and generated content comply with applicable laws, copyright requirements, and website terms.
-
-The project will not accept contributions for built-in piracy sources, DRM circumvention, paywall bypassing, private-token sharing, cookie harvesting, or anti-bot bypass logic.
-
-Legado compatibility is a source-rule format compatibility target only. Yuedu Reader does not bundle third-party source rules and is not affiliated with the [Legado](https://github.com/gedoor/legado) project.
-
-## AI-Assisted Development
-
-This repository is developed with heavy AI-assisted collaboration, including code generation, refactoring, documentation, and review support. Human review and project ownership remain part of the workflow, but AI-assisted code is intentionally present throughout the project.
-
-If you strongly prefer strictly human-authored code or are uncomfortable with AI-assisted development, please review the project with that expectation in mind. Your understanding is appreciated.
 
 ## Requirements
 
@@ -143,46 +132,21 @@ Select the `Yuedu-Reader` scheme and build for a simulator or device. Or run:
 ./scripts/build.sh
 ```
 
-## Demo Media
+## Project Boundary
 
-README demo media should live in:
+Yuedu Reader is a reader engine and app shell. It does not include, host, recommend, or distribute copyrighted content sources.
 
-```text
-docs/demo/
-  cjk-vertical-toc.gif
-  reader-page-turn.gif
-  import-flow.gif
-docs/screenshots/
-  cjk-vertical.png
-  english-epub.png
-  toc.png
-```
+Users are responsible for making sure imported files, RSS feeds, websites, custom rules, cookies, accounts, and generated content comply with applicable laws, copyright requirements, and website terms.
 
-The first-screen GIF should stay short: 5-10 seconds, 300-360 px wide, ideally under 10 MB. If the GIF is too large, put an MP4 in `docs/demo/` or a release asset and link it through a screenshot.
+The project will not accept contributions for built-in piracy sources, DRM circumvention, paywall bypassing, private-token sharing, cookie harvesting, or anti-bot bypass logic.
 
-Simulator recording:
+Legado compatibility is a source-rule format compatibility target only. Yuedu Reader does not bundle third-party source rules and is not affiliated with the [Legado](https://github.com/gedoor/legado) project.
 
-```bash
-xcrun simctl io booted recordVideo demo.mov
-```
+## AI-Assisted Development
 
-GIF conversion:
+This repository is developed with heavy AI-assisted collaboration, including code generation, refactoring, documentation, and review support. Human review and project ownership remain part of the workflow, but AI-assisted code is intentionally present throughout the project.
 
-```bash
-ffmpeg -i demo.mov -vf "fps=12,scale=640:-1:flags=lanczos" -loop 0 docs/demo/cjk-vertical-toc.gif
-```
-
-Smaller GIF:
-
-```bash
-ffmpeg -i demo.mov -vf "fps=10,scale=480:-1:flags=lanczos" -loop 0 docs/demo/cjk-vertical-toc.gif
-```
-
-MP4 fallback:
-
-```bash
-ffmpeg -i demo.mov -vf "scale=720:-2" -c:v libx264 -crf 28 -preset slow -pix_fmt yuv420p docs/demo/cjk-vertical-toc.mp4
-```
+If you strongly prefer strictly human-authored code or are uncomfortable with AI-assisted development, please review the project with that expectation in mind. Your understanding is appreciated.
 
 ## Repository Layout
 
@@ -205,7 +169,7 @@ iOS/
 └── *.lproj/              # Localization: zh-Hant, zh-Hans, en
 ```
 
-## Development Rules
+## Development
 
 - Use `localized()` for user-facing strings; update all three `.lproj` files.
 - Keep reading position based on content coordinates, not page indexes.
@@ -215,7 +179,7 @@ iOS/
 - Nested block CSS margins accumulate through `inheritedBlockMarginLeft`.
 - Keep source/rule-engine work limited to legal, user-provided content workflows.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Demo media workflow: [docs/demo/README.md](docs/demo/README.md).
 
 ## License
 

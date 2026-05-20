@@ -57,6 +57,15 @@
 - `toc.ncx` 和 `nav.xhtml` 导航
 - 高亮、书签和 TTS
 
+## 阅读工作流
+
+阅读不只是本地 EPUB 阅读器，也包含 RSS 阅读和网页文章转码，支持在线阅读工作流。
+
+- **RSS 阅读器**：RSS / Atom feed、文章提取，并在原生阅读器内阅读。
+- **网页文章转码**：将网页转成干净的长文本阅读内容。
+
+短工作流 GIF 应放在 `docs/demo/rss-reading.gif` 和 `docs/demo/web-normalization.gif`。它们刻意不放在第一屏，避免 README 加载过慢或展示重点分散。
+
 ## 功能
 
 - SwiftUI + CoreText 原生 iOS 阅读器
@@ -84,44 +93,24 @@
 
 ## 渲染管线
 
-<p align="center">
-  <img src="docs/banner.svg" alt="渲染管线架构图" width="680">
-</p>
+阅读有两条 EPUB 渲染路径，它们共用同一套 CSS resolution 和 CoreText 绘制层：
 
-两条平行路径都会产出 CoreText 属性字符串：
+- Legacy HTML attributed-string builder
+- RenderableNode IR pipeline
 
-```text
-旧路径：      HTMLAttributedStringBuilder.build() -> NSAttributedString
-                       |                            |
-RenderableNode：HTMLStyledASTRenderableNodeConverter -> RenderableNode IR -> NodeAttributedStringRenderer
-                       |                            |
-                共享层：CSSParser -> ResolvedStyle -> CoreTextPageView.drawLines()
-```
+多数贡献者在处理 UI、文档、本地化、EPUB 测试、WebDAV 或书源规则功能前，不需要先理解完整引擎。
 
-任何 CSS 属性变更都必须更新两条路径。共享层负责 CSS 解析、`ResolvedStyle` 和 `CoreTextPageView` 的 frame 绘制。
+详细内容见：
 
-更多细节：
+- [CoreText contributor notes](docs/coretext/README.md)
+- [Architecture notes](Technotes/Architecture.md)
 
-- [架构笔记](Technotes/Architecture.md)
-- [CoreText 贡献者笔记](docs/coretext/README.md)
-- [EPUB 兼容性 checklist](docs/epub-compatibility-checklist.md)
+## EPUB 兼容性
+
+阅读包含小型 EPUB regression corpus 和兼容性 checklist，用来测试渲染行为。
+
+- [EPUB compatibility checklist](docs/epub-compatibility-checklist.md)
 - [EPUB regression samples](docs/epub-regression/README.md)
-
-## 项目边界
-
-阅读是阅读器引擎和应用外壳，不内置、不托管、不推荐、也不分发任何受版权保护的内容来源。
-
-用户需要自行确保导入文件、RSS feed、网站、自定义规则、cookie、账号和生成内容符合当地法律、版权要求和网站服务条款。
-
-本项目不接受内置盗版源、DRM 绕过、付费墙绕过、私有 token 分享、cookie 提取或反爬绕过逻辑等贡献。
-
-Legado 兼容性只代表书源规则格式兼容；阅读不内置第三方书源规则，也不是 [Legado](https://github.com/gedoor/legado) 项目的官方关联产品。
-
-## AI 协同开发声明
-
-本仓库重度使用 AI 协同开发，包括代码生成、重构、文档撰写和审查辅助。项目仍会保留人工审阅与维护责任，但 AI 辅助产出的代码会明确存在于项目中。
-
-如果你偏好完全由人手撰写的代码，或对 AI 辅助开发有疑虑或排斥，请在使用或贡献前自行评估，并请见谅。
 
 ## 环境要求
 
@@ -143,46 +132,21 @@ open Yuedu-Reader.xcodeproj
 ./scripts/build.sh
 ```
 
-## 演示素材
+## 项目边界
 
-README 演示素材建议放在：
+阅读是阅读器引擎和应用外壳，不内置、不托管、不推荐、也不分发任何受版权保护的内容来源。
 
-```text
-docs/demo/
-  cjk-vertical-toc.gif
-  reader-page-turn.gif
-  import-flow.gif
-docs/screenshots/
-  cjk-vertical.png
-  english-epub.png
-  toc.png
-```
+用户需要自行确保导入文件、RSS feed、网站、自定义规则、cookie、账号和生成内容符合当地法律、版权要求和网站服务条款。
 
-首屏 GIF 建议控制在 5-10 秒、宽度 300-360 px，最好不要超过 10 MB。如果 GIF 太大，可以把 MP4 放在 `docs/demo/` 或 release asset，README 用截图链接过去。
+本项目不接受内置盗版源、DRM 绕过、付费墙绕过、私有 token 分享、cookie 提取或反爬绕过逻辑等贡献。
 
-模拟器录影：
+Legado 兼容性只代表书源规则格式兼容；阅读不内置第三方书源规则，也不是 [Legado](https://github.com/gedoor/legado) 项目的官方关联产品。
 
-```bash
-xcrun simctl io booted recordVideo demo.mov
-```
+## AI 协同开发声明
 
-转 GIF：
+本仓库重度使用 AI 协同开发，包括代码生成、重构、文档撰写和审查辅助。项目仍会保留人工审阅与维护责任，但 AI 辅助产出的代码会明确存在于项目中。
 
-```bash
-ffmpeg -i demo.mov -vf "fps=12,scale=640:-1:flags=lanczos" -loop 0 docs/demo/cjk-vertical-toc.gif
-```
-
-更小的 GIF：
-
-```bash
-ffmpeg -i demo.mov -vf "fps=10,scale=480:-1:flags=lanczos" -loop 0 docs/demo/cjk-vertical-toc.gif
-```
-
-MP4 fallback：
-
-```bash
-ffmpeg -i demo.mov -vf "scale=720:-2" -c:v libx264 -crf 28 -preset slow -pix_fmt yuv420p docs/demo/cjk-vertical-toc.mp4
-```
+如果你偏好完全由人手撰写的代码，或对 AI 辅助开发有疑虑或排斥，请在使用或贡献前自行评估，并请见谅。
 
 ## 目录结构
 
@@ -205,7 +169,7 @@ iOS/
 └── *.lproj/              # 本地化：zh-Hant、zh-Hans、en
 ```
 
-## 开发规则
+## 开发
 
 - 用户字符串使用 `localized()`，更新三个 `.lproj` 文件。
 - 阅读位置以内容坐标为准，不用页码。
@@ -215,7 +179,7 @@ iOS/
 - 嵌套区块 CSS 边距通过 `inheritedBlockMarginLeft` 累加。
 - 书源和规则引擎相关工作必须限定在合法、用户自行提供内容的流程。
 
-请见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+请见 [CONTRIBUTING.md](CONTRIBUTING.md)。演示素材流程见 [docs/demo/README.md](docs/demo/README.md)。
 
 ## 许可证
 
