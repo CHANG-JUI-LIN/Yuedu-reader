@@ -280,25 +280,29 @@ This is where building a reader differs from building a document viewer. The UI 
 
 ## Pagination is a cache problem too
 
-CoreText pagination can be expensive. Yuedu caches chapter layouts, but the cache key has to include anything that can change layout. In the app, that key currently looks like this:
+CoreText pagination can be expensive. Yuedu caches chapter layouts, but the cache key has to include anything that can change layout. The important part is not the struct definition by itself; it is where the paginator builds the key before deciding whether the old layout is still valid:
 
 ```swift
-private struct CacheKey: Hashable {
-    let spineIndex: Int
-    let width: CGFloat
-    let height: CGFloat
-    let fontSize: CGFloat
-    let marginH: CGFloat
-    let marginV: CGFloat
-    let lineSpacing: CGFloat
-    let paragraphSpacing: CGFloat
-    let letterSpacing: CGFloat
-    let writingMode: ReaderWritingMode
-    let contentFingerprint: Int
+let key = CacheKey(
+    spineIndex: spineIndex,
+    width: renderSize.width,
+    height: renderSize.height,
+    fontSize: fontSize,
+    marginH: contentInsets.left,
+    marginV: contentInsets.top,
+    lineSpacing: lineSpacing,
+    paragraphSpacing: paragraphSpacing,
+    letterSpacing: letterSpacing,
+    writingMode: writingMode,
+    contentFingerprint: Self.layoutFingerprint(for: attrStr)
+)
+
+if let cached = cachedLayout(for: key) {
+    return cached
 }
 ```
 
-This sounds obvious, but it is one of the places where reader engines fail quietly. If any layout-affecting value is missing from this key, the bug does not look like a cache bug at first. It looks like wrong page counts, stale highlights, broken TOC page numbers, or a reader that ignores typography changes.
+`layoutFingerprint(for:)` hashes the attributed string length, text, and layout-affecting attributes. This sounds obvious, but it is one of the places where reader engines fail quietly. If any layout-affecting value is missing from this key, the bug does not look like a cache bug at first. It looks like wrong page counts, stale highlights, broken TOC page numbers, or a reader that ignores typography changes.
 
 The same issue appears with page offsets. A table of contents can only show useful page numbers if the engine can resolve real chapter offsets after layout.
 
