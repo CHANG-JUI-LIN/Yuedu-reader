@@ -25,3 +25,7 @@ Pods/
 
 # Claude Code skills (local dev only)
 .claude/
+
+# Agent instructions (local dev only)
+AGENTS.md
+.codex/
