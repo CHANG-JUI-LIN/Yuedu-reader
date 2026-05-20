@@ -18,7 +18,7 @@ How CJK vertical writing pushed my reader away from WebView and toward a custom 
 
 ![Yuedu Reader CJK vertical reading demo](https://raw.githubusercontent.com/CHANG-JUI-LIN/Yuedu-reader/main/docs/demo/cjk-vertical-toc.gif)
 
-This post covers why Yuedu Reader moved from basic reading workflows to a CoreText-based EPUB rendering path, what Readium still helped with, and why CJK vertical writing affects much more than glyph drawing.
+This post covers why Yuedu Reader moved from a WebView-based EPUB prototype to a CoreText rendering path, where Readium still helped, and why CJK vertical writing affects much more than glyph drawing.
 
 ## Contents
 
