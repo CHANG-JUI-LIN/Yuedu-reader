@@ -1,0 +1,7 @@
+title: Yuedu Reader Engineering
+description: Engineering notes from Yuedu Reader, a native iOS reader built with SwiftUI and CoreText.
+url: "https://chang-jui-lin.github.io"
+baseurl: "/Yuedu-reader"
+permalink: /:year/:month/:day/:title/
+markdown: kramdown
+
