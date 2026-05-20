@@ -18,7 +18,7 @@ How CJK vertical writing pushed my reader away from WebView and toward a custom 
 
 ![Yuedu Reader CJK vertical reading demo](https://raw.githubusercontent.com/CHANG-JUI-LIN/Yuedu-reader/main/docs/demo/cjk-vertical-toc.gif)
 
-This post covers why I moved Yuedu Reader from `WKWebView` to a CoreText-based rendering path, what Readium still helped with, and why CJK vertical writing affects much more than glyph drawing.
+This post covers why Yuedu Reader moved from basic reading workflows to a CoreText-based EPUB rendering path, what Readium still helped with, and why CJK vertical writing affects much more than glyph drawing.
 
 ## Contents
 
@@ -28,20 +28,25 @@ This post covers why I moved Yuedu Reader from `WKWebView` to a CoreText-based r
 - [Stable position beats page number](#stable-position-beats-page-number)
 - [CJK vertical writing changed the renderer](#cjk-vertical-writing-changed-the-renderer)
 - [The table of contents had to become directional too](#the-table-of-contents-had-to-become-directional-too)
+- [Pagination is a cache problem too](#pagination-is-a-cache-problem-too)
 - [What I would not underestimate again](#what-i-would-not-underestimate-again)
 - [Where Yuedu is now](#where-yuedu-is-now)
 
-When I started building Yuedu Reader, I did not really understand EPUB.
+When I started building Yuedu Reader, I was not trying to build an EPUB rendering engine.
 
-I only knew that I wanted a native iOS reading app. The first prototype used `WKWebView`, because EPUB content is mostly XHTML, CSS, images, links, and metadata. A web view looked like the obvious renderer.
+The original goal was a native iOS reader for web novels, TXT files, and long-form reading workflows I personally wanted. I cared about CJK reading from the beginning, but mostly in the sense of making plain text and online fiction comfortable to read.
 
-That worked for a while. I could load chapters, display text, and experiment with snapshotting pages to make page-turn animations smoother. It was a good way to learn the shape of an EPUB: spine items, navigation documents, resources, CSS, anchors, and reading order.
+EPUB came later. At first, I treated it as another import format: parse the package, load XHTML chapters, apply CSS, and render the text.
 
-But the deeper I went into real books, the more the abstraction started to leak.
+After I got basic EPUB opening working, I came across a vertical Traditional Chinese EPUB edition of Dream of the Red Chamber with dense inline commentary. That book changed how I thought about EPUB.
 
-In the early WebView version, one coordinator slowly became the reader engine: page-turn state, `WKWebView` pooling, chapter loading, table-of-contents scanning, progress restore, snapshot rendering, and WebKit callbacks all lived too close together.
+Before that, I treated EPUB mostly as a container: XHTML, CSS, images, metadata, and chapters. After seeing that book, I understood why people still care about EPUB as a reading format. It can preserve typography, structure, annotations, navigation, and the feeling of a designed book.
+
+That was when CJK vertical writing stopped being a checkbox and became one of the core requirements of the reader.
 
 ## Why WebView was not enough
+
+The first EPUB prototype used `WKWebView`, because EPUB content is mostly XHTML, CSS, images, links, and metadata. A web view looked like the obvious renderer.
 
 `WKWebView` is a reasonable choice for many EPUB readers. It already understands HTML, CSS, links, images, scrolling, text selection, and layout. If the product is mostly a web-document viewer, WebView is hard to beat.
 
@@ -58,7 +63,11 @@ Some of these are possible with WebView. Combining all of them made the reader f
 
 A reader is not just a web page viewer. Page numbers need to be stable enough for navigation. Highlights need precise text ranges. TTS needs to follow the rendered text. Page turns need to feel native. CJK vertical writing needs punctuation handling, mixed Latin handling, inline images, annotation spans, and right-to-left reading flow.
 
+The first real stress test was not a fancy EPUB feature. It was CJK vertical writing: right-to-left page flow, vertical punctuation, mixed Latin text, inline commentary, and a table of contents that suddenly felt wrong when it stayed horizontal.
+
 The hardest WebView bugs were not compile errors. They were runtime reader bugs: blank pages after a chapter switch, tap-to-turn failing after repeated navigation, repeated pages, slow snapshot generation, and page offsets based on stale WebView geometry.
+
+In the early WebView version, one coordinator slowly became the reader engine: page-turn state, `WKWebView` pooling, chapter loading, table-of-contents scanning, progress restore, snapshot rendering, and WebKit callbacks all lived too close together.
 
 The WebView version taught me what the app needed. It also made clear that the main reading engine needed to own layout.
 
@@ -104,6 +113,8 @@ After that, the reader attaches app behavior: taps, selection, highlights, image
 
 One recurring lesson was that parsing support is not enough. If a CSS property affects layout, it has to survive the whole path from EPUB source to attributed text, pagination, drawing, hit testing, and cache invalidation. Otherwise a feature works in one place and quietly fails somewhere else.
 
+The most fragile boundary is usually not the final `draw` call. It is the point where EPUB structure becomes attributed text with enough metadata left for the reader to keep behaving like a reader.
+
 ## Stable position beats page number
 
 One of the biggest design shifts was moving away from page number as identity.
@@ -113,10 +124,13 @@ Page numbers are output, not source truth. They change when the font size change
 Yuedu stores reading position as content coordinates:
 
 ```swift
-CoreTextReadingPosition(spineIndex: spineIndex, charOffset: charOffset)
+struct CoreTextReadingPosition: Hashable, Codable {
+    let spineIndex: Int
+    let charOffset: Int
+}
 ```
 
-That means the app can rebuild layout and then ask the engine to resolve the nearest page for the same content position.
+The page index is derived after layout. It is not the durable state. That means the app can rebuild layout and then ask the engine to resolve the nearest page for the same content position.
 
 This matters for restoring progress, switching between paged and scroll modes, jumping from the table of contents, bookmarks, highlights, and TTS progress.
 
@@ -140,7 +154,14 @@ CoreText supports vertical text, but not as a complete EPUB reader. You still ha
 
 Yuedu's vertical pages use CoreText's right-to-left frame progression and vertical glyph forms. Then the paginator prepares the attributed string so CJK text uses vertical forms while Latin, numbers, and ASCII runs can stay readable as sideways groups.
 
-The coordinate system also changes. In horizontal text, `CTLineGetOffsetForStringIndex` feels like an x-axis measurement. In vertical-rl, that same value becomes inline advance from the column top downward. The API names stay the same, but the geometry does not.
+The coordinate system also changes. In horizontal text, `CTLineGetOffsetForStringIndex` feels like an x-axis measurement. In vertical-rl, that same value behaves like inline progress from the top of the column.
+
+```text
+horizontal:  x moves across the line
+vertical-rl: offset moves down the column
+```
+
+The API names are still `ascent`, `descent`, and `offset`, but the mental model is different.
 
 That affected much more than drawing:
 
@@ -214,8 +235,8 @@ But the architecture now matches the product I wanted to build: EPUB structure f
 
 That path took longer than embedding a web view. It also made the reader feel like an iOS reading app instead of a browser with page-turn gestures.
 
+---
+
 Yuedu Reader is open source here:
 
 [github.com/CHANG-JUI-LIN/Yuedu-reader](https://github.com/CHANG-JUI-LIN/Yuedu-reader)
-
-I am still looking for EPUB compatibility samples, CJK vertical writing edge cases, and contributors interested in SwiftUI, CoreText, RSS, WebDAV, or OPDS.
