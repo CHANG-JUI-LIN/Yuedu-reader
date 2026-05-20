@@ -1,23 +1,17 @@
----
-layout: null
----
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <title>{{ site.title | xml_escape }}</title>
-  <subtitle>{{ site.description | xml_escape }}</subtitle>
-  <link href="{{ site.url }}{{ site.baseurl }}/feed.xml" rel="self" type="application/atom+xml" />
-  <link href="{{ site.url }}{{ site.baseurl }}/" rel="alternate" type="text/html" />
-  <id>{{ site.url }}{{ site.baseurl }}/</id>
-  <updated>{{ site.time | date_to_xmlschema }}</updated>
-  {% for post in site.posts %}
+  <title>Yuedu Reader Engineering</title>
+  <subtitle>Engineering notes from Yuedu Reader, a native iOS reader built with SwiftUI and CoreText.</subtitle>
+  <link href="https://chang-jui-lin.github.io/Yuedu-reader/feed.xml" rel="self" type="application/atom+xml" />
+  <link href="https://chang-jui-lin.github.io/Yuedu-reader/" rel="alternate" type="text/html" />
+  <id>https://chang-jui-lin.github.io/Yuedu-reader/</id>
+  <updated>2026-05-20T00:00:00+08:00</updated>
   <entry>
-    <title>{{ post.title | xml_escape }}</title>
-    <link href="{{ site.url }}{{ site.baseurl }}{{ post.url }}" rel="alternate" type="text/html" />
-    <id>{{ site.url }}{{ site.baseurl }}{{ post.url }}</id>
-    <published>{{ post.date | date_to_xmlschema }}</published>
-    <updated>{{ post.date | date_to_xmlschema }}</updated>
-    <summary>{{ post.description | default: post.excerpt | strip_html | normalize_whitespace | xml_escape }}</summary>
-    <content type="html">{{ post.content | xml_escape }}</content>
+    <title>From WebView to CoreText: Building a Native EPUB Reader for iOS</title>
+    <link href="https://chang-jui-lin.github.io/Yuedu-reader/2026/05/20/from-webview-to-coretext/" rel="alternate" type="text/html" />
+    <id>https://chang-jui-lin.github.io/Yuedu-reader/2026/05/20/from-webview-to-coretext/</id>
+    <published>2026-05-20T00:00:00+08:00</published>
+    <updated>2026-05-20T00:00:00+08:00</updated>
+    <summary>How CJK vertical writing pushed Yuedu Reader away from WebView and toward a custom CoreText rendering engine.</summary>
   </entry>
-  {% endfor %}
 </feed>
