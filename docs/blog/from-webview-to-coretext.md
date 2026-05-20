@@ -152,7 +152,28 @@ Horizontal Latin text is already complex. Vertical CJK text adds another set of 
 
 CoreText supports vertical text, but not as a complete EPUB reader. You still have to build the surrounding engine.
 
-Yuedu's vertical pages use CoreText's right-to-left frame progression and vertical glyph forms. Then the paginator prepares the attributed string so CJK text uses vertical forms while Latin, numbers, and ASCII runs can stay readable as sideways groups.
+Yuedu's vertical pages use CoreText's right-to-left frame progression and vertical glyph forms:
+
+```swift
+let frameAttributes: CFDictionary = [
+    kCTFrameProgressionAttributeName: CTFrameProgression.rightToLeft.rawValue
+] as CFDictionary
+
+attributedString.addAttribute(
+    kCTVerticalFormsAttributeName as NSAttributedString.Key,
+    value: true,
+    range: NSRange(location: 0, length: attributedString.length)
+)
+
+let frame = CTFramesetterCreateFrame(
+    framesetter,
+    CFRange(location: 0, length: attributedString.length),
+    path,
+    frameAttributes
+)
+```
+
+This only tells CoreText how to lay out vertical text. The reader still has to handle touch geometry, selection rectangles, images, links, TTS highlights, and page-turn direction around that frame. The paginator also prepares the attributed string so CJK text uses vertical forms while Latin, numbers, and ASCII runs can stay readable as sideways groups.
 
 The coordinate system also changes. In horizontal text, `CTLineGetOffsetForStringIndex` feels like an x-axis measurement. In vertical-rl, that same value behaves like inline progress from the top of the column.
 
@@ -190,9 +211,23 @@ This is where building a reader differs from building a document viewer. The UI 
 
 ## Pagination is a cache problem too
 
-CoreText pagination can be expensive. Yuedu caches chapter layouts, but the cache key has to include anything that can change layout: text content, writing mode, render size, content insets, font size, line spacing, paragraph spacing, image metrics, and layout-affecting attributes.
+CoreText pagination can be expensive. Yuedu caches chapter layouts, but the cache key has to include anything that can change layout:
 
-This sounds obvious, but it is one of the places where reader engines fail quietly. If a setting changes and the cache key does not, the old page ranges survive. Then the UI looks like a rendering bug even though the bug is actually stale layout.
+```swift
+struct CoreTextLayoutKey: Hashable {
+    let spineIndex: Int
+    let contentHash: Int
+    let writingMode: ReaderWritingMode
+    let renderSize: CGSize
+    let contentInsets: EdgeInsets
+    let fontSize: CGFloat
+    let lineSpacing: CGFloat
+    let paragraphSpacing: CGFloat
+    let imageMetricsHash: Int
+}
+```
+
+This sounds obvious, but it is one of the places where reader engines fail quietly. If any layout-affecting value is missing from this key, the bug does not look like a cache bug at first. It looks like wrong page counts, stale highlights, broken TOC page numbers, or a reader that ignores typography changes.
 
 The same issue appears with page offsets. A table of contents can only show useful page numbers if the engine can resolve real chapter offsets after layout.
 
