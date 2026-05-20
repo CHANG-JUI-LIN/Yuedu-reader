@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% if page.title %}{{ page.title }} | {% endif %}{{ site.title }}</title>
     <meta name="description" content="{{ page.description | default: site.description }}">
+    <link rel="alternate" type="application/atom+xml" title="{{ site.title }}" href="{{ site.baseurl }}/feed.xml">
     <style>
       :root {
         color-scheme: light dark;
@@ -106,4 +107,3 @@
     </main>
   </body>
 </html>
-
