@@ -113,7 +113,34 @@ After that, the reader attaches app behavior: taps, selection, highlights, image
 
 One recurring lesson was that parsing support is not enough. If a CSS property affects layout, it has to survive the whole path from EPUB source to attributed text, pagination, drawing, hit testing, and cache invalidation. Otherwise a feature works in one place and quietly fails somewhere else.
 
-The most fragile boundary is usually not the final `draw` call. It is the point where EPUB structure becomes attributed text with enough metadata left for the reader to keep behaving like a reader.
+For example, links are not only visual style. In the RenderableNode path, an EPUB `<a>` becomes a reader-specific attribute that later drives hit testing:
+
+```swift
+case .anchor(let href, let children):
+    var childCtx = ctx
+    childCtx.linkHref = href
+    return await renderInlineChildren(children, ctx: childCtx)
+
+var baseAttributes: [NSAttributedString.Key: Any] {
+    var attrs: [NSAttributedString.Key: Any] = [
+        .font: font,
+        .foregroundColor: textColor,
+        .paragraphStyle: paragraphStyle
+    ]
+
+    if let href = linkHref {
+        attrs[HTMLAttributedStringBuilder.internalLinkAttribute] = href
+        attrs[.foregroundColor] = UIColor.systemBlue
+        attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        attrs[HTMLAttributedStringBuilder.cssSpecifiedForegroundColorAttribute] =
+            UIColor.systemBlue
+    }
+
+    return attrs
+}
+```
+
+The important part is not only converting CSS into visual attributes. Reader-specific metadata, such as links, image sources, anchors, and writing mode, has to survive into pagination and hit testing.
 
 ## Stable position beats page number
 
