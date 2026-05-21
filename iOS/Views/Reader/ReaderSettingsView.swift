@@ -7,6 +7,7 @@ struct ReaderSettingsView: View {
     @Binding var theme: ReaderTheme
     var capabilities: ReaderCapabilities = .reflowableText
     var allowsUserSelectedReaderFont = false
+    var isVerticalWritingMode = false
 
     @StateObject private var readerConfig = ReaderConfig.shared
     @ObservedObject private var settings = GlobalSettings.shared
@@ -54,6 +55,12 @@ struct ReaderSettingsView: View {
             case .scroll: return "上下"
             case .none: return "無動畫"
             }
+        }
+    }
+
+    private var availablePageTurnOptions: [PageTurnOption] {
+        PageTurnOption.allCases.filter { option in
+            !(isVerticalWritingMode && option == .scroll)
         }
     }
 
@@ -136,7 +143,7 @@ struct ReaderSettingsView: View {
                     SegmentedPickerRow(
                         title: localized("翻頁"),
                         selection: pageTurnOptionBinding,
-                        items: PageTurnOption.allCases,
+                        items: availablePageTurnOptions,
                         titleProvider: { localized($0.titleKey) }
                     )
                 }
@@ -409,6 +416,9 @@ struct ReaderSettingsView: View {
     private var pageTurnOptionBinding: Binding<PageTurnOption> {
         Binding(
             get: {
+                if isVerticalWritingMode && settings.scrollMode {
+                    return .slide
+                }
                 if settings.scrollMode {
                     return .scroll
                 }
@@ -420,6 +430,7 @@ struct ReaderSettingsView: View {
                 }
             },
             set: { option in
+                guard !(isVerticalWritingMode && option == .scroll) else { return }
                 switch option {
                 case .slide:
                     settings.scrollMode = false
@@ -436,7 +447,6 @@ struct ReaderSettingsView: View {
                     settings.scrollMode = false
                     settings.pageTurnStyle = .none
                 }
-                readerConfig.refresh.send(.layout)
             }
         )
     }
