@@ -98,6 +98,7 @@ struct ReaderView: View {
     // Source change
     @State private var showChangeSourceSheet = false
     @State private var runtimeState = ReaderRuntimeState()
+    @State private var pendingCoreTextJumpTarget: CoreTextReadingPosition?
     @State private var bookDocument: (any BookDocument)? = nil
     @State private var contentProvider: (any BookContentProvider)? = nil
     @State private var readerCapabilities: ReaderCapabilities = .reflowableText
@@ -308,23 +309,25 @@ struct ReaderView: View {
 
     private func scheduleCoreTextPageChanged(
         _ newPage: Int,
-        engine: any PageRenderingProvider
+        engine: any PageRenderingProvider,
+        visiblePosition: CoreTextReadingPosition? = nil
     ) {
         DispatchQueue.main.async {
-            handleCoreTextPageChanged(newPage, engine: engine)
+            handleCoreTextPageChanged(newPage, engine: engine, visiblePosition: visiblePosition)
         }
     }
 
     private func handleCoreTextPageChanged(
         _ newPage: Int,
-        engine: any PageRenderingProvider
+        engine: any PageRenderingProvider,
+        visiblePosition: CoreTextReadingPosition? = nil
     ) {
-        let newChapter = engine.charOffset(forPage: newPage).spineIndex
+        let newChapter = visiblePosition?.spineIndex ?? engine.charOffset(forPage: newPage).spineIndex
         let chapterChanged = newChapter != currentChapterIndex
 
         currentChapterIndex = newChapter
 
-        progressTrace("onPageChanged page=\(newPage) chapter=\(currentChapterIndex)")
+        progressTrace("onPageChanged page=\(newPage) chapter=\(currentChapterIndex) visiblePosition=\(String(describing: visiblePosition))")
 
         if chapterChanged {
             ensureChapterReady(chapterIndex: newChapter)
@@ -531,8 +534,10 @@ struct ReaderView: View {
                     theme: readerTheme,
                     playbackHighlightText: nil,
                     isRTL: false,
+                    externalTargetPosition: nil,
+                    clearExternalTargetPosition: {},
                     currentPage: $currentPage,
-                    onPageChanged: { newPage in
+                    onPageChanged: { newPage, _ in
                         currentPage = newPage
                     },
                     onTapZone: { zone in
@@ -564,9 +569,11 @@ struct ReaderView: View {
                         ? nil
                         : ttsCoordinator.currentSegmentText,
                     isRTL: effectiveWritingMode.isVertical,
+                    externalTargetPosition: pendingCoreTextJumpTarget,
+                    clearExternalTargetPosition: { pendingCoreTextJumpTarget = nil },
                     currentPage: $currentPage,
-                    onPageChanged: { newPage in
-                        scheduleCoreTextPageChanged(newPage, engine: ctEngine)
+                    onPageChanged: { newPage, visiblePosition in
+                        scheduleCoreTextPageChanged(newPage, engine: ctEngine, visiblePosition: visiblePosition)
                     },
                     onTapZone: { zone in
                         switch zone {
@@ -807,7 +814,8 @@ struct ReaderView: View {
                         set: { readerTheme = $0 }
                     ),
                     capabilities: readerCapabilities,
-                    allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true
+                    allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
+                    isVerticalWritingMode: effectiveWritingMode.isVertical
                 )
             }
         }
@@ -1817,30 +1825,26 @@ struct ReaderView: View {
     private func jumpToChapter(_ idx: Int, charOffset: Int = 0) {
         guard chapters.indices.contains(idx) else { return }
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            engine.cancelPendingWork()
             let position = CoreTextReadingPosition(spineIndex: idx, charOffset: charOffset)
-            // Navigate via position: pageViewController(for:) returns a VC immediately
-            // (placeholder if layout not ready, real page if cached). The placeholder
-            // triggers preload internally; when layout is ready, onChapterReady refreshes the page.
+            print("[FlipTrace] ReaderView.jumpToChapter request spine=\(idx) charOffset=\(charOffset) layoutReady=\(engine.layouts[idx] != nil)")
+            pendingCoreTextJumpTarget = position
             _ = engine.pageViewController(for: position)
-
-            // Preload adjacent chapters in background so flip-to-adjacent is instant.
-            if idx > 0 { Task { await engine.preloadChapter(at: idx - 1) } }
-            if idx < chapters.count - 1 { Task { await engine.preloadChapter(at: idx + 1) } }
-
             currentChapterIndex = idx
             if let exactPage = engine.pageIndex(for: position) {
                 currentPage = exactPage
+                print("[FlipTrace] ReaderView.jumpToChapter exact spine=\(idx) page=\(exactPage)")
             } else if let estimatedPage = engine.estimatedGlobalPage(for: position) {
                 currentPage = estimatedPage
+                print("[FlipTrace] ReaderView.jumpToChapter placeholder spine=\(idx) page=\(estimatedPage)")
             }
             epubRenderer.currentEpubPage = currentPage
-
             let alreadyReady = readerViewModel.chapterState(for: idx) == .ready
             ensureChapterReady(chapterIndex: idx, priority: .jump)
             if alreadyReady, isChapterContentAvailable(at: idx) {
                 Task { await engine.notifyChapterDataChanged(at: idx) }
             }
+            if idx > 0 { Task { await engine.preloadChapter(at: idx - 1) } }
+            if idx < chapters.count - 1 { Task { await engine.preloadChapter(at: idx + 1) } }
         } else {
             currentChapterIndex = idx
             if let p = findChapterFirstPage(idx) { currentPage = p }
@@ -2481,8 +2485,21 @@ struct ReaderView: View {
             rebuildPages()
             return
         }
-        epubRenderer.updateRenderSettings(currentRenderSettings(marginH: effectivePageMarginH))
         let size = targetSize ?? engine.renderSize
+        let newSettings = currentRenderSettings(marginH: effectivePageMarginH)
+        if targetSize != nil,
+           abs(size.width - engine.renderSize.width) < 0.5,
+           abs(size.height - engine.renderSize.height) < 0.5 {
+            print("[FlipTrace] performUnifiedRelayout skip sameSize size=\(size)")
+            return
+        }
+        if let coreEngine = engine as? CoreTextPageEngine,
+           targetSize == nil,
+           newSettings == coreEngine.renderSettings {
+            print("[FlipTrace] performUnifiedRelayout skip sameSettings size=\(size)")
+            return
+        }
+        epubRenderer.updateRenderSettings(newSettings)
         Task { await engine.invalidateLayout(newSize: size) }
     }
 
@@ -3053,8 +3070,10 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
     let theme: ReaderTheme
     let playbackHighlightText: String?
     let isRTL: Bool
+    let externalTargetPosition: CoreTextReadingPosition?
+    let clearExternalTargetPosition: () -> Void
     @Binding var currentPage: Int
-    let onPageChanged: (Int) -> Void
+    let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
     let onTapZone: (String) -> Void
 
     func makeUIViewController(context: Context) -> UIPageViewController {
@@ -3106,7 +3125,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             context.coordinator.suppressNextTransition = true
             DispatchQueue.main.async {
                 self.currentPage = initialPage
-                self.onPageChanged(initialPage)
+                self.onPageChanged(initialPage, nil)
             }
         }
 
@@ -3137,15 +3156,22 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIPageViewController, context: Context) {
         context.coordinator.currentEngine = engine
         context.coordinator.currentPlaybackHighlightText = playbackHighlightText
+        context.coordinator.externalTargetPosition = externalTargetPosition
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: uiViewController)
         let clampedPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
+        let targetViewController = {
+            if let externalTargetPosition {
+                return engine.pageViewController(for: externalTargetPosition)
+            }
+            return engine.pageViewController(at: clampedPage)
+        }
         if context.coordinator.currentTheme != theme {
             context.coordinator.currentTheme = theme
             engine.applyThemeChange(
                 textColor: UIColor(theme.textColor),
                 backgroundColor: UIColor(theme.backgroundColor)
             )
-            let targetVC = engine.pageViewController(at: clampedPage)
+            let targetVC = targetViewController()
             context.coordinator.applyPlaybackHighlight(to: targetVC)
             uiViewController.setViewControllers([targetVC], direction: .forward, animated: false)
             _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
@@ -3153,7 +3179,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         if let visible = uiViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController) {
-            if visible.globalPageIndex == clampedPage {
+            if visible.globalPageIndex == clampedPage, externalTargetPosition == nil {
                 context.coordinator.applyPlaybackHighlight(to: visible)
                 return
             }
@@ -3167,9 +3193,18 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // Suppress flag from makeUIViewController: force instant transition on first alignment.
             if context.coordinator.suppressNextTransition {
                 context.coordinator.suppressNextTransition = false
-                let targetVC = engine.pageViewController(at: clampedPage)
+                let targetVC = targetViewController()
                 context.coordinator.applyPlaybackHighlight(to: targetVC)
                 uiViewController.setViewControllers([targetVC], direction: direction, animated: false)
+                _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
+                return
+            }
+
+            if externalTargetPosition != nil, !context.coordinator.isTransitioning {
+                let targetVC = targetViewController()
+                context.coordinator.applyPlaybackHighlight(to: targetVC)
+                uiViewController.setViewControllers([targetVC], direction: direction, animated: false)
+                uiViewController.view.layoutIfNeeded()
                 _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
                 return
             }
@@ -3187,7 +3222,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         on: uiViewController
                     )
                 } else if !context.coordinator.isTransitioning {
-                    let targetVC = engine.pageViewController(at: clampedPage)
+                    let targetVC = targetViewController()
                     context.coordinator.applyPlaybackHighlight(to: targetVC)
                     uiViewController.setViewControllers([targetVC], direction: direction, animated: false)
                     uiViewController.view.layoutIfNeeded()
@@ -3219,7 +3254,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             return
         }
 
-        let targetVC = engine.pageViewController(at: clampedPage)
+        let targetVC = targetViewController()
         context.coordinator.applyPlaybackHighlight(to: targetVC)
         uiViewController.setViewControllers([targetVC], direction: .forward, animated: false)
         _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
@@ -3232,6 +3267,8 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             theme: theme,
             playbackHighlightText: playbackHighlightText,
             isRTL: isRTL,
+            externalTargetPosition: externalTargetPosition,
+            clearExternalTargetPosition: clearExternalTargetPosition,
             currentPage: $currentPage,
             onPageChanged: onPageChanged,
             onTapZone: onTapZone
@@ -3247,9 +3284,35 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         var currentTheme: ReaderTheme
         var currentPlaybackHighlightText: String?
         @Binding var currentPage: Int
-        let onPageChanged: (Int) -> Void
+        let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
         let onTapZone: (String) -> Void
         let isRTL: Bool
+        let clearExternalTargetPosition: () -> Void
+        var externalTargetPosition: CoreTextReadingPosition? {
+            didSet {
+                guard let externalTargetPosition else { return }
+                currentCoreTextPosition = externalTargetPosition
+                pendingNavigation = PendingNavigation(target: .position(externalTargetPosition))
+            }
+        }
+
+        private enum NavigationTarget {
+            case position(CoreTextReadingPosition)
+            case page(Int)
+        }
+
+        private struct PendingNavigation {
+            let target: NavigationTarget
+        }
+
+        private enum NavigationMode {
+            case jump
+            case interactiveTurn
+
+            var allowsPlaceholder: Bool {
+                self == .jump
+            }
+        }
 
         // Cover animation overlay components
         private let coverOverlayView = UIView()
@@ -3263,6 +3326,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// so the subsequent updateUIViewController skips redundant backward animation (binding not yet synced).
         fileprivate var suppressNextTransition = false
         fileprivate var currentCoreTextPosition: CoreTextReadingPosition?
+        private var pendingNavigation: PendingNavigation?
         weak var coverPageViewController: UIPageViewController?
         private weak var callbackEngineObject: AnyObject?
         private var callbackEngineIdentifier: ObjectIdentifier?
@@ -3274,17 +3338,25 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
              theme: ReaderTheme,
              playbackHighlightText: String?,
              isRTL: Bool,
+             externalTargetPosition: CoreTextReadingPosition?,
+             clearExternalTargetPosition: @escaping () -> Void,
              currentPage: Binding<Int>,
-             onPageChanged: @escaping (Int) -> Void,
+             onPageChanged: @escaping (Int, CoreTextReadingPosition?) -> Void,
              onTapZone: @escaping (String) -> Void) {
             self.currentEngine = engine
             self.pageTurnStyle = pageTurnStyle
             self.currentTheme = theme
             self.currentPlaybackHighlightText = playbackHighlightText
             self.isRTL = isRTL
+            self.externalTargetPosition = externalTargetPosition
+            self.clearExternalTargetPosition = clearExternalTargetPosition
             self._currentPage = currentPage
             self.onPageChanged = onPageChanged
             self.onTapZone = onTapZone
+            if let externalTargetPosition {
+                self.currentCoreTextPosition = externalTargetPosition
+                self.pendingNavigation = PendingNavigation(target: .position(externalTargetPosition))
+            }
         }
 
         deinit {
@@ -3342,7 +3414,12 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let freshVC: UIViewController
             let targetPage: Int
 
-            if let position = currentCoreTextPosition {
+            if let pendingNavigation,
+               let resolved = resolvedNavigation(pendingNavigation.target) {
+                freshVC = resolved.viewController
+                targetPage = resolved.page
+                self.pendingNavigation = nil
+            } else if let position = currentCoreTextPosition {
                 freshVC = engine.pageViewController(for: position)
                 targetPage = engine.pageIndex(for: position)
                     ?? (freshVC as? any PageIndexProviding)?.globalPageIndex
@@ -3371,9 +3448,19 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 "[StartupTrace][ReaderView.Coordinator] handleChapterReady syncedPage=\(resolved ?? -1)"
             print(resolvedLine)
             NSLog("%@", resolvedLine)
+            if let target = externalTargetPosition,
+               let resolved,
+               currentEngine.pageIndex(for: target) == resolved {
+                externalTargetPosition = nil
+                clearExternalTargetPosition()
+            }
         }
 
-        private func publishCurrentPage(_ page: Int, notify: Bool) {
+        private func publishCurrentPage(
+            _ page: Int,
+            position: CoreTextReadingPosition? = nil,
+            notify: Bool
+        ) {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
 
@@ -3383,8 +3470,8 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     self.currentPage = page
                 }
 
-                if notify, didChange {
-                    self.onPageChanged(page)
+                if notify, didChange || position != nil {
+                    self.onPageChanged(page, position)
                 }
             }
         }
@@ -3476,11 +3563,11 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 currentCoreTextPosition = position
 
                 if let resolvedPage = currentEngine.pageIndex(for: position) {
-                    publishCurrentPage(resolvedPage, notify: true)
+                    publishCurrentPage(resolvedPage, position: position, notify: true)
                     return resolvedPage
                 }
 
-                publishCurrentPage(fallbackPage, notify: notifyFallback)
+                publishCurrentPage(fallbackPage, position: position, notify: notifyFallback)
 
                 if notifyFallback {
                     return fallbackPage
@@ -3507,6 +3594,47 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return currentEngine.readingPosition(forPage: provider.globalPageIndex)
             }
             return nil
+        }
+
+        private func resolvedNavigation(_ target: NavigationTarget) -> (viewController: UIViewController, page: Int)? {
+            switch target {
+            case .position(let position):
+                guard let page = currentEngine.pageIndex(for: position) else { return nil }
+                let viewController = currentEngine.pageViewController(for: position)
+                guard !(viewController is PlaceholderPageViewController) else { return nil }
+                return (viewController, page)
+            case .page(let page):
+                guard page >= 0, page < currentEngine.totalPages else { return nil }
+                let viewController = currentEngine.pageViewController(at: page)
+                guard !(viewController is PlaceholderPageViewController) else { return nil }
+                return (viewController, page)
+            }
+        }
+
+        private func navigationViewController(
+            for target: NavigationTarget,
+            mode: NavigationMode
+        ) -> UIViewController? {
+            let viewController: UIViewController
+            let pageDescription: String
+            switch target {
+            case .position(let position):
+                viewController = currentEngine.pageViewController(for: position)
+                pageDescription = "\(position)"
+            case .page(let page):
+                viewController = currentEngine.pageViewController(at: page)
+                pageDescription = "page=\(page)"
+            }
+
+            if viewController is PlaceholderPageViewController {
+                pendingNavigation = PendingNavigation(target: target)
+                print("[FlipTrace] navigation \(mode) placeholder target=\(pageDescription)")
+                return mode.allowsPlaceholder ? viewController : nil
+            }
+
+            pendingNavigation = nil
+            applyPlaybackHighlight(to: viewController)
+            return viewController
         }
 
         // MARK: - UIPageViewControllerDataSource
@@ -3538,12 +3666,20 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                   vc.globalPageIndex > 0 else { return nil }
             let (currentSpine, currentLocal) = currentEngine.localPosition(for: vc.globalPageIndex)
             if currentLocal == 0 && currentSpine > 0 {
-                let previousVC = currentEngine.pageViewController(for: .chapterEnd(currentSpine - 1))
-                applyPlaybackHighlight(to: previousVC)
+                print("[FlipTrace] pageBackward crossing chapter fromSpine=\(currentSpine) page=\(vc.globalPageIndex) toSpine=\(currentSpine - 1)")
+                let targetPosition = CoreTextReadingPosition.chapterEnd(currentSpine - 1)
+                let previousVC = navigationViewController(
+                    for: .position(targetPosition),
+                    mode: .interactiveTurn
+                )
+                print("[FlipTrace] pageBackward landing type=\(previousVC.map { "\(type(of: $0))" } ?? "nil") page=\((previousVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
                 return previousVC
             }
-            let previousVC = currentEngine.pageViewController(at: vc.globalPageIndex - 1)
-            applyPlaybackHighlight(to: previousVC)
+            let previousVC = navigationViewController(
+                for: .page(vc.globalPageIndex - 1),
+                mode: .interactiveTurn
+            )
+            print("[FlipTrace] pageBackward sameChapter fromPage=\(vc.globalPageIndex) landingType=\(previousVC.map { "\(type(of: $0))" } ?? "nil") page=\(vc.globalPageIndex - 1)")
             return previousVC
         }
 
@@ -3553,21 +3689,27 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let (currentSpine, _) = currentEngine.localPosition(for: vc.globalPageIndex)
             if let lastPage = currentEngine.lastPageIndex(ofChapter: currentSpine),
                vc.globalPageIndex == lastPage {
+                print("[FlipTrace] pageForward crossing chapter fromSpine=\(currentSpine) page=\(vc.globalPageIndex) toSpine=\(currentSpine + 1)")
                 let nextPosition = CoreTextReadingPosition.chapterStart(currentSpine + 1)
                 if let targetPage = currentEngine.pageIndex(for: nextPosition),
                    let snapVC = currentEngine.snapshotViewController(at: targetPage) {
+                    print("[FlipTrace] pageForward snapshot landing page=\(targetPage) type=\(type(of: snapVC))")
                     return snapVC
                 }
-                let nextVC = currentEngine.pageViewController(for: nextPosition)
-                applyPlaybackHighlight(to: nextVC)
+                let nextVC = navigationViewController(
+                    for: .position(nextPosition),
+                    mode: .interactiveTurn
+                )
+                print("[FlipTrace] pageForward realOrPlaceholder landing type=\(nextVC.map { "\(type(of: $0))" } ?? "nil") page=\((nextVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
                 return nextVC
             }
             let nextIndex = vc.globalPageIndex + 1
             if let snapVC = currentEngine.snapshotViewController(at: nextIndex) {
+                print("[FlipTrace] pageForward snapshot landing page=\(nextIndex) type=\(type(of: snapVC))")
                 return snapVC
             }
-            let nextVC = currentEngine.pageViewController(at: nextIndex)
-            applyPlaybackHighlight(to: nextVC)
+            let nextVC = navigationViewController(for: .page(nextIndex), mode: .interactiveTurn)
+            print("[FlipTrace] pageForward sameChapter fromPage=\(vc.globalPageIndex) landingType=\(nextVC.map { "\(type(of: $0))" } ?? "nil") page=\(nextIndex)")
             return nextVC
         }
 
@@ -3609,12 +3751,14 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
             // If the landing VC is a snapshot, immediately replace it with the real rendered VC (layout is ready, visually seamless).
             if let snapVC = pvc.viewControllers?.first as? SnapshotPageViewController {
+                print("[FlipTrace] didFinish landing SNAPSHOT page=\(snapVC.globalPageIndex)")
                 let realVC: UIViewController
                 if let position = snapVC.coreTextReadingPosition {
                     realVC = currentEngine.pageViewController(for: position)
                 } else {
                     realVC = currentEngine.pageViewController(at: snapVC.globalPageIndex)
                 }
+                print("[FlipTrace] didFinish replaceSnapshot realType=\(type(of: realVC)) page=\((realVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
                 applyPlaybackHighlight(to: realVC)
                 pvc.setViewControllers([realVC], direction: .forward, animated: false)
                 if let resolvedPage = syncStablePosition(afterShowing: realVC, notifyFallback: false) {
@@ -3629,6 +3773,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
 
             guard let vc = pvc.viewControllers?.first as? any PageIndexProviding & UIViewController else { return }
+            print("[FlipTrace] didFinish landing type=\(type(of: vc)) page=\(vc.globalPageIndex)")
             if let resolvedPage = syncStablePosition(afterShowing: vc, notifyFallback: false) {
                 Task { @MainActor in
                     currentEngine.warmUpNext(currentGlobalPage: resolvedPage)
@@ -3719,6 +3864,14 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         // Forward uncover: current page slides left, new page underneath.
                         coverDirection = 1
                         let target = currentPage + 1
+                        guard currentEngine.renderSnapshot(forPage: target) != nil else {
+                            let targetVC = currentEngine.pageViewController(at: target)
+                            if targetVC is PlaceholderPageViewController {
+                                pendingNavigation = PendingNavigation(target: .page(target))
+                                print("[FlipTrace] coverInteractive forward blocked placeholder targetPage=\(target)")
+                            }
+                            return
+                        }
                         coverTargetPage = target
                         coverOverlayView.frame = view.bounds
                         coverCurrentImageView.frame = view.bounds
@@ -3775,15 +3928,22 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     }
                 } completion: { _ in
                     if shouldCommit {
+                        var settledPosition: CoreTextReadingPosition?
                         // Set the real VC immediately so updateUIViewController returns early, avoiding double animation.
                         if let pvc = self.coverPageViewController {
                             let realVC = self.currentEngine.pageViewController(at: targetPage)
+                            print("[FlipTrace] coverInteractive commit targetPage=\(targetPage) realType=\(type(of: realVC))")
                             self.applyPlaybackHighlight(to: realVC)
                             pvc.setViewControllers([realVC], direction: .forward, animated: false)
                             pvc.view.layoutIfNeeded()
                             self.captureStablePosition(from: realVC)
+                            settledPosition = self.readingPosition(from: realVC)
                         }
-                        self.publishCurrentPage(targetPage, notify: true)
+                        self.publishCurrentPage(
+                            targetPage,
+                            position: settledPosition,
+                            notify: true
+                        )
                         Task { @MainActor in
                             self.currentEngine.warmUpNext(currentGlobalPage: targetPage)
                         }
@@ -3814,6 +3974,14 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 resetCoverOverlay()
                 return
             }
+            if currentEngine.renderSnapshot(forPage: targetPage) == nil {
+                let targetVC = currentEngine.pageViewController(at: targetPage)
+                if targetVC is PlaceholderPageViewController {
+                    pendingNavigation = PendingNavigation(target: .page(targetPage))
+                    print("[FlipTrace] coverProgrammatic blocked placeholder targetPage=\(targetPage)")
+                    return
+                }
+            }
             
             isTransitioning = true
             let width = max(view.bounds.width, 1)
@@ -3839,12 +4007,17 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     // Capture the latest binding value.
                     let latestPage = self.currentPage
                     let realVC = self.currentEngine.pageViewController(at: latestPage)
+                    print("[FlipTrace] coverProgrammatic forward latestPage=\(latestPage) realType=\(type(of: realVC))")
                     self.applyPlaybackHighlight(to: realVC)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded()
                     
                     self.captureStablePosition(from: realVC)
-                    self.publishCurrentPage(latestPage, notify: true)
+                    self.publishCurrentPage(
+                        latestPage,
+                        position: self.readingPosition(from: realVC),
+                        notify: true
+                    )
                     Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: latestPage) }
 
                     self.resetCoverOverlay()
@@ -3855,11 +4028,16 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 guard let targetSnapshot = currentEngine.renderSnapshot(forPage: targetPage) else {
                     let latestPage = self.currentPage
                     let realVC = currentEngine.pageViewController(at: latestPage)
+                    print("[FlipTrace] coverProgrammatic backward snapshotMiss targetPage=\(targetPage) latestPage=\(latestPage) realType=\(type(of: realVC))")
                     self.applyPlaybackHighlight(to: realVC)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded()
                     self.captureStablePosition(from: realVC)
-                    self.publishCurrentPage(latestPage, notify: true)
+                    self.publishCurrentPage(
+                        latestPage,
+                        position: self.readingPosition(from: realVC),
+                        notify: true
+                    )
                     Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: latestPage) }
                     self.resetCoverOverlay()
                     self.isTransitioning = false
@@ -3874,12 +4052,17 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 } completion: { _ in
                     let latestPage = self.currentPage
                     let realVC = self.currentEngine.pageViewController(at: latestPage)
+                    print("[FlipTrace] coverProgrammatic backward latestPage=\(latestPage) realType=\(type(of: realVC))")
                     self.applyPlaybackHighlight(to: realVC)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded()
                     
                     self.captureStablePosition(from: realVC)
-                    self.publishCurrentPage(latestPage, notify: true)
+                    self.publishCurrentPage(
+                        latestPage,
+                        position: self.readingPosition(from: realVC),
+                        notify: true
+                    )
                     Task { @MainActor in self.currentEngine.warmUpNext(currentGlobalPage: latestPage) }
 
                     self.resetCoverOverlay()
