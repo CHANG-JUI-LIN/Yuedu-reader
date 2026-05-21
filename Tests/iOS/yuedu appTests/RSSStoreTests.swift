@@ -84,6 +84,38 @@ struct RSSStoreTests {
         #expect(article.isFavorite)
     }
 
+    @Test("refresh merge reports only newly inserted unread articles after initial cache")
+    func refreshMergeReportsNewUnreadArticles() throws {
+        let store = RSSStore(storageDirectory: try temporaryDirectory())
+        let source = RSSSource(id: "source-1", name: "BBC", url: "https://feed.example/rss")
+        store.addSource(source)
+
+        let first = RSSItem(
+            id: "https://example.com/first",
+            title: "First",
+            link: "https://example.com/first",
+            pubDate: nil,
+            description: "Initial article",
+            author: nil,
+            sourceId: source.id
+        )
+        #expect(store.mergeFetchedItems([first], for: source.id).isEmpty)
+
+        let second = RSSItem(
+            id: "https://example.com/second",
+            title: "Second",
+            link: "https://example.com/second",
+            pubDate: nil,
+            description: "New article",
+            author: nil,
+            sourceId: source.id
+        )
+        let newArticles = store.mergeFetchedItems([second, first], for: source.id)
+
+        #expect(newArticles.map(\.id) == [second.id])
+        #expect(store.totalUnreadCount() == 2)
+    }
+
     @Test("removing source clears cached articles and statuses")
     func removingSourceClearsCachedArticlesAndStatuses() throws {
         let store = RSSStore(storageDirectory: try temporaryDirectory())

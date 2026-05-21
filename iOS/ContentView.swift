@@ -3,6 +3,11 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var store: BookStore
     @ObservedObject private var gs = GlobalSettings.shared
+    @StateObject private var rssStore = RSSStore.shared
+
+    private var rssUnreadCount: Int {
+        rssStore.totalUnreadCount()
+    }
 
     var body: some View {
         TabView {
@@ -18,6 +23,7 @@ struct ContentView: View {
             Tab(localized("RSS 訂閱"), systemImage: "newspaper") {
                 RSSListView()
             }
+            .badge(rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
             
             Tab(localized("設定"), systemImage: "gearshape") {
                 SettingsView()

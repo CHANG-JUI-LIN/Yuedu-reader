@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct yuedu_appApp: App {
+    @UIApplicationDelegateAdaptor(RSSAppNotificationDelegate.self) private var rssNotificationDelegate
     @StateObject private var bookStore = BookStore()
 
     var body: some Scene {

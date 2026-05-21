@@ -475,11 +475,13 @@ struct RSSListView: View {
             let fetcher = RSSFetcher()
             await fetcher.fetchItems(from: source, metadata: store.feedMetadata(for: source.id))
             if fetcher.error == nil {
+                let newArticles: [RSSArticleRecord]
                 if let response = fetcher.response {
-                    store.applyFeedResponse(response, for: source.id)
+                    newArticles = store.applyFeedResponse(response, for: source.id)
                 } else {
-                    store.mergeFetchedItems(fetcher.items, for: source.id)
+                    newArticles = store.mergeFetchedItems(fetcher.items, for: source.id)
                 }
+                RSSNotificationManager.shared.notifyNewArticles(newArticles, source: source)
             }
             refreshProgress.completed += 1
         }

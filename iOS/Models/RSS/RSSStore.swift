@@ -168,10 +168,13 @@ final class RSSStore: ObservableObject {
         nextSourceSortOrder(inFolderNamed: folder?.name)
     }
 
-    func mergeFetchedItems(_ items: [RSSItem], for sourceID: String) {
-        let existingByID = Dictionary(uniqueKeysWithValues: (cachedArticlesBySource[sourceID] ?? []).map { ($0.id, $0) })
+    @discardableResult
+    func mergeFetchedItems(_ items: [RSSItem], for sourceID: String) -> [RSSArticleRecord] {
+        let existingRecords = cachedArticlesBySource[sourceID] ?? []
+        let existingByID = Dictionary(uniqueKeysWithValues: existingRecords.map { ($0.id, $0) })
+        let hadExistingCache = !existingRecords.isEmpty
         let fetchedAt = Date()
-        cachedArticlesBySource[sourceID] = items.map { item in
+        let mergedRecords = items.map { item in
             var record = RSSArticleRecord(item: item, fetchedAt: fetchedAt, status: articleStatuses[item.id])
             if let oldRecord = existingByID[item.id] {
                 record.fullText = oldRecord.fullText
@@ -187,21 +190,28 @@ final class RSSStore: ObservableObject {
             }
             return record
         }
+        cachedArticlesBySource[sourceID] = mergedRecords
         save()
+        guard hadExistingCache else { return [] }
+        return mergedRecords.filter { record in
+            existingByID[record.id] == nil && !record.isRead
+        }
     }
 
-    func applyFeedResponse(_ response: RSSFeedResponse, for sourceID: String) {
+    @discardableResult
+    func applyFeedResponse(_ response: RSSFeedResponse, for sourceID: String) -> [RSSArticleRecord] {
         switch response {
         case .notModified:
             var metadata = feedMetadataBySource[sourceID] ?? RSSFeedFetchMetadata()
             metadata.lastFetchedAt = Date()
             feedMetadataBySource[sourceID] = metadata
             save()
+            return []
 
         case .updated(let items, let metadata, let feedInfo):
             feedMetadataBySource[sourceID] = metadata
             applyFeedInfo(feedInfo, to: sourceID)
-            mergeFetchedItems(items, for: sourceID)
+            return mergeFetchedItems(items, for: sourceID)
         }
     }
 
@@ -247,6 +257,9 @@ final class RSSStore: ObservableObject {
         articleStatuses[articleId] = status
         updateCachedArticle(articleId: articleId, status: status)
         save()
+        if isRead {
+            RSSNotificationManager.shared.removeDeliveredNotification(articleID: articleId)
+        }
     }
 
     func updateReaderScrollY(articleId: String, scrollY: Double) {
@@ -295,6 +308,9 @@ final class RSSStore: ObservableObject {
             updateCachedArticle(articleId: articleID, status: status)
         }
         save()
+        if isRead {
+            RSSNotificationManager.shared.removeDeliveredNotifications(articleIDs: articleIDs)
+        }
     }
 
     func unreadCount(for sourceID: String) -> Int {
@@ -505,6 +521,7 @@ final class RSSStore: ObservableObject {
         save(cachedArticlesBySource, to: articleStorageURL)
         save(articleStatuses, to: statusStorageURL)
         save(feedMetadataBySource, to: feedMetadataStorageURL)
+        RSSNotificationManager.shared.updateBadge(unreadCount: totalUnreadCount())
     }
 
     private func load<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
