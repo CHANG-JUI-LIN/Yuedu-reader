@@ -541,6 +541,14 @@ final class HTMLAttributedStringBuilder {
                     parentElement: parentElement,
                     config: config
                 )
+                let children = await buildChildren(
+                    from: element.getChildNodes(),
+                    parentStyle: style,
+                    rules: rules,
+                    rootFontSize: rootFontSize,
+                    parentElement: element,
+                    config: config
+                )
                 result.append(
                     .element(
                         ElementNode(
@@ -549,7 +557,7 @@ final class HTMLAttributedStringBuilder {
                             classes: Array((try? element.classNames()) ?? []),
                             attributes: makeAttributeMap(for: element),
                             resolvedStyle: style,
-                            children: [],
+                            children: children,
                             svgContent: svgString
                         )
                     )
@@ -1452,8 +1460,15 @@ final class HTMLAttributedStringBuilder {
             return nil
         }
 
-        if element.tag == "img" || element.tag == "image" || element.tag == "svg" {
+        if element.tag == "img" || element.tag == "image" {
             return ImageOnlyBlockPayload(imageElement: element, linkHref: inheritedLinkHref)
+        }
+
+        if element.tag == "svg" {
+            return ImageOnlyBlockPayload(
+                imageElement: embeddedSVGImageElement(in: element) ?? element,
+                linkHref: inheritedLinkHref
+            )
         }
 
         if element.tag == "a" {
@@ -1484,8 +1499,15 @@ final class HTMLAttributedStringBuilder {
             return nil
         }
 
-        if element.tag == "img" || element.tag == "image" || element.tag == "svg" {
+        if element.tag == "img" || element.tag == "image" {
             return ImageOnlyBlockPayload(imageElement: element, linkHref: inheritedLinkHref)
+        }
+
+        if element.tag == "svg" {
+            return ImageOnlyBlockPayload(
+                imageElement: embeddedSVGImageElement(in: element) ?? element,
+                linkHref: inheritedLinkHref
+            )
         }
 
         if element.tag == "a" {
@@ -1526,10 +1548,34 @@ final class HTMLAttributedStringBuilder {
     }
 
     private func imageSource(from element: ElementNode) -> String {
-        element.attributes["src"]
+        let directSource = element.attributes["src"]
             ?? element.attributes["xlink:href"]
             ?? element.attributes["href"]
-            ?? ""
+        if let directSource, !directSource.isEmpty {
+            return directSource
+        }
+        if element.tag == "svg", let imageElement = embeddedSVGImageElement(in: element) {
+            return imageSource(from: imageElement)
+        }
+        return ""
+    }
+
+    private func embeddedSVGImageElement(in element: ElementNode) -> ElementNode? {
+        guard element.tag == "svg" else { return nil }
+        return firstDescendantImageElement(in: element.children)
+    }
+
+    private func firstDescendantImageElement(in nodes: [ASTNode]) -> ElementNode? {
+        for node in nodes {
+            guard case .element(let element) = node else { continue }
+            if element.tag == "image" || element.tag == "img" {
+                return element
+            }
+            if let nested = firstDescendantImageElement(in: element.children) {
+                return nested
+            }
+        }
+        return nil
     }
 
     private func resolveSVGPresentationAttributes(

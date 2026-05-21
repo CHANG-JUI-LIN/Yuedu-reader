@@ -242,6 +242,7 @@ struct CSSPropertyApplierTests {
             strikethrough: false,
             inheritedBlockMarginLeft: 0,
             inheritedBlockMarginRight: 0,
+            borderRadius: 0,
             isVerticalWritingMode: false,
             pageBreakBefore: false,
             pageBreakAfter: false
