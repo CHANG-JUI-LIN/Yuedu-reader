@@ -154,7 +154,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private let styleResolver: EPUBStyleResolver
     let offsetStore: CharOffsetStore
 
-    private var renderSettings: ReaderRenderSettings
+    private(set) var renderSettings: ReaderRenderSettings
 
     private var currentBookId: String?
     private var pendingRestoreTarget: (spineIndex: Int, charOffset: Int)?
@@ -548,15 +548,26 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     private func schedulePreloadChapter(at spineIndex: Int) {
-        guard (0..<chapterCount).contains(spineIndex),
-_layouts[spineIndex] == nil,
-              preloadTasks[spineIndex] == nil else { return }
+        guard (0..<chapterCount).contains(spineIndex) else {
+            print("[FlipTrace] schedulePreload skip outOfRange spine=\(spineIndex) chapterCount=\(chapterCount)")
+            return
+        }
+        guard _layouts[spineIndex] == nil else {
+            print("[FlipTrace] schedulePreload skip loaded spine=\(spineIndex) layouts=\(_layouts.keys.sorted())")
+            return
+        }
+        guard preloadTasks[spineIndex] == nil else {
+            print("[FlipTrace] schedulePreload skip pending spine=\(spineIndex) pending=\(preloadTasks.keys.sorted())")
+            return
+        }
 
         let generation = layoutGeneration
+        print("[FlipTrace] schedulePreload spine=\(spineIndex) generation=\(generation) layouts=\(_layouts.keys.sorted())")
         preloadTasks[spineIndex] = makePreloadTask(spineIndex: spineIndex, generation: generation)
     }
 
     func cancelPendingWork() {
+        print("[FlipTrace] cancelPendingWork generation=\(layoutGeneration) pending=\(preloadTasks.keys.sorted()) layouts=\(_layouts.keys.sorted())")
         layoutGeneration += 1
         cancelPreloadTasks()
     }
@@ -564,6 +575,7 @@ _layouts[spineIndex] == nil,
     func pageViewController(at index: Int) -> UIViewController {
         let (spineIndex, localPage) = localPosition(for: index)
         if let layout = _layouts[spineIndex] {
+            print("[FlipTrace] pageVC REAL page=\(index) spine=\(spineIndex) local=\(localPage) pages=\(layout.pageRanges.count)")
             return configuredPageViewController(
                 layout: layout,
                 spineIndex: spineIndex,
@@ -575,6 +587,7 @@ _layouts[spineIndex] == nil,
         let readingPosition: CoreTextReadingPosition? = localPage == 0
             ? .chapterStart(spineIndex)
             : nil
+        print("[FlipTrace] pageVC PLACEHOLDER page=\(index) spine=\(spineIndex) local=\(localPage) layouts=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
         let placeholder = PlaceholderPageViewController(
             chapterTitle: title,
             globalPage: index,
@@ -638,11 +651,13 @@ _layouts[spineIndex] == nil,
         }
 
         if let globalPage = pageIndex(for: position) {
+            print("[FlipTrace] positionVC exact position=\(position) page=\(globalPage)")
             return pageViewController(at: globalPage)
         }
 
         let title = chapterTitle(at: position.spineIndex)
         let estimated = estimatedGlobalPage(for: position) ?? 0
+        print("[FlipTrace] positionVC PLACEHOLDER position=\(position) estimated=\(estimated) layouts=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
         let placeholder = PlaceholderPageViewController(
             chapterTitle: title,
             globalPage: estimated,
@@ -661,8 +676,12 @@ _layouts[spineIndex] == nil,
 
     func preloadChapter(at spineIndex: Int) async {
         guard (0..<chapterCount).contains(spineIndex) else { return }
-        if _layouts[spineIndex] != nil { return }
+        if _layouts[spineIndex] != nil {
+            print("[FlipTrace] preload skip loaded spine=\(spineIndex) layouts=\(_layouts.keys.sorted())")
+            return
+        }
         if let existing = preloadTasks[spineIndex] {
+            print("[FlipTrace] preload await existing spine=\(spineIndex) generation=\(layoutGeneration)")
             await existing.value
             return
         }
@@ -709,6 +728,7 @@ _layouts[spineIndex] = nil
         guard (0..<chapterCount).contains(spineIndex),
 _layouts[spineIndex] == nil else { return }
         guard !shouldAbortPreload(generation: generation) else { return }
+        print("[FlipTrace] preload begin spine=\(spineIndex) generation=\(generation) layouts=\(_layouts.keys.sorted())")
 
         if let attributedBuilder {
             guard let buildResult = try? await attributedBuilder.buildChapter(
@@ -740,6 +760,7 @@ _layouts[spineIndex] == nil else { return }
             guard !shouldAbortPreload(generation: generation) else { return }
 
 _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
+            print("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
             generateSnapshot(for: spineIndex)
             rebuildPageOffsets()
             applyPendingRestoreIfPossible()
@@ -833,6 +854,7 @@ _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backg
         // Apply the current theme colors to prevent preload tasks that started before a theme change
         // from overwriting the new theme with stale colors after the change completes.
 _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
+        print("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
         generateSnapshot(for: spineIndex)
         rebuildPageOffsets()
         applyPendingRestoreIfPossible()
@@ -928,6 +950,7 @@ _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backg
     }
 
     func invalidateLayout(newSize: CGSize) async {
+        print("[FlipTrace] invalidateLayout newSize=\(newSize) oldSize=\(renderSize) loaded=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
         cancelPendingWork()
         isRelaying = true
         renderSize = newSize
@@ -994,11 +1017,15 @@ _layouts.removeAll()
         // Evict distant chapters on page turn
         evictDistantChapters(currentSpine: spineIndex)
 
-        guard let layout = _layouts[spineIndex] else { return }
+        guard let layout = _layouts[spineIndex] else {
+            print("[FlipTrace] warmUp skip missingCurrent page=\(currentGlobalPage) spine=\(spineIndex) local=\(localPage) layouts=\(_layouts.keys.sorted())")
+            return
+        }
         let total = layout.pageRanges.count
         // Trigger at 20% remaining (minimum 3 pages) so snapshot is ready before chapter boundary
         let threshold = max(3, Int(Double(total) * 0.20))
         let remaining = total - localPage
+        print("[FlipTrace] warmUp page=\(currentGlobalPage) spine=\(spineIndex) local=\(localPage) total=\(total) remaining=\(remaining) threshold=\(threshold) layouts=\(_layouts.keys.sorted())")
         if remaining <= threshold {
             let nextSpine = spineIndex + 1
             if nextSpine < chapterCount {
@@ -1014,8 +1041,16 @@ _layouts.removeAll()
     func snapshotViewController(at index: Int) -> UIViewController? {
         let (spineIndex, localPage) = localPosition(for: index)
         // Snapshots are only used for chapter boundary handoff. Page 0 key is (spineIndex << 1)
-        guard localPage == 0,
-              let snapshot = chapterSnapshots.object(forKey: NSNumber(value: (spineIndex << 1))) else { return nil }
+        guard localPage == 0 else {
+            print("[FlipTrace] snapshotVC MISS nonFirstPage page=\(index) spine=\(spineIndex) local=\(localPage)")
+            return nil
+        }
+        let key = NSNumber(value: (spineIndex << 1))
+        guard let snapshot = chapterSnapshots.object(forKey: key) else {
+            print("[FlipTrace] snapshotVC MISS noSnapshot page=\(index) spine=\(spineIndex) key=\(key) layouts=\(_layouts.keys.sorted())")
+            return nil
+        }
+        print("[FlipTrace] snapshotVC HIT page=\(index) spine=\(spineIndex) key=\(key)")
         let bgColor: UIColor
         if let layout = _layouts[spineIndex],
            layout.attributedString.length > 0,
@@ -1052,18 +1087,29 @@ _layouts[spineIndex] = _layouts[spineIndex]?.withUpdatedColors(textColor: textCo
     /// Offscreen renders any global page as a UIImage for use as an immediate snapshot during cover animation.
     func renderSnapshot(forPage globalPage: Int) -> UIImage? {
         let (spineIndex, localPage) = localPosition(for: globalPage)
-        guard let layout = _layouts[spineIndex],
-              localPage < layout.pageRanges.count,
-              renderSize.width > 0, renderSize.height > 0 else { return nil }
+        guard let layout = _layouts[spineIndex] else {
+            print("[FlipTrace] renderSnapshot MISS noLayout page=\(globalPage) spine=\(spineIndex) local=\(localPage) layouts=\(_layouts.keys.sorted())")
+            return nil
+        }
+        guard localPage < layout.pageRanges.count else {
+            print("[FlipTrace] renderSnapshot MISS pageOutOfRange page=\(globalPage) spine=\(spineIndex) local=\(localPage) pages=\(layout.pageRanges.count)")
+            return nil
+        }
+        guard renderSize.width > 0, renderSize.height > 0 else {
+            print("[FlipTrace] renderSnapshot MISS invalidSize page=\(globalPage) spine=\(spineIndex) size=\(renderSize)")
+            return nil
+        }
         
         // Prefer the boundary cache (Key: (spine << 1) | isLastPage)
         let isLastPage = localPage == (layout.pageRanges.count - 1)
         if localPage == 0 || isLastPage {
             let key = NSNumber(value: (spineIndex << 1) | (isLastPage ? 1 : 0))
             if let cached = chapterSnapshots.object(forKey: key) {
+                print("[FlipTrace] renderSnapshot HIT cached page=\(globalPage) spine=\(spineIndex) local=\(localPage) key=\(key)")
                 return cached
             }
         }
+        print("[FlipTrace] renderSnapshot render page=\(globalPage) spine=\(spineIndex) local=\(localPage)")
         
         let bgColor: UIColor
         if layout.attributedString.length > 0,
