@@ -10,6 +10,7 @@ struct CoreTextUnderlineSelectionRequest {
     let position: CoreTextReadingPosition
     let length: Int
     let excerpt: String
+    let removesExistingUnderline: Bool
 }
 
 extension Notification.Name {

@@ -496,6 +496,19 @@ class BookStore: ObservableObject, BookProvider {
         saveMeta()
     }
 
+    func removeUnderlineBookmark(
+        bookId: UUID,
+        position: CoreTextReadingPosition,
+        length: Int
+    ) {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        let safeLength = max(1, length)
+        books[idx].bookmarks.removeAll {
+            $0.kind == .underline && $0.position == position && $0.length == safeLength
+        }
+        saveMeta()
+    }
+
     func isBookmark(bookId: UUID, position: CoreTextReadingPosition) -> Bool {
         books.first(where: { $0.id == bookId })?.bookmarks.contains(where: {
             $0.position == position

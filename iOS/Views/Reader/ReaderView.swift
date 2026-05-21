@@ -451,6 +451,15 @@ struct ReaderView: View {
     private func addUnderlineBookmark(_ request: CoreTextUnderlineSelectionRequest) {
         let position = request.position
         guard chapters.indices.contains(position.spineIndex) else { return }
+        if request.removesExistingUnderline {
+            store.removeUnderlineBookmark(
+                bookId: bookId,
+                position: position,
+                length: request.length
+            )
+            syncCoreTextTextAnnotations()
+            return
+        }
         store.addUnderlineBookmark(
             bookId: bookId,
             chapterIndex: position.spineIndex,

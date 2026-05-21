@@ -120,12 +120,13 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         suggestedActions: [UIMenuElement]
     ) -> UIMenu? {
         guard selectedTextForCopy?.isEmpty == false else { return nil }
+        let removesExistingUnderline = selectedRangeHasExactUnderline()
         var actions = suggestedActions
         actions.append(UIAction(
-            title: localized("underline"),
+            title: localized(removesExistingUnderline ? "解除下劃線" : "下劃線"),
             image: nil,
             handler: { [weak self] _ in
-                self?.underlineSelection(nil)
+                self?.toggleUnderlineSelection(removesExistingUnderline: removesExistingUnderline)
             }
         ))
         return UIMenu(children: actions)
@@ -751,6 +752,10 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     }
 
     @objc private func underlineSelection(_ sender: Any?) {
+        toggleUnderlineSelection(removesExistingUnderline: selectedRangeHasExactUnderline())
+    }
+
+    private func toggleUnderlineSelection(removesExistingUnderline: Bool) {
         guard let layout,
               let range = selectionManager.selectedRange,
               range.length > 0,
@@ -758,12 +763,18 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
               range.location + range.length <= layout.attributedString.length
         else { return }
         let excerpt = selectedTextForCopy ?? selectionManager.selectedText(in: layout.attributedString) ?? ""
-        let annotation = CoreTextTextAnnotation(
-            id: UUID(),
-            spineIndex: layout.spineIndex,
-            range: range
-        )
-        textAnnotations.append(annotation)
+        if removesExistingUnderline {
+            textAnnotations.removeAll {
+                $0.spineIndex == layout.spineIndex && NSEqualRanges($0.range, range)
+            }
+        } else {
+            let annotation = CoreTextTextAnnotation(
+                id: UUID(),
+                spineIndex: layout.spineIndex,
+                range: range
+            )
+            textAnnotations.append(annotation)
+        }
         updateAnnotationOverlay()
         NotificationCenter.default.post(
             name: .coreTextUnderlineSelectionRequested,
@@ -775,7 +786,8 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
                         charOffset: range.location
                     ),
                     length: range.length,
-                    excerpt: excerpt.trimmingCharacters(in: .whitespacesAndNewlines)
+                    excerpt: excerpt.trimmingCharacters(in: .whitespacesAndNewlines),
+                    removesExistingUnderline: removesExistingUnderline
                 )
             ]
         )
@@ -850,11 +862,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             let paragraphRange = defaultSelectionRange(around: index, in: layout.attributedString)
             selectionManager.setSelection(range: paragraphRange, maxLength: layout.attributedString.length)
             updateSelectionOverlay(with: context)
-        case .changed:
-            selectionManager.updateSelection(to: index, maxLength: layout.attributedString.length)
-            updateSelectionOverlay(with: context)
         case .ended:
-            selectionManager.updateSelection(to: index, maxLength: layout.attributedString.length)
             updateSelectionOverlay(with: context)
             guard selectionManager.hasSelection else { return }
             selectedTextForCopy = selectionManager.selectedText(in: layout.attributedString)
@@ -1255,6 +1263,16 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         annotationOverlay.underlineRects = rects
         annotationOverlay.startHandlePoint = nil
         annotationOverlay.endHandlePoint = nil
+    }
+
+    private func selectedRangeHasExactUnderline() -> Bool {
+        guard let layout,
+              let range = selectionManager.selectedRange,
+              range.length > 0
+        else { return false }
+        return textAnnotations.contains {
+            $0.spineIndex == layout.spineIndex && NSEqualRanges($0.range, range)
+        }
     }
 
     private func updatePlaybackHighlightOverlay() {
