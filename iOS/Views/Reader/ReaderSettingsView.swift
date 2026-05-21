@@ -416,10 +416,7 @@ struct ReaderSettingsView: View {
     private var pageTurnOptionBinding: Binding<PageTurnOption> {
         Binding(
             get: {
-                if isVerticalWritingMode && settings.scrollMode {
-                    return .slide
-                }
-                if settings.scrollMode {
+                if !isVerticalWritingMode && settings.scrollMode {
                     return .scroll
                 }
                 switch settings.pageTurnStyle {

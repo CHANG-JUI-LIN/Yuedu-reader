@@ -565,7 +565,7 @@ struct ReaderView: View {
                 .id(settings.pageTurnStyle)
                 .ignoresSafeArea()
                 .transition(.opacity.animation(.easeOut(duration: 0.25)))
-            } else if settings.scrollMode {
+            } else if effectiveScrollMode {
                 scrollBody
                     .transition(.opacity.animation(.easeOut(duration: 0.25)))
             } else if let ctEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
@@ -621,7 +621,7 @@ struct ReaderView: View {
             //   }
 
             // Top/Bottom bars
-            if !showBars && !settings.scrollMode && !chapters.isEmpty {
+            if !showBars && !effectiveScrollMode && !chapters.isEmpty {
                 VStack {
                     Spacer()
                     bottomFooter
@@ -671,7 +671,7 @@ struct ReaderView: View {
                     "bookId": bookId.uuidString,
                     "pipelineKind": telemetryPipelineKind,
                     "turnStyle": settings.pageTurnStyle.rawValue,
-                    "scrollMode": settings.scrollMode ? "1" : "0",
+                    "scrollMode": effectiveScrollMode ? "1" : "0",
                 ]
             )
             readerConfig.syncFromGlobalSettings()
@@ -1065,7 +1065,7 @@ struct ReaderView: View {
             return
         }
 
-        if settings.scrollMode, !chapters.isEmpty {
+        if effectiveScrollMode, !chapters.isEmpty {
             let maxIndex = chapters.count - 1
             guard maxIndex > 0 else { return }
             let target = max(0, min(Int(round(progress * Double(maxIndex))), maxIndex))
@@ -1266,11 +1266,14 @@ struct ReaderView: View {
     }
 
     private var effectiveWritingMode: ReaderWritingMode {
-        guard !settings.scrollMode,
-              (isVerticalEPUB || book?.allowsVerticalWritingMode == true) else {
+        guard isVerticalEPUB || book?.allowsVerticalWritingMode == true else {
             return .horizontal
         }
         return isVerticalEPUB ? .verticalRTL : settings.readerWritingMode
+    }
+
+    private var effectiveScrollMode: Bool {
+        settings.scrollMode && !effectiveWritingMode.isVertical
     }
 
     private var legacyScrollBody: some View {
@@ -1598,7 +1601,7 @@ struct ReaderView: View {
 
     private func chapterSliderProgressValue() -> Double {
         // Scroll mode: approximate using chapter index (chunks may not be fully loaded, no reliable character count).
-        if settings.scrollMode {
+        if effectiveScrollMode {
             let total = max(chapters.count - 1, 1)
             return Double(min(scrollVisibleChapter, total)) / Double(total)
         }
@@ -1617,7 +1620,7 @@ struct ReaderView: View {
 
     private func applyChapterSliderProgress(_ value: Double) {
         // Scroll mode: round to nearest chapter, then reslice the engine.
-        if settings.scrollMode, let scrollEngine = epubRenderer.scrollEngine {
+        if effectiveScrollMode, let scrollEngine = epubRenderer.scrollEngine {
             let total = max(chapters.count - 1, 1)
             let target = max(0, min(Int(round(value * Double(total))), total))
             scrollVisibleChapter = target
@@ -1789,7 +1792,7 @@ struct ReaderView: View {
             return layout.attributedString.attributedSubstring(from: range).string
         }
 
-        if !settings.scrollMode, !allPages.isEmpty {
+        if !effectiveScrollMode, !allPages.isEmpty {
             let startPage = max(0, min(currentPage, max(allPages.count - 1, 0)))
             let text = allPages
                 .enumerated()
@@ -1813,7 +1816,7 @@ struct ReaderView: View {
     private func jumpToBookmark(_ bookmark: Bookmark) {
         let position = bookmark.position
         guard chapters.indices.contains(position.spineIndex) else { return }
-        if settings.scrollMode, epubRenderer.scrollEngine != nil {
+        if effectiveScrollMode, epubRenderer.scrollEngine != nil {
             currentChapterIndex = position.spineIndex
             scrollVisibleChapter = position.spineIndex
             savedCoreTextRestoreTarget = (position.spineIndex, position.charOffset)
@@ -1888,7 +1891,7 @@ struct ReaderView: View {
                 percentage: normalized
             )
             store.updatePosition(bookId: bookId, position: normalized)
-        } else if !settings.scrollMode && !allPages.isEmpty {
+        } else if !effectiveScrollMode && !allPages.isEmpty {
             // TXT: use allPages
             let page = allPages[min(currentPage, allPages.count - 1)]
             currentChapterIndex = page.chapterIndex
