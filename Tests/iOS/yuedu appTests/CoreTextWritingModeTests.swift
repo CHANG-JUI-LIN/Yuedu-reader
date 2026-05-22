@@ -538,6 +538,76 @@ struct CoreTextWritingModeTests {
         #expect(annotation.attributedString.string.contains("夾注﹁之﹂別︒"))
     }
 
+    @Test("vertical scroll chunks draw images nested inside inline annotations")
+    func verticalScrollChunksDrawImagesNestedInsideInlineAnnotations() async throws {
+        let image = await MainActor.run {
+            UIGraphicsImageRenderer(size: CGSize(width: 18, height: 18)).image { context in
+                UIColor.magenta.setFill()
+                context.cgContext.fill(CGRect(x: 0, y: 0, width: 18, height: 18))
+            }
+        }
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { _ in image }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.0,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            fontFamilyName: nil,
+            renderWidth: 240,
+            writingMode: .verticalRTL
+        )
+
+        let result = await builder.build(
+            html: """
+            <html>
+            <head>
+            <style>
+            .small { font-size: 0.75em; }
+            .font_patch { width: 1em; height: auto; }
+            </style>
+            </head>
+            <body><p>甲<span class="small"><img src="patch.gif" class="font_patch" alt="甲側">側批</span>乙</p></body>
+            </html>
+            """,
+            config: config
+        )
+        let prepared = CoreTextPaginator.preparedAttributedString(
+            result.attributedString,
+            writingMode: .verticalRTL,
+            fontSize: 18,
+            maxInlineAnnotationAdvance: 204
+        )
+        let output = CoreTextChunkSlicer.slice(
+            attributedString: prepared,
+            chapterIndex: 0,
+            contentWidth: 240,
+            writingMode: .verticalRTL
+        )
+        let chunk = try #require(output.chunks.first { !$0.inlineAnnotations.isEmpty })
+        let annotationRect = try #require(chunk.inlineAnnotations.first?.uiRect)
+
+        let rendered = await MainActor.run {
+            let drawView = CoreTextChunkDrawView(frame: CGRect(origin: .zero, size: CGSize(width: chunk.width, height: chunk.height)))
+            drawView.backgroundColor = .white
+            drawView.chunk = chunk
+
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = true
+            return UIGraphicsImageRenderer(size: drawView.bounds.size, format: format).image { context in
+                UIColor.white.setFill()
+                context.cgContext.fill(drawView.bounds)
+                drawView.draw(drawView.bounds)
+            }
+        }
+
+        #expect(containsMagentaPixel(in: annotationRect, image: rendered))
+    }
+
     @Test("vertical EPUB ruby tags become CoreText ruby annotations")
     func verticalEPUBRubyTagsBecomeCoreTextRubyAnnotations() async throws {
         let builder = HTMLAttributedStringBuilder()
@@ -981,6 +1051,36 @@ struct CoreTextWritingModeTests {
                 let looksYellowRGB = r > 180 && g > 160 && b < 120
                 let looksYellowBGR = b > 180 && g > 160 && r < 120
                 if looksYellowRGB || looksYellowBGR {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private func containsMagentaPixel(in rect: CGRect, image: UIImage) -> Bool {
+        guard let cgImage = image.cgImage,
+              let data = cgImage.dataProvider?.data,
+              let bytes = CFDataGetBytePtr(data)
+        else { return false }
+
+        let minX = max(0, Int(floor(rect.minX)))
+        let maxX = min(cgImage.width, Int(ceil(rect.maxX)))
+        let minY = max(0, Int(floor(rect.minY)))
+        let maxY = min(cgImage.height, Int(ceil(rect.maxY)))
+        guard minX < maxX, minY < maxY else { return false }
+
+        let bytesPerPixel = max(1, cgImage.bitsPerPixel / 8)
+        let bytesPerRow = cgImage.bytesPerRow
+        for y in minY..<maxY {
+            for x in minX..<maxX {
+                let offset = y * bytesPerRow + x * bytesPerPixel
+                let r = bytes[offset]
+                let g = bytes[offset + min(1, bytesPerPixel - 1)]
+                let b = bytes[offset + min(2, bytesPerPixel - 1)]
+                let looksMagentaRGB = r > 180 && g < 100 && b > 180
+                let looksMagentaBGR = b > 180 && g < 100 && r > 180
+                if looksMagentaRGB || looksMagentaBGR {
                     return true
                 }
             }

@@ -59,6 +59,97 @@ struct CoreTextScrollTests {
         #expect(controller.scrollAxis == .horizontalRTL)
     }
 
+    @Test("vertical RTL scroll cover fits viewport width instead of text extent")
+    @MainActor
+    func verticalRTLScrollCoverFitsViewportWidthInsteadOfTextExtent() async throws {
+        let cover = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 900)).image { context in
+            UIColor.systemRed.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 600, height: 900))
+        }
+        let settings = Self.makeRenderSettings(writingMode: .verticalRTL)
+        let engine = CoreTextScrollEngine(
+            builder: ImagePageScrollTestBuilder(image: cover),
+            renderSettings: settings
+        )
+        let controller = CoreTextCollectionScrollViewController(
+            engine: engine,
+            axis: .horizontalRTL,
+            horizontalInset: 24,
+            verticalInset: 60,
+            backgroundColor: .white
+        )
+        controller.bottomMargin = 32
+        controller.setInitialPosition(chapter: 0, charOffset: 0)
+
+        let scene = try #require(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+
+        for _ in 0..<50 where !engine.isReady {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        controller.view.layoutIfNeeded()
+
+        let chunk = try #require(engine.chunks.first)
+        let attachment = try #require(chunk.attachments.first)
+        #expect(chunk.isImageOnly)
+        #expect(abs(chunk.width - 342) < 1)
+        #expect(abs(chunk.height - 752) < 1)
+        #expect(attachment.rect.width <= chunk.width)
+        #expect(attachment.rect.height <= chunk.height)
+        window.isHidden = true
+    }
+
+    @Test("vertical RTL scroll keeps a visible chapter boundary gap")
+    @MainActor
+    func verticalRTLScrollKeepsVisibleChapterBoundaryGap() async throws {
+        let settings = Self.makeRenderSettings(writingMode: .verticalRTL)
+        let engine = CoreTextScrollEngine(
+            builder: StaticScrollTestBuilder(chapters: ["短章節。", "第二章節。"]),
+            renderSettings: settings
+        )
+        let controller = CoreTextCollectionScrollViewController(
+            engine: engine,
+            axis: .horizontalRTL,
+            horizontalInset: 24,
+            verticalInset: 60,
+            backgroundColor: .white
+        )
+        controller.setInitialPosition(chapter: 0, charOffset: 0)
+
+        let scene = try #require(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+
+        let collectionView = try #require(Self.firstCollectionView(in: controller.view))
+        for _ in 0..<50 where engine.chapterRanges[1] == nil || collectionView.numberOfItems(inSection: 0) < 2 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            controller.view.layoutIfNeeded()
+        }
+        controller.view.layoutIfNeeded()
+
+        try #require(engine.chunks.count > 1)
+        let secondChunk = engine.chunks[1]
+        let secondFrame = try #require(collectionView.layoutAttributesForItem(
+            at: IndexPath(item: 1, section: 0)
+        )?.frame)
+        #expect(secondFrame.width - secondChunk.width >= 72)
+        window.isHidden = true
+    }
+
     @Test("horizontal RTL scroll starts at the mirrored leading edge")
     @MainActor
     func horizontalRTLInitialScrollStartsAtMirroredLeadingEdge() async throws {
@@ -345,9 +436,13 @@ struct CoreTextScrollTests {
         )
 
         #expect(!output.chunks.isEmpty)
-        for chunk in output.chunks {
+        for (index, chunk) in output.chunks.enumerated() {
             #expect(chunk.writingMode == .verticalRTL)
-            #expect(chunk.width == Self.fixtureContentWidth)
+            if index == output.chunks.indices.last {
+                #expect(chunk.width <= Self.fixtureContentWidth)
+            } else {
+                #expect(chunk.width == Self.fixtureContentWidth)
+            }
             #expect(chunk.height == Self.fixtureContentHeight)
         }
         Self.expectContinuousChunks(output.chunks, totalLength: result.attributedString.length)
@@ -374,11 +469,39 @@ struct CoreTextScrollTests {
         )
 
         #expect(!output.chunks.isEmpty)
-        for chunk in output.chunks {
+        for (index, chunk) in output.chunks.enumerated() {
             #expect(chunk.writingMode == .verticalRTL)
-            #expect(chunk.width == 480)
+            if index == output.chunks.indices.last {
+                #expect(chunk.width <= 480)
+            } else {
+                #expect(chunk.width == 480)
+            }
             #expect(chunk.height == 320)
         }
+    }
+
+    @Test("vertical RTL scroll terminal chunk shrinks to used columns")
+    func verticalRTLScrollTerminalChunkShrinksToUsedColumns() throws {
+        let attr = NSAttributedString(
+            string: "短章節，只有幾欄。",
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 18),
+                .foregroundColor: UIColor.black,
+            ]
+        )
+
+        let output = CoreTextChunkSlicer.slice(
+            attributedString: attr,
+            chapterIndex: 0,
+            contentWidth: 320,
+            heightCap: 480,
+            writingMode: .verticalRTL
+        )
+
+        let chunk = try #require(output.chunks.first)
+        #expect(chunk.writingMode == .verticalRTL)
+        #expect(chunk.width < 480)
+        #expect(chunk.height == 320)
     }
 
     private static let renderSettings = makeRenderSettings()
@@ -481,6 +604,38 @@ private struct StaticScrollTestBuilder: AttributedStringBuilding {
                 ]
             ),
             imagePage: nil,
+            pageBackgroundImage: nil,
+            anchorOffsets: [:]
+        )
+    }
+}
+
+private struct ImagePageScrollTestBuilder: AttributedStringBuilding {
+    let image: UIImage
+
+    var chapterCount: Int { 1 }
+
+    func chapterTitle(at index: Int) -> String { "Cover" }
+    func chapterSourceHref(at index: Int) -> String? { "cover.xhtml" }
+    func chapterDataSize(at index: Int) async -> Int { 1 }
+    func chapterIndex(for href: String) -> Int? { nil }
+    func cssResourceHrefs() -> [String] { [] }
+
+    func buildChapter(
+        at index: Int,
+        settings: ReaderRenderSettings,
+        themeTextColor: UIColor,
+        themeBackgroundColor: UIColor
+    ) async throws -> AttributedChapterBuildResult {
+        AttributedChapterBuildResult(
+            attributedString: NSAttributedString(
+                string: "\u{FFFC}",
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: settings.fontSize),
+                    .foregroundColor: themeTextColor,
+                ]
+            ),
+            imagePage: HTMLAttributedStringBuilder.ImagePage(source: "cover.jpg", image: image),
             pageBackgroundImage: nil,
             anchorOffsets: [:]
         )
