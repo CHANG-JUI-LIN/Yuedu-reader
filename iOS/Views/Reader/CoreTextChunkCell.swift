@@ -82,8 +82,12 @@ final class CoreTextChunkDrawView: UIView {
         }
 
         // Phase 4: Inline image attachments (UIKit coordinates)
-        for attachment in chunk.attachments {
-            attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
+        if !chunk.attachments.isEmpty {
+            print("[ImageDraw] chunk=\(chunk.charRange.location) vertical=\(chunk.writingMode.isVertical) images=\(chunk.attachments.count) bounds=\(bounds)")
+            for (i, attachment) in chunk.attachments.enumerated() {
+                print("[ImageDraw]   [\(i)] rect=\(attachment.rect) src=\(attachment.sourceHref ?? "nil") size=\(attachment.image.size)")
+                attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
+            }
         }
     }
 }
@@ -99,6 +103,7 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
     private var widthConstraint: NSLayoutConstraint!
     private var heightConstraint: NSLayoutConstraint!
     private(set) var currentChunk: CoreTextChunk?
+    private var annotationOverlays: [LayerKey: InteractionOverlayView] = [:]
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -169,7 +174,7 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
             overlay.clearSelection()
             return
         }
-        let rects = chunk.selectionRects(forChapterRange: range)
+        let rects = renderRects(for: range)
         if rects.isEmpty { overlay.clearSelection(); return }
         overlay.selectionRects = rects
 
@@ -206,10 +211,108 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
             return
         }
 
-        let rects = chunk.selectionRects(forChapterRange: found)
+        let rects = renderRects(for: found)
         playbackOverlay.selectionRects = rects
         playbackOverlay.startHandlePoint = nil
         playbackOverlay.endHandlePoint = nil
+    }
+
+    /// Helper: computes rects for a chapter-level range within this chunk using the shared renderer.
+    private func renderRects(for chapterRange: NSRange) -> [CGRect] {
+        guard let chunk = currentChunk else { return [] }
+        chunk.materializeFrameIfNeeded()
+        guard let frame = chunk.frame else { return [] }
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        guard !lines.isEmpty else { return [] }
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+
+        let chunkNS = NSRange(location: chunk.charRange.location, length: chunk.charRange.length)
+        let inter = NSIntersectionRange(chunkNS, chapterRange)
+        guard inter.length > 0 else { return [] }
+
+        return CoreTextAnnotationRenderer.rects(
+            forRange: inter,
+            lines: lines,
+            lineOrigins: origins,
+            contentOffset: .zero,
+            layoutHeight: chunk.height,
+            writingMode: chunk.writingMode
+        )
+    }
+
+    /// Renders text annotations (underline/highlight) onto this chunk using the shared AnnotationRenderer.
+    func applyAnnotations(_ annotations: [CoreTextTextAnnotation]) {
+        guard let chunk = currentChunk, chunk.chapterIndex >= 0 else {
+            clearAnnotationOverlays()
+            return
+        }
+        chunk.materializeFrameIfNeeded()
+        guard let frame = chunk.frame else {
+            clearAnnotationOverlays()
+            return
+        }
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        guard !lines.isEmpty else { clearAnnotationOverlays(); return }
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+
+        let chunkNS = NSRange(location: chunk.charRange.location, length: chunk.charRange.length)
+        let layers = CoreTextAnnotationRenderer.render(
+            annotations: annotations,
+            spineIndex: chunk.chapterIndex,
+            pageCharRange: chunkNS,
+            lines: lines,
+            lineOrigins: origins,
+            contentOffset: .zero,
+            layoutHeight: chunk.height,
+            writingMode: chunk.writingMode
+        )
+
+        // Apply layers — reuse overlay views per (style, color)
+        var activeKeys = Set<LayerKey>()
+        for layer in layers {
+            let key = LayerKey(style: layer.style, color: layer.color)
+            activeKeys.insert(key)
+            let overlay: InteractionOverlayView
+            if let existing = annotationOverlays[key] {
+                overlay = existing
+            } else {
+                overlay = InteractionOverlayView()
+                overlay.frame = drawView.bounds
+                overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                overlay.showsHandles = false
+                contentView.addSubview(overlay)
+                annotationOverlays[key] = overlay
+            }
+            if layer.style == .highlight {
+                overlay.fillColor = layer.color.uiColor.withAlphaComponent(0.25)
+                overlay.selectionRects = layer.rects
+                overlay.underlineRects = []
+            } else {
+                overlay.fillColor = .clear
+                overlay.underlineColor = layer.color.uiColor.withAlphaComponent(0.85)
+                overlay.underlineRects = layer.rects
+                overlay.drawsVerticalUnderlines = chunk.writingMode.isVertical
+                overlay.selectionRects = []
+            }
+            overlay.startHandlePoint = nil
+            overlay.endHandlePoint = nil
+            overlay.isHidden = false
+        }
+
+        // Hide unused overlays
+        for (key, overlay) in annotationOverlays where !activeKeys.contains(key) {
+            overlay.isHidden = true
+            overlay.clearSelection()
+        }
+    }
+
+    private func clearAnnotationOverlays() {
+        for overlay in annotationOverlays.values {
+            overlay.clearSelection()
+            overlay.isHidden = true
+        }
     }
 
     override func prepareForReuse() {
