@@ -4,7 +4,7 @@
 "HTTP TTS URL 模板" = "HTTP TTS URL Template";
 "Legado 資料遷移" = "Legado Data Migration";
 "RSS 網址" = "RSS URL";
-"RSS 訂閱" = "RSS Subscriptions";
+"RSS 訂閱" = "Feed";
 "TXT、EPUB、Web、書源" = "TXT, EPUB, Web, Sources";
 "URL" = "URL";
 "WebDAV 同步" = "WebDAV Sync";
@@ -603,4 +603,8 @@
 "來源名稱（選填）" = "Feed Name (Optional)";
 "留空將自動從 RSS 抓取" = "Leave blank to fetch from RSS";
 "正在抓取 RSS 資訊…" = "Fetching RSS info…";
+"刷新全部訂閱" = "Refresh All Feeds";
+"新增或匯入" = "Add or Import";
+"更多" = "More";
+"訂閱" = "Feeds";
 "Fixed-layout EPUB detected" = "Fixed-layout EPUB detected (in development)";

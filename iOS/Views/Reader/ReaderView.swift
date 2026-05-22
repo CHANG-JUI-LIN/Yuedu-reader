@@ -445,28 +445,34 @@ struct ReaderView: View {
     }
 
     private func syncCoreTextTextAnnotations() {
-        epubRenderer.engine?.setTextAnnotations(coreTextTextAnnotations)
+        let annotations = coreTextTextAnnotations
+        epubRenderer.engine?.setTextAnnotations(annotations)
+        epubRenderer.scrollEngine?.textAnnotations = annotations
     }
 
     private func addUnderlineBookmark(_ request: CoreTextUnderlineSelectionRequest) {
         let position = request.position
         guard chapters.indices.contains(position.spineIndex) else { return }
         if request.removesExistingUnderline {
-            store.removeUnderlineBookmark(
+            store.removeTextAnnotation(
                 bookId: bookId,
                 position: position,
-                length: request.length
+                length: request.length,
+                style: request.style,
+                color: request.color
             )
             syncCoreTextTextAnnotations()
             return
         }
-        store.addUnderlineBookmark(
+        store.addTextAnnotation(
             bookId: bookId,
             chapterIndex: position.spineIndex,
             chapterTitle: bookmarkChapterTitle(for: position.spineIndex),
             position: position,
             length: request.length,
-            excerpt: request.excerpt.isEmpty ? currentPageExcerpt : String(request.excerpt.prefix(80))
+            excerpt: request.excerpt.isEmpty ? currentPageExcerpt : String(request.excerpt.prefix(80)),
+            style: request.style,
+            color: request.color
         )
         syncCoreTextTextAnnotations()
     }
@@ -742,6 +748,10 @@ struct ReaderView: View {
             } else if phase == .active {
                 restoreReaderDisplayStateAfterResume()
             }
+        }
+        .onReceive(epubRenderer.$scrollEngine) { engine in
+            guard engine != nil else { return }
+            syncCoreTextTextAnnotations()
         }
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
@@ -1199,6 +1209,7 @@ struct ReaderView: View {
                 resliceToken: scrollResliceToken,
                 playbackHighlightText: ttsCoordinator.playbackState == .stopped
                     ? nil : ttsCoordinator.currentSegmentText,
+                textAnnotations: coreTextTextAnnotations,
                 onTap: {
                     withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
                 },

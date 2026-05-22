@@ -62,7 +62,7 @@ struct RSSListView: View {
                 }
                 .scrollIndicators(.visible)
             }
-            .navigationTitle(localized("RSS訂閱"))
+            .navigationTitle(localized("RSS 訂閱"))
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
