@@ -394,7 +394,11 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
                 minOffsetX,
                 collectionView.contentSize.width - visibleWidth + collectionView.adjustedContentInset.right
             )
-            let desiredOffsetX = attributes.frame.maxX - visibleWidth + collectionView.adjustedContentInset.right
+            // RTL flow layout with flipsHorizontally flips frames: item 0 is at
+            // contentSize.width - itemWidth (far right). frame.minX points to the
+            // item's LEFT edge. Vertical-rl text starts from the RIGHT edge, so
+            // align the visible area with frame.maxX (right edge).
+            let desiredOffsetX = attributes.frame.maxX - visibleWidth
             let offsetX = min(max(desiredOffsetX, minOffsetX), maxOffsetX)
             collectionView.setContentOffset(
                 CGPoint(
