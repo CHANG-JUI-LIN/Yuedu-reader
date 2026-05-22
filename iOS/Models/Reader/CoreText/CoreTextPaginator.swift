@@ -590,7 +590,7 @@ final class CoreTextPaginator {
 
     /// Vertical mode: glyph-aware normalization → font cascade → paragraph style → vertical forms → ASCII exceptions.
     /// Horizontal mode: returns unchanged.
-    private static func preparedAttributedString(
+    static func preparedAttributedString(
         _ attrStr: NSAttributedString,
         writingMode: ReaderWritingMode,
         fontSize: CGFloat,

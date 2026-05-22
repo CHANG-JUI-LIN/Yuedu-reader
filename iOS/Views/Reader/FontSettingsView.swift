@@ -205,9 +205,12 @@ struct FontSettingsView: View {
                 // MARK: - Scroll Mode
 
                 if supportsLineHeight {
+                    let verticalScroll = settings.readerWritingMode.isVertical
                     Section(
                         header: Text(localized("閱讀模式")),
-                        footer: Text(localized(settings.scrollMode ? "上下滾動，連續閱讀" : "左右翻頁，按頁左右切換"))
+                        footer: Text(localized(settings.scrollMode
+                            ? (verticalScroll ? "右往左連續閱讀" : "上下滾動，連續閱讀")
+                            : "左右翻頁，按頁左右切換"))
                     ) {
                         Picker(
                             localized("閱讀模式"),
@@ -215,15 +218,12 @@ struct FontSettingsView: View {
                                 get: { settings.scrollMode },
                                 set: { scrollMode in
                                     settings.scrollMode = scrollMode
-                                    if scrollMode {
-                                        settings.readerWritingMode = .horizontal
-                                    }
                                     readerConfig.refresh.send(.layout)
                                 }
                             )
                         ) {
                             Text(localized("左右翻頁")).tag(false)
-                            Text(localized("上下滾動")).tag(true)
+                            Text(localized(verticalScroll ? "右往左連續" : "上下滾動")).tag(true)
                         }
                         .pickerStyle(.menu)
                     }
@@ -232,7 +232,7 @@ struct FontSettingsView: View {
                 if supportsLineHeight && allowsVerticalWritingMode {
                     Section(
                         header: Text(localized("排版方向")),
-                        footer: Text(localized(settings.readerWritingMode.isVertical ? "直排目前使用左右翻頁" : "橫排支援翻頁與滾動"))
+                        footer: Text(localized(settings.readerWritingMode.isVertical ? "直排支援左右翻頁與右往左連續閱讀" : "橫排支援翻頁與滾動"))
                     ) {
                         Picker(
                             localized("排版方向"),
@@ -240,9 +240,6 @@ struct FontSettingsView: View {
                                 get: { settings.readerWritingMode },
                                 set: { mode in
                                     settings.readerWritingMode = mode
-                                    if mode.isVertical {
-                                        settings.scrollMode = false
-                                    }
                                     readerConfig.refresh.send(.layout)
                                 }
                             )

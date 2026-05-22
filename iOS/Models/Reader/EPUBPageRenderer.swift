@@ -115,7 +115,11 @@ final class EPUBPageRenderer: ObservableObject {
         self.onlineBuilder = nil
         let newEngine: CoreTextPageEngine
         if GlobalSettings.shared.useRenderableNodePipeline {
-            let builder = EPUBAttributedStringBuilder(session: session, renderSize: effectiveSize)
+            let builder = EPUBAttributedStringBuilder(
+                session: session,
+                renderSize: effectiveSize,
+                pipeline: .renderableNode
+            )
             self.epubBuilder = builder
             newEngine = CoreTextPageEngine(
                 attributedBuilder: builder,
@@ -125,8 +129,12 @@ final class EPUBPageRenderer: ObservableObject {
             self.scrollEngine = CoreTextScrollEngine(builder: builder, renderSettings: settings)
         } else {
             // The paged engine uses the resourceProvider path, but scroll mode still needs AttributedStringBuilding.
-            // Create a separate EPUB builder for scrollEngine (both paths share the same PublicationSession).
-            let builder = EPUBAttributedStringBuilder(session: session, renderSize: effectiveSize)
+            // Keep it on the legacy HTML path so scroll mode does not restyle chapter titles or English text differently.
+            let builder = EPUBAttributedStringBuilder(
+                session: session,
+                renderSize: effectiveSize,
+                pipeline: .legacyHTML
+            )
             self.epubBuilder = builder
             newEngine = CoreTextPageEngine(
                 resourceProvider: ReadiumBookResourceAdapter(session: session),

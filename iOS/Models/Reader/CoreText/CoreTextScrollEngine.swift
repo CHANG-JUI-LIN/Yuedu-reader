@@ -97,6 +97,28 @@ final class CoreTextScrollEngine: ObservableObject {
         renderSettings = settings
     }
 
+    private func prepareAttributedString(_ raw: NSAttributedString) -> NSAttributedString {
+        guard renderSettings.writingMode.isVertical, raw.length > 0 else { return raw }
+        let advance = max(renderSettings.fontSize * 4, contentWidth - renderSettings.fontSize * 2)
+        return CoreTextPaginator.preparedAttributedString(
+            raw,
+            writingMode: renderSettings.writingMode,
+            fontSize: renderSettings.fontSize,
+            maxInlineAnnotationAdvance: advance
+        )
+    }
+
+    func warmChunks(around row: Int, radius: Int = 6) {
+        guard !chunks.isEmpty else { return }
+        let center = max(0, min(row, chunks.count - 1))
+        let start = max(0, center - max(0, radius))
+        let end = min(chunks.count - 1, center + max(0, radius))
+        guard start <= end else { return }
+        for index in start...end {
+            chunks[index].materializeFrameIfNeeded()
+        }
+    }
+
     // MARK: - Internal load
 
     /// Loads and slices a single chapter, appending or prepending to chunks
@@ -113,7 +135,7 @@ final class CoreTextScrollEngine: ObservableObject {
                 themeTextColor: renderSettings.textColor,
                 themeBackgroundColor: renderSettings.backgroundColor
             )
-            let attrStr = result.attributedString
+            let attrStr = prepareAttributedString(result.attributedString)
             let width = contentWidth
             let cIdx = chapterIndex
             print("[ScrollEngine] built chapter=\(cIdx) length=\(attrStr.length) width=\(width)")
@@ -128,20 +150,28 @@ final class CoreTextScrollEngine: ObservableObject {
                     fallbackAttrStr: attrStr
                 )
                 insert(chunks: [chunk], chapterIndex: chapterIndex, prepend: prepend)
+                if let range = chapterRanges[chapterIndex] {
+                    warmChunks(around: range.lowerBound, radius: 4)
+                }
                 loadedChapters.insert(chapterIndex)
                 return
             }
 
+            let writingMode = renderSettings.writingMode
             let output: CoreTextChunkSlicer.Output = await Task.detached(priority: .userInitiated) {
                 CoreTextChunkSlicer.slice(
                     attributedString: attrStr,
                     chapterIndex: cIdx,
-                    contentWidth: width
+                    contentWidth: width,
+                    writingMode: writingMode
                 )
             }.value
             print("[ScrollEngine] sliced chapter=\(cIdx) chunks=\(output.chunks.count)")
 
             insert(chunks: output.chunks, chapterIndex: chapterIndex, prepend: prepend)
+            if let range = chapterRanges[chapterIndex] {
+                warmChunks(around: range.lowerBound, radius: 4)
+            }
             loadedChapters.insert(chapterIndex)
         } catch {
             print("[ScrollEngine] buildChapter error chapter=\(chapterIndex) error=\(error)")
@@ -157,7 +187,9 @@ final class CoreTextScrollEngine: ObservableObject {
             let insertAt = 0
             chunks.insert(contentsOf: newChunks, at: insertAt)
             let delta = newChunks.count
-            let addedHeight = newChunks.reduce(CGFloat(0)) { $0 + $1.height }
+            let addedHeight = newChunks.reduce(CGFloat(0)) {
+                $0 + (renderSettings.writingMode.isVertical ? $1.width : $1.height)
+            }
             var newRanges: [Int: Range<Int>] = [:]
             for (k, r) in chapterRanges {
                 newRanges[k] = (r.lowerBound + delta)..<(r.upperBound + delta)
@@ -198,6 +230,7 @@ final class CoreTextScrollEngine: ObservableObject {
             framesetter: framesetter,
             attributedString: fallbackAttrStr,
             frame: nil,
+            writingMode: renderSettings.writingMode,
             presetAttachments: [attachment],
             isImageOnly: true
         )

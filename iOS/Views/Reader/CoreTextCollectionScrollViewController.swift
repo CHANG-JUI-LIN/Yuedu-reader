@@ -1,0 +1,598 @@
+import Combine
+import UIKit
+
+/// UICollectionView-backed CoreText continuous reader.
+/// Horizontal books scroll vertically; vertical-rl books scroll horizontally right-to-left.
+final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenuInteractionDelegate {
+
+    static let chapterGap: CGFloat = 24
+
+    private let engine: CoreTextScrollEngine
+    private(set) var scrollAxis: CoreTextScrollAxis
+    private var horizontalInset: CGFloat
+    private var verticalInset: CGFloat
+    var onProgressChange: ((Int, Int, Double) -> Void)?
+    var onTap: (() -> Void)?
+    var onInternalLinkTap: ((String) -> Void)?
+
+    private let collectionView: UICollectionView
+    private var cancellables: Set<AnyCancellable> = []
+    private var pendingInitialScroll: (chapter: Int, charOffset: Int)?
+    private var hasAppliedInitialScroll = false
+    private var hasKickedOffEngine = false
+    private var pendingInitialChapter: Int = 0
+    private var displayedCount: Int = 0
+    private var progressThrottle = CoreTextScrollProgressThrottle(minimumInterval: 0.25)
+    private var lastWarmRow: Int?
+
+    private var selectionChapter: Int?
+    private var anchorIndex: Int?
+    private var focusIndex: Int?
+    private var selectedText: String?
+    private var playbackHighlightText: String?
+
+    init(
+        engine: CoreTextScrollEngine,
+        axis: CoreTextScrollAxis,
+        horizontalInset: CGFloat,
+        verticalInset: CGFloat,
+        backgroundColor: UIColor
+    ) {
+        self.engine = engine
+        self.scrollAxis = axis
+        self.horizontalInset = horizontalInset
+        self.verticalInset = verticalInset
+
+        let layout = CoreTextScrollFlowLayout()
+        layout.scrollDirection = axis.collectionScrollDirection
+        layout.minimumLineSpacing = 0
+        layout.minimumInteritemSpacing = 0
+        self.collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
+
+        super.init(nibName: nil, bundle: nil)
+        view.backgroundColor = backgroundColor
+        collectionView.backgroundColor = backgroundColor
+        collectionView.semanticContentAttribute = axis.semanticContentAttribute
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    private lazy var editMenuInteraction: UIEditMenuInteraction = {
+        UIEditMenuInteraction(delegate: self)
+    }()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.addInteraction(editMenuInteraction)
+
+        collectionView.dataSource = self
+        collectionView.delegate = self
+        collectionView.showsVerticalScrollIndicator = false
+        collectionView.showsHorizontalScrollIndicator = false
+        collectionView.contentInsetAdjustmentBehavior = .never
+        collectionView.register(CoreTextChunkCollectionCell.self, forCellWithReuseIdentifier: CoreTextChunkCollectionCell.reuseIdentifier)
+        collectionView.contentInset = contentInset
+
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(collectionView)
+        NSLayoutConstraint.activate([
+            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        tap.cancelsTouchesInView = false
+        collectionView.addGestureRecognizer(tap)
+
+        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        longPress.minimumPressDuration = 0.4
+        longPress.cancelsTouchesInView = false
+        collectionView.addGestureRecognizer(longPress)
+
+        bindEngine()
+    }
+
+    override var canBecomeFirstResponder: Bool { true }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        action == #selector(copy(_:)) && (selectedText?.isEmpty == false)
+    }
+
+    func editMenuInteraction(
+        _ interaction: UIEditMenuInteraction,
+        menuFor configuration: UIEditMenuConfiguration,
+        suggestedActions: [UIMenuElement]
+    ) -> UIMenu? {
+        nil
+    }
+
+    @objc override func copy(_ sender: Any?) {
+        guard let text = selectedText, !text.isEmpty else { return }
+        UIPasteboard.general.string = text
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        kickoffEngineIfNeeded()
+        applyPendingInitialScrollIfPossible()
+    }
+
+    func setInitialPosition(chapter: Int, charOffset: Int) {
+        pendingInitialScroll = (chapter, charOffset)
+        pendingInitialChapter = chapter
+        applyPendingInitialScrollIfPossible()
+    }
+
+    func update(axis: CoreTextScrollAxis, horizontal: CGFloat, vertical: CGFloat) {
+        let oldExtent = currentContentExtent
+        let restoreChapter = visibleProgressChapter()
+        let axisChanged = axis != scrollAxis
+        scrollAxis = axis
+        horizontalInset = horizontal
+        verticalInset = vertical
+        collectionView.contentInset = contentInset
+        collectionView.semanticContentAttribute = axis.semanticContentAttribute
+        if let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout {
+            layout.scrollDirection = axis.collectionScrollDirection
+            layout.invalidateLayout()
+        }
+
+        let newExtent = currentContentExtent
+        if axisChanged || abs(newExtent - oldExtent) > 0.5 {
+            requestReslice(at: restoreChapter)
+        } else {
+            displayedCount = engine.chunks.count
+            engine.warmChunks(around: visibleProgressRow(), radius: 6)
+            collectionView.reloadData()
+        }
+    }
+
+    func updateBackgroundColor(_ color: UIColor) {
+        view.backgroundColor = color
+        collectionView.backgroundColor = color
+    }
+
+    func setPlaybackHighlight(text: String?) {
+        playbackHighlightText = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        for cell in collectionView.visibleCells.compactMap({ $0 as? CoreTextChunkCollectionCell }) {
+            cell.applyPlaybackHighlight(text: playbackHighlightText)
+        }
+    }
+
+    func requestReslice(at chapter: Int) {
+        let extent = currentContentExtent
+        guard extent > 0 else { return }
+        Task { [weak self] in
+            guard let self = self else { return }
+            self.hasAppliedInitialScroll = false
+            self.pendingInitialScroll = (chapter, 0)
+            await self.engine.reslice(restoreAt: chapter, contentWidth: extent)
+        }
+    }
+
+    private var contentInset: UIEdgeInsets {
+        switch scrollAxis {
+        case .vertical:
+            return UIEdgeInsets(top: verticalInset, left: 0, bottom: verticalInset, right: 0)
+        case .horizontalRTL:
+            return UIEdgeInsets(top: 0, left: horizontalInset, bottom: 0, right: horizontalInset)
+        }
+    }
+
+    private var currentContentExtent: CGFloat {
+        switch scrollAxis {
+        case .vertical:
+            return max(0, view.bounds.width - 2 * horizontalInset)
+        case .horizontalRTL:
+            return max(0, view.bounds.height - 2 * verticalInset)
+        }
+    }
+
+    private func kickoffEngineIfNeeded() {
+        guard !hasKickedOffEngine else { return }
+        let extent = currentContentExtent
+        guard extent > 0 else { return }
+        hasKickedOffEngine = true
+        Task { [weak self] in
+            guard let self = self else { return }
+            await self.engine.start(initialChapter: self.pendingInitialChapter, contentWidth: extent)
+        }
+    }
+
+    private func bindEngine() {
+        engine.events
+            .receive(on: RunLoop.main)
+            .sink { [weak self] event in
+                self?.handle(event: event)
+            }
+            .store(in: &cancellables)
+
+        displayedCount = engine.chunks.count
+        if !engine.chunks.isEmpty {
+            collectionView.reloadData()
+        }
+    }
+
+    private func handle(event: CoreTextScrollEngine.Event) {
+        switch event {
+        case .reset:
+            displayedCount = engine.chunks.count
+            progressThrottle.reset()
+            lastWarmRow = nil
+            collectionView.reloadData()
+        case .insertedAtBottom(let count, _):
+            insertItems(count: count, atBottom: true, addedExtent: 0)
+        case .insertedAtTop(let count, let addedExtent, _):
+            insertItems(count: count, atBottom: false, addedExtent: addedExtent)
+        }
+
+        applyPendingInitialScrollIfPossible()
+    }
+
+    private func insertItems(count: Int, atBottom: Bool, addedExtent: CGFloat) {
+        let total = engine.chunks.count
+        let actualOld = displayedCount
+        let expectedOld = max(0, total - count)
+        guard actualOld == expectedOld else {
+            displayedCount = total
+            collectionView.reloadData()
+            return
+        }
+
+        engine.warmChunks(around: atBottom ? actualOld : count, radius: 6)
+        guard actualOld > 0, collectionView.window != nil else {
+            displayedCount = total
+            collectionView.reloadData()
+            collectionView.layoutIfNeeded()
+            return
+        }
+
+        let offset = collectionView.contentOffset
+        let anchorPath = atBottom ? nil : visibleProgressIndexPath()
+        let anchorFrame = anchorPath.flatMap {
+            collectionView.layoutAttributesForItem(at: $0)?.frame
+        }
+        let paths: [IndexPath] = atBottom
+            ? (actualOld..<total).map { IndexPath(item: $0, section: 0) }
+            : (0..<count).map { IndexPath(item: $0, section: 0) }
+        displayedCount = total
+        collectionView.performBatchUpdates {
+            collectionView.insertItems(at: paths)
+        } completion: { [weak self] _ in
+            guard let self = self, !atBottom else { return }
+            self.collectionView.layoutIfNeeded()
+            if let anchorPath,
+               let anchorFrame,
+               let newFrame = self.collectionView.layoutAttributesForItem(
+                   at: IndexPath(item: anchorPath.item + count, section: anchorPath.section)
+               )?.frame {
+                self.collectionView.setContentOffset(
+                    CGPoint(
+                        x: offset.x + newFrame.minX - anchorFrame.minX,
+                        y: offset.y + newFrame.minY - anchorFrame.minY
+                    ),
+                    animated: false
+                )
+            } else if self.scrollAxis == .vertical {
+                self.collectionView.setContentOffset(
+                    CGPoint(x: offset.x, y: offset.y + addedExtent),
+                    animated: false
+                )
+            }
+        }
+    }
+
+    private func applyPendingInitialScrollIfPossible() {
+        guard !hasAppliedInitialScroll, let target = pendingInitialScroll else { return }
+        guard let row = engine.chunkIndex(forChapter: target.chapter, charOffset: target.charOffset),
+              row < engine.chunks.count else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            guard self.scrollToInitialRow(row) else { return }
+            self.engine.warmChunks(around: row, radius: 6)
+            self.hasAppliedInitialScroll = true
+            self.pendingInitialScroll = nil
+        }
+    }
+
+    @discardableResult
+    private func scrollToInitialRow(_ row: Int) -> Bool {
+        guard collectionView.window != nil,
+              collectionView.bounds.width > 0,
+              collectionView.bounds.height > 0,
+              collectionView.numberOfItems(inSection: 0) > row
+        else { return false }
+
+        let path = IndexPath(item: row, section: 0)
+        collectionView.layoutIfNeeded()
+
+        switch scrollAxis {
+        case .vertical:
+            collectionView.scrollToItem(
+                at: path,
+                at: scrollAxis.initialScrollPosition,
+                animated: false
+            )
+            return true
+        case .horizontalRTL:
+            guard let attributes = collectionView.layoutAttributesForItem(at: path),
+                  collectionView.contentSize.width > 0
+            else { return false }
+            let visibleWidth = collectionView.bounds.width
+            let minOffsetX = -collectionView.adjustedContentInset.left
+            let maxOffsetX = max(
+                minOffsetX,
+                collectionView.contentSize.width - visibleWidth + collectionView.adjustedContentInset.right
+            )
+            let desiredOffsetX = attributes.frame.minX - collectionView.adjustedContentInset.left
+            let offsetX = min(max(desiredOffsetX, minOffsetX), maxOffsetX)
+            collectionView.setContentOffset(
+                CGPoint(
+                    x: offsetX,
+                    y: collectionView.contentOffset.y
+                ),
+                animated: false
+            )
+            return true
+        }
+    }
+
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        if anchorIndex != nil || focusIndex != nil {
+            clearSelection()
+            return
+        }
+
+        let point = gesture.location(in: collectionView)
+        if let (_, chunk, localPoint) = hitTestChunk(at: point),
+           let idx = chunk.stringIndex(atLocalPoint: localPoint),
+           idx < chunk.attributedString.length,
+           let href = chunk.attributedString.attribute(
+               HTMLAttributedStringBuilder.internalLinkAttribute,
+               at: idx,
+               effectiveRange: nil
+           ) as? String,
+           !href.isEmpty {
+            onInternalLinkTap?(href)
+            return
+        }
+
+        onTap?()
+    }
+
+    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard !scrollAxis.isHorizontalRTL else {
+            clearSelection()
+            return
+        }
+        let point = gesture.location(in: collectionView)
+        switch gesture.state {
+        case .began:
+            guard let (cell, chunk, localPoint) = hitTestChunk(at: point) else {
+                clearSelection()
+                return
+            }
+            guard let idx = chunk.stringIndex(atLocalPoint: localPoint) else { return }
+            selectionChapter = chunk.chapterIndex
+            anchorIndex = idx
+            focusIndex = idx
+            refreshSelectionOverlays()
+            _ = cell
+        case .changed:
+            guard let chapter = selectionChapter,
+                  let (_, chunk, localPoint) = hitTestChunk(at: point),
+                  chunk.chapterIndex == chapter,
+                  let idx = chunk.stringIndex(atLocalPoint: localPoint) else { return }
+            focusIndex = idx
+            refreshSelectionOverlays()
+        case .ended:
+            updateSelectedText()
+            guard let text = selectedText, !text.isEmpty else { clearSelection(); return }
+            becomeFirstResponder()
+            let viewPoint = collectionView.convert(point, to: view)
+            editMenuInteraction.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: viewPoint))
+            _ = text
+        case .cancelled, .failed:
+            clearSelection()
+        default:
+            break
+        }
+    }
+
+    private func hitTestChunk(at pointInCollection: CGPoint) -> (cell: CoreTextChunkCollectionCell, chunk: CoreTextChunk, localPoint: CGPoint)? {
+        guard let path = collectionView.indexPathForItem(at: pointInCollection),
+              let cell = collectionView.cellForItem(at: path) as? CoreTextChunkCollectionCell,
+              let chunk = cell.currentChunk else { return nil }
+        let local = collectionView.convert(pointInCollection, to: cell.drawView)
+        return (cell, chunk, local)
+    }
+
+    private var currentSelectionRange: NSRange? {
+        guard let a = anchorIndex, let f = focusIndex else { return nil }
+        let start = min(a, f)
+        let end = max(a, f)
+        return NSRange(location: start, length: end - start + 1)
+    }
+
+    private func refreshSelectionOverlays() {
+        let chapter = selectionChapter
+        let range = currentSelectionRange
+        for cell in collectionView.visibleCells.compactMap({ $0 as? CoreTextChunkCollectionCell }) {
+            if let chapter = chapter {
+                cell.applySelection(chapterIndex: chapter, chapterRange: range)
+            } else {
+                cell.applySelection(chapterIndex: -1, chapterRange: nil)
+            }
+        }
+    }
+
+    private func updateSelectedText() {
+        guard let chapter = selectionChapter,
+              let range = currentSelectionRange,
+              range.length > 0 else { selectedText = nil; return }
+        if let chunk = engine.chunks.first(where: { $0.chapterIndex == chapter }) {
+            let s = chunk.attributedString
+            guard range.location + range.length <= s.length else { selectedText = nil; return }
+            selectedText = (s.string as NSString).substring(with: range)
+        } else {
+            selectedText = nil
+        }
+    }
+
+    private func clearSelection() {
+        selectionChapter = nil
+        anchorIndex = nil
+        focusIndex = nil
+        selectedText = nil
+        refreshSelectionOverlays()
+        editMenuInteraction.dismissMenu()
+    }
+
+    private func visibleProgressRow() -> Int {
+        guard let row = visibleProgressIndexPath()?.item, row < engine.chunks.count else { return 0 }
+        return row
+    }
+
+    private func visibleProgressChapter() -> Int {
+        let chunks = engine.chunks
+        guard !chunks.isEmpty else { return pendingInitialChapter }
+        let row = visibleProgressRow()
+        return chunks.indices.contains(row) ? chunks[row].chapterIndex : (chunks.first?.chapterIndex ?? 0)
+    }
+
+    private func visibleProgressIndexPath() -> IndexPath? {
+        guard !engine.chunks.isEmpty else { return nil }
+        switch scrollAxis {
+        case .vertical:
+            let visibleY = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
+            return collectionView.indexPathForItem(at: CGPoint(x: collectionView.bounds.midX, y: max(0, visibleY)))
+        case .horizontalRTL:
+            let rightX = collectionView.contentOffset.x + collectionView.bounds.width - collectionView.adjustedContentInset.right - 1
+            return collectionView.indexPathForItem(at: CGPoint(x: max(0, rightX), y: collectionView.bounds.midY))
+        }
+    }
+
+    private func chapterGap(for row: Int) -> CGFloat {
+        guard row > 0, row < engine.chunks.count else { return 0 }
+        return engine.chunks[row].chapterIndex != engine.chunks[row - 1].chapterIndex
+            ? Self.chapterGap
+            : 0
+    }
+}
+
+extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
+
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        displayedCount
+    }
+
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(
+            withReuseIdentifier: CoreTextChunkCollectionCell.reuseIdentifier,
+            for: indexPath
+        )
+        if let chunkCell = cell as? CoreTextChunkCollectionCell,
+           indexPath.item < engine.chunks.count {
+            chunkCell.bind(
+                chunk: engine.chunks[indexPath.item],
+                axis: scrollAxis,
+                horizontalInset: horizontalInset,
+                verticalInset: verticalInset,
+                leadingSpacing: chapterGap(for: indexPath.item)
+            )
+        }
+        return cell
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        layout collectionViewLayout: UICollectionViewLayout,
+        sizeForItemAt indexPath: IndexPath
+    ) -> CGSize {
+        guard indexPath.item < engine.chunks.count else { return .zero }
+        let chunk = engine.chunks[indexPath.item]
+        let gap = chapterGap(for: indexPath.item)
+        switch scrollAxis {
+        case .vertical:
+            return CGSize(width: collectionView.bounds.width, height: chunk.height + gap)
+        case .horizontalRTL:
+            return CGSize(width: chunk.width + gap, height: collectionView.bounds.height)
+        }
+    }
+
+    func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        guard indexPath.item < engine.chunks.count else { return }
+        if !engine.chunks[indexPath.item].isMaterialized {
+            engine.chunks[indexPath.item].materializeFrameIfNeeded()
+        }
+        if let chunkCell = cell as? CoreTextChunkCollectionCell {
+            if let chapter = selectionChapter {
+                chunkCell.applySelection(chapterIndex: chapter, chapterRange: currentSelectionRange)
+            }
+            chunkCell.applyPlaybackHighlight(text: playbackHighlightText)
+        }
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        let chunks = engine.chunks
+        guard !chunks.isEmpty else { return }
+
+        let remainingVertical = scrollView.contentSize.height - (scrollView.contentOffset.y + scrollView.bounds.height)
+        let remainingHorizontal = scrollView.contentSize.width - (scrollView.contentOffset.x + scrollView.bounds.width)
+        if scrollAxis == .vertical, remainingVertical < scrollView.bounds.height * 1.5,
+           let lastChapter = chunks.last?.chapterIndex {
+            engine.ensureChapterAhead(of: lastChapter)
+        }
+        if scrollAxis == .vertical, scrollView.contentOffset.y < scrollView.bounds.height * 1.5,
+           let firstChapter = chunks.first?.chapterIndex {
+            engine.ensureChapterBehind(of: firstChapter)
+        }
+        if scrollAxis == .horizontalRTL, min(scrollView.contentOffset.x, remainingHorizontal) < scrollView.bounds.width * 1.5,
+           let visible = visibleProgressIndexPath(), visible.item < chunks.count {
+            engine.ensureChapterAhead(of: chunks[visible.item].chapterIndex)
+            engine.ensureChapterBehind(of: chunks[visible.item].chapterIndex)
+        }
+
+        guard let path = visibleProgressIndexPath(), path.item < chunks.count else { return }
+
+        if !CoreTextScrollPerfFlags.disableWarmPreload {
+            if lastWarmRow != path.item {
+                lastWarmRow = path.item
+                engine.warmChunks(around: path.item, radius: 6)
+            }
+        }
+
+        // A: disable onProgressChange during scroll
+        if CoreTextScrollPerfFlags.disableProgressCallback { return }
+
+        guard progressThrottle.shouldReport(row: path.item) else { return }
+        let chunk = chunks[path.item]
+        let total = max(1, engine.chapterCount)
+        let pct = Double(chunk.chapterIndex) / Double(total - 1 == 0 ? 1 : total - 1)
+        onProgressChange?(chunk.chapterIndex, chunk.charRange.location, min(1, max(0, pct)))
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        reportFinalProgress()
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate { reportFinalProgress() }
+    }
+
+    private func reportFinalProgress() {
+        let chunks = engine.chunks
+        guard !chunks.isEmpty, let path = visibleProgressIndexPath(), path.item < chunks.count else { return }
+        let chunk = chunks[path.item]
+        let total = max(1, engine.chapterCount)
+        let pct = Double(chunk.chapterIndex) / Double(total - 1 == 0 ? 1 : total - 1)
+        onProgressChange?(chunk.chapterIndex, chunk.charRange.location, min(1, max(0, pct)))
+    }
+}
+
+private final class CoreTextScrollFlowLayout: UICollectionViewFlowLayout {
+    override var flipsHorizontallyInOppositeLayoutDirection: Bool { true }
+}

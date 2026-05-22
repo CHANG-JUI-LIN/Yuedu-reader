@@ -9,12 +9,14 @@ enum CoreTextChunkAttachmentExtractor {
         frame: CTFrame,
         chunkSize: CGSize,
         attributedString: NSAttributedString,
-        rangeInChapter: CFRange
+        rangeInChapter: CFRange,
+        writingMode: ReaderWritingMode = .horizontal
     ) -> [CoreTextPaginator.RenderedAttachment] {
         let lines = CTFrameGetLines(frame) as! [CTLine]
         var origins = [CGPoint](repeating: .zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        let isVertical = writingMode.isVertical
 
         var result: [CoreTextPaginator.RenderedAttachment] = []
 
@@ -64,13 +66,24 @@ enum CoreTextChunkAttachmentExtractor {
                 let rect: CGRect
                 switch info.displayMode {
                 case .inline:
-                    let xOffset = CTLineGetOffsetForStringIndex(line, runStart, nil)
-                    rect = CGRect(
-                        x: lineOrigin.x + penOffset + xOffset + info.paddingLeft,
-                        y: uiY,
-                        width: info.drawWidth,
-                        height: info.drawHeight
-                    )
+                    if isVertical {
+                        let textAdvance = CTLineGetOffsetForStringIndex(line, runStart, nil)
+                        let lineTypographicCenterX = lineOrigin.x + (lineAscent - lineDescent) / 2
+                        rect = CGRect(
+                            x: lineTypographicCenterX - (info.drawWidth / 2),
+                            y: chunkSize.height - lineOrigin.y + textAdvance,
+                            width: info.drawWidth,
+                            height: info.drawHeight
+                        )
+                    } else {
+                        let xOffset = CTLineGetOffsetForStringIndex(line, runStart, nil)
+                        rect = CGRect(
+                            x: lineOrigin.x + penOffset + xOffset + info.paddingLeft,
+                            y: uiY,
+                            width: info.drawWidth,
+                            height: info.drawHeight
+                        )
+                    }
                 case .block:
                     let leftInset = min(paragraphStyle?.headIndent ?? 0, paragraphStyle?.firstLineHeadIndent ?? 0)
                     let rightInset = (paragraphStyle?.tailIndent ?? 0) < 0 ? -(paragraphStyle?.tailIndent ?? 0) : 0

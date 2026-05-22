@@ -1181,12 +1181,15 @@ struct ReaderView: View {
             let initialPos = computeScrollInitialPosition()
             CoreTextScrollHostView(
                 engine: scrollEngine,
+                axis: scrollAxis,
                 horizontalInset: effectivePageMarginH,
                 verticalInset: readerConfig.pageMarginV,
-                backgroundColor: UIColor(readerTheme.backgroundColor),
+                backgroundColor: readerTheme.uiBackgroundColor,
                 initialChapter: initialPos.chapter,
                 initialCharOffset: initialPos.charOffset,
                 resliceToken: scrollResliceToken,
+                playbackHighlightText: ttsCoordinator.playbackState == .stopped
+                    ? nil : ttsCoordinator.currentSegmentText,
                 onTap: {
                     withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
                 },
@@ -1204,6 +1207,19 @@ struct ReaderView: View {
                     if let pagedEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
                         let page = pagedEngine.pageIndex(forSpine: chapter, charOffset: charOffset)
                         if page >= 0 { currentPage = page }
+                    }
+                },
+                onInternalLinkTap: { href in
+                    Task {
+                        guard let targetPage = await epubRenderer.resolveInternalLink(href, fromSpineIndex: currentChapterIndex),
+                              let pagedEngine = epubRenderer.engine else { return }
+                        let (spine, charOffset) = pagedEngine.charOffset(forPage: targetPage)
+                        await MainActor.run {
+                            currentChapterIndex = spine
+                            scrollVisibleChapter = spine
+                            savedCoreTextRestoreTarget = (spine, charOffset)
+                            scrollResliceToken &+= 1
+                        }
                     }
                 }
             )
@@ -1245,8 +1261,8 @@ struct ReaderView: View {
         )
         return ReaderRenderSettings(
             theme: readerTheme.rawValue,
-            textColor: UIColor(readerTheme.textColor),
-            backgroundColor: UIColor(readerTheme.backgroundColor),
+            textColor: readerTheme.uiTextColor,
+            backgroundColor: readerTheme.uiBackgroundColor,
             fontSize: readerConfig.fontSize,
             lineHeightMultiple: readerConfig.lineHeightMultiple,
             lineSpacing: readerConfig.lineSpacing,
@@ -1273,7 +1289,11 @@ struct ReaderView: View {
     }
 
     private var effectiveScrollMode: Bool {
-        settings.scrollMode && !effectiveWritingMode.isVertical
+        settings.scrollMode
+    }
+
+    private var scrollAxis: CoreTextScrollAxis {
+        effectiveWritingMode.isVertical ? .horizontalRTL : .vertical
     }
 
     private var legacyScrollBody: some View {
@@ -1828,6 +1848,14 @@ struct ReaderView: View {
 
     private func jumpToChapter(_ idx: Int, charOffset: Int = 0) {
         guard chapters.indices.contains(idx) else { return }
+        if effectiveScrollMode, epubRenderer.scrollEngine != nil {
+            currentChapterIndex = idx
+            scrollVisibleChapter = idx
+            savedCoreTextRestoreTarget = (idx, charOffset)
+            scrollResliceToken &+= 1
+            ensureChapterReady(chapterIndex: idx, priority: .jump)
+            return
+        }
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let position = CoreTextReadingPosition(spineIndex: idx, charOffset: charOffset)
             print("[FlipTrace] ReaderView.jumpToChapter request spine=\(idx) charOffset=\(charOffset) layoutReady=\(engine.layouts[idx] != nil)")
@@ -1858,6 +1886,20 @@ struct ReaderView: View {
 
     private func autoSaveProgress() {
         guard !isRestoringPosition else { return }
+
+        if effectiveScrollMode {
+            progressTrace("autoSave scroll visibleChapter=\(scrollVisibleChapter)")
+            progressManager.saveScroll(
+                bookId: bookId,
+                chapterIndex: scrollVisibleChapter,
+                percentage: Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
+            )
+            store.updatePosition(
+                bookId: bookId,
+                position: Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
+            )
+            return
+        }
 
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let total = engine.totalPages
@@ -2097,8 +2139,8 @@ struct ReaderView: View {
         let lineHeightMultiple = max(1.0, readerConfig.lineHeightMultiple)
         return ReaderRenderSettings(
             theme: readerTheme.epubJSName,
-            textColor: UIColor(readerTheme.textColor),
-            backgroundColor: UIColor(readerTheme.backgroundColor),
+            textColor: readerTheme.uiTextColor,
+            backgroundColor: readerTheme.uiBackgroundColor,
             fontSize: fontSize,
             lineHeightMultiple: lineHeightMultiple,
             lineSpacing: readerConfig.lineSpacing,
@@ -2511,8 +2553,8 @@ struct ReaderView: View {
         guard let engine = epubRenderer.engine else { return }
         epubRenderer.updateRenderSettings(currentRenderSettings(marginH: effectivePageMarginH))
         engine.applyThemeChange(
-            textColor: UIColor(readerTheme.textColor),
-            backgroundColor: UIColor(readerTheme.backgroundColor)
+            textColor: readerTheme.uiTextColor,
+            backgroundColor: readerTheme.uiBackgroundColor
         )
     }
 }
@@ -3091,6 +3133,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         context.coordinator.externalTargetPosition = externalTargetPosition
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: uiViewController)
         let clampedPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
+        print("[CurlTrace] updateUIViewController binding=\(currentPage) visible=\((uiViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
         let targetViewController = {
             if let externalTargetPosition {
                 return engine.pageViewController(for: externalTargetPosition)
@@ -3264,6 +3307,8 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private var callbackEngineIdentifier: ObjectIdentifier?
         fileprivate var isTransitioning = false
         fileprivate var transitionQueue = ReaderPageTransitionQueue()
+        private var isCurlTransitionActive = false
+        private var pendingCurlRefresh = false
 
         init(engine: any PageRenderingProvider,
              pageTurnStyle: PageTurnStyle,
@@ -3341,6 +3386,11 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
 
         private func handleChapterReady(on pageViewController: UIPageViewController) {
+            if pageTurnStyle == .curl && isCurlTransitionActive {
+                pendingCurlRefresh = true
+                print("[CurlTrace] defer handleChapterReady during curl transition")
+                return
+            }
             let engine = currentEngine
             let fallbackPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
             let freshVC: UIViewController
@@ -3623,7 +3673,8 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                vc.globalPageIndex == lastPage {
                 print("[FlipTrace] pageForward crossing chapter fromSpine=\(currentSpine) page=\(vc.globalPageIndex) toSpine=\(currentSpine + 1)")
                 let nextPosition = CoreTextReadingPosition.chapterStart(currentSpine + 1)
-                if let targetPage = currentEngine.pageIndex(for: nextPosition),
+                if pageTurnStyle != .curl,
+                   let targetPage = currentEngine.pageIndex(for: nextPosition),
                    let snapVC = currentEngine.snapshotViewController(at: targetPage) {
                     print("[FlipTrace] pageForward snapshot landing page=\(targetPage) type=\(type(of: snapVC))")
                     return snapVC
@@ -3636,7 +3687,8 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return nextVC
             }
             let nextIndex = vc.globalPageIndex + 1
-            if let snapVC = currentEngine.snapshotViewController(at: nextIndex) {
+            if pageTurnStyle != .curl,
+               let snapVC = currentEngine.snapshotViewController(at: nextIndex) {
                 print("[FlipTrace] pageForward snapshot landing page=\(nextIndex) type=\(type(of: snapVC))")
                 return snapVC
             }
@@ -3666,6 +3718,9 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             willTransitionTo pendingViewControllers: [UIViewController]
         ) {
             transitionQueue.beginInteractiveTransition()
+            if pageTurnStyle == .curl {
+                isCurlTransitionActive = true
+            }
         }
 
         func pageViewController(
@@ -3674,6 +3729,18 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             previousViewControllers: [UIViewController],
             transitionCompleted completed: Bool
         ) {
+            print("[CurlTrace] didFinish completed=\(completed) visible=\((pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1) binding=\(currentPage)")
+
+            defer {
+                if pageTurnStyle == .curl {
+                    isCurlTransitionActive = false
+                }
+                if pendingCurlRefresh {
+                    pendingCurlRefresh = false
+                    handleChapterReady(on: pvc)
+                }
+            }
+
             guard completed else {
                 let settledPage = (pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex
                     ?? currentPage
@@ -3681,8 +3748,11 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return
             }
 
-            // If the landing VC is a snapshot, immediately replace it with the real rendered VC (layout is ready, visually seamless).
-            if let snapVC = pvc.viewControllers?.first as? SnapshotPageViewController {
+            // Snapshot replacement is unsafe for curl: the page curl animation internally
+            // uses current/target/back side/under-page views, and replacing during or
+            // immediately after curl can corrupt the transition state.
+            if pageTurnStyle != .curl,
+               let snapVC = pvc.viewControllers?.first as? SnapshotPageViewController {
                 print("[FlipTrace] didFinish landing SNAPSHOT page=\(snapVC.globalPageIndex)")
                 let realVC: UIViewController
                 if let position = snapVC.coreTextReadingPosition {

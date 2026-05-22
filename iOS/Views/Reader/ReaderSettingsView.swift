@@ -59,9 +59,7 @@ struct ReaderSettingsView: View {
     }
 
     private var availablePageTurnOptions: [PageTurnOption] {
-        PageTurnOption.allCases.filter { option in
-            !(isVerticalWritingMode && option == .scroll)
-        }
+        PageTurnOption.allCases
     }
 
     var body: some View {
@@ -144,11 +142,20 @@ struct ReaderSettingsView: View {
                         title: localized("翻頁"),
                         selection: pageTurnOptionBinding,
                         items: availablePageTurnOptions,
-                        titleProvider: { localized($0.titleKey) }
+                        titleProvider: { option in
+                            localized(scrollTitleKey(for: option))
+                        }
                     )
                 }
             }
         }
+    }
+
+    private func scrollTitleKey(for option: PageTurnOption) -> String {
+        guard option == .scroll, isVerticalWritingMode else {
+            return option.titleKey
+        }
+        return "右往左"
     }
 
     private var textStyleSection: some View {
@@ -416,7 +423,7 @@ struct ReaderSettingsView: View {
     private var pageTurnOptionBinding: Binding<PageTurnOption> {
         Binding(
             get: {
-                if !isVerticalWritingMode && settings.scrollMode {
+                if settings.scrollMode {
                     return .scroll
                 }
                 switch settings.pageTurnStyle {
@@ -427,7 +434,6 @@ struct ReaderSettingsView: View {
                 }
             },
             set: { option in
-                guard !(isVerticalWritingMode && option == .scroll) else { return }
                 switch option {
                 case .slide:
                     settings.scrollMode = false

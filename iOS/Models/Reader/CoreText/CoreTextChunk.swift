@@ -13,13 +13,21 @@ final class CoreTextChunk {
     /// Shared across all chunks of the same chapter; used to rebuild frame after eviction
     let framesetter: CTFramesetter
     let attributedString: NSAttributedString
+    let writingMode: ReaderWritingMode
 
     private(set) var frame: CTFrame?
+    var isMaterialized: Bool {
+        isImageOnly || frame != nil
+    }
     /// Image attachment positions (UIKit coordinates, relative to chunk top-left origin). Cached once during slicing.
     private(set) var attachments: [CoreTextPaginator.RenderedAttachment] = []
 
     /// Whether this chunk is a single-image block (cover / full-page illustration). When true, skip CTFrame rendering and only draw attachments.
     let isImageOnly: Bool
+    /// Block-level decorations (backgrounds, borders) extracted from the attributed string. Cached once during slicing or materialization.
+    private(set) var blockRenderables: [CoreTextPaginator.RenderedBlockRenderable] = []
+    /// Inline text annotations (span.small notes in vertical writing mode). Extracted during slicing or frame materialization.
+    private(set) var inlineAnnotations: [CoreTextPaginator.RenderedInlineAnnotation] = []
 
     init(chapterIndex: Int,
          charRange: CFRange,
@@ -27,16 +35,22 @@ final class CoreTextChunk {
          framesetter: CTFramesetter,
          attributedString: NSAttributedString,
          frame: CTFrame?,
+         writingMode: ReaderWritingMode = .horizontal,
          presetAttachments: [CoreTextPaginator.RenderedAttachment]? = nil,
-         isImageOnly: Bool = false) {
+         isImageOnly: Bool = false,
+         blockRenderables: [CoreTextPaginator.RenderedBlockRenderable] = [],
+         inlineAnnotations: [CoreTextPaginator.RenderedInlineAnnotation] = []) {
         self.chapterIndex = chapterIndex
         self.charRange = charRange
         self.width = size.width
         self.height = size.height
         self.framesetter = framesetter
         self.attributedString = attributedString
+        self.writingMode = writingMode
         self.frame = frame
         self.isImageOnly = isImageOnly
+        self.blockRenderables = blockRenderables
+        self.inlineAnnotations = inlineAnnotations
         if let preset = presetAttachments {
             self.attachments = preset
         } else if let f = frame {
@@ -44,7 +58,8 @@ final class CoreTextChunk {
                 frame: f,
                 chunkSize: size,
                 attributedString: attributedString,
-                rangeInChapter: charRange
+                rangeInChapter: charRange,
+                writingMode: writingMode
             )
         }
     }
@@ -53,14 +68,35 @@ final class CoreTextChunk {
         if isImageOnly { return }
         guard frame == nil else { return }
         let path = CGPath(rect: CGRect(x: 0, y: 0, width: width, height: height), transform: nil)
-        let f = CTFramesetterCreateFrame(framesetter, charRange, path, nil)
+        let f = CoreTextPaginator.makeFrame(
+            framesetter: framesetter,
+            range: charRange,
+            path: path,
+            writingMode: writingMode
+        )
         frame = f
         if attachments.isEmpty {
             attachments = CoreTextChunkAttachmentExtractor.extract(
                 frame: f,
                 chunkSize: CGSize(width: width, height: height),
                 attributedString: attributedString,
-                rangeInChapter: charRange
+                rangeInChapter: charRange,
+                writingMode: writingMode
+            )
+        }
+        if writingMode.isVertical && inlineAnnotations.isEmpty {
+            inlineAnnotations = CoreTextChunkSlicer.extractInlineAnnotations(
+                frame: f,
+                chunkSize: CGSize(width: width, height: height),
+                attributedString: attributedString
+            )
+        }
+        if !writingMode.isVertical && blockRenderables.isEmpty {
+            blockRenderables = CoreTextChunkSlicer.extractBlockRenderables(
+                frame: f,
+                chunkSize: CGSize(width: width, height: height),
+                attributedString: attributedString,
+                charRange: charRange
             )
         }
     }

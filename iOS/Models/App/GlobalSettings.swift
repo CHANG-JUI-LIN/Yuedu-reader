@@ -58,6 +58,22 @@ enum ReaderTheme: String, CaseIterable {
         }
     }
 
+    var uiBackgroundColor: UIColor {
+        switch self {
+        case .white: return .white
+        case .sepia: return UIColor(red: 244 / 255, green: 236 / 255, blue: 216 / 255, alpha: 1)
+        case .night: return UIColor(red: 26 / 255, green: 26 / 255, blue: 26 / 255, alpha: 1)
+        }
+    }
+
+    var uiTextColor: UIColor {
+        switch self {
+        case .white: return UIColor(red: 51 / 255, green: 51 / 255, blue: 51 / 255, alpha: 1)
+        case .sepia: return UIColor(red: 91 / 255, green: 70 / 255, blue: 54 / 255, alpha: 1)
+        case .night: return UIColor(red: 217 / 255, green: 217 / 255, blue: 217 / 255, alpha: 1)
+        }
+    }
+
     var barColor: Color {
         switch self {
         case .white: return Color(UIColor.systemBackground)
