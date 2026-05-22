@@ -7,33 +7,18 @@ final class CoreTextChunkDrawView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
         contentMode = .redraw
-        applyPerfFlags()
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    private func applyPerfFlags() {
-        if CoreTextScrollPerfFlags.disableCoreTextDraw {
-            backgroundColor = UIColor(
-                hue: CGFloat(arc4random_uniform(360)) / 360.0,
-                saturation: 0.3, brightness: 0.95, alpha: 1
-            )
-            isOpaque = true
-        } else {
-            backgroundColor = .clear
-            isOpaque = false
-        }
-    }
-
     override func draw(_ rect: CGRect) {
         guard let chunk = chunk else { return }
 
-        // B: skip all drawing — perf flag handled by solid background above.
-        if CoreTextScrollPerfFlags.disableCoreTextDraw { return }
-
         // Image-only chunk (cover / full-page illustration): draw attachments directly.
-        if chunk.isImageOnly && !CoreTextScrollPerfFlags.disableImageDrawing {
+        if chunk.isImageOnly {
             for attachment in chunk.attachments {
                 attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
             }
@@ -88,9 +73,6 @@ final class CoreTextChunkDrawView: UIView {
                 mutable.draw(with: annotation.uiRect, options: [.usesLineFragmentOrigin], context: nil)
             }
         }
-
-        // C: skip image drawing
-        if CoreTextScrollPerfFlags.disableImageDrawing { return }
 
         // Phase 3: Block image attachments (UIKit coordinates)
         for item in chunk.blockRenderables {

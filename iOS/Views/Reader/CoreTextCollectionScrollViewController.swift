@@ -11,7 +11,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     private(set) var scrollAxis: CoreTextScrollAxis
     private var horizontalInset: CGFloat
     private var verticalInset: CGFloat
-    var onProgressChange: ((Int, Int, Double) -> Void)?
+    private var safeTop: CGFloat = 0
+    private var safeBottom: CGFloat = 0
+    var onProgressCommit: ((ScrollProgress) -> Void)?
     var onTap: (() -> Void)?
     var onInternalLinkTap: ((String) -> Void)?
 
@@ -22,7 +24,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     private var hasKickedOffEngine = false
     private var pendingInitialChapter: Int = 0
     private var displayedCount: Int = 0
-    private var progressThrottle = CoreTextScrollProgressThrottle(minimumInterval: 0.25)
+    private var pendingProgress: ScrollProgress?
     private var lastWarmRow: Int?
 
     private var selectionChapter: Int?
@@ -177,7 +179,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         case .vertical:
             return UIEdgeInsets(top: verticalInset, left: 0, bottom: verticalInset, right: 0)
         case .horizontalRTL:
-            return UIEdgeInsets(top: 0, left: horizontalInset, bottom: 0, right: horizontalInset)
+            return UIEdgeInsets(top: safeTop, left: horizontalInset, bottom: safeBottom, right: horizontalInset)
         }
     }
 
@@ -186,7 +188,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         case .vertical:
             return max(0, view.bounds.width - 2 * horizontalInset)
         case .horizontalRTL:
-            return max(0, view.bounds.height - 2 * verticalInset)
+            return max(0, view.bounds.height - safeTop - safeBottom)
         }
     }
 
@@ -219,7 +221,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         switch event {
         case .reset:
             displayedCount = engine.chunks.count
-            progressThrottle.reset()
+            pendingProgress = nil
             lastWarmRow = nil
             collectionView.reloadData()
         case .insertedAtBottom(let count, _):
@@ -558,38 +560,37 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
 
         guard let path = visibleProgressIndexPath(), path.item < chunks.count else { return }
 
-        if !CoreTextScrollPerfFlags.disableWarmPreload {
-            if lastWarmRow != path.item {
-                lastWarmRow = path.item
-                engine.warmChunks(around: path.item, radius: 6)
-            }
+        if lastWarmRow != path.item {
+            lastWarmRow = path.item
+            engine.warmChunks(around: path.item, radius: 6)
         }
 
-        // A: disable onProgressChange during scroll
-        if CoreTextScrollPerfFlags.disableProgressCallback { return }
-
-        guard progressThrottle.shouldReport(row: path.item) else { return }
+        // Record position for commit-on-stop. No save / store update / SwiftUI state here.
         let chunk = chunks[path.item]
         let total = max(1, engine.chapterCount)
         let pct = Double(chunk.chapterIndex) / Double(total - 1 == 0 ? 1 : total - 1)
-        onProgressChange?(chunk.chapterIndex, chunk.charRange.location, min(1, max(0, pct)))
+        pendingProgress = ScrollProgress(
+            chapter: chunk.chapterIndex,
+            charOffset: chunk.charRange.location,
+            percentage: min(1, max(0, pct))
+        )
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        reportFinalProgress()
+        commitProgress()
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        if !decelerate { reportFinalProgress() }
+        if !decelerate { commitProgress() }
     }
 
-    private func reportFinalProgress() {
-        let chunks = engine.chunks
-        guard !chunks.isEmpty, let path = visibleProgressIndexPath(), path.item < chunks.count else { return }
-        let chunk = chunks[path.item]
-        let total = max(1, engine.chapterCount)
-        let pct = Double(chunk.chapterIndex) / Double(total - 1 == 0 ? 1 : total - 1)
-        onProgressChange?(chunk.chapterIndex, chunk.charRange.location, min(1, max(0, pct)))
+    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+        commitProgress()
+    }
+
+    private func commitProgress() {
+        guard let pos = pendingProgress else { return }
+        onProgressCommit?(pos)
     }
 }
 

@@ -1193,19 +1193,19 @@ struct ReaderView: View {
                 onTap: {
                     withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
                 },
-                onProgressChange: { chapter, charOffset, pct in
-                    scrollVisibleChapter = chapter
-                    currentChapterIndex = chapter
+                onProgressCommit: { pos in
+                    scrollVisibleChapter = pos.chapter
+                    currentChapterIndex = pos.chapter
                     progressManager.saveScroll(
                         bookId: bookId,
-                        chapterIndex: chapter,
-                        charOffset: charOffset,
-                        percentage: pct
+                        chapterIndex: pos.chapter,
+                        charOffset: pos.charOffset,
+                        percentage: pos.percentage
                     )
-                    store.updatePosition(bookId: bookId, position: pct)
+                    store.updatePosition(bookId: bookId, position: pos.percentage)
                     // Sync the paged engine's current page so switching back to paged mode preserves position.
                     if let pagedEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
-                        let page = pagedEngine.pageIndex(forSpine: chapter, charOffset: charOffset)
+                        let page = pagedEngine.pageIndex(forSpine: pos.chapter, charOffset: pos.charOffset)
                         if page >= 0 { currentPage = page }
                     }
                 },

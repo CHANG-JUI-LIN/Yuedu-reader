@@ -3,6 +3,14 @@ import CoreText
 import Foundation
 import UIKit
 
+/// A lightweight value that captures where the reader stopped scrolling.
+/// Committed once on scroll-end — never inside scrollViewDidScroll.
+struct ScrollProgress {
+    let chapter: Int
+    let charOffset: Int
+    let percentage: Double
+}
+
 /// Dedicated scroll-mode engine: slices each chapter's attributedString into a series of chunks for UICollectionView rendering.
 /// Operates alongside the page-oriented `CoreTextPageEngine` without interfering with it.
 @MainActor
