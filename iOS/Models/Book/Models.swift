@@ -26,6 +26,7 @@ struct Bookmark: Identifiable, Codable, Equatable {
     enum Kind: String, Codable {
         case bookmark
         case underline
+        case highlight
     }
 
     let id: UUID
@@ -36,7 +37,9 @@ struct Bookmark: Identifiable, Codable, Equatable {
     let kind: Kind
     let date: Date
     var note: String
-    let excerpt: String  // Excerpt of the first few characters at the bookmark position
+    let excerpt: String
+    let annotationStyle: AnnotationStyle?
+    let annotationColor: AnnotationColor?
 
     init(
         chapterIndex: Int,
@@ -47,7 +50,9 @@ struct Bookmark: Identifiable, Codable, Equatable {
         note: String = "",
         excerpt: String = "",
         id: UUID = UUID(),
-        date: Date = Date()
+        date: Date = Date(),
+        annotationStyle: AnnotationStyle? = nil,
+        annotationColor: AnnotationColor? = nil
     ) {
         self.id = id
         self.chapterIndex = chapterIndex
@@ -58,6 +63,8 @@ struct Bookmark: Identifiable, Codable, Equatable {
         self.date = date
         self.note = note
         self.excerpt = excerpt
+        self.annotationStyle = annotationStyle
+        self.annotationColor = annotationColor
     }
 
     var isChapterStartBookmark: Bool {
@@ -81,6 +88,7 @@ struct Bookmark: Identifiable, Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case id, chapterIndex, chapterTitle, position, length, kind, date, note, excerpt
         case spineIndex, charOffset, pageIndex
+        case annotationStyle, annotationColor
     }
 
     init(from decoder: Decoder) throws {
@@ -100,6 +108,8 @@ struct Bookmark: Identifiable, Codable, Equatable {
         date = (try? c.decode(Date.self, forKey: .date)) ?? Date()
         note = (try? c.decode(String.self, forKey: .note)) ?? ""
         excerpt = (try? c.decode(String.self, forKey: .excerpt)) ?? ""
+        annotationStyle = try? c.decode(AnnotationStyle.self, forKey: .annotationStyle)
+        annotationColor = try? c.decode(AnnotationColor.self, forKey: .annotationColor)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -113,6 +123,8 @@ struct Bookmark: Identifiable, Codable, Equatable {
         try c.encode(date, forKey: .date)
         try c.encode(note, forKey: .note)
         try c.encode(excerpt, forKey: .excerpt)
+        try c.encodeIfPresent(annotationStyle, forKey: .annotationStyle)
+        try c.encodeIfPresent(annotationColor, forKey: .annotationColor)
     }
 }
 

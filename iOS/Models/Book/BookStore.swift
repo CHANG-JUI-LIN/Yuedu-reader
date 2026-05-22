@@ -468,44 +468,102 @@ class BookStore: ObservableObject, BookProvider {
         saveMeta()
     }
 
-    func addUnderlineBookmark(
+    func addTextAnnotation(
         bookId: UUID,
         chapterIndex: Int,
         chapterTitle: String,
         position: CoreTextReadingPosition,
         length: Int,
-        excerpt: String
+        excerpt: String,
+        style: AnnotationStyle = .underline,
+        color: AnnotationColor = .yellow,
+        note: String? = nil
     ) {
         guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
         let safeLength = max(1, length)
-        if books[idx].bookmarks.contains(where: {
-            $0.kind == .underline && $0.position == position && $0.length == safeLength
-        }) {
-            return
-        }
-        let bookmark = Bookmark(
-            chapterIndex: chapterIndex,
-            chapterTitle: chapterTitle,
-            position: position,
-            length: safeLength,
-            kind: .underline,
-            excerpt: excerpt
+        let newAnnotation = CoreTextTextAnnotation(
+            spineIndex: position.spineIndex,
+            range: NSRange(location: position.charOffset, length: safeLength),
+            style: style,
+            color: color,
+            note: note
         )
-        books[idx].bookmarks.append(bookmark)
+        let existingAnnotations = books[idx].bookmarks.compactMap(\.coreTextTextAnnotation)
+        let (merged, _) = AnnotationStore.merge(newAnnotation, into: existingAnnotations)
+
+        // Remove all old annotation bookmarks, then re-insert merged results.
+        // Keep non-annotation bookmarks (kind == .bookmark) untouched.
+        books[idx].bookmarks.removeAll { bm in
+            bm.kind == .underline || bm.kind == .highlight
+        }
+        for ann in merged {
+            let annChapterTitle = ann.spineIndex == chapterIndex
+                ? chapterTitle
+                : chapters(for: books[idx]).first(where: { $0.index == ann.spineIndex })?.title ?? ""
+            let bm = Bookmark(
+                chapterIndex: ann.spineIndex,
+                chapterTitle: annChapterTitle,
+                position: CoreTextReadingPosition(spineIndex: ann.spineIndex, charOffset: ann.startOffset),
+                length: ann.range.length,
+                kind: ann.style == .highlight ? .highlight : .underline,
+                excerpt: ann.spineIndex == chapterIndex ? excerpt : "",
+                annotationStyle: ann.style,
+                annotationColor: ann.color
+            )
+            books[idx].bookmarks.append(bm)
+        }
         books[idx].bookmarks = books[idx].bookmarks.sortedByStablePosition()
         saveMeta()
     }
 
-    func removeUnderlineBookmark(
+    func removeTextAnnotation(
         bookId: UUID,
         position: CoreTextReadingPosition,
-        length: Int
+        length: Int,
+        style: AnnotationStyle = .underline,
+        color: AnnotationColor = .yellow
     ) {
         guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        let spineIndex = position.spineIndex
         let safeLength = max(1, length)
-        books[idx].bookmarks.removeAll {
-            $0.kind == .underline && $0.position == position && $0.length == safeLength
+
+        // Remove the exact annotation from the target spine using AnnotationStore
+        let existingAnnotations = books[idx].bookmarks.compactMap(\.coreTextTextAnnotation)
+        let (remaining, _) = AnnotationStore.removeExact(
+            spineIndex: spineIndex,
+            range: NSRange(location: position.charOffset, length: safeLength),
+            from: existingAnnotations
+        )
+
+        // Only remove annotation bookmarks from the target spine; keep other spines untouched
+        let otherSpineAnnotations = books[idx].bookmarks.filter { bm in
+            (bm.kind == .underline || bm.kind == .highlight) && bm.position.spineIndex != spineIndex
         }
+        books[idx].bookmarks.removeAll { bm in
+            bm.kind == .underline || bm.kind == .highlight
+        }
+
+        // Re-add annotations from other spines (untouched)
+        for bm in otherSpineAnnotations {
+            books[idx].bookmarks.append(bm)
+        }
+
+        // Re-add remaining annotations from the target spine (after removal)
+        for ann in remaining where ann.spineIndex == spineIndex {
+            let chapterTitle = chapters(for: books[idx]).first(where: { $0.index == ann.spineIndex })?.title ?? ""
+            let bm = Bookmark(
+                chapterIndex: ann.spineIndex,
+                chapterTitle: chapterTitle,
+                position: CoreTextReadingPosition(spineIndex: ann.spineIndex, charOffset: ann.startOffset),
+                length: ann.range.length,
+                kind: ann.style == .highlight ? .highlight : .underline,
+                excerpt: "",
+                annotationStyle: ann.style,
+                annotationColor: ann.color
+            )
+            books[idx].bookmarks.append(bm)
+        }
+        books[idx].bookmarks = books[idx].bookmarks.sortedByStablePosition()
         saveMeta()
     }
 
