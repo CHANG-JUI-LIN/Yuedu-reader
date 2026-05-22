@@ -15,21 +15,16 @@ struct RSSFeedInfo: Codable, Equatable {
 
 enum RSSFeedDiscovery {
     static func isProbablyHTML(_ data: Data) -> Bool {
-        guard let prefix = String(data: data.prefix(512), encoding: .utf8)?.lowercased() else {
-            return false
-        }
-        return prefix.contains("<!doctype html")
-            || prefix.contains("<html")
-            || prefix.contains("<head")
+        data.isProbablyHTML
     }
 
     static func isProbablyFeed(_ data: Data) -> Bool {
-        guard let prefix = String(data: data.prefix(512), encoding: .utf8)?.lowercased() else {
-            return false
-        }
-        return prefix.contains("<rss")
-            || prefix.contains("<feed")
-            || prefix.contains("<rdf:rdf")
+        detectFeedType(data: data) != .notAFeed
+    }
+
+    static func isDefinitelyFeed(_ data: Data) -> Bool {
+        let type = detectFeedType(data: data)
+        return type == .rss || type == .atom || type == .jsonFeed || type == .rssInJSON
     }
 
     static func feedURLs(inHTML data: Data, baseURL: URL) -> [URL] {
@@ -39,8 +34,10 @@ enum RSSFeedDiscovery {
         }
 
         var urls: [URL] = []
-        let links = (try? document.select("link[rel]").array()) ?? []
-        for link in links {
+
+        // Phase 1: <head> <link> elements
+        let headLinks = (try? document.head()?.select("link[rel]").array()) ?? []
+        for link in headLinks {
             let rel = ((try? link.attr("rel")) ?? "").lowercased()
             guard rel.split(whereSeparator: \.isWhitespace).contains("alternate") else { continue }
 
@@ -62,10 +59,50 @@ enum RSSFeedDiscovery {
             }
         }
 
+        // Phase 2: <body> <a> links (for pages without proper <head> declarations)
+        if urls.isEmpty {
+            let bodyLinks = (try? document.body()?.select("a[href]").array()) ?? []
+            for link in bodyLinks {
+                guard let href = try? link.attr("href"), !href.isEmpty else { continue }
+                let lower = href.lowercased()
+                guard lower.contains("feed") || lower.contains("rss") || lower.contains("atom")
+                        || lower.hasSuffix(".xml") else { continue }
+                if let url = URL(string: href, relativeTo: baseURL)?.absoluteURL,
+                   ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                   !urls.contains(url) {
+                    urls.append(url)
+                }
+            }
+        }
+
         if urls.isEmpty {
             urls.append(contentsOf: fallbackFeedURLs(for: baseURL))
         }
         return urls
+    }
+
+    /// Verify a candidate feed URL by downloading and checking if it parses as a feed.
+    static func verifyFeedURL(_ url: URL) async -> Bool {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        RSSRequestFactory.applyHeaders(to: &request)
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return data.count >= 128 && isDefinitelyFeed(data)
+        } catch {
+            return false
+        }
+    }
+
+    /// Filter a list of candidate feed URLs to only those that are actually feeds.
+    static func verifiedFeedURLs(from candidates: [URL]) async -> [URL] {
+        var verified: [URL] = []
+        for candidate in candidates.prefix(5) {
+            if await verifyFeedURL(candidate) {
+                verified.append(candidate)
+            }
+        }
+        return verified
     }
 
     private static func hrefLooksLikeFeed(_ href: String) -> Bool {
@@ -91,6 +128,19 @@ enum RSSFeedResponse {
 }
 
 enum RSSRequestFactory {
+    private static let userAgent: String = {
+        let webKitVersion = "605.1.15"
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+        let osVersionString = "\(osVersion.majorVersion)_\(osVersion.minorVersion)"
+        return "Mozilla/5.0 (iPhone; CPU iPhone OS \(osVersionString) like Mac OS X) AppleWebKit/\(webKitVersion) (KHTML, like Gecko) yuedu/1.0"
+    }()
+
+    static func applyHeaders(to request: inout URLRequest) {
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("application/rss+xml, application/atom+xml, application/json, application/xml, text/xml, */*", forHTTPHeaderField: "Accept")
+        request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
+    }
+
     static func feedRequest(for source: RSSSource, metadata: RSSFeedFetchMetadata?) -> URLRequest? {
         guard let url = URL(string: source.url)?.upgradedToHTTPS() else {
             return nil
@@ -98,7 +148,7 @@ enum RSSRequestFactory {
         var request = URLRequest(url: url)
         request.timeoutInterval = 20
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        applyHeaders(to: &request)
         if let etag = metadata?.etag, !etag.isEmpty {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }
@@ -175,7 +225,7 @@ enum RSSFaviconResolver {
         var request = URLRequest(url: homepageURL.upgradedToHTTPS())
         request.timeoutInterval = 10
         request.cachePolicy = .returnCacheDataElseLoad
-        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        RSSRequestFactory.applyHeaders(to: &request)
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -1162,7 +1212,7 @@ enum RSSArticleContentLoader {
         var request = URLRequest(url: url)
         request.timeoutInterval = 25
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        RSSRequestFactory.applyHeaders(to: &request)
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)

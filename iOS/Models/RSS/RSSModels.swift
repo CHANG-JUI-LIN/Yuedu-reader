@@ -1,5 +1,102 @@
 import Foundation
 
+// MARK: - Feed Type
+
+enum FeedType: String, Sendable {
+    case rss
+    case atom
+    case jsonFeed
+    case rssInJSON
+    case unknown
+    case notAFeed
+}
+
+// MARK: - Parsed Author
+
+struct ParsedAuthor: Hashable, Codable, Sendable {
+    var name: String?
+    var url: String?
+    var avatarURL: String?
+    var emailAddress: String?
+
+    var isEmpty: Bool { name == nil && url == nil && avatarURL == nil && emailAddress == nil }
+}
+
+// MARK: - Parsed Attachment
+
+struct ParsedAttachment: Hashable, Codable, Sendable {
+    var url: String
+    var mimeType: String?
+    var title: String?
+    var sizeInBytes: Int?
+    var durationInSeconds: Int?
+
+    init?(url: String, mimeType: String?, title: String?, sizeInBytes: Int?, durationInSeconds: Int?) {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        self.url = trimmed
+        self.mimeType = mimeType
+        self.title = title
+        self.sizeInBytes = sizeInBytes
+        self.durationInSeconds = durationInSeconds
+    }
+}
+
+// MARK: - Parsed Hub (WebSub)
+
+struct ParsedHub: Hashable, Codable, Sendable {
+    var type: String
+    var url: String
+}
+
+// MARK: - Parsed Feed Item (unified intermediate representation)
+
+struct ParsedFeedItem: Hashable, Sendable {
+    var uniqueID: String
+    var feedURL: String
+    var url: String?
+    var externalURL: String?
+    var title: String?
+    var language: String?
+    var contentHTML: String?
+    var contentText: String?
+    var summary: String?
+    var imageURL: String?
+    var bannerImageURL: String?
+    var datePublished: Date?
+    var dateModified: Date?
+    var authors: Set<ParsedAuthor>?
+    var tags: Set<String>?
+    var attachments: Set<ParsedAttachment>?
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(uniqueID)
+        hasher.combine(feedURL)
+    }
+}
+
+// MARK: - Parsed Feed Info (feed-level metadata)
+
+struct ParsedFeedInfo: Sendable {
+    var type: FeedType
+    var title: String?
+    var homePageURL: String?
+    var feedURL: String?
+    var language: String?
+    var feedDescription: String?
+    var nextURL: String?
+    var iconURL: String?
+    var faviconURL: String?
+    var authors: Set<ParsedAuthor>?
+    var expired: Bool = false
+    var hubs: Set<ParsedHub>?
+    var items: Set<ParsedFeedItem>
+
+    var bestIconURL: String? { iconURL ?? faviconURL }
+}
+
+// MARK: - RSS Source
+
 struct RSSSource: Codable, Identifiable {
     var id: String = UUID().uuidString
     var name: String
@@ -9,6 +106,7 @@ struct RSSSource: Codable, Identifiable {
     var customRule: String?
     var sortOrder: Int = 0
     var enabled: Bool = true
+    var newArticleNotificationsEnabled: Bool = true
 
     // Legado-compatible fields
     var sourceGroup: String?
@@ -70,17 +168,71 @@ enum RSSSmartFeedKind: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+// MARK: - RSS Item (parser output)
+
 struct RSSItem: Codable, Identifiable {
     var id: String = UUID().uuidString
     var title: String
     var link: String
     var pubDate: Date?
+    var dateModified: Date?
     var description: String
     var contentHTML: String = ""
     var author: String?
     var imageURL: String?
+    var bannerImageURL: String?
     var sourceId: String
+    var language: String?
+    var tags: [String] = []
+
+    init(id: String = UUID().uuidString,
+         title: String,
+         link: String,
+         pubDate: Date? = nil,
+         dateModified: Date? = nil,
+         description: String = "",
+         contentHTML: String = "",
+         author: String? = nil,
+         imageURL: String? = nil,
+         bannerImageURL: String? = nil,
+         sourceId: String = "",
+         language: String? = nil,
+         tags: [String] = []) {
+        self.id = id
+        self.title = title
+        self.link = link
+        self.pubDate = pubDate
+        self.dateModified = dateModified
+        self.description = description
+        self.contentHTML = contentHTML
+        self.author = author
+        self.imageURL = imageURL
+        self.bannerImageURL = bannerImageURL
+        self.sourceId = sourceId
+        self.language = language
+        self.tags = tags
+    }
+
+    /// Convert from unified ParsedFeedItem and source ID.
+    /// The caller is responsible for generating a plain-text summary from `contentHTML`.
+    init(from parsed: ParsedFeedItem, sourceId: String, summary: String = "") {
+        self.id = parsed.uniqueID
+        self.title = parsed.title ?? ""
+        self.link = parsed.url ?? parsed.externalURL ?? ""
+        self.pubDate = parsed.datePublished
+        self.dateModified = parsed.dateModified
+        self.contentHTML = parsed.contentHTML ?? ""
+        self.author = parsed.authors?.first?.name
+        self.imageURL = parsed.imageURL
+        self.bannerImageURL = parsed.bannerImageURL
+        self.sourceId = sourceId
+        self.language = parsed.language
+        self.tags = parsed.tags.map { Array($0) } ?? []
+        self.description = summary
+    }
 }
+
+// MARK: - Article Status & Record
 
 struct RSSArticleStatus: Codable, Equatable {
     var articleId: String
@@ -98,6 +250,7 @@ struct RSSArticleRecord: Codable, Identifiable, Equatable {
     var summary: String
     var contentHTML: String
     var pubDate: Date?
+    var dateModified: Date?
     var author: String?
     var imageURL: String?
     var fetchedAt: Date
@@ -117,6 +270,7 @@ struct RSSArticleRecord: Codable, Identifiable, Equatable {
         case summary
         case contentHTML
         case pubDate
+        case dateModified
         case author
         case imageURL
         case fetchedAt
@@ -138,6 +292,7 @@ struct RSSArticleRecord: Codable, Identifiable, Equatable {
         summary = try container.decode(String.self, forKey: .summary)
         contentHTML = try container.decodeIfPresent(String.self, forKey: .contentHTML) ?? ""
         pubDate = try container.decodeIfPresent(Date.self, forKey: .pubDate)
+        dateModified = try container.decodeIfPresent(Date.self, forKey: .dateModified)
         author = try container.decodeIfPresent(String.self, forKey: .author)
         imageURL = try container.decodeIfPresent(String.self, forKey: .imageURL)
         fetchedAt = try container.decode(Date.self, forKey: .fetchedAt)
@@ -158,6 +313,7 @@ struct RSSArticleRecord: Codable, Identifiable, Equatable {
         summary = item.description
         contentHTML = item.contentHTML
         pubDate = item.pubDate
+        dateModified = item.dateModified
         author = item.author
         imageURL = item.imageURL
         self.fetchedAt = fetchedAt

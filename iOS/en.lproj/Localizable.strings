@@ -15,6 +15,9 @@
 "{{key}} 為搜索關鍵字佔位符。POST 格式：URL,POST,body" = "{{key}} is the keyword placeholder. POST format: URL,POST,body";
 "上一章" = "Prev";
 "上下滾動" = "Scroll";
+"右往左" = "RTL";
+"右往左連續" = "RTL Continuous";
+"右往左連續閱讀" = "Right-to-left continuous reading";
 "上次同步" = "Last Sync";
 "下一頁 URL" = "Next Page URL";
 "下載中" = "Downloading";
@@ -387,6 +390,7 @@
 "橫排" = "Horizontal";
 "直排" = "Vertical";
 "直排目前使用左右翻頁" = "Vertical writing currently uses page turning";
+"直排支援左右翻頁與右往左連續閱讀" = "Vertical writing supports paging and right-to-left continuous reading";
 "橫排支援翻頁與滾動" = "Horizontal writing supports paging and scrolling";
 "閱讀外觀" = "Reading Appearance";
 "文字" = "Text";
@@ -498,6 +502,11 @@
 "RSS 解析成功，但沒有找到文章。" = "RSS parsed successfully, but no articles were found.";
 "RSS XML 解析失敗。" = "RSS XML parse failed.";
 "此來源使用不安全的 HTTP 連線，已被 iOS 安全政策阻擋。" = "This feed uses an insecure HTTP connection and was blocked by iOS security policy.";
+"此來源需要認證（401），請檢查 URL 是否包含帳號密碼，或是否為私人訂閱源。" = "This feed requires authentication (401). Check if the URL includes credentials or if it is a private feed.";
+"伺服器拒絕存取（403），此來源可能封鎖了請求。" = "Server denied access (403). This feed may be blocking requests.";
+"找不到此 RSS 來源（404），連結可能已失效。" = "RSS feed not found (404). The link may no longer be valid.";
+"請求過於頻繁（429），請稍後再試。" = "Too many requests (429). Please try again later.";
+"伺服器錯誤（HTTP %d），來源暫時無法存取。" = "Server error (HTTP %d). The feed is temporarily unavailable.";
 "章節進度" = "Chapter Progress";
 "上一章" = "Prev";
 "下一章" = "Next";
