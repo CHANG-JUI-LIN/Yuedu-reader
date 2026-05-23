@@ -353,6 +353,10 @@ struct ReaderView: View {
 
         epubRenderer.updateCurrentPosition(globalPage: newPage, engine: engine)
 
+        if let position = engine.readingPosition(forPage: newPage) {
+            positionCoordinator?.commit(position)
+        }
+
         if let progressBookId = localEPUBBookIdentifier {
             epubRenderer.syncProgress(bookId: progressBookId)
         }
