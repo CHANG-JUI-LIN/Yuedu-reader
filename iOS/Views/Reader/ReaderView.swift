@@ -1912,11 +1912,6 @@ struct ReaderView: View {
 
         if effectiveScrollMode {
             progressTrace("autoSave scroll visibleChapter=\(scrollVisibleChapter)")
-            progressManager.saveScroll(
-                bookId: bookId,
-                chapterIndex: scrollVisibleChapter,
-                percentage: Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
-            )
             store.updatePosition(
                 bookId: bookId,
                 position: Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
@@ -1939,52 +1934,28 @@ struct ReaderView: View {
             }
             let spineIndex = resolved.spineIndex
             let charOffset = resolved.charOffset
-            if let progressBookId = localEPUBBookIdentifier {
-                epubRenderer.updateCurrentPosition(globalPage: candidatePage, engine: engine)
-                epubRenderer.syncProgress(bookId: progressBookId)
-            }
             currentChapterIndex = spineIndex
             let pct = engine.totalProgress(forSpine: spineIndex, charOffset: charOffset)
             let normalized = min(1.0, max(0.0, pct))
             progressTrace(
                 "autoSave coreText page=\(candidatePage) spine=\(spineIndex) charOffset=\(charOffset) pct=\(String(format: "%.6f", normalized))"
             )
-            progressManager.saveCoreText(
-                bookId: bookId,
-                chapterIndex: spineIndex,
-                charOffset: charOffset,
-                percentage: normalized
-            )
             store.updatePosition(bookId: bookId, position: normalized)
         } else if !effectiveScrollMode && !allPages.isEmpty {
-            // TXT: use allPages
             let page = allPages[min(currentPage, allPages.count - 1)]
             currentChapterIndex = page.chapterIndex
-            // Prefetch the next chapter early when near the end of the current chapter.
             maybeEarlyPrefetchIfNearChapterEnd()
             let progress = Double(currentPage) / Double(max(allPages.count - 1, 1))
             let normalized = min(1.0, max(0.0, progress))
             progressTrace(
                 "autoSave paged currentPage=\(currentPage) chapter=\(page.chapterIndex) pageInChapter=\(page.pageInChapter) pct=\(String(format: "%.6f", normalized))"
             )
-            progressManager.savePaged(
-                bookId: bookId,
-                chapterIndex: page.chapterIndex,
-                pageInChapter: page.pageInChapter,
-                percentage: normalized
-            )
             store.updatePosition(bookId: bookId, position: normalized)
         } else {
-            // Scroll mode
             let progress = Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
             let normalized = min(1.0, max(0.0, progress))
             progressTrace(
                 "autoSave scroll visibleChapter=\(scrollVisibleChapter) pct=\(String(format: "%.6f", normalized))"
-            )
-            progressManager.saveScroll(
-                bookId: bookId,
-                chapterIndex: scrollVisibleChapter,
-                percentage: normalized
             )
             store.updatePosition(bookId: bookId, position: normalized)
         }

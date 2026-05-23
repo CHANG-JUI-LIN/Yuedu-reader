@@ -326,19 +326,12 @@ final class EPUBPageRenderer: ObservableObject {
 
     /// Saves a CharOffsetRecord for the given bookId.
     func syncProgress(bookId: String) {
-        guard let eng = engine else { return }
-        // Use position cached at navigation time — more reliable than converting
-        // from currentEpubPage now, because spinePageOffsets may have shifted.
-        let record = CharOffsetRecord(
-            bookId: bookId,
-            spineIndex: savedSpineIndex,
-            charOffset: savedCharOffset,
-            timestamp: Date()
-        )
-        eng.offsetStore.save(record)
-        if let locator = makeCurrentLocator(engine: eng) {
-            locatorStore?.save(record: locator)
-        }
+        logProgress("syncProgress deprecated bookId=\(bookId)")
+    }
+
+    func flushProgress(bookId: String) {
+        logProgress("flushProgress deprecated bookId=\(bookId)")
+    }
         logProgress("syncProgress bookId=\(bookId) globalPage=\(currentEpubPage) spine=\(savedSpineIndex) charOffset=\(savedCharOffset) partialCFI=\(EPUBPartialCFI.make(spineIndex: savedSpineIndex, charOffset: savedCharOffset))")
     }
 

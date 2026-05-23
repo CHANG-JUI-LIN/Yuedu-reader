@@ -31,51 +31,15 @@ final class ReaderProgressManager {
     }
 
     func saveCoreText(bookId: UUID, chapterIndex: Int, charOffset: Int, percentage: Double) {
-        let snapshot = BookProgressSnapshot(
-            bookId: bookId,
-            mode: .coreText,
-            chapterIndex: chapterIndex,
-            pageIndex: nil,
-            charOffset: charOffset,
-            percentage: normalized(percentage),
-            timestamp: Date()
-        )
-        log("saveCoreText bookId=\(bookId.uuidString) chapter=\(chapterIndex) charOffset=\(charOffset) pct=\(String(format: "%.6f", snapshot.percentage))")
-        saveSnapshot(snapshot)
+        log("saveCoreText deprecated bookId=\(bookId.uuidString)")
     }
 
     func savePaged(bookId: UUID, chapterIndex: Int, pageInChapter: Int, percentage: Double) {
-        let snapshot = BookProgressSnapshot(
-            bookId: bookId,
-            mode: .paged,
-            chapterIndex: chapterIndex,
-            pageIndex: pageInChapter,
-            charOffset: nil,
-            percentage: normalized(percentage),
-            timestamp: Date()
-        )
-        log("savePaged bookId=\(bookId.uuidString) chapter=\(chapterIndex) pageInChapter=\(pageInChapter) pct=\(String(format: "%.6f", snapshot.percentage))")
-        saveSnapshot(snapshot)
-        saveLegacyPagedPosition(
-            bookId: bookId,
-            chapterIndex: chapterIndex,
-            pageInChapter: pageInChapter,
-            percentage: percentage
-        )
+        log("savePaged deprecated bookId=\(bookId.uuidString)")
     }
 
     func saveScroll(bookId: UUID, chapterIndex: Int, charOffset: Int = 0, percentage: Double) {
-        let snapshot = BookProgressSnapshot(
-            bookId: bookId,
-            mode: .scroll,
-            chapterIndex: chapterIndex,
-            pageIndex: nil,
-            charOffset: charOffset,
-            percentage: normalized(percentage),
-            timestamp: Date()
-        )
-        log("saveScroll bookId=\(bookId.uuidString) chapter=\(chapterIndex) charOffset=\(charOffset) pct=\(String(format: "%.6f", snapshot.percentage))")
-        saveSnapshot(snapshot)
+        log("saveScroll deprecated bookId=\(bookId.uuidString)")
     }
 
     func loadSnapshot(bookId: UUID) -> BookProgressSnapshot? {
