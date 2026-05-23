@@ -51,6 +51,33 @@ extension BookSourceFetcher {
             _dbgLog("fetchTOC chapterList 為空", data: ["source": source.bookSourceName], hyp: "H1")
         }
         // #endregion
+
+        if source.shouldUseLegadoRuntimeFetch(for: tocUrl) {
+            let bridge = ModernParserBridge(source: source)
+            let (html, finalUrl) = try await bridge.fetch(ruleUrl: tocUrl)
+            let chapters = try bridge.parseTOC(
+                html: html,
+                baseURL: finalUrl,
+                source: source,
+                runtimeVariables: runtimeVariables
+            )
+            let normalized = chapters.enumerated().map { i, ref in
+                var r = ref
+                r.index = i
+                return r
+            }
+            if !normalized.isEmpty {
+                onFirstPageReady?(normalized)
+            }
+            return saveTOCPackage(
+                tocUrl: tocUrl,
+                source: source,
+                runtimeVariables: normalized.last?.runtimeVariables ?? runtimeVariables,
+                chapters: normalized,
+                rawHTML: html
+            )
+        }
+
         guard let url = safeURL(string: tocUrl) else { throw FetchError.invalidURL(tocUrl) }
         let html: String
         var usedWebView = false

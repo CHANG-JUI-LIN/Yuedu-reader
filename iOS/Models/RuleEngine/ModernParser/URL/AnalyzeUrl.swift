@@ -66,7 +66,8 @@ class AnalyzeUrl {
     /// Speak speed for TTS rules.
     private let speakSpeed: Int?
 
-    /// Optional JS evaluator closure — wire up later for full scripting support.
+    /// Optional JS evaluator closure used by `<js>` / `@js:` URL rules and
+    /// `{{...}}` expressions. This must be available before `initUrl(_:)` runs.
     /// Signature: (jsCode, bindings) -> result string
     var jsEvaluator: ((String, [String: Any]) -> String?)?
 
@@ -117,7 +118,8 @@ class AnalyzeUrl {
          baseUrl: String? = nil,
          source: RuleDataInterface? = nil,
          book: RuleDataInterface? = nil,
-         chapter: RuleDataInterface? = nil) {
+         chapter: RuleDataInterface? = nil,
+         jsEvaluator: ((String, [String: Any]) -> String?)? = nil) {
 
         self.key = key
         self.page = page
@@ -126,6 +128,7 @@ class AnalyzeUrl {
         self.source = source
         self.ruleData = book
         self.chapter = chapter
+        self.jsEvaluator = jsEvaluator
 
         // Strip any JSON options appended to the base URL itself
         if let base = baseUrl {

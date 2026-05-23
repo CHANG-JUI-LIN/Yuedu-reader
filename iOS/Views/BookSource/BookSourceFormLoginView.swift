@@ -159,16 +159,19 @@ struct BookSourceFormLoginView: View {
         Task.detached(priority: .userInitiated) {
             let engine = JSCoreEngine()
             engine.bookSource = source
+            Self.configureLegadoRuntime(engine, source: source)
 
             // Wire browser pop-up for java.startBrowser / java.startBrowserAwait
-            engine.browserPresentHandler = { url, title, done in
+            engine.browserPresentHandler = { url, title, completion in
                 DispatchQueue.main.async {
                     guard let topVC = BookSourceFormLoginView.topViewController() else {
-                        done(); return
+                        completion(nil); return
                     }
                     let hostVC = UIHostingController(
-                        rootView: JsBridgeBrowserView(urlString: url, title: title) {
-                            topVC.dismiss(animated: true, completion: done)
+                        rootView: JsBridgeBrowserView(urlString: url, title: title) { body in
+                            topVC.dismiss(animated: true) {
+                                completion(body)
+                            }
                         }
                     )
                     topVC.present(hostVC, animated: true)
@@ -193,14 +196,8 @@ struct BookSourceFormLoginView: View {
                 }
             }
             let bindings: [String: Any] = [
-                "result": "",
-                "baseUrl": source.bookSourceUrl,
-                "source": [
-                    "bookSourceUrl": source.bookSourceUrl,
-                    "bookSourceName": source.bookSourceName,
-                    "loginUrl": source.loginUrl,
-                    "loginInfo": credentials
-                ]
+                "result": credentials,
+                "baseUrl": source.bookSourceUrl
             ]
 
             // Extract JS body from loginUrl (strip @js: / <js>…</js>)
@@ -247,15 +244,18 @@ struct BookSourceFormLoginView: View {
         Task.detached(priority: .userInitiated) {
             let engine = JSCoreEngine()
             engine.bookSource = source
+            Self.configureLegadoRuntime(engine, source: source)
 
-            engine.browserPresentHandler = { url, title, done in
+            engine.browserPresentHandler = { url, title, completion in
                 DispatchQueue.main.async {
                     guard let topVC = BookSourceFormLoginView.topViewController() else {
-                        done(); return
+                        completion(nil); return
                     }
                     let hostVC = UIHostingController(
-                        rootView: JsBridgeBrowserView(urlString: url, title: title) {
-                            topVC.dismiss(animated: true, completion: done)
+                        rootView: JsBridgeBrowserView(urlString: url, title: title) { body in
+                            topVC.dismiss(animated: true) {
+                                completion(body)
+                            }
                         }
                     )
                     topVC.present(hostVC, animated: true)
@@ -281,6 +281,87 @@ struct BookSourceFormLoginView: View {
                 "baseUrl": source.bookSourceUrl
             ]
             _ = engine.evaluate(combined, bindings: bindings)
+        }
+    }
+
+    nonisolated private static func configureLegadoRuntime(_ engine: JSCoreEngine, source: BookSource) {
+        let sourceUrl = source.bookSourceUrl
+        let runtimeStore = BookSourceRuntimeStateStore.shared
+        let ruleData = BookSourceRuleData(source: source)
+
+        engine.sourceBridge.getVariableHandler = {
+            runtimeStore.sourceVariableJSON(for: sourceUrl) ?? ""
+        }
+        engine.sourceBridge.setVariableHandler = { jsonString in
+            runtimeStore.setSourceVariableJSON(jsonString, for: sourceUrl)
+        }
+        engine.sourceBridge.getLoginInfoHandler = {
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceUrl).flatMap { info in
+                guard let data = try? JSONSerialization.data(withJSONObject: info) else { return nil }
+                return String(data: data, encoding: .utf8)
+            }
+        }
+        engine.sourceBridge.getLoginInfoMapHandler = {
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceUrl) ?? [:]
+        }
+        engine.sourceBridge.putLoginInfoHandler = { info in
+            guard let data = info.data(using: .utf8),
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
+            LoginManager.shared.storeLoginInfo(sourceUrl: sourceUrl, info: dict)
+        }
+        engine.sourceBridge.removeLoginInfoHandler = {
+            LoginManager.shared.clearLogin(sourceUrl: sourceUrl)
+        }
+        engine.sourceBridge.putLoginHeaderHandler = { header in
+            guard let data = header.data(using: .utf8),
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
+            LoginManager.shared.storeLoginHeaders(sourceUrl: sourceUrl, headers: dict)
+        }
+        engine.sourceBridge.removeLoginHeaderHandler = {
+            LoginManager.shared.clearLogin(sourceUrl: sourceUrl)
+        }
+        engine.sourceBridge.getHeaderMapHandler = {
+            var headers = source.parsedHeaders
+            if let loginHeaders = LoginManager.shared.getLoginHeaderMap(sourceUrl: sourceUrl) {
+                headers.merge(loginHeaders) { _, new in new }
+            }
+            return headers
+        }
+        engine.sourceBridge.evalJSHandler = { js in
+            engine.evaluate(js) ?? ""
+        }
+        engine.analyzeUrlHandler = { urlStr in
+            let analyzeUrl = AnalyzeUrl(
+                ruleUrl: urlStr,
+                baseUrl: source.bookSourceUrl,
+                source: ruleData,
+                jsEvaluator: { js, bindings in engine.evaluate(js, bindings: bindings) }
+            )
+            if analyzeUrl.isDataUri {
+                guard let decoded = analyzeUrl.decodeDataUri() else { return "" }
+                if analyzeUrl.type?.isEmpty == false {
+                    return decoded.data.map { String(format: "%02x", $0) }.joined()
+                }
+                return String(data: decoded.data, encoding: .utf8) ?? ""
+            }
+            guard var request = analyzeUrl.toURLRequest() else { return "" }
+            for (key, value) in source.parsedHeaders where request.value(forHTTPHeaderField: key) == nil {
+                request.setValue(value, forHTTPHeaderField: key)
+            }
+            LoginManager.shared.applyLoginHeaders(to: &request, sourceUrl: sourceUrl)
+            let semaphore = DispatchSemaphore(value: 0)
+            var body = ""
+            URLSession.shared.dataTask(with: request) { data, _, _ in
+                if let data {
+                    body = String(data: data, encoding: .utf8) ?? ""
+                }
+                semaphore.signal()
+            }.resume()
+            _ = semaphore.wait(timeout: .now() + 30)
+            return body
+        }
+        if !source.jsLib.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            _ = engine.evaluate(source.jsLib, bindings: ["baseUrl": source.bookSourceUrl])
         }
     }
 

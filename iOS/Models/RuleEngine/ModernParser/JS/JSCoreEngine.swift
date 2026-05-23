@@ -18,6 +18,15 @@ class JSCoreEngine {
     private let bridge: LegadoJSBridge
     private let cookieBridge = LegadoCookieBridge()
 
+    /// Bridge for `source.*` — replaces the plain dictionary with a full Legado-compatible object.
+    private(set) var sourceBridge: LegadoSourceBridge
+    /// Bridge for `cache.*` — persistent + memory key-value store.
+    private(set) var cacheBridge: LegadoCacheBridge
+    /// Bridge for Legado's mutable `book` object.
+    private(set) var bookBridge: LegadoBookBridge
+    /// Bridge for Legado's mutable `chapter` object.
+    private(set) var chapterBridge: LegadoChapterBridge
+
     // Serial queue owns the JSContext — all evaluations run on this thread.
     // Using a dedicated queue instead of NSLock eliminates the deadlock that
     // NSLock causes when JS calls java.ajax() (semaphore) while the lock is held.
@@ -42,6 +51,11 @@ class JSCoreEngine {
     /// Handle network requests originating from `java.ajax` / `java.connect`.
     var networkHandler: ((URLRequest) -> String?)? {
         didSet { bridge.networkHandler = networkHandler }
+    }
+
+    /// Handle AnalyzeUrl parsing for `java.ajax` URLs with ,{json} options.
+    var analyzeUrlHandler: ((String) -> String?)? {
+        didSet { bridge.analyzeUrlHandler = analyzeUrlHandler }
     }
 
     /// Handle `java.getString(ruleStr)` — connected to ModernRuleEngine later.
@@ -71,7 +85,7 @@ class JSCoreEngine {
 
     /// Called when JS invokes `java.startBrowser` / `java.startBrowserAwait`.
     /// Set this before evaluating login JS to enable interactive browser pop-ups.
-    var browserPresentHandler: ((String, String, @escaping () -> Void) -> Void)? {
+    var browserPresentHandler: ((String, String, @escaping (String?) -> Void) -> Void)? {
         didSet { bridge.browserPresentHandler = browserPresentHandler }
     }
 
@@ -91,8 +105,24 @@ class JSCoreEngine {
     var bookSource: BookSource? {
         didSet {
             onJSQueue {
+                guard let src = bookSource else {
+                    sourceBridge = LegadoSourceBridge(
+                        bookSourceUrl: "", bookSourceName: "", bookSourceGroup: "",
+                        bookSourceComment: "", loginUrl: "", header: "", loginCheckJs: ""
+                    )
+                    cacheBridge = LegadoCacheBridge(sourceId: "")
+                    bridge.sourceHeaders = [:]
+                    injectSourceObject(into: context)
+                    context.setObject(cacheBridge, forKeyedSubscript: "cache" as NSString)
+                    return
+                }
+                let prevHandlers = sourceBridge.getVariableHandler
+                sourceBridge = LegadoSourceBridge.from(src)
+                sourceBridge.getVariableHandler = prevHandlers
+                cacheBridge = LegadoCacheBridge(sourceId: src.bookSourceUrl)
                 injectSourceObject(into: context)
-                bridge.sourceHeaders = parseHeaders(bookSource?.header ?? "")
+                context.setObject(cacheBridge, forKeyedSubscript: "cache" as NSString)
+                bridge.sourceHeaders = parseHeaders(src.header)
             }
         }
     }
@@ -106,6 +136,13 @@ class JSCoreEngine {
         let ctx = JSContext()!
         self.context = ctx
         self.bridge = LegadoJSBridge()
+        self.sourceBridge = LegadoSourceBridge(
+            bookSourceUrl: "", bookSourceName: "", bookSourceGroup: "",
+            bookSourceComment: "", loginUrl: "", header: "", loginCheckJs: ""
+        )
+        self.cacheBridge = LegadoCacheBridge(sourceId: "")
+        self.bookBridge = LegadoBookBridge()
+        self.chapterBridge = LegadoChapterBridge()
 
         jsQueue.setSpecific(key: jsQueueKey, value: ())
         configureContext(ctx)
@@ -136,12 +173,18 @@ class JSCoreEngine {
     /// Evaluate with a `result` variable pre-set (Legado convention:
     /// the previous rule step's output is available as `result` in JS).
     func evaluate(_ script: String, result: String?) -> String? {
+        evaluate(script, result: result as Any?, bindings: [:])
+    }
+
+    /// Evaluate with an arbitrary `result` value and extra bindings. JSON strings
+    /// are exposed to JS as objects so rules can use `result.book_id` after
+    /// a `$.data` extraction, matching Legado's dynamic result semantics.
+    func evaluate(_ script: String, result: Any?, bindings: [String: Any] = [:]) -> String? {
         onJSQueue {
             lastError = nil
-            if let result = result {
-                context.setObject(result, forKeyedSubscript: "result" as NSString)
-            } else {
-                context.setObject(NSNull(), forKeyedSubscript: "result" as NSString)
+            setResult(result)
+            for (key, value) in bindings {
+                context.setObject(value, forKeyedSubscript: key as NSString)
             }
             guard let value = context.evaluateScript(script) else { return nil }
             return extractString(from: value)
@@ -170,6 +213,20 @@ class JSCoreEngine {
         }
     }
 
+    func setBookBridge(_ bridge: LegadoBookBridge) {
+        onJSQueue {
+            self.bookBridge = bridge
+            context.setObject(bridge, forKeyedSubscript: "book" as NSString)
+        }
+    }
+
+    func setChapterBridge(_ bridge: LegadoChapterBridge) {
+        onJSQueue {
+            self.chapterBridge = bridge
+            context.setObject(bridge, forKeyedSubscript: "chapter" as NSString)
+        }
+    }
+
     // MARK: - Private Helpers
 
     /// Configure a fresh JSContext with the bridge object and helpers.
@@ -189,12 +246,31 @@ class JSCoreEngine {
 
         // Inject the `java` bridge object
         ctx.setObject(bridge, forKeyedSubscript: "java" as NSString)
+        let getCookieBlock: @convention(block) (String, JSValue?) -> String = { [weak bridge] url, keyValue in
+            guard let bridge else { return "" }
+            let key: String
+            if let keyValue, !keyValue.isUndefined, !keyValue.isNull {
+                key = keyValue.toString() ?? ""
+            } else {
+                key = ""
+            }
+            return key.isEmpty ? bridge.getCookie(url) : bridge.getCookieValue(url, key)
+        }
+        ctx.setObject(getCookieBlock, forKeyedSubscript: "__yueduGetCookie" as NSString)
+        ctx.evaluateScript("java.getCookie = __yueduGetCookie;")
 
         // Inject the `cookie` bridge object (get/set/remove via HTTPCookieStorage)
         ctx.setObject(cookieBridge, forKeyedSubscript: "cookie" as NSString)
 
-        // Inject `source` object (may be nil at configure time; bookSource didSet re-injects)
+        // Inject `source` as a full bridge object (Legado-compatible)
         injectSourceObject(into: ctx)
+
+        // Inject `cache` bridge object (persistent + memory key-value store)
+        ctx.setObject(cacheBridge, forKeyedSubscript: "cache" as NSString)
+
+        // Inject mutable book/chapter bridge objects used by Legado rule JS.
+        ctx.setObject(bookBridge, forKeyedSubscript: "book" as NSString)
+        ctx.setObject(chapterBridge, forKeyedSubscript: "chapter" as NSString)
 
         // Inject a top-level `print` that delegates to java.log
         let printBlock: @convention(block) (String) -> Void = { msg in
@@ -232,28 +308,33 @@ class JSCoreEngine {
         """)
     }
 
-    /// Inject `source` as a plain JS object derived from BookSource properties.
+    /// Inject `source` as a Legado-compatible bridge object with methods and properties.
     private func injectSourceObject(into ctx: JSContext) {
-        guard let src = bookSource else {
-            ctx.setObject([:] as [String: Any], forKeyedSubscript: "source" as NSString)
+        ctx.setObject(sourceBridge, forKeyedSubscript: "source" as NSString)
+    }
+
+    private func setResult(_ result: Any?) {
+        guard let result else {
+            context.setObject(NSNull(), forKeyedSubscript: "result" as NSString)
             return
         }
-        var obj: [String: Any] = [
-            "bookSourceUrl": src.bookSourceUrl,
-            "bookSourceName": src.bookSourceName,
-            "bookSourceGroup": src.bookSourceGroup,
-            "bookSourceComment": src.bookSourceComment,
-            "loginUrl": src.loginUrl,
-            "loginUi": src.loginUi,
-            "loginCheckJs": src.loginCheckJs,
-            "header": src.header,
-        ]
-        if !src.variableComment.isEmpty { obj["variableComment"] = src.variableComment }
-        ctx.setObject(obj, forKeyedSubscript: "source" as NSString)
+        if let string = result as? String,
+           let jsonObject = Self.jsonObjectIfPossible(from: string) {
+            context.setObject(jsonObject, forKeyedSubscript: "result" as NSString)
+            return
+        }
+        context.setObject(result, forKeyedSubscript: "result" as NSString)
+    }
+
+    private static func jsonObjectIfPossible(from string: String) -> Any? {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{") || trimmed.hasPrefix("["),
+              let data = trimmed.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
     }
 
     /// Parse a Legado header string (JSON object or "Key: Value\nKey2: Value2") into a dictionary.
-    private func parseHeaders(_ headerStr: String) -> [String: String] {
+    func parseHeaders(_ headerStr: String) -> [String: String] {
         let trimmed = headerStr.trimmingCharacters(in: .whitespacesAndNewlines)
         if let data = trimmed.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] {

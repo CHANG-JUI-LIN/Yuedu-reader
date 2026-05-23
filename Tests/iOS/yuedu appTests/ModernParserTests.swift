@@ -1048,6 +1048,244 @@ struct AnalyzeUrlTests {
         let au = AnalyzeUrl(ruleUrl: "https://example.com,{\"retry\":3}")
         #expect(au.retry == 3)
     }
+
+    @Test("<js> URL can produce typed data URI body as hex")
+    func jsUrlDataUriFetchReturnsHexBody() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "legado-test-\(UUID().uuidString)"
+        source.jsLib = "function noop() { return ''; }"
+        let bridge = ModernParserBridge(source: source)
+        let ruleUrl = """
+        <js>
+        let payload = java.base64Encode(JSON.stringify({ key: key, page: page }));
+        `data:;base64,${payload},{"type":"gysearch"}`;
+        </js>
+        """
+
+        let (body, finalUrl) = try await bridge.fetch(ruleUrl: ruleUrl, key: "needle", page: 3)
+        let decoded = LegadoJSBridge().hexDecodeToString(body)
+
+        #expect(finalUrl.hasPrefix("data:;base64,"))
+        #expect(decoded.contains("\"key\":\"needle\""))
+        #expect(decoded.contains("\"page\":3"))
+    }
+
+    @Test("source.setVariable stores nested JSON without flattening")
+    func sourceSetVariablePreservesNestedJSON() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "legado-variable-test-\(UUID().uuidString)"
+        source.jsLib = "function noop() { return ''; }"
+        BookSourceRuntimeStateStore.shared.setSourceVariableJSON(nil, for: source.bookSourceUrl)
+        let bridge = ModernParserBridge(source: source)
+        let ruleUrl = """
+        <js>
+        source.setVariable(JSON.stringify({ more: { mode: "novel" }, list: ["a", "b"] }));
+        let payload = java.base64Encode(source.getVariable());
+        `data:;base64,${payload},{"type":"state"}`;
+        </js>
+        """
+
+        let (body, _) = try await bridge.fetch(ruleUrl: ruleUrl)
+        let decoded = LegadoJSBridge().hexDecodeToString(body)
+
+        #expect(decoded.contains("\"more\""))
+        #expect(decoded.contains("\"mode\":\"novel\""))
+        #expect(decoded.contains("\"list\""))
+        #expect(BookSourceRuntimeStateStore.shared.sourceVariableJSON(for: source.bookSourceUrl) == decoded)
+    }
+
+    @Test("Legado runtime bridge runs search detail toc and content data URI pipeline")
+    func legadoRuntimePipelineDataURIFlow() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "legado-pipeline-test-\(UUID().uuidString)"
+        source.bookSourceName = "Pipeline Test"
+        source.jsLib = """
+        function request(url, method, body) {
+            if (url.indexOf('/search') === 0) {
+                return JSON.stringify({ data: [{
+                    book_id: 'b1', source: 'demo', tab: 'novel',
+                    book_name: 'Pipeline Book', author: 'Author',
+                    thumb_url: 'https://img.test/cover.jpg', abstract: 'Intro',
+                    toc_url: ''
+                }]});
+            }
+            if (url.indexOf('/detail') === 0) {
+                return JSON.stringify({ data: {
+                    book_id: 'b1', source: 'demo', tab: 'novel',
+                    book_name: 'Pipeline Book', author: 'Author',
+                    thumb_url: 'https://img.test/cover.jpg', abstract: 'Intro',
+                    toc_url: ''
+                }});
+            }
+            if (url.indexOf('/catalog') === 0) {
+                return JSON.stringify({ data: [
+                    { title: 'Chapter 1', item_id: 'c1', source: 'demo', tab: 'novel' }
+                ]});
+            }
+            if (url.indexOf('/content') === 0) {
+                return JSON.stringify({ content: 'Chapter body from runtime' });
+            }
+            return '{}';
+        }
+        """
+        source.searchUrl = """
+        <js>
+        let payload = java.base64Encode(JSON.stringify({ key: key, page: page }));
+        `data:;base64,${payload},{"type":"search"}`;
+        </js>
+        """
+        source.exploreUrl = """
+        <js>
+        let payload = java.base64Encode(JSON.stringify({ section: 'hot', page: page }));
+        JSON.stringify([{ title: 'Hot Books', url: `data:;base64,${payload},{"type":"discover"}` }]);
+        </js>
+        """
+        source.ruleSearch.bookList = """
+        <js>
+        JSON.parse(java.hexDecodeToString(result));
+        request('/search');
+        </js>$.data
+        """
+        source.ruleSearch.name = "$.book_name"
+        source.ruleSearch.author = "$.author"
+        source.ruleSearch.coverUrl = "$.thumb_url"
+        source.ruleSearch.intro = "$.abstract"
+        source.ruleSearch.bookUrl = """
+        <js>
+        let detail = java.base64Encode(JSON.stringify({
+            book_id: result.book_id, source: result.source, tab: result.tab, url: result.toc_url || ''
+        }));
+        `data:;base64,${detail},{"type":"detail"}`;
+        </js>
+        """
+        source.ruleExplore.bookList = """
+        <js>
+        JSON.parse(java.hexDecodeToString(result));
+        request('/search');
+        </js>$.data
+        """
+        source.ruleExplore.name = "$.book_name"
+        source.ruleExplore.author = "$.author"
+        source.ruleExplore.coverUrl = "$.thumb_url"
+        source.ruleExplore.intro = "$.abstract"
+        source.ruleExplore.bookUrl = source.ruleSearch.bookUrl
+        source.ruleBookInfo.initScript = """
+        <js>
+        JSON.parse(java.hexDecodeToString(result));
+        request('/detail');
+        </js>$.data
+        """
+        source.ruleBookInfo.name = "$.book_name"
+        source.ruleBookInfo.author = "$.author"
+        source.ruleBookInfo.coverUrl = "$.thumb_url"
+        source.ruleBookInfo.intro = "$.abstract"
+        source.ruleBookInfo.tocUrl = """
+        <js>
+        let toc = java.base64Encode(JSON.stringify({
+            book_id: result.book_id, source: result.source, tab: result.tab, url: result.toc_url || ''
+        }));
+        `data:;base64,${toc},{"type":"toc"}`;
+        </js>
+        """
+        source.ruleToc.chapterList = """
+        <js>
+        const res = JSON.parse(java.hexDecodeToString(result));
+        java.put('book_id', res.book_id);
+        request('/catalog');
+        </js>$.data
+        """
+        source.ruleToc.chapterName = "$.title"
+        source.ruleToc.chapterUrl = """
+        <js>
+        let content = java.base64Encode(JSON.stringify({
+            book_id: java.get('book_id'), item_id: result.item_id,
+            title: result.title, source: result.source, tab: result.tab
+        }));
+        `data:;base64,${content},{"type":"content"}`;
+        </js>
+        """
+        source.ruleContent.content = """
+        <js>
+        JSON.parse(java.hexDecodeToString(result));
+        request('/content');
+        </js>$.content
+        """
+        source.ruleContent.title = "@js:result.title || ''"
+
+        let bridge = ModernParserBridge(source: source)
+        let books = try await bridge.searchBooks(keyword: "Pipeline")
+        #expect(books.count == 1)
+        #expect(books[0].bookUrl.hasPrefix("data:;base64,"))
+
+        let info = try await bridge.getBookInfo(url: books[0].bookUrl)
+        #expect(info.name == "Pipeline Book")
+        #expect(info.tocUrl.hasPrefix("data:;base64,"))
+
+        let chapters = try await bridge.getChapterList(url: info.tocUrl)
+        #expect(chapters.map(\.title) == ["Chapter 1"])
+        #expect(chapters[0].url.hasPrefix("data:;base64,"))
+
+        let content = try await bridge.getContent(url: chapters[0].url)
+        #expect(content == "Chapter body from runtime")
+
+        let fetcher = BookSourceFetcher.shared
+        let discoverItems = await fetcher.discoverItems(page: 2, in: source)
+        #expect(discoverItems.compactMap(\.title) == ["Hot Books"])
+        let discoveredBooks = try await fetcher.discoverBooks(from: discoverItems[0], in: source)
+        #expect(discoveredBooks.map(\.name) == ["Pipeline Book"])
+
+        let fetchedBooks = try await fetcher.search(query: "Pipeline", in: source)
+        #expect(fetchedBooks.count == 1)
+        let infoPackage = try await fetcher.fetchBookInfoPackage(
+            url: fetchedBooks[0].bookUrl,
+            source: source,
+            runtimeVariables: fetchedBooks[0].runtimeVariables
+        )
+        #expect(infoPackage.name == "Pipeline Book")
+        let tocPackage = try await fetcher.fetchTOCPackage(
+            tocUrl: infoPackage.tocUrl,
+            source: source,
+            runtimeVariables: infoPackage.runtimeVariables
+        )
+        #expect(tocPackage.chapters.map(\.title) == ["Chapter 1"])
+        let bookId = UUID()
+        let chapterPackage = try await fetcher.fetchChapterPackage(
+            ref: tocPackage.chapters[0],
+            bookId: bookId,
+            source: source
+        )
+        defer {
+            fetcher.clearAllChapterCache(bookId: bookId)
+        }
+        #expect(chapterPackage.content == "Chapter body from runtime")
+    }
+}
+
+@Suite("BookSource local fixture")
+struct BookSourceLocalFixtureTests {
+
+    @Test("local Legado source fixture decodes when path is provided")
+    func localLegadoSourceFixtureDecodes() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let path = env["YueduLocalBookSourceFixturePath"]
+                ?? env["TEST_RUNNER_YueduLocalBookSourceFixturePath"],
+              !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let sources = try JSONDecoder().decode([BookSource].self, from: data)
+        let source = try #require(
+            sources.first { $0.bookSourceName.contains("光遇") || $0.bookSourceUrl.contains("光遇") }
+        )
+
+        #expect(!source.jsLib.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        #expect(source.searchUrl.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<js>"))
+        #expect(source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<js>"))
+        #expect(source.ruleBookInfo.initScript.contains("java.hexDecodeToString"))
+        #expect(source.ruleToc.chapterUrl.contains("data:;base64"))
+        #expect(source.ruleContent.content.contains("chapter.index"))
+        #expect(!source.loginUi.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
 }
 
 @Suite("CustomUrl")
@@ -1199,6 +1437,48 @@ struct JSCoreEngineTests {
         engine.reset()
         let result = engine.evaluate("typeof testVar")
         #expect(result == "undefined")
+    }
+
+    @Test("cache object is available from JS")
+    func cacheObjectFromJS() {
+        var source = BookSource()
+        source.bookSourceUrl = "cache-js-\(UUID().uuidString)"
+        let engine = JSCoreEngine()
+        engine.bookSource = source
+
+        _ = engine.evaluate("cache.putMemory('memKey', 'memVal')")
+        let result = engine.evaluate("cache.getFromMemory('memKey')")
+
+        #expect(result == "memVal")
+    }
+
+    @Test("java.getCookie can return a named cookie")
+    func javaGetCookieNamedValue() {
+        let host = "https://cookie-\(UUID().uuidString).example.com"
+        CookieStore.shared.set(url: host, cookie: "qttoken=abc123")
+        CookieStore.shared.set(url: host, cookie: "sessionid=sid456")
+        defer {
+            CookieStore.shared.remove(url: host)
+        }
+        let engine = JSCoreEngine()
+
+        let result = engine.evaluate("java.getCookie('\(host)', 'sessionid')")
+
+        #expect(result == "sid456")
+    }
+
+    @Test("startBrowserAwait returns captured body")
+    func startBrowserAwaitReturnsBody() {
+        let engine = JSCoreEngine()
+        engine.browserPresentHandler = { _, _, completion in
+            completion("<html>done</html>")
+        }
+
+        let result = engine.evaluate(
+            "java.startBrowserAwait('https://example.com', 'Title').body()"
+        )
+
+        #expect(result == "<html>done</html>")
     }
 }
 
@@ -1391,6 +1671,201 @@ struct LegadoJSBridgeTests {
         let bridge = LegadoJSBridge()
         let result = bridge.log("test message")
         #expect(result == "test message")
+    }
+}
+
+// MARK: - 11b. LegadoSourceBridge Tests
+
+@Suite("LegadoSourceBridge")
+struct LegadoSourceBridgeTests {
+
+    @Test("static properties are exposed correctly")
+    func staticProperties() {
+        let bridge = LegadoSourceBridge(
+            bookSourceUrl: "https://example.com",
+            bookSourceName: "Test",
+            bookSourceGroup: "Group",
+            bookSourceComment: "Comment",
+            loginUrl: "login",
+            header: "{}",
+            loginCheckJs: "check"
+        )
+        #expect(bridge.bookSourceUrl == "https://example.com")
+        #expect(bridge.bookSourceName == "Test")
+        #expect(bridge.bookSourceGroup == "Group")
+        #expect(bridge.bookSourceComment == "Comment")
+        #expect(bridge.loginUrl == "login")
+        #expect(bridge.header == "{}")
+        #expect(bridge.loginCheckJs == "check")
+        #expect(bridge.key == "https://example.com")
+    }
+
+    @Test("getVariable/setVariable via handlers")
+    func getSetVariable() {
+        let bridge = LegadoSourceBridge.from(BookSource())
+        var stored: String? = "{\"key\":\"value\"}"
+        bridge.getVariableHandler = { stored }
+        bridge.setVariableHandler = { stored = $0 }
+        #expect(bridge.getVariable() == "{\"key\":\"value\"}")
+        bridge.setVariable("{\"key\":\"new\"}")
+        #expect(stored == "{\"key\":\"new\"}")
+    }
+
+    @Test("getVariable returns empty when no handler set")
+    func getVariableNoHandler() {
+        let bridge = LegadoSourceBridge.from(BookSource())
+        #expect(bridge.getVariable() == "")
+    }
+
+    @Test("getLoginInfo returns nil when no handler set")
+    func getLoginInfoNoHandler() {
+        let bridge = LegadoSourceBridge.from(BookSource())
+        #expect(bridge.getLoginInfo() == nil)
+    }
+
+    @Test("getLoginInfoMap returns empty when no handler set")
+    func getLoginInfoMapNoHandler() {
+        let bridge = LegadoSourceBridge.from(BookSource())
+        #expect(bridge.getLoginInfoMap().isEmpty)
+    }
+
+    @Test("putLoginInfo delegates to handler")
+    func putLoginInfo() {
+        let bridge = LegadoSourceBridge.from(BookSource())
+        var received: String?
+        bridge.putLoginInfoHandler = { received = $0 }
+        bridge.putLoginInfo("{\"email\":\"test\"}")
+        #expect(received == "{\"email\":\"test\"}")
+    }
+
+    @Test("putLoginHeader delegates to handler")
+    func putLoginHeader() {
+        let bridge = LegadoSourceBridge.from(BookSource())
+        var received: String?
+        bridge.putLoginHeaderHandler = { received = $0 }
+        bridge.putLoginHeader("{\"Cookie\":\"abc\"}")
+        #expect(received == "{\"Cookie\":\"abc\"}")
+    }
+
+    @Test("getHeaderMap returns empty when no handler set")
+    func getHeaderMapNoHandler() {
+        let bridge = LegadoSourceBridge.from(BookSource())
+        #expect(bridge.getHeaderMap().isEmpty)
+    }
+
+    @Test("put/get key-value store with handlers")
+    func putGetKV() {
+        let bridge = LegadoSourceBridge.from(BookSource())
+        var stored: String? = "{}"
+        bridge.getVariableHandler = { stored }
+        bridge.setVariableHandler = { stored = $0 }
+        bridge.put("name", "value")
+        // get reads from variable handler (stored JSON)
+        #expect(bridge.get("name") == "value")
+    }
+
+    @Test("get returns empty for unknown key")
+    func getUnknownKey() {
+        let bridge = LegadoSourceBridge.from(BookSource())
+        #expect(bridge.get("unknown") == "")
+    }
+
+    @Test("Factory creates bridge from BookSource")
+    func factoryFromBookSource() {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com"
+        source.bookSourceName = "Test"
+        source.bookSourceGroup = "group"
+        source.bookSourceComment = "cmt"
+        source.loginUrl = "login"
+        source.header = "{}"
+        source.loginCheckJs = "check"
+        let bridge = LegadoSourceBridge.from(source)
+        #expect(bridge.bookSourceUrl == "https://example.com")
+        #expect(bridge.bookSourceName == "Test")
+    }
+}
+
+// MARK: - 11c. LegadoCacheBridge Tests
+
+@Suite("LegadoCacheBridge")
+struct LegadoCacheBridgeTests {
+
+    @Test("put and get persistent")
+    func putGetPersistent() {
+        let bridge = LegadoCacheBridge(sourceId: "test")
+        bridge.put("key1", "value1")
+        #expect(bridge.get("key1") == "value1")
+        bridge.delete("key1")
+    }
+
+    @Test("get returns nil for unknown key")
+    func getUnknownKey() {
+        let bridge = LegadoCacheBridge(sourceId: "test2")
+        #expect(bridge.get("nonexistent") == nil)
+    }
+
+    @Test("delete removes key")
+    func deleteKey() {
+        let bridge = LegadoCacheBridge(sourceId: "test3")
+        bridge.put("temp", "val")
+        #expect(bridge.get("temp") == "val")
+        bridge.delete("temp")
+        #expect(bridge.get("temp") == nil)
+    }
+
+    @Test("putMemory and getFromMemory")
+    func memoryCache() {
+        let bridge = LegadoCacheBridge(sourceId: "test4")
+        bridge.putMemory("memKey", "memVal")
+        #expect(bridge.getFromMemory("memKey") == "memVal")
+    }
+
+    @Test("deleteMemory removes from memory")
+    func deleteMemory() {
+        let bridge = LegadoCacheBridge(sourceId: "test5")
+        bridge.putMemory("memDel", "val")
+        #expect(bridge.getFromMemory("memDel") == "val")
+        bridge.deleteMemory("memDel")
+        #expect(bridge.getFromMemory("memDel") == nil)
+    }
+
+    @Test("getFromMemory returns nil for unknown key")
+    func memoryUnknown() {
+        let bridge = LegadoCacheBridge(sourceId: "test6")
+        #expect(bridge.getFromMemory("nothing") == nil)
+    }
+
+    @Test("different source IDs are isolated")
+    func sourceIdIsolation() {
+        let bridgeA = LegadoCacheBridge(sourceId: "A")
+        let bridgeB = LegadoCacheBridge(sourceId: "B")
+        bridgeA.put("shared", "fromA")
+        bridgeB.put("shared", "fromB")
+        #expect(bridgeA.get("shared") == "fromA")
+        #expect(bridgeB.get("shared") == "fromB")
+        bridgeA.delete("shared")
+        bridgeB.delete("shared")
+    }
+}
+
+// MARK: - 11d. LegadoStrResponse Tests
+
+@Suite("LegadoStrResponse")
+struct LegadoStrResponseTests {
+
+    @Test("body returns stored body")
+    func bodyReturns() {
+        let response = LegadoStrResponse(url: "https://example.com", body: "<html>test</html>")
+        #expect(response.url == "https://example.com")
+        #expect(response.body() == "<html>test</html>")
+    }
+
+    @Test("empty body is fine")
+    func emptyBody() {
+        let response = LegadoStrResponse(url: "about:blank", body: "")
+        #expect(response.url == "about:blank")
+        #expect(response.body() == "")
     }
 }
 

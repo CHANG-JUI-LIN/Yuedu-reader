@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 // MARK: - Error
 
@@ -25,6 +26,7 @@ class ModernParserBridge {
 
     private let jsEngine: JSCoreEngine
     private let loginManager: LoginManager
+    private let runtimeStateStore: BookSourceRuntimeStateStore
     let sourceRuleData: BookSourceRuleData
 
     /// When set, every `ModernRuleEngine` created by `makeEngine()` will have this
@@ -38,6 +40,7 @@ class ModernParserBridge {
         self.sourceRuleData = BookSourceRuleData(source: source)
         self.jsEngine = JSCoreEngine()
         self.loginManager = LoginManager.shared
+        self.runtimeStateStore = BookSourceRuntimeStateStore.shared
 
         wireJSEngine()
     }
@@ -58,7 +61,14 @@ class ModernParserBridge {
             // Safe because jsEngine serialises all evaluations on its dedicated queue.
             self.jsEngine.getStringHandler = { ruleStr in engine.getString(ruleStr: ruleStr) }
             self.jsEngine.getStringListHandler = { ruleStr in engine.getStringList(ruleStr: ruleStr) }
-            return self.jsEngine.evaluate(jsCode, result: ModernRuleEngine.toString(prevResult))
+            return self.jsEngine.evaluate(
+                jsCode,
+                result: prevResult,
+                bindings: [
+                    "baseUrl": engine.baseUrl,
+                    "baseURL": engine.baseUrl
+                ]
+            )
         }
         return e
     }
@@ -85,6 +95,96 @@ class ModernParserBridge {
             self?.sourceRuleData.putVariable(key: key, value: value)
         }
 
+        // ── Source Bridge Wiring ──
+
+        let sourceUrl = sourceRuleData.source.bookSourceUrl
+
+        jsEngine.sourceBridge.getVariableHandler = { [weak self] in
+            guard let self else { return "" }
+            return self.runtimeStateStore.sourceVariableJSON(for: sourceUrl) ?? ""
+        }
+        jsEngine.sourceBridge.setVariableHandler = { [weak self] jsonString in
+            self?.runtimeStateStore.setSourceVariableJSON(jsonString, for: sourceUrl)
+        }
+
+        jsEngine.sourceBridge.getLoginInfoHandler = {
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceUrl).flatMap { info in
+                if let data = try? JSONSerialization.data(withJSONObject: info),
+                   let json = String(data: data, encoding: .utf8) {
+                    return json
+                }
+                return nil
+            }
+        }
+        jsEngine.sourceBridge.putLoginInfoHandler = { info in
+            guard let data = info.data(using: .utf8),
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
+            LoginManager.shared.storeLoginInfo(sourceUrl: sourceUrl, info: dict)
+        }
+        jsEngine.sourceBridge.getLoginInfoMapHandler = {
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceUrl) ?? [:]
+        }
+        jsEngine.sourceBridge.removeLoginInfoHandler = {
+            LoginManager.shared.clearLogin(sourceUrl: sourceUrl)
+        }
+        jsEngine.sourceBridge.putLoginHeaderHandler = { header in
+            guard let data = header.data(using: .utf8),
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
+            LoginManager.shared.storeLoginHeaders(sourceUrl: sourceUrl, headers: dict)
+        }
+        jsEngine.sourceBridge.removeLoginHeaderHandler = {
+            LoginManager.shared.clearLogin(sourceUrl: sourceUrl)
+        }
+        jsEngine.sourceBridge.getHeaderMapHandler = { [weak self] in
+            var merged = self?.jsEngine.parseHeaders(self?.sourceRuleData.source.header ?? "") ?? [:]
+            if let loginHeaders = LoginManager.shared.getLoginHeaderMap(sourceUrl: sourceUrl) {
+                merged.merge(loginHeaders) { _, new in new }
+            }
+            return merged
+        }
+        jsEngine.sourceBridge.evalJSHandler = { [weak self] js in
+            self?.jsEngine.evaluate(js) ?? ""
+        }
+
+        // ── AnalyzeUrl handler for java.ajax() ──
+        jsEngine.analyzeUrlHandler = { [weak self] urlStr in
+            guard let self else { return nil }
+            let analyzeUrl = AnalyzeUrl(
+                ruleUrl: urlStr,
+                baseUrl: self.sourceRuleData.source.bookSourceUrl,
+                source: self.sourceRuleData,
+                jsEvaluator: { [weak self] jsCode, bindings in
+                    self?.jsEngine.evaluate(jsCode, bindings: bindings)
+                }
+            )
+            if analyzeUrl.isDataUri {
+                return Self.bodyForDataURI(analyzeUrl)
+            }
+            guard var request = analyzeUrl.toURLRequest() else { return nil }
+            for (key, value) in self.sourceRuleData.source.parsedHeaders {
+                if request.value(forHTTPHeaderField: key) == nil {
+                    request.setValue(value, forHTTPHeaderField: key)
+                }
+            }
+            LoginManager.shared.applyLoginHeaders(to: &request, sourceUrl: sourceUrl)
+            let sem = DispatchSemaphore(value: 0)
+            var result: String?
+            let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+                if let data {
+                    let encoding = Self.encodingFromCharset(analyzeUrl.charset)
+                    result = String(data: data, encoding: encoding)
+                        ?? String(data: data, encoding: .utf8)
+                }
+                sem.signal()
+            }
+            task.resume()
+            _ = sem.wait(timeout: .now() + 30)
+            return result
+        }
+
+        // Evaluate jsLib if present, cache the hash to avoid re-evaluation
+        evaluateJsLibIfNeeded()
+
         // setContent handler: JS calls java.setContent(html) → create engine, set content, wire back-refs
         jsEngine.setContentHandler = { [weak self] content, baseUrl in
             guard let self else { return }
@@ -92,7 +192,14 @@ class ModernParserBridge {
             engine.source = self.sourceRuleData
             engine.jsEvaluator = { [weak engine] jsCode, prevResult in
                 guard engine != nil else { return nil }
-                return self.jsEngine.evaluate(jsCode, result: ModernRuleEngine.toString(prevResult))
+                return self.jsEngine.evaluate(
+                    jsCode,
+                    result: prevResult,
+                    bindings: [
+                        "baseUrl": baseUrl ?? "",
+                        "baseURL": baseUrl ?? ""
+                    ]
+                )
             }
             engine.setContent(content, baseUrl: baseUrl ?? "")
             self.jsEngine.getStringHandler = { ruleStr in engine.getString(ruleStr: ruleStr) }
@@ -179,6 +286,8 @@ class ModernParserBridge {
         runtimeVariables: [String: String]? = nil
     ) throws -> OnlineBook {
         loadRuntimeVariables(runtimeVariables)
+        setBookContext(runtimeVariables: runtimeVariables)
+        jsEngine.setChapterBridge(LegadoChapterBridge())
         let engine = makeEngine()
         engine.setContent(html, baseUrl: baseURL)
 
@@ -201,8 +310,15 @@ class ModernParserBridge {
                     engine.setContent(groups, baseUrl: baseURL)
                 }
             } else {
-                // JavaScript: evaluate and use returned JSON object keys as field sources
-                if let jsonText = jsEngine.evaluate(initScript, result: html),
+                // Legado init can itself be a full rule chain, e.g.
+                // `<js>...</js>$.data`; run it through ModernRuleEngine.
+                let initResult = engine.getString(ruleStr: initScript)
+                if let jsonData = initResult.data(using: .utf8),
+                   let jsonObj = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                    engine.setContent(jsonObj, baseUrl: baseURL)
+                } else if !initResult.isEmpty {
+                    engine.setContent(initResult, baseUrl: baseURL)
+                } else if let jsonText = jsEngine.evaluate(initScript, result: html),
                    let jsonData = jsonText.data(using: .utf8),
                    let jsonObj = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
                     engine.setContent(jsonObj, baseUrl: baseURL)
@@ -245,6 +361,8 @@ class ModernParserBridge {
         runtimeVariables: [String: String]? = nil
     ) throws -> [OnlineChapterRef] {
         loadRuntimeVariables(runtimeVariables)
+        setBookContext(runtimeVariables: runtimeVariables)
+        jsEngine.setChapterBridge(LegadoChapterBridge())
         let engine = makeEngine()
         engine.setContent(html, baseUrl: baseURL)
 
@@ -328,9 +446,23 @@ class ModernParserBridge {
         html: String,
         baseURL: String,
         source: BookSource,
-        runtimeVariables: [String: String]? = nil
+        runtimeVariables: [String: String]? = nil,
+        chapterRef: OnlineChapterRef? = nil
     ) throws -> ChapterParsePayload {
         loadRuntimeVariables(runtimeVariables)
+        setBookContext(runtimeVariables: runtimeVariables)
+        if let chapterRef {
+            jsEngine.setChapterBridge(
+                LegadoChapterBridge(
+                    index: chapterRef.index,
+                    title: chapterRef.title,
+                    order: chapterRef.index,
+                    url: chapterRef.url
+                )
+            )
+        } else {
+            jsEngine.setChapterBridge(LegadoChapterBridge())
+        }
         let engine = makeEngine()
         engine.setContent(html, baseUrl: baseURL)
 
@@ -400,6 +532,110 @@ class ModernParserBridge {
         return payload.content
     }
 
+    // MARK: - Explore / Discover
+
+    /// Discover item returned from exploreUrl JS evaluation.
+    struct DiscoverItem: Decodable {
+        var title: String?
+        var url: String?
+        var style: [String: String]?
+        var type: String?
+        var action: String?
+        var chars: [String]?
+        var `default`: String?
+        var viewName: String?
+    }
+
+    /// Evaluate exploreUrl for a book source and return discover items.
+    /// Handles JS-based exploreUrl (e.g. 光遇聚合 `<js>...</js>`).
+    func getExploreItems(page: Int = 1) async -> [DiscoverItem] {
+        let source = sourceRuleData.source
+        let rawExploreUrl = source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawExploreUrl.isEmpty else { return [] }
+
+        // If exploreUrl is JS-based (`<js>...</js>` or `@js:`), evaluate directly
+        let isJS = rawExploreUrl.hasPrefix("<js>") || rawExploreUrl.hasPrefix("@js:")
+        if isJS {
+            let jsCode = rawExploreUrl
+                .replacingOccurrences(of: "<js>", with: "")
+                .replacingOccurrences(of: "</js>", with: "")
+                .replacingOccurrences(of: "@js:", with: "")
+            let bindings: [String: Any] = [
+                "page": page,
+                "baseUrl": source.bookSourceUrl,
+            ]
+            if let result = jsEngine.evaluate(jsCode, bindings: bindings) {
+                return parseDiscoverJSON(result)
+            }
+            return []
+        }
+
+        // Fallback: fetch as URL
+        do {
+            let (body, _) = try await fetch(ruleUrl: rawExploreUrl, page: page)
+            return parseDiscoverJSON(body)
+        } catch {
+            return []
+        }
+    }
+
+    /// Parse a JSON array string into DiscoverItem list.
+    private func parseDiscoverJSON(_ json: String) -> [DiscoverItem] {
+        guard let data = json.data(using: .utf8) else { return [] }
+        if let items = try? JSONDecoder().decode([DiscoverItem].self, from: data) {
+            return items
+        }
+        if let single = try? JSONDecoder().decode(DiscoverItem.self, from: data) {
+            return [single]
+        }
+        return []
+    }
+
+    /// Parse explore results using ruleExplore rules (for non-JS exploreUrl).
+    func parseExploreResults(html: String, baseURL: String, source: BookSource) -> [OnlineBook] {
+        let engine = makeEngine()
+        engine.setContent(html, baseUrl: baseURL)
+
+        let listRule = source.ruleExplore.bookList
+        guard !listRule.isEmpty else {
+            // If no ruleExplore, try to parse the HTML as JSON discover items
+            let items = parseDiscoverJSON(html)
+            return items.compactMap { item in
+                guard let title = item.title, !title.isEmpty else { return nil }
+                return OnlineBook(
+                    name: title, author: "", intro: "",
+                    coverUrl: "", bookUrl: item.url ?? "",
+                    tocUrl: item.url ?? "", wordCount: "",
+                    lastChapter: "", kind: "",
+                    sourceId: source.id, sourceName: source.bookSourceName
+                )
+            }
+        }
+
+        let elements = engine.getElements(ruleStr: listRule)
+        var books: [OnlineBook] = []
+        for element in elements {
+            engine.setContent(element, baseUrl: baseURL)
+            let name = engine.getString(ruleStr: source.ruleExplore.name)
+            guard !name.isEmpty else { continue }
+            let author = engine.getString(ruleStr: source.ruleExplore.author)
+            let bookUrl = engine.getString(ruleStr: source.ruleExplore.bookUrl, isUrl: true)
+            let coverUrl = engine.getString(ruleStr: source.ruleExplore.coverUrl, isUrl: true)
+            let intro = engine.getString(ruleStr: source.ruleExplore.intro)
+            let wordCount = engine.getString(ruleStr: source.ruleExplore.wordCount)
+            let lastChapter = engine.getString(ruleStr: source.ruleExplore.lastChapter)
+            let kind = engine.getString(ruleStr: source.ruleExplore.kind)
+            books.append(OnlineBook(
+                name: name, author: author, intro: intro,
+                coverUrl: coverUrl, bookUrl: bookUrl,
+                tocUrl: bookUrl, wordCount: wordCount,
+                lastChapter: lastChapter, kind: kind,
+                sourceId: source.id, sourceName: source.bookSourceName
+            ))
+        }
+        return books
+    }
+
     // MARK: - Network fetch using AnalyzeUrl
 
     func checkLoginRequired(
@@ -426,12 +662,14 @@ class ModernParserBridge {
             key: key,
             page: page,
             baseUrl: sourceRuleData.source.bookSourceUrl,
-            source: sourceRuleData
+            source: sourceRuleData,
+            jsEvaluator: { [weak self] jsCode, bindings in
+                self?.jsEngine.evaluate(jsCode, bindings: bindings)
+            }
         )
 
-        // Wire JS evaluator for URL-level JS
-        analyzeUrl.jsEvaluator = { [weak self] jsCode, bindings in
-            self?.jsEngine.evaluate(jsCode, bindings: bindings)
+        if analyzeUrl.isDataUri {
+            return (Self.bodyForDataURI(analyzeUrl), analyzeUrl.url)
         }
 
         guard var request = analyzeUrl.toURLRequest() else {
@@ -471,8 +709,34 @@ class ModernParserBridge {
     }
 
     private func dumpRuntimeVariables() -> [String: String]? {
-        let map = sourceRuleData.variableMap
+        var map = sourceRuleData.variableMap
+        for (key, value) in jsEngine.bookBridge.runtimeVariables() where !value.isEmpty {
+            map["book.variable.\(key)"] = value
+        }
         return map.isEmpty ? nil : map
+    }
+
+    private func setBookContext(runtimeVariables: [String: String]?) {
+        var bookVariables: [String: String] = [:]
+        runtimeVariables?.forEach { key, value in
+            if key.hasPrefix("book.variable.") {
+                let rawKey = String(key.dropFirst("book.variable.".count))
+                bookVariables[rawKey] = value
+            }
+        }
+        let bridge = LegadoBookBridge(
+            durChapterIndex: Int(runtimeVariables?["book.durChapterIndex"] ?? "") ?? 0,
+            durChapterTitle: runtimeVariables?["book.durChapterTitle"] ?? "",
+            order: Int(runtimeVariables?["book.order"] ?? "") ?? 0,
+            type: Int(runtimeVariables?["book.type"] ?? "") ?? 0,
+            imageStyle: runtimeVariables?["book.imageStyle"] ?? "",
+            name: runtimeVariables?["book.name"] ?? "",
+            author: runtimeVariables?["book.author"] ?? "",
+            coverUrl: runtimeVariables?["book.coverUrl"] ?? "",
+            abstract: runtimeVariables?["book.abstract"] ?? "",
+            variables: bookVariables
+        )
+        jsEngine.setBookBridge(bridge)
     }
 
     // MARK: - Private: Helpers
@@ -494,5 +758,47 @@ class ModernParserBridge {
         default:
             return .utf8
         }
+    }
+
+    private static func bodyForDataURI(_ analyzeUrl: AnalyzeUrl) -> String {
+        guard let decoded = analyzeUrl.decodeDataUri() else { return "" }
+        if analyzeUrl.type?.isEmpty == false {
+            return decoded.data.map { String(format: "%02x", $0) }.joined()
+        }
+        return String(data: decoded.data, encoding: .utf8)
+            ?? String(decoding: decoded.data, as: UTF8.self)
+    }
+
+    // MARK: - jsLib Caching
+
+    /// Hashed `jsLib` content that was last evaluated.  `nil` means jsLib has never been evaluated.
+    private var evaluatedJsLibHash: String?
+
+    /// Evaluate jsLib once per source, caching the hash so we don't re-evaluate
+    /// on every request.  jsLib functions (e.g. `BaseUrl()`, `getVariable()`,
+    /// `request()`) stay in the shared JSContext scope.
+    private func evaluateJsLibIfNeeded() {
+        let jsLib = sourceRuleData.source.jsLib
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !jsLib.isEmpty else { return }
+
+        let newHash = jsLib.md5Hash
+        guard newHash != evaluatedJsLibHash else { return }
+
+        _ = jsEngine.evaluate(jsLib)
+        evaluatedJsLibHash = newHash
+    }
+
+    /// Re-evaluate jsLib on next use (e.g. after source variable reset).
+    func invalidateJsLibCache() {
+        evaluatedJsLibHash = nil
+    }
+}
+
+private extension String {
+    var md5Hash: String {
+        guard let data = data(using: .utf8) else { return "" }
+        let hash = CryptoKit.Insecure.MD5.hash(data: data)
+        return hash.map { String(format: "%02x", $0) }.joined()
     }
 }

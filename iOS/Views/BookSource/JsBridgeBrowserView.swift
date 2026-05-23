@@ -8,7 +8,7 @@ import Combine
 struct JsBridgeBrowserView: View {
     let urlString: String
     let title: String
-    let onDismiss: () -> Void
+    let onDismiss: (_ body: String?) -> Void
 
     @StateObject private var bridge = JsBridgeBrowserBridge()
     @State private var isSyncing = false
@@ -21,7 +21,7 @@ struct JsBridgeBrowserView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
-                        Button("取消") { onDismiss() }
+                        Button("取消") { onDismiss(nil) }
                             .disabled(isSyncing)
                     }
                     ToolbarItem(placement: .navigationBarTrailing) {
@@ -30,8 +30,8 @@ struct JsBridgeBrowserView: View {
                         } else {
                             Button("完成") {
                                 isSyncing = true
-                                bridge.syncCookiesAndDismiss? {
-                                    onDismiss()
+                                bridge.syncCookiesAndDismiss? { body in
+                                    onDismiss(body)
                                 }
                             }
                             .font(.body.weight(.semibold))
@@ -46,7 +46,7 @@ struct JsBridgeBrowserView: View {
 // MARK: - JsBridgeBrowserBridge
 
 final class JsBridgeBrowserBridge: ObservableObject {
-    var syncCookiesAndDismiss: ((@escaping () -> Void) -> Void)?
+    var syncCookiesAndDismiss: ((@escaping (String?) -> Void) -> Void)?
 }
 
 // MARK: - UIViewRepresentable
@@ -70,8 +70,8 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
 
         let coordinator = context.coordinator
         bridge.syncCookiesAndDismiss = { completion in
-            guard let wv = coordinator.webView else { completion(); return }
-            coordinator.syncCookies(from: wv, completion: completion)
+            guard let wv = coordinator.webView else { completion(nil); return }
+            coordinator.syncCookiesAndDismiss(from: wv, completion: completion)
         }
 
         if let url = URL(string: urlString) {
@@ -87,29 +87,30 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         weak var webView: WKWebView?
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            syncCookies(from: webView, completion: nil)
+            syncCookiesAndDismiss(from: webView, completion: nil)
         }
 
-        func syncCookies(from webView: WKWebView, completion: (() -> Void)?) {
-            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-                guard !cookies.isEmpty else { completion?(); return }
+        func syncCookiesAndDismiss(from webView: WKWebView, completion: ((String?) -> Void)?) {
+            webView.evaluateJavaScript("document.documentElement.outerHTML") { body, _ in
+                let pageBody = body as? String
+                webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+                    guard !cookies.isEmpty else { completion?(pageBody); return }
 
-                // (1) Push into URLSession's shared cookie storage
-                cookies.forEach { HTTPCookieStorage.shared.setCookie($0) }
+                    cookies.forEach { HTTPCookieStorage.shared.setCookie($0) }
 
-                // (2) Group by domain and push into CookieStore (for JS bridge access)
-                var byDomain: [String: [HTTPCookie]] = [:]
-                for cookie in cookies {
-                    let domain = cookie.domain.hasPrefix(".")
-                        ? String(cookie.domain.dropFirst()) : cookie.domain
-                    byDomain["https://\(domain)", default: []].append(cookie)
+                    var byDomain: [String: [HTTPCookie]] = [:]
+                    for cookie in cookies {
+                        let domain = cookie.domain.hasPrefix(".")
+                            ? String(cookie.domain.dropFirst()) : cookie.domain
+                        byDomain["https://\(domain)", default: []].append(cookie)
+                    }
+                    for (domainKey, domainCookies) in byDomain {
+                        let joined = domainCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+                        CookieStore.shared.set(url: domainKey, cookie: joined)
+                    }
+
+                    completion?(pageBody)
                 }
-                for (domainKey, domainCookies) in byDomain {
-                    let joined = domainCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-                    CookieStore.shared.set(url: domainKey, cookie: joined)
-                }
-
-                completion?()
             }
         }
     }

@@ -65,12 +65,14 @@ struct BookSourceParsingPipeline {
         html: String,
         baseURL: String,
         source: BookSource,
-        runtimeVariables: [String: String]? = nil
+        runtimeVariables: [String: String]? = nil,
+        chapterRef: OnlineChapterRef? = nil
     ) throws -> ChapterParsePayload {
         let bridge = ModernParserBridge(source: source)
         return try bridge.parseChapterResult(
             html: html, baseURL: baseURL,
-            source: source, runtimeVariables: runtimeVariables
+            source: source, runtimeVariables: runtimeVariables,
+            chapterRef: chapterRef
         )
     }
 

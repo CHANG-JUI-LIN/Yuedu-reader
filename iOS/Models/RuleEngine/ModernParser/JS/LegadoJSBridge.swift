@@ -1,6 +1,7 @@
 import Foundation
 import JavaScriptCore
 import CryptoKit
+import UIKit
 
 // MARK: - JSExport Protocol
 
@@ -11,6 +12,12 @@ import CryptoKit
     func ajax(_ urlStr: String) -> String
     func ajaxAll(_ urlArray: [String]) -> [String]
     func connect(_ urlStr: String) -> String
+
+    // Cookie helpers (used by sources like 光遇)
+    func getCookie(_ url: String) -> String
+    func getCookie(_ url: String, _ key: String) -> String
+    func getCookieValue(_ url: String, _ key: String) -> String
+    func getWebViewUA() -> String
 
     // Variable storage
     func put(_ key: String, _ value: String)
@@ -24,7 +31,8 @@ import CryptoKit
 
     // Browser WebView (Legado startBrowser / startBrowserAwait)
     func startBrowser(_ url: String, _ title: String)
-    func startBrowserAwait(_ url: String, _ title: String)
+    func startBrowserAwait(_ url: String, _ title: String) -> LegadoStrResponse
+    func startBrowserAwait(_ url: String, _ title: String, _ refetchAfterSuccess: Bool) -> LegadoStrResponse
 
     // Toast notifications
     func toast(_ msg: String)
@@ -52,6 +60,20 @@ import CryptoKit
     // Chinese character conversion
     func t2s(_ text: String) -> String
     func s2t(_ text: String) -> String
+
+    // UI actions used by complex Legado sources. Most are safe no-ops in parser-only flows.
+    func refreshExplore()
+    func reLoginView()
+    func refreshBookInfo()
+    func refreshBookToc()
+    func refreshContent()
+    func showBrowser(_ url: String, _ title: String)
+    func showReadingBrowser(_ url: String, _ title: String)
+    func startBrowserDp(_ url: String, _ title: String)
+    func copyText(_ text: String)
+    func deviceID() -> String
+    func androidId() -> String
+    func openVideoPlayer(_ url: String, _ title: String)
 }
 
 // MARK: - Cookie Bridge
@@ -59,8 +81,11 @@ import CryptoKit
 /// Legado's `cookie` object — accessible from JS as `cookie.get(url)`, `cookie.set(url, val)`, `cookie.remove(url)`.
 @objc protocol LegadoCookieBridgeExport: JSExport {
     func get(_ url: String) -> String
+    func getCookie(_ url: String) -> String
     func set(_ url: String, _ cookie: String)
+    func setCookie(_ url: String, _ cookie: String)
     func remove(_ url: String)
+    func removeCookie(_ url: String)
 }
 
 @objc class LegadoCookieBridge: NSObject, LegadoCookieBridgeExport {
@@ -69,11 +94,23 @@ import CryptoKit
         CookieStore.shared.get(url: url)
     }
 
+    func getCookie(_ url: String) -> String {
+        CookieStore.shared.get(url: url)
+    }
+
     func set(_ url: String, _ cookie: String) {
         CookieStore.shared.set(url: url, cookie: cookie)
     }
 
+    func setCookie(_ url: String, _ cookie: String) {
+        CookieStore.shared.set(url: url, cookie: cookie)
+    }
+
     func remove(_ url: String) {
+        CookieStore.shared.remove(url: url)
+    }
+
+    func removeCookie(_ url: String) {
         CookieStore.shared.remove(url: url)
     }
 }
@@ -90,10 +127,10 @@ import CryptoKit
     /// Delegate for network requests.
     var networkHandler: ((URLRequest) -> String?)?
 
-    /// Called when JS invokes `java.startBrowser(url, title)` or `java.startBrowserAwait(url, title)`.
-    /// Receives (url, title, onDismiss). For `startBrowserAwait` the bridge blocks jsQueue via
-    /// DispatchSemaphore until `onDismiss()` is called; for `startBrowser` it is called immediately.
-    var browserPresentHandler: ((String, String, @escaping () -> Void) -> Void)?
+    /// Called when JS invokes `java.startBrowser(url, title)` or `java.startBrowserAwait(url, title, ...)`.
+    /// Receives (url, title, completion). Completion receives the page body (nil if no body captured).
+    /// For `startBrowserAwait` the bridge blocks jsQueue via DispatchSemaphore until completion is called.
+    var browserPresentHandler: ((String, String, @escaping (String?) -> Void) -> Void)?
 
     /// Called when JS invokes `java.toast(msg)` / `java.longToast(msg)`.
     var toastHandler: ((String) -> Void)?
@@ -111,6 +148,10 @@ import CryptoKit
 
     /// Book source headers (for JS network requests to use correct User-Agent etc.)
     var sourceHeaders: [String: String] = [:]
+
+    /// AnalyzeUrl-based request handler. When set, `java.ajax()` routes URLs containing `,{json}`
+    /// through AnalyzeUrl rather than treating the entire string as a simple URL.
+    var analyzeUrlHandler: ((String) -> String?)?
 
     // MARK: Networking
 
@@ -146,6 +187,35 @@ import CryptoKit
 
     func connect(_ urlStr: String) -> String {
         return performRequest(urlStr)
+    }
+
+    // MARK: Cookie Helpers
+
+    func getCookie(_ url: String) -> String {
+        return CookieStore.shared.get(url: url)
+    }
+
+    func getCookie(_ url: String, _ key: String) -> String {
+        getCookieValue(url, key)
+    }
+
+    func getCookieValue(_ url: String, _ key: String) -> String {
+        let cookie = CookieStore.shared.get(url: url)
+        guard !key.isEmpty else { return cookie }
+        return cookie
+            .split(separator: ";")
+            .compactMap { part -> String? in
+                let pieces = part.split(separator: "=", maxSplits: 1).map {
+                    $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                guard pieces.count == 2, pieces[0] == key else { return nil }
+                return pieces[1]
+            }
+            .first ?? ""
+    }
+
+    func getWebViewUA() -> String {
+        return "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15"
     }
 
     // MARK: Variable Storage
@@ -202,17 +272,29 @@ import CryptoKit
 
     /// Opens a browser WebView without blocking JS execution.
     func startBrowser(_ url: String, _ title: String) {
-        browserPresentHandler?(url, title) { /* fire and forget */ }
+        browserPresentHandler?(url, title) { _ in /* fire and forget */ }
     }
 
     /// Opens a browser WebView and blocks the JS thread (jsQueue) until the user closes it.
-    /// Uses DispatchSemaphore with a 60s timeout — safe because jsQueue is a background
-    /// serial queue and the dismiss callback fires from the main thread.
-    func startBrowserAwait(_ url: String, _ title: String) {
-        guard let handler = browserPresentHandler else { return }
+    /// Returns a `LegadoStrResponse` with `.body()` and `.url` for JS consumption.
+    /// Mirrors Legado's `java.startBrowserAwait(url, title): StrResponse`.
+    func startBrowserAwait(_ url: String, _ title: String) -> LegadoStrResponse {
+        return startBrowserAwait(url, title, false)
+    }
+
+    /// Opens a browser WebView and blocks the JS thread, with optional refetch-after-success.
+    func startBrowserAwait(_ url: String, _ title: String, _ refetchAfterSuccess: Bool) -> LegadoStrResponse {
+        guard let handler = browserPresentHandler else {
+            return LegadoStrResponse(url: url, body: "")
+        }
         let sem = DispatchSemaphore(value: 0)
-        handler(url, title) { sem.signal() }
+        var capturedBody: String?
+        handler(url, title) { body in
+            capturedBody = body
+            sem.signal()
+        }
         _ = sem.wait(timeout: .now() + 60)
+        return LegadoStrResponse(url: url, body: capturedBody ?? "")
     }
 
     /// Show a short toast. Delegates to `toastHandler` on MainThread.
@@ -371,6 +453,72 @@ import CryptoKit
         text.applyingTransform(.init("Traditional-Simplified"), reverse: true) ?? text
     }
 
+    // MARK: - Action Stubs (Legado UI actions)
+
+    func refreshExplore() {
+        #if DEBUG
+        print("[JSBridge] refreshExplore() called")
+        #endif
+    }
+
+    func reLoginView() {
+        #if DEBUG
+        print("[JSBridge] reLoginView() called")
+        #endif
+    }
+
+    func refreshBookInfo() {
+        #if DEBUG
+        print("[JSBridge] refreshBookInfo() called")
+        #endif
+    }
+
+    func refreshBookToc() {
+        #if DEBUG
+        print("[JSBridge] refreshBookToc() called")
+        #endif
+    }
+
+    func refreshContent() {
+        #if DEBUG
+        print("[JSBridge] refreshContent() called")
+        #endif
+    }
+
+    /// Opens a URL in browser without returning body.
+    func showBrowser(_ url: String, _ title: String) {
+        browserPresentHandler?(url, title) { _ in }
+    }
+
+    func showReadingBrowser(_ url: String, _ title: String) {
+        showBrowser(url, title)
+    }
+
+    func startBrowserDp(_ url: String, _ title: String) {
+        startBrowser(url, title)
+    }
+
+    /// Copies text to clipboard (stub).
+    func copyText(_ text: String) {
+        #if DEBUG
+        print("[JSBridge] copyText(\(text.prefix(50))) called")
+        #endif
+    }
+
+    /// Returns a device identifier. Used by sources like 光遇 for `checkEnv()`.
+    func deviceID() -> String {
+        return UIDevice.current.identifierForVendor?.uuidString ?? "ios-device"
+    }
+
+    func androidId() -> String {
+        deviceID()
+    }
+
+    /// Opens a video player (stub — falls back to browser).
+    func openVideoPlayer(_ url: String, _ title: String) {
+        startBrowser(url, title)
+    }
+
     // MARK: - UTC Time Formatting
 
     /// Format a Unix millisecond timestamp in UTC with a timezone offset.
@@ -396,6 +544,15 @@ import CryptoKit
     }
 
     private func performRequest(_ urlStr: String) -> String {
+        // Route through AnalyzeUrl handler if available and URL looks like a Legado URL
+        let trimmedUrl = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let analyzeHandler = analyzeUrlHandler,
+           trimmedUrl.hasPrefix("data:")
+            || trimmedUrl.contains(",{")
+            || trimmedUrl.contains("{\"method\"") {
+            return analyzeHandler(urlStr) ?? ""
+        }
+
         // Delegate to external handler if provided
         if let handler = networkHandler {
             guard let url = URL(string: urlStr.trimmingCharacters(in: .whitespacesAndNewlines)) else {
@@ -516,5 +673,29 @@ import CryptoKit
         ]
         let lower = body.lowercased()
         return specificMarkers.contains(where: { lower.contains($0) })
+    }
+}
+
+// MARK: - StrResponse (Legado startBrowserAwait return type)
+
+/// JS-callable response object returned by `java.startBrowserAwait()`.
+/// Mirrors Legado's `StrResponse(url, body)`.
+@objc protocol LegadoStrResponseExport: JSExport {
+    func body() -> String
+    var url: String { get }
+}
+
+@objc class LegadoStrResponse: NSObject, LegadoStrResponseExport {
+    @objc let url: String
+    private let responseBody: String
+
+    init(url: String, body: String) {
+        self.url = url
+        self.responseBody = body
+        super.init()
+    }
+
+    func body() -> String {
+        return responseBody
     }
 }

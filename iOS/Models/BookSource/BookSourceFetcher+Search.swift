@@ -7,6 +7,13 @@ extension BookSourceFetcher {
     func search(query: String, in source: BookSource) async throws -> [OnlineBook] {
         guard !source.searchUrl.isEmpty else { throw FetchError.noSearchURL }
 
+        if source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) {
+            let books = try await ModernParserBridge(source: source)
+                .searchBooks(keyword: query, page: 1)
+            return filterSearchResultsByCheckKeyWord(
+                books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
+        }
+
         let requestSpec = source.renderSearchRequest(query: query)
         let resolvedUrlStr = RuleEngine.resolveURL(
             requestSpec.url,

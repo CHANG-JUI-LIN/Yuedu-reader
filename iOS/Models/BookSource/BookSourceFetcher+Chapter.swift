@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // MARK: - Fetch Chapter Content
@@ -63,6 +64,13 @@ extension BookSourceFetcher {
             expectedTOCTitle: ref.title
         ), cached.state == .cached, !cached.content.isEmpty {
             return cached
+        }
+        if source.shouldUseLegadoRuntimeFetch(for: ref.url) {
+            return try await fetchLegadoRuntimeChapterPackage(
+                ref: ref,
+                bookId: bookId,
+                source: source
+            )
         }
         // Sanitize: old TOC cache may contain HTML fragments (e.g. <a href="...">), sanitize before parsing
         var sanitizedRefUrl = RuleEngine.sanitizeExtractedURL(ref.url)
@@ -168,7 +176,8 @@ extension BookSourceFetcher {
                     html: html,
                     baseURL: baseURL,
                     source: source,
-                    runtimeVariables: runtimeBox.get()
+                    runtimeVariables: runtimeBox.get(),
+                    chapterRef: ref
                 )
                 if let runtimeVariables = parsed.runtimeVariables, !runtimeVariables.isEmpty {
                     runtimeBox.set(runtimeVariables)
@@ -250,5 +259,66 @@ extension BookSourceFetcher {
             expectedTOCTitle: ref.title
         )
         return reloaded ?? buildResult.package
+    }
+
+    private func fetchLegadoRuntimeChapterPackage(
+        ref: OnlineChapterRef,
+        bookId: UUID,
+        source: BookSource
+    ) async throws -> ChapterPackage {
+        let bridge = ModernParserBridge(source: source)
+        let (html, finalUrl) = try await bridge.fetch(ruleUrl: ref.url)
+        let parsed = try bridge.parseChapterResult(
+            html: html,
+            baseURL: finalUrl,
+            source: source,
+            runtimeVariables: ref.runtimeVariables,
+            chapterRef: ref
+        )
+        let content = await ChapterFetcher.shared.resolveContent(
+            parsed: parsed,
+            replaceRules: source.ruleContent.replaceRegex,
+            sourceUrl: ref.url,
+            fetchViaJS: { nil },
+            fetchBySelectors: { nil }
+        )
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw FetchError.emptyContent
+        }
+        let canonicalTitle = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveTitle = canonicalTitle.isEmpty ? ref.title : canonicalTitle
+        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: effectiveTitle,
+            plainTextContent: content,
+            rawHTMLContent: parsed.content
+        )
+        let checksum = SHA256.hash(data: Data(content.utf8)).map {
+            String(format: "%02x", $0)
+        }.joined()
+        let package = ChapterPackage(
+            bookId: bookId,
+            chapterIndex: ref.index,
+            sourceURL: ref.url,
+            tocTitle: ref.title,
+            canonicalTitle: canonicalTitle.isEmpty ? nil : canonicalTitle,
+            content: content,
+            contentChecksum: checksum,
+            rawHTMLFilename: "\(ref.index).raw.html",
+            normalizedHTMLFilename: "\(ref.index).normalized.xhtml",
+            savedAt: Date(),
+            state: .cached,
+            failureReason: nil
+        )
+        saveChapterPackageToCache(
+            package,
+            rawHTML: html,
+            normalizedHTML: normalizedHTML
+        )
+        return loadChapterPackageSync(
+            bookId: bookId,
+            chapterIndex: ref.index,
+            expectedSourceURL: ref.url,
+            expectedTOCTitle: ref.title
+        ) ?? package
     }
 }

@@ -256,6 +256,7 @@ struct BookSource: Identifiable, Codable {
     var variableComment: String = ""  // Legado: variable comment
     var exploreScreen: String = ""    // Legado: discover page configuration
     var coverDecodeJs: String = ""    // Legado: cover decode JS
+    var jsLib: String = ""            // Legado: shared JS library evaluated at source init
     var ruleSearch: SearchRule = SearchRule()
     var ruleExplore: ExploreRule = ExploreRule()  // Legado: discover page rule
     var ruleBookInfo: BookInfoRule = BookInfoRule()
@@ -274,7 +275,7 @@ struct BookSource: Identifiable, Codable {
         case searchUrl, exploreUrl, concurrentRate
         case header, loginUrl, loginUi, loginCheckJs
         case respondTime, lastUpdateTime, weight
-        case variableComment, exploreScreen, coverDecodeJs
+        case variableComment, exploreScreen, coverDecodeJs, jsLib
         case ruleSearch, ruleExplore, ruleBookInfo, ruleToc, ruleContent, ruleReview
     }
 
@@ -300,8 +301,9 @@ struct BookSource: Identifiable, Codable {
         lastUpdateTime   = c.safeInt64(forKey: .lastUpdateTime)
         weight           = c.safeInt(forKey: .weight)
         variableComment  = c.safeString(forKey: .variableComment)
-        exploreScreen    = c.safeString(forKey: .exploreScreen)
-        coverDecodeJs    = c.safeString(forKey: .coverDecodeJs)
+        exploreScreen   = c.safeString(forKey: .exploreScreen)
+        coverDecodeJs   = c.safeString(forKey: .coverDecodeJs)
+        jsLib           = c.safeString(forKey: .jsLib)
         // Legado's enabled field may be Bool, Int 1/0, or String "true"/"false"
         enabled          = c.safeBool(forKey: .enabled, defaultValue: true)
         enabledExplore   = c.safeBool(forKey: .enabledExplore, defaultValue: true)
@@ -355,4 +357,18 @@ struct OnlineChapterRef: Identifiable, Codable {
     var isPay: Bool = false
     var cachedFilename: String? = nil  // nil means not yet fetched
     var runtimeVariables: [String: String]? = nil
+}
+
+extension BookSource {
+    var usesLegadoRuntimeSession: Bool {
+        !jsLib.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func shouldUseLegadoRuntimeFetch(for ruleUrl: String? = nil) -> Bool {
+        let url = ruleUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return url.hasPrefix("data:")
+            || url.contains(",{")
+            || url.hasPrefix("<js>")
+            || url.hasPrefix("@js:")
+    }
 }

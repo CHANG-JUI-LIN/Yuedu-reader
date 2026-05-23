@@ -30,6 +30,24 @@ extension BookSourceFetcher {
             "fetchBookInfo 進入",
             data: ["url": String(url.prefix(80)), "source": source.bookSourceName], hyp: "A")
         // #endregion
+
+        if source.shouldUseLegadoRuntimeFetch(for: url) {
+            let bridge = ModernParserBridge(source: source)
+            let (html, finalUrl) = try await bridge.fetch(ruleUrl: url)
+            let info = try bridge.parseBookInfo(
+                html: html,
+                bookUrl: url,
+                baseURL: finalUrl,
+                source: source,
+                runtimeVariables: runtimeVariables
+            )
+            return saveBookInfoPackage(
+                info: info,
+                source: source,
+                rawHTML: html
+            )
+        }
+
         guard let bookURL = safeURL(string: url) else { throw FetchError.invalidURL(url) }
         let html: String
         if source.needsWebView {
