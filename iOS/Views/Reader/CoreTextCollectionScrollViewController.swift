@@ -249,14 +249,14 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         }
     }
 
-    func requestReslice(at chapter: Int) {
+    func requestReslice(at chapter: Int, charOffset: Int = 0) {
         let extent = currentContentExtent
         let imageExtent = currentImageContentWidth
         guard extent > 0 else { return }
         Task { [weak self] in
             guard let self = self else { return }
             self.hasAppliedInitialScroll = false
-            self.pendingInitialScroll = (chapter, 0)
+            self.pendingInitialScroll = (chapter, charOffset)
             await self.engine.reslice(
                 restoreAt: chapter,
                 contentWidth: extent,

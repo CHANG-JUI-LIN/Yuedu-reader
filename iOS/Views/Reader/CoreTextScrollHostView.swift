@@ -49,7 +49,7 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
         if context.coordinator.lastResliceToken != resliceToken {
             context.coordinator.lastResliceToken = resliceToken
             if context.coordinator.lastResliceToken != 0 {
-                collectionVC.requestReslice(at: initialChapter)
+                collectionVC.requestReslice(at: initialChapter, charOffset: initialCharOffset)
             }
         }
     }

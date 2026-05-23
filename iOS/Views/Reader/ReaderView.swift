@@ -1216,6 +1216,7 @@ struct ReaderView: View {
                 onProgressCommit: { pos in
                     scrollVisibleChapter = pos.chapter
                     currentChapterIndex = pos.chapter
+                    savedCoreTextRestoreTarget = nil
                     progressManager.saveScroll(
                         bookId: bookId,
                         chapterIndex: pos.chapter,
@@ -1262,6 +1263,9 @@ struct ReaderView: View {
     /// 2) Persisted snapshot (mode == .scroll) → restore from last exit position (cold start)
     /// 3) Fallback to currentChapterIndex / 0
     private func computeScrollInitialPosition() -> (chapter: Int, charOffset: Int) {
+        if let target = savedCoreTextRestoreTarget {
+            return (target.chapterIndex, target.charOffset)
+        }
         if let pagedEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
             let (spine, offset) = pagedEngine.charOffset(forPage: currentPage)
             return (max(0, spine), max(0, offset))
