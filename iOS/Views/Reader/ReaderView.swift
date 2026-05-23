@@ -97,9 +97,18 @@ struct ReaderView: View {
 
     @State private var positionCoordinator: ReadingPositionCoordinator?
 
+    @State private var isRestoringPosition = true
+    @State private var savedPositionSnapshot: Double = 0
+    @State private var savedCoreTextRestoreTarget: (chapterIndex: Int, charOffset: Int)?
+    @State private var isApplyingCoreTextRestore = false
+    @State private var hasAppliedNonZeroRestore = false
+    @State private var isLoadingPipeline = false
+    @State private var curlStartupStartedAt: CFAbsoluteTime?
+    @State private var hasLoggedCurlInteractiveReady = false
+    @State private var hasPerformedInitialLoad = false
+
     // Source change
     @State private var showChangeSourceSheet = false
-    @State private var runtimeState = ReaderRuntimeState()
     @State private var pendingCoreTextJumpTarget: CoreTextReadingPosition?
     @State private var bookDocument: (any BookDocument)? = nil
     @State private var contentProvider: (any BookContentProvider)? = nil
@@ -111,55 +120,7 @@ struct ReaderView: View {
     private var changeSourceLoading: Bool { readerViewModel.changeSourceLoading }
     private var changeSourceError: String? { readerViewModel.changeSourceError }
 
-    private var systemBrightness: Double {
-        get { runtimeState.systemBrightness }
-        nonmutating set { runtimeState.systemBrightness = newValue }
-    }
-
-    private var isRestoringPosition: Bool {
-        get { runtimeState.isRestoringPosition }
-        nonmutating set { runtimeState.isRestoringPosition = newValue }
-    }
-
-    private var savedPositionSnapshot: Double {
-        get { runtimeState.savedPositionSnapshot }
-        nonmutating set { runtimeState.savedPositionSnapshot = newValue }
-    }
-
-    private var savedCoreTextRestoreTarget: (chapterIndex: Int, charOffset: Int)? {
-        get { runtimeState.savedCoreTextRestoreTarget }
-        nonmutating set { runtimeState.savedCoreTextRestoreTarget = newValue }
-    }
-
-    private var isApplyingCoreTextRestore: Bool {
-        get { runtimeState.isApplyingCoreTextRestore }
-        nonmutating set { runtimeState.isApplyingCoreTextRestore = newValue }
-    }
-
-    private var hasAppliedNonZeroRestore: Bool {
-        get { runtimeState.hasAppliedNonZeroRestore }
-        nonmutating set { runtimeState.hasAppliedNonZeroRestore = newValue }
-    }
-
-    private var isLoadingPipeline: Bool {
-        get { runtimeState.isLoadingPipeline }
-        nonmutating set { runtimeState.isLoadingPipeline = newValue }
-    }
-
-    private var curlStartupStartedAt: CFAbsoluteTime? {
-        get { runtimeState.curlStartupStartedAt }
-        nonmutating set { runtimeState.curlStartupStartedAt = newValue }
-    }
-
-    private var hasLoggedCurlInteractiveReady: Bool {
-        get { runtimeState.hasLoggedCurlInteractiveReady }
-        nonmutating set { runtimeState.hasLoggedCurlInteractiveReady = newValue }
-    }
-
-    private var hasPerformedInitialLoad: Bool {
-        get { runtimeState.hasPerformedInitialLoad }
-        nonmutating set { runtimeState.hasPerformedInitialLoad = newValue }
-    }
+    @State private var systemBrightness: Double = 0.5
 
     private var fontSize: CGFloat {
         get { readerConfig.fontSize }
@@ -540,6 +501,7 @@ struct ReaderView: View {
                 let c = ReadingPositionCoordinator(store: store, bookId: bookIdStr, fallback: fallback)
                 await c.restore()
                 positionCoordinator = c
+                isRestoringPosition = false
             }
     }
 
