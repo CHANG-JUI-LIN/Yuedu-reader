@@ -224,7 +224,6 @@ struct HomeView: View {
             if let bookId = readerBookId {
                 ReaderView(bookId: bookId)
                     .environmentObject(store)
-                    .navigationTransition(.zoom(sourceID: bookId, in: bookTransition))
             }
         }
     }
