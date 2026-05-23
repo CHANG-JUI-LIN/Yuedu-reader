@@ -6,7 +6,7 @@ import SwiftUI
 struct DSSearchBar: View {
     let placeholder: String
     @Binding var text: String
-
+    
     var body: some View {
         HStack(spacing: DSSpacing.sm) {
             Image(systemName: "magnifyingglass")
@@ -35,12 +35,13 @@ struct DSSettingsRow: View {
     let title: String
     var detail: String? = nil
     let action: () -> Void
-
+    
     var body: some View {
         Button(action: action) {
             HStack {
                 Label(title, systemImage: icon)
                     .foregroundColor(DSColor.textPrimary)
+                    .labelStyle(IconConsistentLabelStyle())
                 Spacer()
                 if let detail {
                     Text(detail)
@@ -55,14 +56,26 @@ struct DSSettingsRow: View {
     }
 }
 
+
+struct IconConsistentLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.icon
+                .font(.system(size: 17, weight: .medium))
+                .frame(width: 28, height: 28)
+            configuration.title
+        }
+    }
+}
+
 /// Card container with uniform padding, rounded corners, and shadow.
 struct DSCard<Content: View>: View {
     let content: Content
-
+    
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
-
+    
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
             content
@@ -79,7 +92,7 @@ struct DSChip: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
-
+    
     var body: some View {
         Button(action: action) {
             Text(title)
@@ -97,7 +110,7 @@ struct DSChip: View {
 struct DSToast: View {
     let message: String
     let color: Color
-
+    
     var body: some View {
         Text(message)
             .font(DSFont.subheadline)
@@ -116,7 +129,7 @@ struct DSEmptyState: View {
     let icon: String
     let title: String
     var subtitle: String? = nil
-
+    
     var body: some View {
         VStack(spacing: DSSpacing.md) {
             Image(systemName: icon)
