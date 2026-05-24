@@ -374,8 +374,8 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         let paths: [IndexPath] = atBottom
             ? (actualOld..<total).map { IndexPath(item: $0, section: 0) }
             : (0..<count).map { IndexPath(item: $0, section: 0) }
-        displayedCount = total
         collectionView.performBatchUpdates {
+            self.displayedCount = total
             collectionView.insertItems(at: paths)
         } completion: { [weak self] _ in
             guard let self = self, !atBottom else { return }
@@ -434,22 +434,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             )
             return true
         case .horizontalRTL:
-            guard let attributes = collectionView.layoutAttributesForItem(at: path),
-                  collectionView.contentSize.width > 0
-            else { return false }
-            let visibleWidth = collectionView.bounds.width
-            let minOffsetX = -collectionView.adjustedContentInset.left
-            let maxOffsetX = max(
-                minOffsetX,
-                collectionView.contentSize.width - visibleWidth + collectionView.adjustedContentInset.right
-            )
-            let desiredOffsetX = attributes.frame.maxX - visibleWidth + collectionView.adjustedContentInset.right
-            let offsetX = min(max(desiredOffsetX, minOffsetX), maxOffsetX)
-            collectionView.setContentOffset(
-                CGPoint(
-                    x: offsetX,
-                    y: collectionView.contentOffset.y
-                ),
+            collectionView.scrollToItem(
+                at: path,
+                at: scrollAxis.initialScrollPosition,
                 animated: false
             )
             return true

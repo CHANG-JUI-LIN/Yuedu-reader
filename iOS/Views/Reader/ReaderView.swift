@@ -94,6 +94,7 @@ struct ReaderView: View {
     // Scroll mode progress tracking
     @State private var scrollVisibleChapter = 0
     @State private var scrollResliceToken: UInt = 0
+    @State private var pendingScrollJumpTarget: CoreTextReadingPosition?
 
     @State private var positionCoordinator: ReadingPositionCoordinator?
 
@@ -770,6 +771,9 @@ struct ReaderView: View {
                 hasLoggedCurlInteractiveReady = false
             }
         }
+        .onChanged(of: settings.scrollMode) { enabled in
+            handleScrollModeChanged(enabled)
+        }
         .onChanged(of: settings.readerWritingMode) { _ in
             handleReaderConfigRefresh(.layout)
         }
@@ -1090,6 +1094,54 @@ struct ReaderView: View {
         )
     }
 
+    private func handleScrollModeChanged(_ enabled: Bool) {
+        if enabled {
+            guard let position = currentPagedReadingPositionForModeSwitch() else { return }
+            currentChapterIndex = position.spineIndex
+            scrollVisibleChapter = position.spineIndex
+            pendingScrollJumpTarget = position
+            positionCoordinator?.commit(position)
+            return
+        }
+
+        pendingScrollJumpTarget = nil
+        let position = positionCoordinator?.positionForModeSwitch()
+            ?? CoreTextReadingPosition(spineIndex: scrollVisibleChapter, charOffset: 0)
+        currentChapterIndex = position.spineIndex
+
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
+            pendingCoreTextJumpTarget = position
+            _ = engine.pageViewController(for: position)
+            if let exactPage = engine.pageIndex(for: position) {
+                currentPage = exactPage
+            } else if let estimatedPage = engine.estimatedGlobalPage(for: position) {
+                currentPage = estimatedPage
+            }
+            epubRenderer.currentEpubPage = currentPage
+            positionCoordinator?.commit(position)
+            ensureChapterReady(chapterIndex: position.spineIndex, priority: .jump)
+            return
+        }
+
+        if let page = findChapterFirstPage(position.spineIndex) {
+            currentPage = page
+        }
+    }
+
+    private func currentPagedReadingPositionForModeSwitch() -> CoreTextReadingPosition? {
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
+            return engine.readingPosition(forPage: currentPage)
+                ?? CoreTextReadingPosition(
+                    spineIndex: engine.charOffset(forPage: currentPage).spineIndex,
+                    charOffset: engine.charOffset(forPage: currentPage).charOffset
+                )
+        }
+
+        guard !allPages.isEmpty else { return nil }
+        let page = allPages[min(currentPage, allPages.count - 1)]
+        return CoreTextReadingPosition(spineIndex: page.chapterIndex, charOffset: 0)
+    }
+
     // MARK: - Bottom Footer (overlay for slide/cover/tab modes)
     private var bottomFooter: some View {
         ReaderOverlayFooter(
@@ -1181,6 +1233,7 @@ struct ReaderView: View {
                     withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
                 },
                 onProgressCommit: { position in
+                    pendingScrollJumpTarget = nil
                     scrollVisibleChapter = position.spineIndex
                     currentChapterIndex = position.spineIndex
                     positionCoordinator?.commit(position)
@@ -1197,6 +1250,7 @@ struct ReaderView: View {
                             positionCoordinator?.commit(position)
                             currentChapterIndex = spine
                             scrollVisibleChapter = spine
+                            pendingScrollJumpTarget = position
                             scrollResliceToken &+= 1
                         }
                     }
@@ -1224,6 +1278,9 @@ struct ReaderView: View {
     /// 2) Persisted snapshot (mode == .scroll) → restore from last exit position (cold start)
     /// 3) Fallback to currentChapterIndex / 0
     private func computeScrollInitialPosition() -> (chapter: Int, charOffset: Int) {
+        if let target = pendingScrollJumpTarget {
+            return (target.spineIndex, target.charOffset)
+        }
         if let pos = positionCoordinator?.positionForModeSwitch() {
             return (pos.spineIndex, pos.charOffset)
         }
@@ -1817,6 +1874,7 @@ struct ReaderView: View {
         if effectiveScrollMode, epubRenderer.scrollEngine != nil {
             currentChapterIndex = position.spineIndex
             scrollVisibleChapter = position.spineIndex
+            pendingScrollJumpTarget = position
             positionCoordinator?.commit(position)
             scrollResliceToken &+= 1
             return
@@ -1827,9 +1885,11 @@ struct ReaderView: View {
     private func jumpToChapter(_ idx: Int, charOffset: Int = 0) {
         guard chapters.indices.contains(idx) else { return }
         if effectiveScrollMode, epubRenderer.scrollEngine != nil {
+            let position = CoreTextReadingPosition(spineIndex: idx, charOffset: charOffset)
             currentChapterIndex = idx
             scrollVisibleChapter = idx
-            positionCoordinator?.commit(CoreTextReadingPosition(spineIndex: idx, charOffset: charOffset))
+            pendingScrollJumpTarget = position
+            positionCoordinator?.commit(position)
             scrollResliceToken &+= 1
             ensureChapterReady(chapterIndex: idx, priority: .jump)
             return
