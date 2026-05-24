@@ -631,7 +631,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             width: max(1, rect.width - paddingLeft - paddingRight),
             height: max(1, rect.height - paddingTop - paddingBottom)
         )
-        let framesetter = CTFramesetterCreateWithAttributedString(text)
+        let framesetter = CoreTextFramesetterFactory.make(for: text)
         let suggestedSize = CTFramesetterSuggestFrameSizeWithConstraints(
             framesetter,
             CFRange(location: 0, length: text.length),
@@ -1729,6 +1729,53 @@ final class SnapshotPageViewController: UIViewController {
 
 extension SnapshotPageViewController: PageIndexProviding {}
 extension SnapshotPageViewController: CoreTextReadingPositionProviding {}
+
+/// Back side used by curl's double-sided page animation.
+final class PageBackViewController: UIViewController {
+    let virtualIndex: Int
+    let logicalPageIndex: Int
+
+    private let pageBackgroundColor: UIColor
+    private let textureImage: UIImage?
+
+    init(
+        virtualIndex: Int,
+        logicalPageIndex: Int,
+        backgroundColor: UIColor,
+        textureImage: UIImage? = nil
+    ) {
+        self.virtualIndex = virtualIndex
+        self.logicalPageIndex = logicalPageIndex
+        self.pageBackgroundColor = backgroundColor
+        self.textureImage = textureImage
+        super.init(nibName: nil, bundle: nil)
+        view.backgroundColor = backgroundColor
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not used")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = pageBackgroundColor
+        view.isOpaque = true
+
+        guard let textureImage else { return }
+        let imageView = UIImageView(image: textureImage)
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.contentMode = .scaleAspectFill
+        imageView.alpha = 0.08
+        view.addSubview(imageView)
+
+        NSLayoutConstraint.activate([
+            imageView.topAnchor.constraint(equalTo: view.topAnchor),
+            imageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            imageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+    }
+}
 
 /// Placeholder ViewController shown when a chapter's layout has not yet been computed (displays chapter title + loading indicator).
 final class PlaceholderPageViewController: UIViewController {

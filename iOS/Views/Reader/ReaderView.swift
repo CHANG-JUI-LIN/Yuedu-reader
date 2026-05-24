@@ -77,8 +77,15 @@ struct ReaderView: View {
 
     private func restoreReaderDisplayStateAfterResume() {
         guard let engine = epubRenderer.engine, isEPUB, engine.totalPages > 0 else { return }
-        let (spineIndex, _) = engine.charOffset(forPage: currentPage)
+        let (spineIndex, charOffset) = engine.charOffset(forPage: currentPage)
         currentChapterIndex = spineIndex
+        moveReaderSession(
+            to: CoreTextReadingPosition(spineIndex: spineIndex, charOffset: charOffset),
+            source: .restored,
+            pageIndex: currentPage,
+            totalPages: engine.totalPages,
+            shouldPersist: false
+        )
     }
 
     @StateObject private var epubRenderer = EPUBPageRenderer()
@@ -96,7 +103,7 @@ struct ReaderView: View {
     @State private var scrollResliceToken: UInt = 0
     @State private var pendingScrollJumpTarget: CoreTextReadingPosition?
 
-    @State private var positionCoordinator: ReadingPositionCoordinator?
+    @State private var readerNavigator: ReaderNavigator?
 
     @State private var isRestoringPosition = true
     @State private var savedPositionSnapshot: Double = 0
@@ -262,6 +269,62 @@ struct ReaderView: View {
         print("[ProgressTrace][ReaderView][\(bookId.uuidString)] \(message)")
     }
 
+    private var currentReaderPresentationState: ReaderPresentationState {
+        ReaderPresentationState(
+            location: readerNavigator?.state.location
+                ?? ReaderLocation(spineIndex: currentChapterIndex, charOffset: 0),
+            direction: effectiveWritingMode.isVertical ? .rtl : .ltr,
+            spreadMode: .singlePage,
+            viewportSize: readerViewportSize,
+            appearance: ReaderAppearance(settings: buildRenderSettings(), theme: readerTheme),
+            pagingStyle: ReaderPagingStyle(pageTurnStyle: settings.pageTurnStyle)
+        )
+    }
+
+    private func ensureReaderNavigator(initialPosition: CoreTextReadingPosition) {
+        if readerNavigator == nil {
+            var state = currentReaderPresentationState
+            state.location = ReaderLocation(initialPosition, source: .restored)
+            readerNavigator = ReaderNavigator(
+                initialState: state,
+                positionStore: dependencies.readingPositionStore,
+                bookId: book?.id.uuidString ?? bookId.uuidString
+            )
+            return
+        }
+        readerNavigator?.updateAppearance(currentReaderPresentationState.appearance)
+        readerNavigator?.updateViewport(readerViewportSize)
+        readerNavigator?.updateDirection(effectiveWritingMode.isVertical ? .rtl : .ltr)
+        readerNavigator?.switchPagingStyle(ReaderPagingStyle(pageTurnStyle: settings.pageTurnStyle))
+    }
+
+    private func moveReaderSession(
+        to position: CoreTextReadingPosition,
+        source: ReaderLocation.Source,
+        pageIndex: Int? = nil,
+        totalPages: Int? = nil,
+        isEstimated: Bool = false,
+        shouldPersist: Bool = true
+    ) {
+        ensureReaderNavigator(initialPosition: position)
+        switch source {
+        case .settledPage:
+            readerNavigator?.settle(at: position, pageIndex: pageIndex, totalPages: totalPages, persist: shouldPersist)
+        case .scrollCommit:
+            readerNavigator?.scrollCommit(to: position)
+        case .internalLink:
+            readerNavigator?.internalLink(to: position, pageIndex: pageIndex, totalPages: totalPages)
+        case .jump:
+            readerNavigator?.jump(to: position, pageIndex: pageIndex, totalPages: totalPages, isEstimated: isEstimated)
+        case .modeSwitch:
+            readerNavigator?.switchMode(to: position)
+        case .restored:
+            readerNavigator?.restore(to: position, pageIndex: pageIndex, totalPages: totalPages, isEstimated: isEstimated)
+        case .placeholder:
+            readerNavigator?.jump(to: position, pageIndex: pageIndex, totalPages: totalPages, isEstimated: true)
+        }
+    }
+
     private func coreTextPositionIfLayoutReady(
         engine: any PageRenderingProvider,
         page: Int
@@ -290,6 +353,19 @@ struct ReaderView: View {
         let chapterChanged = newChapter != currentChapterIndex
 
         currentChapterIndex = newChapter
+        let settledPosition = visiblePosition
+            ?? engine.readingPosition(forPage: newPage)
+            ?? CoreTextReadingPosition(
+                spineIndex: engine.charOffset(forPage: newPage).spineIndex,
+                charOffset: engine.charOffset(forPage: newPage).charOffset
+            )
+        moveReaderSession(
+            to: settledPosition,
+            source: .settledPage,
+            pageIndex: newPage,
+            totalPages: engine.totalPages,
+            shouldPersist: false
+        )
 
         progressTrace("onPageChanged page=\(newPage) chapter=\(currentChapterIndex) visiblePosition=\(String(describing: visiblePosition))")
 
@@ -315,9 +391,11 @@ struct ReaderView: View {
 
         epubRenderer.updateCurrentPosition(globalPage: newPage, engine: engine)
 
-        if let position = engine.readingPosition(forPage: newPage) {
-            positionCoordinator?.commit(position)
-        }
+        readerNavigator?.settle(
+            at: settledPosition,
+            pageIndex: newPage,
+            totalPages: engine.totalPages
+        )
     }
 
     /// EPUB font asset directory (Documents/{uuid}_epub_assets/).
@@ -491,13 +569,15 @@ struct ReaderView: View {
     var body: some View {
         buildBody()
             .task {
-                guard positionCoordinator == nil else { return }
-                let store = dependencies.readingPositionStore
-                let bookIdStr = book?.id.uuidString ?? ""
+                guard readerNavigator == nil else { return }
                 let fallback = CoreTextReadingPosition(spineIndex: 0, charOffset: 0)
-                let c = ReadingPositionCoordinator(store: store, bookId: bookIdStr, fallback: fallback)
-                await c.restore()
-                positionCoordinator = c
+                ensureReaderNavigator(initialPosition: fallback)
+                let restored = await readerNavigator?.restore()
+                if let restored {
+                    currentChapterIndex = restored.spineIndex
+                    scrollVisibleChapter = restored.spineIndex
+                    pendingScrollJumpTarget = restored.coreTextPosition
+                }
                 isRestoringPosition = false
             }
     }
@@ -965,6 +1045,15 @@ struct ReaderView: View {
                     currentPage = currentEnginePage
                     currentChapterIndex = engine.charOffset(forPage: currentEnginePage).spineIndex
                 }
+                if let position = engine.readingPosition(forPage: currentEnginePage) {
+                    moveReaderSession(
+                        to: position,
+                        source: .restored,
+                        pageIndex: currentEnginePage,
+                        totalPages: engine.totalPages,
+                        shouldPersist: false
+                    )
+                }
                 ensureChapterReady(chapterIndex: currentChapterIndex)
                 if engine.totalPages > 0 {
                     epubRenderer.updateCurrentPosition(globalPage: currentEnginePage, engine: engine)
@@ -1000,6 +1089,13 @@ struct ReaderView: View {
                     self.progressTrace("applyInitialProgress preciseRestore resolvedPage=\(resolvedPage) from=(\(spineIndex),\(target.charOffset))")
                     self.currentPage = resolvedPage
                     self.currentChapterIndex = spineIndex
+                    self.moveReaderSession(
+                        to: CoreTextReadingPosition(spineIndex: spineIndex, charOffset: target.charOffset),
+                        source: .restored,
+                        pageIndex: resolvedPage,
+                        totalPages: engine.totalPages,
+                        shouldPersist: false
+                    )
                     self.ensureChapterReady(chapterIndex: spineIndex)
                     self.epubRenderer.updateCurrentPosition(globalPage: resolvedPage, engine: engine)
                     if resolvedPage > 0 {
@@ -1018,8 +1114,16 @@ struct ReaderView: View {
             let target = max(0, min(Int(round(progress * Double(engine.totalPages - 1))), engine.totalPages - 1))
             if target > 0 {
                 currentPage = target
-                let (spineIndex, _) = engine.charOffset(forPage: target)
+                let (spineIndex, charOffset) = engine.charOffset(forPage: target)
                 currentChapterIndex = spineIndex
+                moveReaderSession(
+                    to: CoreTextReadingPosition(spineIndex: spineIndex, charOffset: charOffset),
+                    source: .restored,
+                    pageIndex: target,
+                    totalPages: engine.totalPages,
+                    isEstimated: engine.layouts[spineIndex] == nil,
+                    shouldPersist: false
+                )
                 ensureChapterReady(chapterIndex: spineIndex)
                 epubRenderer.updateCurrentPosition(globalPage: target, engine: engine)
                 hasAppliedNonZeroRestore = true
@@ -1040,6 +1144,13 @@ struct ReaderView: View {
             if target > 0 {
                 currentPage = target
                 currentChapterIndex = allPages[target].chapterIndex
+                moveReaderSession(
+                    to: CoreTextReadingPosition(spineIndex: currentChapterIndex, charOffset: 0),
+                    source: .restored,
+                    pageIndex: target,
+                    totalPages: allPages.count,
+                    shouldPersist: false
+                )
             }
             savedPositionSnapshot = 0
             savedCoreTextRestoreTarget = nil
@@ -1053,6 +1164,11 @@ struct ReaderView: View {
             if target > 0 {
                 scrollVisibleChapter = target
                 currentChapterIndex = target
+                moveReaderSession(
+                    to: CoreTextReadingPosition(spineIndex: target, charOffset: 0),
+                    source: .restored,
+                    shouldPersist: false
+                )
             }
             savedPositionSnapshot = 0
             savedCoreTextRestoreTarget = nil
@@ -1097,16 +1213,17 @@ struct ReaderView: View {
     private func handleScrollModeChanged(_ enabled: Bool) {
         if enabled {
             guard let position = currentPagedReadingPositionForModeSwitch() else { return }
+            moveReaderSession(to: position, source: .modeSwitch)
             currentChapterIndex = position.spineIndex
             scrollVisibleChapter = position.spineIndex
             pendingScrollJumpTarget = position
-            positionCoordinator?.commit(position)
             return
         }
 
         pendingScrollJumpTarget = nil
-        let position = positionCoordinator?.positionForModeSwitch()
+        let position = readerNavigator?.state.location.coreTextPosition
             ?? CoreTextReadingPosition(spineIndex: scrollVisibleChapter, charOffset: 0)
+        moveReaderSession(to: position, source: .modeSwitch)
         currentChapterIndex = position.spineIndex
 
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
@@ -1118,7 +1235,6 @@ struct ReaderView: View {
                 currentPage = estimatedPage
             }
             epubRenderer.currentEpubPage = currentPage
-            positionCoordinator?.commit(position)
             ensureChapterReady(chapterIndex: position.spineIndex, priority: .jump)
             return
         }
@@ -1236,7 +1352,7 @@ struct ReaderView: View {
                     pendingScrollJumpTarget = nil
                     scrollVisibleChapter = position.spineIndex
                     currentChapterIndex = position.spineIndex
-                    positionCoordinator?.commit(position)
+                    moveReaderSession(to: position, source: .scrollCommit)
                     let pct = epubRenderer.engine?.totalProgress(forSpine: position.spineIndex, charOffset: position.charOffset) ?? 0
                     store.updatePosition(bookId: bookId, position: pct)
                 },
@@ -1247,7 +1363,12 @@ struct ReaderView: View {
                         let (spine, charOffset) = pagedEngine.charOffset(forPage: targetPage)
                         await MainActor.run {
                             let position = CoreTextReadingPosition(spineIndex: spine, charOffset: charOffset)
-                            positionCoordinator?.commit(position)
+                            moveReaderSession(
+                                to: position,
+                                source: .internalLink,
+                                pageIndex: targetPage,
+                                totalPages: pagedEngine.totalPages
+                            )
                             currentChapterIndex = spine
                             scrollVisibleChapter = spine
                             pendingScrollJumpTarget = position
@@ -1278,11 +1399,11 @@ struct ReaderView: View {
     /// 2) Persisted snapshot (mode == .scroll) → restore from last exit position (cold start)
     /// 3) Fallback to currentChapterIndex / 0
     private func computeScrollInitialPosition() -> (chapter: Int, charOffset: Int) {
+        if let position = readerNavigator?.state.location.coreTextPosition {
+            return (position.spineIndex, position.charOffset)
+        }
         if let target = pendingScrollJumpTarget {
             return (target.spineIndex, target.charOffset)
-        }
-        if let pos = positionCoordinator?.positionForModeSwitch() {
-            return (pos.spineIndex, pos.charOffset)
         }
         return (max(0, currentChapterIndex), 0)
     }
@@ -1875,7 +1996,7 @@ struct ReaderView: View {
             currentChapterIndex = position.spineIndex
             scrollVisibleChapter = position.spineIndex
             pendingScrollJumpTarget = position
-            positionCoordinator?.commit(position)
+            moveReaderSession(to: position, source: .jump)
             scrollResliceToken &+= 1
             return
         }
@@ -1889,7 +2010,7 @@ struct ReaderView: View {
             currentChapterIndex = idx
             scrollVisibleChapter = idx
             pendingScrollJumpTarget = position
-            positionCoordinator?.commit(position)
+            moveReaderSession(to: position, source: .jump)
             scrollResliceToken &+= 1
             ensureChapterReady(chapterIndex: idx, priority: .jump)
             return
@@ -1902,10 +2023,20 @@ struct ReaderView: View {
             currentChapterIndex = idx
             if let exactPage = engine.pageIndex(for: position) {
                 currentPage = exactPage
+                moveReaderSession(to: position, source: .jump, pageIndex: exactPage, totalPages: engine.totalPages)
                 print("[FlipTrace] ReaderView.jumpToChapter exact spine=\(idx) page=\(exactPage)")
             } else if let estimatedPage = engine.estimatedGlobalPage(for: position) {
                 currentPage = estimatedPage
+                moveReaderSession(
+                    to: position,
+                    source: .jump,
+                    pageIndex: estimatedPage,
+                    totalPages: engine.totalPages,
+                    isEstimated: true
+                )
                 print("[FlipTrace] ReaderView.jumpToChapter placeholder spine=\(idx) page=\(estimatedPage)")
+            } else {
+                moveReaderSession(to: position, source: .jump)
             }
             epubRenderer.currentEpubPage = currentPage
             let alreadyReady = readerViewModel.chapterState(for: idx) == .ready
@@ -1918,6 +2049,7 @@ struct ReaderView: View {
         } else {
             currentChapterIndex = idx
             if let p = findChapterFirstPage(idx) { currentPage = p }
+            moveReaderSession(to: CoreTextReadingPosition(spineIndex: idx, charOffset: charOffset), source: .jump)
             ensureChapterReady(chapterIndex: idx, priority: .jump)
         }
     }
@@ -1982,9 +2114,9 @@ struct ReaderView: View {
         isRestoringPosition = false
         autoSaveProgress()
         isRestoringPosition = wasRestoring
-        if let coordinator = positionCoordinator {
+        if let navigator = readerNavigator {
             Task {
-                await coordinator.flush()
+                await navigator.flush()
             }
         }
     }
@@ -3080,6 +3212,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             navigationOrientation: .horizontal,
             options: options
         )
+        pvc.isDoubleSided = pageTurnStyle == .curl
         // cover / none mode: disable built-in swipe gesture (use custom pan or tap for page turns).
         if adapterDescriptor.disablesBuiltInSwipe {
             pvc.dataSource = nil
@@ -3107,7 +3240,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         let initialVC = engine.pageViewController(at: initialPage)
         context.coordinator.applyPlaybackHighlight(to: initialVC)
         context.coordinator.captureStablePosition(from: initialVC)
-        pvc.setViewControllers([initialVC], direction: .forward, animated: false)
+        pvc.setViewControllers(context.coordinator.viewControllerStack(startingWith: initialVC), direction: .forward, animated: false)
         // Sync the binding so ReaderView.currentPage aligns with the engine-restored position.
         if initialPage != currentPage {
             context.coordinator.suppressNextTransition = true
@@ -3162,7 +3295,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             )
             let targetVC = targetViewController()
             context.coordinator.applyPlaybackHighlight(to: targetVC)
-            uiViewController.setViewControllers([targetVC], direction: .forward, animated: false)
+            uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: .forward, animated: false)
             _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
             return
         }
@@ -3184,7 +3317,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 context.coordinator.suppressNextTransition = false
                 let targetVC = targetViewController()
                 context.coordinator.applyPlaybackHighlight(to: targetVC)
-                uiViewController.setViewControllers([targetVC], direction: direction, animated: false)
+                uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: direction, animated: false)
                 _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
                 return
             }
@@ -3192,7 +3325,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if externalTargetPosition != nil, !context.coordinator.isTransitioning {
                 let targetVC = targetViewController()
                 context.coordinator.applyPlaybackHighlight(to: targetVC)
-                uiViewController.setViewControllers([targetVC], direction: direction, animated: false)
+                uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: direction, animated: false)
                 uiViewController.view.layoutIfNeeded()
                 _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
                 return
@@ -3213,7 +3346,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 } else if !context.coordinator.isTransitioning {
                     let targetVC = targetViewController()
                     context.coordinator.applyPlaybackHighlight(to: targetVC)
-                    uiViewController.setViewControllers([targetVC], direction: direction, animated: false)
+                    uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: direction, animated: false)
                     uiViewController.view.layoutIfNeeded()
                     _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
                 }
@@ -3245,7 +3378,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         let targetVC = targetViewController()
         context.coordinator.applyPlaybackHighlight(to: targetVC)
-        uiViewController.setViewControllers([targetVC], direction: .forward, animated: false)
+        uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: .forward, animated: false)
         _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
     }
 
@@ -3323,6 +3456,25 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         fileprivate var transitionQueue = ReaderPageTransitionQueue()
         private var isCurlTransitionActive = false
         private var pendingCurlRefresh = false
+
+        private var curlBackPageColor: UIColor {
+            UIColor(currentTheme.backgroundColor)
+        }
+
+        fileprivate func viewControllerStack(startingWith viewController: UIViewController) -> [UIViewController] {
+            guard pageTurnStyle == .curl,
+                  let page = viewController as? any PageIndexProviding & UIViewController else {
+                return [viewController]
+            }
+            return [
+                viewController,
+                PageBackViewController(
+                    virtualIndex: page.globalPageIndex * 2 + 1,
+                    logicalPageIndex: page.globalPageIndex,
+                    backgroundColor: curlBackPageColor
+                )
+            ]
+        }
 
         init(engine: any PageRenderingProvider,
              pageTurnStyle: PageTurnStyle,
@@ -3437,7 +3589,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
             if isRTL { direction = direction == .forward ? .reverse : .forward }
 
-            pageViewController.setViewControllers([freshVC], direction: direction, animated: false)
+            pageViewController.setViewControllers(viewControllerStack(startingWith: freshVC), direction: direction, animated: false)
             applyPlaybackHighlight(to: freshVC)
             let resolved = syncStablePosition(afterShowing: freshVC, notifyFallback: false)
             let resolvedLine =
@@ -3516,6 +3668,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             ProgrammaticPageTransitionPerformer(pageTurnStyle: pageTurnStyle).perform(
                 on: pageViewController,
                 targetViewController: targetViewController,
+                targetViewControllers: viewControllerStack(startingWith: targetViewController),
                 direction: direction,
                 animated: animated,
                 restoringDataSource: self
@@ -3546,6 +3699,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         func applyPlaybackHighlight(to viewController: UIViewController) {
+            guard !(viewController is PageBackViewController) else { return }
             (viewController as? CoreTextPageViewController)?.setPlaybackHighlight(
                 text: currentPlaybackHighlightText
             )
@@ -3553,6 +3707,10 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         @discardableResult
         func syncStablePosition(afterShowing viewController: UIViewController, notifyFallback: Bool) -> Int? {
+            if viewController is PageBackViewController {
+                return nil
+            }
+
             let fallbackPage = (viewController as? any PageIndexProviding)?.globalPageIndex ?? currentPage
 
             if let position = readingPosition(from: viewController) {
@@ -3582,6 +3740,9 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         private func readingPosition(from viewController: UIViewController) -> CoreTextReadingPosition? {
+            if viewController is PageBackViewController {
+                return nil
+            }
             if let provider = viewController as? CoreTextReadingPositionProviding,
                let position = provider.coreTextReadingPosition {
                 return position
@@ -3669,8 +3830,23 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         private func pageBackward(from viewController: UIViewController) -> UIViewController? {
+            if let backPage = viewController as? PageBackViewController {
+                return navigationViewController(
+                    for: .page(backPage.logicalPageIndex),
+                    mode: .interactiveTurn
+                )
+            }
+
             guard let vc = viewController as? any PageIndexProviding & UIViewController,
                   vc.globalPageIndex > 0 else { return nil }
+            if pageTurnStyle == .curl {
+                let logicalPage = vc.globalPageIndex - 1
+                return PageBackViewController(
+                    virtualIndex: logicalPage * 2 + 1,
+                    logicalPageIndex: logicalPage,
+                    backgroundColor: curlBackPageColor
+                )
+            }
             let (currentSpine, currentLocal) = currentEngine.localPosition(for: vc.globalPageIndex)
             if currentLocal == 0 && currentSpine > 0 {
                 print("[FlipTrace] pageBackward crossing chapter fromSpine=\(currentSpine) page=\(vc.globalPageIndex) toSpine=\(currentSpine - 1)")
@@ -3691,8 +3867,23 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         private func pageForward(from viewController: UIViewController) -> UIViewController? {
-            guard let vc = viewController as? any PageIndexProviding & UIViewController,
-                  vc.globalPageIndex < currentEngine.totalPages - 1 else { return nil }
+            if let backPage = viewController as? PageBackViewController {
+                guard backPage.logicalPageIndex + 1 < currentEngine.totalPages else { return nil }
+                return navigationViewController(
+                    for: .page(backPage.logicalPageIndex + 1),
+                    mode: .interactiveTurn
+                )
+            }
+
+            guard let vc = viewController as? any PageIndexProviding & UIViewController else { return nil }
+            if pageTurnStyle == .curl {
+                return PageBackViewController(
+                    virtualIndex: vc.globalPageIndex * 2 + 1,
+                    logicalPageIndex: vc.globalPageIndex,
+                    backgroundColor: curlBackPageColor
+                )
+            }
+            guard vc.globalPageIndex < currentEngine.totalPages - 1 else { return nil }
             let (currentSpine, _) = currentEngine.localPosition(for: vc.globalPageIndex)
             if let lastPage = currentEngine.lastPageIndex(ofChapter: currentSpine),
                vc.globalPageIndex == lastPage {
@@ -3731,7 +3922,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // Use right-hand spine for RTL curl animation to match physical book physics.
             if isRTL && pageTurnStyle == .curl {
                 if let current = pvc.viewControllers?.first {
-                    pvc.setViewControllers([current], direction: .forward, animated: false)
+                    pvc.setViewControllers(viewControllerStack(startingWith: current), direction: .forward, animated: false)
                 }
                 return .max
             }
@@ -3770,6 +3961,11 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 let settledPage = (pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex
                     ?? currentPage
                 continueQueuedTransitionIfNeeded(on: pvc, showing: settledPage)
+                return
+            }
+
+            if pvc.viewControllers?.first is PageBackViewController {
+                continueQueuedTransitionIfNeeded(on: pvc, showing: currentPage)
                 return
             }
 

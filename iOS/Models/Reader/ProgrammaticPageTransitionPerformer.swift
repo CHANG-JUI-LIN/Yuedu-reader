@@ -26,11 +26,13 @@ struct ProgrammaticPageTransitionPerformer {
     func perform(
         on controller: ProgrammaticPageTransitionControlling,
         targetViewController: UIViewController,
+        targetViewControllers: [UIViewController]? = nil,
         direction: UIPageViewController.NavigationDirection,
         animated: Bool,
         restoringDataSource: UIPageViewControllerDataSource?,
         completion: @escaping (UIViewController) -> Void
     ) {
+        let targetStack = targetViewControllers ?? [targetViewController]
         let finish: (UIViewController) -> Void = { settledViewController in
             controller.layoutIfNeeded()
             completion(settledViewController)
@@ -38,8 +40,8 @@ struct ProgrammaticPageTransitionPerformer {
 
         if animated && direction == .reverse && pageTurnStyle != .curl {
             controller.dataSource = nil
-            controller.setViewControllers([targetViewController], direction: .reverse, animated: true) { _ in
-                controller.setViewControllers([targetViewController], direction: .reverse, animated: false) { _ in
+            controller.setViewControllers(targetStack, direction: .reverse, animated: true) { _ in
+                controller.setViewControllers(targetStack, direction: .reverse, animated: false) { _ in
                     if self.pageTurnStyle == .slide {
                         controller.dataSource = restoringDataSource
                     }
@@ -49,7 +51,7 @@ struct ProgrammaticPageTransitionPerformer {
             return
         }
 
-        controller.setViewControllers([targetViewController], direction: direction, animated: animated) { _ in
+        controller.setViewControllers(targetStack, direction: direction, animated: animated) { _ in
             finish(controller.viewControllers?.first ?? targetViewController)
         }
     }

@@ -128,7 +128,7 @@ struct ReaderBottomControlBar: View {
                             chapterSliderDraft = nil
                         }
                     }
-                ).accentColor(readerTheme.textColor.opacity(0.4))
+                ).accentColor(readerTheme.accentColor)
 
                 Text("\(chapterPageInfo)  ·  \(totalProgressPercent)")
                     .font(.system(size: 10).monospacedDigit())
@@ -194,7 +194,7 @@ struct ReaderBottomControlBar: View {
                 }
                 Text(label).font(.system(size: 10))
             }
-            .foregroundColor(active ? Color.blue : readerTheme.textColor.opacity(0.85))
+            .foregroundColor(active ? readerTheme.accentColor : readerTheme.textColor.opacity(0.85))
             .frame(maxWidth: .infinity)
         }
     }

@@ -29,7 +29,7 @@ struct ReaderSettingsView: View {
     }
 
     private var readerTint: Color {
-        Color(uiColor: .systemBlue)
+        theme.accentColor
     }
 
     private let previewTextHeight: CGFloat = 220
@@ -192,7 +192,7 @@ struct ReaderSettingsView: View {
                     .font(.system(size: 18, weight: .regular))
                     .baselineOffset(-6)
             }
-            Text(localized("可是越獄成功以後呢？以前我們裹足不前，可以怪父母怨社會，而阿德勒卻完全把人生責任和選擇的權力交給了我們自己。當我們從這些束縛中解脫出來後，卻會發現，我們其實一直都很自由，真正讓我們裹足不前的，原來正是我們自己。"))
+            Text(localized("這是一段測試文字，用來測試字體大小和行距、字距、段落間距，以及不同主題下的閱讀舒適度。調整設定時，可以觀察文字密度、換行節奏與背景對比是否符合你的閱讀習慣。"))
                 .font(.system(size: min(max(fontSize, 17), 24), weight: .regular))
                 .lineSpacing(readerConfig.lineSpacing)
                 .tracking(readerConfig.letterSpacing)

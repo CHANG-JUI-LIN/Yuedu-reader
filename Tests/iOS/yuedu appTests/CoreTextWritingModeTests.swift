@@ -7,6 +7,33 @@ import UIKit
 @Suite("CoreText writing mode", .serialized)
 struct CoreTextWritingModeTests {
 
+    @Test("CoreText paginator handles long complex Unicode text")
+    func coreTextPaginatorHandlesLongComplexUnicodeText() async throws {
+        let paragraph = "هذا نص عربي طويل لاختبار محرك CoreText مع 中文直排混合內容與 emoji 😀。\n"
+        let text = String(repeating: paragraph, count: 260)
+        let attributed = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 18),
+                .foregroundColor: UIColor.black,
+            ]
+        )
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 77,
+            attrStr: attributed,
+            renderSize: CGSize(width: 320, height: 560),
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 24, left: 20, bottom: 24, right: 20),
+            writingMode: .horizontal
+        )
+
+        #expect(layout.pageRanges.count > 1)
+        #expect(layout.pageRanges.allSatisfy { $0.length > 0 })
+        let covered = layout.pageRanges.reduce(0) { $0 + $1.length }
+        #expect(covered == attributed.length)
+    }
+
     @Test("EPUB CSS page-break styles become forced CoreText page boundaries")
     func epubCSSPageBreakStylesForceCoreTextPageBoundaries() async throws {
         let builder = HTMLAttributedStringBuilder()

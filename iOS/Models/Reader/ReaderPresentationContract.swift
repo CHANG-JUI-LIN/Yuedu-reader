@@ -5,6 +5,31 @@ import UIKit
 struct ReaderLocation: Hashable, Codable {
     let spineIndex: Int
     let charOffset: Int
+    let source: Source?
+    let isEstimated: Bool
+    let progression: Progression?
+
+    enum Source: String, Hashable, Codable {
+        case restored
+        case settledPage
+        case scrollCommit
+        case jump
+        case internalLink
+        case modeSwitch
+        case placeholder
+    }
+
+    struct Progression: Hashable, Codable {
+        let pageIndex: Int?
+        let totalPages: Int?
+        let fraction: Double?
+
+        init(pageIndex: Int? = nil, totalPages: Int? = nil, fraction: Double? = nil) {
+            self.pageIndex = pageIndex
+            self.totalPages = totalPages
+            self.fraction = fraction
+        }
+    }
 
     static func chapterStart(_ spineIndex: Int) -> Self {
         Self(spineIndex: spineIndex, charOffset: 0)
@@ -14,18 +39,61 @@ struct ReaderLocation: Hashable, Codable {
         Self(spineIndex: spineIndex, charOffset: .max)
     }
 
-    init(spineIndex: Int, charOffset: Int) {
+    init(
+        spineIndex: Int,
+        charOffset: Int,
+        source: Source? = nil,
+        isEstimated: Bool = false,
+        progression: Progression? = nil
+    ) {
         self.spineIndex = spineIndex
         self.charOffset = charOffset
+        self.source = source
+        self.isEstimated = isEstimated
+        self.progression = progression
     }
 
-    init(_ position: CoreTextReadingPosition) {
+    init(
+        _ position: CoreTextReadingPosition,
+        source: Source? = nil,
+        isEstimated: Bool = false,
+        progression: Progression? = nil
+    ) {
         self.spineIndex = position.spineIndex
         self.charOffset = position.charOffset
+        self.source = source
+        self.isEstimated = isEstimated
+        self.progression = progression
     }
 
     var coreTextPosition: CoreTextReadingPosition {
         CoreTextReadingPosition(spineIndex: spineIndex, charOffset: charOffset)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case spineIndex
+        case charOffset
+        case source
+        case isEstimated
+        case progression
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        spineIndex = try container.decode(Int.self, forKey: .spineIndex)
+        charOffset = try container.decode(Int.self, forKey: .charOffset)
+        source = try container.decodeIfPresent(Source.self, forKey: .source)
+        isEstimated = try container.decodeIfPresent(Bool.self, forKey: .isEstimated) ?? false
+        progression = try container.decodeIfPresent(Progression.self, forKey: .progression)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(spineIndex, forKey: .spineIndex)
+        try container.encode(charOffset, forKey: .charOffset)
+        try container.encodeIfPresent(source, forKey: .source)
+        try container.encode(isEstimated, forKey: .isEstimated)
+        try container.encodeIfPresent(progression, forKey: .progression)
     }
 }
 

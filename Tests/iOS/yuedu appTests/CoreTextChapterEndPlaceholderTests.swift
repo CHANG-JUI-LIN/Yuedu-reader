@@ -7,7 +7,7 @@ import UIKit
 struct CoreTextChapterEndPlaceholderTests {
     @Test("unloaded chapter end estimates the chapter tail instead of chapter start")
     func unloadedChapterEndEstimatesTailPage() async throws {
-        let builder = FixedSizeChapterBuilder(byteSizes: [1_200, 1_200, 1_800])
+        let builder = FixedSizeChapterBuilder(byteSizes: [1_200, 1_200, 1_800, 1_800])
         let engine = CoreTextPageEngine(
             attributedBuilder: builder,
             renderSettings: ReaderRenderSettings(
@@ -42,6 +42,48 @@ struct CoreTextChapterEndPlaceholderTests {
         let placeholder = engine.pageViewController(at: estimatedEnd)
         let position = (placeholder as? CoreTextReadingPositionProviding)?.coreTextReadingPosition
         #expect(position == .chapterEnd(2))
+    }
+
+    @Test("page provider exposes previous chapter tail as boundary placeholder")
+    func providerReportsBackwardBoundaryPlaceholder() async throws {
+        let builder = FixedSizeChapterBuilder(byteSizes: [1_200, 1_200, 1_800])
+        let engine = CoreTextPageEngine(
+            attributedBuilder: builder,
+            renderSettings: ReaderRenderSettings(
+                theme: "test",
+                textColor: .label,
+                backgroundColor: .systemBackground,
+                fontSize: 20,
+                lineHeightMultiple: 1.4,
+                lineSpacing: 2,
+                paragraphSpacing: 8,
+                letterSpacing: 0,
+                marginH: 20,
+                marginV: 20,
+                footerHeight: 0,
+                contentInsets: .zero,
+                writingMode: .horizontal
+            ),
+            offsetStore: CharOffsetStore(
+                directoryURL: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("ReaderBoundaryReadiness-\(UUID().uuidString)")
+            )
+        )
+
+        await engine.start(renderSize: CGSize(width: 320, height: 640), bookId: "boundary-test")
+        let provider = LegacyCoreTextPageProvider(engine: engine, bookId: "boundary-test")
+        let readiness = await provider.prepareBoundary(
+            from: .chapterStart(3),
+            direction: .backward
+        )
+
+        guard case .placeholder(let target, let pageIndex) = readiness else {
+            Issue.record("Expected placeholder readiness, got \(readiness)")
+            return
+        }
+
+        #expect(target.coreTextPosition == .chapterEnd(2))
+        #expect(pageIndex >= 0)
     }
 }
 

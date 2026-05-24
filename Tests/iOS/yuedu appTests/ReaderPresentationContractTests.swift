@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import Testing
 import UIKit
 @testable import yuedu_app
@@ -67,5 +68,74 @@ struct ReaderPresentationContractTests {
         #expect(store.state.pagingStyle == .curl)
         #expect(store.state.direction == .rtl)
         #expect(store.state.viewportSize == CGSize(width: 390, height: 844))
+    }
+
+    @Test("reader location decodes v1 persisted payloads without metadata")
+    func readerLocationDecodesLegacyPayload() throws {
+        let data = try #require(#"{"spineIndex":2,"charOffset":128}"#.data(using: .utf8))
+        let location = try JSONDecoder().decode(ReaderLocation.self, from: data)
+
+        #expect(location.spineIndex == 2)
+        #expect(location.charOffset == 128)
+        #expect(location.source == nil)
+        #expect(location.isEstimated == false)
+        #expect(location.progression == nil)
+    }
+
+    @Test("navigator owns live location and persists only through its store")
+    func navigatorOwnsLiveLocation() async {
+        let positionStore = InMemoryReadingPositionStore()
+        let navigator = ReaderNavigator(
+            initialState: ReaderPresentationState(
+                location: .chapterStart(0),
+                direction: .ltr,
+                spreadMode: .singlePage,
+                viewportSize: CGSize(width: 320, height: 480),
+                appearance: ReaderAppearance(
+                    theme: .sepia,
+                    fontSize: 18,
+                    lineHeightMultiple: 1.4,
+                    lineSpacing: 2,
+                    paragraphSpacing: 6,
+                    letterSpacing: 0,
+                    marginH: 24,
+                    marginV: 28,
+                    footerHeight: 20,
+                    writingMode: .horizontal
+                ),
+                pagingStyle: .slide
+            ),
+            positionStore: positionStore,
+            bookId: "navigator-test"
+        )
+
+        navigator.jump(
+            to: CoreTextReadingPosition(spineIndex: 4, charOffset: 96),
+            pageIndex: 12,
+            totalPages: 120
+        )
+        await navigator.flush()
+
+        #expect(navigator.state.location == ReaderLocation(
+            CoreTextReadingPosition(spineIndex: 4, charOffset: 96),
+            source: .jump,
+            progression: ReaderLocation.Progression(pageIndex: 12, totalPages: 120, fraction: 12.0 / 119.0)
+        ))
+        #expect(await positionStore.load(for: "navigator-test") == CoreTextReadingPosition(spineIndex: 4, charOffset: 96))
+    }
+}
+
+private final class InMemoryReadingPositionStore: ReadingPositionStore, @unchecked Sendable {
+    private var storage: [String: CoreTextReadingPosition] = [:]
+
+    func save(_ position: CoreTextReadingPosition, for bookId: String) async {
+        storage[bookId] = position
+    }
+
+    func load(for bookId: String) async -> CoreTextReadingPosition? {
+        storage[bookId]
+    }
+
+    func flush(for bookId: String) async {
     }
 }

@@ -141,7 +141,7 @@ final class CoreTextPaginator {
                 }
             }
 
-            let newFramesetter = CTFramesetterCreateWithAttributedString(updated)
+            let newFramesetter = CoreTextFramesetterFactory.make(for: updated)
             return ChapterLayout(
                 spineIndex: spineIndex,
                 attributedString: updated,
@@ -388,7 +388,7 @@ final class CoreTextPaginator {
         debugVerticalLog("EPUBFLOW paginator.compute spine=\(spineIndex) writingMode=\(writingMode) isVertical=\(writingMode.isVertical) contentRect=\(contentRect) ctPathRect=\(contentPathRect) maxAnnotationAdvance=\(maxInlineAnnotationAdvance ?? 0) preparedLen=\(attrStr.length)")
 
         if let imagePage {
-            let framesetter = CTFramesetterCreateWithAttributedString(attrStr)
+            let framesetter = CoreTextFramesetterFactory.make(for: attrStr)
             let imageRect = aspectFitRect(
                 for: imagePage.image?.size ?? contentRect.size,
                 in: contentRect
@@ -413,7 +413,7 @@ final class CoreTextPaginator {
             )
         }
 
-        let framesetter = CTFramesetterCreateWithAttributedString(attrStr)
+        let framesetter = CoreTextFramesetterFactory.make(for: attrStr)
         let pagePath = CGPath(rect: contentPathRect, transform: nil)
 
         var pageRanges: [CFRange] = []
@@ -1839,7 +1839,7 @@ final class CoreTextPaginator {
 
     private static func measureHeight(for attributedString: NSAttributedString, constrainedWidth: CGFloat) -> CGFloat {
         guard attributedString.length > 0 else { return 0 }
-        let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
+        let framesetter = CoreTextFramesetterFactory.make(for: attributedString)
         let size = CTFramesetterSuggestFrameSizeWithConstraints(
             framesetter,
             CFRangeMake(0, attributedString.length),

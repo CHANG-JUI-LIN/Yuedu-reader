@@ -20,6 +20,16 @@ struct CoreTextScrollTests {
         }
     }
 
+    @Test("reader theme uses WeChat reader day and night palette")
+    func readerThemeUsesWeChatReaderPalette() {
+        #expect(Self.bytes(of: ReaderTheme.white.uiBackgroundColor) == [244, 245, 247, 255])
+        #expect(Self.bytes(of: ReaderTheme.white.uiBarColor) == [255, 255, 255, 255])
+        #expect(Self.bytes(of: ReaderTheme.white.uiAccentColor) == [56, 151, 241, 255])
+        #expect(Self.bytes(of: ReaderTheme.night.uiBackgroundColor) == [0, 0, 0, 255])
+        #expect(Self.bytes(of: ReaderTheme.night.uiBarColor) == [26, 26, 26, 255])
+        #expect(Self.bytes(of: ReaderTheme.night.uiAccentColor) == [56, 151, 241, 255])
+    }
+
     @Test("collection scroll controller is available for vertical scroll")
     @MainActor
     func collectionScrollControllerInitializes() {
@@ -548,6 +558,15 @@ struct CoreTextScrollTests {
         var alpha: CGFloat = 0
         color.getRed(nil, green: nil, blue: nil, alpha: &alpha)
         return alpha
+    }
+
+    private static func bytes(of color: UIColor) -> [Int] {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return [red, green, blue, alpha].map { Int(round($0 * 255)) }
     }
 
     private static func makeRenderSettings(writingMode: ReaderWritingMode = .horizontal) -> ReaderRenderSettings {

@@ -26,7 +26,7 @@ enum CoreTextChunkSlicer {
         heightCap: CGFloat = defaultHeightCap,
         writingMode: ReaderWritingMode = .horizontal
     ) -> Output {
-        let framesetter = CTFramesetterCreateWithAttributedString(attrStr as CFAttributedString)
+        let framesetter = CoreTextFramesetterFactory.make(for: attrStr)
         let totalLen = attrStr.length
         guard contentWidth > 0, totalLen > 0 else {
             return Output(chunks: [], framesetter: framesetter, attributedString: attrStr)

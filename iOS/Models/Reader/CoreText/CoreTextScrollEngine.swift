@@ -257,7 +257,7 @@ final class CoreTextScrollEngine: ObservableObject {
             )
             let rect = Self.aspectFitRect(for: image.size, in: container)
             let attachment = CoreTextPaginator.RenderedAttachment(rect: rect, image: image, opacity: 1.0)
-            let framesetter = CTFramesetterCreateWithAttributedString(fallbackAttrStr as CFAttributedString)
+            let framesetter = CoreTextFramesetterFactory.make(for: fallbackAttrStr)
             return CoreTextChunk(
                 chapterIndex: chapterIndex,
                 charRange: CFRange(location: 0, length: max(fallbackAttrStr.length, 1)),
@@ -279,7 +279,7 @@ final class CoreTextScrollEngine: ObservableObject {
         let x = (contentWidth - drawWidth) / 2
         let rect = CGRect(x: x, y: 0, width: drawWidth, height: height)
         let attachment = CoreTextPaginator.RenderedAttachment(rect: rect, image: image, opacity: 1.0)
-        let framesetter = CTFramesetterCreateWithAttributedString(fallbackAttrStr as CFAttributedString)
+        let framesetter = CoreTextFramesetterFactory.make(for: fallbackAttrStr)
         return CoreTextChunk(
             chapterIndex: chapterIndex,
             charRange: CFRange(location: 0, length: max(fallbackAttrStr.length, 1)),

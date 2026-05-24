@@ -93,4 +93,30 @@ struct ProgrammaticPageTransitionPerformerTests {
         #expect((settledViewController as? IndexedViewController)?.globalPageIndex == 0)
         #expect((container.viewControllers?.first as? IndexedViewController)?.globalPageIndex == 0)
     }
+
+    @Test("curl transition applies full double-sided stack")
+    func curlTransitionAppliesFullDoubleSidedStack() {
+        let performer = ProgrammaticPageTransitionPerformer(pageTurnStyle: .curl)
+        let container = FakePageContainer()
+        let target = IndexedViewController(index: 2)
+        let back = UIViewController()
+
+        var settledViewController: UIViewController?
+
+        performer.perform(
+            on: container,
+            targetViewController: target,
+            targetViewControllers: [target, back],
+            direction: .forward,
+            animated: true,
+            restoringDataSource: nil
+        ) { settled in
+            settledViewController = settled
+        }
+
+        #expect(container.viewControllers?.count == 2)
+        #expect(container.viewControllers?.first === target)
+        #expect(container.viewControllers?.last === back)
+        #expect(settledViewController === target)
+    }
 }

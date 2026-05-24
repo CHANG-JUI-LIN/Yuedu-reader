@@ -29,10 +29,14 @@ enum ReaderTheme: String, CaseIterable {
 
     private static let userDefaultsKey = "yd_reader_theme"
     private static let lastLightThemeKey = "lastLightTheme"
+    private static let weChatAccent = UIColor(red: 56 / 255, green: 151 / 255, blue: 241 / 255, alpha: 1)
+    private static let weChatDayBackground = UIColor(red: 244 / 255, green: 245 / 255, blue: 247 / 255, alpha: 1)
+    private static let weChatNightBackground = UIColor.black
+    private static let weChatNightBarBackground = UIColor(red: 26 / 255, green: 26 / 255, blue: 26 / 255, alpha: 1)
 
     static func loadPersisted() -> ReaderTheme {
         let raw = UserDefaults.standard.string(forKey: userDefaultsKey) ?? ""
-        return ReaderTheme(rawValue: raw) ?? .sepia
+        return ReaderTheme(rawValue: raw) ?? .white
     }
 
     func persist() {
@@ -43,26 +47,22 @@ enum ReaderTheme: String, CaseIterable {
     }
 
     var backgroundColor: Color {
-        switch self {
-        case .white: return .white
-        case .sepia: return Color(red: 244 / 255, green: 236 / 255, blue: 216 / 255)
-        case .night: return Color(red: 26 / 255, green: 26 / 255, blue: 26 / 255)
-        }
+        Color(uiColor: uiBackgroundColor)
     }
 
     var textColor: Color {
-        switch self {
-        case .white: return Color(red: 51 / 255, green: 51 / 255, blue: 51 / 255)
-        case .sepia: return Color(red: 91 / 255, green: 70 / 255, blue: 54 / 255)
-        case .night: return Color(red: 217 / 255, green: 217 / 255, blue: 217 / 255)
-        }
+        Color(uiColor: uiTextColor)
+    }
+
+    var accentColor: Color {
+        Color(uiColor: uiAccentColor)
     }
 
     var uiBackgroundColor: UIColor {
         switch self {
-        case .white: return .white
+        case .white: return Self.weChatDayBackground
         case .sepia: return UIColor(red: 244 / 255, green: 236 / 255, blue: 216 / 255, alpha: 1)
-        case .night: return UIColor(red: 26 / 255, green: 26 / 255, blue: 26 / 255, alpha: 1)
+        case .night: return Self.weChatNightBackground
         }
     }
 
@@ -74,11 +74,19 @@ enum ReaderTheme: String, CaseIterable {
         }
     }
 
+    var uiAccentColor: UIColor {
+        Self.weChatAccent
+    }
+
     var barColor: Color {
+        Color(uiColor: uiBarColor)
+    }
+
+    var uiBarColor: UIColor {
         switch self {
-        case .white: return Color(UIColor.systemBackground)
-        case .sepia: return Color(red: 0.93, green: 0.91, blue: 0.83)
-        case .night: return Color(red: 0.12, green: 0.12, blue: 0.12)
+        case .white: return .white
+        case .sepia: return UIColor(red: 0.93, green: 0.91, blue: 0.83, alpha: 1)
+        case .night: return Self.weChatNightBarBackground
         }
     }
 
