@@ -46,9 +46,12 @@ enum RegexSanitizer {
 
     // MARK: - Timeout-Protected Execution
 
-    /// Execute `work` on a background thread, returning `fallback` if it takes
+    /// Execute `work` on a detached OS thread, returning `fallback` if it takes
     /// longer than `seconds`.  The background thread is not cancelled — it will
     /// finish eventually — but the caller is unblocked.
+    ///
+    /// Uses `Thread.detachNewThread` instead of GCD to avoid exhausting the global
+    /// dispatch thread pool when many callers block on the semaphore simultaneously.
     ///
     /// Use this wrapper around any NSRegularExpression matching call to guard
     /// against catastrophic backtracking.
@@ -59,7 +62,7 @@ enum RegexSanitizer {
     ) -> T {
         let box = _TimeoutResultBox<T>()
         let sema = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .userInitiated).async {
+        Thread.detachNewThread {
             box.value = work()
             sema.signal()
         }

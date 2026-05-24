@@ -60,7 +60,7 @@ final class JSSandbox {
         let box = ResultBox()
         let semaphore = DispatchSemaphore(value: 0)
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        Thread.detachNewThread {
             let r = context.evaluateScript(script)
             box.lock.withLock { box.value = r }
             semaphore.signal()
