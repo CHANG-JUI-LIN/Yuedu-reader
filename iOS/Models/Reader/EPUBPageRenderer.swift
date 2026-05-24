@@ -324,13 +324,15 @@ final class EPUBPageRenderer: ObservableObject {
         logProgress("updateCurrentPosition globalPage=\(globalPage) spine=\(spine) charOffset=\(offset)")
     }
 
-    /// Saves a CharOffsetRecord for the given bookId.
     func syncProgress(bookId: String) {
-        logProgress("syncProgress deprecated bookId=\(bookId)")
+        guard let eng = engine, let store = locatorStore else { return }
+        if let locator = makeCurrentLocator(engine: eng) {
+            store.save(record: locator)
+        }
     }
 
     func flushProgress(bookId: String) {
-        logProgress("flushProgress deprecated bookId=\(bookId)")
+        locatorStore?.flushSync()
     }
 
     private func makeCurrentLocator(engine eng: any PageRenderingProvider) -> ReaderLocator? {

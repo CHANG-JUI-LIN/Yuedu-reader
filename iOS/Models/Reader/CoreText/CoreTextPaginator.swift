@@ -1534,7 +1534,7 @@ final class CoreTextPaginator {
                 .filter { !$0.rect.isNull }
                 .map { group -> RenderedBlockRenderable in
                     // Container groups only render decoration (border/background), don't take over text rendering
-                    let text: NSAttributedString? = group.isContainer ? nil : explicitRenderableText(
+                    let text: NSAttributedString? = (group.isContainer || !group.usesExplicitGeometry) ? nil : explicitRenderableText(
                         style: group.style,
                         ranges: group.ranges,
                         attrStr: attrStr,

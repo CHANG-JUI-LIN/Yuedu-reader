@@ -179,7 +179,7 @@ enum TTSAudioProviderError: LocalizedError {
 }
 
 final class CustomHTTPProvider: TTSAudioProvider {
-    var displayName: String { "Online TTS" }
+    var displayName: String { "網路語音" }
 
     static func buildURL(template: String, text: String, title: String, rate: Float) -> URL? {
         let provider = CustomHTTPProvider()
