@@ -10,12 +10,15 @@ struct BookSourceFormLoginView: View {
     let source: BookSource
     let onDismiss: () -> Void
 
+    @MainActor private static weak var currentToastAlert: UIAlertController?
+
     private let gs = GlobalSettings.shared
     @State private var fields: [LoginUIField] = []
     @State private var values: [String: String] = [:]
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
     @State private var successMessage: String? = nil
+    @State private var showFanqieLogin = false
 
     var body: some View {
         NavigationView {
@@ -48,6 +51,17 @@ struct BookSourceFormLoginView: View {
                     }
                 }
 
+                if Self.supportsFanqieLogin(source: source) {
+                    Section {
+                        Button {
+                            showFanqieLogin = true
+                        } label: {
+                            Label(localized("番茄登入"), systemImage: "network")
+                        }
+                        .foregroundColor(DSColor.accent)
+                    }
+                }
+
                 if let err = errorMessage {
                     Section {
                         Label(err, systemImage: "exclamationmark.triangle.fill")
@@ -70,11 +84,18 @@ struct BookSourceFormLoginView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) { onDismiss() }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if isLoading {
-                        ProgressView()
-                    } else {
-                        Button(localized("確認")) { doLogin() }
+                if !fields.contains(where: { $0.type == .button }) {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            Button(localized("確認")) { doLogin() }
+                                .font(.body.weight(.semibold))
+                        }
+                    }
+                } else {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(localized("完成")) { onDismiss() }
                             .font(.body.weight(.semibold))
                     }
                 }
@@ -82,6 +103,11 @@ struct BookSourceFormLoginView: View {
         }
         .navigationViewStyle(.stack)
         .onAppear { loadUI() }
+        .sheet(isPresented: $showFanqieLogin) {
+            JsBridgeBrowserView(urlString: "https://fanqienovel.com", title: localized("番茄登入")) { _ in
+                showFanqieLogin = false
+            }
+        }
     }
 
     // MARK: - Setup
@@ -99,6 +125,16 @@ struct BookSourceFormLoginView: View {
             get: { values[name] ?? "" },
             set: { values[name] = $0 }
         )
+    }
+
+    static func supportsFanqieLogin(source: BookSource) -> Bool {
+        [
+            source.loginUi,
+            source.loginUrl,
+            source.jsLib,
+            source.ruleToc.chapterUrl,
+            source.ruleContent.content,
+        ].contains { $0.contains("fanqienovel.com") || $0.contains("getFqToken") }
     }
 
     // MARK: - Login Action
@@ -181,10 +217,7 @@ struct BookSourceFormLoginView: View {
             // Wire java.toast / java.longToast — shows a UIAlertController auto-dismiss
             engine.toastHandler = { msg in
                 Task { @MainActor in
-                    guard let topVC = BookSourceFormLoginView.topViewController() else { return }
-                    let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
-                    topVC.present(alert, animated: true)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { alert.dismiss(animated: true) }
+                    BookSourceFormLoginView.presentToastAlert(message: msg)
                 }
             }
 
@@ -263,10 +296,7 @@ struct BookSourceFormLoginView: View {
             }
             engine.toastHandler = { msg in
                 Task { @MainActor in
-                    guard let topVC = BookSourceFormLoginView.topViewController() else { return }
-                    let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
-                    topVC.present(alert, animated: true)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { alert.dismiss(animated: true) }
+                    BookSourceFormLoginView.presentToastAlert(message: msg)
                 }
             }
             engine.cloudflareChallengeHandler = { url, done in
@@ -376,6 +406,57 @@ struct BookSourceFormLoginView: View {
         else { return nil }
         var top = root
         while let p = top.presentedViewController { top = p }
+        return top
+    }
+
+    @MainActor
+    static func presentToastAlert(message: String) {
+        let showNewAlert = {
+            guard let presenter = topViewControllerForToast() else { return }
+            showToastAlert(message: message, from: presenter)
+        }
+
+        if let currentToastAlert, currentToastAlert.presentingViewController != nil {
+            currentToastAlert.dismiss(animated: false) {
+                Task { @MainActor in
+                    self.currentToastAlert = nil
+                    showNewAlert()
+                }
+            }
+        } else {
+            currentToastAlert = nil
+            showNewAlert()
+        }
+    }
+
+    @MainActor
+    private static func showToastAlert(message: String, from presenter: UIViewController) {
+        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        currentToastAlert = alert
+        presenter.present(alert, animated: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if alert.presentingViewController != nil {
+                alert.dismiss(animated: true)
+            }
+            if currentToastAlert === alert {
+                currentToastAlert = nil
+            }
+        }
+    }
+
+    @MainActor
+    private static func topViewControllerForToast() -> UIViewController? {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene }).first,
+              let root = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController
+        else { return nil }
+        var top = root
+        while let presented = top.presentedViewController {
+            if presented is UIAlertController {
+                break
+            }
+            top = presented
+        }
         return top
     }
 }
