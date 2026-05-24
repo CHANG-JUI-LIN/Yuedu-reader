@@ -50,7 +50,7 @@ private func makeSource(
 
 // MARK: - 2. Cross-Parser Compatibility Tests
 
-@Suite("Cross-Parser Compatibility")
+@Suite("Cross-Parser Compatibility", .serialized)
 struct CrossParserCompatibilityTests {
 
     // MARK: CSS
@@ -232,7 +232,7 @@ struct CrossParserCompatibilityTests {
     }
 }
 
-@Suite("Browser Import Plain Text Regression")
+@Suite("Browser Import Plain Text Regression", .serialized)
 struct BrowserImportPlainTextRegressionTests {
     @Test("web novel toc titles strip escaped break tags")
     func webNovelTOCTitlesStripEscapedBreakTags() throws {
@@ -375,7 +375,7 @@ struct BrowserImportPlainTextRegressionTests {
 
 // MARK: - 3. BookSource Model Tests
 
-@Suite("BookSource Model Compatibility")
+@Suite("BookSource Model Compatibility", .serialized)
 struct BookSourceModelTests {
 
     @Test("BookSource properties accessible after creation")
@@ -437,7 +437,7 @@ struct BookSourceModelTests {
 
 // MARK: - 5. Edge Case Tests
 
-@Suite("Regression Edge Cases")
+@Suite("Regression Edge Cases", .serialized)
 struct RegressionEdgeCaseTests {
 
     @Test("Empty content returns empty for both parsers")
@@ -510,7 +510,7 @@ struct RegressionEdgeCaseTests {
 
 // MARK: - 6. RuleEngine Static API Compatibility
 
-@Suite("RuleEngine Static API")
+@Suite("RuleEngine Static API", .serialized)
 struct RuleEngineAPITests {
 
     @Test("splitRuleByOperators handles || correctly")
@@ -561,7 +561,7 @@ struct RuleEngineAPITests {
 
 // MARK: - 7. RegexSanitizer — Java → ICU Pattern Conversion
 
-@Suite("RegexSanitizer Java→ICU")
+@Suite("RegexSanitizer Java→ICU", .serialized)
 struct RegexSanitizerTests {
 
     // MARK: Possessive quantifiers

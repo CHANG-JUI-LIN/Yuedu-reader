@@ -3,7 +3,7 @@ import Testing
 import UIKit
 @testable import yuedu_app
 
-@Suite("CoreText EPUB CFI progress restore")
+@Suite("CoreText EPUB CFI progress restore", .serialized)
 struct CoreTextCFIProgressTests {
     private struct StaticChapterBuilder: AttributedStringBuilding {
         let text: String

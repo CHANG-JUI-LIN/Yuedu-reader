@@ -2,7 +2,7 @@ import Testing
 import UIKit
 @testable import yuedu_app
 
-@Suite("ProgrammaticPageTransitionPerformer")
+@Suite("ProgrammaticPageTransitionPerformer", .serialized)
 struct ProgrammaticPageTransitionPerformerTests {
 
     private final class IndexedViewController: UIViewController, PageIndexProviding {

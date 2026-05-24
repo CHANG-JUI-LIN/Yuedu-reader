@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import yuedu_app
 
-@Suite("GlobalSettings Localization")
+@Suite("GlobalSettings Localization", .serialized)
 struct GlobalSettingsLocalizationTests {
     @Test("traditional chinese returns source string")
     func traditionalChineseReturnsSourceString() {

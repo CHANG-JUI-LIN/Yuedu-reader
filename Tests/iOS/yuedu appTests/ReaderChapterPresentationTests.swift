@@ -1,7 +1,7 @@
 import Testing
 @testable import yuedu_app
 
-@Suite("ReaderChapterPresentation")
+@Suite("ReaderChapterPresentation", .serialized)
 struct ReaderChapterPresentationTests {
 
     @Test("content availability suppresses overlays")

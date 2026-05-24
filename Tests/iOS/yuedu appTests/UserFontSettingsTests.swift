@@ -3,7 +3,7 @@ import Testing
 import UIKit
 @testable import yuedu_app
 
-@Suite("User reader fonts")
+@Suite("User reader fonts", .serialized)
 @MainActor
 struct UserFontSettingsTests {
 

@@ -223,7 +223,7 @@ private let fixtures: [Fixture] = [
 
 // ── Test Suite ────────────────────────────────────────────────────────────────
 
-@Suite("Legado Alignment — Single-Value Rules")
+@Suite("Legado Alignment — Single-Value Rules", .serialized)
 struct LegadoAlignmentStringTests {
 
     @Test("All single-value fixtures match Android Legado output",
@@ -245,7 +245,7 @@ struct LegadoAlignmentStringTests {
     }
 }
 
-@Suite("Legado Alignment — List Rules")
+@Suite("Legado Alignment — List Rules", .serialized)
 struct LegadoAlignmentListTests {
 
     @Test("All list-value fixtures match Android Legado output",
@@ -275,7 +275,7 @@ struct LegadoAlignmentListTests {
 //                           --android /tmp/legado_raw.txt \
 //                           --out report.html
 
-@Suite("Legado Alignment — Log Export")
+@Suite("Legado Alignment — Log Export", .serialized)
 struct LegadoAlignmentExportTests {
 
     @Test("Export combined pipeline log for all fixtures")

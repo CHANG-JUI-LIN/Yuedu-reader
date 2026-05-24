@@ -6,7 +6,7 @@ import UIKit
 
 // MARK: - CJK 排版後處理器
 
-@Suite("CJKTypographyProcessor")
+@Suite("CJKTypographyProcessor", .serialized)
 struct CJKTypographyProcessorTests {
 
     // MARK: kern 壓縮
@@ -191,7 +191,7 @@ struct CJKTypographyProcessorTests {
 
 // MARK: - CSS 屬性套用器
 
-@Suite("HTMLCSSPropertyApplierRegistry")
+@Suite("HTMLCSSPropertyApplierRegistry", .serialized)
 struct CSSPropertyApplierTests {
 
     private static func makeDefaultStyle(fontSize: CGFloat = 17) -> HTMLAttributedStringBuilder.ResolvedStyle {
@@ -413,7 +413,7 @@ struct CSSPropertyApplierTests {
 
 // MARK: - CoreTextPaginator.ChapterLayout
 
-@Suite("CoreTextPaginator.ChapterLayout")
+@Suite("CoreTextPaginator.ChapterLayout", .serialized)
 struct ChapterLayoutTests {
 
     private func makeLayout(text: String, fontSize: CGFloat = 18) -> CoreTextPaginator.ChapterLayout {

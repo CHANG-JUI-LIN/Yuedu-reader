@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import yuedu_app
 
-@Suite("BookmarkStablePosition")
+@Suite("BookmarkStablePosition", .serialized)
 struct BookmarkStablePositionTests {
 
     @Test("top bar bookmark stores chapter start as stable position")

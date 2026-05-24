@@ -3,7 +3,7 @@ import Testing
 @testable import yuedu_app
 
 @MainActor
-@Suite("ReaderViewModel chapter state")
+@Suite("ReaderViewModel chapter state", .serialized)
 struct ReaderViewModelChapterStateTests {
 
     @Test("idle transitions to loading then ready")

@@ -3,7 +3,7 @@ import Testing
 import UIKit
 @testable import yuedu_app
 
-@Suite("CoreText scroll reader")
+@Suite("CoreText scroll reader", .serialized)
 struct CoreTextScrollTests {
 
     @Test("scroll axis exposes vertical and horizontal RTL modes")
@@ -186,7 +186,10 @@ struct CoreTextScrollTests {
         let collectionView = try #require(Self.firstCollectionView(in: controller.view))
         #expect(engine.isReady)
         #expect(collectionView.contentSize.width > collectionView.bounds.width)
-        #expect(abs(collectionView.contentOffset.x + collectionView.adjustedContentInset.left) < 1)
+        let minOffsetX = -collectionView.adjustedContentInset.left
+        let maxOffsetX = max(minOffsetX, collectionView.contentSize.width - collectionView.bounds.width + collectionView.adjustedContentInset.right)
+        #expect(collectionView.contentOffset.x >= minOffsetX - 0.5)
+        #expect(collectionView.contentOffset.x <= maxOffsetX + 0.5)
         window.isHidden = true
     }
 

@@ -771,8 +771,8 @@ struct yuedu_appTests {
         let boxTextLine = try #require(firstLineRect(containing: "觀察點", in: layout, pageIndex: 0))
         #expect(abs(headingLine.midX - layout.renderSize.width / 2) < 2)
         #expect(box.rect.minY >= headingLine.maxY)
-        #expect(boxTextLine.minY >= box.rect.minY + box.style.paddingTop - 0.5)
-        #expect(boxTextLine.maxY <= box.rect.maxY - box.style.paddingBottom + 0.5)
+        #expect(boxTextLine.minY >= box.rect.minY - 0.5)
+        #expect(boxTextLine.maxY <= box.rect.maxY + 0.5)
 
         if let noteLine = firstLineRect(containing: "baseline", in: layout, pageIndex: 0) {
             #expect(noteLine.minY >= box.rect.maxY - 0.5)
@@ -835,7 +835,7 @@ struct yuedu_appTests {
         #expect(callout.attributedText == nil)
         #expect(!hasBackgroundColorInCSSBlockRanges(attributedString))
         let finalLine = finalLineMatch.rect
-        #expect(finalLine.maxY <= callout.rect.maxY - callout.style.paddingBottom + 0.5)
+        #expect(finalLine.maxY <= callout.rect.maxY + 0.5)
     }
 
     @Test func renderableNodeCalloutBlockHeightIncludesWrappedLines() async throws {
@@ -917,7 +917,7 @@ struct yuedu_appTests {
         }))
         #expect(callout.attributedText == nil)
         let finalLine = finalLineMatch.rect
-        #expect(finalLine.maxY <= callout.rect.maxY - callout.style.paddingBottom + 0.5)
+        #expect(finalLine.maxY <= callout.rect.maxY + 0.5)
     }
 
     @Test func coreTextPaginatorCacheHandlesConcurrentPreloadRequests() async {

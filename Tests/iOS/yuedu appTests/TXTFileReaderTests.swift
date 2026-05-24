@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import yuedu_app
 
-@Suite("TXTFileReader")
+@Suite("TXTFileReader", .serialized)
 struct TXTFileReaderTests {
 
     @Test("sample-based detection picks GB18030 before reading the full file")

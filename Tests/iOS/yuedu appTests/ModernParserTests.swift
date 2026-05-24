@@ -5,7 +5,7 @@ import Testing
 
 // MARK: - 1. RuleAnalyzer Tests
 
-@Suite("RuleAnalyzer")
+@Suite("RuleAnalyzer", .serialized)
 struct RuleAnalyzerTests {
 
     @Test("splitRule with || operator separates segments")
@@ -166,7 +166,7 @@ struct RuleAnalyzerTests {
 
 // MARK: - 2. SourceRule Tests
 
-@Suite("SourceRule")
+@Suite("SourceRule", .serialized)
 struct SourceRuleTests {
 
     @Test("@CSS: prefix sets default mode")
@@ -306,7 +306,7 @@ struct SourceRuleTests {
 
 // MARK: - 3. RegexExtractor Tests
 
-@Suite("RegexExtractor")
+@Suite("RegexExtractor", .serialized)
 struct RegexExtractorTests {
 
     private let extractor = RegexExtractor()
@@ -431,7 +431,7 @@ struct RegexExtractorTests {
 
 // MARK: - 4. JSONPath / JsonExtractor Tests
 
-@Suite("JSONPathEvaluator")
+@Suite("JSONPathEvaluator", .serialized)
 struct JSONPathEvaluatorTests {
 
     private let storeJSON: [String: Any] = [
@@ -565,7 +565,7 @@ struct JSONPathEvaluatorTests {
     }
 }
 
-@Suite("JsonExtractor")
+@Suite("JsonExtractor", .serialized)
 struct JsonExtractorTests {
 
     private let extractor = JsonExtractor()
@@ -621,7 +621,7 @@ struct JsonExtractorTests {
 
 // MARK: - 5. Cache Tests
 
-@Suite("LRUCache")
+@Suite("LRUCache", .serialized)
 struct LRUCacheTests {
 
     @Test("basic put and get")
@@ -733,7 +733,7 @@ struct LRUCacheTests {
     }
 }
 
-@Suite("RegexCache")
+@Suite("RegexCache", .serialized)
 struct RegexCacheTests {
 
     @Test("compile and retrieve valid pattern")
@@ -779,7 +779,7 @@ struct RegexCacheTests {
     }
 }
 
-@Suite("SelectorCache")
+@Suite("SelectorCache", .serialized)
 struct SelectorCacheTests {
 
     @Test("basic put and get")
@@ -824,7 +824,7 @@ struct SelectorCacheTests {
 
 // MARK: - 6. RuleData Tests
 
-@Suite("RuleData")
+@Suite("RuleData", .serialized)
 struct RuleDataTests {
 
     @Test("putVariable and getVariable for small values")
@@ -912,7 +912,7 @@ struct RuleDataTests {
 
 // MARK: - 7. AnalyzeUrl Tests
 
-@Suite("AnalyzeUrl")
+@Suite("AnalyzeUrl", .serialized)
 struct AnalyzeUrlTests {
 
     @Test("simple absolute URL")
@@ -999,6 +999,20 @@ struct AnalyzeUrlTests {
         #expect(request != nil)
         #expect(request?.httpMethod == "POST")
         #expect(request?.httpBody != nil)
+    }
+
+    @Test("toURLRequest preserves JSON POST body")
+    func toURLRequestPostJSONBody() throws {
+        let au = AnalyzeUrl(
+            ruleUrl: #"https://example.com/api,{"method":"POST","headers":{"Content-Type":"application/json"},"body":"{\"register_email\":\"a@example.com\",\"password\":\"secret\"}"}"#
+        )
+        let request = try #require(au.toURLRequest())
+        let body = String(data: try #require(request.httpBody), encoding: .utf8)
+
+        #expect(request.httpMethod == "POST")
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+        #expect(body == #"{"register_email":"a@example.com","password":"secret"}"#)
+        #expect(body?.contains("%7B") == false)
     }
 
     @Test("page rules array selects correct page")
@@ -1261,7 +1275,7 @@ struct AnalyzeUrlTests {
     }
 }
 
-@Suite("BookSource local fixture")
+@Suite("BookSource local fixture", .serialized)
 struct BookSourceLocalFixtureTests {
 
     @Test("local Legado source fixture decodes when path is provided")
@@ -1288,7 +1302,7 @@ struct BookSourceLocalFixtureTests {
     }
 }
 
-@Suite("CustomUrl")
+@Suite("CustomUrl", .serialized)
 struct CustomUrlTests {
 
     @Test("simple URL without options")
@@ -1344,7 +1358,7 @@ struct CustomUrlTests {
 
 // MARK: - 8. JSCoreEngine Tests
 
-@Suite("JSCoreEngine")
+@Suite("JSCoreEngine", .serialized)
 struct JSCoreEngineTests {
 
     @Test("simple expression evaluation")
@@ -1484,7 +1498,7 @@ struct JSCoreEngineTests {
 
 // MARK: - 9. JSSandbox Tests
 
-@Suite("JSSandbox")
+@Suite("JSSandbox", .serialized)
 struct JSSandboxTests {
 
     @Test("configure removes unsafe globals")
@@ -1567,7 +1581,7 @@ struct JSSandboxTests {
 
 // MARK: - 10. LoginManager & LoginState Tests
 
-@Suite("LoginState")
+@Suite("LoginState", .serialized)
 struct LoginStateTests {
 
     @Test("LoginState equality")
@@ -1581,7 +1595,7 @@ struct LoginStateTests {
     }
 }
 
-@Suite("LoginError")
+@Suite("LoginError", .serialized)
 struct LoginErrorTests {
 
     @Test("error descriptions are non-empty")
@@ -1615,7 +1629,7 @@ struct LoginErrorTests {
 
 // MARK: - 11. LegadoJSBridge Tests
 
-@Suite("LegadoJSBridge")
+@Suite("LegadoJSBridge", .serialized)
 struct LegadoJSBridgeTests {
 
     @Test("base64Encode and base64Decode roundtrip")
@@ -1676,7 +1690,7 @@ struct LegadoJSBridgeTests {
 
 // MARK: - 11b. LegadoSourceBridge Tests
 
-@Suite("LegadoSourceBridge")
+@Suite("LegadoSourceBridge", .serialized)
 struct LegadoSourceBridgeTests {
 
     @Test("static properties are exposed correctly")
@@ -1788,7 +1802,7 @@ struct LegadoSourceBridgeTests {
 
 // MARK: - 11c. LegadoCacheBridge Tests
 
-@Suite("LegadoCacheBridge")
+@Suite("LegadoCacheBridge", .serialized)
 struct LegadoCacheBridgeTests {
 
     @Test("put and get persistent")
@@ -1851,7 +1865,7 @@ struct LegadoCacheBridgeTests {
 
 // MARK: - 11d. LegadoStrResponse Tests
 
-@Suite("LegadoStrResponse")
+@Suite("LegadoStrResponse", .serialized)
 struct LegadoStrResponseTests {
 
     @Test("body returns stored body")
@@ -1871,7 +1885,7 @@ struct LegadoStrResponseTests {
 
 // MARK: - 12. Integration: RuleAnalyzer + SourceRule
 
-@Suite("RuleAnalyzer + SourceRule Integration")
+@Suite("RuleAnalyzer + SourceRule Integration", .serialized)
 struct RuleAnalyzerSourceRuleIntegrationTests {
 
     @Test("split and parse multiple rules with ||")
@@ -1903,7 +1917,7 @@ struct RuleAnalyzerSourceRuleIntegrationTests {
 
 // MARK: - 13. Edge Cases & Stress Tests
 
-@Suite("Edge Cases")
+@Suite("Edge Cases", .serialized)
 struct EdgeCaseTests {
 
     @Test("JSONPath on deeply nested data")

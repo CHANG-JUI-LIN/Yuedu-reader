@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import yuedu_app
 
-@Suite("Feed Integration")
+@Suite("Feed Integration", .serialized)
 struct FeedIntegrationTests {
 
     /// Feed URLs from the US OPML test set.

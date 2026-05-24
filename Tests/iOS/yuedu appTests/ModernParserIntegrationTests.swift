@@ -5,7 +5,7 @@ import Testing
 
 // MARK: - 1. Full Rule Pipeline Tests
 
-@Suite("ModernRuleEngine Pipeline")
+@Suite("ModernRuleEngine Pipeline", .serialized)
 struct RuleEnginePipelineTests {
 
     // MARK: Helpers
@@ -353,7 +353,7 @@ struct RuleEnginePipelineTests {
 
 // MARK: - 2. AnalyzeUrl Integration Tests
 
-@Suite("AnalyzeUrl Pipeline")
+@Suite("AnalyzeUrl Pipeline", .serialized)
 struct AnalyzeUrlIntegrationTests {
 
     @Test("Simple GET URL parses correctly")
@@ -500,7 +500,7 @@ struct AnalyzeUrlIntegrationTests {
 
 // MARK: - 3. JSCoreEngine Integration Tests
 
-@Suite("JSCoreEngine Pipeline")
+@Suite("JSCoreEngine Pipeline", .serialized)
 struct JSCoreEngineIntegrationTests {
 
     @Test("JS evaluation with result variable")
@@ -618,7 +618,7 @@ struct JSCoreEngineIntegrationTests {
 
 // MARK: - 4. Multi-Extractor Routing Tests
 
-@Suite("Extractor Routing")
+@Suite("Extractor Routing", .serialized)
 struct ExtractorRoutingTests {
 
     private let html = """
@@ -713,7 +713,7 @@ struct ExtractorRoutingTests {
 
 // MARK: - 5. SourceRule Parsing Tests
 
-@Suite("SourceRule Parsing")
+@Suite("SourceRule Parsing", .serialized)
 struct SourceRuleParsingTests {
 
     @Test("Detects @get:{key} template")
@@ -767,7 +767,7 @@ struct SourceRuleParsingTests {
 
 // MARK: - 6. Real-World Book Source Simulation
 
-@Suite("Book Source Simulation")
+@Suite("Book Source Simulation", .serialized)
 struct BookSourceSimulationTests {
 
     /// Simulated search result HTML like a typical novel site
@@ -996,7 +996,7 @@ struct BookSourceSimulationTests {
 
 // MARK: - 7. Cross-Component Wiring Tests
 
-@Suite("Cross-Component Wiring")
+@Suite("Cross-Component Wiring", .serialized)
 struct CrossComponentWiringTests {
 
     @Test("JS java.put → engine.get round trip")

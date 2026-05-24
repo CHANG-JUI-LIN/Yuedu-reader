@@ -96,4 +96,23 @@ struct ModernRuleEngineTests {
         #expect(modern == "斗羅大陸")
     }
 
+    @Test
+    func jsBlockNewlineJSONPathListExtraction() {
+        let engine = ModernRuleEngine()
+        engine.setContent("payload")
+        engine.jsEvaluator = { _, _ in
+            #"{"data":[{"book_name":"斗罗大陆"},{"book_name":"斗罗大陆II"}]}"#
+        }
+
+        let elements = engine.getElements(ruleStr: """
+        <js>
+        request('/search');
+        </js>
+        $.data
+        """)
+
+        #expect(elements.count == 2)
+        #expect(String(describing: elements.first ?? "").contains("斗罗大陆"))
+    }
+
 }
