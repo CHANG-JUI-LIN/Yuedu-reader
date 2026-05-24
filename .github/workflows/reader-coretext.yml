@@ -1,0 +1,41 @@
+name: Reader CoreText Gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  reader-coretext:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Whitespace check
+        run: git diff --check
+
+      - name: Localization plist lint
+        run: find iOS -name Localizable.strings -print0 | xargs -0 plutil -lint
+
+      - name: Build app
+        run: |
+          xcodebuild build \
+            -project Yuedu-Reader.xcodeproj \
+            -scheme Yuedu-Reader \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
+            -configuration Debug
+
+      - name: Focused reader tests
+        run: |
+          xcodebuild test \
+            -project Yuedu-Reader.xcodeproj \
+            -scheme Yuedu-Reader \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
+            -only-testing:"yuedu appTests/ReaderPresentationContractTests" \
+            -only-testing:"yuedu appTests/ReaderEngineContractTests" \
+            -only-testing:"yuedu appTests/ProgrammaticPageTransitionPerformerTests" \
+            -only-testing:"yuedu appTests/ReaderPageTransitionQueueTests" \
+            -only-testing:"yuedu appTests/CoreTextCFIProgressTests"
