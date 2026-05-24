@@ -346,7 +346,7 @@ class AnalyzeUrl {
         if method.uppercased() == "GET" {
             splitQueryFromUrl()
         } else {
-            encodedForm = encodeParams(body, isQuery: false)
+            encodedForm = shouldEncodePostBodyAsForm(body) ? encodeParams(body, isQuery: false) : nil
         }
     }
 
@@ -485,6 +485,19 @@ class AnalyzeUrl {
         }
 
         return encoded.joined(separator: "&")
+    }
+
+    private func shouldEncodePostBodyAsForm(_ body: String?) -> Bool {
+        guard let body else { return false }
+        let contentType = headers.first { key, _ in
+            key.lowercased() == "content-type"
+        }?.value.lowercased() ?? ""
+        if contentType.contains("application/json") { return false }
+
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") { return false }
+
+        return true
     }
 
     /// Percent-encode a single component, skipping if it appears already encoded.
