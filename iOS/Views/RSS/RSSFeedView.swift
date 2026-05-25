@@ -535,7 +535,7 @@ private struct RSSFeedSearchBarIOS18: ViewModifier {
         content
             .searchable(
                 text: $searchText,
-                placement: .navigationBarDrawer(displayMode: .always),
+                placement: .toolbar,
                 prompt: localized("搜尋文章")
             )
             .textInputAutocapitalization(.never)
@@ -548,6 +548,7 @@ private struct RSSFeedSearchBar: ViewModifier {
     @Binding var searchText: String
 
     func body(content: Content) -> some View {
+        #if compiler(>=6.2)
         content
             .searchable(
                 text: $searchText,
@@ -562,6 +563,16 @@ private struct RSSFeedSearchBar: ViewModifier {
                     placement: .bottomBar
                 )
             }
+        #else
+        content
+            .searchable(
+                text: $searchText,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: localized("搜尋文章")
+            )
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+        #endif
     }
 }
 
