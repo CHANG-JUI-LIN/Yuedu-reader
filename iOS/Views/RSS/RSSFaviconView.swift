@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CryptoKit
 
 struct RSSFaviconView: View {
     let source: RSSSource
@@ -58,7 +59,38 @@ private actor RSSFaviconImageLoader {
     static let shared = RSSFaviconImageLoader()
 
     private var imageCache: [String: UIImage] = [:]
-    private var missingCache = Set<String>()
+
+    // On-disk persistence so favicons survive app relaunch.
+    private let directory: URL
+    private let resolvedMapURL: URL
+    private let missingMapURL: URL
+    private var resolvedMap: [String: String] // sourceKey: winning favicon URL string
+    private var missingMap: [String: Double] // sourceKey: epoch seconds when marked as having no favicon
+
+    // Sources with no favicon are re-checked after this interval, so a transient
+    // network failure doesn't permanently suppress an icon.
+    private let missingRetryInterval: TimeInterval = 7 * 24 * 60 * 60
+
+    init() {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let dir = caches.appendingPathComponent("RSSFavicons", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        directory = dir
+        resolvedMapURL = dir.appendingPathComponent("resolved-urls.json")
+        missingMapURL = dir.appendingPathComponent("missing-favicons.json")
+        if let data = try? Data(contentsOf: resolvedMapURL),
+           let map = try? JSONDecoder().decode([String: String].self, from: data) {
+            resolvedMap = map
+        } else {
+            resolvedMap = [:]
+        }
+        if let data = try? Data(contentsOf: missingMapURL),
+           let map = try? JSONDecoder().decode([String: Double].self, from: data) {
+            missingMap = map
+        } else {
+            missingMap = [:]
+        }
+    }
 
     func image(for source: RSSSource) async -> UIImage? {
         let sourceKey = [
@@ -71,29 +103,70 @@ private actor RSSFaviconImageLoader {
         if let cached = imageCache[sourceKey] {
             return cached
         }
-        if missingCache.contains(sourceKey) {
+        if let markedAt = missingMap[sourceKey],
+           Date().timeIntervalSince1970 - markedAt < missingRetryInterval {
             return nil
+        }
+
+        // Fast path: a previous run already resolved which URL wins for this source,
+        // so skip the homepage HTML fetch in candidateURLs entirely.
+        if let resolved = resolvedMap[sourceKey] {
+            if let image = loadFromMemoryOrDisk(urlKey: resolved) {
+                imageCache[sourceKey] = image
+                return image
+            }
+            if let url = URL(string: resolved), let image = await downloadImage(from: url) {
+                store(image, urlKey: resolved, sourceKey: sourceKey)
+                return image
+            }
+            resolvedMap[sourceKey] = nil // stale; fall through and re-resolve
+            persistResolvedMap()
         }
 
         let candidates = await RSSFaviconResolver.candidateURLs(for: source)
         for url in candidates {
             let urlKey = url.absoluteString
-            if let cached = imageCache[urlKey] {
-                imageCache[sourceKey] = cached
-                return cached
+            if let image = loadFromMemoryOrDisk(urlKey: urlKey) {
+                store(image, urlKey: urlKey, sourceKey: sourceKey)
+                return image
             }
 
             guard let image = await downloadImage(from: url) else {
                 continue
             }
 
-            imageCache[urlKey] = image
-            imageCache[sourceKey] = image
+            store(image, urlKey: urlKey, sourceKey: sourceKey)
             return image
         }
 
-        missingCache.insert(sourceKey)
+        missingMap[sourceKey] = Date().timeIntervalSince1970
+        persistMissingMap()
         return nil
+    }
+
+    private func store(_ image: UIImage, urlKey: String, sourceKey: String) {
+        imageCache[urlKey] = image
+        imageCache[sourceKey] = image
+        if missingMap[sourceKey] != nil {
+            missingMap[sourceKey] = nil
+            persistMissingMap()
+        }
+        if resolvedMap[sourceKey] != urlKey {
+            resolvedMap[sourceKey] = urlKey
+            persistResolvedMap()
+        }
+    }
+
+    private func loadFromMemoryOrDisk(urlKey: String) -> UIImage? {
+        if let cached = imageCache[urlKey] {
+            return cached
+        }
+        let fileURL = directory.appendingPathComponent(diskKey(for: urlKey))
+        guard let data = try? Data(contentsOf: fileURL), let image = UIImage(data: data) else {
+            return nil
+        }
+        imageCache[urlKey] = image
+        return image
     }
 
     private func downloadImage(from url: URL) async -> UIImage? {
@@ -108,10 +181,29 @@ private actor RSSFaviconImageLoader {
                !(200...299).contains(httpResponse.statusCode) {
                 return nil
             }
-            return UIImage(data: data)
+            guard let image = UIImage(data: data) else {
+                return nil
+            }
+            try? data.write(to: directory.appendingPathComponent(diskKey(for: url.absoluteString)))
+            return image
         } catch {
             return nil
         }
+    }
+
+    private func diskKey(for urlString: String) -> String {
+        let digest = Insecure.MD5.hash(data: Data(urlString.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func persistResolvedMap() {
+        guard let data = try? JSONEncoder().encode(resolvedMap) else { return }
+        try? data.write(to: resolvedMapURL)
+    }
+
+    private func persistMissingMap() {
+        guard let data = try? JSONEncoder().encode(missingMap) else { return }
+        try? data.write(to: missingMapURL)
     }
 }
 
