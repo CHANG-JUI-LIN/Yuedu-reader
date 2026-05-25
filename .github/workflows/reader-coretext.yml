@@ -1,10 +1,8 @@
 name: Reader CoreText Gates
 
 on:
+  workflow_dispatch:
   pull_request:
-  push:
-    branches:
-      - main
 
 jobs:
   reader-coretext:
