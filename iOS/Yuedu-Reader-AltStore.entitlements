@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- AltStore / free-account sideloading: no iCloud, no Sign in with Apple -->
+	<!-- These capabilities require a paid developer account and cannot be   -->
+	<!-- registered via AltStore's personal-team signing flow.               -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.zhangruilin.yuedureader</string>
+	</array>
+</dict>
+</plist>
