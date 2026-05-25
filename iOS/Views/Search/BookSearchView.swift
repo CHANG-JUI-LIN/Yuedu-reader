@@ -13,10 +13,19 @@ struct BookSearchView: View {
     @State private var selectedBook: SearchBook? = nil
     @State private var openingOnlineBook: OnlineBook? = nil
     @State private var errorMsg: String? = nil
+    @State private var submittedQuery = ""
     @FocusState private var searchFocused: Bool
     @ObservedObject private var gs = GlobalSettings.shared
 
     var enabledSources: [BookSource] { sourceStore.enabledSources }
+
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var shouldShowEmptyResult: Bool {
+        !submittedQuery.isEmpty && trimmedQuery == submittedQuery
+    }
 
     var body: some View {
         NavigationView {
@@ -46,7 +55,7 @@ struct BookSearchView: View {
                                 ProgressView(localized("搜索中…"))
                                 Spacer()
                             }
-                        } else if !query.isEmpty {
+                        } else if shouldShowEmptyResult {
                             emptyResultView
                         } else {
                             hintView
@@ -100,6 +109,7 @@ struct BookSearchView: View {
             if !query.isEmpty {
                 Button {
                     query = ""
+                    submittedQuery = ""
                     aggregator.cancel()
                 } label: {
                     Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
@@ -197,7 +207,7 @@ struct BookSearchView: View {
             Spacer()
             Image(systemName: "magnifyingglass").font(.system(size: 48)).foregroundColor(
                 Color.secondary.opacity(0.3))
-            Text(localized("沒有找到") + "「\(query)」").font(.headline)
+            Text(localized("沒有找到") + "「\(submittedQuery)」").font(.headline)
             Text(localized("嘗試換個關鍵字，或切換書源")).font(.subheadline).foregroundColor(.secondary)
             Spacer()
         }
@@ -225,7 +235,7 @@ struct BookSearchView: View {
 
     // MARK: Search Logic
     private func doSearch() {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let q = trimmedQuery
         guard !q.isEmpty else { return }
         let sources =
             selectedSourceId == nil
@@ -236,6 +246,7 @@ struct BookSearchView: View {
             return
         }
 
+        submittedQuery = q
         aggregator.search(query: q, sources: sources)
     }
 
