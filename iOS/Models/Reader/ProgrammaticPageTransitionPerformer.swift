@@ -32,9 +32,12 @@ struct ProgrammaticPageTransitionPerformer {
         restoringDataSource: UIPageViewControllerDataSource?,
         completion: @escaping (UIViewController) -> Void
     ) {
-        let targetStack = pageTurnStyle == .curl
-            ? [targetViewController]
-            : (targetViewControllers ?? [targetViewController])
+        let targetStack: [UIViewController]
+        if pageTurnStyle == .curl, !animated {
+            targetStack = [targetViewController]
+        } else {
+            targetStack = targetViewControllers ?? [targetViewController]
+        }
         let finish: (UIViewController) -> Void = { settledViewController in
             controller.layoutIfNeeded()
             completion(settledViewController)

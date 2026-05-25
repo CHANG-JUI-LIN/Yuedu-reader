@@ -94,8 +94,8 @@ struct ProgrammaticPageTransitionPerformerTests {
         #expect((container.viewControllers?.first as? IndexedViewController)?.globalPageIndex == 0)
     }
 
-    @Test("curl transition uses a single visible controller stack")
-    func curlTransitionUsesSingleVisibleControllerStack() {
+    @Test("animated curl transition keeps the provided double-sided stack")
+    func animatedCurlTransitionKeepsProvidedDoubleSidedStack() {
         let performer = ProgrammaticPageTransitionPerformer(pageTurnStyle: .curl)
         let container = FakePageContainer()
         let target = IndexedViewController(index: 2)
@@ -109,6 +109,32 @@ struct ProgrammaticPageTransitionPerformerTests {
             targetViewControllers: [target, back],
             direction: .forward,
             animated: true,
+            restoringDataSource: nil
+        ) { settled in
+            settledViewController = settled
+        }
+
+        #expect(container.viewControllers?.count == 2)
+        #expect(container.viewControllers?.first === target)
+        #expect(container.viewControllers?.last === back)
+        #expect(settledViewController === target)
+    }
+
+    @Test("non-animated curl transition uses one visible controller")
+    func nonAnimatedCurlTransitionUsesOneVisibleController() {
+        let performer = ProgrammaticPageTransitionPerformer(pageTurnStyle: .curl)
+        let container = FakePageContainer()
+        let target = IndexedViewController(index: 2)
+        let back = UIViewController()
+
+        var settledViewController: UIViewController?
+
+        performer.perform(
+            on: container,
+            targetViewController: target,
+            targetViewControllers: [target, back],
+            direction: .forward,
+            animated: false,
             restoringDataSource: nil
         ) { settled in
             settledViewController = settled

@@ -3534,6 +3534,25 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             [viewController]
         }
 
+        fileprivate func transitionViewControllerStack(
+            startingWith viewController: UIViewController,
+            animated: Bool
+        ) -> [UIViewController] {
+            guard pageTurnStyle == .curl,
+                  animated,
+                  let page = viewController as? any PageIndexProviding & UIViewController else {
+                return viewControllerStack(startingWith: viewController)
+            }
+            return [
+                viewController,
+                PageBackViewController(
+                    virtualIndex: page.globalPageIndex * 2 + 1,
+                    logicalPageIndex: page.globalPageIndex,
+                    backgroundColor: curlBackPageColor
+                )
+            ]
+        }
+
         init(engine: any PageRenderingProvider,
              pageTurnStyle: PageTurnStyle,
              theme: ReaderTheme,
@@ -3768,7 +3787,10 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     pageTurnStyle: pageTurnStyle,
                     on: pageViewController,
                     targetViewController: targetViewController,
-                    targetViewControllers: viewControllerStack(startingWith: targetViewController),
+                    targetViewControllers: transitionViewControllerStack(
+                        startingWith: targetViewController,
+                        animated: animated
+                    ),
                     direction: direction,
                     animated: animated,
                     restoringDataSource: self
@@ -3781,7 +3803,10 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
             ProgrammaticPageTransitionPerformer(pageTurnStyle: pageTurnStyle).perform(
                 on: pageViewController,
                 targetViewController: targetViewController,
-                targetViewControllers: viewControllerStack(startingWith: targetViewController),
+                targetViewControllers: transitionViewControllerStack(
+                    startingWith: targetViewController,
+                    animated: animated
+                ),
                 direction: direction,
                 animated: animated,
                 restoringDataSource: self
