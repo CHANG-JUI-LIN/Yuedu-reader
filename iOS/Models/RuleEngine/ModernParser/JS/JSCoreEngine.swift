@@ -366,13 +366,36 @@ class JSCoreEngine {
         if lastError != nil { return nil }
         if value.isUndefined || value.isNull { return nil }
 
-        // Arrays and objects → JSON string
+        // Arrays and plain objects → JSON string.
+        // Use JSON.stringify inside JSContext: NSJSONSerialization throws Obj-C
+        // exceptions (not Swift errors) when toObject() contains non-JSON values
+        // such as functions, symbols, or circular references.
         if value.isArray || value.isObject {
-            if let data = try? JSONSerialization.data(
-                withJSONObject: value.toObject() as Any, options: []
-            ), let json = String(data: data, encoding: .utf8) {
+            context.setObject(value, forKeyedSubscript: "__yueduExtractValue" as NSString)
+            defer { context.setObject(nil, forKeyedSubscript: "__yueduExtractValue" as NSString) }
+
+            if let jsonValue = context.evaluateScript(
+                """
+                (function(v) {
+                    try {
+                        if (v === undefined || v === null) return null;
+                        var s = JSON.stringify(v);
+                        return (s === undefined) ? null : s;
+                    } catch (e) {
+                        return null;
+                    }
+                })(__yueduExtractValue)
+                """
+            ), !jsonValue.isUndefined, !jsonValue.isNull,
+               let json = jsonValue.toString(),
+               !json.isEmpty {
                 return json
             }
+
+            if let fallback = value.toString(), !fallback.isEmpty, fallback != "[object Object]" {
+                return fallback
+            }
+            return nil
         }
 
         return value.toString()

@@ -7,7 +7,7 @@ import MobileCoreServices
 /// shared from Safari / other apps into yuedu app.
 class ShareViewController: UIViewController {
 
-    private let appGroupID = "group.com.zruilin.yuedu-app"
+    private let appGroupID = "group.com.mumu.yuedu"
 
     // MARK: - Lifecycle
 

@@ -45,6 +45,8 @@ final class EPUBPageRenderer: ObservableObject {
     private var lastViewportSize: CGSize = UIScreen.main.bounds.size
     /// bookId waiting for a valid viewport size before CoreTextPageEngine.start() can run.
     private var pendingStartBookId: String?
+    /// Identifier passed to CoreTextPageEngine.start(); used for progress persistence.
+    private(set) var progressBookIdentifier: String?
 
     private func logProgress(_ message: String) {
         let line = "[ProgressTrace][EPUBPageRenderer] \(message)"
@@ -107,6 +109,7 @@ final class EPUBPageRenderer: ObservableObject {
         let store = CharOffsetStore(directoryURL: progressDir)
 
         configureProgressStore(bookIdentifier: bookIdentifier)
+        progressBookIdentifier = bookIdentifier
         progressChapters = session.chapters.map {
             ProgressChapterMetadata(href: $0.href, title: $0.title)
         }
@@ -201,6 +204,7 @@ final class EPUBPageRenderer: ObservableObject {
             offsetStore: store
         )
         configureProgressStore(bookIdentifier: bookIdentifier)
+        progressBookIdentifier = bookIdentifier
         progressChapters = (0..<attributedBuilder.chapterCount).map { index in
             ProgressChapterMetadata(
                 href: attributedBuilder.chapterSourceHref(at: index) ?? "\(index)",
@@ -258,6 +262,7 @@ final class EPUBPageRenderer: ObservableObject {
             offsetStore: store
         )
         configureProgressStore(bookIdentifier: bookIdentifier)
+        progressBookIdentifier = bookIdentifier
         progressChapters = resourceAdapter.chapters.map {
             ProgressChapterMetadata(href: $0.href, title: $0.title)
         }
@@ -324,15 +329,19 @@ final class EPUBPageRenderer: ObservableObject {
         logProgress("updateCurrentPosition globalPage=\(globalPage) spine=\(spine) charOffset=\(offset)")
     }
 
-    func syncProgress(bookId: String) {
+    func syncProgress() {
         guard let eng = engine, let store = locatorStore else { return }
         if let locator = makeCurrentLocator(engine: eng) {
+            logProgress(
+                "syncProgress spine=\(savedSpineIndex) charOffset=\(savedCharOffset) partialCFI=\(locator.partialCFI ?? "nil")"
+            )
             store.save(record: locator)
         }
     }
 
-    func flushProgress(bookId: String) {
+    func flushProgress() {
         locatorStore?.flushSync()
+        logProgress("flushProgress spine=\(savedSpineIndex) charOffset=\(savedCharOffset)")
     }
 
     private func makeCurrentLocator(engine eng: any PageRenderingProvider) -> ReaderLocator? {

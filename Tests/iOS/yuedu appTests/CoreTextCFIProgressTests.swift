@@ -131,8 +131,8 @@ struct CoreTextCFIProgressTests {
         let pageIndex = 2
         let charOffset = Int(layout.pageRanges[pageIndex].location)
         renderer.updateCurrentPosition(globalPage: pageIndex, engine: engine)
-        renderer.syncProgress(bookId: bookId)
-        renderer.flushProgress(bookId: bookId)
+        renderer.syncProgress()
+        renderer.flushProgress()
 
         let locator = try #require(EPUBProgressStore(directoryURL: progressDirectory).loadLastRecord())
         #expect(locator.spineHref == "Text/chapter.xhtml")

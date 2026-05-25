@@ -31,15 +31,45 @@ final class ReaderProgressManager {
     }
 
     func saveCoreText(bookId: UUID, chapterIndex: Int, charOffset: Int, percentage: Double) {
-        log("saveCoreText deprecated bookId=\(bookId.uuidString)")
+        let snapshot = BookProgressSnapshot(
+            bookId: bookId,
+            mode: .coreText,
+            chapterIndex: chapterIndex,
+            pageIndex: nil,
+            charOffset: charOffset,
+            percentage: normalized(percentage),
+            timestamp: Date()
+        )
+        saveSnapshot(snapshot)
+        log("saveCoreText bookId=\(bookId.uuidString) chapter=\(chapterIndex) charOffset=\(charOffset) pct=\(String(format: "%.6f", snapshot.percentage))")
     }
 
     func savePaged(bookId: UUID, chapterIndex: Int, pageInChapter: Int, percentage: Double) {
-        log("savePaged deprecated bookId=\(bookId.uuidString)")
+        let snapshot = BookProgressSnapshot(
+            bookId: bookId,
+            mode: .paged,
+            chapterIndex: chapterIndex,
+            pageIndex: pageInChapter,
+            charOffset: nil,
+            percentage: normalized(percentage),
+            timestamp: Date()
+        )
+        saveSnapshot(snapshot)
+        log("savePaged bookId=\(bookId.uuidString) chapter=\(chapterIndex) page=\(pageInChapter) pct=\(String(format: "%.6f", snapshot.percentage))")
     }
 
     func saveScroll(bookId: UUID, chapterIndex: Int, charOffset: Int = 0, percentage: Double) {
-        log("saveScroll deprecated bookId=\(bookId.uuidString)")
+        let snapshot = BookProgressSnapshot(
+            bookId: bookId,
+            mode: .scroll,
+            chapterIndex: chapterIndex,
+            pageIndex: nil,
+            charOffset: charOffset,
+            percentage: normalized(percentage),
+            timestamp: Date()
+        )
+        saveSnapshot(snapshot)
+        log("saveScroll bookId=\(bookId.uuidString) chapter=\(chapterIndex) charOffset=\(charOffset) pct=\(String(format: "%.6f", snapshot.percentage))")
     }
 
     func loadSnapshot(bookId: UUID) -> BookProgressSnapshot? {

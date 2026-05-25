@@ -445,6 +445,7 @@ struct ReaderView: View {
         }
 
         epubRenderer.updateCurrentPosition(globalPage: newPage, engine: engine)
+        syncCoreTextProgressPersistence(engine: engine, flush: false)
 
         readerSessionCoordinator?.send(.settlePage(
             position: settledPosition,
@@ -452,6 +453,37 @@ struct ReaderView: View {
             totalPages: engine.totalPages,
             persist: true
         ))
+    }
+
+    private func syncCoreTextProgressPersistence(
+        engine: any PageRenderingProvider,
+        flush: Bool
+    ) {
+        guard usesCoreTextEPUB, !effectiveScrollMode else { return }
+        let candidatePage: Int = {
+            if currentPage == 0, engine.currentPage > 0 {
+                return engine.currentPage
+            }
+            return currentPage
+        }()
+        guard engine.totalPages > 0 else { return }
+
+        epubRenderer.updateCurrentPosition(globalPage: candidatePage, engine: engine)
+        let (spineIndex, charOffset) = engine.charOffset(forPage: candidatePage)
+        let progressBookId = epubRenderer.progressBookIdentifier ?? book?.id.uuidString ?? bookId.uuidString
+        engine.offsetStore.save(
+            CharOffsetRecord(
+                bookId: progressBookId,
+                spineIndex: spineIndex,
+                charOffset: charOffset,
+                timestamp: Date()
+            )
+        )
+        epubRenderer.syncProgress()
+        if flush {
+            epubRenderer.flushProgress()
+            engine.offsetStore.flushSync()
+        }
     }
 
     /// EPUB font asset directory (Documents/{uuid}_epub_assets/).
@@ -1075,9 +1107,11 @@ struct ReaderView: View {
         let snapshot = progressManager.loadSnapshot(bookId: bookId)
         savedPositionSnapshot = min(1.0, max(0.0, snapshot?.percentage ?? book?.currentPosition ?? 0))
         if let snapshot,
-           snapshot.mode == .coreText,
+           (snapshot.mode == .coreText || snapshot.mode == .scroll),
            let charOffset = snapshot.charOffset {
             savedCoreTextRestoreTarget = (snapshot.chapterIndex, max(0, charOffset))
+        } else if let snapshot, snapshot.mode == .scroll {
+            savedCoreTextRestoreTarget = (snapshot.chapterIndex, 0)
         } else {
             savedCoreTextRestoreTarget = nil
         }
@@ -1414,7 +1448,17 @@ struct ReaderView: View {
                     currentChapterIndex = position.spineIndex
                     moveReaderSession(to: position, source: .scrollCommit)
                     let pct = epubRenderer.engine?.totalProgress(forSpine: position.spineIndex, charOffset: position.charOffset) ?? 0
-                    store.updatePosition(bookId: bookId, position: pct)
+                    let normalized = min(1.0, max(0.0, pct))
+                    progressManager.saveScroll(
+                        bookId: bookId,
+                        chapterIndex: position.spineIndex,
+                        charOffset: position.charOffset,
+                        percentage: normalized
+                    )
+                    store.updatePosition(bookId: bookId, position: normalized)
+                    if let engine = epubRenderer.engine {
+                        syncCoreTextProgressPersistence(engine: engine, flush: true)
+                    }
                 },
                 onInternalLinkTap: { href in
                     Task {
@@ -2119,11 +2163,25 @@ struct ReaderView: View {
         guard !isRestoringPosition else { return }
 
         if effectiveScrollMode {
-            progressTrace("autoSave scroll visibleChapter=\(scrollVisibleChapter)")
-            store.updatePosition(
-                bookId: bookId,
-                position: Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
+            let position = readerSessionCoordinator?.state.location.coreTextPosition
+                ?? CoreTextReadingPosition(spineIndex: scrollVisibleChapter, charOffset: 0)
+            let normalized = min(
+                1.0,
+                max(
+                    0.0,
+                    Double(position.spineIndex) / Double(max(chapters.count - 1, 1))
+                )
             )
+            progressTrace(
+                "autoSave scroll visibleChapter=\(position.spineIndex) charOffset=\(position.charOffset) pct=\(String(format: "%.6f", normalized))"
+            )
+            progressManager.saveScroll(
+                bookId: bookId,
+                chapterIndex: position.spineIndex,
+                charOffset: position.charOffset,
+                percentage: normalized
+            )
+            store.updatePosition(bookId: bookId, position: normalized)
             return
         }
 
@@ -2136,17 +2194,23 @@ struct ReaderView: View {
                 }
                 return currentPage
             }()
-            guard let resolved = coreTextPositionIfLayoutReady(engine: engine, page: candidatePage) else {
-                progressTrace("autoSave coreText skipped page=\(candidatePage) reason=layoutNotReady")
-                return
-            }
-            let spineIndex = resolved.spineIndex
-            let charOffset = resolved.charOffset
+            let (spineIndex, charOffset) = engine.charOffset(forPage: candidatePage)
             currentChapterIndex = spineIndex
-            let pct = engine.totalProgress(forSpine: spineIndex, charOffset: charOffset)
+            let pct: Double
+            if let resolved = coreTextPositionIfLayoutReady(engine: engine, page: candidatePage) {
+                pct = engine.totalProgress(forSpine: resolved.spineIndex, charOffset: resolved.charOffset)
+            } else {
+                pct = engine.totalProgress(forSpine: spineIndex, charOffset: charOffset)
+            }
             let normalized = min(1.0, max(0.0, pct))
             progressTrace(
                 "autoSave coreText page=\(candidatePage) spine=\(spineIndex) charOffset=\(charOffset) pct=\(String(format: "%.6f", normalized))"
+            )
+            progressManager.saveCoreText(
+                bookId: bookId,
+                chapterIndex: spineIndex,
+                charOffset: charOffset,
+                percentage: normalized
             )
             store.updatePosition(bookId: bookId, position: normalized)
         } else if !effectiveScrollMode && !allPages.isEmpty {
@@ -2158,12 +2222,23 @@ struct ReaderView: View {
             progressTrace(
                 "autoSave paged currentPage=\(currentPage) chapter=\(page.chapterIndex) pageInChapter=\(page.pageInChapter) pct=\(String(format: "%.6f", normalized))"
             )
+            progressManager.savePaged(
+                bookId: bookId,
+                chapterIndex: page.chapterIndex,
+                pageInChapter: page.pageInChapter,
+                percentage: normalized
+            )
             store.updatePosition(bookId: bookId, position: normalized)
         } else {
             let progress = Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
             let normalized = min(1.0, max(0.0, progress))
             progressTrace(
                 "autoSave scroll visibleChapter=\(scrollVisibleChapter) pct=\(String(format: "%.6f", normalized))"
+            )
+            progressManager.saveScroll(
+                bookId: bookId,
+                chapterIndex: scrollVisibleChapter,
+                percentage: normalized
             )
             store.updatePosition(bookId: bookId, position: normalized)
         }
@@ -2174,6 +2249,9 @@ struct ReaderView: View {
         progressTrace("saveProgress begin wasRestoring=\(wasRestoring)")
         isRestoringPosition = false
         autoSaveProgress()
+        if let engine = epubRenderer.engine {
+            syncCoreTextProgressPersistence(engine: engine, flush: true)
+        }
         isRestoringPosition = wasRestoring
         if let navigator = readerSessionCoordinator?.navigator {
             Task {

@@ -1393,6 +1393,30 @@ struct JSCoreEngineTests {
         #expect(result!.contains("\"b\""))
     }
 
+    @Test("object with function property does not crash extraction")
+    func objectWithFunctionDoesNotCrash() {
+        let engine = JSCoreEngine()
+        let result = engine.evaluate("({a: 1, fn: function(){ return 2; }})")
+        #expect(result != nil)
+        #expect(result!.contains("\"a\""))
+        #expect(!result!.contains("fn"))
+    }
+
+    @Test("circular object does not crash extraction")
+    func circularObjectDoesNotCrash() {
+        let engine = JSCoreEngine()
+        let result = engine.evaluate(
+            """
+            (function() {
+                var o = {a: 1};
+                o.self = o;
+                return o;
+            })()
+            """
+        )
+        #expect(result == nil || result == "[object Object]")
+    }
+
     @Test("result variable binding")
     func resultVariableBinding() {
         let engine = JSCoreEngine()
