@@ -333,6 +333,14 @@
 				TargetAttributes = {
 					460D36582F51C5B8006E774C = {
 						CreatedOnToolsVersion = 26.2;
+						SystemCapabilities = {
+							com.apple.AppleSignIn = {
+								enabled = 1;
+							};
+							com.apple.iCloud = {
+								enabled = 1;
+							};
+						};
 					};
 					460D36652F51C5B9006E774C = {
 						CreatedOnToolsVersion = 26.2;
@@ -492,6 +500,8 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				CURRENT_PROJECT_VERSION = 2;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.zhangruilin.yuedureader.widget";
 				PRODUCT_NAME = yuedu_app_Widget;
 				SDKROOT = iphoneos;
@@ -641,7 +651,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = "iOS/Yuedu-Reader.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_APPINTENTS_DEPLOYMENT_AWARE_PROCESSING = NO;
 				ENABLE_PREVIEWS = YES;
@@ -662,9 +672,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.zhangruilin.yuedureader";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = YueduReader;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -688,7 +698,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = "iOS/Yuedu-Reader.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_APPINTENTS_DEPLOYMENT_AWARE_PROCESSING = NO;
 				ENABLE_PREVIEWS = YES;
@@ -709,9 +719,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.zhangruilin.yuedureader";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = YueduReader;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -849,6 +859,8 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				CURRENT_PROJECT_VERSION = 2;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.zhangruilin.yuedureader.shareextension";
 				PRODUCT_NAME = yuedu_app_ShareExtension;
 				SDKROOT = iphoneos;
@@ -879,6 +891,8 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				CURRENT_PROJECT_VERSION = 2;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.zhangruilin.yuedureader.shareextension";
 				PRODUCT_NAME = yuedu_app_ShareExtension;
 				SDKROOT = iphoneos;
@@ -908,6 +922,8 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				CURRENT_PROJECT_VERSION = 2;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.zhangruilin.yuedureader.widget";
 				PRODUCT_NAME = yuedu_app_Widget;
 				SDKROOT = iphoneos;
