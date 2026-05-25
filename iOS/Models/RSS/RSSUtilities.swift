@@ -1256,6 +1256,9 @@ enum RSSArticleContentLoaderError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .httpStatus(let status):
+            if status == 403 {
+                return localized("網站拒絕存取全文。你仍可開啟原始網頁閱讀。")
+            }
             return "HTTP \(status)"
         case .emptyContent:
             return localized("沒有可讀全文")

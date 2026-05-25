@@ -217,8 +217,16 @@ struct RSSArticleReaderView: View {
             let extracted = try await RSSArticleContentLoader.loadFullText(for: article)
             store.updateFullText(articleId: article.id, text: extracted.text, html: extracted.html)
         } catch {
-            fullTextError = String(format: localized("全文抓取失敗：%@"), error.localizedDescription)
+            fullTextError = fullTextErrorMessage(for: error)
         }
+    }
+
+    private func fullTextErrorMessage(for error: Error) -> String {
+        if let loaderError = error as? RSSArticleContentLoaderError,
+           case .httpStatus(403) = loaderError {
+            return error.localizedDescription
+        }
+        return String(format: localized("全文抓取失敗：%@"), error.localizedDescription)
     }
 
     private func shouldPreferFeedContent(_ article: RSSArticleRecord) -> Bool {

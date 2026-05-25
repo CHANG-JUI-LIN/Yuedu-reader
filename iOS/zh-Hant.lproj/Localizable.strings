@@ -566,6 +566,7 @@
 "Reader View" = "Reader View";
 "顯示摘要" = "顯示摘要";
 "沒有可讀全文" = "沒有可讀全文";
+"網站拒絕存取全文。你仍可開啟原始網頁閱讀。" = "網站拒絕存取全文。你仍可開啟原始網頁閱讀。";
 "分享" = "分享";
 "匯入 Legado JSON" = "匯入 Legado JSON";
 "匯出 Legado JSON" = "匯出 Legado JSON";
