@@ -36,4 +36,29 @@ struct TTSCoordinatorTests {
     @Test func httpProviderDisplayName() {
         #expect(CustomHTTPProvider().displayName == "網路語音")
     }
+
+    @Test func legadoVoiceSourceJSONParsesNameURLAndNumericID() throws {
+        let json = """
+        [
+          {
+            "id": 1641697053905,
+            "name": "2.推薦 百度AI 情感杜逍遙",
+            "url": "http://ai.baidu.com/aidemo?type=tns&tex={{java.encodeURI(java.encodeURI(speakText))}}",
+            "header": ""
+          },
+          {
+            "id": 0,
+            "name": "說明",
+            "url": ""
+          }
+        ]
+        """
+
+        let sources = try TTSSourceJSONParser.parse(data: Data(json.utf8))
+
+        #expect(sources.count == 1)
+        #expect(sources[0].id == "1641697053905")
+        #expect(sources[0].name == "2.推薦 百度AI 情感杜逍遙")
+        #expect(sources[0].urlTemplate.contains("{{java.encodeURI(java.encodeURI(speakText))}}"))
+    }
 }
