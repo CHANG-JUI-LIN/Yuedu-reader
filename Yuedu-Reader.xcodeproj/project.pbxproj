@@ -705,7 +705,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "閱讀";
+				INFOPLIST_KEY_CFBundleDisplayName = Yuedu;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "用於連接同一 Wi-Fi 下的本機語音測試服務。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
