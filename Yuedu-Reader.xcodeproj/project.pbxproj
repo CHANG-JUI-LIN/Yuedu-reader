@@ -490,7 +490,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = "Widget/Yuedu-Reader-Widget.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				EXECUTABLE_NAME = yuedu_app_Widget;
 				INFOPLIST_FILE = Widget/Info.plist;
@@ -501,7 +501,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zhangruilin.yuedureader.widget;
 				PRODUCT_NAME = yuedu_app_Widget;
 				SDKROOT = iphoneos;
@@ -651,7 +651,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = "iOS/Yuedu-Reader.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_APPINTENTS_DEPLOYMENT_AWARE_PROCESSING = NO;
 				ENABLE_PREVIEWS = YES;
@@ -672,7 +672,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zhangruilin.yuedureader;
 				PRODUCT_NAME = YueduReader;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -698,7 +698,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = "iOS/Yuedu-Reader-AltStore.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_APPINTENTS_DEPLOYMENT_AWARE_PROCESSING = NO;
 				ENABLE_PREVIEWS = YES;
@@ -719,7 +719,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zhangruilin.yuedureader;
 				PRODUCT_NAME = YueduReader;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -849,7 +849,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = "ShareExtension/Yuedu-Reader-ShareExtension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				EXECUTABLE_NAME = yuedu_app_ShareExtension;
 				INFOPLIST_FILE = ShareExtension/Info.plist;
@@ -860,7 +860,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zhangruilin.yuedureader.shareextension;
 				PRODUCT_NAME = yuedu_app_ShareExtension;
 				SDKROOT = iphoneos;
@@ -881,7 +881,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = "ShareExtension/Yuedu-Reader-ShareExtension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				EXECUTABLE_NAME = yuedu_app_ShareExtension;
 				INFOPLIST_FILE = ShareExtension/Info.plist;
@@ -892,7 +892,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zhangruilin.yuedureader.shareextension;
 				PRODUCT_NAME = yuedu_app_ShareExtension;
 				SDKROOT = iphoneos;
@@ -912,7 +912,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = "Widget/Yuedu-Reader-Widget.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				EXECUTABLE_NAME = yuedu_app_Widget;
 				INFOPLIST_FILE = Widget/Info.plist;
@@ -923,7 +923,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zhangruilin.yuedureader.widget;
 				PRODUCT_NAME = yuedu_app_Widget;
 				SDKROOT = iphoneos;
