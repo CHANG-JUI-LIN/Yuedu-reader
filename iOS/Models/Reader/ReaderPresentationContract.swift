@@ -118,7 +118,7 @@ enum ReaderPagingStyle: Hashable, Codable {
         case .slide: return .slide
         case .cover: return .cover
         case .curl: return .curl
-        case .none: return .none
+        case .none: return PageTurnStyle.none
         case .custom: return nil
         }
     }

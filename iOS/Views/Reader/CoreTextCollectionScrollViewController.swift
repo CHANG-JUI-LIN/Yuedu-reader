@@ -25,6 +25,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     private var pendingInitialChapter: Int = 0
     private var displayedCount: Int = 0
     private var lastWarmRow: Int?
+    private var lastWarmUptime: TimeInterval = 0
 
     private var selectionChapter: Int?
     private var selectedText: String?
@@ -221,7 +222,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             requestReslice(at: restoreChapter)
         } else {
             displayedCount = engine.chunks.count
-            engine.warmChunks(around: visibleProgressRow(), radius: 6)
+            warmChunks(around: visibleProgressRow(), force: true)
             collectionView.reloadData()
         }
     }
@@ -358,7 +359,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             return
         }
 
-        engine.warmChunks(around: atBottom ? actualOld : count, radius: 6)
+        warmChunks(around: atBottom ? actualOld : count, force: true)
         guard actualOld > 0, collectionView.window != nil else {
             displayedCount = total
             collectionView.reloadData()
@@ -410,7 +411,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             guard self.scrollToInitialRow(row) else { return }
-            self.engine.warmChunks(around: row, radius: 6)
+            self.warmChunks(around: row, force: true)
             self.hasAppliedInitialScroll = true
             self.pendingInitialScroll = nil
         }
@@ -647,8 +648,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
         guard let path = visibleProgressIndexPath(), path.item < chunks.count else { return }
 
         if lastWarmRow != path.item {
-            lastWarmRow = path.item
-            engine.warmChunks(around: path.item, radius: 6)
+            warmChunks(around: path.item)
         }
     }
 
@@ -668,6 +668,15 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
         guard let pos = visibleCanonicalPosition() else { return }
         print("[ProgressTrace][ScrollVC] commit(visibleCenter) spine=\(pos.spineIndex) charOffset=\(pos.charOffset)")
         onProgressCommit?(pos)
+    }
+
+    private func warmChunks(around row: Int, force: Bool = false) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force || row != lastWarmRow else { return }
+        guard force || now - lastWarmUptime >= 0.08 else { return }
+        lastWarmRow = row
+        lastWarmUptime = now
+        engine.warmChunks(around: row, radius: 2)
     }
 
     private func visibleCanonicalPosition() -> CoreTextReadingPosition? {

@@ -36,6 +36,17 @@ final class ReaderNavigator: ObservableObject {
         return location
     }
 
+    @discardableResult
+    func restoreSync() -> ReaderLocation {
+        guard let positionStore,
+              let saved = positionStore.loadSync(for: bookId) else {
+            return state.location
+        }
+        let location = ReaderLocation(saved, source: .restored)
+        sessionStore.move(to: location)
+        return location
+    }
+
     func settle(
         at position: CoreTextReadingPosition,
         pageIndex: Int?,

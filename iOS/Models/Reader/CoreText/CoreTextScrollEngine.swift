@@ -98,20 +98,24 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     /// Reslice (settings changed): clear all chunks and re-slice from the specified chapter
     func reslice(restoreAt chapterIndex: Int, contentWidth: CGFloat, imageContentWidth: CGFloat? = nil) async {
         let resolvedImageContentWidth = imageContentWidth ?? self.imageContentWidth
-        self.contentWidth = contentWidth
-        self.imageContentWidth = resolvedImageContentWidth
-        chunks = []
-        chapterRanges = [:]
-        loadedChapters = []
-        slicingChapters = []
-        pendingMissingChapters = [:]
-        isReady = false
-        events.send(.reset)
-        await start(
+
+        let replacement = CoreTextScrollEngine(builder: builder, renderSettings: renderSettings)
+        replacement.onChapterContentRequired = onChapterContentRequired
+        await replacement.start(
             initialChapter: chapterIndex,
             contentWidth: contentWidth,
             imageContentWidth: resolvedImageContentWidth
         )
+
+        self.contentWidth = contentWidth
+        self.imageContentWidth = resolvedImageContentWidth
+        chunks = replacement.chunks
+        chapterRanges = replacement.chapterRanges
+        loadedChapters = replacement.loadedChapters
+        slicingChapters = []
+        pendingMissingChapters = replacement.pendingMissingChapters
+        isReady = replacement.isReady
+        events.send(.reset)
     }
 
     func updateRenderSettings(_ settings: ReaderRenderSettings) {

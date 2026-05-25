@@ -1363,7 +1363,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
     private func changeAnnotationColor(to color: AnnotationColor) {
         guard var annotation = interactor.tappedAnnotation,
-              let layout,
+              layout != nil,
               let context = makeInteractionContext()
         else { return }
         annotation.color = color
@@ -1377,7 +1377,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
     private func changeAnnotationStyle(to style: AnnotationStyle) {
         guard var annotation = interactor.tappedAnnotation,
-              let layout,
+              layout != nil,
               let context = makeInteractionContext()
         else { return }
         annotation.style = style
@@ -1734,20 +1734,23 @@ extension SnapshotPageViewController: CoreTextReadingPositionProviding {}
 final class PageBackViewController: UIViewController {
     let virtualIndex: Int
     let logicalPageIndex: Int
+    let globalPageIndex: Int
+    let coreTextReadingPosition: CoreTextReadingPosition?
 
     private let pageBackgroundColor: UIColor
-    private let textureImage: UIImage?
 
     init(
         virtualIndex: Int,
         logicalPageIndex: Int,
+        globalPageIndex: Int,
         backgroundColor: UIColor,
-        textureImage: UIImage? = nil
+        readingPosition: CoreTextReadingPosition? = nil
     ) {
         self.virtualIndex = virtualIndex
         self.logicalPageIndex = logicalPageIndex
+        self.globalPageIndex = globalPageIndex
+        self.coreTextReadingPosition = readingPosition
         self.pageBackgroundColor = backgroundColor
-        self.textureImage = textureImage
         super.init(nibName: nil, bundle: nil)
         view.backgroundColor = backgroundColor
     }
@@ -1758,24 +1761,15 @@ final class PageBackViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        // Opaque solid theme color: the underside of the curling leaf never
+        // shows the page content (no show-through text).
         view.backgroundColor = pageBackgroundColor
         view.isOpaque = true
-
-        guard let textureImage else { return }
-        let imageView = UIImageView(image: textureImage)
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.contentMode = .scaleAspectFill
-        imageView.alpha = 0.08
-        view.addSubview(imageView)
-
-        NSLayoutConstraint.activate([
-            imageView.topAnchor.constraint(equalTo: view.topAnchor),
-            imageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            imageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
     }
 }
+
+extension PageBackViewController: PageIndexProviding {}
+extension PageBackViewController: CoreTextReadingPositionProviding {}
 
 /// Placeholder ViewController shown when a chapter's layout has not yet been computed (displays chapter title + loading indicator).
 final class PlaceholderPageViewController: UIViewController {

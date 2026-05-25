@@ -11,12 +11,11 @@ final class JSONFileReadingPositionStore: ReadingPositionStore {
     private let baseURL: URL
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
-    private let fileManager = FileManager.default
 
     init() {
-        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         self.baseURL = docs.appendingPathComponent("reading_position", isDirectory: true)
-        try? fileManager.createDirectory(at: baseURL, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
     }
 
     private func fileURL(for bookId: String) -> URL {
@@ -36,7 +35,7 @@ final class JSONFileReadingPositionStore: ReadingPositionStore {
 
     func loadSync(for bookId: String) -> CoreTextReadingPosition? {
         let url = fileURL(for: bookId)
-        guard fileManager.fileExists(atPath: url.path),
+        guard FileManager.default.fileExists(atPath: url.path),
               let data = try? Data(contentsOf: url) else {
             print("[ProgressTrace][PositionStore] load bookId=\(bookId) result=miss")
             return nil

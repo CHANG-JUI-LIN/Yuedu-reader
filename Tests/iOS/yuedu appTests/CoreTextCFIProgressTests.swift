@@ -3,7 +3,7 @@ import Testing
 import UIKit
 @testable import yuedu_app
 
-@Suite("CoreText EPUB CFI progress restore", .serialized)
+@Suite("CoreText EPUB locator compatibility", .serialized)
 struct CoreTextCFIProgressTests {
     private struct StaticChapterBuilder: AttributedStringBuilding {
         let text: String
@@ -40,7 +40,7 @@ struct CoreTextCFIProgressTests {
         }
     }
 
-    @Test @MainActor func coreTextEPUBRestoreUsesPartialCFIAfterLayoutChanges() async throws {
+    @Test @MainActor func coreTextEPUBStartIgnoresLegacyCFIProgressAfterLayoutChanges() async throws {
         let text = Self.longChapterText()
         let oldSettings = Self.renderSettings(fontSize: 18)
         let newSettings = Self.renderSettings(fontSize: 26)
@@ -95,49 +95,27 @@ struct CoreTextCFIProgressTests {
 
         let newLayout = try #require(engine.layouts[0])
         let expectedPage = newLayout.pageIndex(for: cfiCharOffset)
-        #expect(engine.currentPage == expectedPage)
-
-        let restoredRange = newLayout.pageRanges[expectedPage]
-        #expect(restoredRange.location <= cfiCharOffset)
-        #expect(cfiCharOffset < restoredRange.location + restoredRange.length)
-        #expect(engine.currentPage > 0)
+        #expect(expectedPage > 0)
+        #expect(engine.currentPage == 0)
     }
 
-    @Test @MainActor func pageRendererSyncProgressPersistsPartialCFI() async throws {
+    @Test func partialCFIRoundTripsStableReadingPosition() {
         let text = Self.longChapterText()
-        let settings = Self.renderSettings(fontSize: 20)
-        let bookId = "CoreTextCFISave-\(UUID().uuidString)"
-        let documentsURL = try #require(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first)
-        let progressDirectory = documentsURL.appendingPathComponent("epub_progress/\(bookId)")
-        try? FileManager.default.removeItem(at: progressDirectory)
-        defer { try? FileManager.default.removeItem(at: progressDirectory) }
-
-        let renderer = EPUBPageRenderer()
-        renderer.loadTXT(
-            attributedBuilder: StaticChapterBuilder(text: text),
-            bookIdentifier: bookId,
-            renderSize: CGSize(width: 360, height: 520),
-            settings: settings
+        let charOffset = text.utf16.count / 2
+        let cfi = EPUBPartialCFI.make(spineIndex: 4, charOffset: charOffset)
+        let locator = ReaderLocator(
+            spineHref: "Text/chapter.xhtml",
+            chapterIndex: 0,
+            pageInChapter: 0,
+            totalPagesInChapter: 1,
+            globalPage: 0,
+            progression: 0,
+            generationId: 0,
+            partialCFI: cfi
         )
 
-        for _ in 0..<60 where !renderer.isCoreTextReady {
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
-        try #require(renderer.isCoreTextReady)
-        let engine = try #require(renderer.engine)
-        let layout = try #require(engine.layouts[0])
-        try #require(layout.pageRanges.count > 2)
-
-        let pageIndex = 2
-        let charOffset = Int(layout.pageRanges[pageIndex].location)
-        renderer.updateCurrentPosition(globalPage: pageIndex, engine: engine)
-        renderer.syncProgress(bookId: bookId)
-        renderer.flushProgress(bookId: bookId)
-
-        let locator = try #require(EPUBProgressStore(directoryURL: progressDirectory).loadLastRecord())
-        #expect(locator.spineHref == "Text/chapter.xhtml")
-        #expect(locator.chapterIndex == 0)
-        #expect(locator.partialCFI == EPUBPartialCFI.make(spineIndex: 0, charOffset: charOffset))
+        #expect(locator.cfiReadingPosition() == CoreTextReadingPosition(spineIndex: 4, charOffset: charOffset))
+        #expect(locator.cfiReadingPosition(resolvedChapterIndex: 7) == CoreTextReadingPosition(spineIndex: 7, charOffset: charOffset))
     }
 
     private static func longChapterText() -> String {

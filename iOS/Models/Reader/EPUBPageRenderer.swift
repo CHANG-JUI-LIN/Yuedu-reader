@@ -33,14 +33,6 @@ final class EPUBPageRenderer: ObservableObject {
     /// Tracks the current global page index (kept in sync by ReaderView / CoreTextPageEngineView).
     var currentEpubPage: Int = 0
 
-    /// Stable content position captured at navigation time (when the spine IS loaded).
-    /// More reliable than converting currentEpubPage at save time, because spinePageOffsets
-    /// may shift as more chapters load and replace estimated page counts.
-    private var savedSpineIndex: Int = 0
-    private var savedCharOffset: Int = 0
-    private var locatorStore: EPUBProgressStore?
-    private var progressChapters: [ProgressChapterMetadata] = []
-
     /// Last non-zero viewport size reported by ReaderView via notifyViewportSize().
     private var lastViewportSize: CGSize = UIScreen.main.bounds.size
     /// bookId waiting for a valid viewport size before CoreTextPageEngine.start() can run.
@@ -55,21 +47,6 @@ final class EPUBPageRenderer: ObservableObject {
     private func elapsedMs(since start: TimeInterval) -> String {
         let value = (ProcessInfo.processInfo.systemUptime - start) * 1000
         return String(format: "%.1f", value)
-    }
-
-    private struct ProgressChapterMetadata {
-        let href: String
-        let title: String
-    }
-
-    private func configureProgressStore(bookIdentifier: String) {
-        let docsURL = FileManager.default.urls(
-            for: .documentDirectory, in: .userDomainMask
-        ).first!
-        let progressDir = docsURL.appendingPathComponent(
-            "epub_progress/\(bookIdentifier)"
-        )
-        locatorStore = EPUBProgressStore(directoryURL: progressDir)
     }
 
     // MARK: - Load
@@ -105,11 +82,6 @@ final class EPUBPageRenderer: ObservableObject {
             "epub_charoffsets/\(bookIdentifier)"
         )
         let store = CharOffsetStore(directoryURL: progressDir)
-
-        configureProgressStore(bookIdentifier: bookIdentifier)
-        progressChapters = session.chapters.map {
-            ProgressChapterMetadata(href: $0.href, title: $0.title)
-        }
 
         // ── Phase 7 A/B branch ─────────────────────────────────────────────
         self.onlineBuilder = nil
@@ -200,13 +172,6 @@ final class EPUBPageRenderer: ObservableObject {
             renderSettings: settings,
             offsetStore: store
         )
-        configureProgressStore(bookIdentifier: bookIdentifier)
-        progressChapters = (0..<attributedBuilder.chapterCount).map { index in
-            ProgressChapterMetadata(
-                href: attributedBuilder.chapterSourceHref(at: index) ?? "\(index)",
-                title: attributedBuilder.chapterTitle(at: index)
-            )
-        }
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         self.engine = newEngine
         self.epubBuilder = nil
@@ -257,10 +222,6 @@ final class EPUBPageRenderer: ObservableObject {
             renderSettings: settings,
             offsetStore: store
         )
-        configureProgressStore(bookIdentifier: bookIdentifier)
-        progressChapters = resourceAdapter.chapters.map {
-            ProgressChapterMetadata(href: $0.href, title: $0.title)
-        }
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         self.engine = newEngine
         // Online book: create a separate OnlineProviderAttributedStringBuilder for scrollEngine.
@@ -312,60 +273,14 @@ final class EPUBPageRenderer: ObservableObject {
         }
     }
 
-    // MARK: - Progress persistence
+    // MARK: - Progress presentation
 
-    /// Called at page-turn time when the spine is guaranteed to be loaded.
-    /// Caches the stable (spineIndex, charOffset) for use in syncProgress.
+    /// Called at page-turn time so the renderer can expose the current page for UI.
+    /// Position persistence is owned by ReaderNavigator/ReadingPositionStore.
     func updateCurrentPosition(globalPage: Int, engine eng: any PageRenderingProvider) {
         currentEpubPage = globalPage
         let (spine, offset) = eng.charOffset(forPage: globalPage)
-        savedSpineIndex = spine
-        savedCharOffset = offset
         logProgress("updateCurrentPosition globalPage=\(globalPage) spine=\(spine) charOffset=\(offset)")
-    }
-
-    func syncProgress(bookId: String) {
-        guard let eng = engine, let store = locatorStore else { return }
-        if let locator = makeCurrentLocator(engine: eng) {
-            store.save(record: locator)
-        }
-    }
-
-    func flushProgress(bookId: String) {
-        locatorStore?.flushSync()
-    }
-
-    private func makeCurrentLocator(engine eng: any PageRenderingProvider) -> ReaderLocator? {
-        let metadata = progressChapters.indices.contains(savedSpineIndex)
-            ? progressChapters[savedSpineIndex]
-            : ProgressChapterMetadata(href: "\(savedSpineIndex)", title: "")
-        let layout = eng.layouts[savedSpineIndex]
-        let pageInChapter = layout?.pageIndex(for: savedCharOffset) ?? 0
-        let totalPagesInChapter = max(layout?.pageRanges.count ?? 1, 1)
-        let chapterProgression: Double? = {
-            guard let length = layout?.attributedString.length, length > 0 else { return nil }
-            return min(1.0, max(0.0, Double(savedCharOffset) / Double(length)))
-        }()
-        let totalProgression = eng.totalProgress(
-            forSpine: savedSpineIndex,
-            charOffset: savedCharOffset
-        )
-        return ReaderLocator(
-            spineHref: metadata.href,
-            chapterIndex: savedSpineIndex,
-            pageInChapter: pageInChapter,
-            totalPagesInChapter: totalPagesInChapter,
-            globalPage: currentEpubPage,
-            progression: totalProgression,
-            generationId: 0,
-            title: metadata.title.isEmpty ? nil : metadata.title,
-            chapterProgression: chapterProgression,
-            totalProgression: totalProgression,
-            partialCFI: EPUBPartialCFI.make(
-                spineIndex: savedSpineIndex,
-                charOffset: savedCharOffset
-            )
-        )
     }
 
     func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int? {

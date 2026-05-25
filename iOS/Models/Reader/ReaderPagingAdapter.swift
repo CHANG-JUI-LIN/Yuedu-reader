@@ -68,3 +68,28 @@ struct PageViewControllerPagingAdapterDescriptor: Equatable {
         isRTL && style == .curl ? .max : .min
     }
 }
+
+enum ReaderCurlVirtualIndex {
+    static func frontIndex(forGlobalPage page: Int, isRTL: Bool) -> Int {
+        let base = max(0, page) * 2
+        return isRTL ? base + 1 : base
+    }
+
+    static func backIndex(forLogicalPage page: Int, isRTL: Bool) -> Int {
+        let base = max(0, page) * 2
+        return isRTL ? base : base + 1
+    }
+}
+
+enum ReaderCurlBackPageResolver {
+    static func logicalPageIndex(targetPage: Int, visiblePage: Int) -> Int {
+        targetPage >= visiblePage ? targetPage - 1 : targetPage
+    }
+
+    static func contentPageIndex(logicalPageIndex: Int, totalPages: Int) -> Int? {
+        guard logicalPageIndex >= 0 else { return nil }
+        let contentPage = logicalPageIndex + 1
+        guard contentPage < totalPages else { return nil }
+        return contentPage
+    }
+}

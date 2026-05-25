@@ -34,6 +34,47 @@ struct ReaderPresentationContractTests {
         #expect(!none.usesCoverOverlay)
     }
 
+    @Test("curl virtual indices mirror when RTL uses a right-hand spine")
+    func curlVirtualIndicesMirrorForRTLSpine() {
+        #expect(ReaderCurlVirtualIndex.frontIndex(forGlobalPage: 3, isRTL: false) == 6)
+        #expect(ReaderCurlVirtualIndex.backIndex(forLogicalPage: 3, isRTL: false) == 7)
+
+        #expect(ReaderCurlVirtualIndex.frontIndex(forGlobalPage: 3, isRTL: true) == 7)
+        #expect(ReaderCurlVirtualIndex.backIndex(forLogicalPage: 3, isRTL: true) == 6)
+    }
+
+    @Test("curl back page content follows logical reader direction")
+    func curlBackPageContentFollowsLogicalReaderDirection() {
+        #expect(ReaderCurlBackPageResolver.logicalPageIndex(targetPage: 4, visiblePage: 3) == 3)
+        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 3, totalPages: 6) == 4)
+
+        #expect(ReaderCurlBackPageResolver.logicalPageIndex(targetPage: 2, visiblePage: 3) == 2)
+        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 2, totalPages: 6) == 3)
+
+        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: -1, totalPages: 6) == nil)
+        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 5, totalPages: 6) == nil)
+    }
+
+    @Test("curl back pages stay opaque solid color but keep stable position identity")
+    func curlBackPageStaysSolidColorWithStableIdentity() {
+        let position = CoreTextReadingPosition(spineIndex: 2, charOffset: 64)
+        let backPage = PageBackViewController(
+            virtualIndex: 7,
+            logicalPageIndex: 3,
+            globalPageIndex: 4,
+            backgroundColor: .white,
+            readingPosition: position
+        )
+
+        backPage.loadViewIfNeeded()
+
+        #expect(backPage.view.isOpaque)
+        #expect(backPage.view.backgroundColor == .white)
+        #expect(backPage.logicalPageIndex == 3)
+        #expect(backPage.globalPageIndex == 4)
+        #expect(backPage.coreTextReadingPosition == position)
+    }
+
     @Test("session store keeps reader presentation state as a single update surface")
     func sessionStoreUpdatesPresentationState() {
         let appearance = ReaderAppearance(

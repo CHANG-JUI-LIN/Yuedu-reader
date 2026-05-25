@@ -63,6 +63,11 @@ final class ReaderSessionCoordinator: ObservableObject {
         await navigator.restore()
     }
 
+    @discardableResult
+    func restoreSync() -> ReaderLocation {
+        navigator.restoreSync()
+    }
+
     func setExternalTarget(_ position: CoreTextReadingPosition?) {
         externalTargetPosition = position
     }
@@ -81,6 +86,7 @@ final class ReaderSessionCoordinator: ObservableObject {
         transitionQueue.reset()
     }
 
+    @discardableResult
     func send(_ action: ReaderAction) -> [ReaderEffect] {
         switch action {
         case .restore:

@@ -31,4 +31,20 @@ struct ReaderPageTransitionQueueTests {
         #expect(followUp == nil)
         #expect(queue.queuedPage == nil)
     }
+
+    @Test("interactive transitions share the same in-flight queue")
+    func interactiveTransitionsQueueLatestProgrammaticTarget() {
+        var queue = ReaderPageTransitionQueue()
+
+        queue.beginInteractiveTransition()
+        #expect(queue.isTransitioning)
+
+        let decision = queue.requestTransition(to: 12, visiblePage: 10)
+        #expect(decision == .deferUntilCurrentTransitionFinishes)
+        #expect(queue.queuedPage == 12)
+
+        let followUp = queue.transitionFinished(showing: 11)
+        #expect(followUp == 12)
+        #expect(!queue.isTransitioning)
+    }
 }

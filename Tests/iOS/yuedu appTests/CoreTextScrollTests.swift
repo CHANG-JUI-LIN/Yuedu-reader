@@ -284,6 +284,29 @@ struct CoreTextScrollTests {
         #expect(materialized == [1, 2, 3])
     }
 
+    @Test("scroll engine keeps old chunks visible while reslicing")
+    @MainActor
+    func scrollEngineKeepsOldChunksVisibleWhileReslicing() async throws {
+        let engine = CoreTextScrollEngine(
+            builder: DelayedScrollTestBuilder(chapters: [Self.longChapter], delayNanoseconds: 120_000_000),
+            renderSettings: Self.renderSettings
+        )
+        await engine.start(initialChapter: 0, contentWidth: 220)
+        let oldCount = engine.chunks.count
+        try #require(engine.isReady)
+        try #require(oldCount > 0)
+
+        let resliceTask = Task { await engine.reslice(restoreAt: 0, contentWidth: 220) }
+        await Task.yield()
+
+        #expect(engine.isReady)
+        #expect(engine.chunks.count == oldCount)
+
+        await resliceTask.value
+        #expect(engine.isReady)
+        #expect(!engine.chunks.isEmpty)
+    }
+
     @Test("progress throttle suppresses repeated same-row updates")
     func progressThrottleSuppressesDuplicateRows() {
         var throttle = CoreTextScrollProgressThrottle(minimumInterval: 0.25)
@@ -618,6 +641,40 @@ private struct StaticScrollTestBuilder: AttributedStringBuilding {
         themeBackgroundColor: UIColor
     ) async throws -> AttributedChapterBuildResult {
         AttributedChapterBuildResult(
+            attributedString: NSAttributedString(
+                string: chapters[index],
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: settings.fontSize),
+                    .foregroundColor: themeTextColor,
+                ]
+            ),
+            imagePage: nil,
+            pageBackgroundImage: nil,
+            anchorOffsets: [:]
+        )
+    }
+}
+
+private struct DelayedScrollTestBuilder: AttributedStringBuilding {
+    let chapters: [String]
+    let delayNanoseconds: UInt64
+
+    var chapterCount: Int { chapters.count }
+
+    func chapterTitle(at index: Int) -> String { "Chapter \(index)" }
+    func chapterSourceHref(at index: Int) -> String? { "chapter-\(index).xhtml" }
+    func chapterDataSize(at index: Int) async -> Int { chapters[index].utf8.count }
+    func chapterIndex(for href: String) -> Int? { nil }
+    func cssResourceHrefs() -> [String] { [] }
+
+    func buildChapter(
+        at index: Int,
+        settings: ReaderRenderSettings,
+        themeTextColor: UIColor,
+        themeBackgroundColor: UIColor
+    ) async throws -> AttributedChapterBuildResult {
+        try? await Task.sleep(nanoseconds: delayNanoseconds)
+        return AttributedChapterBuildResult(
             attributedString: NSAttributedString(
                 string: chapters[index],
                 attributes: [

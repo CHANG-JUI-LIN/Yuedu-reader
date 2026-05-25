@@ -1828,27 +1828,45 @@ struct yuedu_appTests {
         #expect(shouldPersist == true)
     }
 
-    @Test func readerProgressSyncPolicyDoesNotUseZeroEnginePageBeforePaginationReady() {
-        let shouldUseDirectly = ReaderProgressSyncPolicy.shouldUseEnginePageDirectly(
-            enginePage: 0,
-            totalPages: 0,
-            savedPositionSnapshot: 0,
-            hasRestoreTarget: false
-        )
-        #expect(shouldUseDirectly == false)
-    }
+    @Test func coreTextEngineDoesNotRestoreFromLegacyCharOffsetStore() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreTextSingleRestoreSource-\(UUID().uuidString)")
+        let bookId = "single-source-\(UUID().uuidString)"
+        let offsetStore = CharOffsetStore(directoryURL: dir, debounceInterval: 0)
+        offsetStore.save(CharOffsetRecord(
+            bookId: bookId,
+            spineIndex: 3,
+            charOffset: 5,
+            timestamp: Date()
+        ))
+        offsetStore.flushSync()
 
-    @Test func readerProgressSyncPolicyPrefersRestoreTargetOverTransientEnginePage() {
-        // A precise restore target must win even if the engine transiently reports a
-        // non-zero page during the cold-restore window, otherwise restore can race to
-        // the chapter start intermittently.
-        let shouldUseDirectly = ReaderProgressSyncPolicy.shouldUseEnginePageDirectly(
-            enginePage: 5,
-            totalPages: 100,
-            savedPositionSnapshot: 0,
-            hasRestoreTarget: true
+        let settings = ReaderRenderSettings(
+            theme: "light",
+            textColor: .black,
+            backgroundColor: .white,
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 6,
+            paragraphSpacing: 8,
+            letterSpacing: 0,
+            marginH: 24,
+            marginV: 16,
+            footerHeight: 24,
+            contentInsets: .zero
         )
-        #expect(shouldUseDirectly == false)
+        let engine = await MainActor.run {
+            CoreTextPageEngine(
+                attributedBuilder: ProgressFallbackBuilder(chapterCount: 5),
+                renderSettings: settings,
+                offsetStore: offsetStore
+            )
+        }
+
+        await engine.start(renderSize: CGSize(width: 320, height: 480), bookId: bookId)
+
+        let currentPage = await MainActor.run { engine.currentPage }
+        #expect(currentPage == 0)
     }
 
     @Test func coreTextProgressFallsBackToChapterRatioBeforeByteScan() async {

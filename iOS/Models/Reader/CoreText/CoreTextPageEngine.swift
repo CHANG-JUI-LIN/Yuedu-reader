@@ -157,7 +157,6 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private(set) var renderSettings: ReaderRenderSettings
 
     private var currentBookId: String?
-    private var pendingRestoreTarget: (spineIndex: Int, charOffset: Int)?
     private var chapterByteScanTask: Task<Void, Never>?
     private var startupBeganUptime: TimeInterval?
     private var didLogProgressFallback = false
@@ -320,27 +319,10 @@ final class CoreTextPageEngine: PageRenderingProvider {
             await self.scanChapterByteSizes(for: bookId)
         }
 
-        // 2. Read progress record → determine priority chapters to load.
-        // Prefer the EPUB locator's partial CFI because it represents content
-        // position; CharOffsetStore remains the fallback for older saves.
-        let maxSpineIndex = max(0, totalChapters - 1)
-        let restoreRecord = savedProgressPosition(bookId: bookId, maxSpineIndex: maxSpineIndex)
-        let savedSpine = restoreRecord?.position.spineIndex ?? 0
-        if let restoreRecord {
-            print("[ProgressTrace][CoreTextPageEngine] start loadRecord bookId=\(bookId) source=\(restoreRecord.source) clampedSpine=\(savedSpine) charOffset=\(restoreRecord.position.charOffset)")
-        } else {
-            print("[ProgressTrace][CoreTextPageEngine] start loadRecord bookId=\(bookId) none")
-        }
-        pendingRestoreTarget = restoreRecord.map {
-            ($0.position.spineIndex, $0.position.charOffset)
-        }
-
-        // 3. Load the saved chapter neighborhood [n-1, n, n+1] (plus chapter 0 if not already included)
+        // 2. Load chapter 0. Restore targets are supplied by ReaderNavigator/ReaderView;
+        // the engine no longer reads persisted position independently.
         var priority = Set<Int>()
         priority.insert(0) // Cover/TOC is always needed
-        for i in max(0, savedSpine - 1)...min(savedSpine + 1, totalChapters - 1) {
-            priority.insert(i)
-        }
         startupTrace("preload priority=\(priority.sorted())")
 
         await withTaskGroup(of: Void.self) { group in
@@ -350,13 +332,6 @@ final class CoreTextPageEngine: PageRenderingProvider {
         }
         startupTrace("preload priority done totalPages=\(totalPages)")
         print("[CoreTextEngine] start done totalPages=\(totalPages)")
-
-        // 4. Restore position (saved chapter is already loaded, won't fall back to 0)
-        if pendingRestoreTarget != nil {
-            applyPendingRestoreIfPossible()
-        } else {
-            migrateFromLegacyProgressIfNeeded(bookId: bookId)
-        }
     }
 
     private func scanChapterByteSizes(for bookId: String) async {
@@ -761,11 +736,10 @@ _layouts[spineIndex] == nil else { return }
             let layout = await paginationManager.paginate(request).layout
             guard !shouldAbortPreload(generation: generation) else { return }
 
-_layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
+            _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
             print("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
             generateSnapshot(for: spineIndex)
             rebuildPageOffsets()
-            applyPendingRestoreIfPossible()
             return
         }
 
@@ -859,7 +833,6 @@ _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backg
         print("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
         generateSnapshot(for: spineIndex)
         rebuildPageOffsets()
-        applyPendingRestoreIfPossible()
     }
 
     private func resolvedPageBackgroundImage(
@@ -953,6 +926,7 @@ _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backg
 
     func invalidateLayout(newSize: CGSize) async {
         print("[FlipTrace] invalidateLayout newSize=\(newSize) oldSize=\(renderSize) loaded=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
+        let restorePosition = readingPosition(forPage: currentPage)
         cancelPendingWork()
         isRelaying = true
         renderSize = newSize
@@ -970,15 +944,13 @@ _layouts.removeAll()
         }
 
         // Byte size rescan not needed (unaffected by font size changes)
-        // Restore currentPage (charOffset unchanged, but page numbers may differ)
-        if let bookId = currentBookId,
-           let restoreRecord = savedProgressPosition(bookId: bookId, maxSpineIndex: max(0, chapterCount - 1)) {
-            let maxSpineIndex = max(0, chapterCount - 1)
-            pendingRestoreTarget = (
-                max(0, min(restoreRecord.position.spineIndex, maxSpineIndex)),
-                max(0, restoreRecord.position.charOffset)
-            )
-            applyPendingRestoreIfPossible()
+        // Restore the in-memory location after re-pagination; do not read disk.
+        if let restorePosition,
+           let resolved = pageIndex(for: restorePosition) {
+            currentPage = resolved
+            onNavigateToPage?(resolved)
+        } else {
+            currentPage = max(0, min(currentPage, max(totalPages - 1, 0)))
         }
         isRelaying = false
         onChapterReady?(nil)
@@ -1350,28 +1322,6 @@ _layouts[spineIndex] = _layouts[spineIndex]?.withUpdatedColors(textColor: textCo
         return nil
     }
 
-    private func resolvedPageIndex(forSpine spineIndex: Int, charOffset: Int) -> Int? {
-        guard spinePageOffsets.indices.contains(spineIndex),
-              let layout = _layouts[spineIndex] else { return nil }
-        let localPage = layout.pageIndex(for: charOffset)
-        return spinePageOffsets[spineIndex] + localPage
-    }
-
-    private func applyPendingRestoreIfPossible() {
-        guard let target = pendingRestoreTarget else { return }
-        guard let resolved = resolvedPageIndex(forSpine: target.spineIndex, charOffset: target.charOffset) else {
-            print("[ProgressTrace][CoreTextPageEngine] pendingRestore waiting spine=\(target.spineIndex) charOffset=\(target.charOffset) layoutsReady=\(layouts[target.spineIndex] != nil)")
-            return
-        }
-        print("[ProgressTrace][CoreTextPageEngine] pendingRestore applied spine=\(target.spineIndex) charOffset=\(target.charOffset) resolvedPage=\(resolved)")
-        let previousPage = currentPage
-        currentPage = resolved
-        if previousPage != resolved {
-            onNavigateToPage?(resolved)
-        }
-        pendingRestoreTarget = nil
-    }
-
     private func currentContentInsets() -> UIEdgeInsets {
         renderSettings.contentInsets
     }
@@ -1411,67 +1361,4 @@ _layouts[spineIndex] = _layouts[spineIndex]?.withUpdatedColors(textColor: textCo
         return (layout.attributedString.string as NSString).substring(with: nsRange)
     }
 
-    private func progressStore(for bookId: String) -> EPUBProgressStore {
-        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let progressDir = docsURL.appendingPathComponent("epub_progress/\(bookId)")
-        return EPUBProgressStore(directoryURL: progressDir)
-    }
-
-    private func savedProgressPosition(
-        bookId: String,
-        maxSpineIndex: Int
-    ) -> (position: CoreTextReadingPosition, source: String)? {
-        let legacyStore = progressStore(for: bookId)
-        if let locator = legacyStore.loadLastRecord(),
-           let position = cfiReadingPosition(from: locator, maxSpineIndex: maxSpineIndex) {
-            return (position, "partialCFI")
-        }
-
-        if let record = offsetStore.load(bookId: bookId) {
-            return (
-                CoreTextReadingPosition(
-                    spineIndex: max(0, min(record.spineIndex, maxSpineIndex)),
-                    charOffset: max(0, record.charOffset)
-                ),
-                "charOffset"
-            )
-        }
-
-        return nil
-    }
-
-    private func cfiReadingPosition(
-        from locator: ReaderLocator,
-        maxSpineIndex: Int
-    ) -> CoreTextReadingPosition? {
-        let resolvedChapterIndex = chapterIndex(for: locator.spineHref)
-        guard let position = locator.cfiReadingPosition(resolvedChapterIndex: resolvedChapterIndex) else {
-            return nil
-        }
-        return CoreTextReadingPosition(
-            spineIndex: max(0, min(position.spineIndex, maxSpineIndex)),
-            charOffset: max(0, position.charOffset)
-        )
-    }
-
-    private func migrateFromLegacyProgressIfNeeded(bookId: String) {
-        let legacyStore = progressStore(for: bookId)
-        guard let locator = legacyStore.loadLastRecord() else { return }
-
-        if let position = cfiReadingPosition(from: locator, maxSpineIndex: max(0, chapterCount - 1)) {
-            pendingRestoreTarget = (position.spineIndex, position.charOffset)
-            applyPendingRestoreIfPossible()
-            return
-        }
-
-        let spineIndex = locator.chapterIndex
-        guard let layout = _layouts[spineIndex] else {
-            pendingRestoreTarget = (spineIndex, 0)
-            return
-        }
-        let progression = locator.chapterProgression ?? locator.progression
-        let charOffset = Int(progression * Double(layout.attributedString.length))
-        pendingRestoreTarget = (spineIndex, charOffset)
-        applyPendingRestoreIfPossible()
-    }
 }

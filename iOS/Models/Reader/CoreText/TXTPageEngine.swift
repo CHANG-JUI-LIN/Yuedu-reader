@@ -115,19 +115,12 @@ final class TXTPageEngine: PageRenderingProvider {
     func start(renderSize: CGSize, bookId: String) async {
         self.renderSize = renderSize
         self.currentBookId = bookId
-        
-        var startSpine = 0
-        var startCharOffset = 0
-        if let record = offsetStore.load(bookId: bookId) {
-            startSpine = record.spineIndex
-            startCharOffset = record.charOffset
-        }
-        
+
+        let startSpine = 0
         await preloadChapter(at: startSpine)
-        if startSpine > 0 { schedulePreloadChapter(at: startSpine - 1) }
         if startSpine < chapterCount - 1 { schedulePreloadChapter(at: startSpine + 1) }
-        
-        self.currentPage = pageIndex(forSpine: startSpine, charOffset: startCharOffset)
+
+        self.currentPage = 0
         onChapterReady?(startSpine)
     }
 
