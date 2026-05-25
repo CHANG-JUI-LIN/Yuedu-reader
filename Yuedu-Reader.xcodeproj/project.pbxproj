@@ -483,7 +483,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Widget/Yuedu-Reader-Widget.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				EXECUTABLE_NAME = yuedu_app_Widget;
-				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/Widget/Info.plist";
+				INFOPLIST_FILE = Widget/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -837,7 +837,7 @@
 				CODE_SIGN_ENTITLEMENTS = "ShareExtension/Yuedu-Reader-ShareExtension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				EXECUTABLE_NAME = yuedu_app_ShareExtension;
-				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/ShareExtension/Info.plist";
+				INFOPLIST_FILE = ShareExtension/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -866,7 +866,7 @@
 				CODE_SIGN_ENTITLEMENTS = "ShareExtension/Yuedu-Reader-ShareExtension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				EXECUTABLE_NAME = yuedu_app_ShareExtension;
-				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/ShareExtension/Info.plist";
+				INFOPLIST_FILE = ShareExtension/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -894,7 +894,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Widget/Yuedu-Reader-Widget.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				EXECUTABLE_NAME = yuedu_app_Widget;
-				INFOPLIST_FILE = "/Users/zhangruilin/Desktop/Yuedu-reader/Widget/Info.plist";
+				INFOPLIST_FILE = Widget/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (

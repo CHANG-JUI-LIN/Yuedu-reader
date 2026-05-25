@@ -3531,18 +3531,7 @@ private struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         fileprivate func viewControllerStack(startingWith viewController: UIViewController) -> [UIViewController] {
-            guard pageTurnStyle == .curl,
-                  let page = viewController as? any PageIndexProviding & UIViewController else {
-                return [viewController]
-            }
-            return [
-                viewController,
-                PageBackViewController(
-                    virtualIndex: page.globalPageIndex * 2 + 1,
-                    logicalPageIndex: page.globalPageIndex,
-                    backgroundColor: curlBackPageColor
-                )
-            ]
+            [viewController]
         }
 
         init(engine: any PageRenderingProvider,
