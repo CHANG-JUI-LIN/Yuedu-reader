@@ -440,6 +440,16 @@
 "尚未配置語音源，暫時無法開始聽書" = "No voice source is configured, so listening cannot start yet.";
 "語音源 JSON" = "Voice Source JSON";
 "語音源 JSON URL" = "Voice Source JSON URL";
+"搜索語音源" = "Search Voice Sources";
+"尚無語音源" = "No Voice Sources Yet";
+"匯入語音源 JSON" = "Import Voice Source JSON";
+"點擊右上角 ↓ 匯入 Legado 語音源 JSON" = "Tap ↓ in the top-right to import Legado voice source JSON";
+"輸入語音源 JSON 的網路地址，支援直接返回 JSON 的 URL。" = "Enter a voice source JSON URL that returns JSON directly.";
+"設為使用" = "Use This Source";
+"使用中" = "In Use";
+"已複製語音源 JSON" = "Voice source JSON copied";
+"已載入" = "Loaded";
+"個語音源" = "voice sources";
 "載入中…" = "Loading…";
 "載入語音源 JSON" = "Load Voice Source JSON";
 "從檔案匯入語音源 JSON" = "Import Voice Source JSON from File";

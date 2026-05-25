@@ -3,134 +3,85 @@ import UniformTypeIdentifiers
 
 struct TTSSettingsView: View {
     @ObservedObject private var gs = GlobalSettings.shared
+    @Environment(\.presentationMode) private var presentationMode
     @StateObject private var testCoordinator = TTSCoordinator()
     @State private var sourceListURL = ""
     @State private var sourceImportMessage: String?
     @State private var isImportingSources = false
     @State private var showSourceFileImporter = false
-    private let localTestTemplate = "http://192.168.1.16:5001/tts?text={{text}}&rate={{speakSpeed}}"
+    @State private var showNetworkImport = false
+    @State private var searchText = ""
+
+    private var filteredSources: [ImportedTTSSource] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return gs.importedTTSSources }
+        return gs.importedTTSSources.filter {
+            $0.name.localizedCaseInsensitiveContains(q)
+                || $0.urlTemplate.localizedCaseInsensitiveContains(q)
+        }
+    }
 
     var body: some View {
-        Form {
-            Section(header: Text(localized("語音源 JSON"))) {
-                TextField(localized("語音源 JSON URL"), text: $sourceListURL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
+        NavigationView {
+            AdaptiveSheetContainer(maxWidth: 980) {
+                VStack(spacing: 0) {
+                    searchBar
 
-                Button {
-                    Task { await importTTSSources() }
-                } label: {
-                    if isImportingSources {
-                        Label(localized("載入中…"), systemImage: "arrow.triangle.2.circlepath")
+                    Divider()
+
+                    if gs.importedTTSSources.isEmpty {
+                        emptyView
                     } else {
-                        Label(localized("載入語音源 JSON"), systemImage: "square.and.arrow.down")
+                        sourceList
                     }
+
+                    Divider()
+
+                    bottomToolbar
                 }
-                .disabled(sourceListURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isImportingSources)
-
-                Button {
-                    showSourceFileImporter = true
-                } label: {
-                    Label(localized("從檔案匯入語音源 JSON"), systemImage: "doc.badge.plus")
+            }
+            .navigationTitle(localized("語音朗讀設定"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(localized("關閉")) { dismissSettings() }
                 }
-                .disabled(isImportingSources)
-
-                Text(localized("支援 Legado（閱讀）語音源 JSON。選中語音源後會寫入下方 URL 模板。"))
-                    .font(.caption)
-                    .foregroundColor(DSColor.textSecondary)
-
-                if let sourceImportMessage {
-                    Text(sourceImportMessage)
-                        .font(.caption)
-                        .foregroundColor(DSColor.textSecondary)
-                }
-
-                if !gs.importedTTSSources.isEmpty {
-                    ForEach(gs.importedTTSSources) { source in
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Menu {
                         Button {
-                            gs.httpTtsUrlTemplate = source.urlTemplate
-                            gs.httpTtsHeaders = source.headers
+                            showSourceFileImporter = true
                         } label: {
-                            HStack(spacing: 10) {
-                                Text(source.name)
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                if gs.httpTtsUrlTemplate == source.urlTemplate {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.accentColor)
-                                }
+                            Label(localized("本地導入"), systemImage: "doc.badge.plus")
+                        }
+                        Button {
+                            showNetworkImport = true
+                        } label: {
+                            Label(localized("網路導入"), systemImage: "network")
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                    }
+                    .disabled(isImportingSources)
+                }
+            }
+            .sheet(isPresented: $showNetworkImport) {
+                AdaptiveSheetContainer(maxWidth: 820) {
+                    networkImportSheet
+                }
+            }
+            .overlay(alignment: .top) {
+                if let sourceImportMessage {
+                    toastBanner(sourceImportMessage)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                                withAnimation { self.sourceImportMessage = nil }
                             }
                         }
-                    }
-
-                    Button(role: .destructive) {
-                        gs.importedTTSSources = []
-                        gs.httpTtsHeaders = [:]
-                    } label: {
-                        Text(localized("清除已匯入語音源"))
-                    }
                 }
-            }
-
-            Section(header: Text(localized("語音源 URL 模板"))) {
-                TextEditor(text: $gs.httpTtsUrlTemplate)
-                    .frame(minHeight: 80)
-                    .font(.system(.footnote, design: .monospaced))
-
-                Button {
-                    gs.httpTtsUrlTemplate = localTestTemplate
-                } label: {
-                    Label(localized("使用本機測試服務"), systemImage: "network")
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(localized("目前沒有內建雲端 TTS。這裡需要填入能直接回傳音訊資料的接口。"))
-                        .font(.caption)
-                        .foregroundColor(DSColor.textSecondary)
-                        .padding(.bottom, 4)
-                    Text(localized("支援的佔位符："))
-                        .font(.caption)
-                        .foregroundColor(DSColor.textSecondary)
-                    placeholderRow("{{text}}", desc: localized("段落文字（URL 編碼）"))
-                    placeholderRow("{{speakText}}", desc: localized("Legado 語音源段落文字"))
-                    placeholderRow("{{title}}", desc: localized("章節標題（URL 編碼）"))
-                    placeholderRow("{{speakSpeed}}", desc: localized("語速，例如 +0%、+30%、-20%"))
-                }
-                .padding(.vertical, 4)
-
-                HStack(spacing: 36) {
-                    Spacer()
-                    Button {
-                    } label: {
-                        Image(systemName: "backward.fill")
-                            .font(.title3)
-                    }
-                    .disabled(true)
-
-                    Button {
-                        toggleTestPlayback()
-                    } label: {
-                        Image(systemName: testCoordinator.playbackState == .playing ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 46))
-                    }
-                    .disabled(gs.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                    Button {
-                    } label: {
-                        Image(systemName: "forward.fill")
-                            .font(.title3)
-                    }
-                    .disabled(true)
-                    Spacer()
-                }
-                .buttonStyle(.borderless)
-                .foregroundColor(.accentColor)
-                .padding(.vertical, 6)
             }
         }
-        .navigationTitle(localized("語音朗讀設定"))
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationViewStyle(.stack)
         .fileImporter(
             isPresented: $showSourceFileImporter,
             allowedContentTypes: [.json, .plainText],
@@ -145,30 +96,266 @@ struct TTSSettingsView: View {
 
     // MARK: - Private
 
-    private func placeholderRow(_ placeholder: String, desc: String) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Text(placeholder)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundColor(DSColor.accent)
-            Text("—")
-                .font(.caption)
+    private var searchBar: some View {
+        DSSearchBar(placeholder: localized("搜索語音源"), text: $searchText)
+    }
+
+    private var sourceList: some View {
+        List {
+            ForEach(filteredSources) { source in
+                sourceRow(source)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                    .listRowSeparator(.visible)
+            }
+        }
+        .listStyle(.plain)
+    }
+
+    private func sourceRow(_ source: ImportedTTSSource) -> some View {
+        HStack(spacing: 0) {
+            Button {
+                selectSource(source)
+            } label: {
+                Image(systemName: isSelected(source) ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundColor(isSelected(source) ? DSColor.accent : Color(UIColor.systemGray3))
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 16)
+            .padding(.trailing, 12)
+
+            Button {
+                selectSource(source)
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(source.name)
+                            .font(DSFont.toolbarIcon)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+
+                        if isSelected(source) {
+                            Text(localized("使用中"))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(DSColor.accent)
+                                .clipShape(Capsule())
+                        }
+                    }
+
+                    Text(source.urlTemplate)
+                        .font(.system(size: 11))
+                        .foregroundColor(DSColor.textSecondary.opacity(0.6))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Menu {
+                Button {
+                    selectSource(source)
+                } label: {
+                    Label(localized("設為使用"), systemImage: "checkmark.circle")
+                }
+
+                Button {
+                    testPlayback(source)
+                } label: {
+                    Label(localized("測試播放"), systemImage: "play.circle")
+                }
+
+                Button {
+                    copySourceJSON(source)
+                } label: {
+                    Label(localized("複製 JSON"), systemImage: "doc.on.doc")
+                }
+
+                Divider()
+
+                Button(role: .destructive) {
+                    deleteSource(source)
+                } label: {
+                    Label(localized("刪除"), systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(DSFont.toolbarIcon)
+                    .foregroundColor(DSColor.textSecondary)
+                    .frame(width: 24, height: 24)
+                    .rotationEffect(.degrees(90))
+            }
+            .padding(.trailing, 12)
+        }
+        .padding(.vertical, 14)
+    }
+
+    private var emptyView: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            Image(systemName: "waveform.circle")
+                .font(.system(size: 64))
+                .foregroundColor(Color.secondary.opacity(0.35))
+            Text(localized("尚無語音源"))
+                .font(.title2.weight(.semibold))
+            Text(localized("點擊右上角 ↓ 匯入 Legado 語音源 JSON"))
+                .font(.subheadline)
                 .foregroundColor(DSColor.textSecondary)
-            Text(desc)
-                .font(.caption)
+                .multilineTextAlignment(.center)
+            Button {
+                showSourceFileImporter = true
+            } label: {
+                Label(localized("匯入語音源 JSON"), systemImage: "square.and.arrow.down")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 13)
+                    .background(DSColor.accent)
+                    .clipShape(Capsule())
+            }
+            Spacer()
+        }
+        .padding()
+    }
+
+    private var bottomToolbar: some View {
+        HStack(spacing: 12) {
+            Text(localized("已載入") + " \(gs.importedTTSSources.count) " + localized("個語音源"))
+                .font(.system(size: 13))
                 .foregroundColor(DSColor.textSecondary)
+                .lineLimit(1)
+
+            Spacer()
+
+            Button(role: .destructive) {
+                clearSources()
+            } label: {
+                Text(localized("清除已匯入語音源"))
+                    .font(.system(size: 13))
+                    .foregroundColor(gs.importedTTSSources.isEmpty ? .secondary : .red)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 7)
+                    .background(Color(UIColor.systemGray5))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .disabled(gs.importedTTSSources.isEmpty)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color(UIColor.systemBackground))
+    }
+
+    private var networkImportSheet: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "network").foregroundColor(DSColor.accent)
+                    Text(localized("輸入語音源 JSON 的網路地址，支援直接返回 JSON 的 URL。"))
+                        .font(.caption)
+                        .foregroundColor(DSColor.textSecondary)
+                }
+                .padding()
+                .background(DSColor.accent.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding()
+
+                TextField(localized("語音源 JSON URL"), text: $sourceListURL)
+                    .textFieldStyle(.roundedBorder)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .padding(.horizontal)
+
+                if isImportingSources {
+                    ProgressView()
+                        .padding(.top, 24)
+                }
+
+                Spacer()
+            }
+            .navigationTitle(localized("網路導入"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(localized("取消")) {
+                        showNetworkImport = false
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(localized("匯入")) {
+                        Task { await importTTSSources() }
+                    }
+                    .font(.body.weight(.semibold))
+                    .disabled(sourceListURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isImportingSources)
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+
+    private func toastBanner(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline.weight(.medium))
+            .foregroundColor(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .background(DSColor.accent)
+            .clipShape(Capsule())
+            .shadow(radius: 6)
+            .padding(.top, 12)
+    }
+
+    private func dismissSettings() {
+        presentationMode.wrappedValue.dismiss()
+    }
+
+    private func isSelected(_ source: ImportedTTSSource) -> Bool {
+        gs.httpTtsUrlTemplate == source.urlTemplate
+    }
+
+    private func selectSource(_ source: ImportedTTSSource) {
+        gs.httpTtsUrlTemplate = source.urlTemplate
+        gs.httpTtsHeaders = source.headers
+    }
+
+    private func testPlayback(_ source: ImportedTTSSource) {
+        selectSource(source)
+        switch testCoordinator.playbackState {
+        case .playing:
+            testCoordinator.stop(reason: "restart source test playback")
+        case .paused:
+            testCoordinator.stop(reason: "restart source test playback")
+        case .stopped:
+            break
+        }
+        testCoordinator.speak(text: "這是一段測試文字，用於確認 HTTP TTS 引擎設定是否正確。", title: "測試")
+    }
+
+    private func copySourceJSON(_ source: ImportedTTSSource) {
+        if let data = try? JSONEncoder().encode(source),
+           let string = String(data: data, encoding: .utf8) {
+            UIPasteboard.general.string = string
+            withAnimation { sourceImportMessage = localized("已複製語音源 JSON") }
         }
     }
 
-    private func toggleTestPlayback() {
-        switch testCoordinator.playbackState {
-        case .playing:
-            testCoordinator.pause()
-        case .paused:
-            testCoordinator.resume()
-        case .stopped:
-            testCoordinator.stop(reason: "restart test playback")
-            testCoordinator.speak(text: "這是一段測試文字，用於確認 HTTP TTS 引擎設定是否正確。", title: "測試")
+    private func deleteSource(_ source: ImportedTTSSource) {
+        gs.importedTTSSources.removeAll { $0.id == source.id }
+        if isSelected(source) {
+            gs.httpTtsUrlTemplate = ""
+            gs.httpTtsHeaders = [:]
+            testCoordinator.stop(reason: "deleted selected source")
         }
+    }
+
+    private func clearSources() {
+        gs.importedTTSSources = []
+        gs.httpTtsUrlTemplate = ""
+        gs.httpTtsHeaders = [:]
+        testCoordinator.stop(reason: "cleared sources")
     }
 
     @MainActor

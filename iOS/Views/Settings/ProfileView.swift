@@ -181,14 +181,7 @@ struct SettingsView: View {
                 }
             }
             .sheet(isPresented: $showTTSSettings) {
-                NavigationView {
-                    TTSSettingsView()
-                        .toolbar {
-                            ToolbarItem(placement: .navigationBarTrailing) {
-                                Button(localized("完成")) { showTTSSettings = false }
-                            }
-                        }
-                }
+                TTSSettingsView()
             }
         }
     }
