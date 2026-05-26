@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="index, follow">
+<title>支援 · Support — 閱讀 Yuedu Reader</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.7;
+    color: #1c1c1e;
+    background: #ffffff;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 40px 22px 80px; }
+  h1 { font-size: 1.7rem; margin: 0 0 4px; }
+  h2 { font-size: 1.2rem; margin: 2.2em 0 0.4em; padding-top: 0.6em; border-top: 1px solid #e5e5ea; }
+  h3 { font-size: 1.02rem; margin: 1.4em 0 0.3em; }
+  .sub { color: #6b6b70; margin: 0 0 1.4em; font-size: 0.95rem; }
+  .lede { background: #f2f7ff; border: 1px solid #d6e4ff; border-radius: 12px; padding: 14px 18px; }
+  ul { padding-left: 1.2em; }
+  li { margin: 0.3em 0; }
+  .q { font-weight: 600; margin: 1.1em 0 0.1em; }
+  code { background: #f2f2f7; padding: 1px 5px; border-radius: 5px; font-size: 0.9em; }
+  a { color: #0a6cff; }
+  .langbar { font-size: 0.95rem; margin-bottom: 1.6em; }
+  .btnrow { margin: 1em 0 0; }
+  .btn { display: inline-block; margin: 4px 8px 4px 0; padding: 8px 14px; border-radius: 10px; background: #0a6cff; color: #fff; text-decoration: none; font-size: 0.95rem; }
+  .btn.alt { background: #e9eef6; color: #0a6cff; }
+  hr.divider { border: 0; border-top: 1px dashed #d0d0d5; margin: 56px 0; }
+  footer { margin-top: 48px; color: #6b6b70; font-size: 0.88rem; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6e6ea; background: #0f0f12; }
+    h2 { border-top-color: #2c2c30; }
+    .sub, footer { color: #9a9aa0; }
+    .lede { background: #15203a; border-color: #2a3a63; }
+    code { background: #1e1e22; }
+    a { color: #5aa6ff; }
+    .btn.alt { background: #1e2633; color: #5aa6ff; }
+    hr.divider { border-top-color: #2c2c30; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="langbar"><a href="#zh">繁體中文</a> · <a href="#en">English</a></div>
+
+  <!-- ===================== 繁體中文 ===================== -->
+  <section id="zh">
+  <h1>支援中心</h1>
+  <p class="sub">「閱讀」（Yuedu Reader）· iOS 原生 EPUB / TXT / RSS 閱讀器</p>
+
+  <p class="lede">
+    需要協助或想回報問題？最快的方式是到 GitHub 專案開一則 issue。「閱讀」是使用 SwiftUI 與 CoreText 打造的本機優先閱讀器，支援 EPUB / TXT、RSS、網路書源、WebDAV 同步、TTS 朗讀，以及 CJK 直排閱讀。
+  </p>
+
+  <div class="btnrow">
+    <a class="btn" href="https://github.com/CHANG-JUI-LIN/Yuedu-reader/issues">回報問題 / 提出建議</a>
+    <a class="btn alt" href="https://testflight.apple.com/join/7hvbzYC1">加入 TestFlight 測試</a>
+    <a class="btn alt" href="https://chang-jui-lin.github.io/Yuedu-reader/privacy.html">隱私權政策</a>
+  </div>
+
+  <h2>系統需求</h2>
+  <ul>
+    <li>iOS 18.0 以上的 iPhone / iPad。</li>
+  </ul>
+
+  <h2>常見問題</h2>
+
+  <p class="q">如何加入書籍？</p>
+  <p>支援 EPUB 與 TXT。可從「檔案」App 或其他 App 用「分享 / 用其他 App 開啟」把書傳給「閱讀」，或在書架上用新增按鈕匯入。</p>
+
+  <p class="q">翻頁和滾動模式怎麼切換？</p>
+  <p>在閱讀器設定中可切換翻頁（滑動 / 覆蓋 / 仿真翻頁 curl）與直向滾動兩種閱讀方式，字體、行距、邊距、主題也都能調整。</p>
+
+  <p class="q">支援直排（豎排）中文嗎？</p>
+  <p>支援。提供 CJK 直排、由右至左的閱讀順序與目錄、直排標點處理與行內註解，由 CoreText 排版（非 WebView）。</p>
+
+  <p class="q">RSS、網路書源、WebDAV 怎麼用？</p>
+  <p>可訂閱 RSS（含 OPML 與 Legado 規則匯入）、設定網路書源做線上閱讀，以及連到你自己的 WebDAV 伺服器同步。這些都需要你提供來源網址。</p>
+
+  <p class="q">語音朗讀（TTS）沒有聲音？</p>
+  <p>朗讀需要你在設定中填入一個 HTTP TTS 服務的網址。未設定時不會送出文字、也不會發聲。請確認網址正確且該服務可用。</p>
+
+  <p class="q">iCloud 同步如何運作？我的資料安全嗎？</p>
+  <p>開啟後會透過 CloudKit 把書庫與設定備份/還原到你<strong>自己的私人 iCloud</strong>，不經過任何開發者伺服器。詳見<a href="https://chang-jui-lin.github.io/Yuedu-reader/privacy.html">隱私權政策</a>。</p>
+
+  <p class="q">閱讀進度跑掉 / 同步怪怪的？</p>
+  <p>請先確認系統已登入 iCloud 且 App 的 iCloud 同步為開啟；重開 App 通常會重新校正位置。若仍有問題，請開 issue 並附上書籍格式與重現步驟。</p>
+
+  <p class="q">一定要登入嗎？</p>
+  <p>不用。閱讀功能不需登入即可使用；Apple / Google 登入為選用。</p>
+
+  <h2>聯絡我們</h2>
+  <p>問題、建議或錯誤回報，請到 <a href="https://github.com/CHANG-JUI-LIN/Yuedu-reader/issues">GitHub Issues</a>。回報時附上裝置型號、iOS 版本、書籍格式與重現步驟，能幫助我們更快處理。</p>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ===================== English ===================== -->
+  <section id="en" lang="en">
+  <h1>Support</h1>
+  <p class="sub">閱讀 (Yuedu Reader) · A native iOS EPUB / TXT / RSS reader</p>
+
+  <p class="lede">
+    Need help or want to report a problem? The fastest way is to open an issue on the GitHub project. Yuedu Reader is a local-first reader built with SwiftUI and CoreText, supporting EPUB / TXT, RSS, web book sources, WebDAV sync, text-to-speech, and CJK vertical reading.
+  </p>
+
+  <div class="btnrow">
+    <a class="btn" href="https://github.com/CHANG-JUI-LIN/Yuedu-reader/issues">Report an issue / Request a feature</a>
+    <a class="btn alt" href="https://testflight.apple.com/join/7hvbzYC1">Join the TestFlight beta</a>
+    <a class="btn alt" href="https://chang-jui-lin.github.io/Yuedu-reader/privacy.html">Privacy Policy</a>
+  </div>
+
+  <h2>System requirements</h2>
+  <ul>
+    <li>iPhone / iPad running iOS 18.0 or later.</li>
+  </ul>
+
+  <h2>Frequently asked questions</h2>
+
+  <p class="q">How do I add books?</p>
+  <p>EPUB and TXT are supported. Send a book to Yuedu Reader from the Files app or another app via "Share / Open in," or import it from the bookshelf's add button.</p>
+
+  <p class="q">How do I switch between paged and scroll modes?</p>
+  <p>In the reader settings you can switch between paged turning (slide / cover / page-curl) and vertical scrolling, and adjust font size, line spacing, margins, and theme.</p>
+
+  <p class="q">Does it support vertical (CJK) text?</p>
+  <p>Yes. It supports vertical writing, right-to-left reading flow and table of contents, CJK punctuation handling, and inline annotations, all laid out with CoreText (not a WebView).</p>
+
+  <p class="q">How do RSS, web book sources, and WebDAV work?</p>
+  <p>You can subscribe to RSS (with OPML and Legado-rule import), configure web book sources for online reading, and connect to your own WebDAV server to sync. These require you to provide the source URL.</p>
+
+  <p class="q">Text-to-speech has no sound?</p>
+  <p>TTS requires you to enter an HTTP TTS service URL in settings. If it isn't configured, no text is sent and no audio is produced. Make sure the URL is correct and the service is reachable.</p>
+
+  <p class="q">How does iCloud sync work? Is my data safe?</p>
+  <p>When enabled, your library and settings are backed up/restored to <strong>your own private iCloud</strong> via CloudKit — never through any developer server. See the <a href="https://chang-jui-lin.github.io/Yuedu-reader/privacy.html">Privacy Policy</a>.</p>
+
+  <p class="q">My reading position drifted / sync seems off?</p>
+  <p>First make sure your device is signed in to iCloud and the app's iCloud sync is on; reopening the app usually re-aligns the position. If it persists, please open an issue with the book format and steps to reproduce.</p>
+
+  <p class="q">Do I have to sign in?</p>
+  <p>No. Reading features work without signing in; Apple / Google sign-in is optional.</p>
+
+  <h2>Contact</h2>
+  <p>For questions, suggestions, or bug reports, please use <a href="https://github.com/CHANG-JUI-LIN/Yuedu-reader/issues">GitHub Issues</a>. Including your device model, iOS version, book format, and steps to reproduce helps us respond faster.</p>
+  </section>
+
+  <footer>
+    閱讀 · Yuedu Reader — Native iOS reader (EPUB / TXT / RSS / WebDAV / TTS).
+  </footer>
+
+</div>
+</body>
+</html>
