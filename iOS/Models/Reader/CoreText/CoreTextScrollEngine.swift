@@ -167,6 +167,29 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         }
     }
 
+    /// Materializes CTFrames around `row` off the main thread, then applies the
+    /// result on the main thread. Used during scrolling so frame construction
+    /// (the expensive part) does not hitch the main thread. willDisplay still
+    /// materializes synchronously as a correctness fallback for chunks that
+    /// scroll into view before the async warm completes.
+    func warmChunksAhead(around row: Int, radius: Int = 2) {
+        guard !chunks.isEmpty else { return }
+        let center = max(0, min(row, chunks.count - 1))
+        let start = max(0, center - max(0, radius))
+        let end = min(chunks.count - 1, center + max(0, radius))
+        guard start <= end else { return }
+        let pending = (start...end)
+            .map { chunks[$0] }
+            .filter { !$0.isMaterialized }
+        guard !pending.isEmpty else { return }
+        Task.detached(priority: .userInitiated) {
+            for chunk in pending {
+                guard let built = chunk.buildFrameData() else { continue }
+                await MainActor.run { chunk.applyBuiltFrame(built) }
+            }
+        }
+    }
+
     @discardableResult
     func retryChapterIfNeeded(_ chapterIndex: Int) async -> Bool {
         guard let prepend = pendingMissingChapters.removeValue(forKey: chapterIndex),

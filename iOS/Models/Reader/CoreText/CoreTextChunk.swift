@@ -67,37 +67,72 @@ final class CoreTextChunk {
     func materializeFrameIfNeeded() {
         if isImageOnly { return }
         guard frame == nil else { return }
-        let path = CGPath(rect: CGRect(x: 0, y: 0, width: width, height: height), transform: nil)
+        guard let built = buildFrameData() else { return }
+        applyBuiltFrame(built)
+    }
+
+    /// Result of an off-main frame build, ready to be applied on the main thread.
+    struct BuiltFrame {
+        let frame: CTFrame
+        let attachments: [CoreTextPaginator.RenderedAttachment]
+        let inlineAnnotations: [CoreTextPaginator.RenderedInlineAnnotation]
+        let blockRenderables: [CoreTextPaginator.RenderedBlockRenderable]
+    }
+
+    /// Builds the CTFrame and its derived data. Reads only immutable stored
+    /// properties, so it is safe to call off the main thread; the result is
+    /// applied via `applyBuiltFrame` back on the main thread.
+    func buildFrameData() -> BuiltFrame? {
+        if isImageOnly { return nil }
+        let size = CGSize(width: width, height: height)
+        let path = CGPath(rect: CGRect(origin: .zero, size: size), transform: nil)
         let f = CoreTextPaginator.makeFrame(
             framesetter: framesetter,
             range: charRange,
             path: path,
             writingMode: writingMode
         )
-        frame = f
-        if attachments.isEmpty {
-            attachments = CoreTextChunkAttachmentExtractor.extract(
+        let builtAttachments = CoreTextChunkAttachmentExtractor.extract(
+            frame: f,
+            chunkSize: size,
+            attributedString: attributedString,
+            rangeInChapter: charRange,
+            writingMode: writingMode
+        )
+        let builtInline = writingMode.isVertical
+            ? CoreTextChunkSlicer.extractInlineAnnotations(
                 frame: f,
-                chunkSize: CGSize(width: width, height: height),
-                attributedString: attributedString,
-                rangeInChapter: charRange,
-                writingMode: writingMode
-            )
-        }
-        if writingMode.isVertical && inlineAnnotations.isEmpty {
-            inlineAnnotations = CoreTextChunkSlicer.extractInlineAnnotations(
-                frame: f,
-                chunkSize: CGSize(width: width, height: height),
+                chunkSize: size,
                 attributedString: attributedString
-            )
-        }
-        if !writingMode.isVertical && blockRenderables.isEmpty {
-            blockRenderables = CoreTextChunkSlicer.extractBlockRenderables(
+              )
+            : []
+        let builtBlocks = !writingMode.isVertical
+            ? CoreTextChunkSlicer.extractBlockRenderables(
                 frame: f,
-                chunkSize: CGSize(width: width, height: height),
+                chunkSize: size,
                 attributedString: attributedString,
                 charRange: charRange
-            )
+              )
+            : []
+        return BuiltFrame(
+            frame: f,
+            attachments: builtAttachments,
+            inlineAnnotations: builtInline,
+            blockRenderables: builtBlocks
+        )
+    }
+
+    /// Applies a frame built by `buildFrameData`. Must run on the main thread
+    /// (the only writer of `frame`); no-ops if the frame was already materialized.
+    func applyBuiltFrame(_ built: BuiltFrame) {
+        guard frame == nil else { return }
+        frame = built.frame
+        if attachments.isEmpty { attachments = built.attachments }
+        if writingMode.isVertical && inlineAnnotations.isEmpty {
+            inlineAnnotations = built.inlineAnnotations
+        }
+        if !writingMode.isVertical && blockRenderables.isEmpty {
+            blockRenderables = built.blockRenderables
         }
     }
 
@@ -206,3 +241,10 @@ final class CoreTextChunk {
     }
 
 }
+
+// Thread-safety contract: `buildFrameData` reads only immutable stored
+// properties and may run off the main thread; `frame` and the derived arrays
+// are written exclusively on the main thread (via `applyBuiltFrame` /
+// `materializeFrameIfNeeded`), which is also the only reader during cell draw.
+extension CoreTextChunk: @unchecked Sendable {}
+extension CoreTextChunk.BuiltFrame: @unchecked Sendable {}

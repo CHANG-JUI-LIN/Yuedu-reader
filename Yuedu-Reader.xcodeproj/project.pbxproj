@@ -66,7 +66,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		460D36592F51C5B8006E774C /* yuedu app.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "yuedu app.app"; path = YueduReader.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		460D36592F51C5B8006E774C /* YueduReader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YueduReader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		460D36662F51C5B9006E774C /* yuedu appTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "yuedu appTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		460D36702F51C5B9006E774C /* yuedu appUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "yuedu appUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E4E1DDA4EE35F67778097F0 /* yuedu_app_Widget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = yuedu_app_Widget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -187,7 +187,7 @@
 		460D365A2F51C5B8006E774C /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				460D36592F51C5B8006E774C /* yuedu app.app */,
+				460D36592F51C5B8006E774C /* YueduReader.app */,
 				460D36662F51C5B9006E774C /* yuedu appTests.xctest */,
 				460D36702F51C5B9006E774C /* yuedu appUITests.xctest */,
 				4E4E1DDA4EE35F67778097F0 /* yuedu_app_Widget.appex */,
@@ -256,7 +256,7 @@
 				463C854E2FA4F493008F9AD7 /* GoogleSignInSwift */,
 			);
 			productName = "yuedu app";
-			productReference = 460D36592F51C5B8006E774C /* yuedu app.app */;
+			productReference = 460D36592F51C5B8006E774C /* YueduReader.app */;
 			productType = "com.apple.product-type.application";
 		};
 		460D36652F51C5B9006E774C /* yuedu appTests */ = {

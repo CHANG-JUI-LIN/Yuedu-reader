@@ -17,7 +17,22 @@ final class EPUBPageRenderer: ObservableObject {
     private var onlineBuilder: OnlineProviderAttributedStringBuilder?
 
     /// Scroll-mode-specific engine (alongside the page engine). Created automatically when builder is available.
-    @Published private(set) var scrollEngine: CoreTextScrollEngine?
+    @Published private(set) var scrollEngine: CoreTextScrollEngine? {
+        didSet {
+            // Bridge the nested engine's isReady into a property the view observes
+            // directly, so the scroll body can gate on a ready engine without a
+            // white/blank flash. SwiftUI does not observe nested ObservableObjects.
+            guard oldValue !== scrollEngine else { return }
+            scrollEngineReady = scrollEngine?.isReady ?? false
+            scrollReadyCancellable = scrollEngine?.$isReady
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] ready in self?.scrollEngineReady = ready }
+        }
+    }
+
+    /// Mirrors `scrollEngine?.isReady` reactively for the SwiftUI body.
+    @Published private(set) var scrollEngineReady: Bool = false
+    private var scrollReadyCancellable: AnyCancellable?
 
     @Published var isCoreTextReady: Bool = false
 
