@@ -604,6 +604,7 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
         pageTitle = webView.title ?? ""
         currentURL = webView.url?.absoluteString ?? ""
         hasPage = webView.url != nil
+        BrowseHistoryStore.shared.record(title: pageTitle, url: currentURL)
         webView.evaluateJavaScript(detectPageJS) { [weak self] result, _ in
             let n = (result as? Int) ?? 0
             DispatchQueue.main.async {
@@ -689,32 +690,23 @@ struct BrowserView: View {
     @State private var pendingChapterStart: (chapters: [WebChapterItem], title: String, startIndex: Int)?
 
     @State private var errorMsg: String?
+    @State private var showHome = true
 
     private var browserContentMaxWidth: CGFloat {
         (horizontalSizeClass == .regular || UIDevice.current.userInterfaceIdiom == .pad) ? 980 : .infinity
     }
 
-    private var browserHeroSpacing: CGFloat {
-        (horizontalSizeClass == .regular || UIDevice.current.userInterfaceIdiom == .pad) ? 28 : 36
-    }
-
-    private var browserEngineSpacing: CGFloat {
-        (horizontalSizeClass == .regular || UIDevice.current.userInterfaceIdiom == .pad) ? 24 : 32
-    }
-
     var body: some View {
         ZStack(alignment: .top) {
             VStack(spacing: 0) {
-                if browser.hasPage {
-                    addressBar
-                    if browser.isLoading {
-                        ProgressView().progressViewStyle(.linear).frame(height: 2)
-                    }
-                    if addressFocused {
-                        engineShortcuts
-                    }
-                    Divider()
+                addressBar
+                if browser.isLoading {
+                    ProgressView().progressViewStyle(.linear).frame(height: 2)
                 }
+                if addressFocused {
+                    engineShortcuts
+                }
+                Divider()
                 ZStack(alignment: .bottomTrailing) {
                     WebViewRepresentable(webView: browser.webView)
                     if browser.hasPage && browser.hasEnoughContent && !browser.isLoading {
@@ -723,8 +715,10 @@ struct BrowserView: View {
                 }
             }
 
-            if !browser.hasPage {
-                homePageView
+            if showHome {
+                ExploreHomeView(onNavigate: navigateFromExplore)
+                    .environmentObject(store)
+                    .transition(.opacity)
             }
         }
         .ignoresSafeArea(edges: .bottom)
@@ -769,6 +763,14 @@ struct BrowserView: View {
         }
     }
 
+    // MARK: - Navigate from Explore home
+    private func navigateFromExplore(_ urlString: String) {
+        browser.load(urlString)
+        addressText = urlString
+        addressFocused = false
+        withAnimation(DSAnimation.standard) { showHome = false }
+    }
+
     // MARK: - Create Online Book with Lazy Chapter Loading
     private func startChapterDownload(chapters: [WebChapterItem], title: String, startIndex: Int) {
         let refs = chapters.enumerated().map { idx, ch in
@@ -810,101 +812,6 @@ struct BrowserView: View {
         browser.syncCookiesToURLSession {
             readerPresentation = ReaderPresentation(id: book.id)
         }
-    }
-
-    // MARK: Home Page
-    private var homePageView: some View {
-        let iconGray = Color(red: 174/255, green: 174/255, blue: 178/255)
-        let labelDark = Color(red: 60/255, green: 60/255, blue: 67/255)
-        return VStack(alignment: .leading, spacing: 0) {
-            if browser.isLoading {
-                ProgressView().progressViewStyle(.linear).frame(height: 2)
-            }
-
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(iconGray)
-                    .font(.system(size: 16))
-                ZStack(alignment: .leading) {
-                    if addressText.isEmpty {
-                        Text(localized("網址或搜尋"))
-                            .font(.system(size: 16))
-                            .foregroundColor(iconGray)
-                    }
-                    TextField("", text: $addressText)
-                        .font(.system(size: 16))
-                        .disableAutocorrection(true)
-                        .keyboardType(.URL)
-                        .focused($addressFocused)
-                        .onSubmit {
-                            browser.load(addressText)
-                            addressFocused = false
-                        }
-                }
-                if !addressText.isEmpty {
-                    Button { addressText = "" } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(iconGray)
-                    }
-                }
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 44)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.08), radius: 3, x: 0, y: 1)
-            .padding(.horizontal, 16)
-
-            Spacer().frame(height: 16)
-
-            HStack(alignment: .top, spacing: 20) {
-                ForEach(SearchEngine.allCases) { engine in
-                    Button {
-                        browser.loadEngine(engine)
-                        addressFocused = false
-                        addressText = engine.startURL
-                    } label: {
-                        VStack(spacing: 6) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.white)
-                                    .frame(width: 52, height: 52)
-                                    .shadow(color: .black.opacity(0.10), radius: 4, x: 0, y: 1)
-                                AsyncImage(url: URL(string: engine.faviconURL)) { phase in
-                                    if let image = phase.image {
-                                        image.resizable().scaledToFit()
-                                    } else {
-                                        Color.clear
-                                    }
-                                }
-                                .frame(width: 28, height: 28)
-                            }
-                            Text(engine.rawValue)
-                                .font(.system(size: 11, weight: .regular))
-                                .foregroundColor(labelDark)
-                        }
-                    }.buttonStyle(.plain)
-                }
-            }
-            .padding(.leading, 16)
-
-            Spacer().frame(height: 20)
-
-            HStack(spacing: 4) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 13))
-                    .foregroundColor(iconGray)
-                Text(localized("前往小說章節頁，點擊右下角即可轉碼閱讀"))
-                    .font(.system(size: 13))
-                    .foregroundColor(iconGray)
-            }
-            .padding(.leading, 16)
-
-            Spacer()
-        }
-        .padding(.top, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
     }
 
     // MARK: Extract FAB
@@ -984,6 +891,12 @@ struct BrowserView: View {
     // MARK: Address Bar
     private var addressBar: some View {
         HStack(spacing: 8) {
+            Button { withAnimation(DSAnimation.standard) { showHome = true } } label: {
+                Image(systemName: "house")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.primary)
+            }
+
             Button { browser.goBack() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 17, weight: .medium))

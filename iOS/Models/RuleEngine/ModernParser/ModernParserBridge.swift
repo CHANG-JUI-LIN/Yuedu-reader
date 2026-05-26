@@ -535,6 +535,10 @@ class ModernParserBridge {
     // MARK: - Explore / Discover
 
     /// Discover item returned from exploreUrl JS evaluation.
+    ///
+    /// Decoding is intentionally lenient: aggregator sources (e.g. 光遇聚合) emit
+    /// `style` values as numbers/bools (`layout_flexBasisPercent: 0.45`), which a
+    /// strict `[String: String]` decode would reject — failing the *entire* array.
     struct DiscoverItem: Decodable {
         var title: String?
         var url: String?
@@ -544,6 +548,39 @@ class ModernParserBridge {
         var chars: [String]?
         var `default`: String?
         var viewName: String?
+
+        enum CodingKeys: String, CodingKey {
+            case title, url, style, type, action, chars, `default`, viewName
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            title = try? c.decodeIfPresent(String.self, forKey: .title)
+            url = try? c.decodeIfPresent(String.self, forKey: .url)
+            type = try? c.decodeIfPresent(String.self, forKey: .type)
+            action = try? c.decodeIfPresent(String.self, forKey: .action)
+            `default` = try? c.decodeIfPresent(String.self, forKey: .default)
+            viewName = try? c.decodeIfPresent(String.self, forKey: .viewName)
+            chars = try? c.decodeIfPresent([String].self, forKey: .chars)
+            if let raw = try? c.decodeIfPresent([String: LenientScalar].self, forKey: .style) {
+                style = raw.mapValues(\.stringValue)
+            } else {
+                style = nil
+            }
+        }
+
+        /// Decodes a JSON scalar (string / number / bool) into a string.
+        private struct LenientScalar: Decodable {
+            let stringValue: String
+            init(from decoder: Decoder) throws {
+                let c = try decoder.singleValueContainer()
+                if let s = try? c.decode(String.self) { stringValue = s }
+                else if let i = try? c.decode(Int.self) { stringValue = String(i) }
+                else if let d = try? c.decode(Double.self) { stringValue = String(d) }
+                else if let b = try? c.decode(Bool.self) { stringValue = String(b) }
+                else { stringValue = "" }
+            }
+        }
     }
 
     /// Evaluate exploreUrl for a book source and return discover items.

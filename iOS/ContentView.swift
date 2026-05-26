@@ -16,7 +16,7 @@ struct ContentView: View {
                 HomeView()
             }
 
-            Tab(localized("瀏覽"), systemImage: "globe") {
+            Tab(localized("探索"), systemImage: "safari") {
                 BrowserView()
             }
 

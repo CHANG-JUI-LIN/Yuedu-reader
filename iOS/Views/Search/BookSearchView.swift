@@ -3,6 +3,8 @@ import SwiftUI
 // MARK: - Book Search View
 
 struct BookSearchView: View {
+    var initialQuery: String = ""
+
     @EnvironmentObject var bookStore: BookStore
     @ObservedObject private var sourceStore = BookSourceStore.shared
     @StateObject private var aggregator = SearchAggregator()
@@ -95,7 +97,14 @@ struct BookSearchView: View {
             }
         }
         .navigationViewStyle(.stack)
-        .onAppear { searchFocused = true }
+        .onAppear {
+            if !initialQuery.isEmpty && query.isEmpty {
+                query = initialQuery
+                doSearch()
+            } else {
+                searchFocused = true
+            }
+        }
     }
 
     // MARK: Search Bar
