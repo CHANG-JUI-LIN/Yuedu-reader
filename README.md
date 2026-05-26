@@ -16,6 +16,12 @@
 </p>
 
 <p align="center">
+  <a href="https://testflight.apple.com/join/7hvbzYC1">
+    <img src="https://img.shields.io/badge/TestFlight-Join%20Beta-0D96F6?logo=apple&logoColor=white" alt="Join the TestFlight beta">
+  </a>
+</p>
+
+<p align="center">
   <img src="docs/demo/cjk-vertical-toc.gif" width="320" alt="Yuedu Reader CJK vertical reading demo">
 </p>
 

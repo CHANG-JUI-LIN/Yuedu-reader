@@ -16,6 +16,12 @@
 </p>
 
 <p align="center">
+  <a href="https://testflight.apple.com/join/7hvbzYC1">
+    <img src="https://img.shields.io/badge/TestFlight-加入测试-0D96F6?logo=apple&logoColor=white" alt="加入 TestFlight 测试">
+  </a>
+</p>
+
+<p align="center">
   <img src="docs/demo/cjk-vertical-toc.gif" width="320" alt="阅读 CJK 竖排演示">
 </p>
 
