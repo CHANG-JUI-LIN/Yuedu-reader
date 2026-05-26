@@ -19,6 +19,9 @@
   <a href="https://testflight.apple.com/join/7hvbzYC1">
     <img src="https://img.shields.io/badge/TestFlight-Join%20Beta-0D96F6?logo=apple&logoColor=white" alt="Join the TestFlight beta">
   </a>
+  <a href="https://t.me/+ZWmmgMwwJ3JiN2Rl">
+    <img src="https://img.shields.io/badge/Telegram-Join%20Group-26A5E4?logo=telegram&logoColor=white" alt="Join the Telegram group">
+  </a>
 </p>
 
 <p align="center">
@@ -217,4 +220,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Demo media workflow: [docs/demo/README.m
 
 ## License
 
-MIT. See [LICENSE](LICENSE). This project links against [Readium](https://github.com/readium) components, which are BSD-licensed.
+[MIT](https://opensource.org/license/mit). See [LICENSE](LICENSE). This project links against [Readium](https://github.com/readium) components, which are BSD-licensed.

@@ -19,6 +19,9 @@
   <a href="https://testflight.apple.com/join/7hvbzYC1">
     <img src="https://img.shields.io/badge/TestFlight-加入测试-0D96F6?logo=apple&logoColor=white" alt="加入 TestFlight 测试">
   </a>
+  <a href="https://t.me/+ZWmmgMwwJ3JiN2Rl">
+    <img src="https://img.shields.io/badge/Telegram-加入群组-26A5E4?logo=telegram&logoColor=white" alt="加入 Telegram 群组">
+  </a>
 </p>
 
 <p align="center">
@@ -190,6 +193,17 @@ iOS/
 
 请见 [CONTRIBUTING.md](CONTRIBUTING.md)。演示素材流程见 [docs/demo/README.md](docs/demo/README.md)。
 
+## 交流群
+
+欢迎加入交流群，反馈问题、获取测试版与书源资讯：
+
+- Telegram：<https://t.me/+ZWmmgMwwJ3JiN2Rl>
+- QQ 群「阅读测试群」：群号 **1107613783** · [点击加入群聊](https://qun.qq.com/universal-share/share?ac=1&authKey=mNrlfOidh408YjJvObbFYjZOx1tV8n0yfS69xbwAS3xpBkaHEo1kP5O1ztPDmtjg&busi_data=eyJncm91cENvZGUiOiIxMTA3NjEzNzgzIiwidG9rZW4iOiJvYmtOSG1FdmErRGIzT05JOG94TEQ1cTdYZS9LbnFvdHNjZTlsQjNucjJNQ0pjT3BqeTRBOHM3L3N5TlUyejNkIiwidWluIjoiMjA4MTg1ODQzMCJ9&data=OvRT_XrwFaKXJRHD2QBjh3KYkAkZrb3WeB4ai3uHUnHMUpakpn54ykC1B7qplCLZ4ZCq3mUBoCabT_xlbXR6sA&svctype=4&tempid=h5_group_info)
+
+<p align="center">
+  <img src="docs/qq-group-qr.jpg" width="220" alt="QQ 群二维码（阅读测试群 1107613783）">
+</p>
+
 ## 许可证
 
-MIT。详见 [LICENSE](LICENSE)。本项目链接 [Readium](https://github.com/readium) 组件，Readium 使用 BSD 许可证。
+[MIT](https://opensource.org/license/mit)。详见 [LICENSE](LICENSE)。本项目链接 [Readium](https://github.com/readium) 组件，Readium 使用 BSD 许可证。

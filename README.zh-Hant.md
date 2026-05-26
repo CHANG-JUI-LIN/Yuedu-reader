@@ -19,6 +19,9 @@
   <a href="https://testflight.apple.com/join/7hvbzYC1">
     <img src="https://img.shields.io/badge/TestFlight-加入測試-0D96F6?logo=apple&logoColor=white" alt="加入 TestFlight 測試">
   </a>
+  <a href="https://t.me/+ZWmmgMwwJ3JiN2Rl">
+    <img src="https://img.shields.io/badge/Telegram-加入群組-26A5E4?logo=telegram&logoColor=white" alt="加入 Telegram 群組">
+  </a>
 </p>
 
 <p align="center">
@@ -192,4 +195,4 @@ iOS/
 
 ## 授權
 
-MIT。詳見 [LICENSE](LICENSE)。本專案連結 [Readium](https://github.com/readium) 元件，Readium 使用 BSD 授權。
+[MIT](https://opensource.org/license/mit)。詳見 [LICENSE](LICENSE)。本專案連結 [Readium](https://github.com/readium) 元件，Readium 使用 BSD 授權。
