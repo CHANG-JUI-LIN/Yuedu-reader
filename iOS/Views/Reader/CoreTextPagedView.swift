@@ -143,6 +143,15 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: direction, animated: false)
                 uiViewController.view.layoutIfNeeded()
                 _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
+                // One-shot: the external target is a positioning instruction. Once it has
+                // been applied to a real page, clear it so later re-renders (or the user's
+                // own page turns) are never forced back to it. Without this, the target
+                // persists and updateUIViewController keeps snapping back — the curl
+                // "animates then bounces back" bug after a scroll→paged switch.
+                if !(targetVC is PlaceholderPageViewController) {
+                    let clear = clearExternalTargetPosition
+                    DispatchQueue.main.async { clear() }
+                }
                 return
             }
 

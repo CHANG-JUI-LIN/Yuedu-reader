@@ -353,17 +353,25 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         let total = engine.chunks.count
         let actualOld = displayedCount
         let expectedOld = max(0, total - count)
+
+        // Count desync: concurrent chapter loads (fast scrolling) leave displayedCount
+        // out of step with engine.chunks, so incremental insertItems(at:) is unsafe.
+        // Reload but keep the reader's position — never reset to chapter start.
         guard actualOld == expectedOld else {
-            displayedCount = total
-            collectionView.reloadData()
+            reloadPreservingVisiblePosition()
             return
         }
 
         warmChunks(around: atBottom ? actualOld : count, force: true)
         guard actualOld > 0, collectionView.window != nil else {
-            displayedCount = total
-            collectionView.reloadData()
-            collectionView.layoutIfNeeded()
+            reloadPreservingVisiblePosition()
+            return
+        }
+
+        // RTL columns (vertical writing): the frame-anchor offset math below is unreliable
+        // (it can fling the offset to a garbage value). Restore by reading position instead.
+        if !atBottom && scrollAxis == .horizontalRTL {
+            reloadPreservingVisiblePosition()
             return
         }
 
@@ -400,6 +408,22 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
                 )
             }
         }
+    }
+
+    /// Reloads the collection view while keeping the reader at the same content
+    /// position. Used when incremental insertion can't be trusted (count desync,
+    /// RTL prepend) so the reader never snaps back to the chapter start.
+    private func reloadPreservingVisiblePosition() {
+        let anchor = visibleCanonicalPosition()
+        displayedCount = engine.chunks.count
+        collectionView.reloadData()
+        collectionView.layoutIfNeeded()
+        guard let anchor,
+              let row = engine.chunkIndex(forChapter: anchor.spineIndex, charOffset: anchor.charOffset),
+              row < collectionView.numberOfItems(inSection: 0) else { return }
+        let position: UICollectionView.ScrollPosition =
+            scrollAxis == .vertical ? .centeredVertically : .centeredHorizontally
+        collectionView.scrollToItem(at: IndexPath(item: row, section: 0), at: position, animated: false)
     }
 
     private func applyPendingInitialScrollIfPossible() {
@@ -676,7 +700,13 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
         guard force || now - lastWarmUptime >= 0.08 else { return }
         lastWarmRow = row
         lastWarmUptime = now
-        engine.warmChunks(around: row, radius: 2)
+        if force {
+            // Immediate, on-main: the visible region must be ready before reload.
+            engine.warmChunks(around: row, radius: 2)
+        } else {
+            // During scrolling: build frames off-main to avoid hitching.
+            engine.warmChunksAhead(around: row, radius: 2)
+        }
     }
 
     private func visibleCanonicalPosition() -> CoreTextReadingPosition? {
