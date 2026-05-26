@@ -792,6 +792,14 @@ struct RSSStoreTests {
         #expect(document.html.contains("点击查看本文英文版。"))
     }
 
+    @Test("article content loader shows friendly 403 message")
+    func articleContentLoaderShowsFriendly403Message() throws {
+        let message = try #require(RSSArticleContentLoaderError.httpStatus(403).errorDescription)
+
+        #expect(message == localized("網站拒絕存取全文。你仍可開啟原始網頁閱讀。"))
+        #expect(message != "HTTP 403")
+    }
+
     @Test("reader paragraph helper splits single line chapters consistently")
     func readerParagraphHelperSplitsSingleLineChaptersConsistently() {
         let singleLine = String(repeating: "这是一个很长的章节句子，用来模拟来源没有保留段落换行的情况。", count: 18)

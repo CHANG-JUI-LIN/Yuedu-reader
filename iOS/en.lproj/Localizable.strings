@@ -566,6 +566,7 @@
 "Reader View" = "Reader View";
 "顯示摘要" = "Show Summary";
 "沒有可讀全文" = "No readable full text";
+"網站拒絕存取全文。你仍可開啟原始網頁閱讀。" = "The website refused access to the full article. You can still open the original page.";
 "分享" = "Share";
 "匯入 Legado JSON" = "Import Legado JSON";
 "匯出 Legado JSON" = "Export Legado JSON";
