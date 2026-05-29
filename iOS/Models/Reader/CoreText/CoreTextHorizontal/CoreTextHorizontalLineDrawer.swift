@@ -181,7 +181,21 @@ enum CoreTextHorizontalLineDrawer {
 
         let lineNSRange = NSRange(location: lineStart, length: max(0, lineRange.length))
         let substring = attrStr.attributedSubstring(from: lineNSRange)
-        let naturalLine = CTLineCreateWithAttributedString(substring)
+        // Drop the trailing per-glyph spacing (.kern) on the line's last character.
+        // CoreText adds .kern as advance *after* every glyph, so without this the last
+        // glyph of a justified line stops one letterSpacing short of the right edge,
+        // producing a consistent gap that looks like an asymmetric right margin.
+        let justifiable: NSAttributedString
+        if substring.length > 0,
+           let trailingKern = substring.attribute(.kern, at: substring.length - 1, effectiveRange: nil) as? CGFloat,
+           trailingKern != 0 {
+            let mutable = NSMutableAttributedString(attributedString: substring)
+            mutable.removeAttribute(.kern, range: NSRange(location: substring.length - 1, length: 1))
+            justifiable = mutable
+        } else {
+            justifiable = substring
+        }
+        let naturalLine = CTLineCreateWithAttributedString(justifiable)
         let naturalWidth = CTLineGetTypographicBounds(naturalLine, nil, nil, nil)
         let coverage = naturalWidth / Double(availableWidth)
 

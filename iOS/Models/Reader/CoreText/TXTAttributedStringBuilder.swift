@@ -65,7 +65,12 @@ struct TXTAttributedStringBuilder: AttributedStringBuilding {
         titleParaStyle.paragraphSpacing = 24
 
         let bodyParaStyle = NSMutableParagraphStyle()
-        bodyParaStyle.alignment = .natural
+        // Justify body text so both edges align. CoreTextHorizontalLineDrawer only
+        // engages its CJK justification path when the paragraph is .justified; with
+        // .natural every line is ragged on the right, which reads as an asymmetric
+        // (larger) right margin. Paragraph-last and short lines stay ragged-left,
+        // which the drawer handles correctly.
+        bodyParaStyle.alignment = .justified
         bodyParaStyle.lineBreakMode = .byWordWrapping
         bodyParaStyle.minimumLineHeight = bodyTargetLineHeight
         bodyParaStyle.maximumLineHeight = bodyTargetLineHeight
