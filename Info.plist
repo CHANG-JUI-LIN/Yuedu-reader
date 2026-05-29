@@ -21,6 +21,8 @@
 	</array>
 	<key>GIDClientID</key>
 	<string>303059321609-aapbvd37l5kgtv3lpu9d0pr33bin0vm8.apps.googleusercontent.com</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
