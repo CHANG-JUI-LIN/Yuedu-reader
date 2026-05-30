@@ -405,40 +405,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     // MARK: - Text splitting
 
     private func splitText(_ text: String) -> [String] {
-        var result: [String] = []
-        var buffer = ""
-        let terminators = CharacterSet(charactersIn: "。！？!?；;…\n")
-
-        for scalar in text.unicodeScalars {
-            buffer.unicodeScalars.append(scalar)
-            let shouldBreak = terminators.contains(scalar) || buffer.count >= targetChunkLength
-            if shouldBreak {
-                appendChunk(buffer, to: &result)
-                buffer.removeAll(keepingCapacity: true)
-            }
-        }
-
-        appendChunk(buffer, to: &result)
-        return result
-    }
-
-    private func appendChunk(_ text: String, to result: inout [String]) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        guard containsSpeakableContent(trimmed) else {
-            if let lastIndex = result.indices.last {
-                result[lastIndex] += trimmed
-            }
-            return
-        }
-        result.append(trimmed)
-    }
-
-    private func containsSpeakableContent(_ text: String) -> Bool {
-        text.unicodeScalars.contains { scalar in
-            CharacterSet.letters.contains(scalar)
-                || CharacterSet.decimalDigits.contains(scalar)
-        }
+        TTSTextChunker.split(text, targetChunkLength: targetChunkLength)
     }
 
     // MARK: - Background task

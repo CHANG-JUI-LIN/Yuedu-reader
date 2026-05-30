@@ -707,3 +707,8 @@
 "天前" = "d ago";
 "分類篩選" = "Filters";
 "前往書源管理新增並啟用書源" = "Add and enable a source in Source Manager";
+"系統離線語音" = "System Offline Voice";
+"免網路，使用裝置內建語音朗讀" = "Works offline using the built-in device voice";
+"語音" = "Voice";
+"自動" = "Automatic";
+"未配置網路語音源，將使用系統離線語音朗讀" = "No network voice source configured; using the system offline voice";

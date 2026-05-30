@@ -133,8 +133,20 @@ final class TTSCoordinator: ObservableObject {
     var onPreviousTrackRequested: (() -> Bool)?
     // MARK: - Engine
     private let httpEngine = HTTPTTSEngine()
-    private var currentEngine: TTSPlayable { httpEngine }
+    private let systemEngine = SystemTTSEngine()
+    /// Engine bound for the current playback session; resolved at `speak` time so toggling the
+    /// system-voice setting never redirects pause/stop to the wrong engine mid-session.
+    private lazy var activeEngine: TTSPlayable = httpEngine
+    private var currentEngine: TTSPlayable { activeEngine }
     private static weak var activeSystemMediaCoordinator: TTSCoordinator?
+
+    /// Use the on-device offline voice when the user forces it, or as an automatic fallback
+    /// whenever no HTTP TTS source is configured. Otherwise use the HTTP engine.
+    private func resolveEngine() -> TTSPlayable {
+        if GlobalSettings.shared.ttsUseSystemVoice { return systemEngine }
+        let template = GlobalSettings.shared.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+        return template.isEmpty ? systemEngine : httpEngine
+    }
 
     private var sleepTimer: Timer?
     private var audioSessionActive = false
@@ -160,11 +172,12 @@ final class TTSCoordinator: ObservableObject {
     // MARK: - External Controls
 
     func speak(text: String, title: String = "") {
-        ttsLog("[TTS][Coordinator] speak requested engine=http textCount=\(text.count) title=\(title) rate=\(speechRate)")
         guard !text.isEmpty else {
             ttsLog("[TTS][Coordinator] speak ignored empty text")
             return
         }
+        activeEngine = resolveEngine()
+        ttsLog("[TTS][Coordinator] speak requested engine=\(currentEngine === systemEngine ? "system" : "http") textCount=\(text.count) title=\(title) rate=\(speechRate)")
         guard activateAudioSession() else {
             ttsLog("[TTS][Coordinator] speak aborted audio session activation failed")
             return
@@ -340,11 +353,16 @@ final class TTSCoordinator: ObservableObject {
     }
 
     private func rewireCallbacks() {
-        httpEngine.onPageFinished = { [weak self] in
+        wireCallbacks(to: httpEngine)
+        wireCallbacks(to: systemEngine)
+    }
+
+    private func wireCallbacks(to engine: TTSPlayable) {
+        engine.onPageFinished = { [weak self] in
             guard let self, self.isPlaying else { return nil }
             return self.onPageFinished?()
         }
-        httpEngine.onStop = { [weak self] in
+        engine.onStop = { [weak self] in
             let handleStop = {
                 guard let self else { return }
                 guard !self.isStoppingFromCoordinator else { return }
@@ -357,12 +375,12 @@ final class TTSCoordinator: ObservableObject {
                 DispatchQueue.main.async(execute: handleStop)
             }
         }
-        httpEngine.onPlaybackStarted = { [weak self] duration in
+        engine.onPlaybackStarted = { [weak self] duration in
             DispatchQueue.main.async {
                 self?.handleEnginePlaybackStarted(duration: duration)
             }
         }
-        httpEngine.onSegmentChanged = { [weak self] index, total, text in
+        engine.onSegmentChanged = { [weak self] index, total, text in
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.currentSegmentIndex = index

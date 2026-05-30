@@ -18,8 +18,13 @@ struct TTSPanelView: View {
     @State private var scrubProgress = 0.0
     @State private var showChapterPicker = false
 
-    private var hasAudioSource: Bool {
-        !gs.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    // Playback is always available: when no HTTP source is configured, the coordinator falls
+    // back to the on-device offline voice.
+    private var hasAudioSource: Bool { true }
+
+    private var usesSystemVoice: Bool {
+        gs.ttsUseSystemVoice
+            || gs.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var controlChapterIndex: Int {
@@ -54,8 +59,8 @@ struct TTSPanelView: View {
                                 .foregroundColor(DSColor.textSecondary)
                         }
                     }
-                    if !hasAudioSource {
-                        Label(localized("尚未配置語音源，暫時無法開始聽書"), systemImage: "exclamationmark.triangle")
+                    if usesSystemVoice {
+                        Label(localized("未配置網路語音源，將使用系統離線語音朗讀"), systemImage: "iphone.gen2")
                             .font(DSFont.caption)
                             .foregroundColor(DSColor.textSecondary)
                     }
@@ -320,4 +325,21 @@ struct AutoReadPanelView: View {
             }
         }
     }
+}
+
+#Preview {
+    TTSPanelView(
+        tts: TTSCoordinator(),
+        chapters: [
+            BookChapter(index: 0, title: "第一章", content: ""),
+            BookChapter(index: 1, title: "第二章", content: "")
+        ],
+        currentReaderChapterIndex: 0,
+        activeTTSChapterIndex: nil,
+        activeChapterTitle: "第一章",
+        onPlayPause: {},
+        onPreviousChapter: { false },
+        onNextChapter: { false },
+        onSelectChapter: { _ in }
+    )
 }

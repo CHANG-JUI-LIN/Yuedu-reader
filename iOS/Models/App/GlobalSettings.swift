@@ -363,6 +363,14 @@ class GlobalSettings: ObservableObject {
     @Published var importedTTSSources: [ImportedTTSSource] {
         didSet { Self.saveImportedTTSSources(importedTTSSources) }
     }
+    /// Force the offline, on-device `AVSpeechSynthesizer` voice even when an HTTP source exists.
+    @Published var ttsUseSystemVoice: Bool {
+        didSet { UserDefaults.standard.set(ttsUseSystemVoice, forKey: "yd_tts_use_system_voice") }
+    }
+    /// Selected `AVSpeechSynthesisVoice` identifier for the offline engine; empty = auto by language.
+    @Published var ttsSystemVoiceIdentifier: String {
+        didSet { UserDefaults.standard.set(ttsSystemVoiceIdentifier, forKey: "yd_tts_system_voice_id") }
+    }
 
     // MARK: - Experimental Feature Flags
 
@@ -444,6 +452,8 @@ class GlobalSettings: ObservableObject {
         httpTtsUrlTemplate = UserDefaults.standard.string(forKey: "yd_http_tts_url_template") ?? ""
         httpTtsHeaders = Self.loadTTSHeaders()
         importedTTSSources = Self.loadImportedTTSSources()
+        ttsUseSystemVoice = UserDefaults.standard.bool(forKey: "yd_tts_use_system_voice")
+        ttsSystemVoiceIdentifier = UserDefaults.standard.string(forKey: "yd_tts_system_voice_id") ?? ""
     }
 
     private static func loadImportedTTSSources() -> [ImportedTTSSource] {

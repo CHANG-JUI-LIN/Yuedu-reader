@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -31,6 +32,10 @@ struct TTSSettingsView: View {
             AdaptiveSheetContainer(maxWidth: 980) {
                 VStack(spacing: 0) {
                     searchBar
+
+                    Divider()
+
+                    systemVoiceSection
 
                     Divider()
 
@@ -103,6 +108,141 @@ struct TTSSettingsView: View {
 
     private var searchBar: some View {
         DSSearchBar(placeholder: localized("搜索語音源"), text: $searchText)
+    }
+
+    // MARK: - System (offline) voice
+
+    private var systemVoiceSection: some View {
+        VStack(spacing: 0) {
+            systemVoiceRow
+            if isSystemVoiceSelected {
+                systemVoicePickerRow
+            }
+        }
+    }
+
+    private var systemVoiceRow: some View {
+        HStack(spacing: 0) {
+            Image(systemName: isSystemVoiceSelected ? "checkmark.square.fill" : "square")
+                .font(.system(size: 20))
+                .foregroundColor(isSystemVoiceSelected ? DSColor.accent : Color(UIColor.systemGray3))
+                .padding(.leading, 16)
+                .padding(.trailing, 12)
+
+            Button {
+                selectSystemVoice()
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(localized("系統離線語音"))
+                            .font(DSFont.toolbarIcon)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+
+                        if isSystemVoiceSelected {
+                            Text(localized("使用中"))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(DSColor.accent)
+                                .clipShape(Capsule())
+                        }
+                    }
+
+                    Text(localized("免網路，使用裝置內建語音朗讀"))
+                        .font(.system(size: 11))
+                        .foregroundColor(DSColor.textSecondary.opacity(0.6))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                testSystemPlayback()
+            } label: {
+                Image(systemName: "play.circle")
+                    .font(.system(size: 22))
+                    .foregroundColor(DSColor.accent)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 16)
+        }
+        .padding(.vertical, 14)
+        .contentShape(Rectangle())
+    }
+
+    private var systemVoicePickerRow: some View {
+        HStack {
+            Text(localized("語音"))
+                .font(.system(size: 13))
+                .foregroundColor(DSColor.textSecondary)
+
+            Spacer()
+
+            Menu {
+                Button {
+                    gs.ttsSystemVoiceIdentifier = ""
+                } label: {
+                    voiceMenuLabel(localized("自動"), selected: gs.ttsSystemVoiceIdentifier.isEmpty)
+                }
+                ForEach(availableSystemVoices, id: \.identifier) { voice in
+                    Button {
+                        gs.ttsSystemVoiceIdentifier = voice.identifier
+                    } label: {
+                        voiceMenuLabel(voiceLabel(voice), selected: gs.ttsSystemVoiceIdentifier == voice.identifier)
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(selectedSystemVoiceName)
+                        .font(.system(size: 13))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 11))
+                        .foregroundColor(DSColor.textSecondary)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 14)
+    }
+
+    private var availableSystemVoices: [AVSpeechSynthesisVoice] {
+        AVSpeechSynthesisVoice.speechVoices()
+            .filter { voice in
+                let lang = voice.language.lowercased()
+                return lang.hasPrefix("zh") || lang.hasPrefix("en")
+            }
+            .sorted { lhs, rhs in
+                lhs.language == rhs.language
+                    ? lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                    : lhs.language < rhs.language
+            }
+    }
+
+    private var selectedSystemVoiceName: String {
+        guard !gs.ttsSystemVoiceIdentifier.isEmpty,
+              let voice = AVSpeechSynthesisVoice(identifier: gs.ttsSystemVoiceIdentifier) else {
+            return localized("自動")
+        }
+        return voice.name
+    }
+
+    private func voiceLabel(_ voice: AVSpeechSynthesisVoice) -> String {
+        "\(voice.name) (\(voice.language))"
+    }
+
+    @ViewBuilder
+    private func voiceMenuLabel(_ title: String, selected: Bool) -> some View {
+        if selected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
+        }
     }
 
     private var sourceList: some View {
@@ -368,12 +508,27 @@ struct TTSSettingsView: View {
     }
 
     private func isSelected(_ source: ImportedTTSSource) -> Bool {
-        gs.httpTtsUrlTemplate == source.urlTemplate
+        !gs.ttsUseSystemVoice && gs.httpTtsUrlTemplate == source.urlTemplate
     }
 
     private func selectSource(_ source: ImportedTTSSource) {
+        gs.ttsUseSystemVoice = false
         gs.httpTtsUrlTemplate = source.urlTemplate
         gs.httpTtsHeaders = source.headers
+    }
+
+    private var isSystemVoiceSelected: Bool {
+        gs.ttsUseSystemVoice
+    }
+
+    private func selectSystemVoice() {
+        gs.ttsUseSystemVoice = true
+    }
+
+    private func testSystemPlayback() {
+        selectSystemVoice()
+        testCoordinator.stop(reason: "restart system voice test")
+        testCoordinator.speak(text: "這是一段測試文字，用於確認系統離線語音是否正常。", title: "測試")
     }
 
     private func toggleSelection(_ id: String) {
@@ -523,4 +678,8 @@ struct TTSSettingsView: View {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
     }
+}
+
+#Preview {
+    TTSSettingsView()
 }
