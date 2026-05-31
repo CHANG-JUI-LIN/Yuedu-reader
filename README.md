@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>A native iOS reader powered by CoreText.</strong><br>
-  EPUB / TXT / RSS / WebDAV / TTS / CJK vertical writing.
+  EPUB / TXT / RSS / Manga / WebDAV / TTS / CJK vertical writing.
 </p>
 
 <p align="center">
@@ -22,6 +22,9 @@
   <a href="https://t.me/+ZWmmgMwwJ3JiN2Rl">
     <img src="https://img.shields.io/badge/Telegram-Join%20Group-26A5E4?logo=telegram&logoColor=white" alt="Join the Telegram group">
   </a>
+  <a href="https://iosdevweekly.com/issues/751">
+    <img src="https://img.shields.io/badge/Featured%20in-iOS%20Dev%20Weekly%20%23751-FF6600" alt="Featured in iOS Dev Weekly #751">
+  </a>
 </p>
 
 <p align="center">
@@ -33,7 +36,9 @@
   <img src="docs/demo/cjk-vertical-toc.gif" width="320" alt="Yuedu Reader CJK vertical reading demo">
 </p>
 
-Yuedu Reader is a native iOS reading app for serious long-form reading, focused on CJK typography, local EPUB/TXT libraries, RSS, web article normalization, TTS, WebDAV sync, and a reader UI that stays native instead of WebView-based.
+Yuedu Reader is a native iOS reading app for serious long-form reading, focused on CJK typography, local EPUB/TXT libraries, manga, RSS, web article normalization, TTS, OPDS and WebDAV import/sync, and a reader UI that stays native instead of WebView-based.
+
+> 📝 Featured in [iOS Dev Weekly #751](https://iosdevweekly.com/issues/751) — [*From WebView to CoreText: Building a Native EPUB Reader for iOS*](https://chang-jui-lin.github.io/Yuedu-reader/2026/05/20/from-webview-to-coretext/).
 
 ## CJK Vertical Reading
 
@@ -78,6 +83,8 @@ Yuedu Reader is not only a local EPUB reader. It also includes RSS reading and w
 - **RSS Reader**: RSS / Atom feeds, article extraction, and reading inside the native reader.
 - **Web Article Normalization**: convert web pages into clean long-form reading content.
 - **Book Source Reading**: Legado-compatible book sources for online web novels — search, browse chapters, and read in the native CoreText reader.
+- **Manga Reading**: read manga from compatible book sources or import local manga (`.cbz` / `.zip`), viewed in a dedicated image reader.
+- **Library Import**: add books straight from OPDS catalogs and WebDAV servers via the bookshelf add-book menu.
 
 <p align="center">
   <img src="docs/demo/book-source-reading.gif" width="320" alt="Online book-source web-novel reading demo">
@@ -91,7 +98,9 @@ Yuedu Reader is not only a local EPUB reader. It also includes RSS reading and w
 - Paged and scroll reading modes
 - Highlights, bookmarks, annotations
 - TTS and auto-reading
-- WebDAV sync
+- Manga reading via a dedicated image reader (book sources + local `.cbz` / `.zip` import)
+- OPDS catalog import
+- WebDAV import and sync
 - RSS / web article reading
 - Legado-compatible source rules
 - EPUB regression samples for rendering compatibility
@@ -107,9 +116,8 @@ Yuedu Reader is not only a local EPUB reader. It also includes RSS reading and w
 
 ### Next
 
-- OPDS catalog browsing and EPUB import
-- WebDAV remote library browser
 - Better web article normalization
+- Richer manga sources and reader gestures
 - Fixed-layout EPUB prototype
 
 ### Later

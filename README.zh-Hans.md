@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>一个由 CoreText 驱动的 iOS 原生阅读器。</strong><br>
-  EPUB / TXT / RSS / WebDAV / TTS / CJK 竖排阅读。
+  EPUB / TXT / RSS / 漫画 / WebDAV / TTS / CJK 竖排阅读。
 </p>
 
 <p align="center">
@@ -22,6 +22,9 @@
   <a href="https://t.me/+ZWmmgMwwJ3JiN2Rl">
     <img src="https://img.shields.io/badge/Telegram-加入群组-26A5E4?logo=telegram&logoColor=white" alt="加入 Telegram 群组">
   </a>
+  <a href="https://iosdevweekly.com/issues/751">
+    <img src="https://img.shields.io/badge/iOS%20Dev%20Weekly-%23751%20收录-FF6600" alt="获 iOS Dev Weekly #751 收录">
+  </a>
 </p>
 
 <p align="center">
@@ -33,7 +36,9 @@
   <img src="docs/demo/cjk-vertical-toc.gif" width="320" alt="阅读 CJK 竖排演示">
 </p>
 
-阅读是一个使用 SwiftUI 和 CoreText 构建的 iOS 原生阅读器，专注于长文本阅读、CJK 排版、本地 EPUB/TXT 书库、网页内容转码、RSS、TTS、WebDAV 同步，以及不依赖 WebView 的原生阅读界面。
+阅读是一个使用 SwiftUI 和 CoreText 构建的 iOS 原生阅读器，专注于长文本阅读、CJK 排版、本地 EPUB/TXT 书库、漫画、网页内容转码、RSS、TTS、OPDS 与 WebDAV 导入／同步，以及不依赖 WebView 的原生阅读界面。
+
+> 📝 获 [iOS Dev Weekly #751](https://iosdevweekly.com/issues/751) 收录 —— [*From WebView to CoreText: Building a Native EPUB Reader for iOS*](https://chang-jui-lin.github.io/Yuedu-reader/2026/05/20/from-webview-to-coretext/)。
 
 ## CJK 竖排阅读
 
@@ -78,6 +83,8 @@
 - **RSS 阅读器**：RSS / Atom feed、文章提取，并在原生阅读器内阅读。
 - **网页文章转码**：将网页转成干净的长文本阅读内容。
 - **书源阅读**：兼容 Legado 书源的在线网文阅读——搜索、浏览目录，并在原生 CoreText 阅读器内阅读。
+- **漫画阅读**：通过兼容书源阅读漫画，或导入本地漫画（`.cbz` / `.zip`），以专属图片阅读器浏览。
+- **书库导入**：在书架的添加书籍菜单中，直接从 OPDS 目录与 WebDAV 服务器添加书籍。
 
 <p align="center">
   <img src="docs/demo/book-source-reading.gif" width="320" alt="在线书源网文阅读演示">
@@ -91,7 +98,9 @@
 - 分页与滚动阅读模式
 - 高亮、书签、标注
 - TTS 与自动阅读
-- WebDAV 同步
+- 漫画阅读，专属图片阅读器（书源 + 本地 `.cbz` / `.zip` 导入）
+- OPDS 目录导入
+- WebDAV 导入与同步
 - RSS / 网页文章阅读
 - Legado 兼容书源规则
 - EPUB regression samples 用于渲染兼容性检查
