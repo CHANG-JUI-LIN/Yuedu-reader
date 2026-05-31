@@ -22,6 +22,9 @@ final class ReaderViewModel: ObservableObject {
     private var bookCoordinator: OnlineBookCoordinating
     private var bookSourceFetcher: BookSourceFetching
     private var inFlightRequests: [Int: InFlightRequest] = [:]
+    /// Books already checked for auto manga detection this session (cached-chapter path),
+    /// so a genuine text book is not re-probed on every `ensureChapterReady`.
+    private var mangaDetectionAttempted: Set<UUID> = []
 
     convenience init() {
         self.init(
@@ -74,6 +77,8 @@ final class ReaderViewModel: ObservableObject {
                 existing.task.cancel()
                 await chapterFetcher.cancelChapter(bookId: book.id, chapterIndex: chapterIndex)
             }
+            detectMangaInCachedChapter(
+                book: book, chapterIndex: chapterIndex, priority: priority, store: store)
             return
         }
 
@@ -201,6 +206,31 @@ final class ReaderViewModel: ObservableObject {
 
     // MARK: - Private
 
+    /// One-shot manga probe for an already-cached chapter: a book that was cached as
+    /// text before auto-detection existed still needs to be flipped to the image reader.
+    /// Runs at most once per book per session and reuses the cached package (no network).
+    private func detectMangaInCachedChapter(
+        book: ReadingBook,
+        chapterIndex: Int,
+        priority: ChapterFetchPriority,
+        store: BookStore?
+    ) {
+        guard book.isOnline,
+              book.contentPipelineKind != .manga,
+              let store,
+              !mangaDetectionAttempted.contains(book.id)
+        else { return }
+        mangaDetectionAttempted.insert(book.id)
+        Task { [weak self] in
+            guard let self else { return }
+            guard let package = try? await self.chapterFetcher.fetchChapter(
+                book: book, chapterIndex: chapterIndex, priority: priority, store: store),
+                  !package.content.isEmpty
+            else { return }
+            store.upgradeToMangaIfDetected(bookId: book.id, content: package.content)
+        }
+    }
+
     private func startFetchTask(
         book: ReadingBook,
         chapterIndex: Int,
@@ -226,6 +256,20 @@ final class ReaderViewModel: ObservableObject {
                     ? .ready
                     : .failed(reason: package.failureReason ?? "empty")
                 print("[FetchStateDebug] ch=\(chapterIndex) fetchChapter DONE pkgState=\(package.state) contentLen=\(package.content.count) → result=\(result)")
+                if case .ready = result, let store {
+                    // Aggregation sources serve manga under a text (type-0) source; once the
+                    // first chapter comes back as an image list, flip the book to the manga
+                    // reader. `BookReaderView` swaps reactively.
+                    #if DEBUG
+                    if book.isOnline {
+                        let imgs = MangaChapterParser.imageURLs(from: package.content)
+                        let head = package.content.prefix(600)
+                            .replacingOccurrences(of: "\n", with: "⏎")
+                        print("[MangaDetect] ch=\(chapterIndex) len=\(package.content.count) imgURLs=\(imgs.count) looksManga=\(MangaChapterParser.looksLikeMangaContent(package.content)) head=\(head)")
+                    }
+                    #endif
+                    store.upgradeToMangaIfDetected(bookId: book.id, content: package.content)
+                }
                 self.finishFetch(chapterIndex: chapterIndex, token: token, result: result)
             } catch is CancellationError {
                 print("[FetchStateDebug] ch=\(chapterIndex) fetchChapter CancellationError")

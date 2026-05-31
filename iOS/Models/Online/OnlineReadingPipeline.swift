@@ -12,6 +12,26 @@ enum OnlineChapterLoadState: String {
     case failed
 }
 
+enum OnlineChapterCacheWritePolicy {
+    static func shouldReusePersistedRenderArtifacts(
+        package: ChapterPackage,
+        hasBookSource: Bool
+    ) -> Bool {
+        hasBookSource && (package.rawHTMLFilename != nil || package.normalizedHTMLFilename != nil)
+    }
+
+    static func shouldRefetchStrippedRenderArtifacts(
+        package: ChapterPackage,
+        hasBookSource: Bool
+    ) -> Bool {
+        hasBookSource && package.rawHTMLFilename == nil && package.normalizedHTMLFilename != nil
+    }
+
+    static func contentFilename(chapterIndex: Int) -> String {
+        "\(chapterIndex).txt"
+    }
+}
+
 enum ChapterFetchPriority: Int {
     case background = 0
     case prefetch = 1
@@ -100,6 +120,15 @@ actor ChapterFetchManager {
         guard package.state == .cached, !package.content.isEmpty else { return false }
         if Self.isSuspiciousChapterContent(package.content) { return false }
         if book.bookSourceId == nil, Self.isCollapsedBrowserImportedChapterContent(package.content) {
+            return false
+        }
+        if OnlineChapterCacheWritePolicy.shouldRefetchStrippedRenderArtifacts(
+            package: package,
+            hasBookSource: book.bookSourceId != nil
+        ) {
+            #if DEBUG
+            print("[段評Debug] cache.strippedRenderArtifacts index=\(package.chapterIndex) raw=false normalized=true")
+            #endif
             return false
         }
         return true
@@ -394,14 +423,28 @@ actor ChapterFetchManager {
             }
 
             if package.state == .cached && !package.content.isEmpty {
-                let filename = bookSourceFetcher.saveToCache(
-                    content: package.content,
-                    bookId: book.id,
-                    chapterIndex: chapterIndex,
-                    sourceURL: ref.url,
-                    tocTitle: ref.title,
-                    storeNormalizedHTML: book.bookSourceId != nil
-                )
+                let filename: String
+                if OnlineChapterCacheWritePolicy.shouldReusePersistedRenderArtifacts(
+                    package: package,
+                    hasBookSource: book.bookSourceId != nil
+                ) {
+                    // BookSourceFetcher already persisted raw/normalized render artifacts.
+                    // Re-saving from plain text here would strip HTML-only inline markers
+                    // such as paragraph-review badges.
+                    #if DEBUG
+                    print("[段評Debug] onlinePipeline.preserveRenderArtifacts index=\(chapterIndex) raw=\(package.rawHTMLFilename != nil) normalized=\(package.normalizedHTMLFilename != nil)")
+                    #endif
+                    filename = OnlineChapterCacheWritePolicy.contentFilename(chapterIndex: chapterIndex)
+                } else {
+                    filename = bookSourceFetcher.saveToCache(
+                        content: package.content,
+                        bookId: book.id,
+                        chapterIndex: chapterIndex,
+                        sourceURL: ref.url,
+                        tocTitle: ref.title,
+                        storeNormalizedHTML: book.bookSourceId != nil
+                    )
+                }
                 await MainActor.run {
                     store?.updateCachedChapter(
                         bookId: book.id, chapterIndex: chapterIndex, filename: filename)
@@ -748,8 +791,8 @@ actor BookDownloadManager {
     nonisolated static func downloadMangaImages(
         bookId: UUID, chapterIndex: Int, content: String, headers: [String: String]
     ) async {
-        let urls = MangaChapterParser.imageURLs(from: content)
-        guard !urls.isEmpty else { return }
+        let images = MangaChapterParser.parsedImages(from: content)
+        guard !images.isEmpty else { return }
         let dir = MangaChapterParser.chapterDirectory(bookId: bookId, chapterIndex: chapterIndex)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -760,11 +803,13 @@ actor BookDownloadManager {
             }
         }
 
-        for (index, raw) in urls.enumerated() where !existing.contains(index) {
-            let normalized = raw.hasPrefix("//") ? "https:" + raw : raw
-            guard let url = URL(string: normalized) else { continue }
+        for (index, image) in images.enumerated() where !existing.contains(index) {
+            guard let url = URL(string: image.url) else { continue }
             var request = URLRequest(url: url, timeoutInterval: 60)
-            for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+            // Per-image headers (CDN referer/UA) override the source defaults.
+            for (key, value) in headers.merging(image.headers, uniquingKeysWith: { _, perImage in perImage }) {
+                request.setValue(value, forHTTPHeaderField: key)
+            }
             guard let (data, response) = try? await URLSession.shared.data(for: request),
                   let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
                   !data.isEmpty else { continue }

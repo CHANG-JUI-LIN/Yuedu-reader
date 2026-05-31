@@ -127,6 +127,83 @@ class BookStore: ObservableObject, BookProvider {
         )
     }
 
+    // MARK: Import Local Manga Archive
+
+    @discardableResult
+    func importLocalManga(
+        url: URL,
+        title: String? = nil,
+        author: String? = nil
+    ) async throws -> ReadingBook {
+        let info = try await LocalMangaArchive.inspect(url: url)
+        let uuid = UUID().uuidString
+        let ext = url.pathExtension.lowercased() == "zip" ? "zip" : "cbz"
+        let filename = "\(uuid).\(ext)"
+        let destURL = documentsURL(for: filename)
+        var coverFilename: String?
+        var book: ReadingBook?
+
+        func cleanupImportedFiles() {
+            try? FileManager.default.removeItem(at: destURL)
+            if let coverFilename {
+                try? FileManager.default.removeItem(at: documentsURL(for: coverFilename))
+            }
+            if let book {
+                try? FileManager.default.removeItem(at: LocalMangaArchive.bookDirectory(bookId: book.id))
+            }
+        }
+
+        do {
+            if FileManager.default.fileExists(atPath: destURL.path) {
+                try FileManager.default.removeItem(at: destURL)
+            }
+            try FileManager.default.copyItem(at: url, to: destURL)
+
+            let resolvedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? title!.trimmingCharacters(in: .whitespacesAndNewlines)
+                : info.title
+            let resolvedAuthor = author?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? author!.trimmingCharacters(in: .whitespacesAndNewlines)
+                : info.author
+
+            if let cover = await LocalMangaArchive.coverImageData(from: destURL),
+               UIImage(data: cover.data) != nil {
+                let coverExt = cover.fileExtension.isEmpty ? "jpg" : cover.fileExtension
+                let candidate = "\(uuid)_cover.\(coverExt)"
+                try cover.data.write(to: documentsURL(for: candidate))
+                coverFilename = candidate
+            }
+
+            var imported = ReadingBook(
+                title: resolvedTitle,
+                author: resolvedAuthor,
+                source: "local_manga",
+                contentFilename: filename
+            )
+            imported.contentPipelineKind = .manga
+            imported.onlineChapters = [
+                OnlineChapterRef(index: 0, title: info.chapterTitle, url: filename)
+            ]
+            imported.coverImagePath = coverFilename
+            book = imported
+
+            _ = try await LocalMangaArchive.extractPages(
+                from: destURL,
+                to: LocalMangaArchive.chapterDirectory(bookId: imported.id, chapterIndex: 0)
+            )
+
+            let importedBook = imported
+            await MainActor.run {
+                self.books.insert(importedBook, at: 0)
+                self.saveMeta()
+            }
+            return importedBook
+        } catch {
+            cleanupImportedFiles()
+            throw error
+        }
+    }
+
     private func importLocalTextFile(
         url: URL,
         title: String,
@@ -664,6 +741,13 @@ class BookStore: ObservableObject, BookProvider {
                 } catch {
                     Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to remove document file \(book.contentFilename): \(error)")
                 }
+                if book.resolvedPipelineKind == .manga {
+                    do {
+                        try FileManager.default.removeItem(at: LocalMangaArchive.bookDirectory(bookId: book.id))
+                    } catch {
+                        Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to remove local manga directory for \(book.id): \(error)")
+                    }
+                }
                 TXTChapterParser.deleteCachedIndexes(bookId: bookId)
                 // Also delete EPUB font resource directory
                 if book.isLegacyParsedEPUB {
@@ -710,6 +794,25 @@ class BookStore: ObservableObject, BookProvider {
         saveMeta()
         downloadCoverIfNeeded(bookId: book.id, coverUrl: coverUrl, sourceId: sourceId)
         return book
+    }
+
+    /// Promote an online book to the manga pipeline once a fetched chapter turns out
+    /// to be an image page list. Aggregation sources report `bookSourceType == 0`
+    /// (text) even when serving manga, so the only reliable signal is the content
+    /// itself. After this flips, `BookReaderView` reactively swaps to the image
+    /// reader and the change persists for future opens. Idempotent and cheap.
+    @discardableResult
+    func upgradeToMangaIfDetected(bookId: UUID, content: String, imageStyle: String? = nil) -> Bool {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return false }
+        guard books[idx].isOnline, books[idx].contentPipelineKind != .manga else { return false }
+        guard MangaChapterParser.looksLikeMangaContent(content, imageStyle: imageStyle) else { return false }
+        books[idx].contentPipelineKind = .manga
+        saveMeta()
+        ReaderTelemetry.shared.log(
+            "manga_autodetect",
+            attributes: ["bookId": bookId.uuidString]
+        )
+        return true
     }
 
     /// Download a remote cover (with source headers) and store it on the book.

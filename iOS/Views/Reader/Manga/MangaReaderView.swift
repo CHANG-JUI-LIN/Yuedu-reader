@@ -9,19 +9,42 @@ import SwiftUI
 @MainActor
 final class MangaReaderState: ObservableObject {
     @Published var chapterTitle: String = ""
+    @Published var chapterListItems: [MangaChapterListItem] = []
+    @Published var currentChapterIndex: Int = 0
     @Published var currentPage: Int = 0
     @Published var totalPages: Int = 0
     @Published var mode: MangaReadingMode = .rtl
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published var showControls: Bool = true
+    @Published var showChapterList: Bool = false
 
     // Actions wired by the controller.
     var onJumpToPage: ((Int) -> Void)?
+    var onSelectChapter: ((Int) -> Void)?
     var onSetMode: ((MangaReadingMode) -> Void)?
     var onNextChapter: (() -> Void)?
     var onPrevChapter: (() -> Void)?
     var onReload: (() -> Void)?
+}
+
+struct MangaChapterListItem: Identifiable, Equatable {
+    let id: UUID
+    let index: Int
+    let title: String
+
+    static func items(from refs: [OnlineChapterRef]) -> [MangaChapterListItem] {
+        refs.enumerated().map { offset, ref in
+            let trimmedTitle = ref.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return MangaChapterListItem(
+                id: ref.id,
+                index: offset,
+                title: trimmedTitle.isEmpty
+                    ? String(format: localized("第 %d 章"), offset + 1)
+                    : trimmedTitle
+            )
+        }
+    }
 }
 
 struct MangaReaderView: View {
@@ -54,6 +77,9 @@ struct MangaReaderView: View {
         }
         .animation(DSAnimation.fast, value: state.showControls)
         .statusBarHidden(!state.showControls)
+        .sheet(isPresented: $state.showChapterList) {
+            MangaChapterListView(state: state)
+        }
     }
 
     private func errorView(_ message: String) -> some View {
@@ -107,6 +133,17 @@ struct MangaControlsOverlay: View {
                     .font(.system(size: 17, weight: .medium))
                     .foregroundColor(.white)
                     .frame(width: 36, height: 36)
+            }
+            if !state.chapterListItems.isEmpty {
+                Button {
+                    state.showChapterList = true
+                } label: {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 36, height: 36)
+                }
+                .accessibilityLabel(localized("目錄"))
             }
             Text(state.chapterTitle)
                 .font(.system(size: 14, weight: .medium))
@@ -168,5 +205,45 @@ struct MangaControlsOverlay: View {
         .padding(.bottom, 30)
         .frame(maxWidth: .infinity)
         .background(.ultraThinMaterial)
+    }
+}
+
+struct MangaChapterListView: View {
+    @ObservedObject var state: MangaReaderState
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            ScrollViewReader { proxy in
+                List(state.chapterListItems) { item in
+                    Button {
+                        state.onSelectChapter?(item.index)
+                    } label: {
+                        HStack {
+                            Text(item.title)
+                                .foregroundColor(.primary)
+                                .font(.subheadline)
+                            Spacer()
+                            if item.index == state.currentChapterIndex {
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(.accentColor)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .id(item.index)
+                }
+                .onAppear {
+                    proxy.scrollTo(state.currentChapterIndex, anchor: .center)
+                }
+            }
+            .navigationTitle(localized("目錄"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(localized("關閉")) { dismiss() }
+                }
+            }
+        }
     }
 }

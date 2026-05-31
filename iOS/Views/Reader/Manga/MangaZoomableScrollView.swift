@@ -9,7 +9,7 @@ import UIKit
 final class MangaZoomableScrollView: UIScrollView, UIScrollViewDelegate {
 
     var zoomView: UIView? {
-        didSet { configure() }
+        didSet { configureZoomView(replacing: oldValue) }
     }
 
     var zoomEnabled = true {
@@ -44,9 +44,26 @@ final class MangaZoomableScrollView: UIScrollView, UIScrollViewDelegate {
         centerView()
     }
 
-    private func configure() {
-        zoomView?.addGestureRecognizer(zoomingTap)
-        zoomView?.isUserInteractionEnabled = true
+    private func configureZoomView(replacing oldView: UIView?) {
+        if oldView !== zoomView {
+            if zoomingTap.view === oldView {
+                oldView?.removeGestureRecognizer(zoomingTap)
+            }
+            if oldView?.superview === self {
+                oldView?.removeFromSuperview()
+            }
+        }
+
+        guard let zoomView else { return }
+
+        if zoomView.superview !== self {
+            addSubview(zoomView)
+        }
+        if zoomingTap.view !== zoomView {
+            zoomingTap.view?.removeGestureRecognizer(zoomingTap)
+            zoomView.addGestureRecognizer(zoomingTap)
+        }
+        zoomView.isUserInteractionEnabled = true
     }
 
     func resetZoom() {

@@ -59,6 +59,8 @@ struct FileImportTab: View {
     // Stores the EPUB temporary file URL for the "Add to Shelf" button
     @State private var pendingEpubURL: URL? = nil
     @State private var pendingMarkdownURL: URL? = nil
+    @State private var pendingMangaURL: URL? = nil
+    @State private var pendingMangaPageCount: Int = 0
 
     private func importTrace(_ message: String) {
         let line = "[ImportTrace][AddBookView] \(message)"
@@ -70,8 +72,8 @@ struct FileImportTab: View {
         ScrollView {
             VStack(spacing: 24) {
                 HintCard(
-                    icon: "doc.text", title: localized("支援格式：TXT / Markdown / JSON / EPUB"),
-                    detail: localized("支援純文字（.txt / .md / .markdown / .json）與電子書（.epub）格式。選取後系統自動識別章節結構。"))
+                    icon: "doc.text", title: localized("支援格式：TXT / Markdown / JSON / EPUB / CBZ / ZIP"),
+                    detail: localized("支援純文字（.txt / .md / .markdown / .json）、電子書（.epub）與本地漫畫（.cbz / .zip）格式。選取後系統自動識別內容。"))
 
                 if let content = pendingContent {
                     VStack(alignment: .leading, spacing: 12) {
@@ -88,7 +90,10 @@ struct FileImportTab: View {
                         }
 
                         // Determine whether to show TXT word count or EPUB confirmation
-                        if pendingEpubURL != nil {
+                        if pendingMangaURL != nil {
+                            Text(String(format: localized("已解析漫畫，共 %d 頁"), pendingMangaPageCount))
+                                .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
+                        } else if pendingEpubURL != nil {
                             Text(localized("已解析 EPUB 結構，點擊下方按鈕匯入"))
                                 .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                         } else {
@@ -118,14 +123,17 @@ struct FileImportTab: View {
                             let sessionID = nextSessionID()
                             let epubURLForImport = pendingEpubURL
                             let markdownURLForImport = pendingMarkdownURL
+                            let mangaURLForImport = pendingMangaURL
                             let startUptime = ProcessInfo.processInfo.systemUptime
 
-                            // Determine whether to import as EPUB, Markdown, or TXT
+                            // Determine whether to import as EPUB, Markdown, manga, or TXT
                             importTask = Task {
                                 do {
                                     await MainActor.run {
                                         let mode: String
-                                        if epubURLForImport != nil {
+                                        if mangaURLForImport != nil {
+                                            mode = "manga"
+                                        } else if epubURLForImport != nil {
                                             mode = "epub"
                                         } else if markdownURLForImport != nil {
                                             mode = "markdown"
@@ -136,7 +144,12 @@ struct FileImportTab: View {
                                             "confirmImport begin session=\(sessionID) mode=\(mode) title=\(t)"
                                         )
                                     }
-                                    if let epubURL = epubURLForImport {
+                                    if let mangaURL = mangaURLForImport {
+                                        try Task.checkCancellation()
+                                        _ = try await store.importLocalManga(url: mangaURL, title: t, author: a)
+                                        try Task.checkCancellation()
+                                        try? FileManager.default.removeItem(at: mangaURL)
+                                    } else if let epubURL = epubURLForImport {
                                         try Task.checkCancellation()
                                         _ = try await store.importEpub(url: epubURL, title: t, author: a)
                                         try Task.checkCancellation()
@@ -202,7 +215,7 @@ struct FileImportTab: View {
                         VStack(spacing: 12) {
                             Image(systemName: "folder.badge.plus")
                                 .font(.system(size: 44)).foregroundColor(DSColor.accent)
-                            Text(localized("點擊選取 TXT / EPUB 文件"))
+                            Text(localized("點擊選取 TXT / EPUB / 漫畫文件"))
                                 .font(.headline).foregroundColor(DSColor.accent)
                             Text(localized("從文件 App、iCloud、本機儲存等選取"))
                                 .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
@@ -240,6 +253,8 @@ struct FileImportTab: View {
                 UTType(filenameExtension: "markdown") ?? .plainText,
                 .json,
                 UTType.epub,
+                UTType(filenameExtension: "cbz") ?? .data,
+                UTType(filenameExtension: "zip") ?? .data,
             ]
         ) { result in
             switch result {
@@ -247,11 +262,14 @@ struct FileImportTab: View {
                 cancelOngoingTasks()
                 cleanupPendingEpubTempFile()
                 cleanupPendingMarkdownTempFile()
+                cleanupPendingMangaTempFile()
                 let sessionID = nextSessionID()
                 isLoading = true
                 errorMsg = nil
                 pendingEpubURL = nil
                 pendingMarkdownURL = nil
+                pendingMangaURL = nil
+                pendingMangaPageCount = 0
                 let ext = url.pathExtension.lowercased()
                 let sizeBytes = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
                 importTrace(
@@ -259,6 +277,8 @@ struct FileImportTab: View {
                 )
                 if ext == "epub" {
                     importEPUB(url: url, sessionID: sessionID)
+                } else if LocalMangaArchive.supports(url) {
+                    importManga(url: url, sessionID: sessionID)
                 } else {
                     importTXT(url: url, sessionID: sessionID)
                 }
@@ -272,6 +292,7 @@ struct FileImportTab: View {
             cancelOngoingTasks()
             cleanupPendingEpubTempFile()
             cleanupPendingMarkdownTempFile()
+            cleanupPendingMangaTempFile()
             resetTransientState()
             activeSessionID = UUID()
         }
@@ -405,6 +426,78 @@ struct FileImportTab: View {
         }
     }
 
+    // MARK: - Local Manga Import
+    private func importManga(url: URL, sessionID: UUID) {
+        parseTask = Task(priority: .userInitiated) {
+            let startUptime = ProcessInfo.processInfo.systemUptime
+            await MainActor.run {
+                importTrace("importManga stage=begin session=\(sessionID) file=\(url.lastPathComponent)")
+            }
+            let ok = url.startAccessingSecurityScopedResource()
+            let ext = url.pathExtension.lowercased() == "zip" ? "zip" : "cbz"
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString + ".\(ext)")
+            do {
+                try FileManager.default.copyItem(at: url, to: tempURL)
+            } catch {
+                if ok { url.stopAccessingSecurityScopedResource() }
+                await MainActor.run {
+                    importTrace(
+                        "importManga stage=copyFailed session=\(sessionID) error=\(error.localizedDescription)"
+                    )
+                    isLoading = false
+                    errorMsg = localized("無法複製漫畫檔案：") + error.localizedDescription
+                }
+                return
+            }
+            if ok { url.stopAccessingSecurityScopedResource() }
+
+            do {
+                let info = try await LocalMangaArchive.inspect(url: tempURL)
+                if Task.isCancelled {
+                    try? FileManager.default.removeItem(at: tempURL)
+                    return
+                }
+
+                await MainActor.run {
+                    guard AddBookImportGuard.shouldApplyResult(
+                        activeSessionID: activeSessionID,
+                        resultSessionID: sessionID,
+                        isCancelled: Task.isCancelled
+                    ) else {
+                        importTrace("importManga stage=staleDiscarded session=\(sessionID)")
+                        try? FileManager.default.removeItem(at: tempURL)
+                        return
+                    }
+
+                    isLoading = false
+                    pendingContent = "MANGA_READY"
+                    pendingMangaURL = tempURL
+                    pendingMangaPageCount = info.pageCount
+                    titleInput = info.title
+                    authorInput = info.author == localized("未知作者") ? "" : info.author
+                    importTrace(
+                        "importManga stage=prepared session=\(sessionID) pages=\(info.pageCount) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000)) tempFile=\(tempURL.lastPathComponent)"
+                    )
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: tempURL)
+                await MainActor.run {
+                    guard AddBookImportGuard.shouldApplyResult(
+                        activeSessionID: activeSessionID,
+                        resultSessionID: sessionID,
+                        isCancelled: Task.isCancelled
+                    ) else { return }
+                    importTrace(
+                        "importManga stage=parseFailed session=\(sessionID) error=\(error.localizedDescription)"
+                    )
+                    isLoading = false
+                    errorMsg = localized("匯入失敗：") + error.localizedDescription
+                }
+            }
+        }
+    }
+
     private func nextSessionID() -> UUID {
         let id = UUID()
         activeSessionID = id
@@ -430,6 +523,12 @@ struct FileImportTab: View {
         }
     }
 
+    private func cleanupPendingMangaTempFile() {
+        if let url = pendingMangaURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
     private func resetTransientState() {
         showFilePicker = false
         titleInput = ""
@@ -439,6 +538,8 @@ struct FileImportTab: View {
         isLoading = false
         pendingEpubURL = nil
         pendingMarkdownURL = nil
+        pendingMangaURL = nil
+        pendingMangaPageCount = 0
     }
 }
 

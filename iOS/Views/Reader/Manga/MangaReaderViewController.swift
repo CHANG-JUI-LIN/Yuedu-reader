@@ -33,8 +33,12 @@ final class MangaReaderViewController: UIViewController, MangaReaderContainer {
             sourceBaseURL: resolvedSource?.bookSourceUrl,
             sourceHeaders: resolvedSource?.parsedHeaders ?? [:]
         )
-        self.chapters = book.onlineChapters ?? []
-        self.chapterIndex = min(max(0, book.mangaChapterIndex), max(0, (book.onlineChapters?.count ?? 1) - 1))
+        if !book.isOnline, book.resolvedPipelineKind == .manga, (book.onlineChapters ?? []).isEmpty {
+            self.chapters = [OnlineChapterRef(index: 0, title: book.title, url: book.contentFilename)]
+        } else {
+            self.chapters = book.onlineChapters ?? []
+        }
+        self.chapterIndex = min(max(0, book.mangaChapterIndex), max(0, self.chapters.count - 1))
         self.mode = MangaReadingMode.saved(for: book.id)
         super.init(nibName: nil, bundle: nil)
     }
@@ -46,7 +50,10 @@ final class MangaReaderViewController: UIViewController, MangaReaderContainer {
         view.backgroundColor = .black
 
         state.mode = mode
+        state.chapterListItems = MangaChapterListItem.items(from: chapters)
+        state.currentChapterIndex = chapterIndex
         state.onJumpToPage = { [weak self] page in self?.reader?.goToPage(page, animated: false) }
+        state.onSelectChapter = { [weak self] index in self?.selectChapter(at: index) }
         state.onSetMode = { [weak self] mode in self?.changeMode(mode) }
         state.onNextChapter = { [weak self] in self?.loadNextChapter() }
         state.onPrevChapter = { [weak self] in self?.loadPreviousChapter() }
@@ -96,12 +103,18 @@ final class MangaReaderViewController: UIViewController, MangaReaderContainer {
     private func loadChapter(at index: Int, startPage: Int) {
         guard chapters.indices.contains(index) else { return }
         chapterIndex = index
+        state.currentChapterIndex = index
         state.isLoading = true
         state.errorMessage = nil
         state.chapterTitle = chapters[index].title
 
         let token = UUID()
         loadToken = token
+        if isLocalMangaBook {
+            loadLocalChapter(at: index, startPage: startPage, token: token)
+            return
+        }
+
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -122,6 +135,48 @@ final class MangaReaderViewController: UIViewController, MangaReaderContainer {
                 self.state.errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private var isLocalMangaBook: Bool {
+        !book.isOnline && book.resolvedPipelineKind == .manga
+    }
+
+    private func loadLocalChapter(at index: Int, startPage: Int, token: UUID) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let archiveFilename = self.chapters[index].url.isEmpty
+                    ? self.book.contentFilename
+                    : self.chapters[index].url
+                let archiveURL = LocalMangaArchive.archiveURL(for: archiveFilename)
+                var pages = LocalMangaArchive.pagesForExtractedChapter(
+                    bookId: self.book.id,
+                    chapterIndex: index
+                )
+                if pages.isEmpty {
+                    pages = try await LocalMangaArchive.extractPages(
+                        from: archiveURL,
+                        to: LocalMangaArchive.chapterDirectory(bookId: self.book.id, chapterIndex: index)
+                    )
+                }
+                guard self.loadToken == token else { return }
+                self.state.isLoading = false
+                guard !pages.isEmpty else {
+                    self.state.errorMessage = localized("未找到圖片")
+                    return
+                }
+                self.reader?.setPages(pages, startPage: max(0, min(startPage, pages.count - 1)))
+            } catch {
+                guard self.loadToken == token else { return }
+                self.state.isLoading = false
+                self.state.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func selectChapter(at index: Int) {
+        guard chapters.indices.contains(index), index != chapterIndex else { return }
+        loadChapter(at: index, startPage: 0)
     }
 
     private func loadNextChapter() {

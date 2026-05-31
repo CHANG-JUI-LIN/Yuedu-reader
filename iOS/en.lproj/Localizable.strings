@@ -158,9 +158,11 @@
 "支援格式" = "Formats";
 "支援格式：TXT / Markdown / EPUB" = "Supported formats: TXT / Markdown / EPUB";
 "支援格式：TXT / Markdown / JSON / EPUB" = "Supported formats: TXT / Markdown / JSON / EPUB";
+"支援格式：TXT / Markdown / JSON / EPUB / CBZ / ZIP" = "Supported formats: TXT / Markdown / JSON / EPUB / CBZ / ZIP";
 "支援的佔位符：" = "Supported placeholders:";
 "支援純文字（.txt / .md / .markdown）與電子書（.epub）格式。選取後系統自動識別章節結構。" = "Supports plain text (.txt / .md / .markdown) and ebook (.epub) formats. Chapter structure is detected automatically.";
 "支援純文字（.txt / .md / .markdown / .json）與電子書（.epub）格式。選取後系統自動識別章節結構。" = "Supports plain text (.txt / .md / .markdown / .json) and ebook (.epub) formats. Chapter structure is detected automatically.";
+"支援純文字（.txt / .md / .markdown / .json）、電子書（.epub）與本地漫畫（.cbz / .zip）格式。選取後系統自動識別內容。" = "Supports plain text (.txt / .md / .markdown / .json), ebooks (.epub), and local manga (.cbz / .zip). Content is detected automatically.";
 "放棄" = "Give Up";
 "文字轉換" = "Text Conversion";
 "新增" = "Add";
@@ -236,6 +238,7 @@
 "無效的 URL" = "Invalid URL";
 "無效的影片網址" = "Invalid Video URL";
 "無法準備 Markdown 檔案，請重試" = "Unable to prepare the Markdown file. Please try again.";
+"無法複製漫畫檔案：" = "Unable to copy manga file: ";
 "無法解析伺服器回應" = "Unable to parse the server response";
 "無法讀取文件" = "Cannot read file";
 "無法讀取文件，請確認格式為 TXT / Markdown" = "Unable to read the file. Please make sure it is TXT or Markdown.";
@@ -369,6 +372,7 @@
 "正文到底欄" = "Text to Footer";
 "點擊右上角 + 手動新增\\n或 ↓ 貼上 Legado 書源 JSON 匯入" = "Tap + in the top-right to add one manually\\nor use ↓ to paste Legado source JSON for import";
 "點擊選取 TXT / EPUB 文件" = "Tap to Select a TXT / EPUB File";
+"點擊選取 TXT / EPUB / 漫畫文件" = "Tap to Select a TXT / EPUB / Manga File";
 
 // Bookshelf toolbar menu
 "選取" = "Select";
@@ -753,4 +757,10 @@
 "條漫" = "Webtoon";
 "載入失敗，點擊重試" = "Failed to load, tap to retry";
 "未找到圖片" = "No images found";
+"不支援的漫畫格式" = "Unsupported manga format";
+"已解析漫畫，共 %d 頁" = "Manga parsed, %d pages";
+"漫畫壓縮檔中未找到圖片" = "No images found in the manga archive";
+"漫畫圖片解壓失敗" = "Failed to extract manga images";
+"無法讀取漫畫壓縮檔" = "Unable to read manga archive";
+"第 %d 章" = "Chapter %d";
 "第 %d / %d 頁" = "Page %d / %d";

@@ -303,8 +303,10 @@ struct ChapterFetcher {
         content = Self.sanitizeResolvedContent(content, title: chapterTitle)
 
         // Apply user-configured global replace rules (after per-source rules).
+        // Default/global text cleanup can include tag stripping; don't run it on
+        // image-bearing chapters because that erases manga pages and novel illustrations.
         let globalRules = ReplaceRuleStore.shared.rules(for: sourceUrl)
-        if !globalRules.isEmpty {
+        if !globalRules.isEmpty && !Self.containsContentImageTag(content) {
             content = ReplaceRuleEngine.apply(globalRules, to: content)
         }
 
@@ -330,23 +332,64 @@ struct ChapterFetcher {
             .replacingOccurrences(of: "\r", with: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if output.isEmpty { return "" }
+        if Self.containsContentImageTag(output) {
+            return Self.preserveImageBearingHTML(output)
+        }
         if output.contains("<") {
             output = Self.stripHtmlToText(output)
         } else {
-            output = output.replacingOccurrences(of: "&nbsp;", with: " ", options: .caseInsensitive)
-            output = output.replacingOccurrences(of: "&ensp;", with: " ", options: .caseInsensitive)
-            output = output.replacingOccurrences(of: "&emsp;", with: " ", options: .caseInsensitive)
-            output = output.replacingOccurrences(of: "&thinsp;", with: "", options: .caseInsensitive)
-            output = output.replacingOccurrences(of: "&lt;", with: "<", options: .caseInsensitive)
-            output = output.replacingOccurrences(of: "&gt;", with: ">", options: .caseInsensitive)
-            output = output.replacingOccurrences(of: "&amp;", with: "&", options: .caseInsensitive)
-            output = output.replacingOccurrences(of: "&quot;", with: "\"", options: .caseInsensitive)
-            output = output.replacingOccurrences(of: "&apos;", with: "'", options: .caseInsensitive)
+            output = Self.decodeBasicHTMLEntities(output)
+            if Self.containsContentImageTag(output) {
+                return Self.preserveImageBearingHTML(output)
+            }
         }
         while output.contains("\n\n\n") {
             output = output.replacingOccurrences(of: "\n\n\n", with: "\n\n")
         }
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func containsContentImageTag(_ text: String) -> Bool {
+        text.range(
+            of: #"<\s*(?:img|image)\b"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    private static func preserveImageBearingHTML(_ html: String) -> String {
+        var output = html
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "&nbsp;", with: " ", options: .caseInsensitive)
+            .replacingOccurrences(of: "&ensp;", with: " ", options: .caseInsensitive)
+            .replacingOccurrences(of: "&emsp;", with: " ", options: .caseInsensitive)
+            .replacingOccurrences(of: "&thinsp;", with: "", options: .caseInsensitive)
+        output = output.replacingOccurrences(
+            of: #"(?is)<(script|style|noscript|iframe|object|embed)\b[^>]*>.*?</\1\s*>"#,
+            with: "",
+            options: .regularExpression
+        )
+        output = output.replacingOccurrences(
+            of: #"(?is)<(script|style|noscript|iframe|object|embed)\b[^>]*>"#,
+            with: "",
+            options: .regularExpression
+        )
+        while output.contains("\n\n\n") {
+            output = output.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        }
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func decodeBasicHTMLEntities(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "&nbsp;", with: " ", options: .caseInsensitive)
+            .replacingOccurrences(of: "&ensp;", with: " ", options: .caseInsensitive)
+            .replacingOccurrences(of: "&emsp;", with: " ", options: .caseInsensitive)
+            .replacingOccurrences(of: "&thinsp;", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: "&lt;", with: "<", options: .caseInsensitive)
+            .replacingOccurrences(of: "&gt;", with: ">", options: .caseInsensitive)
+            .replacingOccurrences(of: "&amp;", with: "&", options: .caseInsensitive)
+            .replacingOccurrences(of: "&quot;", with: "\"", options: .caseInsensitive)
+            .replacingOccurrences(of: "&apos;", with: "'", options: .caseInsensitive)
     }
 
     private static func sanitizeResolvedContent(_ text: String?, title: String) -> String {
