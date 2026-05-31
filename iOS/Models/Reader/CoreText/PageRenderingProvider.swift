@@ -45,10 +45,18 @@ protocol StablePositionResolving: AnyObject {
     func readingPosition(forPage page: Int) -> CoreTextReadingPosition?
     /// Global page -> (spineIndex, charOffset).
     func charOffset(forPage page: Int) -> (spineIndex: Int, charOffset: Int)
+    /// Char offset of an in-spine anchor (a TOC fragment / element id), or nil when the spine
+    /// isn't laid out or the anchor is unknown. Lets callers fall back to the spine start.
+    func charOffset(forSpine spineIndex: Int, fragment: String) -> Int?
     /// Global page -> (spineIndex, localPage).
     func localPosition(for globalPage: Int) -> (spineIndex: Int, localPage: Int)
     /// Global page index of the last page of a chapter.
     func lastPageIndex(ofChapter spineIndex: Int) -> Int?
+}
+
+extension StablePositionResolving {
+    /// Default: engines without in-spine anchors fall back to the spine start.
+    func charOffset(forSpine spineIndex: Int, fragment: String) -> Int? { nil }
 }
 
 @MainActor

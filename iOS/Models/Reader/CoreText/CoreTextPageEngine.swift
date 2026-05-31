@@ -581,6 +581,13 @@ final class CoreTextPageEngine: PageRenderingProvider {
         return placeholder
     }
 
+    /// Character offset of an anchor (`id`/fragment) within a spine, if that spine is laid out.
+    /// Returns nil when the spine hasn't been paginated yet or the anchor is unknown, letting
+    /// callers fall back to the spine start.
+    func charOffset(forSpine spineIndex: Int, fragment: String) -> Int? {
+        _layouts[spineIndex]?.anchorOffsets[fragment]
+    }
+
     func pageIndex(forSpine spineIndex: Int, charOffset: Int) -> Int {
         guard spinePageOffsets.indices.contains(spineIndex) else { return 0 }
         if let layout = _layouts[spineIndex] {

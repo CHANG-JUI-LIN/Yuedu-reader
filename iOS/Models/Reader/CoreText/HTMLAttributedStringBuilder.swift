@@ -740,6 +740,9 @@ final class HTMLAttributedStringBuilder {
             if element.tag == "a",
                let href = element.attributes["href"],
                let marker = ReaderHTMLUtilities.decodeReviewHref(href) {
+                #if DEBUG
+                print("[段評Debug] HTMLBuilder.reviewBadge count=\(marker.count) title=\(marker.title) hrefHead=\(href.prefix(80))")
+                #endif
                 return makeReviewBadgePlaceholder(marker: marker, href: href, style: element.resolvedStyle, config: config)
             }
 
@@ -803,7 +806,20 @@ final class HTMLAttributedStringBuilder {
             }
 
             if element.resolvedStyle.isBlock {
-                return await renderBlockElement(element, config: config)
+                let block = await renderBlockElement(element, config: config)
+                // Capture the block's id as an anchor target (TOC fragments frequently point at
+                // heading/div blocks, e.g. <h3 id="…">). Inline ids are tagged elsewhere, but the
+                // block path returns before that, so anchorOffsets would otherwise miss them.
+                guard !element.id.isEmpty, block.length > 0,
+                      block.attribute(Self.anchorIDAttribute, at: 0, effectiveRange: nil) == nil
+                else { return block }
+                let tagged = NSMutableAttributedString(attributedString: block)
+                tagged.addAttribute(
+                    Self.anchorIDAttribute,
+                    value: element.id,
+                    range: NSRange(location: 0, length: 1)
+                )
+                return tagged
             }
 
             let childResult = NSMutableAttributedString()

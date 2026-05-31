@@ -50,8 +50,9 @@ enum RegexSanitizer {
     /// longer than `seconds`.  The background thread is not cancelled — it will
     /// finish eventually — but the caller is unblocked.
     ///
-    /// Uses `Thread.detachNewThread` instead of GCD to avoid exhausting the global
-    /// dispatch thread pool when many callers block on the semaphore simultaneously.
+    /// Uses a dedicated `Thread` (run at the caller's QoS) instead of GCD to avoid
+    /// exhausting the global dispatch thread pool when many callers block on the
+    /// semaphore simultaneously, and to avoid a priority inversion against the waiter.
     ///
     /// Use this wrapper around any NSRegularExpression matching call to guard
     /// against catastrophic backtracking.
@@ -62,10 +63,16 @@ enum RegexSanitizer {
     ) -> T {
         let box = _TimeoutResultBox<T>()
         let sema = DispatchSemaphore(value: 0)
-        Thread.detachNewThread {
+        // The caller blocks on `sema.wait` below. If the worker runs at a lower QoS than
+        // the caller, the high-QoS waiter is stuck behind low-QoS work — a priority
+        // inversion the Thread Performance Checker flags as a "Hang Risk". Pin the worker
+        // to the caller's QoS so waiter and worker sit at the same level.
+        let worker = Thread {
             box.value = work()
             sema.signal()
         }
+        worker.qualityOfService = Thread.current.qualityOfService
+        worker.start()
         if sema.wait(timeout: .now() + seconds) == .timedOut {
             return fallback
         }

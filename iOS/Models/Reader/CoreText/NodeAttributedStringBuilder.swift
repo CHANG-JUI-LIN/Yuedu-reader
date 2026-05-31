@@ -122,13 +122,54 @@ enum TXTRenderableNodeConverter {
 
         return nodes
     }
+
+    /// Like `convert`, but each paragraph may carry a trailing paragraph-review (段評) badge.
+    /// Layout matches `convert` exactly so review chapters look identical to ordinary chapters,
+    /// with the tappable count bubble inlined at the end of its paragraph.
+    static func convertReview(
+        title: String,
+        paragraphs: [ReaderHTMLUtilities.ReviewParagraph]
+    ) -> [RenderableNode] {
+        var nodes: [RenderableNode] = []
+
+        let titleStyle = RenderStyle(
+            fontSizeMultiplier: 1.0,   // heading level 2 → renderer auto-scales to 1.5×
+            bold: true,
+            textAlign: .center,
+            paragraphSpacingAfter: 24
+        )
+        nodes.append(.heading([.text(title)], level: 2, style: titleStyle))
+
+        for para in paragraphs {
+            var inlines: [RenderableNode] = []
+            let trimmed = para.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                inlines.append(.text("\u{3000}\u{3000}" + trimmed))
+            }
+            if let href = para.reviewHref,
+               let marker = ReaderHTMLUtilities.decodeReviewHref(href) {
+                // Thin space so the bubble doesn't butt against the final glyph.
+                if !inlines.isEmpty {
+                    inlines.append(.text("\u{2009}"))
+                }
+                inlines.append(
+                    .commentBadge(count: marker.count, reviewURL: href, title: marker.title)
+                )
+            }
+            guard !inlines.isEmpty else { continue }
+            nodes.append(.paragraph(inlines, style: .body))
+        }
+
+        return nodes
+    }
 }
 
 // MARK: - OnlineNodeAttributedStringBuilder
 //
 // AttributedStringBuilding implementation for online novel chapters.
-// Reads cached ChapterPackages from BookSourceFetcher,
-// converts via TXTRenderableNodeConverter to RenderableNode, then renders to NSAttributedString.
+// Reads cached ChapterPackages from BookSourceFetcher. Chapters with HTML-only
+// paragraph-review markers are rendered from cached normalized HTML; ordinary
+// text chapters continue through TXTRenderableNodeConverter.
 // Uncached chapters return an empty string; once fetched, CoreTextPageEngine rebuilds the page.
 
 struct OnlineNodeAttributedStringBuilder: AttributedStringBuilding {
@@ -182,11 +223,10 @@ struct OnlineNodeAttributedStringBuilder: AttributedStringBuilding {
         let pkg = fetcher.loadChapterPackageSync(
             bookId: bookId, chapterIndex: index,
             expectedSourceURL: sanitizedURL, expectedTOCTitle: ref.title)
-        let content = pkg?.content ?? ""
-
-        if content.isEmpty {
+        guard let package = pkg, !package.content.isEmpty else {
             throw AttributedStringBuildingError.contentNotCached(index)
         }
+        let content = package.content
 
         // Bad cache (merged chapters, abnormally long content): clear it and trigger refetch to avoid permanently showing excessive pages
         if ChapterFetchManager.isSuspiciousChapterContent(content) {
@@ -194,23 +234,56 @@ struct OnlineNodeAttributedStringBuilder: AttributedStringBuilding {
             throw AttributedStringBuildingError.contentNotCached(index)
         }
 
-        let displayTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: ref.title)
-        let paragraphs = ReaderHTMLUtilities.bodyParagraphs(
-            fromPlainText: content,
-            excludingLeadingTitle: displayTitle
-        )
+        if OnlineChapterCacheWritePolicy.shouldRefetchStrippedRenderArtifacts(
+            package: package,
+            hasBookSource: true
+        ) {
+            #if DEBUG
+            print("[段評Debug] onlineNode.refetchStrippedRenderArtifacts index=\(index) raw=false normalized=true")
+            #endif
+            fetcher.clearChapterCache(bookId: bookId, chapterIndex: index)
+            throw AttributedStringBuildingError.contentNotCached(index)
+        }
 
-        let chapter = UnifiedChapter(
-            index: index,
-            title: displayTitle,
-            paragraphs: paragraphs,
-            sourceHref: sanitizedURL
-        )
-        let nodes = TXTRenderableNodeConverter.convert(chapter: chapter)
+        let displayTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: ref.title)
+
+        // Paragraph-review chapters render through the SAME node/text layout as ordinary
+        // chapters (first-line indent, centered title, configured spacing); the per-paragraph
+        // 段評 badge is appended as an inline node at the end of its paragraph. Rendering the
+        // raw source HTML through HTMLAttributedStringBuilder instead would swap renderers and
+        // wreck the layout.
+        var nodes: [RenderableNode]?
+        if let reviewHTML = cachedReviewHTML(for: ref, package: package, sanitizedURL: sanitizedURL) {
+            let reviewParagraphs = ReaderHTMLUtilities.reviewParagraphs(
+                fromHTML: reviewHTML,
+                excludingLeadingTitle: displayTitle
+            )
+            if reviewParagraphs.contains(where: { $0.reviewHref != nil }) {
+                nodes = TXTRenderableNodeConverter.convertReview(
+                    title: displayTitle,
+                    paragraphs: reviewParagraphs
+                )
+            }
+        }
+
+        if nodes == nil {
+            let paragraphs = ReaderHTMLUtilities.bodyParagraphs(
+                fromPlainText: content,
+                excludingLeadingTitle: displayTitle
+            )
+            let chapter = UnifiedChapter(
+                index: index,
+                title: displayTitle,
+                paragraphs: paragraphs,
+                sourceHref: sanitizedURL
+            )
+            nodes = TXTRenderableNodeConverter.convert(chapter: chapter)
+        }
+
         let rendererConfig = NodeAttributedStringRenderer.Config(from: settings, textColor: themeTextColor)
         let renderer = NodeAttributedStringRenderer(config: rendererConfig)
         return AttributedChapterBuildResult(
-            attributedString: await renderer.render(nodes),
+            attributedString: await renderer.render(nodes ?? []),
             imagePage: nil,
             pageBackgroundImage: nil,
             anchorOffsets: [:]
@@ -224,6 +297,46 @@ struct OnlineNodeAttributedStringBuilder: AttributedStringBuilding {
         components.fragment = nil
         components.queryItems = components.queryItems?.sorted { $0.name < $1.name }
         return (components.string ?? raw).lowercased()
+    }
+
+    private func cachedReviewHTML(
+        for ref: OnlineChapterRef,
+        package: ChapterPackage,
+        sanitizedURL: String
+    ) -> String? {
+        guard package.rawHTMLFilename != nil || package.normalizedHTMLFilename != nil else {
+            return nil
+        }
+
+        let html = fetcher.loadNormalizedChapterHTMLSync(
+            bookId: bookId,
+            chapterIndex: ref.index,
+            expectedSourceURL: sanitizedURL,
+            expectedTOCTitle: ref.title
+        )
+        ?? (sanitizedURL != ref.url
+            ? fetcher.loadNormalizedChapterHTMLSync(
+                bookId: bookId,
+                chapterIndex: ref.index,
+                expectedSourceURL: ref.url,
+                expectedTOCTitle: ref.title
+            )
+            : nil)
+
+        guard let html, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+
+        let rewritten = ReaderHTMLUtilities.rewriteReviewComments(html)
+        guard rewritten.range(of: "ydreview://", options: .caseInsensitive) != nil else {
+            return nil
+        }
+
+        #if DEBUG
+        let remainingComment = rewritten.range(of: "<comment", options: .caseInsensitive) != nil
+        print("[段評Debug] onlineNode.reviewHTML index=\(ref.index) ydreview=true remainingComment=\(remainingComment) len=\(rewritten.count)")
+        #endif
+        return rewritten
     }
 
 }

@@ -550,7 +550,15 @@ import UIKit
            trimmedUrl.hasPrefix("data:")
             || trimmedUrl.contains(",{")
             || trimmedUrl.contains("{\"method\"") {
-            return analyzeHandler(urlStr) ?? ""
+            let response = analyzeHandler(urlStr) ?? ""
+            #if DEBUG
+            // TEMP 漫畫診斷：看 /content 伺服器原始回應是空、還是有回但被解析掉。
+            if trimmedUrl.contains("/content") {
+                let head = response.replacingOccurrences(of: "\n", with: "⏎").prefix(400)
+                print("[MangaFetch] POST \(trimmedUrl.prefix(80)) → respLen=\(response.count) head=\(head)")
+            }
+            #endif
+            return response
         }
 
         // Delegate to external handler if provided

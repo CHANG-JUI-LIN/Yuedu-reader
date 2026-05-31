@@ -179,13 +179,33 @@ struct ReaderView: View {
         return allPages.count
     }
 
-    private var tocPageOffsets: [Int: Int] {
-        guard let engine = epubRenderer.engine, usesCoreTextEPUB else { return [:] }
-        var offsets: [Int: Int] = [:]
+    /// The single TOC entry to highlight as "current": the last one whose start page is at or
+    /// before the current page. Keyed by `chapter.id` so sub-sections sharing one spine file
+    /// don't all light up together (the previous `chapter.index == currentIndex` test did).
+    private var currentTOCChapterID: UUID? {
+        let offsets = tocPageOffsets
+        let fallback = chapters.first(where: { $0.index == currentChapterIndex })?.id
+        guard !offsets.isEmpty else { return fallback }
+        var best: (id: UUID, page: Int)?
         for chapter in chapters {
-            if offsets[chapter.index] == nil {
-                offsets[chapter.index] = engine.pageIndex(forSpine: chapter.index, charOffset: 0)
+            guard let page = offsets[chapter.id], page <= currentPage else { continue }
+            if best == nil || page >= best!.page {
+                best = (chapter.id, page)
             }
+        }
+        return best?.id ?? fallback
+    }
+
+    private var tocPageOffsets: [UUID: Int] {
+        guard let engine = epubRenderer.engine, usesCoreTextEPUB else { return [:] }
+        var offsets: [UUID: Int] = [:]
+        for chapter in chapters {
+            // Resolve the entry's anchor to a char offset so sub-sections of one spine map to
+            // distinct pages; fall back to the spine start when the anchor isn't laid out yet.
+            let charOffset = chapter.fragment.flatMap {
+                engine.charOffset(forSpine: chapter.index, fragment: $0)
+            } ?? 0
+            offsets[chapter.id] = engine.pageIndex(forSpine: chapter.index, charOffset: charOffset)
         }
         return offsets
     }
@@ -964,10 +984,9 @@ struct ReaderView: View {
                     totalPages: renderedPageCount,
                     tocLayoutMode: .from(writingMode: effectiveWritingMode),
                     pageOffsets: tocPageOffsets,
-                    currentIndex: Binding(
-                        get: { currentChapterIndex },
-                        set: { jumpToChapter($0) }
-                    ),
+                    currentIndex: currentChapterIndex,
+                    currentChapterID: currentTOCChapterID,
+                    onSelectChapter: { jumpToTOCEntry($0) },
                     isPresented: $showTOC
                 )
             }
@@ -1980,6 +1999,20 @@ struct ReaderView: View {
         jumpToChapter(position.spineIndex, charOffset: position.charOffset)
     }
 
+    /// Navigate to a TOC entry, honoring its in-spine anchor so sub-sections of one spine file
+    /// land on their own page instead of the file's start.
+    private func jumpToTOCEntry(_ chapter: BookChapter) {
+        let charOffset: Int
+        if let engine = epubRenderer.engine, usesCoreTextEPUB,
+           let fragment = chapter.fragment,
+           let resolved = engine.charOffset(forSpine: chapter.index, fragment: fragment) {
+            charOffset = resolved
+        } else {
+            charOffset = 0
+        }
+        jumpToChapter(chapter.index, charOffset: charOffset)
+    }
+
     private func jumpToChapter(_ idx: Int, charOffset: Int = 0) {
         guard chapters.indices.contains(idx) else { return }
         if effectiveScrollMode, epubRenderer.scrollEngine != nil {
@@ -2301,12 +2334,19 @@ struct ReaderView: View {
 
             var seenTitles: Set<String> = []
             chapters = session.tocEntries.compactMap { entry -> BookChapter? in
-                // Strip fragment from TOC href for spine matching (e.g. "part0005.html#anchor" → "part0005.html")
+                // Split the TOC href into spine path + anchor fragment. The path matches the
+                // spine file; the fragment (e.g. "part0005.html#anchor" → "anchor") locates the
+                // entry *within* that file so sub-sections sharing one spine resolve to distinct
+                // pages instead of all collapsing to the file's start.
                 let hrefWithoutFragment: String
+                let entryFragment: String?
                 if let hashIndex = entry.href.firstIndex(of: "#") {
                     hrefWithoutFragment = String(entry.href[..<hashIndex])
+                    let frag = String(entry.href[entry.href.index(after: hashIndex)...])
+                    entryFragment = frag.isEmpty ? nil : frag
                 } else {
                     hrefWithoutFragment = entry.href
+                    entryFragment = nil
                 }
 
                 let resolvedIndex = spineIndexByHref[hrefWithoutFragment]
@@ -2315,10 +2355,11 @@ struct ReaderView: View {
                     })?.value
                     ?? 0
 
-                // Dedupe consecutive identically-titled entries (e.g. multiple Contents pages)
+                // Dedupe consecutive identically-titled entries (e.g. multiple Contents pages),
+                // keyed by anchor too so distinct sub-sections in one spine survive.
                 let normalizedTitle = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
                 if normalizedTitle.isEmpty { return nil }
-                let dedupeKey = "\(resolvedIndex):\(normalizedTitle)"
+                let dedupeKey = "\(resolvedIndex):\(entryFragment ?? ""):\(normalizedTitle)"
                 if seenTitles.contains(dedupeKey) { return nil }
                 seenTitles.insert(dedupeKey)
 
@@ -2327,7 +2368,8 @@ struct ReaderView: View {
                     title: entry.title,
                     content: "",
                     href: hrefWithoutFragment,
-                    level: entry.level
+                    level: entry.level,
+                    fragment: entryFragment
                 )
             }
         } else {

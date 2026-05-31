@@ -152,7 +152,14 @@ final class UniversalBookResourceAdapter: BookResourceProvider {
     private func chapterHTMLFromPayload(_ payload: ChapterContentPayload, fallbackChapterIndex: Int) -> String {
         if let renderHTML = payload.renderHTML?.trimmingCharacters(in: .whitespacesAndNewlines), !renderHTML.isEmpty {
             let baseURL = payload.sourceHref ?? chapterSourceHrefs[safe: fallbackChapterIndex] ?? payload.sourceHref
-            return rewriteResourceReferences(in: renderHTML, baseURLString: baseURL)
+            let reviewHTML = ReaderHTMLUtilities.rewriteReviewComments(renderHTML)
+            let rewritten = rewriteResourceReferences(in: reviewHTML, baseURLString: baseURL)
+            #if DEBUG
+            let hasReview = rewritten.range(of: "ydreview://", options: .caseInsensitive) != nil
+            let hasComment = rewritten.range(of: "<comment", options: .caseInsensitive) != nil
+            print("[段評Debug] resourceAdapter.chapterHTML index=\(fallbackChapterIndex) ydreview=\(hasReview) remainingComment=\(hasComment) len=\(rewritten.count)")
+            #endif
+            return rewritten
         }
 
         return ReaderHTMLUtilities.normalizedChapterHTML(

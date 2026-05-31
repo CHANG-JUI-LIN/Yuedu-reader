@@ -1,4 +1,5 @@
 import Foundation
+import SwiftSoup
 
 enum ReaderHTMLUtilities {
     static func displayText(fromHTMLFragment text: String) -> String {
@@ -136,6 +137,13 @@ enum ReaderHTMLUtilities {
     /// Anchors and their `href` are always preserved and `href` is in the builder allowlist.
     /// Idempotent: a string with no `<comment …>` markers is returned unchanged.
     static func rewriteReviewComments(_ html: String) -> String {
+        #if DEBUG
+        // TEMP 段評 diagnostic — remove once review rendering is confirmed.
+        let hasComment = html.range(of: "<comment", options: .caseInsensitive) != nil
+        let hasRsNative = html.range(of: "rs-native", options: .caseInsensitive) != nil
+        let hasYdReview = html.range(of: "yd-review", options: .caseInsensitive) != nil
+        print("[段評Debug] rewriteReviewComments len=\(html.count) <comment>=\(hasComment) rs-native=\(hasRsNative) yd-review=\(hasYdReview) head=\(html.prefix(160))")
+        #endif
         guard html.range(of: "<comment", options: .caseInsensitive) != nil else { return html }
         guard let tagRegex = try? NSRegularExpression(
             pattern: #"<comment\b[^>]*>"#,
@@ -160,6 +168,15 @@ enum ReaderHTMLUtilities {
             cursor = range.location + range.length
         }
         result += ns.substring(from: cursor)
+        #if DEBUG
+        let convertedCount = matches.reduce(into: 0) { count, match in
+            let tag = ns.substring(with: match.range)
+            if anchorMarkup(forCommentTag: tag) != nil { count += 1 }
+        }
+        let outputHasReview = result.range(of: "ydreview://", options: .caseInsensitive) != nil
+        let outputHasComment = result.range(of: "<comment", options: .caseInsensitive) != nil
+        print("[段評Debug] rewriteReviewComments.out matches=\(matches.count) converted=\(convertedCount) ydreview=\(outputHasReview) remainingComment=\(outputHasComment) head=\(result.prefix(220))")
+        #endif
         return result
     }
 
@@ -195,16 +212,98 @@ enum ReaderHTMLUtilities {
         return ReviewTarget(url: marker.url, title: marker.title)
     }
 
+    /// One source paragraph paired with its optional paragraph-review anchor.
+    /// `reviewHref` is the internal `ydreview://` href (decode it for count/title).
+    struct ReviewParagraph: Equatable {
+        let text: String
+        let reviewHref: String?
+    }
+
+    /// Parses paragraph-review HTML into an ordered list of `(text, reviewHref)` pairs so the
+    /// chapter can render through the normal text layout (indent / spacing / centered title)
+    /// instead of re-rendering arbitrary source HTML. Each leaf block (`<div rs-native>` / `<p>`)
+    /// becomes one paragraph; the `ydreview://` anchor inside it carries that paragraph's badge.
+    ///
+    /// Returns an empty array when the HTML has no parseable block structure, letting callers
+    /// fall back to plain-text paragraphs.
+    static func reviewParagraphs(
+        fromHTML html: String,
+        excludingLeadingTitle title: String
+    ) -> [ReviewParagraph] {
+        let rewritten = rewriteReviewComments(html)
+        guard let document = try? SwiftSoup.parse(rewritten),
+              let body = document.body() else { return [] }
+
+        let container: Element = ((try? body.select("article#reader-content").array())?.first) ?? body
+        let blocks = leafParagraphBlocks(in: container)
+        guard !blocks.isEmpty else { return [] }
+
+        let titleKey = normalizedTitleKey(title)
+        var result: [ReviewParagraph] = []
+        for block in blocks {
+            // Read the review anchor before stripping it out of the text.
+            let reviewHref = firstReviewHref(in: block)
+            let text = paragraphText(strippingReviewAnchorsFrom: block)
+            if text.isEmpty, reviewHref == nil { continue }
+            // Drop a leading heading that merely repeats the chapter title (handled separately).
+            if !titleKey.isEmpty, result.count < 6, reviewHref == nil,
+               normalizedTitleKey(text) == titleKey {
+                continue
+            }
+            result.append(ReviewParagraph(text: text, reviewHref: reviewHref))
+        }
+        return result
+    }
+
+    /// Block elements that contain no nested block descendant — i.e. the innermost paragraphs.
+    private static func leafParagraphBlocks(in container: Element) -> [Element] {
+        let blockSelector = "p, div, li, blockquote, h1, h2, h3, h4, h5, h6"
+        let candidates = (try? container.select(blockSelector).array()) ?? []
+        return candidates.filter { element in
+            // SwiftSoup's `select` includes the element itself, so a leaf is a block whose
+            // matches are only itself (no other block descendant).
+            let nested = (try? element.select(blockSelector).array()) ?? []
+            return !nested.contains { $0 !== element }
+        }
+    }
+
+    private static func firstReviewHref(in element: Element) -> String? {
+        let anchors = (try? element.select("a[href]").array()) ?? []
+        for anchor in anchors {
+            let href = (try? anchor.attr("href")) ?? ""
+            if href.hasPrefix("\(reviewURLScheme)://"), decodeReviewHref(href) != nil {
+                return href
+            }
+        }
+        return nil
+    }
+
+    /// Plain text of a block with its `ydreview://` badge anchors removed (so the count digits
+    /// don't leak into the paragraph text). Mutates `element`; callers pass a throwaway parse tree.
+    private static func paragraphText(strippingReviewAnchorsFrom element: Element) -> String {
+        let anchors = (try? element.select("a[href]").array()) ?? []
+        for anchor in anchors {
+            let href = (try? anchor.attr("href")) ?? ""
+            if href.hasPrefix("\(reviewURLScheme)://") {
+                try? anchor.remove()
+            }
+        }
+        return displayText(fromHTMLFragment: (try? element.html()) ?? "")
+    }
+
     private static func showReadingBrowserArgs(in tag: String) -> (url: String, title: String)? {
         guard let regex = try? NSRegularExpression(
-            pattern: #"showReadingBrowser\(\s*'([^']*)'\s*,\s*'([^']*)'\s*\)"#,
+            pattern: #"showReadingBrowser\(\s*'([^']*)'(?:\s*,\s*'([^']*)')?\s*\)"#,
             options: [.caseInsensitive]
         ) else { return nil }
         let ns = tag as NSString
         guard let m = regex.firstMatch(in: tag, range: NSRange(location: 0, length: ns.length)),
-              m.numberOfRanges >= 3
+              m.numberOfRanges >= 2
         else { return nil }
-        return (ns.substring(with: m.range(at: 1)), ns.substring(with: m.range(at: 2)))
+        let title = (m.numberOfRanges >= 3 && m.range(at: 2).location != NSNotFound)
+            ? ns.substring(with: m.range(at: 2))
+            : ""
+        return (ns.substring(with: m.range(at: 1)), title)
     }
 
     private static func firstCapture(in text: String, pattern: String) -> String? {

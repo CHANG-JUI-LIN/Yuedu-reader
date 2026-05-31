@@ -235,8 +235,9 @@ private struct VerticalTOCColumn: View {
 private struct VerticalTOCView: View {
     let chapters: [BookChapter]
     let currentIndex: Int
-    let pageOffsets: [Int: Int]
-    let onSelectChapter: (Int) -> Void
+    let currentChapterID: UUID?
+    let pageOffsets: [UUID: Int]
+    let onSelectChapter: (BookChapter) -> Void
 
     @State private var didInitialTOCScroll = false
 
@@ -250,7 +251,7 @@ private struct VerticalTOCView: View {
                 HStack(alignment: .top, spacing: VerticalTOCLayout.columnSpacing) {
                     ForEach(Array(reversedChapters.enumerated()), id: \.element.id) { _, chapter in
                         let pageNumber: Int = {
-                            if let offset = pageOffsets[chapter.index] {
+                            if let offset = pageOffsets[chapter.id] {
                                 return offset + 1
                             }
                             return chapter.index + 1
@@ -258,9 +259,9 @@ private struct VerticalTOCView: View {
                         VerticalTOCColumn(
                             title: chapter.title,
                             page: pageNumber,
-                            isSelected: chapter.index == currentIndex
+                            isSelected: chapter.id == currentChapterID
                         ) {
-                            onSelectChapter(chapter.index)
+                            onSelectChapter(chapter)
                         }
                         .id(chapter.index)
                     }
@@ -287,9 +288,11 @@ struct ReaderMenuView: View {
     let currentPage: Int
     let totalPages: Int
     let tocLayoutMode: TOCLayoutMode
-    let pageOffsets: [Int: Int]
+    let pageOffsets: [UUID: Int]
+    let currentIndex: Int
+    let currentChapterID: UUID?
+    let onSelectChapter: (BookChapter) -> Void
 
-    @Binding var currentIndex: Int
     @Binding var isPresented: Bool
 
     var body: some View {
@@ -307,9 +310,10 @@ struct ReaderMenuView: View {
                 VerticalTOCView(
                     chapters: chapters,
                     currentIndex: currentIndex,
+                    currentChapterID: currentChapterID,
                     pageOffsets: pageOffsets,
-                    onSelectChapter: { idx in
-                        currentIndex = idx
+                    onSelectChapter: { chapter in
+                        onSelectChapter(chapter)
                         isPresented = false
                     }
                 )
@@ -321,7 +325,7 @@ struct ReaderMenuView: View {
     }
 
     private func pageNumber(for chapter: BookChapter) -> Int {
-        if let offset = pageOffsets[chapter.index] {
+        if let offset = pageOffsets[chapter.id] {
             return offset + 1
         }
         return chapter.index + 1
@@ -331,7 +335,7 @@ struct ReaderMenuView: View {
         ScrollViewReader { proxy in
             List(chapters) { chapter in
                 Button {
-                    currentIndex = chapter.index
+                    onSelectChapter(chapter)
                     isPresented = false
                 } label: {
                     HStack(spacing: 0) {
@@ -358,7 +362,7 @@ struct ReaderMenuView: View {
                     .frame(height: 48)
                     .padding(.horizontal, 30)
                     .background {
-                        if chapter.index == currentIndex {
+                        if chapter.id == currentChapterID {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .fill(Color.primary.opacity(0.07))
                         }

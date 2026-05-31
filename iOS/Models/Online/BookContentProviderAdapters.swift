@@ -134,20 +134,30 @@ struct OnlineHTMLContentProviderAdapter: BookContentProvider {
             expectedSourceURL: sanitizedURL,
             expectedTOCTitle: ref.title
         ), cached.state == .cached, !cached.content.isEmpty {
-            return ChapterContentPayload(
-                index: index,
-                title: ReaderHTMLUtilities.displayText(fromHTMLFragment: ref.title),
-                content: cached.content,
-                renderHTML: book.bookSourceId == nil ? nil : resolveNormalizedHTML(
-                    for: book.id,
-                    chapterIndex: index,
-                    tocTitle: ref.title,
-                    primarySourceURL: sanitizedURL,
-                    secondarySourceURL: ref.url,
-                    fallbackContent: cached.content
-                ),
-                sourceHref: sanitizedURL
-            )
+            if OnlineChapterCacheWritePolicy.shouldRefetchStrippedRenderArtifacts(
+                package: cached,
+                hasBookSource: book.bookSourceId != nil
+            ) {
+                #if DEBUG
+                print("[段評Debug] provider.refetchStrippedRenderArtifacts index=\(index) raw=false normalized=true")
+                #endif
+                BookSourceFetcher.shared.clearChapterCache(bookId: book.id, chapterIndex: index)
+            } else {
+                return ChapterContentPayload(
+                    index: index,
+                    title: ReaderHTMLUtilities.displayText(fromHTMLFragment: ref.title),
+                    content: cached.content,
+                    renderHTML: book.bookSourceId == nil ? nil : resolveNormalizedHTML(
+                        for: book.id,
+                        chapterIndex: index,
+                        tocTitle: ref.title,
+                        primarySourceURL: sanitizedURL,
+                        secondarySourceURL: ref.url,
+                        fallbackContent: cached.content
+                    ),
+                    sourceHref: sanitizedURL
+                )
+            }
         }
 
         let pkg = try await ChapterFetchManager.shared.fetchChapter(

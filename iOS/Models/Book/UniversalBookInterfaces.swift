@@ -316,25 +316,35 @@ struct OnlineHTMLBookDocument: BookDocument {
             expectedSourceURL: sanitizedURL,
             expectedTOCTitle: ref.title
         ), cached.state == .cached, !cached.content.isEmpty {
-            let normalizedHTML = BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
-                bookId: book.id,
-                chapterIndex: index,
-                expectedSourceURL: sanitizedURL,
-                expectedTOCTitle: ref.title
-            )
-            ?? (sanitizedURL != ref.url
-                ? BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+            if OnlineChapterCacheWritePolicy.shouldRefetchStrippedRenderArtifacts(
+                package: cached,
+                hasBookSource: book.bookSourceId != nil
+            ) {
+                #if DEBUG
+                print("[段評Debug] document.refetchStrippedRenderArtifacts index=\(index) raw=false normalized=true")
+                #endif
+                BookSourceFetcher.shared.clearChapterCache(bookId: book.id, chapterIndex: index)
+            } else {
+                let normalizedHTML = BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
                     bookId: book.id,
                     chapterIndex: index,
-                    expectedSourceURL: ref.url,
+                    expectedSourceURL: sanitizedURL,
                     expectedTOCTitle: ref.title
                 )
-                : nil)
-            ?? ChapterFetcher.shared.buildNormalizedHTML(
-                title: ref.title,
-                content: cached.content
-            )
-            return .html(normalizedHTML)
+                ?? (sanitizedURL != ref.url
+                    ? BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+                        bookId: book.id,
+                        chapterIndex: index,
+                        expectedSourceURL: ref.url,
+                        expectedTOCTitle: ref.title
+                    )
+                    : nil)
+                ?? ChapterFetcher.shared.buildNormalizedHTML(
+                    title: ref.title,
+                    content: cached.content
+                )
+                return .html(normalizedHTML)
+            }
         }
 
         let pkg = try await ChapterFetchManager.shared.fetchChapter(

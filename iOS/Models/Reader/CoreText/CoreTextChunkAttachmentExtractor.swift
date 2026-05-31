@@ -116,13 +116,20 @@ enum CoreTextChunkAttachmentExtractor {
                     }
                 }
 
+                let linkHref = (attrs[HTMLAttributedStringBuilder.internalLinkAttribute] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                #if DEBUG
+                if let linkHref, ReaderHTMLUtilities.reviewTarget(fromHref: linkHref) != nil {
+                    print("[段評Debug] chunk.inlineReview rect=\(rect) draw=\(info.drawWidth)x\(info.drawHeight) image=\(img.size) rangeStart=\(rangeInChapter.location) hrefHead=\(linkHref.prefix(80))")
+                }
+                #endif
+
                 result.append(CoreTextPaginator.RenderedAttachment(
                     rect: rect,
                     image: img,
                     opacity: info.opacity,
                     sourceHref: info.source.isEmpty ? nil : info.source,
                     alt: info.alt,
-                    linkHref: (attrs[HTMLAttributedStringBuilder.internalLinkAttribute] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                    linkHref: linkHref,
                     originalSize: img.size
                 ))
             }

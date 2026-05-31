@@ -1200,6 +1200,11 @@ final class CoreTextPaginator {
                         switch info.displayMode {
                         case .inline:
                             inlineAttachments[pageIdx, default: []].append(attachment)
+                            #if DEBUG
+                            if let linkHref, ReaderHTMLUtilities.reviewTarget(fromHref: linkHref) != nil {
+                                print("[段評Debug] paginator.inlineReview page=\(pageIdx) rect=\(rect) draw=\(info.drawWidth)x\(info.drawHeight) image=\(img.size) hrefHead=\(linkHref.prefix(80))")
+                            }
+                            #endif
                         case .block:
                             if !hasBlockRenderable {
                                 blockAttachments[pageIdx, default: []].append(attachment)
