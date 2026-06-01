@@ -13,7 +13,10 @@ struct yuedu_appApp: App {
                 .onAppear {
                     CoreTextFontRegistrationService.cleanupStaleTemporaryFonts()
                     UserFontStorageManager.shared.registerAllOnLaunch()
+                    _ = FirebaseAuthManager.shared
+                    FirestoreSyncManager.shared.bind(bookStore: bookStore)
                     Task {
+                        await FirestoreSyncManager.shared.syncAfterSignIn()
                         await WebFetcher.shared.setCloudflareChallengeHandler { url in
                             try await CloudflareChallengePresenter.present(url: url)
                         }

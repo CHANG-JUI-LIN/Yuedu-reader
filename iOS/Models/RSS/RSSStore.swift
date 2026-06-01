@@ -278,6 +278,10 @@ final class RSSStore: ObservableObject {
         articleStatuses[articleID]
     }
 
+    var firestoreArticleStatusesSnapshot: [RSSArticleStatus] {
+        Array(articleStatuses.values)
+    }
+
     func markRead(articleId: String, isRead: Bool) {
         var status = articleStatuses[articleId] ?? RSSArticleStatus(articleId: articleId)
         status.isRead = isRead
@@ -543,6 +547,23 @@ final class RSSStore: ObservableObject {
         articleStatuses = load([String: RSSArticleStatus].self, from: statusStorageURL) ?? [:]
         feedMetadataBySource = load([String: RSSFeedFetchMetadata].self, from: feedMetadataStorageURL) ?? [:]
         backfillFoldersFromSources()
+    }
+
+    func replaceFromSync(
+        sources syncedSources: [RSSSource]?,
+        folders syncedFolders: [RSSFolder]?,
+        articleStatuses syncedStatuses: [RSSArticleStatus]?
+    ) {
+        if let syncedSources {
+            sources = syncedSources
+        }
+        if let syncedFolders {
+            folders = syncedFolders
+        }
+        if let syncedStatuses {
+            articleStatuses = Dictionary(uniqueKeysWithValues: syncedStatuses.map { ($0.articleId, $0) })
+        }
+        save()
     }
 
     private func save() {

@@ -6,7 +6,7 @@ import UIKit
 struct UserDetailView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var gs = GlobalSettings.shared
-    @StateObject private var iCloudSync = ICloudSyncManager.shared
+    @StateObject private var firestoreSync = FirestoreSyncManager.shared
     @State private var showLogin = false
     @State private var selectedAvatarItem: PhotosPickerItem?
     @State private var avatarErrorMessage: String?
@@ -35,7 +35,7 @@ struct UserDetailView: View {
                     VStack(spacing: 8) {
                         HStack(spacing: 4) {
                             Image(systemName: syncStatusIcon)
-                            Text(iCloudSync.statusTitle(isAppSignedIn: gs.isLoggedIn))
+                            Text(gs.isLoggedIn ? firestoreSync.statusTitle : localized("登入後可同步進度"))
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -43,14 +43,14 @@ struct UserDetailView: View {
                         .foregroundColor(syncStatusColor)
                         .clipShape(Capsule())
 
-                        if gs.isLoggedIn, let date = iCloudSync.lastSyncDate {
+                        if gs.isLoggedIn, let date = firestoreSync.lastSyncDate {
                             Text("\(localized("上次同步")) \(date.formatted(date: .abbreviated, time: .shortened))")
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                         }
 
                         if !gs.isLoggedIn {
-                            Text(localized("登入後可跨設備同步書籍與進度"))
+                            Text(localized("登入後可透過 Firestore 跨設備同步書籍與進度"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
 
@@ -165,7 +165,7 @@ struct UserDetailView: View {
 
                         Button(localized("取消"), role: .cancel) {}
                     } message: {
-                        Text(localized("刪除帳號將登出此裝置，並永久刪除已同步至 iCloud 的書庫、書源與替換規則資料。此操作無法復原。"))
+                        Text(localized("刪除帳號將登出此裝置，並永久刪除已同步至 Firestore 的書庫、書源、替換規則、RSS 與頭像資料。此操作無法復原。"))
                     }
 
                     if let deleteAccountErrorMessage {
@@ -174,7 +174,7 @@ struct UserDetailView: View {
                             .foregroundColor(.red)
                     }
                 } footer: {
-                    Text(localized("刪除帳號會移除您的登入資訊並清除已上傳至 iCloud 的同步資料，且無法復原。儲存在本機的書籍不會被刪除。"))
+                    Text(localized("刪除帳號會移除您的登入資訊並清除已上傳至 Firebase 的同步資料，且無法復原。儲存在本機的內容檔不會被刪除。"))
                 }
             }
         }
@@ -191,6 +191,9 @@ struct UserDetailView: View {
             TextField(localized("顯示名稱"), text: $draftDisplayName)
             Button(localized("儲存")) {
                 gs.updateAccountDisplayName(draftDisplayName)
+                Task {
+                    try? await firestoreSync.upsertCurrentProfile()
+                }
             }
             Button(localized("取消"), role: .cancel) {}
         } message: {
@@ -203,22 +206,25 @@ struct UserDetailView: View {
         }
         .task {
             if gs.isLoggedIn {
-                _ = await iCloudSync.refreshAccountStatus()
+                await firestoreSync.syncAfterSignIn()
             }
         }
     }
 
     private var syncStatusIcon: String {
-        guard gs.isLoggedIn else { return "icloud.slash" }
-        return iCloudSync.accountStatus == .available ? "icloud.fill" : "exclamationmark.icloud"
+        guard gs.isLoggedIn else { return "cloud.slash" }
+        if case .failed = firestoreSync.state {
+            return "exclamationmark.icloud"
+        }
+        return "cloud.fill"
     }
 
     private var syncStatusColor: Color {
         guard gs.isLoggedIn else { return .blue }
-        switch iCloudSync.accountStatus {
-        case .available:
+        switch firestoreSync.state {
+        case .synced, .syncing:
             return .blue
-        case .noAccount, .restricted, .temporarilyUnavailable:
+        case .failed:
             return .orange
         default:
             return .secondary
@@ -227,34 +233,29 @@ struct UserDetailView: View {
 
     private func performSignOut(revokeGoogleAccess: Bool) {
         isSigningOut = true
-        gs.signOut(revokeGoogleAccess: revokeGoogleAccess) { _ in
+        Task {
+            do {
+                try await FirebaseAuthManager.shared.signOut(revokeGoogleAccess: revokeGoogleAccess)
+                dismiss()
+            } catch {
+                avatarErrorMessage = error.localizedDescription
+            }
             isSigningOut = false
-            dismiss()
         }
     }
 
     private func performAccountDeletion() {
         isDeletingAccount = true
         deleteAccountErrorMessage = nil
-        let revokeGoogleAccess = gs.accountProvider == "Google"
 
         Task {
             do {
-                try await iCloudSync.deleteRemoteData()
+                try await FirebaseAuthManager.shared.deleteAccount()
+                dismiss()
             } catch {
-                await MainActor.run {
-                    isDeletingAccount = false
-                    deleteAccountErrorMessage = error.localizedDescription
-                }
-                return
+                deleteAccountErrorMessage = error.localizedDescription
             }
-
-            await MainActor.run {
-                gs.signOut(revokeGoogleAccess: revokeGoogleAccess) { _ in
-                    isDeletingAccount = false
-                    dismiss()
-                }
-            }
+            isDeletingAccount = false
         }
     }
 
@@ -269,6 +270,7 @@ struct UserDetailView: View {
             }
             avatarErrorMessage = nil
             gs.updateAccountAvatar(data: avatarData)
+            _ = try await firestoreSync.uploadAvatar(data: avatarData)
         } catch {
             avatarErrorMessage = error.localizedDescription
         }
@@ -299,6 +301,19 @@ struct AccountAvatarView: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
+            } else if let url = URL(string: gs.accountPhotoURL), !gs.accountPhotoURL.isEmpty {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        Image(systemName: "person.crop.circle.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundColor(.blue)
+                            .padding(size * 0.08)
+                    }
+                }
             } else {
                 Image(systemName: gs.isLoggedIn ? "person.crop.circle.fill" : "person.crop.circle")
                     .resizable()

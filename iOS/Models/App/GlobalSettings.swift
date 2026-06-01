@@ -1,4 +1,5 @@
 import Combine
+import FirebaseAuth
 import Foundation
 import GoogleSignIn
 import SwiftUI
@@ -238,6 +239,9 @@ class GlobalSettings: ObservableObject {
     @Published var accountUserIdentifier: String {
         didSet { UserDefaults.standard.set(accountUserIdentifier, forKey: "yd_account_user_identifier") }
     }
+    @Published var accountPhotoURL: String {
+        didSet { UserDefaults.standard.set(accountPhotoURL, forKey: "yd_account_photo_url") }
+    }
 
     /// Subtitle shown under the account name. Prefers a real email, otherwise falls
     /// back to a provider description so we never display an opaque identifier.
@@ -385,6 +389,7 @@ class GlobalSettings: ObservableObject {
         accountEmail = UserDefaults.standard.string(forKey: "yd_account_email") ?? ""
         accountProvider = UserDefaults.standard.string(forKey: "yd_account_provider") ?? ""
         accountUserIdentifier = UserDefaults.standard.string(forKey: "yd_account_user_identifier") ?? ""
+        accountPhotoURL = UserDefaults.standard.string(forKey: "yd_account_photo_url") ?? ""
         accountAvatarData = UserDefaults.standard.data(forKey: "yd_account_avatar_data")
         let rawConv = UserDefaults.standard.string(forKey: "yd_text_conv") ?? ""
         textConversion = TextConversion(rawValue: rawConv) ?? .original
@@ -521,6 +526,34 @@ class GlobalSettings: ObservableObject {
         isLoggedIn = true
     }
 
+    @MainActor
+    func applyFirebaseUser(_ user: User?, providerOverride: String? = nil) {
+        guard let user else {
+            clearAccountState()
+            return
+        }
+
+        let email = user.email ?? ""
+        let displayName = user.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        accountDisplayName = displayName?.isEmpty == false ? displayName! : (email.isEmpty ? localized("已登入") : email)
+        accountEmail = email
+        accountProvider = providerOverride ?? Self.providerDisplayName(from: user)
+        accountUserIdentifier = user.uid
+        accountPhotoURL = user.photoURL?.absoluteString ?? accountPhotoURL
+        isLoggedIn = true
+    }
+
+    @MainActor
+    func applyFirebaseProfile(_ profile: UserProfile) {
+        accountDisplayName = profile.displayName
+        accountEmail = profile.email
+        accountProvider = profile.provider
+        accountUserIdentifier = profile.uid
+        accountPhotoURL = profile.photoURL ?? ""
+        isLoggedIn = true
+        profile.preferences.apply(to: self)
+    }
+
     func updateAccountAvatar(data: Data?) {
         accountAvatarData = data
     }
@@ -561,12 +594,26 @@ class GlobalSettings: ObservableObject {
         completion?(nil)
     }
 
-    private func clearAccountState() {
+    func clearAccountState() {
         isLoggedIn = false
         accountDisplayName = ""
         accountEmail = ""
         accountProvider = ""
         accountUserIdentifier = ""
+        accountPhotoURL = ""
         accountAvatarData = nil
+    }
+
+    private static func providerDisplayName(from user: User) -> String {
+        switch user.providerData.first?.providerID {
+        case "google.com":
+            return "Google"
+        case "apple.com":
+            return "Apple"
+        case "password":
+            return "Email"
+        default:
+            return user.providerData.first?.providerID ?? "Firebase"
+        }
     }
 }

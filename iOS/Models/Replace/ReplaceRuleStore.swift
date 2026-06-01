@@ -62,6 +62,11 @@ final class ReplaceRuleStore: ObservableObject {
             .sorted { $0.sortOrder < $1.sortOrder }
     }
 
+    func replaceRulesFromSync(_ syncedRules: [ReplaceRule]) {
+        rules = syncedRules.sorted { $0.sortOrder < $1.sortOrder }
+        save()
+    }
+
     // MARK: - Persistence
 
     private func load() {

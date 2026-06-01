@@ -26,6 +26,9 @@ final class JSONFileReadingPositionStore: ReadingPositionStore {
         guard let data = try? encoder.encode(position) else { return }
         let url = fileURL(for: bookId)
         try? data.write(to: url, options: .atomic)
+        Task { @MainActor in
+            await FirestoreSyncManager.shared.pushReadingPosition(position, for: bookId)
+        }
         print("[ProgressTrace][PositionStore] save bookId=\(bookId) spine=\(position.spineIndex) charOffset=\(position.charOffset)")
     }
 
@@ -46,5 +49,13 @@ final class JSONFileReadingPositionStore: ReadingPositionStore {
     }
 
     func flush(for bookId: String) async {
+    }
+
+    static func replacePositionsFromSync(_ positions: [String: CoreTextReadingPosition]) {
+        let store = JSONFileReadingPositionStore()
+        for (bookId, position) in positions {
+            guard let data = try? store.encoder.encode(position) else { continue }
+            try? data.write(to: store.fileURL(for: bookId), options: .atomic)
+        }
     }
 }

@@ -1164,6 +1164,20 @@ class BookStore: ObservableObject, BookProvider {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
     }
 
+    func replaceBooksFromSync(_ syncedBooks: [ReadingBook]) {
+        books = syncedBooks.sorted { lhs, rhs in
+            (lhs.lastOpenedDate ?? lhs.addedDate) > (rhs.lastOpenedDate ?? rhs.addedDate)
+        }
+        saveMetaImmediately()
+    }
+
+    private func saveMetaImmediately() {
+        saveWorkItem?.cancel()
+        guard let data = try? JSONEncoder().encode(books) else { return }
+        try? data.write(to: BookStore.booksMetaFileURL, options: .atomic)
+        syncWidgetData()
+    }
+
     // MARK: - Widget Data Sync
 
     private static let widgetAppGroupID = "group.com.zhangruilin.yuedureader"

@@ -262,6 +262,11 @@ class BookSourceStore: ObservableObject {
         return str
     }
 
+    func replaceSourcesFromSync(_ syncedSources: [BookSource]) {
+        sources = syncedSources
+        save()
+    }
+
     // MARK: Persistence
 
     private func save() {
