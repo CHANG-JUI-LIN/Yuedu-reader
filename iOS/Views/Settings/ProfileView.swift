@@ -7,7 +7,6 @@ struct SettingsView: View {
     @State private var showSourceList = false
     @State private var showDownloadManager = false
     @State private var showReplaceRules = false
-    @State private var showReadingStats = false
     @State private var showICloudSync = false
     @State private var showWebDAVSync = false
     @State private var showLanServer = false
@@ -82,11 +81,6 @@ struct SettingsView: View {
 
                     // ── Reading Tools ──
                     Section(header: Text(localized("閱讀工具"))) {
-                        DSSettingsRow(
-                            icon: "chart.bar.fill",
-                            title: localized("閱讀統計"),
-                            action: { showReadingStats = true }
-                        )
                         DSSettingsRow(
                             icon: "waveform",
                             title: localized("語音朗讀設定"),
@@ -165,11 +159,6 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showReplaceRules) {
                 ReplaceRuleListView()
-            }
-            .sheet(isPresented: $showReadingStats) {
-                AdaptiveSheetContainer(maxWidth: 760) {
-                    ReadingStatsView()
-                }
             }
             .sheet(isPresented: $showICloudSync) {
                 AdaptiveSheetContainer(maxWidth: 640) {

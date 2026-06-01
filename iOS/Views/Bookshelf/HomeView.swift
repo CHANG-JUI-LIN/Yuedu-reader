@@ -12,7 +12,6 @@ struct HomeView: View {
     @State private var editingBook: ReadingBook? = nil
     @State private var bookToDelete: ReadingBook? = nil
     @State private var editMode = EditMode.inactive
-    @State private var showSearch = false
     @State private var selectedGroup: String = ""
     @State private var selectedBookIds: Set<UUID> = []
     @State private var showBulkDeleteAlert = false
@@ -47,14 +46,18 @@ struct HomeView: View {
             AdaptiveContentContainer(maxWidth: 920) {
                 Group {
                     if store.books.isEmpty {
-                        EmptyLibraryView(showAdd: $showAddSheet, showSearch: $showSearch)
+                        EmptyLibraryView(showAdd: $showAddSheet)
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     } else {
                         VStack(spacing: 0) {
                             if !store.allGroups.isEmpty {
                                 groupFilterBar
                             }
-                            if isGridMode { bookGrid } else { bookList }
+                            if isGridMode {
+                                bookGrid
+                            } else {
+                                bookList
+                            }
                             if editMode == .active {
                                 editActionBar
                             }
@@ -67,37 +70,25 @@ struct HomeView: View {
             .navigationTitle(localized("書架"))
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Group {
-                        if editMode == .active {
-                            Button {
-                                if isAllSelected {
-                                    selectedBookIds = []
-                                } else {
-                                    selectedBookIds = Set(sortedFilteredBooks.map(\.id))
-                                }
-                            } label: {
-                                Text(localized(isAllSelected ? "全不選" : "全選"))
-                                    .font(DSFont.subheadline.weight(.medium))
-                                    .foregroundColor(.primary)
+                if editMode == .active {
+                    // Select-all kept as its own pill via the prominent + clear-tint
+                    // trick so it doesn't merge with the done button.
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            if isAllSelected {
+                                selectedBookIds = []
+                            } else {
+                                selectedBookIds = Set(sortedFilteredBooks.map(\.id))
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.clear)
-                        } else {
-                            Button { showSearch = true } label: {
-                                Image(systemName: "magnifyingglass")
-                                    .font(DSFont.toolbarIcon)
-                                    .foregroundColor(.black)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.clear)
+                        } label: {
+                            Text(localized(isAllSelected ? "全不選" : "全選"))
+                                .font(DSFont.subheadline.weight(.medium))
+                                .foregroundColor(.primary)
                         }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.clear)
                     }
-                }
-
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    if editMode == .active {
+                    ToolbarItem(placement: .navigationBarTrailing) {
                         Button {
                             withAnimation {
                                 editMode = .inactive
@@ -107,61 +98,19 @@ struct HomeView: View {
                             Image(systemName: "checkmark")
                                 .font(DSFont.toolbarIcon)
                         }
-                    } else {
-                        Menu {
-                            Button {
-                                addSheetSessionID = UUID()
-                                showAddSheet = true
-                            } label: {
-                                Label(localized("從本地匯入"), systemImage: "folder")
-                            }
-                            Button {
-                                showWebDAVImport = true
-                            } label: {
-                                Label(localized("從 WebDAV 匯入"),
-                                      systemImage: "externaldrive.connected.to.line.below")
-                            }
-                            Button {
-                                showOPDSImport = true
-                            } label: {
-                                Label(localized("從 OPDS 匯入"), systemImage: "books.vertical")
-                            }
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(DSFont.toolbarIcon)
-                        }
-                        .id("\(Locale.autoupdatingCurrent.identifier)_add_menu")
-                        Menu {
-                            Button {
-                                withAnimation { editMode = .active }
-                            } label: {
-                                Label(localized("選取"), systemImage: "checkmark.circle")
-                            }
-
-                            Divider()
-
-                            Picker("", selection: $isGridMode) {
-                                Label(localized("列表"), systemImage: "list.bullet").tag(false)
-                                Label(localized("格狀"), systemImage: "square.grid.2x2").tag(true)
-                            }
-                            .pickerStyle(.inline)
-                            .labelsHidden()
-
-                            Divider()
-
-                            Picker("", selection: $sortOrder) {
-                                Text(localized("最近閱讀")).tag(BookSortOrder.recentlyRead.rawValue)
-                                Text(localized("書名")).tag(BookSortOrder.title.rawValue)
-                                Text(localized("作者")).tag(BookSortOrder.author.rawValue)
-                                Text(localized("手動")).tag(BookSortOrder.manual.rawValue)
-                            }
-                            .pickerStyle(.inline)
-                            .labelsHidden()
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                                .font(DSFont.toolbarIcon)
-                        }
-                        .id("\(Locale.autoupdatingCurrent.identifier)_menu")
+                    }
+                } else {
+                    // Two separate glass pills. A ToolbarSpacer (iOS 26+) breaks the
+                    // auto-merge so the two menus sit in their own glass instead of
+                    // fusing into one. Order swapped: options (…) leads, add (+) trails.
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        bookshelfOptionsMenu
+                    }
+                    if #available(iOS 26.0, *) {
+                        ToolbarSpacer(.fixed, placement: .navigationBarTrailing)
+                    }
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        addBookMenu
                     }
                 }
             }
@@ -186,11 +135,6 @@ struct HomeView: View {
             .sheet(isPresented: $showOPDSImport) {
                 AdaptiveSheetContainer(maxWidth: 760) {
                     OPDSImportView().environmentObject(store)
-                }
-            }
-            .sheet(isPresented: $showSearch) {
-                AdaptiveSheetContainer(maxWidth: 900) {
-                    BookSearchView().environmentObject(store)
                 }
             }
             .sheet(item: $editingBook) { book in
@@ -254,6 +198,68 @@ struct HomeView: View {
                     .environmentObject(store)
             }
         }
+    }
+
+    private var addBookMenu: some View {
+        Menu {
+            Button {
+                addSheetSessionID = UUID()
+                showAddSheet = true
+            } label: {
+                Label(localized("從本地匯入"), systemImage: "folder")
+            }
+            Button {
+                showWebDAVImport = true
+            } label: {
+                Label(localized("從 WebDAV 匯入"),
+                      systemImage: "externaldrive.connected.to.line.below")
+            }
+            Button {
+                showOPDSImport = true
+            } label: {
+                Label(localized("從 OPDS 匯入"), systemImage: "books.vertical")
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(DSFont.toolbarIcon)
+                .foregroundColor(.black)
+        }
+        .id("\(Locale.autoupdatingCurrent.identifier)_add_menu")
+    }
+
+    private var bookshelfOptionsMenu: some View {
+        Menu {
+            Button {
+                withAnimation { editMode = .active }
+            } label: {
+                Label(localized("選取"), systemImage: "checkmark.circle")
+            }
+
+            Divider()
+
+            Picker("", selection: $isGridMode) {
+                Label(localized("列表"), systemImage: "list.bullet").tag(false)
+                Label(localized("格狀"), systemImage: "square.grid.2x2").tag(true)
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+
+            Divider()
+
+            Picker("", selection: $sortOrder) {
+                Text(localized("最近閱讀")).tag(BookSortOrder.recentlyRead.rawValue)
+                Text(localized("書名")).tag(BookSortOrder.title.rawValue)
+                Text(localized("作者")).tag(BookSortOrder.author.rawValue)
+                Text(localized("手動")).tag(BookSortOrder.manual.rawValue)
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(DSFont.toolbarIcon)
+                .foregroundColor(.black)
+        }
+        .id("\(Locale.autoupdatingCurrent.identifier)_menu")
     }
 
     // MARK: - Group Filter Bar
@@ -486,7 +492,6 @@ struct EditBookSheet: View {
 // MARK: - Empty Bookshelf
 struct EmptyLibraryView: View {
     @Binding var showAdd: Bool
-    @Binding var showSearch: Bool
     @State private var appeared = false
     var body: some View {
         VStack(spacing: 20) {
@@ -506,8 +511,8 @@ struct EmptyLibraryView: View {
                     .padding(.horizontal, DSSpacing.xxl).padding(.vertical, 14)
                     .background(DSColor.accent).clipShape(Capsule())
             }
-            Button {
-                showSearch = true
+            NavigationLink {
+                SearchView()
             } label: {
                 Label(localized("搜索書籍"), systemImage: "magnifyingglass")
                     .font(DSFont.subheadline.weight(.medium))
@@ -538,71 +543,64 @@ struct BookRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Button(action: onTap) {
-                HStack(alignment: .top, spacing: 12) {
-                    if isEditing {
-                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 22))
-                            .foregroundColor(isSelected ? DSColor.accent : DSColor.textSecondary.opacity(0.5))
-                            .padding(.top, (coverH - 22) / 2)
-                    }
-
-                    Group {
-                        if let ns = transitionNamespace {
-                            bookCover.matchedTransitionSource(id: book.id, in: ns)
-                        } else {
-                            bookCover
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(book.title)
-                            .font(.system(size: 15, weight: .medium))
-                            .lineLimit(2)
-                            .foregroundColor(.primary)
-
-                        if !book.author.isEmpty {
-                            Text(book.author)
-                                .font(.system(size: 13))
-                                .foregroundColor(DSColor.textSecondary)
-                                .lineLimit(1)
+            HStack(alignment: .top, spacing: 12) {
+                Button(action: onTap) {
+                    HStack(alignment: .top, spacing: 12) {
+                        if isEditing {
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 22))
+                                .foregroundColor(isSelected ? DSColor.accent : DSColor.textSecondary.opacity(0.5))
+                                .padding(.top, (coverH - 22) / 2)
                         }
 
-                        progressBadge
-                    }
-                    .padding(.top, 2)
-
-                    Spacer(minLength: 0)
-
-                    if !isEditing {
-                        VStack {
-                            Spacer(minLength: 0)
-                            HStack(spacing: 18) {
-                                if book.offlineDownloadState == .downloading {
-                                    BookSyncIndicator(progress: offlineDownloadProgress)
-                                }
-
-                                Menu {
-                                    Button { onEdit() } label: {
-                                        Label(localized("編輯書籍資訊"), systemImage: "pencil")
-                                    }
-                                    Button(role: .destructive) { onDelete() } label: {
-                                        Label(localized("刪除書籍"), systemImage: "trash")
-                                    }
-                                } label: {
-                                    Image(systemName: "ellipsis")
-                                        .font(.system(size: 16))
-                                        .foregroundColor(DSColor.textSecondary)
-                                }
+                        Group {
+                            if let ns = transitionNamespace {
+                                bookCover.matchedTransitionSource(id: book.id, in: ns)
+                            } else {
+                                bookCover
                             }
-                            .padding(.bottom, 2)
+                        }
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(book.title)
+                                .font(.system(size: 15, weight: .medium))
+                                .lineLimit(2)
+                                .foregroundColor(.primary)
+
+                            if !book.author.isEmpty {
+                                Text(book.author)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(DSColor.textSecondary)
+                                    .lineLimit(1)
+                            }
+
+                            progressBadge
+                        }
+                        .padding(.top, 2)
+
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if !isEditing {
+                    VStack {
+                        Spacer(minLength: 0)
+                        HStack(spacing: 12) {
+                            if book.offlineDownloadState == .downloading {
+                                BookSyncIndicator(progress: offlineDownloadProgress)
+                            }
+                            BookOverflowMenu(
+                                iconSize: 16,
+                                onEdit: onEdit,
+                                onDelete: onDelete
+                            )
                         }
                     }
                 }
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .padding(.vertical, 10)
 
             Rectangle()
                 .fill(Color(uiColor: .separator))
@@ -619,13 +617,13 @@ struct BookRow: View {
 
     @ViewBuilder
     private var progressBadge: some View {
-        if book.currentPosition < 0.01 {
+        if book.shouldShowNewOnBookshelf {
             Text(localized("新增"))
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(.white)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
-                .background(Color.blue)
+                .background(Color(red: 0.03, green: 0.31, blue: 0.58))
                 .clipShape(Capsule())
         } else if book.currentPosition >= 0.99 {
             Text(localized("已讀完"))
@@ -753,19 +751,11 @@ struct BookGridCell: View {
                 }
                 .frame(height: 34, alignment: .topLeading)
                 Spacer(minLength: 0)
-                Menu {
-                    Button { onEdit() } label: {
-                        Label(localized("編輯書籍資訊"), systemImage: "pencil")
-                    }
-                    Button(role: .destructive) { onDelete() } label: {
-                        Label(localized("刪除書籍"), systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 14))
-                        .foregroundColor(DSColor.textSecondary)
-                        .padding(4)
-                }
+                BookOverflowMenu(
+                    iconSize: 14,
+                    onEdit: onEdit,
+                    onDelete: onDelete
+                )
             }
             .frame(height: 34)
         }
@@ -811,6 +801,33 @@ struct BookGridCell: View {
         return UIImage(data: data)
     }
 
+}
+
+// MARK: - Book Overflow Menu
+
+private struct BookOverflowMenu: View {
+    let iconSize: CGFloat
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        Menu {
+            Button { onEdit() } label: {
+                Label(localized("編輯書籍資訊"), systemImage: "pencil")
+            }
+            Button(role: .destructive) { onDelete() } label: {
+                Label(localized("刪除書籍"), systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: iconSize, weight: .semibold))
+                .foregroundColor(DSColor.textSecondary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(localized("編輯書籍資訊"))
+    }
 }
 
 // MARK: - Bulk Add to Group Sheet

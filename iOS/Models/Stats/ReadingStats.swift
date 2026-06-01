@@ -12,6 +12,58 @@ struct ReadingSession: Codable, Identifiable {
     let charactersRead: Int
 }
 
+// MARK: - ReadingStatsSessionTracker
+
+struct ReadingStatsSessionTracker {
+    let bookId: String
+    let bookTitle: String
+    let startDate: Date
+    private var startCharacterOffset: Int?
+    private var latestCharacterOffset: Int?
+
+    init(
+        bookId: String,
+        bookTitle: String,
+        startDate: Date = Date(),
+        startCharacterOffset: Int? = nil
+    ) {
+        self.bookId = bookId
+        self.bookTitle = bookTitle
+        self.startDate = startDate
+        self.startCharacterOffset = startCharacterOffset
+        self.latestCharacterOffset = startCharacterOffset
+    }
+
+    mutating func updateVisibleCharacterOffset(_ offset: Int?) {
+        guard let offset else { return }
+        if startCharacterOffset == nil {
+            startCharacterOffset = offset
+        }
+        latestCharacterOffset = offset
+    }
+
+    func finish(at endDate: Date = Date()) -> ReadingSession? {
+        let duration = endDate.timeIntervalSince(startDate)
+        guard duration > 0 else { return nil }
+
+        let charactersRead: Int
+        if let startCharacterOffset, let latestCharacterOffset {
+            charactersRead = max(0, latestCharacterOffset - startCharacterOffset)
+        } else {
+            charactersRead = 0
+        }
+
+        return ReadingSession(
+            id: UUID(),
+            bookId: bookId,
+            bookTitle: bookTitle,
+            startDate: startDate,
+            duration: duration,
+            charactersRead: charactersRead
+        )
+    }
+}
+
 // MARK: - ReadingStatsStore
 
 class ReadingStatsStore: ObservableObject {
@@ -19,12 +71,15 @@ class ReadingStatsStore: ObservableObject {
 
     @Published var sessions: [ReadingSession] = []
 
-    private let fileURL: URL = {
+    private static let defaultFileURL: URL = {
         let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         return lib.appendingPathComponent("reading_stats.json")
     }()
 
-    private init() {
+    private let fileURL: URL
+
+    init(fileURL: URL = ReadingStatsStore.defaultFileURL) {
+        self.fileURL = fileURL
         load()
     }
 

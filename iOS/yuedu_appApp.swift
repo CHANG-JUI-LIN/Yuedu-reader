@@ -4,6 +4,7 @@ import SwiftUI
 struct yuedu_appApp: App {
     @UIApplicationDelegateAdaptor(RSSAppNotificationDelegate.self) private var rssNotificationDelegate
     @StateObject private var bookStore = BookStore()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -22,6 +23,15 @@ struct yuedu_appApp: App {
                             try await CloudflareChallengePresenter.present(url: url)
                         }
                         await ChapterUpdater.refreshAll(bookStore: bookStore)
+                    }
+                    // Finish any book-source imports the Share Extension queued
+                    // (it can only stash the payload; the merge must happen here).
+                    Task { await SharedImportQueueDrainer.shared.drain() }
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    // Pick up sources shared while the app was backgrounded.
+                    if newPhase == .active {
+                        Task { await SharedImportQueueDrainer.shared.drain() }
                     }
                 }
         }

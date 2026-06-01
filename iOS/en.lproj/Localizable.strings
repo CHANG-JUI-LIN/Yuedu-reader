@@ -39,6 +39,8 @@
 "保留本地資料" = "Keep Local Data";
 "個" = "";
 "個書源" = "sources";
+"個書源匯入失敗" = "source(s) failed to import";
+"個失敗" = "failed";
 "個書源到剪貼簿" = "source(s) to clipboard";
 "個書源嗎？" = "source(s)?";
 "停止服務" = "Stop Service";
@@ -176,6 +178,7 @@
 "書名" = "Title";
 "書名（必填）" = "Title (required)";
 "書架" = "Library";
+"搜尋書架" = "Search Library";
 "書架列表" = "Library List";
 "書架還是空的" = "Library is empty";
 "書源" = "Book Source";
@@ -774,7 +777,7 @@
 "Google 登入缺少身份憑證" = "Google sign-in is missing an identity token";
 "Apple 登入安全驗證失敗" = "Apple sign-in security verification failed";
 "Apple 登入缺少身份憑證" = "Apple sign-in is missing an identity token";
-"目前沒有已登入的" = "No account is currently signed in";
+"目前沒有已登入的帳號" = "No account is currently signed in";
 "為了保護帳號安全，請重新登入後再刪除帳號" = "For account security, sign in again before deleting your account.";
 "等待同步" = "Waiting to sync";
 "正在同步" = "Syncing";
@@ -795,3 +798,7 @@
 "連結電子郵件" = "Link Email";
 "此登入方式已綁定其他帳號，無法連結" = "This sign-in method is already linked to another account.";
 "正在同步書籍檔案…" = "Syncing book files…";
+"立即閱讀" = "Read Now";
+"繼續閱讀" = "Continue Reading";
+"收合" = "Collapse";
+"未知書源" = "Unknown Source";

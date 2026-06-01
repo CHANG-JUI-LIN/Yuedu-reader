@@ -96,6 +96,7 @@ struct ReaderView: View {
     @State private var pendingScrollJumpTarget: CoreTextReadingPosition?
 
     @State private var readerSessionCoordinator: ReaderSessionCoordinator?
+    @State private var readingStatsTracker: ReadingStatsSessionTracker?
 
     @State private var isRestoringPosition = true
     @State private var savedCoreTextRestoreTarget: (chapterIndex: Int, charOffset: Int)?
@@ -847,6 +848,7 @@ struct ReaderView: View {
             } else {
                 restoreReaderDisplayStateAfterResume()
             }
+            beginReadingStatsSession()
             syncCoreTextTextAnnotations()
             systemBrightness = Double(UIScreen.main.brightness)
             if settings.followSystemBrightness {
@@ -887,6 +889,7 @@ struct ReaderView: View {
                 UIScreen.main.brightness = CGFloat(systemBrightness)
             }
             saveProgress()
+            finishReadingStatsSession()
             if let b = book, b.isOnline {
                 Task {
                     await readerViewModel.cancelAll(for: b.id)
@@ -902,8 +905,10 @@ struct ReaderView: View {
                 ttsCoordinator.refreshNowPlayingForSystemSurfaces()
                 epubRenderer.engine?.cancelPendingWork()
                 saveProgress()
+                finishReadingStatsSession()
             } else if phase == .active {
                 restoreReaderDisplayStateAfterResume()
+                beginReadingStatsSession()
             }
         }
         .onReceive(epubRenderer.$scrollEngine) { engine in
@@ -915,6 +920,7 @@ struct ReaderView: View {
         ) { _ in
             epubRenderer.engine?.cancelPendingWork()
             saveProgress()
+            finishReadingStatsSession()
         }
         .onReceive(
             NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)
@@ -971,6 +977,9 @@ struct ReaderView: View {
         }
         .onChanged(of: currentChapterIndex) { newChapter in
             handleReaderChapterChangedForTTS(newChapter)
+        }
+        .onChanged(of: currentPage) { _ in
+            updateReadingStatsPosition()
         }
         .onReceive(NotificationCenter.default.publisher(for: .ttsFloatingPlayerOpenPanel)) { _ in
             showTTSPanel = true
@@ -1057,10 +1066,12 @@ struct ReaderView: View {
                 }
                 syncCoreTextTextAnnotations()
                 applyInitialProgressIfNeeded()
+                updateReadingStatsPosition()
             }
         }
         .onChanged(of: allPages.count) { _ in
             applyInitialProgressIfNeeded()
+            updateReadingStatsPosition()
         }
         .onChanged(of: chapters.count) { _ in
             applyInitialProgressIfNeeded()
@@ -2084,6 +2095,71 @@ struct ReaderView: View {
             moveReaderSession(to: CoreTextReadingPosition(spineIndex: idx, charOffset: charOffset), source: .jump)
             ensureChapterReady(chapterIndex: idx, priority: .jump)
         }
+    }
+
+    private func beginReadingStatsSession() {
+        guard readingStatsTracker == nil, let currentBook = book else { return }
+        readingStatsTracker = ReadingStatsSessionTracker(
+            bookId: currentBook.id.uuidString,
+            bookTitle: currentBook.title,
+            startCharacterOffset: currentReadingStatsCharacterOffset()
+        )
+    }
+
+    private func updateReadingStatsPosition() {
+        guard var tracker = readingStatsTracker else { return }
+        tracker.updateVisibleCharacterOffset(currentReadingStatsCharacterOffset())
+        readingStatsTracker = tracker
+    }
+
+    private func finishReadingStatsSession() {
+        guard var tracker = readingStatsTracker else { return }
+        tracker.updateVisibleCharacterOffset(currentReadingStatsCharacterOffset())
+        if let session = tracker.finish() {
+            ReadingStatsStore.shared.recordSession(session)
+        }
+        readingStatsTracker = nil
+    }
+
+    private func currentReadingStatsCharacterOffset() -> Int? {
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
+            if effectiveScrollMode, let location = readerSessionCoordinator?.state.location {
+                return readingStatsCharacterOffset(
+                    spineIndex: location.spineIndex,
+                    charOffset: location.charOffset,
+                    layouts: engine.layouts
+                )
+            }
+
+            guard engine.totalPages > 0 else { return nil }
+            let page = max(0, min(currentPage, engine.totalPages - 1))
+            let position = engine.charOffset(forPage: page)
+            return readingStatsCharacterOffset(
+                spineIndex: position.spineIndex,
+                charOffset: position.charOffset,
+                layouts: engine.layouts
+            )
+        }
+
+        guard !allPages.isEmpty else { return nil }
+        let page = max(0, min(currentPage, allPages.count - 1))
+        return allPages.prefix(page).reduce(0) { total, page in
+            total + page.content.count
+        }
+    }
+
+    private func readingStatsCharacterOffset(
+        spineIndex: Int,
+        charOffset: Int,
+        layouts: [Int: CoreTextPaginator.ChapterLayout]
+    ) -> Int {
+        let previousLength = layouts.reduce(into: 0) { total, entry in
+            if entry.key < spineIndex {
+                total += entry.value.attributedString.length
+            }
+        }
+        let currentLength = layouts[spineIndex]?.attributedString.length ?? max(0, charOffset)
+        return previousLength + min(max(0, charOffset), currentLength)
     }
 
     private func autoSaveProgress() {

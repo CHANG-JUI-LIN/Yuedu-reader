@@ -25,7 +25,7 @@ struct ExploreHomeView: View {
     @AppStorage("exploreSelectedTab") private var tabRaw = ExploreTab.discover.rawValue
 
     @State private var query = ""
-    @State private var bookSearchRequest: BookSearchRequest?
+    @State private var bookSearchRoute: BookSearchRoute?
     @State private var showSourceManager = false
     @State private var showHistory = false
     @State private var showSourceSites = false
@@ -64,18 +64,17 @@ struct ExploreHomeView: View {
             .onSubmit(of: .search, submitSearch)
             .onAppear { discover.refreshSources() }
             .onChange(of: sourceStore.sources.count) { _, _ in discover.refreshSources() }
+            .navigationDestination(item: $bookSearchRoute) { route in
+                SearchView(initialQuery: route.query)
+                    .environmentObject(store)
+            }
             .sheet(isPresented: $showSourceManager) {
                 NavigationStack { BookSourceListView() }
             }
             .sheet(isPresented: $showHistory) { historySheet }
             .sheet(isPresented: $showSourceSites) { sourceSitesSheet }
-            .sheet(item: $openingBook) { book in
-                AdaptiveSheetContainer(maxWidth: 900) {
-                    OnlineBookView(book: book).environmentObject(store)
-                }
-            }
-            .sheet(item: $bookSearchRequest) { request in
-                BookSearchView(initialQuery: request.query).environmentObject(store)
+            .navigationDestination(item: $openingBook) { book in
+                OnlineBookView(book: book).environmentObject(store)
             }
         }
     }
@@ -93,7 +92,8 @@ struct ExploreHomeView: View {
         guard !trimmed.isEmpty else { return }
         switch tab {
         case .discover:
-            bookSearchRequest = BookSearchRequest(query: trimmed)
+            bookSearchRoute = BookSearchRoute(query: trimmed)
+            query = ""
         case .web:
             onNavigate(trimmed)
             query = ""
@@ -434,9 +434,9 @@ private struct HistoryRow: View {
     }
 }
 
-// MARK: - Book Search Request (sheet item)
+// MARK: - Book Search Route
 
-private struct BookSearchRequest: Identifiable {
+private struct BookSearchRoute: Identifiable, Hashable {
     let id = UUID()
     let query: String
 }

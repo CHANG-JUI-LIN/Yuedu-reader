@@ -51,7 +51,9 @@ struct MangaReaderView: View {
     let bookId: UUID
     @EnvironmentObject var store: BookStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var state = MangaReaderState()
+    @State private var readingStatsTracker: ReadingStatsSessionTracker?
 
     var body: some View {
         ZStack {
@@ -77,9 +79,42 @@ struct MangaReaderView: View {
         }
         .animation(DSAnimation.fast, value: state.showControls)
         .statusBarHidden(!state.showControls)
+        .onAppear {
+            beginReadingStatsSession()
+        }
+        .onDisappear {
+            finishReadingStatsSession()
+        }
+        .onChanged(of: scenePhase) { phase in
+            if phase == .background || phase == .inactive {
+                finishReadingStatsSession()
+            } else if phase == .active {
+                beginReadingStatsSession()
+            }
+        }
         .sheet(isPresented: $state.showChapterList) {
             MangaChapterListView(state: state)
         }
+    }
+
+    private var currentBook: ReadingBook? {
+        store.books.first(where: { $0.id == bookId })
+    }
+
+    private func beginReadingStatsSession() {
+        guard readingStatsTracker == nil, let currentBook else { return }
+        readingStatsTracker = ReadingStatsSessionTracker(
+            bookId: currentBook.id.uuidString,
+            bookTitle: currentBook.title
+        )
+    }
+
+    private func finishReadingStatsSession() {
+        guard let tracker = readingStatsTracker else { return }
+        if let session = tracker.finish() {
+            ReadingStatsStore.shared.recordSession(session)
+        }
+        readingStatsTracker = nil
     }
 
     private func errorView(_ message: String) -> some View {

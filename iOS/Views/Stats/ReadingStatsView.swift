@@ -67,9 +67,11 @@ struct ReadingStatsView: View {
                     Button {
                         dismiss()
                     } label: {
-                        Image(systemName: "xmark.circle.fill")
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(DSColor.textSecondary)
                     }
+                    .accessibilityLabel(localized("關閉"))
                 }
             }
         }

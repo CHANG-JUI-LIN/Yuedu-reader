@@ -4,6 +4,7 @@ struct ContentView: View {
     @EnvironmentObject private var store: BookStore
     @ObservedObject private var gs = GlobalSettings.shared
     @StateObject private var rssStore = RSSStore.shared
+    @ObservedObject private var importDrainer = SharedImportQueueDrainer.shared
 
     private var rssUnreadCount: Int {
         rssStore.totalUnreadCount()
@@ -34,6 +35,52 @@ struct ContentView: View {
                 }
             }
         }
+        .overlay(alignment: .top) {
+            if let outcome = importDrainer.lastOutcome {
+                SharedImportToast(outcome: outcome)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .task(id: outcome) {
+                        try? await Task.sleep(nanoseconds: 3_000_000_000)
+                        withAnimation { importDrainer.lastOutcome = nil }
+                    }
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: importDrainer.lastOutcome)
+    }
+}
+
+/// Toast surfacing the real result of a Share Extension book-source import,
+/// replacing the misleading "added to queue" message the extension shows.
+private struct SharedImportToast: View {
+    let outcome: SharedImportQueueDrainer.Outcome
+
+    private var message: String {
+        let imported = outcome.importedCount
+        let failed = outcome.failureCount
+        if imported > 0 && failed == 0 {
+            return localized("成功匯入") + " \(imported) " + localized("個書源")
+        } else if imported > 0 {
+            return localized("成功匯入") + " \(imported) " + localized("個書源")
+                + "，\(failed) " + localized("個失敗")
+        } else {
+            return "\(failed) " + localized("個書源匯入失敗")
+        }
+    }
+
+    private var tint: Color {
+        if outcome.importedCount == 0 { return .red }
+        return outcome.failureCount == 0 ? .green : .orange
+    }
+
+    var body: some View {
+        Label(message, systemImage: outcome.importedCount > 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(tint.opacity(0.95), in: Capsule())
+            .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
     }
 }
 

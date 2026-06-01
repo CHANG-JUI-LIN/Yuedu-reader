@@ -15,6 +15,7 @@ struct UserDetailView: View {
     @State private var showDeleteAccountConfirmation = false
     @State private var isDeletingAccount = false
     @State private var deleteAccountErrorMessage: String?
+    @State private var showReadingStats = false
     @State private var showRenameAlert = false
     @State private var draftDisplayName = ""
     @State private var showDeletePasswordAlert = false
@@ -87,6 +88,22 @@ struct UserDetailView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .listRowBackground(Color.white)
+            }
+
+            Section(header: Text(localized("閱讀工具"))) {
+                Button {
+                    showReadingStats = true
+                } label: {
+                    HStack {
+                        Label(localized("閱讀統計"), systemImage: "chart.bar.fill")
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary.opacity(0.5))
+                    }
+                }
+                .buttonStyle(.plain)
             }
 
             if gs.isLoggedIn {
@@ -206,6 +223,11 @@ struct UserDetailView: View {
         .navigationTitle(localized("個人資料"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
+        .sheet(isPresented: $showReadingStats) {
+            AdaptiveSheetContainer(maxWidth: 760) {
+                ReadingStatsView()
+            }
+        }
         .fullScreenCover(isPresented: $showLogin) {
             LoginView {
                 showLogin = false

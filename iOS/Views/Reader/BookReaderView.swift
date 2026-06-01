@@ -12,10 +12,17 @@ struct BookReaderView: View {
     @EnvironmentObject var store: BookStore
 
     var body: some View {
-        if store.books.first(where: { $0.id == bookId })?.resolvedPipelineKind == .manga {
-            MangaReaderView(bookId: bookId)
-        } else {
-            ReaderView(bookId: bookId)
+        Group {
+            if store.books.first(where: { $0.id == bookId })?.resolvedPipelineKind == .manga {
+                MangaReaderView(bookId: bookId)
+            } else {
+                ReaderView(bookId: bookId)
+            }
+        }
+        .onAppear {
+            if store.books.first(where: { $0.id == bookId })?.lastOpenedDate == nil {
+                store.updateLastOpened(bookId: bookId)
+            }
         }
     }
 }

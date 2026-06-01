@@ -4,19 +4,17 @@ import SwiftUI
 
 struct BookSearchView: View {
     var initialQuery: String = ""
+    var showsCloseButton = false
 
     @EnvironmentObject var bookStore: BookStore
     @ObservedObject private var sourceStore = BookSourceStore.shared
     @StateObject private var aggregator = SearchAggregator()
-    @Environment(\.presentationMode) var dismiss
+    @Environment(\.dismiss) private var dismiss
 
     @State private var query = ""
     @State private var selectedSourceId: UUID? = nil  // nil = all
-    @State private var selectedBook: SearchBook? = nil
-    @State private var openingOnlineBook: OnlineBook? = nil
     @State private var errorMsg: String? = nil
     @State private var submittedQuery = ""
-    @FocusState private var searchFocused: Bool
     @ObservedObject private var gs = GlobalSettings.shared
 
     var enabledSources: [BookSource] { sourceStore.enabledSources }
@@ -30,104 +28,72 @@ struct BookSearchView: View {
     }
 
     var body: some View {
-        NavigationView {
-            AdaptiveSheetContainer(maxWidth: 900) {
-                VStack(spacing: 0) {
-                    searchBar
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
+        AdaptiveContentContainer(maxWidth: 900) {
+            VStack(spacing: 0) {
+                if enabledSources.count > 1 {
+                    sourceSelector
+                }
 
-                    if enabledSources.count > 1 {
-                        sourceSelector
-                    }
+                Divider()
 
-                    Divider()
-
-                    ZStack {
-                        if !aggregator.results.isEmpty {
-                            resultList
-                                .overlay(alignment: .top) {
-                                    if aggregator.isSearching {
-                                        progressBar
-                                    }
+                ZStack {
+                    if !aggregator.results.isEmpty {
+                        resultList
+                            .overlay(alignment: .top) {
+                                if aggregator.isSearching {
+                                    progressBar
                                 }
-                        } else if aggregator.isSearching {
-                            VStack(spacing: 12) {
-                                Spacer()
-                                ProgressView(localized("搜索中…"))
-                                Spacer()
                             }
-                        } else if shouldShowEmptyResult {
-                            emptyResultView
-                        } else {
-                            hintView
+                    } else if aggregator.isSearching {
+                        VStack(spacing: 12) {
+                            Spacer()
+                            ProgressView(localized("搜索中…"))
+                            Spacer()
                         }
+                    } else if shouldShowEmptyResult {
+                        emptyResultView
+                    } else {
+                        hintView
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .navigationTitle(localized("搜索書籍"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("關閉")) { dismiss.wrappedValue.dismiss() }
-                }
-            }
-            .sheet(item: $selectedBook) { book in
-                AdaptiveSheetContainer(maxWidth: 760) {
-                    SourcePickerSheet(
-                        searchBook: book,
-                        onSelectOrigin: { origin in
-                            openOnlineBook(from: book, origin: origin)
-                        })
-                }
-            }
-            .sheet(item: $openingOnlineBook) { onlineBook in
-                AdaptiveSheetContainer(maxWidth: 900) {
-                    OnlineBookView(book: onlineBook)
-                        .environmentObject(bookStore)
-                }
-            }
-            .alert(
-                localized("搜索失敗"),
-                isPresented: Binding(get: { errorMsg != nil }, set: { if !$0 { errorMsg = nil } })
-            ) {
-                Button(localized("確認")) { errorMsg = nil }
-            } message: {
-                Text(errorMsg ?? "")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DSColor.background)
+        }
+        .background(DSColor.groupedBackground.ignoresSafeArea())
+        .navigationTitle(localized("搜索書籍"))
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: localized("輸入書名或作者"))
+        .onSubmit(of: .search) { doSearch() }
+        .onChange(of: query) { _, newValue in
+            // Mirror the old clear button: emptying the field resets the search.
+            if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                submittedQuery = ""
+                aggregator.cancel()
             }
         }
-        .navigationViewStyle(.stack)
+        .toolbar {
+            if showsCloseButton {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(localized("關閉")) { dismiss() }
+                }
+            }
+        }
+        .alert(
+            localized("搜索失敗"),
+            isPresented: Binding(get: { errorMsg != nil }, set: { if !$0 { errorMsg = nil } })
+        ) {
+            Button(localized("確認")) { errorMsg = nil }
+        } message: {
+            Text(errorMsg ?? "")
+        }
         .onAppear {
             if !initialQuery.isEmpty && query.isEmpty {
                 query = initialQuery
                 doSearch()
-            } else {
-                searchFocused = true
             }
         }
-    }
-
-    // MARK: Search Bar
-    private var searchBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundColor(.secondary)
-            TextField(localized("輸入書名或作者"), text: $query)
-                .focused($searchFocused)
-                .submitLabel(.search)
-                .onSubmit { doSearch() }
-            if !query.isEmpty {
-                Button {
-                    query = ""
-                    submittedQuery = ""
-                    aggregator.cancel()
-                } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding(10)
-        .background(Color.secondary.opacity(0.15))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: Progress Bar
@@ -194,16 +160,12 @@ struct BookSearchView: View {
     // MARK: Result List
     private var resultList: some View {
         List(aggregator.results) { book in
-            Button {
-                if book.origins.count == 1 {
-                    openOnlineBook(from: book, origin: book.origins[0])
-                } else {
-                    selectedBook = book
-                }
+            NavigationLink {
+                OnlineBookView(searchBook: book)
+                    .environmentObject(bookStore)
             } label: {
                 AggregatedResultRow(book: book)
             }
-            .buttonStyle(.plain)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
         }
@@ -257,28 +219,6 @@ struct BookSearchView: View {
 
         submittedQuery = q
         aggregator.search(query: q, sources: sources)
-    }
-
-    // MARK: Open Book Details
-    private func openOnlineBook(from book: SearchBook, origin: BookOrigin) {
-        let onlineBook = OnlineBook(
-            name: book.name,
-            author: book.author,
-            intro: origin.intro.isEmpty ? book.intro : origin.intro,
-            coverUrl: origin.coverUrl.isEmpty ? book.coverUrl : origin.coverUrl,
-            bookUrl: origin.bookUrl,
-            tocUrl: origin.tocUrl,
-            wordCount: origin.wordCount,
-            lastChapter: origin.lastChapter,
-            kind: origin.kind,
-            sourceId: origin.sourceId,
-            sourceName: origin.sourceName
-        )
-        // Dismiss SourcePickerSheet first, then open book details.
-        selectedBook = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            openingOnlineBook = onlineBook
-        }
     }
 }
 
