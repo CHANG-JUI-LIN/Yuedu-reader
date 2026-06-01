@@ -2,10 +2,10 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    match /avatars/{uid}.jpg {
+    match /avatars/{fileName} {
       allow read: if true;
       allow write: if request.auth != null
-        && request.auth.uid == uid
+        && fileName == request.auth.uid + ".jpg"
         && request.resource.size < 2 * 1024 * 1024;
     }
   }
