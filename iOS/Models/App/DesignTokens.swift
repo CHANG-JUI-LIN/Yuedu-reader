@@ -16,6 +16,8 @@ enum DSColor {
     // ── Text ──
     /// Primary text (auto-adapts to light/dark mode)
     static let textPrimary = Color.primary
+    /// Text on strong functional fills.
+    static let textOnAccent = Color.white
     /// Secondary text (captions, subtitles)
     static let textSecondary = Color.secondary
     /// Disabled text

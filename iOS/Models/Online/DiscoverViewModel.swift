@@ -16,6 +16,22 @@ struct DiscoverCardItem: Identifiable {
     let isFetchable: Bool
 }
 
+// MARK: - Discover Filter
+
+/// One dropdown filter the *book source itself* emits from its exploreUrl JS
+/// (e.g. 线路 / 类型 / 频道 / 平台). Each maps to a Legado runtime variable
+/// (`paramKey`) the JS reads on its next run. Options (`chars`) and the current
+/// value (`default`) come straight from the source's `type:"select"` item — for
+/// the 光遇 aggregator the 平台 options are the per-mode cloud config (`js[tab]`),
+/// so they change when 类型 switches.
+struct DiscoverFilter: Identifiable {
+    let id = UUID()
+    let title: String
+    let paramKey: String
+    let options: [String]
+    var selected: String
+}
+
 // MARK: - Discover Showcase Section
 
 /// How a showcase section renders its books. `featured` = horizontal cover
@@ -77,16 +93,14 @@ final class DiscoverViewModel: ObservableObject {
     private var sectionQueue: [UUID] = []
     private var isPumpingSections = false
 
-    @Published var selectedType = "小说"
-    @Published var selectedChannel = "男频"
-    @Published var selectedPlatform = "全部"
-
-    let typeOptions = ["小说", "听书", "漫画", "短剧"]
-    let channelOptions = ["男频", "女频"]
+    /// Filter dropdowns the book source emits from its exploreUrl JS, repopulated
+    /// on every reload. Empty for sources that don't emit `select` items.
+    @Published var filters: [DiscoverFilter] = []
 
     private let sourceStore = BookSourceStore.shared
     private let runtimeStore = BookSourceRuntimeStateStore.shared
     private let selectedSourceKey = "discover.selectedSourceId"
+    private let defaultDiscoverPlatform = "全部"
     private var loadItemsTask: Task<Void, Never>?
     private var loadBooksTask: Task<Void, Never>?
 
@@ -95,21 +109,6 @@ final class DiscoverViewModel: ObservableObject {
     }
 
     var hasExploreSource: Bool { selectedSource != nil }
-
-    var showsFilters: Bool {
-        guard let source = selectedSource else { return false }
-        return Self.sourceUsesDiscoverFilters(source)
-    }
-
-    /// 來源 (platform) chips, derived from the source's group list minus the aggregator name.
-    var platformOptions: [String] {
-        guard let group = selectedSource?.bookSourceGroup else { return ["全部"] }
-        let parts = group
-            .split(whereSeparator: { $0 == "," || $0 == "，" || $0 == " " || $0 == ";" })
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && $0 != "聚合" }
-        return ["全部"] + parts
-    }
 
     init() {
         if let stored = UserDefaults.standard.string(forKey: selectedSourceKey) {
@@ -128,8 +127,6 @@ final class DiscoverViewModel: ObservableObject {
             selectedSourceId = exploreSources.first?.id
             persistSelectedSource()
         }
-        if !platformOptions.contains(selectedPlatform) { selectedPlatform = "全部" }
-        loadVariablesFromSource()
         if items.isEmpty, hasExploreSource { reload() }
     }
 
@@ -137,31 +134,43 @@ final class DiscoverViewModel: ObservableObject {
         guard id != selectedSourceId else { return }
         selectedSourceId = id
         persistSelectedSource()
-        if !platformOptions.contains(selectedPlatform) { selectedPlatform = "全部" }
-        loadVariablesFromSource()
+        filters = []
         reload()
     }
 
     // MARK: - Filters
 
-    func setType(_ value: String) {
-        guard value != selectedType else { return }
-        selectedType = value
-        if showsFilters { applyFilters() }
-        reload()
-    }
+    /// Apply a filter choice: persist it as the source's Legado runtime variable
+    /// (read by the JS on its next run), then reload. Mirrors the source's own
+    /// `show()` — switching 类型 resets the platform and syncs the search mode,
+    /// because each 类型 has its own platform list.
+    func selectFilter(_ filter: DiscoverFilter, value: String) {
+        guard value != filter.selected, let source = selectedSource else { return }
+        var dict = currentVariableDict(for: source)
+        var moreSettings = (dict["更多设置"] as? [String: Any]) ?? [:]
+        let currentMode = discoverMode(from: dict, moreSettings: moreSettings)
 
-    func setChannel(_ value: String) {
-        guard value != selectedChannel else { return }
-        selectedChannel = value
-        if showsFilters { applyFilters() }
-        reload()
-    }
+        dict[filter.paramKey] = value
 
-    func setPlatform(_ value: String) {
-        guard value != selectedPlatform else { return }
-        selectedPlatform = value
-        if showsFilters { applyFilters() }
+        switch filter.paramKey {
+        case "发现页类型":
+            let platform = discoverPlatform(for: value, moreSettings: moreSettings)
+            dict["发现页来源"] = platform
+            moreSettings["搜索模式"] = value
+            moreSettings[value] = platform
+            dict["更多设置"] = moreSettings
+        case "发现页来源":
+            moreSettings["搜索模式"] = currentMode
+            moreSettings[currentMode] = value
+            dict["更多设置"] = moreSettings
+        default:
+            break
+        }
+
+        writeVariableDict(dict, for: source)
+        if let index = filters.firstIndex(where: { $0.id == filter.id }) {
+            filters[index].selected = value
+        }
         reload()
     }
 
@@ -174,8 +183,10 @@ final class DiscoverViewModel: ObservableObject {
             booksSectionTitle = ""
             cancelSectionTasks()
             sections = []
+            filters = []
             return
         }
+        repairHardcodedDiscoverSourceIfNeeded(for: source)
         loadItemsTask?.cancel()
         cancelSectionTasks()
         sections = []
@@ -183,6 +194,7 @@ final class DiscoverViewModel: ObservableObject {
         loadItemsTask = Task { [weak self] in
             let raw = await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
             guard let self, !Task.isCancelled else { return }
+            self.filters = Self.extractFilters(from: raw)
             let mapped = raw.compactMap(Self.mapItem)
             self.items = mapped
             self.isLoadingItems = false
@@ -336,38 +348,38 @@ final class DiscoverViewModel: ObservableObject {
         return String(string[range])
     }
 
+    // MARK: - Source-emitted filters
+
+    /// Pull the source's `type:"select"` dropdowns out of the exploreUrl result.
+    /// The exploreUrl JS encodes the target variable in the action, e.g.
+    /// `show(infoMap['平台'],'发现页来源')` → paramKey `发现页来源`.
+    static func extractFilters(from raw: [ModernParserBridge.DiscoverItem]) -> [DiscoverFilter] {
+        raw.compactMap { item in
+            guard (item.type ?? "") == "select" else { return nil }
+            let title = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let options = (item.chars ?? [])
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            guard !title.isEmpty, !options.isEmpty else { return nil }
+            let paramKey = parseParamKey(from: item.action) ?? title
+            let preferred = (item.default ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let selected = preferred.isEmpty ? (options.first ?? "") : preferred
+            return DiscoverFilter(title: title, paramKey: paramKey, options: options, selected: selected)
+        }
+    }
+
+    /// Extract the variable key from an action like `show(infoMap['平台'],'发现页来源')`
+    /// — the last single-quoted token.
+    private static func parseParamKey(from action: String?) -> String? {
+        guard let action else { return nil }
+        let parts = action.components(separatedBy: "'")
+        // Single-quoted tokens sit at odd indices ("a'X'b'Y'c" → [a,X,b,Y,c]).
+        let quoted = stride(from: 1, to: parts.count, by: 2).map { parts[$0] }
+        return quoted.last.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+    }
+
     // MARK: - Source runtime variables
-
-    /// Filter selections persist as the source's Legado runtime variables, which the
-    /// JS `exploreUrl` reads on its next run (`getVariable('频道')`, etc.).
-    private func loadVariablesFromSource() {
-        guard let source = selectedSource, showsFilters else { return }
-        let dict = currentVariableDict(for: source)
-        if let value = dict["频道"] as? String, channelOptions.contains(value) {
-            selectedChannel = value
-        }
-        if let value = dict["发现页来源"] as? String {
-            selectedPlatform = platformOptions.contains(value) ? value : "全部"
-        }
-        if let more = dict["更多设置"] as? [String: Any],
-           let mode = more["搜索模式"] as? String, typeOptions.contains(mode) {
-            selectedType = mode
-        } else if let value = dict["发现页类型"] as? String, typeOptions.contains(value) {
-            selectedType = value
-        }
-    }
-
-    private func applyFilters() {
-        guard let source = selectedSource, showsFilters else { return }
-        var dict = currentVariableDict(for: source)
-        dict["频道"] = selectedChannel
-        dict["发现页来源"] = selectedPlatform
-        dict["发现页类型"] = selectedType
-        var more = (dict["更多设置"] as? [String: Any]) ?? [:]
-        more["搜索模式"] = selectedType
-        dict["更多设置"] = more
-        writeVariableDict(dict, for: source)
-    }
 
     private func currentVariableDict(for source: BookSource) -> [String: Any] {
         guard let json = runtimeStore.sourceVariableJSON(for: source.bookSourceUrl),
@@ -375,6 +387,58 @@ final class DiscoverViewModel: ObservableObject {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return [:] }
         return object
+    }
+
+    private func discoverMode(from dict: [String: Any], moreSettings: [String: Any]) -> String {
+        if let mode = dict["发现页类型"] as? String, !mode.isEmpty {
+            return mode
+        }
+        if let mode = moreSettings["搜索模式"] as? String, !mode.isEmpty {
+            return mode
+        }
+        if let modeFilter = filters.first(where: { $0.paramKey == "发现页类型" }),
+           !modeFilter.selected.isEmpty {
+            return modeFilter.selected
+        }
+        return "小说"
+    }
+
+    private func discoverPlatform(for mode: String, moreSettings: [String: Any]) -> String {
+        if let saved = Self.nonEmptyString(moreSettings[mode]) {
+            return saved
+        }
+        return defaultDiscoverPlatform
+    }
+
+    private func repairHardcodedDiscoverSourceIfNeeded(for source: BookSource) {
+        let dict = currentVariableDict(for: source)
+        let repaired = Self.repairHardcodedDiscoverSource(in: dict)
+        guard (dict["发现页来源"] as? String) != (repaired["发现页来源"] as? String) else { return }
+        writeVariableDict(repaired, for: source)
+    }
+
+    /// Older builds mirrored the source JS too literally and persisted
+    /// `发现页来源 = 番茄` whenever the mode changed. If a per-mode source already
+    /// exists in `更多设置`, treat that as the user's intended source.
+    nonisolated static func repairHardcodedDiscoverSource(in dict: [String: Any]) -> [String: Any] {
+        guard (dict["发现页来源"] as? String) == "番茄",
+              let moreSettings = dict["更多设置"] as? [String: Any]
+        else { return dict }
+
+        let mode = nonEmptyString(dict["发现页类型"])
+            ?? nonEmptyString(moreSettings["搜索模式"])
+            ?? "小说"
+        guard let saved = nonEmptyString(moreSettings[mode]), saved != "番茄" else { return dict }
+
+        var repaired = dict
+        repaired["发现页来源"] = saved
+        return repaired
+    }
+
+    nonisolated private static func nonEmptyString(_ value: Any?) -> String? {
+        guard let string = value as? String else { return nil }
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func writeVariableDict(_ dict: [String: Any], for source: BookSource) {
@@ -388,13 +452,5 @@ final class DiscoverViewModel: ObservableObject {
     private func persistSelectedSource() {
         guard let id = selectedSourceId else { return }
         UserDefaults.standard.set(id.uuidString, forKey: selectedSourceKey)
-    }
-
-    static func sourceUsesDiscoverFilters(_ source: BookSource) -> Bool {
-        let probes = [source.exploreUrl, source.jsLib]
-        let markers = ["频道", "发现页来源", "发现页类型", "搜索模式"]
-        return probes.contains { text in
-            markers.contains { text.contains($0) }
-        }
     }
 }

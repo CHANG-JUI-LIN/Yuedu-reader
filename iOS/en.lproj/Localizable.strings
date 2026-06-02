@@ -683,9 +683,12 @@
 "網頁瀏覽" = "Web";
 "目前書源" = "Current Source";
 "切換書源" = "Switch Source";
+"切換發現書源" = "Switch Discover Source";
 "書源設定" = "Source Settings";
+"線路" = "Route";
 "類型" = "Type";
 "頻道" = "Channel";
+"平台" = "Platform";
 "尚未啟用支援發現的書源" = "No discover-enabled source";
 "前往書源管理" = "Go to Source Manager";
 "發現" = "Discover";

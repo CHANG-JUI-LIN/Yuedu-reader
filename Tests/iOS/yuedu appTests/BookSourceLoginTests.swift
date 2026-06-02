@@ -228,10 +228,47 @@ struct BookSourceLoginTests {
         let sessionId = engine.evaluate("java.getCookie('fanqienovel.com', 'sessionid')")
         #expect(sessionId == "session-for-test")
     }
+
+    @Test("JS bridge 環境判斷優先回傳改版")
+    func jsBridgeCheckEnvPrefersModernEnvironment() {
+        let engine = JSCoreEngine()
+        let env = engine.evaluate("""
+        function checkEnv() {
+            try {
+                if (typeof java.reLoginView == 'function') {
+                    return "改版";
+                }
+            } catch (error) {}
+            try {
+                java.deviceID();
+                return "苹果";
+            } catch (error) {}
+            return "改版";
+        }
+        checkEnv();
+        """)
+
+        #expect(env == "改版")
+    }
 }
 
 @Suite("GuangYuLiveBookSource", .serialized)
 struct GuangYuLiveBookSourceTests {
+
+    @Test("光遇聚合真源：checkEnv 判斷為改版")
+    func guangYuFixtureCheckEnvReportsModernEnvironment() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let fixturePath = env["YueduLocalBookSourceFixturePath"]
+                ?? env["TEST_RUNNER_YueduLocalBookSourceFixturePath"]
+        else { return }
+
+        let source = try loadGuangYuSource(fixturePath: fixturePath)
+        let engine = JSCoreEngine()
+        engine.bookSource = source
+        configureRuntime(engine, source: source)
+
+        #expect(engine.evaluate("checkEnv()") == "改版")
+    }
 
     @Test("光遇聚合真源：安全按钮、登录、搜索、详情、目录、正文")
     func guangYuLoginSearchAndRead() async throws {

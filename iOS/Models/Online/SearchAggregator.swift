@@ -38,6 +38,13 @@ class SearchBook: Identifiable, ObservableObject {
         return "\(n)||||\(a)"
     }
 
+    /// Name-only normalized key. Used to bucket candidates that share a title so
+    /// their authors can then be compared for compatibility (`isLikelySameBook`),
+    /// instead of requiring an exact name+author match to merge sources.
+    static func nameKey(_ name: String) -> String {
+        normalize(name)
+    }
+
     /// Normalize string: strip whitespace/punctuation, convert fullwidth to halfwidth
     private static func normalize(_ s: String) -> String {
         s.lowercased()
@@ -45,6 +52,39 @@ class SearchBook: Identifiable, ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: " ", with: "")
             ?? s.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Heuristic "same book" test used for 換源 (source switching).
+    ///
+    /// Names must match — equal after normalization, or one strongly contains the
+    /// other (subtitle / volume-suffix variations across sources). Authors are a
+    /// *soft* filter: they only exclude a candidate when BOTH sides report a
+    /// non-empty author AND those authors are incompatible. This keeps alternative
+    /// sources discoverable even when a source omits the author (very common) or
+    /// formats the title slightly differently — the previous exact `(name, author)`
+    /// key match returned an empty list in those cases.
+    static func isLikelySameBook(
+        name lhsName: String, author lhsAuthor: String,
+        name rhsName: String, author rhsAuthor: String
+    ) -> Bool {
+        let n1 = normalize(lhsName)
+        let n2 = normalize(rhsName)
+        guard !n1.isEmpty, !n2.isEmpty else { return false }
+        guard fieldsCompatible(n1, n2) else { return false }
+
+        let a1 = normalize(lhsAuthor)
+        let a2 = normalize(rhsAuthor)
+        if a1.isEmpty || a2.isEmpty { return true }
+        return fieldsCompatible(a1, a2)
+    }
+
+    /// Two already-normalized fields are compatible when equal, or when one
+    /// contains the other (guarding against trivial 1-character substrings).
+    private static func fieldsCompatible(_ a: String, _ b: String) -> Bool {
+        if a == b { return true }
+        if a.count >= 2 && b.contains(a) { return true }
+        if b.count >= 2 && a.contains(b) { return true }
+        return false
     }
 
     /// Primary cover URL (first non-empty one)
@@ -204,8 +244,9 @@ class SearchAggregator: ObservableObject {
     /// Current search task (used for cancellation)
     private var searchTask: Task<Void, Never>?
 
-    /// Dedup table: key → results array index
-    private var deduplicationMap: [String: Int] = [:]
+    /// Dedup table: name key → indices of `results` sharing that title. Within a
+    /// bucket, candidates merge only when their authors are compatible.
+    private var deduplicationMap: [String: [Int]] = [:]
 
     // MARK: - Start Search
 
@@ -353,12 +394,19 @@ class SearchAggregator: ObservableObject {
                 runtimeVariables: book.runtimeVariables
             )
 
-            let key = SearchBook.makeKey(name: book.name, author: book.author)
+            // Bucket by title, then merge into the first same-title result whose
+            // author is compatible (equal, or one side empty). Same title with a
+            // clearly different author stays a separate book.
+            let nameKey = SearchBook.nameKey(book.name)
+            let existingIndex = deduplicationMap[nameKey]?.first { idx in
+                idx < results.count
+                    && SearchBook.isLikelySameBook(
+                        name: book.name, author: book.author,
+                        name: results[idx].name, author: results[idx].author)
+            }
 
-            if let existingIndex = deduplicationMap[key],
-                existingIndex < results.count
-            {
-                // Same name + same author → merge into existing result's origin array
+            if let existingIndex {
+                // Compatible match → merge into existing result's origin array
                 withAnimation(.easeInOut(duration: 0.25)) {
                     results[existingIndex].origins.append(origin)
                 }
@@ -370,7 +418,7 @@ class SearchAggregator: ObservableObject {
                     origins: [origin]
                 )
                 withAnimation(.easeInOut(duration: 0.25)) {
-                    deduplicationMap[key] = results.count
+                    deduplicationMap[nameKey, default: []].append(results.count)
                     results.append(searchBook)
                 }
             }
@@ -430,7 +478,7 @@ class SearchAggregator: ObservableObject {
     private func rebuildDeduplicationMap() {
         deduplicationMap.removeAll(keepingCapacity: true)
         for (index, book) in results.enumerated() {
-            deduplicationMap[book.deduplicationKey] = index
+            deduplicationMap[SearchBook.nameKey(book.name), default: []].append(index)
         }
     }
 }

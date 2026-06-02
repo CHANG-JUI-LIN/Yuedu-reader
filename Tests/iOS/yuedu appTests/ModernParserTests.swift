@@ -1108,6 +1108,68 @@ struct AnalyzeUrlTests {
         #expect(BookSourceRuntimeStateStore.shared.sourceVariableJSON(for: source.bookSourceUrl) == decoded)
     }
 
+    @Test("cached cloud config hydrates source variables before explore JS reads filters")
+    func cachedCloudConfigHydratesExploreFilters() async throws {
+        let cloudPayload = #"{"version":"20260518","hosts":["https://v1.gyks.cf"],"小说":["番茄","七猫"]}"#
+        let encodedCloudPayload = Data(cloudPayload.utf8).base64EncodedString()
+        var source = BookSource()
+        source.bookSourceUrl = "legado-cloud-config-test-\(UUID().uuidString)"
+        source.bookSourceName = "Cloud Config Test"
+        source.jsLib = """
+        let defaultConfig = { 线路: 'https://v1.gyks.cf', 发现页来源: '番茄', 发现页类型: '小说' };
+        function _getParsedVariable() {
+            let v = source.getVariable();
+            try { return JSON.parse(v); } catch(e) { return defaultConfig; }
+        }
+        function getVariable(k) {
+            let parsed = _getParsedVariable();
+            if (!k) { return parsed; }
+            return parsed[k] == undefined ? '' : parsed[k];
+        }
+        function setVariable(k, v) {
+            let parsed = getVariable();
+            parsed[k] = v;
+            source.setVariable(JSON.stringify(parsed));
+        }
+        function getCloudSettings(force) {
+            let cachedVersion = cache.get('gyksconfig');
+            if (cachedVersion && parseInt(cachedVersion) >= 20260518) {
+                return;
+            }
+            let js = JSON.parse(java.ajax('data:application/json;base64,\(encodedCloudPayload)'));
+            cache.put('gyksconfig', js.version);
+            setVariable('云端配置', js);
+        }
+        function cloudPlatforms() {
+            getCloudSettings(true);
+            var config = getVariable('云端配置');
+            return JSON.stringify([{
+                title: '平台',
+                type: 'select',
+                chars: config['小说'] || [],
+                action: "show(infoMap['平台'],'发现页来源')",
+                default: '番茄'
+            }]);
+        }
+        """
+        source.exploreUrl = "<js>cloudPlatforms()</js>"
+
+        BookSourceRuntimeStateStore.shared.setSourceVariableJSON(nil, for: source.bookSourceUrl)
+        LegadoCacheBridge(sourceId: source.bookSourceUrl).put("gyksconfig", "20260518")
+        defer {
+            BookSourceRuntimeStateStore.shared.setSourceVariableJSON(nil, for: source.bookSourceUrl)
+            LegadoCacheBridge(sourceId: source.bookSourceUrl).delete("gyksconfig")
+        }
+
+        let items = await ModernParserBridge(source: source).getExploreItems()
+        let platform = try #require(items.first)
+
+        #expect(platform.chars == ["番茄", "七猫"])
+        let stored = try #require(BookSourceRuntimeStateStore.shared.sourceVariableJSON(for: source.bookSourceUrl))
+        #expect(stored.contains("\"云端配置\""))
+        #expect(stored.contains("\"hosts\""))
+    }
+
     @Test("Legado runtime bridge runs search detail toc and content data URI pipeline")
     func legadoRuntimePipelineDataURIFlow() async throws {
         var source = BookSource()
@@ -1299,6 +1361,37 @@ struct BookSourceLocalFixtureTests {
         #expect(source.ruleToc.chapterUrl.contains("data:;base64"))
         #expect(source.ruleContent.content.contains("chapter.index"))
         #expect(!source.loginUi.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    @Test("local GuangYu fixture hydrates cloud discover platform filters")
+    func localGuangYuFixtureHydratesCloudDiscoverFilters() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let path = env["YueduLocalBookSourceFixturePath"]
+                ?? env["TEST_RUNNER_YueduLocalBookSourceFixturePath"],
+              !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let sources = try JSONDecoder().decode([BookSource].self, from: data)
+        let source = try #require(
+            sources.first { $0.bookSourceName.contains("光遇") || $0.bookSourceUrl.contains("光遇") }
+        )
+        let runtimeStore = BookSourceRuntimeStateStore.shared
+        let cache = LegadoCacheBridge(sourceId: source.bookSourceUrl)
+        runtimeStore.setSourceVariableJSON(nil, for: source.bookSourceUrl)
+        cache.put("gyksconfig", "20260518")
+        defer {
+            runtimeStore.setSourceVariableJSON(nil, for: source.bookSourceUrl)
+            cache.delete("gyksconfig")
+        }
+
+        let items = await ModernParserBridge(source: source).getExploreItems()
+        let platform = try #require(items.first { $0.title == "平台" })
+        let platforms = try #require(platform.chars)
+
+        #expect(platforms.count > 6)
+        #expect(platforms.contains("69书吧"))
+        #expect(platforms.contains("小米"))
     }
 }
 
@@ -1981,33 +2074,163 @@ struct ModernParserBridgeExploreTests {
 struct DiscoverFilterTests {
 
     @MainActor
-    @Test("general Legado sources do not show aggregator filters")
-    func generalSourcesDoNotShowFilters() {
-        var source = BookSource()
-        source.bookSourceUrl = "https://example.com/source"
-        source.bookSourceName = "Plain Explore"
-        source.exploreUrl = "分類一::https://example.com/cat/1"
+    @Test("source select items become filters and stay out of showcase cards")
+    func sourceSelectItemsBecomeFilters() throws {
+        let raw: [ModernParserBridge.DiscoverItem] = [
+            .init(
+                title: "平台",
+                type: "select",
+                action: "show(infoMap['平台'],'发现页来源')",
+                chars: ["番茄", "七猫", "喜马拉雅"],
+                default: "番茄"
+            ),
+            .init(title: "排行榜", url: "https://example.com/rank")
+        ]
 
-        let model = DiscoverViewModel()
-        model.exploreSources = [source]
-        model.selectedSourceId = source.id
+        let filters = DiscoverViewModel.extractFilters(from: raw)
+        let platform = try #require(filters.first)
 
-        #expect(model.showsFilters == false)
+        #expect(platform.title == "平台")
+        #expect(platform.paramKey == "发现页来源")
+        #expect(platform.options == ["番茄", "七猫", "喜马拉雅"])
+        #expect(platform.selected == "番茄")
+        #expect(raw.compactMap(DiscoverViewModel.mapItem).map(\.title) == ["排行榜"])
     }
 
     @MainActor
-    @Test("filter-aware aggregator sources keep filters")
-    func filterAwareSourcesShowFilters() {
+    @Test("selecting platform stores search source under the current mode")
+    func selectingPlatformStoresSearchSourceForCurrentMode() throws {
         var source = BookSource()
-        source.bookSourceUrl = "https://example.com/source"
+        source.bookSourceUrl = "discover-filter-test-\(UUID().uuidString)"
         source.bookSourceName = "Aggregator Explore"
-        source.exploreUrl = "<js>source.getVariable('频道'); []</js>"
+        source.enabledExplore = true
+        let runtimeStore = BookSourceRuntimeStateStore.shared
+        runtimeStore.setSourceVariableJSON(
+            #"{"发现页类型":"漫画","更多设置":{"搜索模式":"漫画"}}"#,
+            for: source.bookSourceUrl
+        )
+        defer { runtimeStore.setSourceVariableJSON(nil, for: source.bookSourceUrl) }
 
         let model = DiscoverViewModel()
         model.exploreSources = [source]
         model.selectedSourceId = source.id
+        model.filters = [
+            DiscoverFilter(
+                title: "平台",
+                paramKey: "发现页来源",
+                options: ["番茄", "全面漫画"],
+                selected: "番茄"
+            )
+        ]
 
-        #expect(model.showsFilters == true)
+        let filter = try #require(model.filters.first)
+        model.selectFilter(filter, value: "全面漫画")
+
+        let stored = try #require(runtimeStore.sourceVariableJSON(for: source.bookSourceUrl))
+        let dict = try #require(Self.jsonObject(stored))
+        let more = try #require(dict["更多设置"] as? [String: Any])
+
+        #expect(dict["发现页来源"] as? String == "全面漫画")
+        #expect(more["搜索模式"] as? String == "漫画")
+        #expect(more["漫画"] as? String == "全面漫画")
+    }
+
+    @MainActor
+    @Test("selecting mode keeps the saved source instead of forcing Fanqie")
+    func selectingModeUsesSavedSourceForMode() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "discover-mode-source-test-\(UUID().uuidString)"
+        source.bookSourceName = "Aggregator Explore"
+        source.enabledExplore = true
+        let runtimeStore = BookSourceRuntimeStateStore.shared
+        runtimeStore.setSourceVariableJSON(
+            #"{"发现页类型":"小说","发现页来源":"番茄","更多设置":{"搜索模式":"小说","漫画":"全面漫画"}}"#,
+            for: source.bookSourceUrl
+        )
+        defer { runtimeStore.setSourceVariableJSON(nil, for: source.bookSourceUrl) }
+
+        let model = DiscoverViewModel()
+        model.exploreSources = [source]
+        model.selectedSourceId = source.id
+        model.filters = [
+            DiscoverFilter(
+                title: "类型",
+                paramKey: "发现页类型",
+                options: ["小说", "漫画"],
+                selected: "小说"
+            )
+        ]
+
+        let filter = try #require(model.filters.first)
+        model.selectFilter(filter, value: "漫画")
+
+        let stored = try #require(runtimeStore.sourceVariableJSON(for: source.bookSourceUrl))
+        let dict = try #require(Self.jsonObject(stored))
+        let more = try #require(dict["更多设置"] as? [String: Any])
+
+        #expect(dict["发现页类型"] as? String == "漫画")
+        #expect(dict["发现页来源"] as? String == "全面漫画")
+        #expect(more["搜索模式"] as? String == "漫画")
+        #expect(more["漫画"] as? String == "全面漫画")
+    }
+
+    @MainActor
+    @Test("selecting mode defaults discover source to all when no mode source is saved")
+    func selectingModeDefaultsSourceToAll() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "discover-mode-all-test-\(UUID().uuidString)"
+        source.bookSourceName = "Aggregator Explore"
+        source.enabledExplore = true
+        let runtimeStore = BookSourceRuntimeStateStore.shared
+        runtimeStore.setSourceVariableJSON(
+            #"{"发现页类型":"小说","发现页来源":"番茄","更多设置":{"搜索模式":"小说"}}"#,
+            for: source.bookSourceUrl
+        )
+        defer { runtimeStore.setSourceVariableJSON(nil, for: source.bookSourceUrl) }
+
+        let model = DiscoverViewModel()
+        model.exploreSources = [source]
+        model.selectedSourceId = source.id
+        model.filters = [
+            DiscoverFilter(
+                title: "类型",
+                paramKey: "发现页类型",
+                options: ["小说", "听书"],
+                selected: "小说"
+            )
+        ]
+
+        let filter = try #require(model.filters.first)
+        model.selectFilter(filter, value: "听书")
+
+        let stored = try #require(runtimeStore.sourceVariableJSON(for: source.bookSourceUrl))
+        let dict = try #require(Self.jsonObject(stored))
+        let more = try #require(dict["更多设置"] as? [String: Any])
+
+        #expect(dict["发现页类型"] as? String == "听书")
+        #expect(dict["发现页来源"] as? String == "全部")
+        #expect(more["搜索模式"] as? String == "听书")
+        #expect(more["听书"] as? String == "全部")
+    }
+
+    @MainActor
+    @Test("reload repairs old hard-coded Fanqie source from saved mode setting")
+    func repairsOldHardcodedFanqieSourceFromSavedModeSetting() throws {
+        let repaired = DiscoverViewModel.repairHardcodedDiscoverSource(in: [
+            "发现页类型": "漫画",
+            "发现页来源": "番茄",
+            "更多设置": [
+                "搜索模式": "漫画",
+                "漫画": "全面漫画"
+            ]
+        ])
+
+        #expect(repaired["发现页来源"] as? String == "全面漫画")
+    }
+
+    private static func jsonObject(_ json: String) -> [String: Any]? {
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 }
 

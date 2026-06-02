@@ -13,28 +13,33 @@ struct DiscoverShowcaseView: View {
     let onOpenBook: (OnlineBook) -> Void
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: DSSpacing.xl) {
-                if discover.isLoadingItems && discover.sections.isEmpty {
-                    loadingState
-                } else if discover.sections.isEmpty {
-                    emptyState
-                } else {
-                    ForEach(discover.sections) { section in
-                        DiscoverSectionView(
-                            section: section,
-                            onOpenBook: onOpenBook,
-                            onAppearLoad: { discover.loadSection(section.id) },
-                            onRetry: { discover.retrySection(section.id) }
-                        )
+        VStack(spacing: 0) {
+            if !discover.filters.isEmpty {
+                DiscoverFilterBar(discover: discover)
+            }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: DSSpacing.xl) {
+                    if discover.isLoadingItems && discover.sections.isEmpty {
+                        loadingState
+                    } else if discover.sections.isEmpty {
+                        emptyState
+                    } else {
+                        ForEach(discover.sections) { section in
+                            DiscoverSectionView(
+                                section: section,
+                                onOpenBook: onOpenBook,
+                                onAppearLoad: { discover.loadSection(section.id) },
+                                onRetry: { discover.retrySection(section.id) }
+                            )
+                        }
                     }
                 }
+                .padding(.vertical, DSSpacing.lg)
+                .padding(.bottom, 120)
             }
-            .padding(.vertical, DSSpacing.lg)
-            .padding(.bottom, 120)
+            .scrollDismissesKeyboard(.immediately)
+            .refreshable { discover.reload() }
         }
-        .scrollDismissesKeyboard(.immediately)
-        .refreshable { discover.reload() }
     }
 
     private var loadingState: some View {
@@ -53,6 +58,92 @@ struct DiscoverShowcaseView: View {
             description: Text(localized("此書源未回傳發現內容，可下拉重新整理或切換書源"))
         )
         .frame(maxWidth: .infinity, minHeight: 320)
+    }
+}
+
+// MARK: - Filter bar
+
+/// Horizontal row of the source's own dropdown filters (线路 / 类型 / 频道 / 平台).
+/// Each is a native `Menu` (design.md: 就地選擇 → Menu). Options come from the
+/// source's `select` items, so the 平台 list reflects the per-mode cloud config.
+private struct DiscoverFilterBar: View {
+    @ObservedObject var discover: DiscoverViewModel
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: DSSpacing.sm) {
+                ForEach(discover.filters) { filter in
+                    Menu {
+                        Picker(filter.title, selection: selectionBinding(for: filter)) {
+                            ForEach(filter.options, id: \.self) { option in
+                                Text(displayName(option)).tag(option)
+                            }
+                        }
+                    } label: {
+                        chip(for: filter)
+                    }
+                }
+            }
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.sm)
+        }
+        .background(DSColor.groupedBackground)
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
+    }
+
+    private func selectionBinding(for filter: DiscoverFilter) -> Binding<String> {
+        Binding(
+            get: { filter.selected },
+            set: { discover.selectFilter(filter, value: $0) }
+        )
+    }
+
+    private func chip(for filter: DiscoverFilter) -> some View {
+        HStack(spacing: DSSpacing.xs) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(filterLabel(filter.title))
+                    .font(DSFont.caption2)
+                    .foregroundColor(DSColor.textSecondary)
+                    .lineLimit(1)
+                Text(displayName(filter.selected))
+                    .font(DSFont.caption)
+                    .foregroundColor(DSColor.textPrimary)
+                    .lineLimit(1)
+            }
+            Image(systemName: "chevron.down")
+                .font(DSFont.caption2.weight(.semibold))
+        }
+        .foregroundColor(DSColor.textPrimary)
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.vertical, DSSpacing.xs)
+        .frame(minHeight: 44)
+        .background(DSColor.surface)
+        .clipShape(Capsule())
+    }
+
+    private func filterLabel(_ title: String) -> String {
+        switch title {
+        case "线路", "線路":
+            return localized("線路")
+        case "类型", "類型":
+            return localized("類型")
+        case "频道", "頻道":
+            return localized("頻道")
+        case "平台":
+            return localized("平台")
+        default:
+            return title
+        }
+    }
+
+    /// 线路 values are server URLs — drop the scheme so the chip stays tidy.
+    private func displayName(_ value: String) -> String {
+        guard value.hasPrefix("http") else { return value }
+        return value
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
     }
 }
 
@@ -76,17 +167,17 @@ private struct DiscoverSectionView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(section.title)
-                .font(.title3.weight(.bold))
+                .font(DSFont.headline)
                 .foregroundColor(DSColor.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: DSSpacing.sm)
             NavigationLink {
                 DiscoverCategoryView(section: section, onOpenBook: onOpenBook)
             } label: {
-                HStack(spacing: 2) {
+                HStack(spacing: DSSpacing.xs) {
                     Text(localized("查看全部"))
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DSFont.caption2.weight(.semibold))
                 }
                 .font(DSFont.subheadline)
                 .foregroundColor(DSColor.textSecondary)
@@ -200,7 +291,7 @@ private struct DiscoverFeaturedCard: View {
                 .frame(width: 104, height: 138)
                 .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
             Text(book.name)
-                .font(.system(size: 13, weight: .medium))
+                .font(DSFont.caption.weight(.medium))
                 .foregroundColor(DSColor.textPrimary)
                 .lineLimit(1)
             if !introText.isEmpty {
@@ -232,9 +323,9 @@ private struct DiscoverRankedRow: View {
                 .frame(width: 52, height: 70)
                 .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm))
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 Text(book.name)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(DSFont.subheadline.weight(.semibold))
                     .foregroundColor(DSColor.textPrimary)
                     .lineLimit(1)
                 if !book.author.isEmpty {
@@ -262,22 +353,22 @@ private struct DiscoverRankedRow: View {
 
     private var rankBadge: some View {
         Text("\(rank)")
-            .font(.system(size: 13, weight: .bold, design: .rounded))
-            .foregroundColor(rank <= 3 ? .white : DSColor.textSecondary)
+            .font(DSFont.caption.weight(.bold))
+            .foregroundColor(rank <= 3 ? DSColor.textOnAccent : DSColor.textSecondary)
             .frame(width: 22, height: 22)
             .background(
                 RoundedRectangle(cornerRadius: DSRadius.sm)
                     .fill(rankColor)
             )
-            .padding(.top, 2)
+            .padding(.top, DSSpacing.xs)
     }
 
     private var rankColor: Color {
         switch rank {
         case 1: return DSColor.destructive
         case 2: return DSColor.warning
-        case 3: return Color.orange.opacity(0.7)
-        default: return Color(.systemGray5)
+        case 3: return DSColor.warning.opacity(0.7)
+        default: return DSColor.surface
         }
     }
 }

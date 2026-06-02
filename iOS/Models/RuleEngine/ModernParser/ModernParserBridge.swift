@@ -607,6 +607,7 @@ class ModernParserBridge {
     /// Mirrors Legado's exploreKinds(): JS may produce a rule string, JSON is
     /// decoded directly, and plain text is split into title::url kinds.
     func getExploreItems(page: Int = 1) async -> [DiscoverItem] {
+        ensureCloudSettingsIfNeeded()
         let source = sourceRuleData.source
         let rawExploreUrl = source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rawExploreUrl.isEmpty else { return [] }
@@ -751,6 +752,7 @@ class ModernParserBridge {
     func fetch(
         ruleUrl: String, key: String? = nil, page: Int? = nil
     ) async throws -> (String, String) {
+        ensureCloudSettingsIfNeeded()
         let analyzeUrl = AnalyzeUrl(
             ruleUrl: ruleUrl,
             key: key,
@@ -808,6 +810,58 @@ class ModernParserBridge {
             map["book.variable.\(key)"] = value
         }
         return map.isEmpty ? nil : map
+    }
+
+    private func ensureCloudSettingsIfNeeded() {
+        guard sourceMayUseCloudSettings else { return }
+        evaluateJsLibIfNeeded()
+        guard !sourceVariableHasCloudConfig() else { return }
+
+        _ = jsEngine.evaluate(
+            """
+            cache.delete('gyksconfig');
+            if (typeof getCloudSettings === 'function') {
+                getCloudSettings(true);
+            }
+            """,
+            bindings: [
+                "baseUrl": sourceRuleData.source.bookSourceUrl,
+                "baseURL": sourceRuleData.source.bookSourceUrl
+            ]
+        )
+    }
+
+    private var sourceMayUseCloudSettings: Bool {
+        [
+            sourceRuleData.source.jsLib,
+            sourceRuleData.source.exploreUrl,
+            sourceRuleData.source.searchUrl
+        ].contains { script in
+            script.contains("云端配置")
+                || script.contains("getCloudSettings")
+                || script.contains("gyksconfig")
+        }
+    }
+
+    private func sourceVariableHasCloudConfig() -> Bool {
+        guard let json = runtimeStateStore.sourceVariableJSON(for: sourceRuleData.source.bookSourceUrl),
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let cloudConfig = object["云端配置"]
+        else { return false }
+
+        switch cloudConfig {
+        case let dict as [String: Any]:
+            return !dict.isEmpty
+        case let array as [Any]:
+            return !array.isEmpty
+        case let string as String:
+            return !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case is NSNull:
+            return false
+        default:
+            return true
+        }
     }
 
     private func setBookContext(runtimeVariables: [String: String]?) {

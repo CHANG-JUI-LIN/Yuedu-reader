@@ -98,5 +98,23 @@
    <ArchiveAction
       buildConfiguration = "Release"
       revealArchiveInOrganizer = "YES">
+      <PostActions>
+         <ExecutionAction
+            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+            <ActionContent
+               title = "Generate SwiftPM binary framework dSYMs"
+               scriptText = "sh &quot;${SRCROOT}/scripts/generate_swiftpm_binary_dsyms.sh&quot;&#10;">
+               <EnvironmentBuildable>
+                  <BuildableReference
+                     BuildableIdentifier = "primary"
+                     BlueprintIdentifier = "460D36582F51C5B8006E774C"
+                     BuildableName = "YueduReader.app"
+                     BlueprintName = "yuedu app"
+                     ReferencedContainer = "container:Yuedu-Reader.xcodeproj">
+                  </BuildableReference>
+               </EnvironmentBuildable>
+            </ActionContent>
+         </ExecutionAction>
+      </PostActions>
    </ArchiveAction>
 </Scheme>

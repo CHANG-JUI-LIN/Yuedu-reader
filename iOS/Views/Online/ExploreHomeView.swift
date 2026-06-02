@@ -27,6 +27,7 @@ struct ExploreHomeView: View {
     @State private var query = ""
     @State private var bookSearchRoute: BookSearchRoute?
     @State private var showSourceManager = false
+    @State private var showDiscoverSourcePicker = false
     @State private var showHistory = false
     @State private var showSourceSites = false
     @State private var openingBook: OnlineBook?
@@ -71,6 +72,19 @@ struct ExploreHomeView: View {
             .sheet(isPresented: $showSourceManager) {
                 NavigationStack { BookSourceListView() }
             }
+            .sheet(isPresented: $showDiscoverSourcePicker) {
+                NavigationStack {
+                    DiscoverSourcePickerView(
+                        sources: discover.exploreSources,
+                        selectedSourceId: discover.selectedSourceId,
+                        onSelect: { source in
+                            discover.selectSource(source.id)
+                            showDiscoverSourcePicker = false
+                        },
+                        onDismiss: { showDiscoverSourcePicker = false }
+                    )
+                }
+            }
             .sheet(isPresented: $showHistory) { historySheet }
             .sheet(isPresented: $showSourceSites) { sourceSitesSheet }
             .navigationDestination(item: $openingBook) { book in
@@ -114,16 +128,10 @@ struct ExploreHomeView: View {
     /// Trailing toolbar menu: switch explore source, refresh, open source settings.
     private var sourceMenu: some View {
         Menu {
-            if discover.exploreSources.count > 1 {
-                Picker(localized("切換書源"), selection: Binding(
-                    get: { discover.selectedSourceId },
-                    set: { if let id = $0 { discover.selectSource(id) } }
-                )) {
-                    ForEach(discover.exploreSources) { source in
-                        Text(source.bookSourceName).tag(Optional(source.id))
-                    }
-                }
+            Button { showDiscoverSourcePicker = true } label: {
+                Label(localized("切換發現書源"), systemImage: "books.vertical")
             }
+            .disabled(discover.exploreSources.count <= 1)
             Button { discover.reload() } label: {
                 Label(localized("換一批"), systemImage: "arrow.triangle.2.circlepath")
             }
@@ -383,6 +391,54 @@ struct ExploreHomeView: View {
         .buttonStyle(.plain)
     }
 
+}
+
+// MARK: - Discover Source Picker
+
+private struct DiscoverSourcePickerView: View {
+    let sources: [BookSource]
+    let selectedSourceId: UUID?
+    let onSelect: (BookSource) -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        List {
+            ForEach(sources) { source in
+                Button {
+                    onSelect(source)
+                } label: {
+                    HStack(spacing: DSSpacing.md) {
+                        Image(systemName: "books.vertical")
+                            .foregroundColor(DSColor.accent)
+                            .frame(width: 28)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(source.bookSourceName)
+                                .foregroundColor(DSColor.textPrimary)
+                                .lineLimit(1)
+                            Text(source.bookSourceUrl)
+                                .font(DSFont.caption)
+                                .foregroundColor(DSColor.textSecondary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: DSSpacing.sm)
+                        if source.id == selectedSourceId {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(DSColor.accent)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .navigationTitle(localized("切換發現書源"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button(localized("完成")) { onDismiss() }
+            }
+        }
+    }
 }
 
 // MARK: - History Row

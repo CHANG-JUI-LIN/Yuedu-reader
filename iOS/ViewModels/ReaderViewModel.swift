@@ -162,38 +162,41 @@ final class ReaderViewModel: ObservableObject {
         changeSourceLoading = true
         changeSourceError = nil
         changeSourceOrigins = []
-        let searchTitle = book.title
-        let key = SearchBook.makeKey(name: book.title, author: book.author)
+        let bookTitle = book.title
+        let bookAuthor = book.author
         let sources = enabledSources.filter { $0.id != currentSourceId }
         Task { [weak self] in
             guard let self else { return }
-            var byKey: [String: [OnlineBook]] = [:]
+            var origins: [BookOrigin] = []
+            var seenSources = Set<UUID>()
             for source in sources {
+                let list: [OnlineBook]
                 do {
-                    let list = try await self.bookSourceFetcher.search(query: searchTitle, in: source)
-                    for ob in list {
-                        let k = SearchBook.makeKey(name: ob.name, author: ob.author)
-                        byKey[k, default: []].append(ob)
-                    }
+                    list = try await self.bookSourceFetcher.search(query: bookTitle, in: source)
                 } catch { continue }
-            }
-            let candidates = byKey[key] ?? []
-            let origins: [BookOrigin] = candidates
-                .filter { $0.sourceId != currentSourceId }
-                .map { ob in
-                    BookOrigin(
-                        sourceId: ob.sourceId,
-                        sourceName: ob.sourceName,
-                        bookUrl: ob.bookUrl,
-                        tocUrl: ob.tocUrl,
-                        coverUrl: ob.coverUrl,
-                        intro: ob.intro,
-                        lastChapter: ob.lastChapter,
-                        wordCount: ob.wordCount,
-                        kind: ob.kind,
-                        runtimeVariables: ob.runtimeVariables
+                for ob in list where ob.sourceId != currentSourceId {
+                    guard SearchBook.isLikelySameBook(
+                        name: bookTitle, author: bookAuthor,
+                        name: ob.name, author: ob.author
+                    ) else { continue }
+                    // One origin per source (avoid duplicate source rows in the sheet).
+                    guard seenSources.insert(ob.sourceId).inserted else { continue }
+                    origins.append(
+                        BookOrigin(
+                            sourceId: ob.sourceId,
+                            sourceName: ob.sourceName,
+                            bookUrl: ob.bookUrl,
+                            tocUrl: ob.tocUrl,
+                            coverUrl: ob.coverUrl,
+                            intro: ob.intro,
+                            lastChapter: ob.lastChapter,
+                            wordCount: ob.wordCount,
+                            kind: ob.kind,
+                            runtimeVariables: ob.runtimeVariables
+                        )
                     )
                 }
+            }
             self.changeSourceOrigins = origins
             self.changeSourceLoading = false
         }
