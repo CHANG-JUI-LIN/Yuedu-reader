@@ -77,6 +77,12 @@ struct SettingsView: View {
                             title: localized("替換規則"),
                             action: { showReplaceRules = true }
                         )
+
+                        NavigationLink(destination: NetworkSettingsView()) {
+                            Label(localized("網路設定"), systemImage: "network")
+                                .foregroundColor(DSColor.textPrimary)
+                                .labelStyle(IconConsistentLabelStyle())
+                        }
                     }
 
                     // ── Reading Tools ──

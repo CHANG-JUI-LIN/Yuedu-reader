@@ -25,6 +25,8 @@ final class ReaderViewModel: ObservableObject {
     /// Books already checked for auto manga detection this session (cached-chapter path),
     /// so a genuine text book is not re-probed on every `ensureChapterReady`.
     private var mangaDetectionAttempted: Set<UUID> = []
+    /// The current 換源 (source switch) search, so a re-open cancels the previous run.
+    private var changeSourceSearchTask: Task<Void, Never>?
 
     convenience init() {
         self.init(
@@ -164,40 +166,68 @@ final class ReaderViewModel: ObservableObject {
         changeSourceOrigins = []
         let bookTitle = book.title
         let bookAuthor = book.author
-        let sources = enabledSources.filter { $0.id != currentSourceId }
-        Task { [weak self] in
+        let currentBookUrlKey = Self.normalizedURLKey(book.bookInfoURL)
+        // Search ALL enabled sources, including the current one. Aggregation sources
+        // expose several "channels" for the same book under a single sourceId, and a
+        // user may have only that one source installed — filtering by sourceId would
+        // then yield zero results. We dedup by book URL instead, so every distinct
+        // channel/source is offered (minus the exact origin already being read).
+        let sources = enabledSources
+        let concurrency = min(30, max(1, GlobalSettings.shared.searchConcurrency))
+
+        changeSourceSearchTask?.cancel()
+        changeSourceSearchTask = Task { [weak self] in
             guard let self else { return }
-            var origins: [BookOrigin] = []
-            var seenSources = Set<UUID>()
-            for source in sources {
-                let list: [OnlineBook]
-                do {
-                    list = try await self.bookSourceFetcher.search(query: bookTitle, in: source)
-                } catch { continue }
-                for ob in list where ob.sourceId != currentSourceId {
-                    guard SearchBook.isLikelySameBook(
-                        name: bookTitle, author: bookAuthor,
-                        name: ob.name, author: ob.author
-                    ) else { continue }
-                    // One origin per source (avoid duplicate source rows in the sheet).
-                    guard seenSources.insert(ob.sourceId).inserted else { continue }
-                    origins.append(
-                        BookOrigin(
-                            sourceId: ob.sourceId,
-                            sourceName: ob.sourceName,
-                            bookUrl: ob.bookUrl,
-                            tocUrl: ob.tocUrl,
-                            coverUrl: ob.coverUrl,
-                            intro: ob.intro,
-                            lastChapter: ob.lastChapter,
-                            wordCount: ob.wordCount,
-                            kind: ob.kind,
-                            runtimeVariables: ob.runtimeVariables
+            let semaphore = AsyncSemaphore(limit: concurrency)
+            var seenBookUrls = Set<String>()
+
+            // Fan out: one bounded, timed task per source. Results are consumed on the
+            // MainActor as they stream in, so dedup state stays single-threaded and the
+            // list fills progressively.
+            await withTaskGroup(of: [OnlineBook]?.self) { group in
+                for source in sources {
+                    group.addTask {
+                        await semaphore.acquire()
+                        defer { Task { await semaphore.release() } }
+                        return await Self.searchSourceWithTimeout(query: bookTitle, source: source)
+                    }
+                }
+
+                for await list in group {
+                    if Task.isCancelled { break }
+                    guard let list else { continue }
+                    for ob in list {
+                        let matched = SearchBook.isLikelySameBook(
+                            name: bookTitle, author: bookAuthor,
+                            name: ob.name, author: ob.author
                         )
-                    )
+                        guard matched else { continue }
+                        // Dedup by book URL so aggregation channels survive; skip the exact
+                        // origin already in use and any duplicate URLs across sources.
+                        let urlKey = Self.normalizedURLKey(ob.bookUrl)
+                        if !urlKey.isEmpty {
+                            if urlKey == currentBookUrlKey { continue }
+                            guard seenBookUrls.insert(urlKey).inserted else { continue }
+                        }
+                        self.changeSourceOrigins.append(
+                            BookOrigin(
+                                sourceId: ob.sourceId,
+                                sourceName: ob.sourceName,
+                                bookUrl: ob.bookUrl,
+                                tocUrl: ob.tocUrl,
+                                coverUrl: ob.coverUrl,
+                                intro: ob.intro,
+                                lastChapter: ob.lastChapter,
+                                wordCount: ob.wordCount,
+                                kind: ob.kind,
+                                runtimeVariables: ob.runtimeVariables
+                            )
+                        )
+                    }
                 }
             }
-            self.changeSourceOrigins = origins
+
+            if Task.isCancelled { return }
             self.changeSourceLoading = false
         }
     }
@@ -205,6 +235,37 @@ final class ReaderViewModel: ObservableObject {
     /// Reports an error from a source change operation.
     func reportChangeSourceError(_ message: String?) {
         changeSourceError = message
+    }
+
+    /// Normalized book-URL key for deduping origins (drops fragment, lowercased).
+    private static func normalizedURLKey(_ raw: String?) -> String {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return "" }
+        if var components = URLComponents(string: trimmed) {
+            components.fragment = nil
+            return (components.string ?? trimmed).lowercased()
+        }
+        return trimmed.lowercased()
+    }
+
+    /// Searches one source with a timeout, off the main actor. Returns nil on error
+    /// or timeout so a slow/hung source can't stall the whole 換源 search.
+    /// `nonisolated` so concurrent tasks don't serialize back onto the MainActor.
+    nonisolated private static func searchSourceWithTimeout(
+        query: String, source: BookSource, seconds: UInt64 = 20
+    ) async -> [OnlineBook]? {
+        await withTaskGroup(of: [OnlineBook]?.self) { group in
+            group.addTask {
+                try? await BookSourceFetcher.shared.search(query: query, in: source)
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
     }
 
     // MARK: - Private

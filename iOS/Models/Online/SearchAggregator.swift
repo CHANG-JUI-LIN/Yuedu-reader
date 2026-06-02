@@ -56,13 +56,16 @@ class SearchBook: Identifiable, ObservableObject {
 
     /// Heuristic "same book" test used for 換源 (source switching).
     ///
-    /// Names must match — equal after normalization, or one strongly contains the
-    /// other (subtitle / volume-suffix variations across sources). Authors are a
-    /// *soft* filter: they only exclude a candidate when BOTH sides report a
-    /// non-empty author AND those authors are incompatible. This keeps alternative
-    /// sources discoverable even when a source omits the author (very common) or
-    /// formats the title slightly differently — the previous exact `(name, author)`
-    /// key match returned an empty list in those cases.
+    /// The title must be an **exact** match after normalization. Containment is
+    /// deliberately *not* allowed for the title: a substring rule matches sequels
+    /// and spin-offs (e.g. "斗罗大陆" vs "斗罗大陆3" / "斗罗大陆之笔"), which would
+    /// offer the wrong book as an alternative source.
+    ///
+    /// The author is a *soft* filter: it only excludes a candidate when BOTH sides
+    /// report a non-empty author AND those authors are incompatible (equal, or one
+    /// contains the other — e.g. "唐家三少" vs "唐家三少著"). This keeps alternative
+    /// sources discoverable even when a source omits the author (very common),
+    /// which is why the previous exact `(name, author)` key match returned empty.
     static func isLikelySameBook(
         name lhsName: String, author lhsAuthor: String,
         name rhsName: String, author rhsAuthor: String
@@ -70,7 +73,7 @@ class SearchBook: Identifiable, ObservableObject {
         let n1 = normalize(lhsName)
         let n2 = normalize(rhsName)
         guard !n1.isEmpty, !n2.isEmpty else { return false }
-        guard fieldsCompatible(n1, n2) else { return false }
+        guard n1 == n2 else { return false }
 
         let a1 = normalize(lhsAuthor)
         let a2 = normalize(rhsAuthor)
@@ -211,7 +214,7 @@ actor AsyncSemaphore {
 // MARK: - Search Aggregation Engine
 //
 // Core design:
-// 1. TaskGroup + AsyncSemaphore manages concurrency with maxConcurrency=30
+// 1. TaskGroup + AsyncSemaphore manages concurrency (user-configurable via GlobalSettings.searchConcurrency)
 // 2. Each book source independently bound to a 15s timeout; timed-out tasks are cancelled to free resources
 // 3. As soon as any single source returns results, immediately mergeItems + re-sort + refresh UI
 // 4. Uses @Published with SwiftUI to automatically trigger view updates (streaming mechanism)
@@ -235,8 +238,12 @@ class SearchAggregator: ObservableObject {
         }
     }
 
-    /// Concurrency limit (max simultaneous requests) — lower reduces timeouts/failures
-    private let maxConcurrency = 12
+    /// Concurrency limit (max simultaneous requests) — lower reduces timeouts/failures.
+    /// User-configurable via `GlobalSettings.searchConcurrency` (網路設定 → 並發數);
+    /// resolved per search so changes take effect on the next search.
+    private var maxConcurrency: Int {
+        min(30, max(1, GlobalSettings.shared.searchConcurrency))
+    }
 
     /// Timeout seconds per book source — increasing reduces timeout failures
     private let perSourceTimeout: UInt64 = 25

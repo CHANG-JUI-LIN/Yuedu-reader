@@ -70,7 +70,10 @@ struct ExploreHomeView: View {
                     .environmentObject(store)
             }
             .sheet(isPresented: $showSourceManager) {
-                NavigationStack { BookSourceListView() }
+                // BookSourceListView already provides its own NavigationView; wrapping
+                // it in another NavigationStack stacks two nav bars (duplicate title on
+                // iOS 18). Present it directly, matching SettingsView.
+                BookSourceListView()
             }
             .sheet(isPresented: $showDiscoverSourcePicker) {
                 NavigationStack {

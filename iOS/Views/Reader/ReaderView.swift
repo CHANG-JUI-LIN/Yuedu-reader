@@ -1745,8 +1745,18 @@ struct ReaderView: View {
                                 }
                             } label: {
                                 HStack {
-                                    Text(origin.sourceName)
-                                        .foregroundColor(.primary)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(origin.sourceName)
+                                            .foregroundColor(.primary)
+                                        // Aggregation sources share one sourceName across
+                                        // channels; lastChapter distinguishes them.
+                                        if !origin.lastChapter.isEmpty {
+                                            Text(origin.lastChapter)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
                                     Spacer()
                                     Image(systemName: "chevron.right")
                                         .font(.caption)

@@ -33,11 +33,26 @@ struct ChangeSourceMatchTests {
             name: "star sea", author: "alice"))
     }
 
-    @Test("title subtitle/volume suffix variations match")
-    func titleContainmentMatches() {
+    @Test("author containment (e.g. 作者 + 著) still matches")
+    func authorContainmentMatches() {
         #expect(SearchBook.isLikelySameBook(
+            name: "斗罗大陆", author: "唐家三少",
+            name: "斗罗大陆", author: "唐家三少著"))
+    }
+
+    @Test("title must match exactly — suffix/sequel variations are rejected")
+    func titleMustMatchExactly() {
+        // A status suffix is treated as a different title (avoids false merges).
+        #expect(!SearchBook.isLikelySameBook(
             name: "星辰之海", author: "旅人",
             name: "星辰之海（完結）", author: "旅人"))
+        // Sequels by the same author must NOT be offered as an alternative source.
+        #expect(!SearchBook.isLikelySameBook(
+            name: "斗罗大陆", author: "唐家三少",
+            name: "斗罗大陆3", author: "唐家三少"))
+        #expect(!SearchBook.isLikelySameBook(
+            name: "斗罗大陆", author: "唐家三少",
+            name: "斗罗大陆之笔", author: "修罗界"))
     }
 
     @Test("different authors on both sides are rejected")
