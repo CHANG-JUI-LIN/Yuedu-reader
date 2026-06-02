@@ -103,11 +103,13 @@ struct ReaderPresentationContractTests {
         store.move(to: ReaderLocation(spineIndex: 3, charOffset: 42))
         store.switchPagingStyle(.curl)
         store.updateDirection(.rtl)
+        store.updateSpreadMode(.doublePage)
         store.updateViewport(CGSize(width: 390, height: 844))
 
         #expect(store.state.location == ReaderLocation(spineIndex: 3, charOffset: 42))
         #expect(store.state.pagingStyle == .curl)
         #expect(store.state.direction == .rtl)
+        #expect(store.state.spreadMode == .doublePage)
         #expect(store.state.viewportSize == CGSize(width: 390, height: 844))
     }
 
@@ -242,6 +244,9 @@ struct ReaderPresentationContractTests {
         let store = InMemoryReadingPositionStore()
         let coordinator = makeSessionCoordinator(bookId: "coordinator-location", positionStore: store)
         let position = CoreTextReadingPosition(spineIndex: 2, charOffset: 64)
+
+        #expect(coordinator.send(.updateSpreadMode(.doublePage)).isEmpty)
+        #expect(coordinator.state.spreadMode == .doublePage)
 
         let effects = coordinator.send(.jumpToPosition(
             position: position,

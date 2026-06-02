@@ -146,6 +146,16 @@
 			path = Widget;
 			sourceTree = "<group>";
 		};
+		A10000000000000000000001 /* Targets/Yuedu */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Targets/Yuedu;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000002 /* Modules */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Modules;
+			sourceTree = "<group>";
+		};
 		A1BCCA3D5B9C4DD1AFB56B678141488F /* ShareExtension */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -240,6 +250,8 @@
 			isa = PBXGroup;
 			children = (
 				E661223F57364063B509666C /* GoogleService-Info.plist */,
+				A10000000000000000000001 /* Targets/Yuedu */,
+				A10000000000000000000002 /* Modules */,
 				460D365B2F51C5B8006E774C /* iOS */,
 				460D36692F51C5B9006E774C /* Tests/iOS */,
 				460D36732F51C5B9006E774C /* Tests/iOS-UI */,
@@ -310,6 +322,8 @@
 			);
 			fileSystemSynchronizedGroups = (
 				460D365B2F51C5B8006E774C /* iOS */,
+				A10000000000000000000001 /* Targets/Yuedu */,
+				A10000000000000000000002 /* Modules */,
 			);
 			name = "yuedu app";
 			packageProductDependencies = (
@@ -764,7 +778,8 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UIStatusBarStyle = "";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -810,7 +825,8 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UIStatusBarStyle = "";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

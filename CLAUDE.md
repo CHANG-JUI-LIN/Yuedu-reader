@@ -34,6 +34,20 @@ Use `-quiet` to suppress build output. Tests are in `Tests/iOS/yuedu appTests/`.
 | `Yuedu-Reader Widget` | Home screen widget |
 | `yuedu app ShareExtension` | Share sheet extension |
 
+## Source Layout
+
+Swift sources live under `Modules/` and `Targets/` (Xcode 16 file-system-synchronized groups — drop a file into the folder and it joins the target, no `.pbxproj` edit). Everything compiles into the `yuedu app` target.
+
+| Folder | Contents |
+|--------|----------|
+| `Modules/Core/` | Domain logic: `ReaderCore` (CoreText engine/paginator), `EPUB`/`TXT`/`Markdown`/`Comic` parsing, `BookSource`, `RuleEngine`, `Replace`, `TTS` |
+| `Modules/Services/` | `Network`, `RSS`, `OPDS`, `Online`, `LibraryStore`, `iCloud`/`WebDAV`/`Account`, `LanServer`, `Stats`, `Migration` |
+| `Modules/Features/` | SwiftUI screens: `Bookshelf`, `Reader` (+`iPad`/`Manga`/`TTS`), `BookDetail`, `Explore`, `WebBrowser`, `Search`, `RSS`, `Settings`, `BookSource`, `Stats` |
+| `Modules/SharedUI/` | `DesignSystem` (`DesignTokens.swift`), `Adaptive`, `Components`, `Extensions` |
+| `Targets/Yuedu/SharedApp/` | App entry (`yuedu_appApp.swift`, `ContentView.swift`), DI, `GlobalSettings`, app config |
+| `Targets/Yuedu/iPad/` | iPad-specific shell (e.g. `IPadAdaptiveRootTabStyle.swift`) |
+| `iOS/` | Resources only: `Assets.xcassets`, `*.lproj`, bridging header, entitlements |
+
 ## Key Architecture
 
 ### Reader Pipeline

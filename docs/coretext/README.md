@@ -8,7 +8,7 @@ vertical writing, links, selection, images, or annotation rendering.
 
 | Area | Files |
 | --- | --- |
-| Pagination and page ranges | `iOS/Models/Reader/CoreText/CoreTextPaginator.swift`, `PaginationManager.swift` |
+| Pagination and page ranges | `Modules/Core/ReaderCore/CoreText/CoreTextPaginator.swift`, `PaginationManager.swift` |
 | Page rendering and interaction | `CoreTextPageView.swift`, `InteractionOverlayView.swift` |
 | EPUB HTML/CSS to attributed text | `HTMLAttributedStringBuilder.swift`, `HTMLBuilderPipelines.swift`, `EPUBAttributedStringBuilder.swift` |
 | Renderable node pipeline | `HTMLStyledASTRenderableNodeConverter.swift`, `RenderableNode.swift`, `NodeAttributedStringRenderer.swift` |

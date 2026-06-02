@@ -48,7 +48,7 @@ When changing either copy, apply the same content change to the other copy befor
 | Need | Read first |
 | --- | --- |
 | App launch and environment injection | `yuedu_appApp.swift` |
-| Main tabs | `ContentView.swift` |
+| Main tabs | `Targets/Yuedu/SharedApp/ContentView.swift` |
 | Bookshelf | `Views/Bookshelf/HomeView.swift` |
 | Book model and store | `Models/Book/Models.swift` (`ReadingBook`, `Bookmark`), `Models/Book/BookStore.swift` (`BookStore`) |
 | Reader screen | `Views/Reader/ReaderView.swift`, `ReaderViewFactory.swift` |
@@ -64,7 +64,7 @@ When changing either copy, apply the same content change to the other copy befor
 | Settings | `Models/App/GlobalSettings.swift` (`GlobalSettings.shared`) |
 | Account row and sign-in | `Views/Settings/ProfileView.swift`, `Views/Login/UserDetailView.swift`, `Views/Login/LoginView.swift` |
 | RSS list and feed parsing | `Views/RSS/RSSListView.swift`, `Views/RSS/RSSFeedView.swift`, `Models/RSS/RSSFetcher.swift` |
-| Design tokens | `Models/App/DesignTokens.swift` (`DSColor`, `DSFont`, `DSSpacing`) |
+| Design tokens | `Modules/SharedUI/DesignSystem/DesignTokens.swift` (`DSColor`, `DSFont`, `DSSpacing`, `DSLayout`) |
 
 ## Search Patterns
 

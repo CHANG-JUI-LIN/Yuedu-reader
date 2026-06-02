@@ -70,7 +70,7 @@ SomeContent()
 
 ---
 
-## 3. 設計系統 Token（綁定 `iOS/Models/App/DesignTokens.swift`）
+## 3. 設計系統 Token（綁定 `Modules/SharedUI/DesignSystem/DesignTokens.swift`）
 
 **禁止寫死顏色 / 字體 / 間距 / 圓角 / 動畫時間。** 一律引用 token；缺的 token 先補進 `DesignTokens.swift` 再用。
 
@@ -99,6 +99,19 @@ SomeContent()
 
 ### 動畫 `DSAnimation`
 `fast=0.15（即時回饋） / standard=0.28（轉場） / slow=0.4（展開）`。不要硬寫 duration。
+
+---
+
+## 3.1 iPad / 自適應佈局
+
+iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共享資料模型與 reader engine 在 `Modules/Core` / `Modules/Services`，feature UI 與設定在 `Modules/Features`，design token 在 `Modules/SharedUI/DesignSystem`；iPad 專屬 shell 放 `Targets/Yuedu/iPad/`、iPad reader UI 放 `Modules/Features/Reader/iPad/` 等明確目錄，避免散落機型判斷。
+
+- 佈局用 size class、scene/window size 與 readable width 驅動；不要散落 `UIDevice.model` 或機型字串判斷。
+- iPhone 維持 compact/portrait 的底部 Tab Bar；iPad regular 使用系統 `TabView.sidebarAdaptable` 或 `NavigationSplitView` 等 HIG 原生容器，不自刻側欄。
+- iPad 橫豎向與視窗 resize 都要能重排；需要 reader 重分頁時，以 SwiftUI 已量到的 viewport size 作為唯一觸發來源。
+- 寬螢幕設定頁、sheet、清單與 reader overlay 使用 `DSLayout.readable*Width` token 限制行長；不要直接寫 640/760/960 等 magic number。
+- 閱讀器橫向雙頁是 reader 專屬模式：iPad regular + landscape 才自動啟用；切回直向或 iPhone 時回單頁，閱讀位置以 `(spineIndex, charOffset)` 保持。
+- iPad 專屬檔案可以包裝共享 view，但不得複製業務邏輯；狀態、同步、書源、閱讀進度仍由共享 model / coordinator 負責。
 
 ---
 
@@ -244,5 +257,5 @@ SomeContent()
 - HIG Accessibility — https://developer.apple.com/design/human-interface-guidelines/accessibility
 - Nielsen 10 Usability Heuristics — https://www.nngroup.com/articles/ten-usability-heuristics/
 - Mobbin（真實 App 模式參考） — https://mobbin.com/
-- 本專案設計 token：`iOS/Models/App/DesignTokens.swift`
+- 本專案設計 token：`Modules/SharedUI/DesignSystem/DesignTokens.swift`
 - 在地化規則：見 `yuedu-tour` skill 的 Localization 章節
