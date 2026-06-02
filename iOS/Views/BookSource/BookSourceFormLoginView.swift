@@ -472,11 +472,10 @@ struct LoginUIField: Identifiable {
     enum FieldType: String { case text, password, button }
 
     static func parse(from json: String) -> [LoginUIField] {
-        let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let data = trimmed.data(using: .utf8),
-              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
-        else { return [] }
+        // Legado's loginUi is frequently authored as a JS object literal
+        // (single-quoted keys, trailing commas) that strict JSON rejects;
+        // LoginManager.lenientJSONArray normalizes those before decoding.
+        guard let array = LoginManager.lenientJSONArray(json) else { return [] }
 
         return array.compactMap { dict in
             guard let name = dict["name"] as? String, !name.isEmpty else { return nil }

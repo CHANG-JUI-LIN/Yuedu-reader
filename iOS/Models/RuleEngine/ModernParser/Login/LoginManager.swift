@@ -3,6 +3,7 @@
 // persistence, and login-check evaluation.
 
 import Foundation
+import JavaScriptCore
 
 // MARK: - Login State
 
@@ -348,13 +349,7 @@ final class LoginManager {
     ///
     /// Legado format. Example: `[{"name":"用户名(username)","type":"text"},{"name":"密码(password)","type":"password"}]`
     func parseLoginUi(_ loginUiJson: String) -> [LoginField] {
-        let trimmed = loginUiJson.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let data = trimmed.data(using: .utf8) else { return [] }
-
-        guard let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return []
-        }
+        guard let array = LoginManager.lenientJSONArray(loginUiJson) else { return [] }
 
         return array.compactMap { dict in
             guard let name = dict["name"] as? String, !name.isEmpty else { return nil }
@@ -363,6 +358,47 @@ final class LoginManager {
             let action = dict["action"] as? String
             return LoginField(name: name, type: type, action: action)
         }
+    }
+
+    /// Parse a possibly-lenient JSON array of objects.
+    ///
+    /// Legado's `loginUi` (and some other fields) are authored as JavaScript
+    /// object literals rather than strict JSON — single-quoted keys/values and
+    /// trailing commas are common (e.g. the 大灰狼/光遇 aggregation sources).
+    /// Strict `JSONSerialization` rejects those, so we first try strict JSON and,
+    /// on failure, normalize the literal through JavaScriptCore (mirroring the
+    /// lenient GSON parsing Legado uses on Android).
+    static func lenientJSONArray(_ raw: String) -> [[String: Any]]? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let data = trimmed.data(using: .utf8),
+           let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            return array
+        }
+
+        guard let normalized = normalizeJSLiteral(trimmed),
+              let data = normalized.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return nil
+        }
+        return array
+    }
+
+    /// Evaluate a JS array/object literal and re-emit it as canonical JSON.
+    private static func normalizeJSLiteral(_ literal: String) -> String? {
+        let context = JSContext()
+        context?.exceptionHandler = { _, _ in }
+        context?.setObject(literal, forKeyedSubscript: "__legadoLiteral" as NSString)
+        // Wrap in parens so a leading `[`/`{` parses as an expression, and stringify.
+        let script = "(function(){try{return JSON.stringify(eval('('+__legadoLiteral+')'));}catch(e){return '';}})()"
+        guard let value = context?.evaluateScript(script),
+              value.isString,
+              let result = value.toString(),
+              !result.isEmpty, result != "undefined", result != "null" else {
+            return nil
+        }
+        return result
     }
 
     // MARK: - Login Header Management (mirrors Legado BaseSource)

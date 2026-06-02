@@ -72,11 +72,6 @@ struct SettingsView: View {
                             action: { showDownloadManager = true }
                         )
 
-                        DSSettingsRow(
-                            icon: "text.magnifyingglass",
-                            title: localized("替換規則"),
-                            action: { showReplaceRules = true }
-                        )
 
                         NavigationLink(destination: NetworkSettingsView()) {
                             Label(localized("網路設定"), systemImage: "network")
@@ -92,6 +87,13 @@ struct SettingsView: View {
                             title: localized("語音朗讀設定"),
                             action: { showTTSSettings = true }
                         )
+                        
+                        DSSettingsRow(
+                            icon: "text.magnifyingglass",
+                            title: localized("替換規則"),
+                            action: { showReplaceRules = true }
+                        )
+
                     }
 
                     // ── Data Management ──
