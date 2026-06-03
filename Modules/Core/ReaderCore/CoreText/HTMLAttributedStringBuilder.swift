@@ -963,13 +963,6 @@ final class HTMLAttributedStringBuilder {
         // spacing only without the hrDivider attribute.
         let hasVisibleBorder = style.borderTopWidth > 0 || style.borderBottomWidth > 0
         let suppress = style.borderExplicitlyNone && !hasVisibleBorder && style.backgroundFillColor == nil
-        print(String(format: "[HRDivider] explicitNone=%@ borderTopW=%.2f borderBottomW=%.2f bg=%@ height=%@ width=%@ → %@",
-                     style.borderExplicitlyNone ? "Y" : "N",
-                     style.borderTopWidth, style.borderBottomWidth,
-                     style.backgroundFillColor != nil ? "Y" : "N",
-                     style.height.map { String(format: "%.1f", $0) } ?? "nil",
-                     style.width.map { String(format: "%.1f", $0) } ?? "nil",
-                     suppress ? "SUPPRESSED (invisible)" : "draw rule"))
         if suppress {
             return NSAttributedString(
                 string: "\n",
@@ -1697,24 +1690,9 @@ final class HTMLAttributedStringBuilder {
         return attributes
     }
 
-    /// Diagnostic gate: only trace font resolution for CJK-looking family lists, rate-limited.
-    private var fontTraceCount = 0
-    private func shouldTraceFont(_ families: [String]) -> Bool {
-        guard fontTraceCount < 40 else { return false }
-        let joined = families.joined().lowercased()
-        let looksCJK = ["楷", "黑", "宋", "仿", "kaiti", "kt", "dk-", "heiti", "songti", "fangsong", "xihei", "pingfang"]
-            .contains { joined.contains($0) }
-        guard looksCJK else { return false }
-        fontTraceCount += 1
-        return true
-    }
-
     private func makeFont(from style: ResolvedStyle, config: Config) -> UIFont {
         let weight = uiFontWeight(from: style.fontWeight)
-        let trace = shouldTraceFont(style.fontFamilies)
-        if trace { print("[FontTrace b3] families=\(style.fontFamilies) weight=\(style.fontWeight) italic=\(style.isItalic)") }
         if let resolvedFont = resolvedFont?(style.fontFamilies, style.fontWeight, style.isItalic, style.fontSize) {
-            if trace { print("[FontTrace b3]   → @font-face match: \(resolvedFont.fontName)") }
             return resolvedFont
         }
         for rawFamily in style.fontFamilies {
@@ -1723,23 +1701,18 @@ final class HTMLAttributedStringBuilder {
             let normalized = normalizeFontName(trimmed)
             let candidate = resolvedFontFamily?(normalized) ?? trimmed
             if let font = exactFont(named: candidate, size: style.fontSize, weight: style.fontWeight, italic: style.isItalic) {
-                if trace { print("[FontTrace b3]   → exact '\(candidate)' = \(font.fontName)") }
                 return wrapCJKFont(font, size: style.fontSize)
             }
             if let font = familyFont(named: candidate, size: style.fontSize, weight: style.fontWeight, italic: style.isItalic) {
-                if trace { print("[FontTrace b3]   → family '\(candidate)' = \(font.fontName)") }
                 return wrapCJKFont(font, size: style.fontSize)
             }
             // EPUBs commonly name CJK fonts only by generic/vendor names (楷体, 黑体, DK-KAITI,
             // @font-face src: local("KaiTi")) with no embedded file. None of those match an iOS
             // font, so map them onto an installed system CJK family before falling back to Latin.
             if let font = cjkSystemFont(forNormalizedName: normalized, size: style.fontSize, weight: style.fontWeight, italic: style.isItalic) {
-                if trace { print("[FontTrace b3]   → cjkAlias '\(normalized)' = \(font.fontName) (family \(font.familyName))") }
                 return wrapCJKFont(font, size: style.fontSize)
             }
-            if trace { print("[FontTrace b3]   ✗ '\(candidate)' (norm '\(normalized)') no match") }
         }
-        if trace { print("[FontTrace b3]   → SYSTEM fallback (no family matched)") }
 
         let system = UIFont.systemFont(ofSize: style.fontSize, weight: weight)
         if style.isItalic {

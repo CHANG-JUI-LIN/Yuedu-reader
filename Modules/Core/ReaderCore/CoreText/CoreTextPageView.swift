@@ -220,8 +220,6 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         )
     }
 
-    nonisolated(unsafe) static var renderPageTraceCount = 0
-
     nonisolated static func renderPage(
         layout: CoreTextPaginator.ChapterLayout,
         pageIndex: Int,
@@ -229,12 +227,6 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         bounds: CGRect
     ) {
         guard pageIndex < layout.pageRanges.count else { return }
-
-        if renderPageTraceCount < 25 {
-            renderPageTraceCount += 1
-            let kind = layout.pageKinds.indices.contains(pageIndex) ? "\(layout.pageKinds[pageIndex])" : "?"
-            print("[RenderPage] idx=\(pageIndex) kind=\(kind) vertical=\(layout.writingMode.isVertical) strLen=\(layout.attributedString.length)")
-        }
 
         let layoutSize = CGSize(
             width: max(1, layout.renderSize.width),
