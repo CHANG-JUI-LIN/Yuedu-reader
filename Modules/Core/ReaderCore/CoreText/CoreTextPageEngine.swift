@@ -189,6 +189,19 @@ final class CoreTextPageEngine: PageRenderingProvider {
                 self?.cancelPreloadTasks()
             }
         }
+
+        // A requested CJK font (楷体/宋体/…) finished downloading — re-paginate loaded chapters so
+        // the real typeface replaces the PingFang fallback rendered on the first pass.
+        NotificationCenter.default.addObserver(
+            forName: CJKFontInstaller.didInstallNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.renderSize != .zero, !self.isRelaying else { return }
+                Task { await self.invalidateLayout(newSize: self.renderSize) }
+            }
+        }
     }
 
     private func startupElapsedMs() -> String {

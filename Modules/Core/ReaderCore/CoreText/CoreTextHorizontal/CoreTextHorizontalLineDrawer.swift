@@ -30,6 +30,15 @@ enum CoreTextHorizontalLineDrawer {
         let nsString = attrStr.string as NSString
         let stringLength = attrStr.length
 
+        if hrTraceCount < 25 {
+            hrTraceCount += 1
+            var hrAttrSpans = 0
+            attrStr.enumerateAttribute(hrDividerKey, in: NSRange(location: 0, length: stringLength)) { v, _, _ in
+                if v != nil { hrAttrSpans += 1 }
+            }
+            print("[HRTrace] drawLines lines=\(lines.count) strLen=\(stringLength) hrAttrSpans=\(hrAttrSpans) suppressed=\(suppressedRanges.count)")
+        }
+
         // Phase 5A: distribute bottom space across paragraph gaps on non-last pages
         var extraSpacePerGap: CGFloat = 0
         var paragraphGapAfterLine: Set<Int> = []
@@ -80,9 +89,10 @@ enum CoreTextHorizontalLineDrawer {
                 }
             }
 
-            // Phase 4: HR divider line
-            if lineRange.location < stringLength,
-               let hrValue = attrStr.attribute(hrDividerKey, at: lineRange.location, effectiveRange: nil) {
+            // Phase 4: HR divider line. The hrDividerAttribute lives on the divider's "\n", which
+            // CoreText often folds into a line range alongside an adjacent paragraph break — so it
+            // is NOT necessarily at lineRange.location. Scan the whole line range for it.
+            if let hrValue = hrDividerValue(in: attrStr, lineStart: lineStart, lineLength: lineRange.length, stringLength: stringLength, key: hrDividerKey) {
                 if drawHR(hrValue, origin: origin, contentWidth: contentWidth, contentMinX: contentMinX, in: ctx) {
                     continue
                 }
@@ -121,9 +131,39 @@ enum CoreTextHorizontalLineDrawer {
                 nsString: nsString
             )
 
+            debugTraceLine(
+                text: nsString.substring(with: NSRange(location: lineStart, length: max(0, lineRange.length))),
+                isJustified: isJustified,
+                availableWidth: availableWidth,
+                natural: line,
+                drawn: lineToDraw
+            )
+
             ctx.textPosition = origin
             CTLineDraw(lineToDraw, ctx)
         }
+    }
+
+    /// Finds the HR divider attribute anywhere within a line's character range (not just at its
+    /// start), returning the first value found. CoreText may place the divider's "\n" at the end
+    /// of a line range rather than its location, so a start-only lookup misses it.
+    private static func hrDividerValue(
+        in attrStr: NSAttributedString,
+        lineStart: Int,
+        lineLength: Int,
+        stringLength: Int,
+        key: NSAttributedString.Key
+    ) -> Any? {
+        guard lineStart >= 0, lineStart < stringLength else { return nil }
+        let length = min(max(1, lineLength), stringLength - lineStart)
+        var result: Any?
+        attrStr.enumerateAttribute(key, in: NSRange(location: lineStart, length: length), options: []) { value, _, stop in
+            if let value {
+                result = value
+                stop.pointee = true
+            }
+        }
+        return result
     }
 
     // MARK: - HR divider
@@ -155,14 +195,60 @@ enum CoreTextHorizontalLineDrawer {
             startX = contentMinX + leftMargin
         }
 
+        let strokeColor = (hr.color ?? .separator)
+        let lineWidth = hr.lineWidth ?? 0.5
+        if hrDrawTraceCount < 8 {
+            hrDrawTraceCount += 1
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            strokeColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+            print(String(format: "[HRDraw] startX=%.1f y=%.1f ruleW=%.1f lineW=%.2f color=rgba(%.2f,%.2f,%.2f,%.2f) contentMinX=%.1f contentW=%.1f leftM=%.1f",
+                         startX, origin.y, ruleWidth, lineWidth, r, g, b, a, contentMinX, contentWidth, leftMargin))
+        }
         ctx.saveGState()
-        ctx.setStrokeColor((hr.color ?? .separator).cgColor)
-        ctx.setLineWidth(hr.lineWidth ?? 0.5)
+        ctx.setStrokeColor(strokeColor.cgColor)
+        ctx.setLineWidth(lineWidth)
         ctx.move(to: CGPoint(x: startX, y: origin.y))
         ctx.addLine(to: CGPoint(x: startX + ruleWidth, y: origin.y))
         ctx.strokePath()
         ctx.restoreGState()
         return true
+    }
+
+    nonisolated(unsafe) private static var hrDrawTraceCount = 0
+    nonisolated(unsafe) private static var hrTraceCount = 0
+
+    // MARK: - Debug: trace digit↔CJK line spacing at draw time
+
+    nonisolated(unsafe) private static var spaceTraceLineCount = 0
+
+    /// For lines containing a digit adjacent to a Han character, logs whether the line is
+    /// justified and how the drawn width compares to the natural width. If drawn > natural,
+    /// the gaps come from justification (draw-time); if they're equal and the line still
+    /// shows gaps, they live in the glyph advances / kern instead. Rate-limited.
+    private static func debugTraceLine(
+        text: String,
+        isJustified: Bool,
+        availableWidth: CGFloat,
+        natural: CTLine,
+        drawn: CTLine
+    ) {
+        guard spaceTraceLineCount < 8 else { return }
+        let scalars = Array(text.unicodeScalars)
+        var hasBoundary = false
+        for i in 0 ..< max(0, scalars.count - 1) {
+            let a = scalars[i].value, b = scalars[i + 1].value
+            let aDigit = (0x30...0x39).contains(Int(a)), bDigit = (0x30...0x39).contains(Int(b))
+            let aHan = (0x4E00...0x9FFF).contains(Int(a)), bHan = (0x4E00...0x9FFF).contains(Int(b))
+            if (aDigit && bHan) || (aHan && bDigit) { hasBoundary = true; break }
+        }
+        guard hasBoundary else { return }
+        spaceTraceLineCount += 1
+        let natW = CTLineGetTypographicBounds(natural, nil, nil, nil)
+        let drawW = CTLineGetTypographicBounds(drawn, nil, nil, nil)
+        let preview = text.count > 32 ? String(text.prefix(32)) + "…" : text
+        print(String(format: "[SpaceTrace][line] \"%@\" justified=%@ avail=%.0f naturalW=%.1f drawnW=%.1f stretched=%@",
+                     preview, isJustified ? "Y" : "N", availableWidth, natW, drawW,
+                     (drawW - natW > 0.5) ? "YES" : "no"))
     }
 
     // MARK: - CJK justification

@@ -962,8 +962,15 @@ final class HTMLAttributedStringBuilder {
         // CSS `color`/`height` on such an element are not a substitute for a border, so emit
         // spacing only without the hrDivider attribute.
         let hasVisibleBorder = style.borderTopWidth > 0 || style.borderBottomWidth > 0
-        if style.borderExplicitlyNone, !hasVisibleBorder, style.backgroundFillColor == nil {
-            print("[HRDivider] suppressed borderless <hr> (border:none, no bg) — rendering as invisible separator; height=\(style.height.map { String(format: "%.1f", $0) } ?? "nil")")
+        let suppress = style.borderExplicitlyNone && !hasVisibleBorder && style.backgroundFillColor == nil
+        print(String(format: "[HRDivider] explicitNone=%@ borderTopW=%.2f borderBottomW=%.2f bg=%@ height=%@ width=%@ → %@",
+                     style.borderExplicitlyNone ? "Y" : "N",
+                     style.borderTopWidth, style.borderBottomWidth,
+                     style.backgroundFillColor != nil ? "Y" : "N",
+                     style.height.map { String(format: "%.1f", $0) } ?? "nil",
+                     style.width.map { String(format: "%.1f", $0) } ?? "nil",
+                     suppress ? "SUPPRESSED (invisible)" : "draw rule"))
+        if suppress {
             return NSAttributedString(
                 string: "\n",
                 attributes: [
@@ -1690,26 +1697,49 @@ final class HTMLAttributedStringBuilder {
         return attributes
     }
 
+    /// Diagnostic gate: only trace font resolution for CJK-looking family lists, rate-limited.
+    private var fontTraceCount = 0
+    private func shouldTraceFont(_ families: [String]) -> Bool {
+        guard fontTraceCount < 40 else { return false }
+        let joined = families.joined().lowercased()
+        let looksCJK = ["楷", "黑", "宋", "仿", "kaiti", "kt", "dk-", "heiti", "songti", "fangsong", "xihei", "pingfang"]
+            .contains { joined.contains($0) }
+        guard looksCJK else { return false }
+        fontTraceCount += 1
+        return true
+    }
+
     private func makeFont(from style: ResolvedStyle, config: Config) -> UIFont {
         let weight = uiFontWeight(from: style.fontWeight)
+        let trace = shouldTraceFont(style.fontFamilies)
+        if trace { print("[FontTrace b3] families=\(style.fontFamilies) weight=\(style.fontWeight) italic=\(style.isItalic)") }
         if let resolvedFont = resolvedFont?(style.fontFamilies, style.fontWeight, style.isItalic, style.fontSize) {
+            if trace { print("[FontTrace b3]   → @font-face match: \(resolvedFont.fontName)") }
             return resolvedFont
         }
-        let familyCandidates = style.fontFamilies
-            .compactMap { family -> String? in
-                let trimmed = family.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return nil }
-                return resolvedFontFamily?(normalizeFontName(trimmed)) ?? trimmed
-            }
-
-        for family in familyCandidates {
-            if let font = exactFont(named: family, size: style.fontSize, weight: style.fontWeight, italic: style.isItalic) {
+        for rawFamily in style.fontFamilies {
+            let trimmed = rawFamily.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let normalized = normalizeFontName(trimmed)
+            let candidate = resolvedFontFamily?(normalized) ?? trimmed
+            if let font = exactFont(named: candidate, size: style.fontSize, weight: style.fontWeight, italic: style.isItalic) {
+                if trace { print("[FontTrace b3]   → exact '\(candidate)' = \(font.fontName)") }
                 return wrapCJKFont(font, size: style.fontSize)
             }
-            if let font = familyFont(named: family, size: style.fontSize, weight: style.fontWeight, italic: style.isItalic) {
+            if let font = familyFont(named: candidate, size: style.fontSize, weight: style.fontWeight, italic: style.isItalic) {
+                if trace { print("[FontTrace b3]   → family '\(candidate)' = \(font.fontName)") }
                 return wrapCJKFont(font, size: style.fontSize)
             }
+            // EPUBs commonly name CJK fonts only by generic/vendor names (楷体, 黑体, DK-KAITI,
+            // @font-face src: local("KaiTi")) with no embedded file. None of those match an iOS
+            // font, so map them onto an installed system CJK family before falling back to Latin.
+            if let font = cjkSystemFont(forNormalizedName: normalized, size: style.fontSize, weight: style.fontWeight, italic: style.isItalic) {
+                if trace { print("[FontTrace b3]   → cjkAlias '\(normalized)' = \(font.fontName) (family \(font.familyName))") }
+                return wrapCJKFont(font, size: style.fontSize)
+            }
+            if trace { print("[FontTrace b3]   ✗ '\(candidate)' (norm '\(normalized)') no match") }
         }
+        if trace { print("[FontTrace b3]   → SYSTEM fallback (no family matched)") }
 
         let system = UIFont.systemFont(ofSize: style.fontSize, weight: weight)
         if style.isItalic {
@@ -1760,6 +1790,56 @@ final class HTMLAttributedStringBuilder {
             return nil
         }
         return UIFont(descriptor: font.fontDescriptor.addingAttributes(cascadeAttributes()), size: size)
+    }
+
+    /// Resolves a CJK generic family name (楷体 / 宋体 / 黑体 …) or vendor alias (DK-KAITI, kt …)
+    /// to an installed iOS system CJK font. Tries concrete PostScript face names first (the most
+    /// reliable instantiation), then faces enumerated from the family, then a family descriptor.
+    private func cjkSystemFont(forNormalizedName name: String, size: CGFloat, weight: Int, italic: Bool) -> UIFont? {
+        guard let target = Self.cjkSystemFontTarget(forNormalized: name) else { return nil }
+        let wantBold = weight >= 600
+        var candidates = wantBold ? target.boldFaces + target.regularFaces
+                                  : target.regularFaces + target.boldFaces
+        candidates += UIFont.fontNames(forFamilyName: target.family)
+        for face in candidates {
+            if let font = UIFont(name: face, size: size) { return font }
+        }
+        // Not installed (iOS ships only PingFang; Kaiti/Songti/… are downloadable system fonts).
+        // Kick off a one-time download; CoreTextPageEngine re-paginates when it lands. Until then
+        // this returns nil so the caller falls back to the Latin/system font for this render.
+        CJKFontInstaller.shared.ensure(target.family)
+        return nil
+    }
+
+    /// Maps common Chinese font names — generic (楷体/宋体/黑体/仿宋), vendor (DK-*), and the
+    /// `local()` @font-face aliases used by calibre/掌阅 EPUBs — onto the CJK fonts that ship
+    /// with iOS, returning the family plus its concrete PostScript faces. iOS has no FangSong,
+    /// so 仿宋 maps to the nearest available serif (Songti SC). Names are pre-normalized.
+    private static func cjkSystemFontTarget(
+        forNormalized name: String
+    ) -> (family: String, regularFaces: [String], boldFaces: [String])? {
+        switch name {
+        case "楷体", "楷體", "楷体_gb2312", "楷体_gbk", "楷体_gb18030", "标楷体", "標楷體",
+             "kaiti", "kai", "kt", "stkaiti", "stkai", "kaiti sc", "kaiti tc",
+             "dfkai-sb", "dk-kaiti":
+            return ("Kaiti SC", ["STKaitiSC-Regular", "Kaiti SC"], ["STKaitiSC-Bold", "STKaitiSC-Black"])
+        case "宋体", "宋體", "新宋体", "新宋體", "正文", "明体", "明體", "明朝",
+             "songti", "song", "st", "zw", "stsong", "stsongti", "songti sc", "songti tc",
+             "simsun", "nsimsun", "mingliu", "pmingliu",
+             "方正小标宋_gbk", "方正小标宋", "xiaobiaosong", "dk-songti", "dk-xiaobiaosong":
+            return ("Songti SC", ["STSongti-SC-Regular", "Songti SC"], ["STSongti-SC-Bold", "STSongti-SC-Black"])
+        case "黑体", "黑體", "黑体-简", "微软雅黑", "微軟雅黑", "雅黑",
+             "细黑体", "細黑體", "细黑", "細黑", "苹方", "蘋方",
+             "heiti", "hei", "ht", "xihei", "xiheiti", "xht", "xh",
+             "stheiti", "sthei", "heiti sc", "heiti tc",
+             "microsoft yahei", "simhei", "pingfang", "pingfang sc",
+             "dk-heiti", "dk-xiheiti":
+            return ("PingFang SC", ["PingFangSC-Regular", "PingFang SC"], ["PingFangSC-Semibold", "PingFangSC-Medium"])
+        case "仿宋", "仿宋_gb2312", "fangsong", "stfangsong", "fs", "dk-fangsong":
+            return ("Songti SC", ["STSongti-SC-Regular", "Songti SC"], ["STSongti-SC-Bold", "STSongti-SC-Black"])
+        default:
+            return nil
+        }
     }
 
     private func styledEmbeddedFont(from font: UIFont, size: CGFloat, weight: Int, italic: Bool) -> UIFont {

@@ -76,7 +76,7 @@ enum CJKTypographyProcessor {
         return max(lowerBound, adjusted)
     }
 
-    /// Applies smart punctuation normalization + CJK punctuation compression + CJK-Latin spacing.
+    /// Applies smart punctuation normalization + CJK punctuation compression.
     static func apply(to attrStr: NSAttributedString) -> NSAttributedString {
         let smart = applySmartPunctuation(to: attrStr)
         guard smart.length > 1 else { return smart }
@@ -116,13 +116,69 @@ enum CJKTypographyProcessor {
                 addKern(-halfEm, at: utf16Idx, in: mutable)
             }
 
-            if shouldApplyCJKLatinSpacing(between: curr, and: next) {
-                let spacing = fontSize * 0.125
-                addKern(spacing, at: utf16Idx, in: mutable)
-            }
+            // NOTE: No automatic CJK↔Latin/number spacing ("pangu" spacing) is inserted.
+            // The source text controls spacing; injecting 1/8em between Han and digits/letters
+            // produced unwanted gaps (e.g. "2017 年 3 月第 1 版") that don't exist in the source.
         }
 
+        debugTraceCJKLatinSpacing(mutable)
+
         return mutable
+    }
+
+    // MARK: - Debug: trace where digit↔CJK gaps come from
+
+    private static var spaceTraceCount = 0
+
+    /// Diagnostic: for paragraphs that contain a digit adjacent to a CJK character
+    /// (e.g. "2017年3月第1版"), dumps every character's `.kern`, font, and point size,
+    /// and flags any literal whitespace. Reveals whether the visible gap is a real space
+    /// character, a positive `.kern`, or a full-width-digit font advance. Rate-limited.
+    private static func debugTraceCJKLatinSpacing(_ attr: NSAttributedString) {
+        guard spaceTraceCount < 6 else { return }
+        let ns = attr.string as NSString
+        // Split into paragraphs and only trace ones with a digit↔Han boundary.
+        attr.string.components(separatedBy: "\n").forEach { para in
+            guard spaceTraceCount < 6 else { return }
+            let scalars = Array(para.unicodeScalars)
+            var hasBoundary = false
+            for i in 0 ..< max(0, scalars.count - 1) {
+                let a = scalars[i], b = scalars[i + 1]
+                if (isDigit(a) && isHan(b)) || (isHan(a) && isDigit(b)) { hasBoundary = true; break }
+            }
+            guard hasBoundary else { return }
+            spaceTraceCount += 1
+
+            let preview = para.count > 40 ? String(para.prefix(40)) + "…" : para
+            print("[SpaceTrace] paragraph=\"\(preview)\"")
+            // Locate this paragraph's UTF-16 range to read per-character attributes.
+            let paraRange = ns.range(of: para)
+            guard paraRange.location != NSNotFound else { return }
+            var i = paraRange.location
+            let end = paraRange.location + paraRange.length
+            while i < end {
+                let chRange = ns.rangeOfComposedCharacterSequence(at: i)
+                let ch = ns.substring(with: chRange)
+                let kern = (attr.attribute(.kern, at: i, effectiveRange: nil) as? NSNumber)?.doubleValue
+                let font = attr.attribute(.font, at: i, effectiveRange: nil) as? UIFont
+                let isWS = ch.unicodeScalars.allSatisfy { CharacterSet.whitespaces.contains($0) }
+                print(String(format: "[SpaceTrace]   '%@'%@ kern=%@ font=%@ size=%.1f",
+                              ch,
+                              isWS ? " <WHITESPACE>" : "",
+                              kern.map { String(format: "%.3f", $0) } ?? "-",
+                              font?.fontName ?? "nil",
+                              font?.pointSize ?? 0))
+                i += max(1, chRange.length)
+            }
+        }
+    }
+
+    private static func isDigit(_ s: Unicode.Scalar) -> Bool { (0x30...0x39).contains(Int(s.value)) }
+    private static func isHan(_ s: Unicode.Scalar) -> Bool {
+        switch s.value {
+        case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF: return true
+        default: return false
+        }
     }
 
     // MARK: - Smart Punctuation
@@ -364,36 +420,6 @@ enum CJKTypographyProcessor {
         let index = String.Index(utf16Offset: offset, in: string)
         guard index > string.startIndex else { return nil }
         return string[string.index(before: index)].unicodeScalars.first
-    }
-
-    private static func shouldApplyCJKLatinSpacing(
-        between lhs: Unicode.Scalar,
-        and rhs: Unicode.Scalar
-    ) -> Bool {
-        (isCJKTextScalar(lhs) && isLatinOrNumberScalar(rhs))
-            || (isLatinOrNumberScalar(lhs) && isCJKTextScalar(rhs))
-    }
-
-    private static func isLatinOrNumberScalar(_ scalar: Unicode.Scalar) -> Bool {
-        switch scalar.value {
-        case 0x0030...0x0039, 0x0041...0x005A, 0x0061...0x007A:
-            return true
-        default:
-            return false
-        }
-    }
-
-    private static func isCJKTextScalar(_ scalar: Unicode.Scalar) -> Bool {
-        switch scalar.value {
-        case 0x3400...0x4DBF,   // CJK Unified Ideographs Extension A
-             0x4E00...0x9FFF,   // CJK Unified Ideographs
-             0x3040...0x309F,   // Hiragana
-             0x30A0...0x30FF,   // Katakana
-             0xAC00...0xD7AF:   // Hangul syllables
-            return true
-        default:
-            return false
-        }
     }
 
     /// Builds a mapping array from Unicode scalar index → UTF-16 code unit offset
