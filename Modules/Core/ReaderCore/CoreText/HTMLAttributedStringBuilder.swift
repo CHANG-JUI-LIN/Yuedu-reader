@@ -153,6 +153,10 @@ final class HTMLAttributedStringBuilder {
         var isVerticalWritingMode: Bool = false
         var pageBreakBefore: Bool = false
         var pageBreakAfter: Bool = false
+        /// True when the author explicitly removed the border via `border: none` / `border-style: none`
+        /// (keyword `none`/`hidden`). Used so a borderless, background-less `<hr>` renders as an
+        /// invisible separator instead of a stray rule (e.g. calibre's `.transition` scene break).
+        var borderExplicitlyNone: Bool = false
     }
 
     /// Visual style for HR dividers (stored in hrDividerAttribute).
@@ -951,6 +955,24 @@ final class HTMLAttributedStringBuilder {
         paragraph.paragraphSpacing = style.fontSize * 0.25
         paragraph.minimumLineHeight = style.fontSize
         paragraph.maximumLineHeight = style.fontSize
+
+        // A <hr> whose border was explicitly removed (border: none / border-style: none) and
+        // that has no positive border and no background fill is a semantic separator only — it
+        // must not draw a rule. (e.g. calibre's `.transition`, paired with a visible "—" glyph.)
+        // CSS `color`/`height` on such an element are not a substitute for a border, so emit
+        // spacing only without the hrDivider attribute.
+        let hasVisibleBorder = style.borderTopWidth > 0 || style.borderBottomWidth > 0
+        if style.borderExplicitlyNone, !hasVisibleBorder, style.backgroundFillColor == nil {
+            print("[HRDivider] suppressed borderless <hr> (border:none, no bg) — rendering as invisible separator; height=\(style.height.map { String(format: "%.1f", $0) } ?? "nil")")
+            return NSAttributedString(
+                string: "\n",
+                attributes: [
+                    .font: makeFont(from: style, config: config),
+                    .foregroundColor: UIColor.clear,
+                    .paragraphStyle: paragraph,
+                ]
+            )
+        }
 
             // Determine color from CSS: border-top-color > border-bottom-color > text color > separator
         let hrColor = style.borderTopColor
@@ -2727,6 +2749,12 @@ final class HTMLAttributedStringBuilder {
         if let borderWidth = declarations["border-width"] {
             applyBorderWidthShorthand(borderWidth, to: &style, rootFontSize: rootFontSize)
         }
+        // `border-style: none/hidden` removes the border regardless of any width set elsewhere.
+        applyBorderStyleNone(declarations["border-style"], edges: [.top, .bottom, .left, .right], to: &style)
+        applyBorderStyleNone(declarations["border-top-style"], edges: [.top], to: &style)
+        applyBorderStyleNone(declarations["border-bottom-style"], edges: [.bottom], to: &style)
+        applyBorderStyleNone(declarations["border-left-style"], edges: [.left], to: &style)
+        applyBorderStyleNone(declarations["border-right-style"], edges: [.right], to: &style)
         if let borderRadius = declarations["border-radius"] {
             style.borderRadius = max(0, resolveLength(borderRadius, currentFontSize: style.fontSize, rootFontSize: rootFontSize, relativeBase: style.fontSize) ?? 0)
         }
@@ -2760,7 +2788,8 @@ final class HTMLAttributedStringBuilder {
         guard !tokens.isEmpty else { return }
 
         let lowered = tokens.map { $0.lowercased() }
-        if lowered.contains("none") {
+        if lowered.contains("none") || lowered.contains("hidden") {
+            style.borderExplicitlyNone = true
             setBorder(width: 0, color: nil, edge: edge, to: &style)
             return
         }
@@ -2792,6 +2821,18 @@ final class HTMLAttributedStringBuilder {
             return currentTextColor
         }
         return parseColor(raw)
+    }
+
+    /// Honors `border-style: none/hidden` (any edge): zeroes the matching border widths and
+    /// records that the author explicitly suppressed the border, so an `<hr>` won't draw a rule.
+    private func applyBorderStyleNone(_ raw: String?, edges: [BorderEdge], to style: inout ResolvedStyle) {
+        guard let raw else { return }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard value == "none" || value == "hidden" else { return }
+        style.borderExplicitlyNone = true
+        for edge in edges {
+            setBorder(width: 0, color: nil, edge: edge, to: &style)
+        }
     }
 
     private func setBorder(width: CGFloat, color: UIColor?, edge: BorderEdge, to style: inout ResolvedStyle) {
