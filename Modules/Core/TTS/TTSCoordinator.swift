@@ -150,7 +150,10 @@ final class TTSCoordinator: ObservableObject {
 
     private var sleepTimer: Timer?
     private var audioSessionActive = false
-    private var nowPlayingTitle = "Reading Aloud"
+    private var nowPlayingBookTitle = ""
+    private var nowPlayingAuthor = ""
+    private var nowPlayingChapterTitle = ""
+    private var nowPlayingArtwork: MPMediaItemArtwork?
     private var nowPlayingElapsed: TimeInterval = 0
     private var nowPlayingDuration: TimeInterval = 1
     private var nowPlayingStartedAt: Date?
@@ -160,7 +163,7 @@ final class TTSCoordinator: ObservableObject {
     private var isStoppingFromCoordinator = false
 
     var floatingTitle: String {
-        nowPlayingTitle
+        displayNowPlayingTitle
     }
 
     init() {
@@ -171,7 +174,13 @@ final class TTSCoordinator: ObservableObject {
 
     // MARK: - External Controls
 
-    func speak(text: String, title: String = "") {
+    func speak(
+        text: String,
+        title: String = "",
+        bookTitle: String = "",
+        author: String = "",
+        artwork: UIImage? = nil
+    ) {
         guard !text.isEmpty else {
             ttsLog("[TTS][Coordinator] speak ignored empty text")
             return
@@ -184,10 +193,13 @@ final class TTSCoordinator: ObservableObject {
         }
         ttsLog("[TTS][Coordinator] configure engine audio session ownership")
         currentEngine.configureAudioSessionOwnership(true)
-        nowPlayingTitle = title.isEmpty ? "Reading Aloud" : title
-        nowPlayingElapsed = 0
-        nowPlayingDuration = estimatedDuration(for: text)
-        nowPlayingStartedAt = Date()
+        configureNowPlayingMetadata(
+            bookTitle: bookTitle,
+            author: author,
+            chapterTitle: title,
+            artwork: artwork
+        )
+        prepareNowPlayingForText(text)
         currentSegmentIndex = 0
         totalSegments = 0
         currentSegmentText = ""
@@ -299,7 +311,20 @@ final class TTSCoordinator: ObservableObject {
     }
 
     func updateNowPlayingTitle(_ title: String) {
-        nowPlayingTitle = title.isEmpty ? "Reading Aloud" : title
+        updateNowPlayingChapter(title: title)
+    }
+
+    func updateNowPlayingChapter(title: String, text: String? = nil) {
+        nowPlayingChapterTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if nowPlayingBookTitle.isEmpty {
+            nowPlayingBookTitle = nowPlayingChapterTitle
+        }
+        if let text {
+            prepareNowPlayingForText(text)
+            currentSegmentIndex = 0
+            totalSegments = 0
+            currentSegmentText = ""
+        }
         updateNowPlaying()
         publishFloatingPlayerState()
     }
@@ -315,7 +340,10 @@ final class TTSCoordinator: ObservableObject {
         } else {
             ttsLog("[TTS][Coordinator] stop skipped clearing system media because coordinator is not active owner")
         }
-        nowPlayingTitle = "Reading Aloud"
+        nowPlayingBookTitle = ""
+        nowPlayingAuthor = ""
+        nowPlayingChapterTitle = ""
+        nowPlayingArtwork = nil
         nowPlayingElapsed = 0
         nowPlayingDuration = 1
         nowPlayingStartedAt = nil
@@ -386,6 +414,8 @@ final class TTSCoordinator: ObservableObject {
                 self.currentSegmentIndex = index
                 self.totalSegments = total
                 self.currentSegmentText = text
+                self.syncNowPlayingElapsedToCurrentSegment(restartClock: self.isPlaying)
+                self.updateNowPlaying()
                 self.publishFloatingPlayerState()
             }
         }
@@ -465,7 +495,7 @@ final class TTSCoordinator: ObservableObject {
         c.stopCommand.isEnabled  = false
         c.nextTrackCommand.isEnabled = true
         c.previousTrackCommand.isEnabled = true
-        c.changePlaybackPositionCommand.isEnabled = false
+        c.changePlaybackPositionCommand.isEnabled = true
 
         c.playCommand.removeTarget(nil)
         c.pauseCommand.removeTarget(nil)
@@ -473,6 +503,7 @@ final class TTSCoordinator: ObservableObject {
         c.stopCommand.removeTarget(nil)
         c.nextTrackCommand.removeTarget(nil)
         c.previousTrackCommand.removeTarget(nil)
+        c.changePlaybackPositionCommand.removeTarget(nil)
 
         c.playCommand.addTarget { [weak self] _ in
             ttsLog("[TTS][Remote] playCommand")
@@ -493,6 +524,15 @@ final class TTSCoordinator: ObservableObject {
         c.previousTrackCommand.addTarget { [weak self] _ in
             ttsLog("[TTS][Remote] previousTrackCommand")
             return self?.performRemoteCommand(requiresActiveSession: true) { $0.skipBackward() } ?? .commandFailed
+        }
+        c.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
+            }
+            ttsLog("[TTS][Remote] changePlaybackPositionCommand position=\(event.positionTime)")
+            return self?.performRemoteCommand(requiresActiveSession: true) {
+                $0.seekToNowPlayingPosition(event.positionTime)
+            } ?? .commandFailed
         }
     }
 
@@ -566,7 +606,7 @@ final class TTSCoordinator: ObservableObject {
         c.stopCommand.isEnabled = false
         c.nextTrackCommand.isEnabled = enabled
         c.previousTrackCommand.isEnabled = enabled
-        c.changePlaybackPositionCommand.isEnabled = false
+        c.changePlaybackPositionCommand.isEnabled = enabled
         ttsLog("[TTS][Coordinator] remote commands enabled=\(enabled)")
     }
 
@@ -592,14 +632,69 @@ final class TTSCoordinator: ObservableObject {
         return .success
     }
 
+    private func seekToNowPlayingPosition(_ positionTime: TimeInterval) {
+        let duration = max(nowPlayingDuration, 1)
+        seekToProgress(positionTime / duration)
+    }
+
+    private var displayNowPlayingTitle: String {
+        if !nowPlayingBookTitle.isEmpty { return nowPlayingBookTitle }
+        if !nowPlayingChapterTitle.isEmpty { return nowPlayingChapterTitle }
+        return "Reading Aloud"
+    }
+
+    private var displayNowPlayingArtist: String {
+        nowPlayingAuthor.isEmpty ? "TTS Narration" : nowPlayingAuthor
+    }
+
+    private func configureNowPlayingMetadata(
+        bookTitle: String,
+        author: String,
+        chapterTitle: String,
+        artwork: UIImage?
+    ) {
+        let trimmedBookTitle = bookTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedChapterTitle = chapterTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        nowPlayingBookTitle = trimmedBookTitle.isEmpty ? trimmedChapterTitle : trimmedBookTitle
+        nowPlayingAuthor = author.trimmingCharacters(in: .whitespacesAndNewlines)
+        nowPlayingChapterTitle = trimmedChapterTitle
+        nowPlayingArtwork = Self.makeNowPlayingArtwork(from: artwork)
+    }
+
+    private func prepareNowPlayingForText(_ text: String) {
+        nowPlayingElapsed = 0
+        nowPlayingDuration = estimatedDuration(for: text)
+        nowPlayingStartedAt = nil
+    }
+
+    private func syncNowPlayingElapsedToCurrentSegment(restartClock: Bool) {
+        if totalSegments > 0 {
+            let clampedIndex = min(max(currentSegmentIndex, 0), max(totalSegments - 1, 0))
+            let progress = Double(clampedIndex) / Double(max(totalSegments, 1))
+            nowPlayingElapsed = min(max(nowPlayingDuration * progress, 0), max(nowPlayingDuration, 1))
+        }
+        nowPlayingStartedAt = restartClock ? Date() : nil
+    }
+
+    private static func makeNowPlayingArtwork(from image: UIImage?) -> MPMediaItemArtwork? {
+        guard let image else { return nil }
+        return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+    }
+
     private func updateNowPlaying() {
         guard Self.activeSystemMediaCoordinator === self else {
             ttsLog("[TTS][NowPlaying] update skipped because coordinator is not active owner")
             return
         }
         var info = [String: Any]()
-        info[MPMediaItemPropertyTitle] = nowPlayingTitle
-        info[MPMediaItemPropertyArtist] = "TTS Narration"
+        info[MPMediaItemPropertyTitle] = displayNowPlayingTitle
+        info[MPMediaItemPropertyArtist] = displayNowPlayingArtist
+        if !nowPlayingChapterTitle.isEmpty {
+            info[MPMediaItemPropertyAlbumTitle] = nowPlayingChapterTitle
+        }
+        if let nowPlayingArtwork {
+            info[MPMediaItemPropertyArtwork] = nowPlayingArtwork
+        }
         info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentNowPlayingElapsed()
         info[MPMediaItemPropertyPlaybackDuration] = max(nowPlayingDuration, 1)
@@ -607,30 +702,28 @@ final class TTSCoordinator: ObservableObject {
         info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
-        ttsLog("[TTS][NowPlaying] update title=\(nowPlayingTitle) elapsed=\(info[MPNowPlayingInfoPropertyElapsedPlaybackTime] ?? "?") duration=\(info[MPMediaItemPropertyPlaybackDuration] ?? "?") rate=\(info[MPNowPlayingInfoPropertyPlaybackRate] ?? "?") state=\(isPlaying ? "playing" : "paused")")
+        ttsLog("[TTS][NowPlaying] update title=\(displayNowPlayingTitle) artist=\(displayNowPlayingArtist) chapter=\(nowPlayingChapterTitle) elapsed=\(info[MPNowPlayingInfoPropertyElapsedPlaybackTime] ?? "?") duration=\(info[MPMediaItemPropertyPlaybackDuration] ?? "?") rate=\(info[MPNowPlayingInfoPropertyPlaybackRate] ?? "?") state=\(isPlaying ? "playing" : "paused")")
     }
 
-    private func handleEnginePlaybackStarted(duration: TimeInterval) {
+    private func handleEnginePlaybackStarted(duration _: TimeInterval) {
         guard Self.activeSystemMediaCoordinator === self else {
             ttsLog("[TTS][NowPlaying] playback started ignored because coordinator is not active owner")
             return
         }
-        nowPlayingDuration = max(duration, 1)
-        resetNowPlayingClockForCurrentAudio()
+        nowPlayingStartedAt = isPlaying ? Date() : nil
         updateNowPlaying()
         publishFloatingPlayerState()
     }
 
     private func resetNowPlayingClockForCurrentAudio() {
-        nowPlayingElapsed = 0
-        nowPlayingStartedAt = playbackState == .playing ? Date() : nil
+        syncNowPlayingElapsedToCurrentSegment(restartClock: isPlaying)
     }
 
     private func currentNowPlayingElapsed() -> TimeInterval {
         guard isPlaying, let startedAt = nowPlayingStartedAt else {
             return nowPlayingElapsed
         }
-        return nowPlayingElapsed + Date().timeIntervalSince(startedAt)
+        return min(max(nowPlayingElapsed + Date().timeIntervalSince(startedAt), 0), max(nowPlayingDuration, 1))
     }
 
     private func freezeNowPlayingElapsed() {
