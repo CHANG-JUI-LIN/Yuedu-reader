@@ -76,7 +76,7 @@ struct AuthAndICloudConfigurationTests {
     private func loadMainAppEntitlements() throws -> [String: Any] {
         let fileURL = URL(fileURLWithPath: #filePath)
         let repoRoot = try #require(findRepoRoot(from: fileURL))
-        let entitlementsURL = repoRoot.appendingPathComponent("iOS/Yuedu-Reader.entitlements")
+        let entitlementsURL = repoRoot.appendingPathComponent("Resources/Yuedu-Reader.entitlements")
         let data = try Data(contentsOf: entitlementsURL)
         let plist = try PropertyListSerialization.propertyList(from: data, format: nil)
         return try #require(plist as? [String: Any])
