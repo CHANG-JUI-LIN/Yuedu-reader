@@ -129,6 +129,7 @@ final class TTSCoordinator: ObservableObject {
     var onStop: (() -> Void)? {
         didSet { rewireCallbacks() }
     }
+    var onWillResume: (() -> Void)?
     var onNextTrackRequested: (() -> Bool)?
     var onPreviousTrackRequested: (() -> Bool)?
     // MARK: - Engine
@@ -238,6 +239,7 @@ final class TTSCoordinator: ObservableObject {
             ttsLog("[TTS][Coordinator] resume ignored no active playback session")
             return
         }
+        onWillResume?()
         guard activateAudioSession() else { return }
         currentEngine.configureAudioSessionOwnership(true)
         currentEngine.resume()

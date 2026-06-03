@@ -88,6 +88,8 @@ struct ReaderView: View {
     @State private var ttsChapterIndex: Int? = nil
     @State private var showTTSJumpPrompt = false
     @State private var ttsJumpPromptChapterIndex: Int? = nil
+    @State private var ttsPlaybackAnchor: CoreTextReadingPosition?
+    @State private var isAligningReaderToTTSAnchor = false
 
     @State private var currentChapterIndex = 0
 
@@ -1015,6 +1017,9 @@ struct ReaderView: View {
                 ttsLog("[TTS][Reader] onChapterFinished ttsChapter=\(ttsChapterIndex.map(String.init) ?? "nil") currentChapter=\(currentChapterIndex)")
                 return advanceTTSChapterFromEngine()
             }
+            ttsCoordinator.onWillResume = {
+                alignReaderToTTSAnchorIfNeeded()
+            }
             ttsCoordinator.onNextTrackRequested = {
                 startAdjacentTTSChapter(delta: 1)
             }
@@ -1023,6 +1028,7 @@ struct ReaderView: View {
             }
             ttsCoordinator.onStop = {
                 ttsChapterIndex = nil
+                ttsPlaybackAnchor = nil
                 showTTSJumpPrompt = false
                 ttsJumpPromptChapterIndex = nil
             }
@@ -1119,17 +1125,19 @@ struct ReaderView: View {
         .onChanged(of: showBars) { visible in
             setTTSFloatingOverlayVisible(visible)
         }
-        .onChanged(of: currentChapterIndex) { newChapter in
-            handleReaderChapterChangedForTTS(newChapter)
+        .onChanged(of: currentChapterIndex) { _ in
+            handleReaderPositionChangedForTTS()
         }
         .onChanged(of: currentPage) { _ in
             updateReadingStatsPosition()
+            handleReaderPositionChangedForTTS()
         }
         .onReceive(NotificationCenter.default.publisher(for: .ttsFloatingPlayerOpenPanel)) { _ in
             showTTSPanel = true
         }
         .onChanged(of: scrollVisibleChapter) { _ in
             autoSaveProgress()
+            handleReaderPositionChangedForTTS()
         }
         .sheet(isPresented: $showSettings) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
@@ -1799,9 +1807,9 @@ struct ReaderView: View {
                 .overlay(Color.white.opacity(0.18))
 
             Button {
-                startTTSFromCurrentReadingPosition()
+                startTTSFromPromptChapter()
             } label: {
-                Label(localized("從本頁聽"), systemImage: "headphones")
+                Label(localized("從本章開始聽"), systemImage: "headphones")
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
             }
@@ -2022,6 +2030,73 @@ struct ReaderView: View {
         )
     }
 
+    private func currentTTSReaderPosition() -> CoreTextReadingPosition? {
+        if effectiveScrollMode {
+            if let location = readerSessionCoordinator?.state.location.coreTextPosition {
+                return location
+            }
+            return CoreTextReadingPosition(spineIndex: scrollVisibleChapter, charOffset: 0)
+        }
+
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
+            guard engine.totalPages > 0 else { return nil }
+            let page = max(0, min(currentPage, engine.totalPages - 1))
+            return engine.readingPosition(forPage: page)
+                ?? CoreTextReadingPosition(
+                    spineIndex: engine.charOffset(forPage: page).spineIndex,
+                    charOffset: engine.charOffset(forPage: page).charOffset
+                )
+        }
+
+        guard !allPages.isEmpty else {
+            return chapters.indices.contains(currentChapterIndex)
+                ? CoreTextReadingPosition(spineIndex: currentChapterIndex, charOffset: 0)
+                : nil
+        }
+        let page = allPages[max(0, min(currentPage, allPages.count - 1))]
+        return CoreTextReadingPosition(spineIndex: page.chapterIndex, charOffset: page.pageInChapter)
+    }
+
+    private func isReaderAtTTSAnchor(_ anchor: CoreTextReadingPosition) -> Bool {
+        if effectiveScrollMode {
+            return currentChapterIndex == anchor.spineIndex
+        }
+
+        if let engine = epubRenderer.engine, usesCoreTextEPUB,
+           let anchorPage = engine.pageIndex(for: anchor) {
+            return currentPage == anchorPage
+        }
+
+        guard let current = currentTTSReaderPosition() else { return false }
+        return current == anchor
+    }
+
+    private func setActiveTTSAnchor(_ anchor: CoreTextReadingPosition, alignReader: Bool) {
+        ttsPlaybackAnchor = anchor
+        showTTSJumpPrompt = false
+        ttsJumpPromptChapterIndex = nil
+        if alignReader {
+            alignReaderToTTSAnchorIfNeeded()
+        }
+    }
+
+    private func alignReaderToTTSAnchorIfNeeded() {
+        guard let anchor = ttsPlaybackAnchor,
+              chapters.indices.contains(anchor.spineIndex),
+              !isReaderAtTTSAnchor(anchor)
+        else { return }
+
+        isAligningReaderToTTSAnchor = true
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showTTSJumpPrompt = false
+            ttsJumpPromptChapterIndex = nil
+        }
+        jumpToChapter(anchor.spineIndex, charOffset: anchor.charOffset)
+        DispatchQueue.main.async {
+            isAligningReaderToTTSAnchor = false
+        }
+    }
+
     private func handleTTSPlayPause() {
         switch ttsCoordinator.playbackState {
         case .playing:
@@ -2053,12 +2128,8 @@ struct ReaderView: View {
         }
 
         ttsChapterIndex = chapterIndex
-        showTTSJumpPrompt = false
-        ttsJumpPromptChapterIndex = nil
+        setActiveTTSAnchor(.chapterStart(chapterIndex), alignReader: true)
         ensureChapterReady(chapterIndex: chapterIndex, priority: .jump)
-        if syncReader {
-            jumpToChapter(chapterIndex)
-        }
         ttsCoordinator.speak(
             text: text,
             title: chapters[chapterIndex].title,
@@ -2066,6 +2137,7 @@ struct ReaderView: View {
             author: ttsNowPlayingAuthor,
             artwork: ttsNowPlayingArtwork()
         )
+        ttsCoordinator.refreshNowPlayingForSystemSurfaces()
         return true
     }
 
@@ -2090,59 +2162,46 @@ struct ReaderView: View {
             return nil
         }
         ttsChapterIndex = target
-        showTTSJumpPrompt = false
-        ttsJumpPromptChapterIndex = nil
+        setActiveTTSAnchor(.chapterStart(target), alignReader: true)
         ttsCoordinator.updateNowPlayingChapter(title: chapters[target].title, text: text)
-        jumpToChapter(target)
         return text
     }
 
-    private func handleReaderChapterChangedForTTS(_ chapterIndex: Int) {
+    private func handleReaderPositionChangedForTTS() {
+        guard !isAligningReaderToTTSAnchor else { return }
         guard ttsCoordinator.playbackState != .stopped,
-              let ttsChapterIndex,
-              chapterIndex != ttsChapterIndex
+              let anchor = ttsPlaybackAnchor
         else {
-            if chapterIndex == ttsChapterIndex {
-                showTTSJumpPrompt = false
-                ttsJumpPromptChapterIndex = nil
-            }
+            showTTSJumpPrompt = false
+            ttsJumpPromptChapterIndex = nil
             return
         }
-        ttsJumpPromptChapterIndex = chapterIndex
+
+        guard !isReaderAtTTSAnchor(anchor) else {
+            showTTSJumpPrompt = false
+            ttsJumpPromptChapterIndex = nil
+            return
+        }
+
+        ttsJumpPromptChapterIndex = currentTTSReaderPosition()?.spineIndex ?? currentChapterIndex
         withAnimation(.easeInOut(duration: 0.2)) {
             showTTSJumpPrompt = true
         }
     }
 
     private func jumpBackToTTSChapter() {
-        guard let ttsChapterIndex, chapters.indices.contains(ttsChapterIndex) else { return }
+        guard let anchor = ttsPlaybackAnchor,
+              chapters.indices.contains(anchor.spineIndex) else { return }
         withAnimation(.easeInOut(duration: 0.2)) {
             showTTSJumpPrompt = false
             ttsJumpPromptChapterIndex = nil
         }
-        jumpToChapter(ttsChapterIndex)
+        alignReaderToTTSAnchorIfNeeded()
     }
 
-    private func startTTSFromCurrentReadingPosition() {
+    private func startTTSFromPromptChapter() {
         let target = ttsJumpPromptChapterIndex ?? currentChapterIndex
-        guard chapters.indices.contains(target) else { return }
-        let text = textForTTSCurrentReadingPosition(chapterIndex: target)
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            _ = startTTSChapter(target, syncReader: false)
-            return
-        }
-
-        ttsChapterIndex = target
-        showTTSJumpPrompt = false
-        ttsJumpPromptChapterIndex = nil
-        ensureChapterReady(chapterIndex: target, priority: .jump)
-        ttsCoordinator.speak(
-            text: text,
-            title: chapters[target].title,
-            bookTitle: ttsNowPlayingBookTitle,
-            author: ttsNowPlayingAuthor,
-            artwork: ttsNowPlayingArtwork()
-        )
+        _ = startTTSChapter(target, syncReader: false)
     }
 
     private func textForTTSChapter(_ chapterIndex: Int) -> String {
@@ -2160,37 +2219,6 @@ struct ReaderView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !pageText.isEmpty { return pageText }
         return chapters[chapterIndex].content
-    }
-
-    private func textForTTSCurrentReadingPosition(chapterIndex: Int) -> String {
-        guard chapters.indices.contains(chapterIndex) else { return "" }
-        if let engine = epubRenderer.engine,
-           usesCoreTextEPUB,
-           let layout = engine.layouts[chapterIndex],
-           layout.attributedString.length > 0 {
-            let position = engine.charOffset(forPage: currentPage)
-            guard position.spineIndex == chapterIndex else {
-                return textForTTSChapter(chapterIndex)
-            }
-            let start = max(0, min(position.charOffset, layout.attributedString.length))
-            let range = NSRange(location: start, length: layout.attributedString.length - start)
-            return layout.attributedString.attributedSubstring(from: range).string
-        }
-
-        if !effectiveScrollMode, !allPages.isEmpty {
-            let startPage = max(0, min(currentPage, max(allPages.count - 1, 0)))
-            let text = allPages
-                .enumerated()
-                .filter { index, page in
-                    index >= startPage && page.chapterIndex == chapterIndex
-                }
-                .map { $0.element.content }
-                .joined(separator: "\n")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty { return text }
-        }
-
-        return textForTTSChapter(chapterIndex)
     }
 
     // MARK: - Logic
