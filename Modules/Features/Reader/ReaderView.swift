@@ -127,6 +127,7 @@ struct ReaderView: View {
     private var changeSourceOrigins: [BookOrigin] { readerViewModel.changeSourceOrigins }
     private var changeSourceLoading: Bool { readerViewModel.changeSourceLoading }
     private var changeSourceError: String? { readerViewModel.changeSourceError }
+    private var changeSourceFailedKeys: Set<String> { readerViewModel.changeSourceFailedKeys }
 
     @State private var systemBrightness: Double = 0.5
 
@@ -2042,101 +2043,132 @@ struct ReaderView: View {
     // MARK: - Source Change Sheet
     private var changeSourceSheetContent: AnyView {
         AnyView(NavigationStack {
-            Group {
-                // Results stream in one source at a time, so show them as soon as the
-                // first match arrives instead of blocking on the full fan-out (459
-                // sources can take minutes). A footer keeps the "still searching" cue.
-                if !changeSourceOrigins.isEmpty {
-                    AnyView(
-                        List {
-                            ForEach(changeSourceOrigins) { origin in
-                                Button {
-                                    Task {
-                                        do {
-                                            try await store.updateOnlineBookSource(
-                                                bookId: bookId, origin: origin)
-                                            await MainActor.run {
-                                                showChangeSourceSheet = false
-                                                loadContent()
-                                            }
-                                        } catch {
-                                            await MainActor.run {
-                                                readerViewModel.reportChangeSourceError(error.localizedDescription)
-                                            }
-                                        }
-                                    }
-                                } label: {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(origin.sourceName)
-                                                .foregroundColor(.primary)
-                                            // Aggregation sources share one sourceName across
-                                            // channels; lastChapter distinguishes them.
-                                            if !origin.lastChapter.isEmpty {
-                                                Text(origin.lastChapter)
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                                    .lineLimit(1)
-                                            }
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                            }
-                            if changeSourceLoading {
-                                HStack(spacing: 8) {
-                                    ProgressView()
-                                    Text(localized("正在搜尋更多書源…"))
-                                        .font(.footnote)
-                                        .foregroundColor(.secondary)
-                                }
+            List {
+                // 目前使用中的書源 — always visible with a checkmark so the user knows
+                // which source is active (search results below exclude this one).
+                Section(localized("目前書源")) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(currentSourceName)
+                                .foregroundColor(.primary)
+                            if let last = book?.onlineChapters?.last?.title, !last.isEmpty {
+                                Text(last)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
                             }
                         }
-                    )
-                } else if changeSourceLoading {
-                    AnyView(
-                        VStack(spacing: 12) {
+                        Spacer()
+                        Image(systemName: "checkmark")
+                            .font(.body.weight(.semibold))
+                            .foregroundColor(.accentColor)
+                    }
+                }
+
+                // 其他可切換的書源。Results stream in one source at a time, so show them
+                // as soon as the first match arrives instead of blocking on the full
+                // fan-out (459 sources can take minutes).
+                Section {
+                    if !changeSourceOrigins.isEmpty {
+                        ForEach(changeSourceOrigins) { origin in
+                            Button { switchToOrigin(origin) } label: { changeSourceRow(origin) }
+                        }
+                        if changeSourceLoading {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text(localized("正在搜尋更多書源…"))
+                                    .font(.footnote)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    } else if changeSourceLoading {
+                        HStack(spacing: 8) {
                             ProgressView()
                             Text(localized("正在搜尋其他書源…"))
-                                .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    )
-                } else if let err = changeSourceError {
-                    AnyView(
-                        VStack(spacing: 12) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.title)
-                                .foregroundColor(.orange)
-                            Text(err)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding()
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    )
-                } else {
-                    AnyView(
+                    } else {
                         Text(localized("暫無其他書源"))
-                            .font(.subheadline)
                             .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    )
+                    }
+                } header: {
+                    Text(localized("其他書源"))
+                } footer: {
+                    if let err = changeSourceError {
+                        Label(err, systemImage: "exclamationmark.triangle")
+                            .foregroundColor(.red)
+                    }
                 }
             }
             .navigationTitle(localized("換源"))
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        loadOtherOrigins(forceRefresh: true)
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .disabled(changeSourceLoading)
+                    .accessibilityLabel(localized("重新搜尋"))
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(localized("關閉")) { showChangeSourceSheet = false }
                 }
             }
         })
+    }
+
+    /// A single switchable-origin row; flags origins that previously failed to switch.
+    @ViewBuilder
+    private func changeSourceRow(_ origin: BookOrigin) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(origin.sourceName)
+                    .foregroundColor(.primary)
+                // Aggregation sources share one sourceName across channels;
+                // lastChapter distinguishes them.
+                if !origin.lastChapter.isEmpty {
+                    Text(origin.lastChapter)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            if changeSourceFailedKeys.contains(ChangeSourceCache.urlKey(origin.bookUrl)) {
+                Text(localized("載入失敗"))
+                    .font(.caption2)
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.red.opacity(0.12)))
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    /// Switches the book to the chosen origin. On success dismisses the sheet and
+    /// reloads; on failure flags the origin (persisted) and keeps the sheet open so
+    /// the user can try another. (Reading position handling unchanged.)
+    private func switchToOrigin(_ origin: BookOrigin) {
+        Task {
+            do {
+                try await store.updateOnlineBookSource(bookId: bookId, origin: origin)
+                await MainActor.run {
+                    showChangeSourceSheet = false
+                    loadContent()
+                }
+            } catch {
+                await MainActor.run {
+                    readerViewModel.markOriginFailed(bookId: bookId, bookUrl: origin.bookUrl)
+                    readerViewModel.reportChangeSourceError(error.localizedDescription)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -2768,14 +2800,23 @@ struct ReaderView: View {
     }
 
     /// Source change search has been moved to ReaderViewModel.loadOtherOrigins. This method only triggers it and passes required data.
-    private func loadOtherOrigins() {
+    private func loadOtherOrigins(forceRefresh: Bool = false) {
         guard let b = book, let currentSourceId = b.bookSourceId else { return }
         readerViewModel.loadOtherOrigins(
             book: b,
             currentSourceId: currentSourceId,
             enabledSources: BookSourceStore.shared.enabledSources,
-            store: store
+            store: store,
+            forceRefresh: forceRefresh
         )
+    }
+
+    /// Display name of the source the book is currently being read from.
+    private var currentSourceName: String {
+        guard let id = book?.bookSourceId,
+              let source = BookSourceStore.shared.sources.first(where: { $0.id == id }),
+              !source.bookSourceName.isEmpty else { return localized("未知書源") }
+        return source.bookSourceName
     }
 
     // MARK: - Online Chapter Lazy Loading

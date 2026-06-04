@@ -11,6 +11,9 @@ final class ReaderViewModel: ObservableObject {
     @Published private(set) var changeSourceOrigins: [BookOrigin] = []
     @Published private(set) var changeSourceLoading: Bool = false
     @Published private(set) var changeSourceError: String? = nil
+    /// Normalized book-URL keys of origins that failed to switch (TOC fetch threw),
+    /// so the 換源 list can flag them. Backed by `ChangeSourceCache`.
+    @Published private(set) var changeSourceFailedKeys: Set<String> = []
 
     private struct InFlightRequest {
         let token: UUID
@@ -165,15 +168,35 @@ final class ReaderViewModel: ObservableObject {
     // MARK: - Source Change Search
 
     /// Searches for alternative book sources with the same title. Results update changeSourceOrigins.
+    ///
+    /// Honors 網路設定 →「搜索結果快取天數」: unless `forceRefresh` is set, a fresh cached
+    /// result for this book is reused instead of re-running the full cross-source search.
     func loadOtherOrigins(
         book: ReadingBook,
         currentSourceId: UUID,
         enabledSources: [BookSource],
-        store: BookStore
+        store: BookStore,
+        forceRefresh: Bool = false
     ) {
+        let bookId = book.id
+
+        // Cache hit: reuse recent results so reopening the sheet is instant.
+        if !forceRefresh,
+           let cached = ChangeSourceCache.shared.freshEntry(
+               for: bookId, days: GlobalSettings.shared.searchCacheDays) {
+            changeSourceSearchTask?.cancel()
+            changeSourceOrigins = cached.origins
+            changeSourceFailedKeys = Set(cached.failedKeys)
+            changeSourceLoading = false
+            changeSourceError = nil
+            return
+        }
+
         changeSourceLoading = true
         changeSourceError = nil
         changeSourceOrigins = []
+        // Keep prior failure flags across a re-search so a known-bad source stays marked.
+        changeSourceFailedKeys = Set(ChangeSourceCache.shared.entry(for: bookId)?.failedKeys ?? [])
         let bookTitle = book.title
         let bookAuthor = book.author
         let currentBookUrlKey = Self.normalizedURLKey(book.bookInfoURL)
@@ -239,12 +262,23 @@ final class ReaderViewModel: ObservableObject {
 
             if Task.isCancelled { return }
             self.changeSourceLoading = false
+            // Persist results so reopening the sheet is instant (honors 快取天數).
+            ChangeSourceCache.shared.store(origins: self.changeSourceOrigins, for: bookId)
         }
     }
 
     /// Reports an error from a source change operation.
     func reportChangeSourceError(_ message: String?) {
         changeSourceError = message
+    }
+
+    /// Flags an origin that failed to switch (its TOC fetch threw), persisting the
+    /// flag so it stays marked across reopen/re-search of the same book.
+    func markOriginFailed(bookId: UUID, bookUrl: String) {
+        let key = ChangeSourceCache.urlKey(bookUrl)
+        guard !key.isEmpty else { return }
+        changeSourceFailedKeys.insert(key)
+        ChangeSourceCache.shared.markFailed(bookUrlKey: key, for: bookId)
     }
 
     /// Normalized book-URL key for deduping origins (drops fragment, lowercased).

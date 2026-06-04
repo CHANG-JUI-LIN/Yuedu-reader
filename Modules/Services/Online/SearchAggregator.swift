@@ -4,7 +4,7 @@ import SwiftUI
 
 // MARK: - Book Origin (link info provided by a single book source)
 
-struct BookOrigin: Identifiable {
+struct BookOrigin: Identifiable, Codable {
     let id = UUID()
     let sourceId: UUID
     let sourceName: String
@@ -16,6 +16,13 @@ struct BookOrigin: Identifiable {
     let wordCount: String
     let kind: String
     let runtimeVariables: [String: String]?
+
+    // `id` is a fresh UUID per instance and is intentionally excluded so cached
+    // origins (換源 results) round-trip without persisting a meaningless identity.
+    private enum CodingKeys: String, CodingKey {
+        case sourceId, sourceName, bookUrl, tocUrl, coverUrl, intro
+        case lastChapter, wordCount, kind, runtimeVariables
+    }
 }
 
 // MARK: - Aggregated Search Results (merge info from multiple sources for the same book)
