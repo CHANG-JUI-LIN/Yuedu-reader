@@ -158,7 +158,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
 
             // Non-adjacent page jumps (TOC navigation, offset recalculation) use instant transition to avoid cover chain reverse.
-            let isAdjacent = abs(clampedPage - visible.globalPageIndex) == context.coordinator.pageStride
+            let isAdjacent = context.coordinator.isAdjacentDisplayPage(clampedPage, to: visible.globalPageIndex)
             let shouldAnimate = (pageTurnStyle != .none) && isAdjacent
 
             if pageTurnStyle == .cover {
@@ -281,7 +281,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private let coverShadowView = UIView()
         private let coverIncomingImageView = UIImageView()
         private var coverTargetPage: Int?
-        private var coverDirection: Int = 0  // 1 = forward, -1 = backward
+        private var coverDirection: ReaderCoverTurnDirection?
         /// Set to true after makeUIViewController has set the initial page,
         /// so the subsequent updateUIViewController skips redundant backward animation (binding not yet synced).
         fileprivate var suppressNextTransition = false
@@ -303,6 +303,33 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         fileprivate var pageStride: Int {
             isDoublePageSpread ? 2 : 1
+        }
+
+        private var fixedLayoutPairingProvider: FixedLayoutSpreadPairingProviding? {
+            currentEngine as? FixedLayoutSpreadPairingProviding
+        }
+
+        private func nextDisplayPage(after page: Int) -> Int? {
+            if isDoublePageSpread,
+               let next = fixedLayoutPairingProvider?.nextFixedLayoutSpreadPage(after: page) {
+                return next
+            }
+            let target = page + pageStride
+            return target < currentEngine.totalPages ? target : nil
+        }
+
+        private func previousDisplayPage(before page: Int) -> Int? {
+            if isDoublePageSpread,
+               let previous = fixedLayoutPairingProvider?.previousFixedLayoutSpreadPage(before: page) {
+                return previous
+            }
+            let target = page - pageStride
+            return target >= 0 ? target : nil
+        }
+
+        fileprivate func isAdjacentDisplayPage(_ targetPage: Int, to visiblePage: Int) -> Bool {
+            nextDisplayPage(after: visiblePage) == targetPage ||
+                previousDisplayPage(before: visiblePage) == targetPage
         }
 
         private var usesCurlBackPages: Bool {
@@ -475,6 +502,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
             let totalPages = currentEngine.totalPages
             let clamped = totalPages > 0 ? max(0, min(index, totalPages - 1)) : 0
+            if let fixedLayoutPair = fixedLayoutPairingProvider?.fixedLayoutSpreadPair(containing: clamped),
+               fixedLayoutPair.isSinglePage {
+                return currentEngine.pageViewController(at: fixedLayoutPair.globalPageIndex)
+            }
             return spreadViewController(containingPage: clamped)
         }
 
@@ -499,6 +530,18 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// odd page offsets every following spread by one and the centre gutter
         /// appears to drift off-centre.
         private func spreadViewController(containingPage page: Int) -> UIViewController {
+            if let fixedLayoutPair = fixedLayoutPairingProvider?.fixedLayoutSpreadPair(containing: page) {
+                let left = fixedLayoutPair.leftPage.map { currentEngine.pageViewController(at: $0) }
+                let right = fixedLayoutPair.rightPage.map { currentEngine.pageViewController(at: $0) }
+                return ReaderSpreadPageViewController(
+                    globalPageIndex: fixedLayoutPair.globalPageIndex,
+                    leftViewController: left,
+                    rightViewController: right,
+                    gutter: spreadGutter,
+                    backgroundColor: UIColor(currentTheme.backgroundColor)
+                )
+            }
+
             let totalPages = currentEngine.totalPages
             let pairStart = (max(0, page) / 2) * 2
             let primary = currentEngine.pageViewController(at: pairStart)
@@ -528,6 +571,31 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private func renderSnapshotForDisplayPage(_ page: Int) -> UIImage? {
             guard isDoublePageSpread else {
                 return currentEngine.renderSnapshot(forPage: page)
+            }
+
+            if let fixedLayoutPair = fixedLayoutPairingProvider?.fixedLayoutSpreadPair(containing: page) {
+                guard !fixedLayoutPair.isSinglePage else {
+                    return currentEngine.renderSnapshot(forPage: fixedLayoutPair.globalPageIndex)
+                }
+                let leftImage = fixedLayoutPair.leftPage.flatMap { currentEngine.renderSnapshot(forPage: $0) }
+                let rightImage = fixedLayoutPair.rightPage.flatMap { currentEngine.renderSnapshot(forPage: $0) }
+                guard leftImage != nil || rightImage != nil else { return nil }
+                let reference = leftImage ?? rightImage!
+                let pageWidth = reference.size.width
+                let pageHeight = max(leftImage?.size.height ?? reference.size.height, rightImage?.size.height ?? reference.size.height)
+                let resultSize = CGSize(width: pageWidth * 2 + spreadGutter, height: pageHeight)
+                let renderer = UIGraphicsImageRenderer(size: resultSize)
+                return renderer.image { context in
+                    UIColor(currentTheme.backgroundColor).setFill()
+                    context.fill(CGRect(origin: .zero, size: resultSize))
+                    leftImage?.draw(in: CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight))
+                    rightImage?.draw(in: CGRect(
+                        x: pageWidth + spreadGutter,
+                        y: 0,
+                        width: pageWidth,
+                        height: pageHeight
+                    ))
+                }
             }
 
             guard let primary = currentEngine.renderSnapshot(forPage: page) else { return nil }
@@ -669,7 +737,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     if isRTL {
                         direction = direction == .forward ? .reverse : .forward
                     }
-                    let shouldAnimate = (pageTurnStyle != .none) && abs(targetPage - visiblePage) == pageStride
+                    let shouldAnimate = (pageTurnStyle != .none) && isAdjacentDisplayPage(targetPage, to: visiblePage)
                     performProgrammaticTransition(
                         on: pageViewController,
                         to: targetPage,
@@ -910,7 +978,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                   vc.globalPageIndex > 0 else { return nil }
 
             if isDoublePageSpread {
-                let targetPage = max(0, vc.globalPageIndex - pageStride)
+                guard let targetPage = previousDisplayPage(before: vc.globalPageIndex) else { return nil }
                 return navigationViewController(for: .page(targetPage), mode: .interactiveTurn)
             }
 
@@ -949,8 +1017,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             guard let vc = viewController as? any PageIndexProviding & UIViewController else { return nil }
 
             if isDoublePageSpread {
-                let targetPage = vc.globalPageIndex + pageStride
-                guard targetPage < currentEngine.totalPages else { return nil }
+                guard let targetPage = nextDisplayPage(after: vc.globalPageIndex) else { return nil }
                 return navigationViewController(for: .page(targetPage), mode: .interactiveTurn)
             }
 
@@ -1138,7 +1205,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             switch gesture.state {
             case .began:
                 coverTargetPage = nil
-                coverDirection = 0
+                coverDirection = nil
                 // Cancel any previous in-flight animation; don't show overlay until direction is confirmed.
                 coverOverlayView.layer.removeAllAnimations()
                 coverIncomingImageView.layer.removeAllAnimations()
@@ -1147,10 +1214,16 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
             case .changed:
                 if coverTargetPage == nil {
-                    if translationX < -GestureConstants.initialTranslationThreshold, currentPage < currentEngine.totalPages - pageStride {
-                        // Forward uncover: current page slides left, new page underneath.
-                        coverDirection = 1
-                        let target = currentPage + pageStride
+                    guard let turnDirection = ReaderCoverPageMotion.direction(
+                        for: translationX,
+                        threshold: GestureConstants.initialTranslationThreshold,
+                        isRTL: isRTL
+                    ) else { return }
+                    let motion = ReaderCoverPageMotion(direction: turnDirection, isRTL: isRTL)
+
+                    if turnDirection == .forward,
+                       let target = nextDisplayPage(after: currentPage) {
+                        coverDirection = turnDirection
                         guard renderSnapshotForDisplayPage(target) != nil else {
                             let targetVC = displayViewController(at: target)
                             if isPlaceholderDisplay(targetVC) {
@@ -1163,54 +1236,51 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         coverOverlayView.frame = view.bounds
                         coverCurrentImageView.frame = view.bounds
                         coverOverlayView.isHidden = false
-                        setupForwardOutgoing(currentPageSnapshot: currentPage, newPage: target, in: view)
-                    } else if translationX > GestureConstants.initialTranslationThreshold, currentPage > 0 {
-                        // Backward cover: previous page covers in from the left.
-                        let target = max(0, currentPage - pageStride)
+                        setupForwardOutgoing(currentPageSnapshot: currentPage, newPage: target, motion: motion, in: view)
+                    } else if turnDirection == .backward,
+                              let target = previousDisplayPage(before: currentPage) {
                         // Don't start animation if snapshot is not ready (chapter not loaded).
                         guard let targetSnapshot = renderSnapshotForDisplayPage(target) else { return }
-                        coverDirection = -1
+                        coverDirection = turnDirection
                         coverTargetPage = target
                         coverOverlayView.frame = view.bounds
                         coverCurrentImageView.frame = view.bounds
                         coverCurrentImageView.image = renderSnapshotForDisplayPage(currentPage)
                         coverOverlayView.isHidden = false
-                        setupIncomingView(for: target, snapshot: targetSnapshot, in: view)
+                        setupIncomingView(for: target, snapshot: targetSnapshot, motion: motion, in: view)
                     }
                 }
-                guard coverTargetPage != nil else { return }
+                guard coverTargetPage != nil, let coverDirection else { return }
+                let motion = ReaderCoverPageMotion(direction: coverDirection, isRTL: isRTL)
                 let rawProgress = min(max(abs(translationX) / width, 0), 0.999)
-                let newX: CGFloat = coverDirection == 1
-                    ? -rawProgress * width
-                    : -width * (1 - rawProgress)
+                let newX = motion.interactiveX(progress: rawProgress, width: width)
                 coverIncomingImageView.frame.origin.x = newX
                 coverShadowView.frame.origin.x = newX
-                if coverDirection == -1 {
+                if coverDirection == .backward {
                     coverDimView.frame = coverCurrentImageView.bounds
                     coverDimView.alpha = rawProgress * GestureConstants.maxDimmingAlpha
-                } else if coverDirection == 1 {
+                } else if coverDirection == .forward {
                     coverDimView.frame = coverCurrentImageView.bounds
                     coverDimView.alpha = (1 - rawProgress) * GestureConstants.maxDimmingAlpha
                 }
 
             case .ended, .cancelled, .failed:
-                guard let targetPage = coverTargetPage else {
+                guard let targetPage = coverTargetPage, let coverDirection else {
                     resetCoverOverlay()
                     return
                 }
+                let motion = ReaderCoverPageMotion(direction: coverDirection, isRTL: isRTL)
                 let progress = min(max(abs(translationX) / width, 0), 1)
                 let shouldCommit = progress > GestureConstants.commitProgressRatio || abs(velocityX) > GestureConstants.commitVelocityThreshold
                 isTransitioning = true
 
                 UIView.animate(withDuration: GestureConstants.settleAnimationDuration, delay: 0, options: [.curveEaseOut]) {
-                    let destX: CGFloat = self.coverDirection == 1
-                        ? (shouldCommit ? -width : 0)
-                        : (shouldCommit ? 0 : -width)
+                    let destX = motion.settledX(width: width, shouldCommit: shouldCommit)
                     self.coverIncomingImageView.frame.origin.x = destX
                     self.coverShadowView.frame.origin.x = destX
-                    if self.coverDirection == -1 {
+                    if coverDirection == .backward {
                         self.coverDimView.alpha = shouldCommit ? GestureConstants.maxDimmingAlpha : 0
-                    } else if self.coverDirection == 1 {
+                    } else if coverDirection == .forward {
                         self.coverDimView.alpha = shouldCommit ? 0 : GestureConstants.maxDimmingAlpha
                     }
                 } completion: { _ in
@@ -1281,12 +1351,16 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             coverCurrentImageView.frame = view.bounds
             coverOverlayView.isHidden = false
 
-            if direction == .forward {
-                setupForwardOutgoing(currentPageSnapshot: oldPage, newPage: targetPage, in: view)
+            let turnDirection: ReaderCoverTurnDirection = targetPage >= oldPage ? .forward : .backward
+            let motion = ReaderCoverPageMotion(direction: turnDirection, isRTL: isRTL)
+
+            if turnDirection == .forward {
+                setupForwardOutgoing(currentPageSnapshot: oldPage, newPage: targetPage, motion: motion, in: view)
                 coverDimView.alpha = 0.35
                 UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseOut]) {
-                    self.coverIncomingImageView.frame.origin.x = -width
-                    self.coverShadowView.frame.origin.x = -width
+                    let destX = motion.settledX(width: width, shouldCommit: true)
+                    self.coverIncomingImageView.frame.origin.x = destX
+                    self.coverShadowView.frame.origin.x = destX
                     self.coverDimView.alpha = 0
                 } completion: { _ in
                     // Capture the latest binding value.
@@ -1309,7 +1383,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     self.isTransitioning = false
                 }
             } else {
-                // Backward cover: previous page covers in from the left, right rounded corners, shadow falls left onto the old page.
                 guard let targetSnapshot = renderSnapshotForDisplayPage(targetPage) else {
                     let latestPage = self.currentPage
                     let realVC = displayViewController(at: latestPage)
@@ -1329,10 +1402,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     return
                 }
                 coverCurrentImageView.image = renderSnapshotForDisplayPage(oldPage)
-                setupIncomingView(for: targetPage, snapshot: targetSnapshot, in: view)
+                setupIncomingView(for: targetPage, snapshot: targetSnapshot, motion: motion, in: view)
                 UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseOut]) {
-                    self.coverIncomingImageView.frame.origin.x = 0
-                    self.coverShadowView.frame.origin.x = 0
+                    let destX = motion.settledX(width: width, shouldCommit: true)
+                    self.coverIncomingImageView.frame.origin.x = destX
+                    self.coverShadowView.frame.origin.x = destX
                     self.coverDimView.alpha = 0.3
                 } completion: { _ in
                     let latestPage = self.currentPage
@@ -1363,32 +1437,41 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             coverOverlayView.isHidden = false
         }
 
-        private func setupForwardOutgoing(currentPageSnapshot: Int, newPage: Int, in view: UIView) {
+        private func setupForwardOutgoing(
+            currentPageSnapshot: Int,
+            newPage: Int,
+            motion: ReaderCoverPageMotion,
+            in view: UIView
+        ) {
             let width = max(view.bounds.width, 1)
             let h = view.bounds.height
             // New page as static background.
             coverCurrentImageView.image = renderSnapshotForDisplayPage(newPage)
             coverCurrentImageView.frame = CGRect(x: 0, y: 0, width: width, height: h)
-            // Current page slides left from x=0, right rounded corners (the last visible edge), shadow falls right onto new page.
-            coverIncomingImageView.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
+            coverIncomingImageView.layer.maskedCorners = motion.movingEdgeCorners
             coverIncomingImageView.image = renderSnapshotForDisplayPage(currentPageSnapshot)
-            coverIncomingImageView.frame = CGRect(x: 0, y: 0, width: width, height: h)
-            coverShadowView.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
-            coverShadowView.layer.shadowOffset = CGSize(width: 10, height: 0)
-            coverShadowView.frame = CGRect(x: 0, y: 0, width: width, height: h)
+            coverIncomingImageView.frame = CGRect(x: motion.initialX(width: width), y: 0, width: width, height: h)
+            coverShadowView.layer.maskedCorners = motion.movingEdgeCorners
+            coverShadowView.layer.shadowOffset = motion.shadowOffset
+            coverShadowView.frame = CGRect(x: motion.initialX(width: width), y: 0, width: width, height: h)
             coverShadowView.layer.shadowPath = UIBezierPath(rect: CGRect(x: 0, y: 0, width: width, height: h)).cgPath
             coverDimView.frame = CGRect(x: 0, y: 0, width: width, height: h)
         }
 
-        private func setupIncomingView(for targetPage: Int, snapshot: UIImage?, in view: UIView) {
+        private func setupIncomingView(
+            for targetPage: Int,
+            snapshot: UIImage?,
+            motion: ReaderCoverPageMotion,
+            in view: UIView
+        ) {
             let width = max(view.bounds.width, 1)
             let h = view.bounds.height
-            coverIncomingImageView.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
+            coverIncomingImageView.layer.maskedCorners = motion.movingEdgeCorners
             coverIncomingImageView.image = snapshot
-            coverIncomingImageView.frame = CGRect(x: -width, y: 0, width: width, height: h)
-            coverShadowView.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
-            coverShadowView.layer.shadowOffset = CGSize(width: -10, height: 0)
-            coverShadowView.frame = CGRect(x: -width, y: 0, width: width, height: h)
+            coverIncomingImageView.frame = CGRect(x: motion.initialX(width: width), y: 0, width: width, height: h)
+            coverShadowView.layer.maskedCorners = motion.movingEdgeCorners
+            coverShadowView.layer.shadowOffset = motion.shadowOffset
+            coverShadowView.frame = CGRect(x: motion.initialX(width: width), y: 0, width: width, height: h)
             coverShadowView.layer.shadowPath = UIBezierPath(rect: CGRect(x: 0, y: 0, width: width, height: h)).cgPath
             coverDimView.frame = coverCurrentImageView.bounds
             coverDimView.alpha = 0
@@ -1402,7 +1485,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             coverShadowView.frame = .zero
             coverDimView.alpha = 0
             coverTargetPage = nil
-            coverDirection = 0
+            coverDirection = nil
         }
     }
 }

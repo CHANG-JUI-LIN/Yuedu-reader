@@ -13,7 +13,7 @@ final class InteractionOverlayView: UIView {
         didSet { setNeedsDisplay() }
     }
 
-    var underlineColor: UIColor = UIColor.systemYellow.withAlphaComponent(0.85) {
+    var underlineColor: UIColor = .systemRed {
         didSet { setNeedsDisplay() }
     }
 
@@ -62,12 +62,12 @@ final class InteractionOverlayView: UIView {
             for rect in underlineRects {
                 if drawsVerticalUnderlines {
                     let x = max(rect.minX, rect.maxX - 2)
-                    ctx.setLineWidth(max(2, min(4, rect.width * 0.12)))
+                    ctx.setLineWidth(max(1, min(2, rect.width * 0.08)))
                     ctx.move(to: CGPoint(x: x, y: rect.minY))
                     ctx.addLine(to: CGPoint(x: x, y: rect.maxY))
                 } else {
                     let y = max(rect.minY, rect.maxY - 2)
-                    ctx.setLineWidth(max(2, min(4, rect.height * 0.08)))
+                    ctx.setLineWidth(max(1, min(2, rect.height * 0.05)))
                     ctx.move(to: CGPoint(x: rect.minX, y: y))
                     ctx.addLine(to: CGPoint(x: rect.maxX, y: y))
                 }
@@ -104,6 +104,27 @@ final class InteractionOverlayView: UIView {
                 height: handleRadius * 2
             ))
         }
+    }
+
+    /// Configure this overlay to render a single annotation layer — the single
+    /// source of truth that maps a `CoreTextAnnotationRenderer.Layer` to its
+    /// visuals (highlight fill vs. red underline). Shared by the paged and
+    /// scroll renderers so the mapping isn't duplicated per host.
+    func apply(layer: CoreTextAnnotationRenderer.Layer, isVertical: Bool) {
+        if layer.style == .highlight {
+            fillColor = layer.color.uiColor.withAlphaComponent(0.25)
+            selectionRects = layer.rects
+            underlineRects = []
+        } else {
+            fillColor = .clear
+            underlineColor = .systemRed
+            underlineRects = layer.rects
+            drawsVerticalUnderlines = isVertical
+            selectionRects = []
+        }
+        startHandlePoint = nil
+        endHandlePoint = nil
+        isHidden = false
     }
 
     func clearSelection() {

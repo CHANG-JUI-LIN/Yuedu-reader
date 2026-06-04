@@ -603,7 +603,14 @@ class BookStore: ObservableObject, BookProvider {
             note: note
         )
         let existingAnnotations = books[idx].bookmarks.compactMap(\.coreTextTextAnnotation)
-        let (merged, _) = AnnotationStore.merge(newAnnotation, into: existingAnnotations)
+        // 若同一範圍已有標註（改顏色/樣式時範圍不變），先移除舊的，避免新舊兩色並存。
+        // 全新選取不會精確命中既有範圍，removeExact 為 no-op。
+        let (cleaned, _) = AnnotationStore.removeExact(
+            spineIndex: position.spineIndex,
+            range: NSRange(location: position.charOffset, length: safeLength),
+            from: existingAnnotations
+        )
+        let (merged, _) = AnnotationStore.merge(newAnnotation, into: cleaned)
 
         // Remove all old annotation bookmarks, then re-insert merged results.
         // Keep non-annotation bookmarks (kind == .bookmark) untouched.

@@ -6,6 +6,71 @@ enum ReaderTapZone {
     case trailing
 }
 
+enum ReaderCoverTurnDirection: Equatable {
+    case forward
+    case backward
+}
+
+struct ReaderCoverPageMotion: Equatable {
+    let direction: ReaderCoverTurnDirection
+    let isRTL: Bool
+
+    static func direction(for translationX: CGFloat, threshold: CGFloat, isRTL: Bool) -> ReaderCoverTurnDirection? {
+        if isRTL {
+            if translationX > threshold { return .forward }
+            if translationX < -threshold { return .backward }
+        } else {
+            if translationX < -threshold { return .forward }
+            if translationX > threshold { return .backward }
+        }
+        return nil
+    }
+
+    func initialX(width: CGFloat) -> CGFloat {
+        switch direction {
+        case .forward:
+            return 0
+        case .backward:
+            return offscreenX(width: width)
+        }
+    }
+
+    func interactiveX(progress: CGFloat, width: CGFloat) -> CGFloat {
+        let clamped = min(max(progress, 0), 0.999)
+        let offscreen = offscreenX(width: width)
+        switch direction {
+        case .forward:
+            return offscreen * clamped
+        case .backward:
+            return offscreen * (1 - clamped)
+        }
+    }
+
+    func settledX(width: CGFloat, shouldCommit: Bool) -> CGFloat {
+        switch direction {
+        case .forward:
+            return shouldCommit ? offscreenX(width: width) : 0
+        case .backward:
+            return shouldCommit ? 0 : offscreenX(width: width)
+        }
+    }
+
+    var movingEdgeCorners: CACornerMask {
+        isRTL
+            ? [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+            : [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
+    }
+
+    var shadowOffset: CGSize {
+        let ltrOffset: CGFloat = direction == .forward ? 10 : -10
+        return CGSize(width: isRTL ? -ltrOffset : ltrOffset, height: 0)
+    }
+
+    private func offscreenX(width: CGFloat) -> CGFloat {
+        (isRTL ? 1 : -1) * max(width, 1)
+    }
+}
+
 @MainActor
 protocol ReaderPagingAdapter: AnyObject {
     var style: ReaderPagingStyle { get }

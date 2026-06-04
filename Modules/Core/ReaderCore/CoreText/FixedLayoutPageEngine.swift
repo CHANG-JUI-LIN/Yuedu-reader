@@ -1,7 +1,7 @@
 import UIKit
 
 @MainActor
-final class FixedLayoutPageEngine: PageRenderingProvider {
+final class FixedLayoutPageEngine: PageRenderingProvider, FixedLayoutSpreadPairingProviding {
     private let session: PublicationSession
     private let resourceProvider: BookResourceProvider
     private let viewportResolver: FixedLayoutViewportResolver
@@ -9,6 +9,7 @@ final class FixedLayoutPageEngine: PageRenderingProvider {
     private(set) var totalPages: Int = 0
     private(set) var currentPage: Int = 0
     private(set) var renderSize: CGSize = .zero
+    let fixedLayoutSpreadPairs: [FixedLayoutSpreadPair]
     let offsetStore: CharOffsetStore
 
     private var pageVCs: [Int: FixedLayoutPageViewController] = [:]
@@ -21,8 +22,13 @@ final class FixedLayoutPageEngine: PageRenderingProvider {
         self.resourceProvider = ReadiumBookResourceAdapter(session: session)
         self.totalPages = session.chapters.count
         self.renderSize = renderSize
+        self.fixedLayoutSpreadPairs = FixedLayoutSpreadPairingBuilder.build(
+            chapters: session.chapters,
+            isRTL: session.pageProgressionDirection == .rtl
+        )
         self.viewportResolver = FixedLayoutViewportResolver(
-            defaultViewport: session.fixedLayoutViewport?.defaultViewport
+            defaultViewport: session.fixedLayoutViewport?.defaultViewport,
+            pageViewports: session.fixedLayoutViewport?.pageViewports ?? [:]
         )
         let storeDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             .appendingPathComponent("epub_charoffsets/\(session.id)")

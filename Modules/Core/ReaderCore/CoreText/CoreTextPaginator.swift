@@ -13,6 +13,7 @@ final class CoreTextPaginator {
         let sourceHref: String?
         let alt: String?
         let linkHref: String?
+        let mediaAttachment: EPUBMediaAttachment?
         let originalSize: CGSize
 
         init(
@@ -22,6 +23,7 @@ final class CoreTextPaginator {
             sourceHref: String? = nil,
             alt: String? = nil,
             linkHref: String? = nil,
+            mediaAttachment: EPUBMediaAttachment? = nil,
             originalSize: CGSize? = nil
         ) {
             self.rect = rect
@@ -30,6 +32,7 @@ final class CoreTextPaginator {
             self.sourceHref = sourceHref
             self.alt = alt
             self.linkHref = linkHref
+            self.mediaAttachment = mediaAttachment
             self.originalSize = originalSize ?? image.size
         }
     }
@@ -1188,6 +1191,7 @@ final class CoreTextPaginator {
                         }
 
                         let linkHref = attrs[HTMLAttributedStringBuilder.internalLinkAttribute] as? String
+                        let mediaAttachment = attrs[HTMLAttributedStringBuilder.mediaAttachmentAttribute] as? EPUBMediaAttachment
                         let attachment = RenderedAttachment(
                             rect: rect,
                             image: img,
@@ -1195,6 +1199,7 @@ final class CoreTextPaginator {
                             sourceHref: info.source.isEmpty ? nil : info.source,
                             alt: info.alt,
                             linkHref: linkHref?.isEmpty == false ? linkHref : nil,
+                            mediaAttachment: mediaAttachment,
                             originalSize: img.size
                         )
                         switch info.displayMode {
@@ -1669,6 +1674,7 @@ final class CoreTextPaginator {
         var sourceHref = blockImage.source.isEmpty ? nil : blockImage.source
         var alt: String?
         var linkHref: String?
+        var mediaAttachment: EPUBMediaAttachment?
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
 
         for range in ranges {
@@ -1695,9 +1701,14 @@ final class CoreTextPaginator {
                    !href.isEmpty {
                     linkHref = href
                 }
+                mediaAttachment = attrStr.attribute(
+                    HTMLAttributedStringBuilder.mediaAttachmentAttribute,
+                    at: effectiveRange.location,
+                    effectiveRange: nil
+                ) as? EPUBMediaAttachment
                 stop.pointee = true
             }
-            if sourceHref != nil || alt != nil || linkHref != nil {
+            if sourceHref != nil || alt != nil || linkHref != nil || mediaAttachment != nil {
                 break
             }
         }
@@ -1710,6 +1721,7 @@ final class CoreTextPaginator {
             sourceHref: sourceHref,
             alt: alt,
             linkHref: linkHref,
+            mediaAttachment: mediaAttachment,
             originalSize: image.size
         )
     }

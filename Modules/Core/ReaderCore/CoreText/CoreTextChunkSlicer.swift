@@ -441,6 +441,20 @@ enum CoreTextChunkSlicer {
         let contentH = max(1, rect.height - blockImage.paddingTop - blockImage.paddingBottom)
         let imgY = contentY + max(0, (contentH - drawHeight) / 2)
 
+        var mediaAttachment: EPUBMediaAttachment?
+        for range in ranges {
+            let safeLocation = max(0, min(range.location, attrStr.length))
+            guard safeLocation < attrStr.length else { continue }
+            if let media = attrStr.attribute(
+                HTMLAttributedStringBuilder.mediaAttachmentAttribute,
+                at: safeLocation,
+                effectiveRange: nil
+            ) as? EPUBMediaAttachment {
+                mediaAttachment = media
+                break
+            }
+        }
+
         return CoreTextPaginator.RenderedAttachment(
             rect: CGRect(x: imgX, y: imgY, width: drawWidth, height: drawHeight),
             image: image,
@@ -448,6 +462,7 @@ enum CoreTextChunkSlicer {
             sourceHref: blockImage.source.isEmpty ? nil : blockImage.source,
             alt: nil,
             linkHref: nil,
+            mediaAttachment: mediaAttachment,
             originalSize: image.size
         )
     }

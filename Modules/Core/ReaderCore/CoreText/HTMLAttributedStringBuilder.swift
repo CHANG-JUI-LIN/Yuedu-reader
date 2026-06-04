@@ -23,6 +23,10 @@ final class HTMLAttributedStringBuilder {
     static let inlineAnnotationRunAttribute = NSAttributedString.Key("ReaderInlineAnnotationRun")
     /// Marker attribute for EPUB CSS-forced page boundaries.
     static let pageBreakAttribute = NSAttributedString.Key("ReaderForcedPageBreak")
+    /// Marker attribute preserving HTML5 semantic element identity through CoreText rendering.
+    static let semanticTagAttribute = NSAttributedString.Key("ReaderHTMLSemanticTag")
+    /// Marker attribute for tappable EPUB audio/video placeholders.
+    static let mediaAttachmentAttribute = NSAttributedString.Key("ReaderEPUBMediaAttachment")
     static let rubyAnnotationAttribute = NSAttributedString.Key(kCTRubyAnnotationAttributeName as String)
     private static let paragraphSeparator = "\n"
     private static let lineSeparator = "\u{2028}"
@@ -269,6 +273,7 @@ final class HTMLAttributedStringBuilder {
 
     var imageLoader: ((String) async -> UIImage?)?
     var cssLoader: ((String) async -> String?)?
+    var mediaURLResolver: ((String) -> String?)?
     var resolvedFontFamily: ((String) -> String?)?
     var resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)?
     /// Set to true after buildStyledAST if CSS writing-mode: vertical-rl is detected on the body element.
@@ -747,6 +752,14 @@ final class HTMLAttributedStringBuilder {
                 return makeReviewBadgePlaceholder(marker: marker, href: href, style: element.resolvedStyle, config: config)
             }
 
+            if element.tag == "table" {
+                return await renderTableElement(element, config: config)
+            }
+
+            if element.tag == "audio" || element.tag == "video" {
+                return await renderMediaElement(element, config: config)
+            }
+
             if element.tag == "img" || element.tag == "image" {
                 let src = imageSource(from: element)
                 let image = src.isEmpty ? nil : await imageLoader?(src)
@@ -807,7 +820,8 @@ final class HTMLAttributedStringBuilder {
             }
 
             if element.resolvedStyle.isBlock {
-                let block = await renderBlockElement(element, config: config)
+                let block = NSMutableAttributedString(attributedString: await renderBlockElement(element, config: config))
+                addSemanticTagIfNeeded(element.tag, to: block)
                 // Capture the block's id as an anchor target (TOC fragments frequently point at
                 // heading/div blocks, e.g. <h3 id="…">). Inline ids are tagged elsewhere, but the
                 // block path returns before that, so anchorOffsets would otherwise miss them.
@@ -867,6 +881,8 @@ final class HTMLAttributedStringBuilder {
                     range: NSRange(location: 0, length: min(1, childResult.length))
                 )
             }
+
+            addSemanticTagIfNeeded(element.tag, to: childResult)
 
             return childResult
         }
@@ -1009,6 +1025,198 @@ final class HTMLAttributedStringBuilder {
                 Self.hrDividerAttribute: hrStyle,
             ]
         )
+    }
+
+    private func renderTableElement(
+        _ element: ElementNode,
+        config: Config
+    ) async -> NSAttributedString {
+        guard let table = HTMLTableModel.from(element: element) else {
+            return NSAttributedString()
+        }
+        var tableStyle = element.resolvedStyle
+        tableStyle.textIndent = 0
+        let font = makeFont(from: tableStyle, config: config)
+        let tableTextColor = tableStyle.textColor
+        let image = await MainActor.run {
+            HTMLTableRasterizer.render(
+                table: table,
+                maxWidth: config.renderWidth,
+                baseFont: font,
+                textColor: tableTextColor,
+                backgroundColor: config.backgroundColor
+            )
+        }
+        if let image {
+            tableStyle.width = image.size.width
+            tableStyle.height = image.size.height
+        }
+        let metrics = resolvedImageMetrics(image: image, config: config, style: tableStyle)
+        let placeholder = NSMutableAttributedString(
+            attributedString: makeImagePlaceholder(
+                image: image,
+                config: config,
+                style: tableStyle,
+                imageSource: "table",
+                imageAlt: table.accessibilityText,
+                displayMode: .block,
+                precomputedMetrics: metrics
+            )
+        )
+        let range = NSRange(location: 0, length: placeholder.length)
+        placeholder.addAttribute(
+            .paragraphStyle,
+            value: imageBlockParagraphStyle(
+                base: makeParagraphStyle(for: tableStyle, config: config),
+                metrics: metrics
+            ),
+            range: range
+        )
+        addSemanticTagIfNeeded(element.tag, to: placeholder)
+        let output = NSMutableAttributedString(attributedString: placeholder)
+        if shouldTerminateBlock(element) {
+            output.append(
+                NSAttributedString(
+                    string: Self.paragraphSeparator,
+                    attributes: paragraphTerminatorAttributes(style: tableStyle, config: config)
+                )
+            )
+        }
+        return output
+    }
+
+    private func renderMediaElement(
+        _ element: ElementNode,
+        config: Config
+    ) async -> NSAttributedString {
+        guard let media = mediaAttachment(from: element) else {
+            return NSAttributedString()
+        }
+        var mediaStyle = element.resolvedStyle
+        mediaStyle.textIndent = 0
+        let font = makeFont(from: mediaStyle, config: config)
+        let mediaTextColor = mediaStyle.textColor
+        let image = await MainActor.run {
+            EPUBMediaPlaceholderRenderer.image(
+                for: media,
+                maxWidth: config.renderWidth,
+                font: font,
+                textColor: mediaTextColor,
+                backgroundColor: config.backgroundColor
+            )
+        }
+        mediaStyle.width = image.size.width
+        mediaStyle.height = image.size.height
+        let metrics = resolvedImageMetrics(image: image, config: config, style: mediaStyle)
+        let placeholder = NSMutableAttributedString(
+            attributedString: makeImagePlaceholder(
+                image: image,
+                config: config,
+                style: mediaStyle,
+                imageSource: media.sourceHref,
+                imageAlt: media.title,
+                displayMode: mediaStyle.isBlock ? .block : .inline,
+                precomputedMetrics: metrics
+            )
+        )
+        let range = NSRange(location: 0, length: placeholder.length)
+        placeholder.addAttribute(Self.mediaAttachmentAttribute, value: media, range: range)
+        if mediaStyle.isBlock {
+            placeholder.addAttribute(
+                .paragraphStyle,
+                value: imageBlockParagraphStyle(
+                    base: makeParagraphStyle(for: mediaStyle, config: config),
+                    metrics: metrics
+                ),
+                range: range
+            )
+        }
+        addSemanticTagIfNeeded(element.tag, to: placeholder)
+        let output = NSMutableAttributedString(attributedString: placeholder)
+        if mediaStyle.isBlock, shouldTerminateBlock(element) {
+            output.append(
+                NSAttributedString(
+                    string: Self.paragraphSeparator,
+                    attributes: paragraphTerminatorAttributes(style: mediaStyle, config: config)
+                )
+            )
+        }
+        return output
+    }
+
+    private func mediaAttachment(from element: ElementNode) -> EPUBMediaAttachment? {
+        let rawSource = mediaSource(from: element)
+        guard !rawSource.isEmpty else { return nil }
+        let resolvedSource = mediaURLResolver?(rawSource) ?? rawSource
+        let kind: EPUBMediaKind = element.tag == "video" ? .video : .audio
+        let title = element.attributes["title"]
+            ?? element.attributes["aria-label"]
+            ?? element.attributes["alt"]
+            ?? (kind == .video ? "EPUB Video" : "EPUB Audio")
+        return EPUBMediaAttachment(
+            kind: kind,
+            sourceHref: resolvedSource,
+            mediaType: mediaType(from: element),
+            title: title,
+            posterHref: element.attributes["poster"].flatMap { mediaURLResolver?($0) ?? $0 }
+        )
+    }
+
+    private func mediaSource(from element: ElementNode) -> String {
+        if let src = element.attributes["src"], !src.isEmpty {
+            return src
+        }
+        for child in element.children {
+            guard case .element(let childElement) = child else { continue }
+            if childElement.tag == "source",
+               let src = childElement.attributes["src"],
+               !src.isEmpty {
+                return src
+            }
+        }
+        return ""
+    }
+
+    private func mediaType(from element: ElementNode) -> String? {
+        if let type = element.attributes["type"], !type.isEmpty {
+            return type
+        }
+        for child in element.children {
+            guard case .element(let childElement) = child else { continue }
+            if childElement.tag == "source",
+               let type = childElement.attributes["type"],
+               !type.isEmpty {
+                return type
+            }
+        }
+        return nil
+    }
+
+    private func addSemanticTagIfNeeded(_ tag: String, to attributedString: NSMutableAttributedString) {
+        guard attributedString.length > 0, Self.isSemanticHTML5Tag(tag) else { return }
+        var rangesToTag: [NSRange] = []
+        attributedString.enumerateAttribute(
+            Self.semanticTagAttribute,
+            in: NSRange(location: 0, length: attributedString.length),
+            options: []
+        ) { value, range, _ in
+            if value == nil {
+                rangesToTag.append(range)
+            }
+        }
+        for range in rangesToTag {
+            attributedString.addAttribute(Self.semanticTagAttribute, value: tag, range: range)
+        }
+    }
+
+    static func isSemanticHTML5Tag(_ tag: String) -> Bool {
+        switch tag {
+        case "article", "aside", "details", "figcaption", "figure", "footer", "header",
+             "main", "mark", "nav", "section", "summary", "time", "audio", "video", "table":
+            return true
+        default:
+            return false
+        }
     }
 
     private func renderBlockElement(
@@ -1674,6 +1882,9 @@ final class HTMLAttributedStringBuilder {
         }
         if style.hasCSSColor {
             attrs[Self.cssSpecifiedForegroundColorAttribute] = style.textColor
+        }
+        if !style.isBlock, let backgroundFillColor = style.backgroundFillColor {
+            attrs[.backgroundColor] = backgroundFillColor
         }
         if style.underline {
             attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
@@ -2447,11 +2658,30 @@ final class HTMLAttributedStringBuilder {
         switch tag {
         case "body":
             return ["display": "block"]
-        case "div", "section", "article":
+        case "div", "section", "article", "main", "header", "footer", "nav", "aside", "figure", "address":
             return [
                 "display": "block",
                 "line-height": "\(config.lineHeight / max(config.fontSize, 1))",
             ]
+        case "figcaption":
+            return [
+                "display": "block",
+                "font-size": "0.9em",
+                "text-align": "center",
+                "line-height": "\(config.lineHeight / max(config.fontSize, 1))",
+            ]
+        case "table":
+            return [
+                "display": "block",
+                "text-indent": "0",
+                "line-height": "\(config.lineHeight / max(config.fontSize, 1))",
+            ]
+        case "caption":
+            return ["display": "block", "text-align": "center", "font-size": "0.9em"]
+        case "thead", "tbody", "tfoot", "tr":
+            return ["display": "block", "text-indent": "0"]
+        case "th", "td":
+            return ["display": "inline", "text-indent": "0"]
         case "p":
             return [
                 "display": "block",
@@ -2489,6 +2719,12 @@ final class HTMLAttributedStringBuilder {
             return ["font-size": "0.75em", "vertical-align": "super"]
         case "sub":
             return ["font-size": "0.75em", "vertical-align": "sub"]
+        case "mark":
+            return ["background-color": "#fff2a8"]
+        case "u", "ins":
+            return ["text-decoration": "underline"]
+        case "s", "strike", "del":
+            return ["text-decoration": "line-through"]
         default:
             return [:]
         }
@@ -3260,7 +3496,10 @@ final class HTMLAttributedStringBuilder {
 
     private func makeAttributeMap(for element: Element) -> [String: String] {
         var attributes: [String: String] = [:]
-        for key in ["id", "class", "style", "src", "href", "xlink:href", "width", "height", "alt"] {
+        for key in [
+            "id", "class", "style", "src", "href", "xlink:href", "width", "height",
+            "alt", "title", "aria-label", "poster", "type", "controls", "colspan", "rowspan", "scope"
+        ] {
             let value = (try? element.attr(key)) ?? ""
             if !value.isEmpty {
                 attributes[key] = value

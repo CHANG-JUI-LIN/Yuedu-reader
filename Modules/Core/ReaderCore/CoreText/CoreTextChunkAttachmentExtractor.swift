@@ -117,6 +117,7 @@ enum CoreTextChunkAttachmentExtractor {
                 }
 
                 let linkHref = (attrs[HTMLAttributedStringBuilder.internalLinkAttribute] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                let mediaAttachment = attrs[HTMLAttributedStringBuilder.mediaAttachmentAttribute] as? EPUBMediaAttachment
 
                 result.append(CoreTextPaginator.RenderedAttachment(
                     rect: rect,
@@ -125,6 +126,7 @@ enum CoreTextChunkAttachmentExtractor {
                     sourceHref: info.source.isEmpty ? nil : info.source,
                     alt: info.alt,
                     linkHref: linkHref,
+                    mediaAttachment: mediaAttachment,
                     originalSize: img.size
                 ))
             }

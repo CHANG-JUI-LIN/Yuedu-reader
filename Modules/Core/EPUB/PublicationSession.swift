@@ -11,16 +11,178 @@ enum EPUBWritingMode: String, Sendable {
     case unspecified
 }
 
-enum EPUBLayoutMode: String, Sendable {
+enum EPUBLayoutMode: String, Codable, Equatable, Sendable {
     case reflowable
     case prePaginated
 }
 
-enum EPUBFlowMode: String, Sendable {
+enum EPUBFlowMode: String, Codable, Equatable, Sendable {
     case paginated
     case scrolledContinuous
     case scrolledDoc
     case auto
+}
+
+enum EPUBPageProgressionDirection: String, Codable, Equatable, Sendable {
+    case `default`
+    case ltr
+    case rtl
+}
+
+enum FixedLayoutSpread: String, Codable, Equatable, Sendable {
+    case auto
+    case landscape
+    case portrait
+    case both
+    case none
+
+    static func parse(_ raw: String?) -> FixedLayoutSpread {
+        guard let raw else { return .auto }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if value.contains("landscape") { return .landscape }
+        if value.contains("portrait") { return .portrait }
+        if value.contains("both") { return .both }
+        if value.contains("none") { return .none }
+        return .auto
+    }
+}
+
+enum FixedLayoutOrientation: String, Codable, Equatable, Sendable {
+    case auto
+    case landscape
+    case portrait
+
+    static func parse(_ raw: String?) -> FixedLayoutOrientation {
+        guard let raw else { return .auto }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if value.contains("landscape") { return .landscape }
+        if value.contains("portrait") { return .portrait }
+        return .auto
+    }
+}
+
+enum FixedLayoutSpreadSide: String, Codable, Equatable, Sendable {
+    case auto
+    case left
+    case right
+    case center
+}
+
+struct FixedLayoutSpreadPair: Equatable, Sendable {
+    let leftPage: Int?
+    let rightPage: Int?
+    let isSinglePage: Bool
+
+    var globalPageIndex: Int {
+        pages.min() ?? 0
+    }
+
+    var pages: [Int] {
+        [leftPage, rightPage].compactMap { $0 }
+    }
+
+    func contains(page: Int) -> Bool {
+        leftPage == page || rightPage == page
+    }
+}
+
+enum FixedLayoutSpreadPairingBuilder {
+    static func build(
+        chapters: [PublicationChapterDescriptor],
+        isRTL: Bool
+    ) -> [FixedLayoutSpreadPair] {
+        guard !chapters.isEmpty else { return [] }
+
+        let firstSide: FixedLayoutSpreadSide = isRTL ? .right : .left
+        let secondSide: FixedLayoutSpreadSide = isRTL ? .left : .right
+        var pairs: [FixedLayoutSpreadPair] = []
+        var leftPage: Int?
+        var rightPage: Int?
+
+        func hasOpenPair() -> Bool {
+            leftPage != nil || rightPage != nil
+        }
+
+        func set(_ page: Int, on side: FixedLayoutSpreadSide) {
+            switch side {
+            case .left:
+                leftPage = page
+            case .right:
+                rightPage = page
+            case .auto, .center:
+                break
+            }
+        }
+
+        func flushOpenPair() {
+            guard hasOpenPair() else { return }
+            pairs.append(FixedLayoutSpreadPair(leftPage: leftPage, rightPage: rightPage, isSinglePage: false))
+            leftPage = nil
+            rightPage = nil
+        }
+
+        for chapter in chapters.sorted(by: { $0.index < $1.index }) {
+            let side = chapter.spreadSide
+            if side == .center {
+                flushOpenPair()
+                pairs.append(FixedLayoutSpreadPair(leftPage: chapter.index, rightPage: nil, isSinglePage: true))
+            } else if side == firstSide {
+                if hasOpenPair() {
+                    flushOpenPair()
+                }
+                set(chapter.index, on: firstSide)
+            } else if side == secondSide {
+                if hasOpenPair() {
+                    set(chapter.index, on: secondSide)
+                    flushOpenPair()
+                } else {
+                    set(chapter.index, on: secondSide)
+                    flushOpenPair()
+                }
+            } else {
+                if !hasOpenPair() {
+                    set(chapter.index, on: firstSide)
+                } else {
+                    set(chapter.index, on: secondSide)
+                    flushOpenPair()
+                }
+            }
+        }
+
+        flushOpenPair()
+        return pairs
+    }
+}
+
+@MainActor
+protocol FixedLayoutSpreadPairingProviding: AnyObject {
+    var fixedLayoutSpreadPairs: [FixedLayoutSpreadPair] { get }
+    func fixedLayoutSpreadPair(containing page: Int) -> FixedLayoutSpreadPair?
+    func nextFixedLayoutSpreadPage(after page: Int) -> Int?
+    func previousFixedLayoutSpreadPage(before page: Int) -> Int?
+}
+
+extension FixedLayoutSpreadPairingProviding {
+    func fixedLayoutSpreadPair(containing page: Int) -> FixedLayoutSpreadPair? {
+        fixedLayoutSpreadPairs.first { $0.contains(page: page) }
+    }
+
+    func nextFixedLayoutSpreadPage(after page: Int) -> Int? {
+        guard let index = fixedLayoutSpreadPairs.firstIndex(where: { $0.contains(page: page) }) else {
+            return fixedLayoutSpreadPairs.first(where: { $0.globalPageIndex > page })?.globalPageIndex
+        }
+        let nextIndex = fixedLayoutSpreadPairs.index(after: index)
+        guard fixedLayoutSpreadPairs.indices.contains(nextIndex) else { return nil }
+        return fixedLayoutSpreadPairs[nextIndex].globalPageIndex
+    }
+
+    func previousFixedLayoutSpreadPage(before page: Int) -> Int? {
+        guard let index = fixedLayoutSpreadPairs.firstIndex(where: { $0.contains(page: page) }) else {
+            return fixedLayoutSpreadPairs.last(where: { $0.globalPageIndex < page })?.globalPageIndex
+        }
+        guard index > fixedLayoutSpreadPairs.startIndex else { return nil }
+        return fixedLayoutSpreadPairs[fixedLayoutSpreadPairs.index(before: index)].globalPageIndex
+    }
 }
 
 struct FixedLayoutViewport: Sendable {
@@ -33,6 +195,33 @@ struct PublicationChapterDescriptor: Equatable {
     let href: String
     let title: String
     let mediaType: String
+    let spreadSide: FixedLayoutSpreadSide
+    let fixedLayoutViewport: CGSize?
+    let layoutModeOverride: EPUBLayoutMode?
+    let spreadOverride: FixedLayoutSpread?
+    let orientationOverride: FixedLayoutOrientation?
+
+    init(
+        index: Int,
+        href: String,
+        title: String,
+        mediaType: String,
+        spreadSide: FixedLayoutSpreadSide = .auto,
+        fixedLayoutViewport: CGSize? = nil,
+        layoutModeOverride: EPUBLayoutMode? = nil,
+        spreadOverride: FixedLayoutSpread? = nil,
+        orientationOverride: FixedLayoutOrientation? = nil
+    ) {
+        self.index = index
+        self.href = href
+        self.title = title
+        self.mediaType = mediaType
+        self.spreadSide = spreadSide
+        self.fixedLayoutViewport = fixedLayoutViewport
+        self.layoutModeOverride = layoutModeOverride
+        self.spreadOverride = spreadOverride
+        self.orientationOverride = orientationOverride
+    }
 }
 
 struct PublicationResourceResponse {
@@ -166,6 +355,9 @@ final class PublicationSessionRegistry {
 
 
 struct SpinesCache: Codable {
+    static let currentSchemaVersion = 2
+
+    var schemaVersion: Int? = SpinesCache.currentSchemaVersion
     let bookTitle: String
     let author: String
     let chapters: [PublicationChapterDescriptorCache]
@@ -180,6 +372,33 @@ struct SpinesCache: Codable {
         let href: String
         let title: String
         let mediaType: String
+        let spreadSide: FixedLayoutSpreadSide?
+        let fixedLayoutViewport: CGSize?
+        let layoutModeOverride: EPUBLayoutMode?
+        let spreadOverride: FixedLayoutSpread?
+        let orientationOverride: FixedLayoutOrientation?
+
+        init(
+            index: Int,
+            href: String,
+            title: String,
+            mediaType: String,
+            spreadSide: FixedLayoutSpreadSide? = nil,
+            fixedLayoutViewport: CGSize? = nil,
+            layoutModeOverride: EPUBLayoutMode? = nil,
+            spreadOverride: FixedLayoutSpread? = nil,
+            orientationOverride: FixedLayoutOrientation? = nil
+        ) {
+            self.index = index
+            self.href = href
+            self.title = title
+            self.mediaType = mediaType
+            self.spreadSide = spreadSide
+            self.fixedLayoutViewport = fixedLayoutViewport
+            self.layoutModeOverride = layoutModeOverride
+            self.spreadOverride = spreadOverride
+            self.orientationOverride = orientationOverride
+        }
     }
 }
 
@@ -201,9 +420,13 @@ final class PublicationSession {
     let chapters: [PublicationChapterDescriptor]
     let tocEntries: [EPUBTocEntry]
     let epubWritingMode: EPUBWritingMode
+    let pageProgressionDirection: EPUBPageProgressionDirection
     let layoutMode: EPUBLayoutMode
     let flowMode: EPUBFlowMode
+    let fixedLayoutSpread: FixedLayoutSpread
+    let fixedLayoutOrientation: FixedLayoutOrientation
     let fixedLayoutViewport: FixedLayoutViewport?
+    let mediaOverlaysByChapter: [Int: EPUBMediaOverlay]
     /// Pre-scanned chapter byte sizes loaded from SpinesCache. nil = not yet available.
     let cachedChapterByteSizes: [Int]?
     private let obfuscationIdentifier: String?
@@ -221,9 +444,13 @@ final class PublicationSession {
         chapters: [PublicationChapterDescriptor],
         tocEntries: [EPUBTocEntry],
         epubWritingMode: EPUBWritingMode,
+        pageProgressionDirection: EPUBPageProgressionDirection,
         layoutMode: EPUBLayoutMode,
         flowMode: EPUBFlowMode,
+        fixedLayoutSpread: FixedLayoutSpread,
+        fixedLayoutOrientation: FixedLayoutOrientation,
         fixedLayoutViewport: FixedLayoutViewport?,
+        mediaOverlaysByChapter: [Int: EPUBMediaOverlay],
         cachedChapterByteSizes: [Int]?,
         obfuscationIdentifier: String?,
         encryptionAlgorithmsByHref: [String: String],
@@ -237,9 +464,13 @@ final class PublicationSession {
         self.chapters = chapters
         self.tocEntries = tocEntries
         self.epubWritingMode = epubWritingMode
+        self.pageProgressionDirection = pageProgressionDirection
         self.layoutMode = layoutMode
         self.flowMode = flowMode
+        self.fixedLayoutSpread = fixedLayoutSpread
+        self.fixedLayoutOrientation = fixedLayoutOrientation
         self.fixedLayoutViewport = fixedLayoutViewport
+        self.mediaOverlaysByChapter = mediaOverlaysByChapter
         self.cachedChapterByteSizes = cachedChapterByteSizes
         self.obfuscationIdentifier = obfuscationIdentifier
         self.encryptionAlgorithmsByHref = encryptionAlgorithmsByHref
@@ -280,10 +511,21 @@ final class PublicationSession {
         var encryptionIsCached = false
 
         if let data = try? Data(contentsOf: cacheURL),
-           let cache = try? JSONDecoder().decode(SpinesCache.self, from: data) {
+           let cache = try? JSONDecoder().decode(SpinesCache.self, from: data),
+           cache.schemaVersion == SpinesCache.currentSchemaVersion {
             // Cache hit, O(1) read, bypassing O(N^2) XML matching
             chapters = cache.chapters.map {
-                PublicationChapterDescriptor(index: $0.index, href: $0.href, title: $0.title, mediaType: $0.mediaType)
+                PublicationChapterDescriptor(
+                    index: $0.index,
+                    href: $0.href,
+                    title: $0.title,
+                    mediaType: $0.mediaType,
+                    spreadSide: $0.spreadSide ?? .auto,
+                    fixedLayoutViewport: $0.fixedLayoutViewport,
+                    layoutModeOverride: $0.layoutModeOverride,
+                    spreadOverride: $0.spreadOverride,
+                    orientationOverride: $0.orientationOverride
+                )
             }
             cachedTitle = cache.bookTitle
             cachedAuthor = cache.author
@@ -309,6 +551,7 @@ final class PublicationSession {
                 if let matchedTOCTitle, !matchedTOCTitle.isEmpty {
                     lastResolvedTOCTitle = matchedTOCTitle
                 }
+                let spineMetadata = opfMetadata.spineMetadataByHref[href]
                 return PublicationChapterDescriptor(
                     index: index,
                     href: href,
@@ -317,14 +560,31 @@ final class PublicationSession {
                         fallbackHref: href,
                         chapterIndex: index
                     ),
-                    mediaType: link.mediaType?.string ?? "application/xhtml+xml"
+                    mediaType: link.mediaType?.string ?? "application/xhtml+xml",
+                    spreadSide: spineMetadata?.spreadSide ?? .auto,
+                    fixedLayoutViewport: spineMetadata?.viewport,
+                    layoutModeOverride: spineMetadata?.layoutModeOverride,
+                    spreadOverride: spineMetadata?.spreadOverride,
+                    orientationOverride: spineMetadata?.orientationOverride
                 )
             }
 
             // Save Cache (encryption will be added after resolving below)
             let cTitle = publication.metadata.title ?? "Unknown"
             let cAuthor = publication.metadata.authors.map { $0.name }.joined(separator: ", ")
-            let cacheChapters = chapters.map { SpinesCache.PublicationChapterDescriptorCache(index: $0.index, href: $0.href, title: $0.title, mediaType: $0.mediaType) }
+            let cacheChapters = chapters.map {
+                SpinesCache.PublicationChapterDescriptorCache(
+                    index: $0.index,
+                    href: $0.href,
+                    title: $0.title,
+                    mediaType: $0.mediaType,
+                    spreadSide: $0.spreadSide,
+                    fixedLayoutViewport: $0.fixedLayoutViewport,
+                    layoutModeOverride: $0.layoutModeOverride,
+                    spreadOverride: $0.spreadOverride,
+                    orientationOverride: $0.orientationOverride
+                )
+            }
             let cacheObj = SpinesCache(bookTitle: cTitle, author: cAuthor, chapters: cacheChapters)
             if let cacheData = try? JSONEncoder().encode(cacheObj) {
                 try? cacheData.write(to: cacheURL)
@@ -348,6 +608,17 @@ final class PublicationSession {
             finalTitle = titleText?.isEmpty == false ? titleText! : sourceURL.deletingPathExtension().lastPathComponent
             finalAuthor = authorText
         }
+
+        let fixedLayoutPageViewports: [Int: CGSize] = Dictionary(
+            uniqueKeysWithValues: chapters.compactMap { chapter in
+                guard let viewport = chapter.fixedLayoutViewport else { return nil }
+                return (chapter.index, viewport)
+            }
+        )
+        let mediaOverlaysByChapter = await parseMediaOverlays(
+            from: sourceURL,
+            chapters: chapters
+        )
 
         let obfuscationIdentifier: String?
         let encryptionAlgorithmsByHref: [String: String]
@@ -379,12 +650,16 @@ final class PublicationSession {
             chapters: chapters,
             tocEntries: tocEntries,
             epubWritingMode: epubWritingMode,
+            pageProgressionDirection: opfMetadata.pageProgressionDirection,
             layoutMode: opfMetadata.layoutMode,
             flowMode: opfMetadata.flowMode,
+            fixedLayoutSpread: opfMetadata.fixedLayoutSpread,
+            fixedLayoutOrientation: opfMetadata.fixedLayoutOrientation,
             fixedLayoutViewport: FixedLayoutViewport(
                 defaultViewport: opfMetadata.defaultViewport,
-                pageViewports: [:]
+                pageViewports: fixedLayoutPageViewports
             ),
+            mediaOverlaysByChapter: mediaOverlaysByChapter,
             cachedChapterByteSizes: cachedByteSizes,
             obfuscationIdentifier: obfuscationIdentifier,
             encryptionAlgorithmsByHref: encryptionAlgorithmsByHref,
@@ -783,12 +1058,29 @@ final class PublicationSession {
 
     private struct OPFMetadataResult {
         let writingMode: EPUBWritingMode
+        let pageProgressionDirection: EPUBPageProgressionDirection
         let layoutMode: EPUBLayoutMode
         let flowMode: EPUBFlowMode
+        let fixedLayoutSpread: FixedLayoutSpread
+        let fixedLayoutOrientation: FixedLayoutOrientation
         let defaultViewport: CGSize?
+        let spineMetadataByHref: [String: OPFSpineItemMetadata]
+    }
+
+    private struct OPFSpineItemMetadata {
+        var spreadSide: FixedLayoutSpreadSide = .auto
+        var viewport: CGSize?
+        var layoutModeOverride: EPUBLayoutMode?
+        var spreadOverride: FixedLayoutSpread?
+        var orientationOverride: FixedLayoutOrientation?
     }
 
     private static func firstMetaPropertyValue(in xml: String, property: String) -> String? {
+        if let value = metaElements(in: xml).first(where: { $0.property == property.lowercased() })?.value,
+           !value.isEmpty {
+            return value
+        }
+
         let escapedProperty = NSRegularExpression.escapedPattern(for: property)
         // Form 1: content="value" attribute
         let attrPattern = #"<meta[^>]*property\s*=\s*""# + escapedProperty + #""[^>]*content\s*=\s*"([^"]*)"[^>]*>"#
@@ -801,9 +1093,13 @@ final class PublicationSession {
     private static func parseOPFMetadata(from sourceURL: URL) async -> OPFMetadataResult {
         let fallback = OPFMetadataResult(
             writingMode: .unspecified,
+            pageProgressionDirection: .default,
             layoutMode: .reflowable,
             flowMode: .auto,
-            defaultViewport: nil
+            fixedLayoutSpread: .auto,
+            fixedLayoutOrientation: .auto,
+            defaultViewport: nil,
+            spineMetadataByHref: [:]
         )
         guard let archive = try? await Archive(url: sourceURL, accessMode: .read) else { return fallback }
         guard
@@ -812,6 +1108,10 @@ final class PublicationSession {
             let opfXML = await readArchiveEntry(opfPath, archive: archive)
         else { return fallback }
 
+        return parseOPFMetadataXML(opfXML, opfPath: opfPath)
+    }
+
+    private static func parseOPFMetadataXML(_ opfXML: String, opfPath: String) -> OPFMetadataResult {
         var writingMode: EPUBWritingMode = .unspecified
 
         // <meta name="primary-writing-mode" content="vertical-rl"/>
@@ -844,9 +1144,22 @@ final class PublicationSession {
             flowMode = .auto
         }
 
+        let fixedLayoutSpread = FixedLayoutSpread.parse(firstMetaPropertyValue(in: opfXML, property: "rendition:spread"))
+        let fixedLayoutOrientation = FixedLayoutOrientation.parse(firstMetaPropertyValue(in: opfXML, property: "rendition:orientation"))
+
         // spine page-progression-direction="rtl" → vertical
-        if let ppd = firstMatch(in: opfXML, pattern: #"<spine[^>]*page-progression-direction\s*=\s*"([^"]+)"[^>]*>"#)?.lowercased(), ppd == "rtl" {
-            writingMode = .verticalRL
+        let pageProgressionDirection: EPUBPageProgressionDirection
+        if let ppd = firstMatch(in: opfXML, pattern: #"<spine[^>]*page-progression-direction\s*=\s*"([^"]+)"[^>]*>"#)?.lowercased() {
+            if ppd == "rtl" {
+                pageProgressionDirection = .rtl
+                writingMode = .verticalRL
+            } else if ppd == "ltr" {
+                pageProgressionDirection = .ltr
+            } else {
+                pageProgressionDirection = .default
+            }
+        } else {
+            pageProgressionDirection = .default
         }
 
         // EPUB3 rendition:viewport
@@ -859,10 +1172,251 @@ final class PublicationSession {
 
         return OPFMetadataResult(
             writingMode: writingMode,
+            pageProgressionDirection: pageProgressionDirection,
             layoutMode: layoutMode,
             flowMode: flowMode,
-            defaultViewport: defaultViewport
+            fixedLayoutSpread: fixedLayoutSpread,
+            fixedLayoutOrientation: fixedLayoutOrientation,
+            defaultViewport: defaultViewport,
+            spineMetadataByHref: parseSpineMetadata(in: opfXML, opfPath: opfPath)
         )
+    }
+
+    private static func parseSpineMetadata(in opfXML: String, opfPath: String) -> [String: OPFSpineItemMetadata] {
+        let basePath = (opfPath as NSString).deletingLastPathComponent
+        let manifestItems = manifestItemsByID(in: opfXML, relativeTo: basePath)
+        let refinedViewports = refinedViewportByID(in: opfXML)
+        let itemrefPattern = #"<itemref\b([^>]*)>"#
+        guard let regex = try? NSRegularExpression(pattern: itemrefPattern, options: [.caseInsensitive]) else {
+            return [:]
+        }
+
+        var metadataByHref: [String: OPFSpineItemMetadata] = [:]
+        let nsXML = opfXML as NSString
+        for match in regex.matches(in: opfXML, range: NSRange(location: 0, length: nsXML.length)) {
+            guard match.numberOfRanges > 1 else { continue }
+            let tag = nsXML.substring(with: match.range(at: 1))
+            let attrs = attributes(in: tag)
+            guard let idref = attrs["idref"], let item = manifestItems[idref] else { continue }
+
+            var metadata = OPFSpineItemMetadata()
+            let tokens = propertyTokens(attrs["properties"])
+            metadata.spreadSide = spreadSide(from: tokens)
+            metadata.layoutModeOverride = layoutModeOverride(from: tokens)
+            metadata.spreadOverride = spreadOverride(from: tokens)
+            metadata.orientationOverride = orientationOverride(from: tokens)
+            metadata.viewport = refinedViewports[attrs["id"] ?? ""] ?? refinedViewports[idref]
+
+            let href = normalizedResourcePath(item.href, relativeTo: basePath)
+            metadataByHref[href] = metadata
+        }
+
+        for (id, viewport) in refinedViewports {
+            guard let item = manifestItems[id] else { continue }
+            let href = normalizedResourcePath(item.href, relativeTo: basePath)
+            var metadata = metadataByHref[href] ?? OPFSpineItemMetadata()
+            metadata.viewport = viewport
+            metadataByHref[href] = metadata
+        }
+
+        return metadataByHref
+    }
+
+    private static func parseMediaOverlays(
+        from sourceURL: URL,
+        chapters: [PublicationChapterDescriptor]
+    ) async -> [Int: EPUBMediaOverlay] {
+        guard let archive = try? await Archive(url: sourceURL, accessMode: .read),
+              let containerXML = await readArchiveEntry("META-INF/container.xml", archive: archive),
+              let opfPath = firstMatch(in: containerXML, pattern: #"full-path\s*=\s*"([^"]+)""#),
+              let opfXML = await readArchiveEntry(opfPath, archive: archive)
+        else { return [:] }
+
+        let basePath = (opfPath as NSString).deletingLastPathComponent
+        let manifestItems = manifestItemsByID(in: opfXML, relativeTo: basePath)
+        let manifestItemsByHref = Dictionary(
+            manifestItems.values.map { item in
+                (normalizedResourcePath(item.href, relativeTo: basePath), item)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        var overlays: [Int: EPUBMediaOverlay] = [:]
+        for chapter in chapters {
+            guard let chapterItem = manifestItemsByHref[chapter.href],
+                  let smilID = chapterItem.mediaOverlayID,
+                  let smilItem = manifestItems[smilID]
+            else { continue }
+            let smilHref = normalizedResourcePath(smilItem.href, relativeTo: basePath)
+            guard let smilXML = await readArchiveEntry(smilHref, archive: archive) else { continue }
+            let parsed = SMILMediaOverlayParser.parse(
+                xml: smilXML,
+                smilHref: smilHref,
+                chapterHref: chapter.href
+            )
+            let normalized = normalizeMediaOverlay(parsed, chapterHref: chapter.href)
+            guard !normalized.fragments.isEmpty else { continue }
+            overlays[chapter.index] = normalized
+        }
+        return overlays
+    }
+
+    private static func normalizeMediaOverlay(
+        _ overlay: EPUBMediaOverlay,
+        chapterHref: String
+    ) -> EPUBMediaOverlay {
+        let smilBase = (overlay.smilHref as NSString).deletingLastPathComponent
+        let fragments = overlay.fragments.map { fragment in
+            let textHref = fragment.textHref.map {
+                normalizedResourcePath($0, relativeTo: smilBase)
+            } ?? chapterHref
+            return EPUBMediaOverlayFragment(
+                id: fragment.id,
+                textHref: textHref,
+                textFragmentID: fragment.textFragmentID,
+                audioHref: normalizedResourcePath(fragment.audioHref, relativeTo: smilBase),
+                clipBegin: fragment.clipBegin,
+                clipEnd: fragment.clipEnd
+            )
+        }
+        return EPUBMediaOverlay(
+            chapterHref: chapterHref,
+            smilHref: overlay.smilHref,
+            fragments: fragments
+        )
+    }
+
+    private struct OPFManifestItem {
+        let href: String
+        let mediaType: String?
+        let mediaOverlayID: String?
+    }
+
+    private static func manifestItemsByID(in opfXML: String, relativeTo basePath: String) -> [String: OPFManifestItem] {
+        let pattern = #"<item\b([^>]*)>"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return [:]
+        }
+        let nsXML = opfXML as NSString
+        var items: [String: OPFManifestItem] = [:]
+        for match in regex.matches(in: opfXML, range: NSRange(location: 0, length: nsXML.length)) {
+            guard match.numberOfRanges > 1 else { continue }
+            let attrs = attributes(in: nsXML.substring(with: match.range(at: 1)))
+            guard let id = attrs["id"], let href = attrs["href"] else { continue }
+            items[id] = OPFManifestItem(
+                href: href,
+                mediaType: attrs["media-type"],
+                mediaOverlayID: attrs["media-overlay"]
+            )
+        }
+        return items
+    }
+
+    private static func refinedViewportByID(in opfXML: String) -> [String: CGSize] {
+        metaElements(in: opfXML).reduce(into: [:]) { result, meta in
+            guard meta.property == "rendition:viewport",
+                  let refines = meta.refines?.trimmingCharacters(in: CharacterSet(charactersIn: "#")),
+                  let viewport = parseViewportString(meta.value)
+            else { return }
+            result[refines] = viewport
+        }
+    }
+
+    private struct OPFMetaElement {
+        let property: String?
+        let refines: String?
+        let value: String
+    }
+
+    private static func metaElements(in opfXML: String) -> [OPFMetaElement] {
+        let pattern = #"<meta\b([^>]*)>([\s\S]*?)</meta>|<meta\b([^>]*)/?>"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return []
+        }
+        let nsXML = opfXML as NSString
+        return regex.matches(in: opfXML, range: NSRange(location: 0, length: nsXML.length)).compactMap { match in
+            let attrsRange = match.range(at: 1).location != NSNotFound ? match.range(at: 1) : match.range(at: 3)
+            guard attrsRange.location != NSNotFound else { return nil }
+            let attrs = attributes(in: nsXML.substring(with: attrsRange))
+            let text: String
+            if match.range(at: 2).location != NSNotFound {
+                text = nsXML.substring(with: match.range(at: 2))
+                    .replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                text = ""
+            }
+            let value = attrs["content"] ?? text
+            return OPFMetaElement(
+                property: attrs["property"]?.lowercased(),
+                refines: attrs["refines"],
+                value: value
+            )
+        }
+    }
+
+    private static func attributes(in tag: String) -> [String: String] {
+        let pattern = #"([A-Za-z_:][A-Za-z0-9_:.-]*)\s*=\s*(['"])(.*?)\2"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return [:]
+        }
+        let nsTag = tag as NSString
+        var attrs: [String: String] = [:]
+        for match in regex.matches(in: tag, range: NSRange(location: 0, length: nsTag.length)) {
+            guard match.numberOfRanges > 3 else { continue }
+            let key = nsTag.substring(with: match.range(at: 1)).lowercased()
+            let value = nsTag.substring(with: match.range(at: 3))
+            attrs[key] = value
+        }
+        return attrs
+    }
+
+    private static func propertyTokens(_ raw: String?) -> Set<String> {
+        Set(
+            (raw ?? "")
+                .split { $0 == " " || $0 == "\n" || $0 == "\t" || $0 == "\r" }
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+        )
+    }
+
+    private static func spreadSide(from tokens: Set<String>) -> FixedLayoutSpreadSide {
+        if tokens.contains("page-spread-left") || tokens.contains("rendition:page-spread-left") {
+            return .left
+        }
+        if tokens.contains("page-spread-right") || tokens.contains("rendition:page-spread-right") {
+            return .right
+        }
+        if tokens.contains("page-spread-center") || tokens.contains("rendition:page-spread-center") {
+            return .center
+        }
+        return .auto
+    }
+
+    private static func layoutModeOverride(from tokens: Set<String>) -> EPUBLayoutMode? {
+        if tokens.contains("rendition:layout-pre-paginated") || tokens.contains("layout-pre-paginated") {
+            return .prePaginated
+        }
+        if tokens.contains("rendition:layout-reflowable") || tokens.contains("layout-reflowable") {
+            return .reflowable
+        }
+        return nil
+    }
+
+    private static func spreadOverride(from tokens: Set<String>) -> FixedLayoutSpread? {
+        for token in tokens {
+            guard token.hasPrefix("rendition:spread-") || token.hasPrefix("spread-") else { continue }
+            return FixedLayoutSpread.parse(token.replacingOccurrences(of: "rendition:spread-", with: "").replacingOccurrences(of: "spread-", with: ""))
+        }
+        return nil
+    }
+
+    private static func orientationOverride(from tokens: Set<String>) -> FixedLayoutOrientation? {
+        for token in tokens {
+            guard token.hasPrefix("rendition:orientation-") || token.hasPrefix("orientation-") else { continue }
+            return FixedLayoutOrientation.parse(token.replacingOccurrences(of: "rendition:orientation-", with: "").replacingOccurrences(of: "orientation-", with: ""))
+        }
+        return nil
     }
 
     private static func parseViewportString(_ raw: String) -> CGSize? {

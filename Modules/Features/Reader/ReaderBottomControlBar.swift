@@ -21,6 +21,7 @@ struct ReaderBottomControlBar: View {
     let onDownloadAction: () -> Void
     let onOpenTTS: () -> Void
     let onOpenTOC: () -> Void
+    let onOpenBookmarks: () -> Void
     let onOpenSettings: () -> Void
 
     @State private var chapterSliderDraft: Double? = nil
@@ -154,6 +155,7 @@ struct ReaderBottomControlBar: View {
     private var toolRow: some View {
         HStack(spacing: 0) {
             toolBtn(icon: "list.bullet", label: localized("目錄")) { onOpenTOC() }
+            toolBtn(icon: "bookmark", label: localized("書籤")) { onOpenBookmarks() }
             toolBtn(
                 icon: readerTheme == .night ? "sun.min" : "moon",
                 label: localized(readerTheme == .night ? "白天" : "深色"),

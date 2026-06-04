@@ -24,6 +24,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     private var playbackHighlightText: String?
     private var textAnnotations: [CoreTextTextAnnotation] = []
     private var annotationOverlays: [LayerKey: InteractionOverlayView] = [:]
+    private var lastOverlayBounds: CGRect = .zero
 
     private func annotationOverlay(for layer: CoreTextAnnotationRenderer.Layer) -> InteractionOverlayView {
         let key = LayerKey(style: layer.style, color: layer.color)
@@ -31,16 +32,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         let overlay = InteractionOverlayView()
         overlay.frame = bounds
         overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        overlay.fillColor = .clear
         overlay.showsHandles = false
-        overlay.underlineColor = layer.color.uiColor.withAlphaComponent(0.85)
-        if layer.style == .highlight {
-            overlay.fillColor = layer.color.uiColor.withAlphaComponent(0.25)
-            overlay.selectionRects = layer.rects
-        } else {
-            overlay.underlineRects = layer.rects
-            overlay.drawsVerticalUnderlines = layout?.writingMode.isVertical ?? false
-        }
         addSubview(overlay)
         annotationOverlays[key] = overlay
         return overlay
@@ -203,6 +195,20 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     override func didMoveToSuperview() {
         super.didMoveToSuperview()
         configureTapPriority()
+    }
+
+    /// 標註/播放/選取 overlay 的 rects 是依 bounds 計算的。正文會在 bounds 變動時
+    /// 自動 draw(rect:) 重畫，但 overlay 不會，所以這裡在 bounds 改變時重算它們，
+    /// 避免旋轉進橫屏雙頁跨頁後高亮/標註用舊 bounds 的位置而錯位。
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds != lastOverlayBounds else { return }
+        lastOverlayBounds = bounds
+        updateAnnotationOverlay()
+        updatePlaybackHighlightOverlay()
+        if let context = makeInteractionContext() {
+            updateSelectionOverlay(with: context)
+        }
     }
 
     override func draw(_ rect: CGRect) {
@@ -1255,6 +1261,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         }
 
         let rects = selectionRects(for: range, in: context)
+        #if DEBUG
+        print("[ANNOT-DIAG] SELECTION range=\(range) rects=\(rects)")
+        #endif
         interactionOverlay.selectionRects = rects
         interactionOverlay.startHandlePoint = rects.first.map { CGPoint(x: $0.minX, y: $0.minY) }
         interactionOverlay.endHandlePoint = rects.last.map { CGPoint(x: $0.maxX, y: $0.maxY) }
@@ -1285,6 +1294,11 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             writingMode: context.writingMode
         )
 
+        #if DEBUG
+        let annRanges = textAnnotations.filter { $0.spineIndex == layout.spineIndex }.map { $0.range }
+        print("[ANNOT-DIAG] ANNOTATION pageRange=\(pageRange) annRanges=\(annRanges) layerRects=\(layers.map { $0.rects })")
+        #endif
+
         // Scale rects to view coordinates
         let scaledLayers = layers.map { layer -> CoreTextAnnotationRenderer.Layer in
             let scaledRects = layer.rects.map { rect in
@@ -1305,20 +1319,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             activeKeys.insert(key)
             let overlay = annotationOverlay(for: layer)
             overlay.frame = bounds
-            if layer.style == .highlight {
-                overlay.fillColor = layer.color.uiColor.withAlphaComponent(0.25)
-                overlay.selectionRects = layer.rects
-                overlay.underlineRects = []
-            } else {
-                overlay.fillColor = .clear
-                overlay.underlineColor = layer.color.uiColor.withAlphaComponent(0.85)
-                overlay.underlineRects = layer.rects
-                overlay.drawsVerticalUnderlines = layout.writingMode.isVertical
-                overlay.selectionRects = []
-            }
-            overlay.startHandlePoint = nil
-            overlay.endHandlePoint = nil
-            overlay.isHidden = false
+            overlay.apply(layer: layer, isVertical: layout.writingMode.isVertical)
         }
 
         // Hide unused overlays
@@ -1368,7 +1369,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
               let context = makeInteractionContext()
         else { return }
         annotation.color = color
-        let (merged, _) = AnnotationStore.merge(annotation, into: textAnnotations)
+        // 先移除舊標註（舊顏色），再合併新顏色，否則新舊兩層會並存導致顏色看似沒變。
+        let withoutOld = AnnotationStore.remove(annotationID: annotation.id, from: textAnnotations)
+        let (merged, _) = AnnotationStore.merge(annotation, into: withoutOld)
         textAnnotations = merged
         interactor.tappedAnnotation = textAnnotations.first { $0.spineIndex == annotation.spineIndex && $0.range == annotation.range }
         updateAnnotationOverlay()
@@ -1382,7 +1385,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
               let context = makeInteractionContext()
         else { return }
         annotation.style = style
-        let (merged, _) = AnnotationStore.merge(annotation, into: textAnnotations)
+        // 先移除舊標註（舊樣式），再合併新樣式，否則新舊兩層會並存。
+        let withoutOld = AnnotationStore.remove(annotationID: annotation.id, from: textAnnotations)
+        let (merged, _) = AnnotationStore.merge(annotation, into: withoutOld)
         textAnnotations = merged
         interactor.tappedAnnotation = textAnnotations.first { $0.spineIndex == annotation.spineIndex && $0.range == annotation.range }
         updateAnnotationOverlay()
@@ -1562,13 +1567,25 @@ final class CoreTextPageViewController: UIViewController {
 
     private func installImageTapHandler() {
         pageView.onImageAttachmentTap = { [weak self] attachment in
-            if let href = attachment.linkHref,
+            if let media = attachment.mediaAttachment {
+                self?.presentEPUBMedia(media)
+            } else if let href = attachment.linkHref,
                let target = ReaderHTMLUtilities.reviewTarget(fromHref: href) {
                 self?.presentReviewSheet(target: target)
             } else {
                 self?.presentImagePreview(for: attachment)
             }
         }
+    }
+
+    private func presentEPUBMedia(_ media: EPUBMediaAttachment) {
+        let controller = UIHostingController(rootView: EPUBMediaPlayerView(media: media))
+        controller.modalPresentationStyle = media.kind == .video ? .fullScreen : .pageSheet
+        if media.kind == .audio, let sheet = controller.sheetPresentationController {
+            sheet.detents = [.medium()]
+            sheet.prefersGrabberVisible = true
+        }
+        present(controller, animated: true)
     }
 
     private func presentImagePreview(for attachment: CoreTextPaginator.RenderedAttachment) {

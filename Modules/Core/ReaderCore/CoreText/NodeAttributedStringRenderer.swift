@@ -28,6 +28,7 @@ struct NodeAttributedStringRenderer {
         let renderWidth: CGFloat?
         let resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)?
         let imageLoader: ((String) async -> UIImage?)?
+        let mediaURLResolver: ((String) -> String?)?
         let writingMode: ReaderWritingMode
 
         init(
@@ -35,7 +36,8 @@ struct NodeAttributedStringRenderer {
             textColor: UIColor? = nil,
             renderWidth: CGFloat? = nil,
             resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
-            imageLoader: ((String) async -> UIImage?)? = nil
+            imageLoader: ((String) async -> UIImage?)? = nil,
+            mediaURLResolver: ((String) -> String?)? = nil
         ) {
             self.baseFontSize = settings.fontSize
             self.lineHeightMultiple = settings.lineHeightMultiple
@@ -47,6 +49,7 @@ struct NodeAttributedStringRenderer {
             self.renderWidth = renderWidth
             self.resolvedFont = resolvedFont
             self.imageLoader = imageLoader
+            self.mediaURLResolver = mediaURLResolver
             self.writingMode = settings.writingMode
         }
     }
@@ -131,6 +134,12 @@ struct NodeAttributedStringRenderer {
         case .image(let src, let alt, let style, let svgContent):
             return await renderInlineImage(src: src, alt: alt, style: style, svgContent: svgContent, ctx: ctx)
 
+        case .table(let table, let style):
+            return await renderTable(table, style: style, ctx: ctx)
+
+        case .media(let media, let style):
+            return await renderMedia(media, style: style, ctx: ctx)
+
         // ──────────────── Paragraph ────────────────
 
         case .paragraph(let children, let style):
@@ -158,10 +167,14 @@ struct NodeAttributedStringRenderer {
 
         // ──────────────── Container ────────────────
 
-        case .block(_, let children, let style):
-            return await renderBlock(children: children, style: style, ctx: ctx, isHeading: false)
+        case .block(let tag, let children, let style):
+            let rendered = NSMutableAttributedString(
+                attributedString: await renderBlock(children: children, style: style, ctx: ctx, isHeading: false)
+            )
+            addSemanticTagIfNeeded(tag, to: rendered)
+            return rendered
 
-        case .inline(_, let children, let style):
+        case .inline(let tag, let children, let style):
             let childCtx = applyInlineStyle(style, to: ctx)
             let rendered = await renderInlineChildren(children, ctx: childCtx)
             if isVertical(style), style.isInlineAnnotation {
@@ -172,7 +185,9 @@ struct NodeAttributedStringRenderer {
                     annotationCtx: childCtx
                 )
             }
-            return rendered
+            let tagged = NSMutableAttributedString(attributedString: rendered)
+            addSemanticTagIfNeeded(tag, to: tagged)
+            return tagged
 
         case .anchor(let href, let children):
             var childCtx = ctx
@@ -700,6 +715,119 @@ struct NodeAttributedStringRenderer {
         return output
     }
 
+    private func renderTable(
+        _ table: HTMLTableModel,
+        style: RenderStyle,
+        ctx: RenderContext
+    ) async -> NSAttributedString {
+        let blockCtx = applyBlockStyle(style, to: ctx, isHeading: false)
+        let maxWidth: CGFloat
+        if let renderWidth = config.renderWidth {
+            maxWidth = renderWidth
+        } else {
+            maxWidth = await MainActor.run { UIScreen.main.bounds.width }
+        }
+        let image = await MainActor.run {
+            HTMLTableRasterizer.render(
+                table: table,
+                maxWidth: maxWidth,
+                baseFont: blockCtx.font,
+                textColor: blockCtx.textColor,
+                backgroundColor: config.backgroundColor
+            )
+        }
+        guard let image else {
+            return NSAttributedString(string: table.accessibilityText + "\n", attributes: blockCtx.baseAttributes)
+        }
+
+        var tableStyle = style
+        tableStyle.width = image.size.width
+        tableStyle.height = image.size.height
+        let metrics = await resolvedImageMetrics(image: image, style: tableStyle, font: blockCtx.font, displayMode: .block)
+        let placeholder = NSMutableAttributedString(
+            attributedString: await makeImagePlaceholder(
+                image: image,
+                style: tableStyle,
+                ctx: blockCtx,
+                imageSource: "table",
+                imageAlt: table.accessibilityText,
+                displayMode: .block,
+                precomputedMetrics: metrics
+            )
+        )
+        let range = NSRange(location: 0, length: placeholder.length)
+        placeholder.addAttribute(
+            .paragraphStyle,
+            value: imageBlockParagraphStyle(base: blockCtx.paragraphStyle, metrics: metrics),
+            range: range
+        )
+        placeholder.addAttribute(
+            HTMLAttributedStringBuilder.semanticTagAttribute,
+            value: "table",
+            range: range
+        )
+        let output = NSMutableAttributedString(attributedString: placeholder)
+        output.append(NSAttributedString(string: "\n", attributes: blockCtx.baseAttributes))
+        return output
+    }
+
+    private func renderMedia(
+        _ media: EPUBMediaAttachment,
+        style: RenderStyle,
+        ctx: RenderContext
+    ) async -> NSAttributedString {
+        let blockCtx = applyBlockStyle(style, to: ctx, isHeading: false)
+        let maxWidth: CGFloat
+        if let renderWidth = config.renderWidth {
+            maxWidth = renderWidth
+        } else {
+            maxWidth = await MainActor.run { UIScreen.main.bounds.width }
+        }
+        let resolvedMedia = EPUBMediaAttachment(
+            kind: media.kind,
+            sourceHref: config.mediaURLResolver?(media.sourceHref) ?? media.sourceHref,
+            mediaType: media.mediaType,
+            title: media.title,
+            posterHref: media.posterHref.flatMap { config.mediaURLResolver?($0) ?? $0 }
+        )
+        let image = await MainActor.run {
+            EPUBMediaPlaceholderRenderer.image(
+                for: resolvedMedia,
+                maxWidth: maxWidth,
+                font: blockCtx.font,
+                textColor: blockCtx.textColor,
+                backgroundColor: config.backgroundColor
+            )
+        }
+
+        var mediaStyle = style
+        mediaStyle.width = image.size.width
+        mediaStyle.height = image.size.height
+        let metrics = await resolvedImageMetrics(image: image, style: mediaStyle, font: blockCtx.font, displayMode: .block)
+        let placeholder = NSMutableAttributedString(
+            attributedString: await makeImagePlaceholder(
+                image: image,
+                style: mediaStyle,
+                ctx: blockCtx,
+                imageSource: resolvedMedia.sourceHref,
+                imageAlt: resolvedMedia.title,
+                displayMode: .block,
+                precomputedMetrics: metrics
+            )
+        )
+        let range = NSRange(location: 0, length: placeholder.length)
+        placeholder.addAttribute(HTMLAttributedStringBuilder.mediaAttachmentAttribute, value: resolvedMedia, range: range)
+        placeholder.addAttribute(HTMLAttributedStringBuilder.semanticTagAttribute, value: media.kind.rawValue, range: range)
+        placeholder.addAttribute(
+            .paragraphStyle,
+            value: imageBlockParagraphStyle(base: blockCtx.paragraphStyle, metrics: metrics),
+            range: range
+        )
+        let output = NSMutableAttributedString(attributedString: placeholder)
+        output.append(NSAttributedString(string: "\n", attributes: blockCtx.baseAttributes))
+        return output
+    }
+
     private func makeImagePlaceholder(
         image: UIImage?,
         style: RenderStyle,
@@ -1010,6 +1138,29 @@ struct NodeAttributedStringRenderer {
         case .center:   return .center
         case .right:    return .right
         case .justify:  return .justified
+        }
+    }
+
+    private func addSemanticTagIfNeeded(_ tag: String, to attributedString: NSMutableAttributedString) {
+        guard attributedString.length > 0,
+              HTMLAttributedStringBuilder.isSemanticHTML5Tag(tag)
+        else { return }
+        var rangesToTag: [NSRange] = []
+        attributedString.enumerateAttribute(
+            HTMLAttributedStringBuilder.semanticTagAttribute,
+            in: NSRange(location: 0, length: attributedString.length),
+            options: []
+        ) { value, range, _ in
+            if value == nil {
+                rangesToTag.append(range)
+            }
+        }
+        for range in rangesToTag {
+            attributedString.addAttribute(
+                HTMLAttributedStringBuilder.semanticTagAttribute,
+                value: tag,
+                range: range
+            )
         }
     }
 

@@ -34,8 +34,25 @@ private extension HTMLAttributedStringBuilder.ElementNode {
         let node: RenderableNode
 
         switch tag {
-        case "p", "div", "section", "article", "main", "header", "footer", "nav", "aside", "body":
+        case "table":
+            if let table = HTMLTableModel.from(element: self) {
+                node = .table(table, style: style)
+            } else {
+                node = .block(tag: tag, children: mappedChildren, style: style)
+            }
+
+        case "audio", "video":
+            if let media = mediaAttachment {
+                node = .media(media, style: style)
+            } else {
+                node = .block(tag: tag, children: mappedChildren, style: style)
+            }
+
+        case "p", "div", "body":
             node = .paragraph(mappedChildren, style: style)
+
+        case "section", "article", "main", "header", "footer", "nav", "aside", "figure", "figcaption", "address":
+            node = .block(tag: tag, children: mappedChildren, style: style)
 
         case "h1", "h2", "h3", "h4", "h5", "h6":
             let level = Int(String(tag.last ?? "1")) ?? 1
@@ -142,6 +159,49 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             className == "small" || className.hasPrefix("small")
         }
     }
+
+    private var mediaAttachment: EPUBMediaAttachment? {
+        let source = mediaSource
+        guard !source.isEmpty else { return nil }
+        let kind: EPUBMediaKind = tag == "video" ? .video : .audio
+        return EPUBMediaAttachment(
+            kind: kind,
+            sourceHref: source,
+            mediaType: mediaType,
+            title: attributes["title"] ?? attributes["aria-label"] ?? attributes["alt"],
+            posterHref: attributes["poster"]
+        )
+    }
+
+    private var mediaSource: String {
+        if let src = attributes["src"], !src.isEmpty {
+            return src
+        }
+        for child in children {
+            guard case .element(let element) = child,
+                  element.tag == "source",
+                  let src = element.attributes["src"],
+                  !src.isEmpty
+            else { continue }
+            return src
+        }
+        return ""
+    }
+
+    private var mediaType: String? {
+        if let type = attributes["type"], !type.isEmpty {
+            return type
+        }
+        for child in children {
+            guard case .element(let element) = child,
+                  element.tag == "source",
+                  let type = element.attributes["type"],
+                  !type.isEmpty
+            else { continue }
+            return type
+        }
+        return nil
+    }
 }
 
 private extension RenderStyle {
@@ -182,7 +242,13 @@ private extension RenderStyle {
             borderLeftColor: s.borderLeftColor.flatMap { RenderColor(uiColor: $0) },
             borderRightColor: s.borderRightColor.flatMap { RenderColor(uiColor: $0) },
             isHorizontallyCentered: s.isHorizontallyCentered,
-            isVerticalWritingMode: s.isVerticalWritingMode
+            firstLetterFontSizeMultiplier: s.firstLetterFontSizeMultiplier,
+            firstLetterFontWeight: s.firstLetterFontWeight,
+            firstLetterColor: s.firstLetterColor.flatMap { RenderColor(uiColor: $0) },
+            underline: s.underline,
+            strikethrough: s.strikethrough,
+            isVerticalWritingMode: s.isVerticalWritingMode,
+            borderRadius: s.borderRadius
         )
     }
 }

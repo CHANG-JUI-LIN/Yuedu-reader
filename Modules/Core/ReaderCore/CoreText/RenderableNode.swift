@@ -63,6 +63,12 @@ public indirect enum RenderableNode: Sendable {
     /// svgContent carries inline SVG XML for rasterization instead of src loading.
     case image(src: String, alt: String, style: RenderStyle = .none, svgContent: String? = nil)
 
+    /// Rasterized HTML table. Keeps row/cell semantics intact until the final renderer stage.
+    case table(HTMLTableModel, style: RenderStyle = .none)
+
+    /// EPUB audio/video attachment rendered as a tappable placeholder.
+    case media(EPUBMediaAttachment, style: RenderStyle = .none)
+
     /// Paragraph-review badge (段評). Renders as a tappable inline count bubble; `reviewURL`
     /// carries the `ydreview://` action that opens the source's review web page.
     case commentBadge(count: String, reviewURL: String, title: String)

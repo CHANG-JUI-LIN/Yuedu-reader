@@ -2,11 +2,13 @@ import UIKit
 
 final class FixedLayoutViewportResolver {
     let defaultViewport: CGSize?
+    private let pageViewports: [Int: CGSize]
     private var pageCache: [Int: CGSize] = [:]
     private let lock = NSLock()
 
-    init(defaultViewport: CGSize?) {
+    init(defaultViewport: CGSize?, pageViewports: [Int: CGSize] = [:]) {
         self.defaultViewport = defaultViewport
+        self.pageViewports = pageViewports
     }
 
     func viewport(
@@ -17,8 +19,13 @@ final class FixedLayoutViewportResolver {
             return cached
         }
 
-        let parsed = await parseViewportFromXHTML(spineIndex: spineIndex, resourceProvider: resourceProvider)
-        let result = parsed ?? defaultViewport ?? CGSize(width: 600, height: 800)
+        let result: CGSize
+        if let configured = pageViewports[spineIndex] {
+            result = configured
+        } else {
+            let parsed = await parseViewportFromXHTML(spineIndex: spineIndex, resourceProvider: resourceProvider)
+            result = parsed ?? defaultViewport ?? CGSize(width: 600, height: 800)
+        }
 
         lock.withLock {
             pageCache[spineIndex] = result
@@ -35,8 +42,13 @@ final class FixedLayoutViewportResolver {
             let isCached = lock.withLock { pageCache[i] != nil }
             if isCached { continue }
 
-            let parsed = await parseViewportFromXHTML(spineIndex: i, resourceProvider: resourceProvider)
-            let result = parsed ?? defaultViewport ?? CGSize(width: 600, height: 800)
+            let result: CGSize
+            if let configured = pageViewports[i] {
+                result = configured
+            } else {
+                let parsed = await parseViewportFromXHTML(spineIndex: i, resourceProvider: resourceProvider)
+                result = parsed ?? defaultViewport ?? CGSize(width: 600, height: 800)
+            }
 
             lock.withLock {
                 pageCache[i] = result

@@ -128,6 +128,12 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             return await self.loadCSS(href: href, chapterHref: chapterHref)
         }
 
+        localBuilder.mediaURLResolver = { [weak self] src in
+            guard let self else { return nil }
+            let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
+            return self.resourceProvider.resourceURL(for: resolved).absoluteString
+        }
+
         // ── Build NSAttributedString ────────────────────────────────────
         let config = makeConfig(
             settings: settings,
@@ -195,6 +201,11 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                 imageLoader: { [weak self] src in
                     guard let self else { return nil }
                     return await self.loadImage(src: src, chapterHref: chapterHref)
+                },
+                mediaURLResolver: { [weak self] src in
+                    guard let self else { return nil }
+                    let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
+                    return self.resourceProvider.resourceURL(for: resolved).absoluteString
                 }
             )
         )

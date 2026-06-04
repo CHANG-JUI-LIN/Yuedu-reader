@@ -282,20 +282,7 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
                 ])
                 annotationOverlays[key] = overlayView
             }
-            if layer.style == .highlight {
-                overlayView.fillColor = layer.color.uiColor.withAlphaComponent(0.25)
-                overlayView.selectionRects = layer.rects
-                overlayView.underlineRects = []
-            } else {
-                overlayView.fillColor = .clear
-                overlayView.underlineColor = layer.color.uiColor.withAlphaComponent(0.85)
-                overlayView.underlineRects = layer.rects
-                overlayView.drawsVerticalUnderlines = chunk.writingMode.isVertical
-                overlayView.selectionRects = []
-            }
-            overlayView.startHandlePoint = nil
-            overlayView.endHandlePoint = nil
-            overlayView.isHidden = false
+            overlayView.apply(layer: layer, isVertical: chunk.writingMode.isVertical)
         }
 
         // Hide unused overlays

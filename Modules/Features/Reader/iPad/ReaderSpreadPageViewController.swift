@@ -8,10 +8,14 @@ final class ReaderSpreadPageViewController: UIViewController, PageIndexProviding
     private let isRTL: Bool
     private let gutter: CGFloat
     private let backgroundUIColor: UIColor
+    private let orderedPages: [UIViewController?]
 
     var coreTextReadingPosition: CoreTextReadingPosition? {
-        if let provider = primaryViewController as? CoreTextReadingPositionProviding {
-            return provider.coreTextReadingPosition
+        for viewController in [primaryViewController, secondaryViewController].compactMap({ $0 }) {
+            if let provider = viewController as? CoreTextReadingPositionProviding,
+               let position = provider.coreTextReadingPosition {
+                return position
+            }
         }
         return nil
     }
@@ -35,6 +39,27 @@ final class ReaderSpreadPageViewController: UIViewController, PageIndexProviding
         self.isRTL = isRTL
         self.gutter = gutter
         self.backgroundUIColor = backgroundColor
+        self.orderedPages = isRTL
+            ? [secondaryViewController, primaryViewController]
+            : [primaryViewController, secondaryViewController]
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    init(
+        globalPageIndex: Int,
+        leftViewController: UIViewController?,
+        rightViewController: UIViewController?,
+        gutter: CGFloat,
+        backgroundColor: UIColor
+    ) {
+        precondition(leftViewController != nil || rightViewController != nil)
+        self.globalPageIndex = globalPageIndex
+        self.primaryViewController = leftViewController ?? rightViewController!
+        self.secondaryViewController = leftViewController == nil ? nil : rightViewController
+        self.isRTL = false
+        self.gutter = gutter
+        self.backgroundUIColor = backgroundColor
+        self.orderedPages = [leftViewController, rightViewController]
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -79,10 +104,6 @@ final class ReaderSpreadPageViewController: UIViewController, PageIndexProviding
             rightContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             rightContainer.widthAnchor.constraint(equalTo: leftContainer.widthAnchor),
         ])
-
-        let orderedPages: [UIViewController?] = isRTL
-            ? [secondaryViewController, primaryViewController]
-            : [primaryViewController, secondaryViewController]
 
         install(orderedPages[0], in: leftContainer)
         install(orderedPages[1], in: rightContainer)

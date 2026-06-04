@@ -842,3 +842,8 @@
 "第 %d 到 %d 章" = "Chapters %d to %d";
 "%d/%d 章" = "%d/%d chapters";
 "全本" = "Full Book";
+"重點" = "Highlights";
+"沒有書籤" = "No Bookmarks";
+"沒有重點" = "No Highlights";
+"點一下你要加入書籤的頁面，點一下選單圖像，然後點一下書籤按鈕。" = "Go to a page you want to bookmark, tap the menu icon, then tap the bookmark button.";
+"在閱讀時選取文字，加入底線或螢光筆即可在此查看。" = "Select text while reading and add an underline or highlight to see it here.";

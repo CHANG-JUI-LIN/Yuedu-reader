@@ -49,6 +49,7 @@ struct ReaderView: View {
     @State private var showBars = false
     @State private var showSettings = false
     @State private var showTOC = false
+    @State private var showBookmarks = false
 
     // Online chapter lazy loading
     @StateObject private var readerViewModel = ReaderViewModel()
@@ -61,6 +62,7 @@ struct ReaderView: View {
 
     @StateObject private var autoReader = AutoReadController()
     @StateObject private var ttsCoordinator = TTSCoordinator()
+    @StateObject private var mediaOverlayCoordinator = EPUBMediaOverlayPlaybackCoordinator()
 
     private func syncReaderBrightnessFromSystem() {
         let current = Double(UIScreen.main.brightness)
@@ -91,6 +93,8 @@ struct ReaderView: View {
     @State private var ttsJumpPromptChapterIndex: Int? = nil
     @State private var ttsPlaybackAnchor: CoreTextReadingPosition?
     @State private var isAligningReaderToTTSAnchor = false
+    @State private var showMediaOverlayPanel = false
+    @State private var activeMediaOverlayChapterIndex: Int? = nil
 
     @State private var currentChapterIndex = 0
 
@@ -109,6 +113,7 @@ struct ReaderView: View {
     @State private var curlStartupStartedAt: CFAbsoluteTime?
     @State private var hasLoggedCurlInteractiveReady = false
     @State private var hasPerformedInitialLoad = false
+    @State private var activeFixedLayoutOrientationRequest: FixedLayoutOrientation?
 
     // Source change
     @State private var showChangeSourceSheet = false
@@ -158,11 +163,15 @@ struct ReaderView: View {
 
     private var effectiveReaderSpreadMode: ReaderSpreadMode {
         guard usesReadableReaderWidth,
-              isLandscapeViewport,
-              !effectiveScrollMode,
-              !usesFixedLayoutRenderer
+              !effectiveScrollMode
         else {
             return .singlePage
+        }
+
+        if usesFixedLayoutRenderer {
+            guard fixedLayoutAllowsDoublePageSpread else { return .singlePage }
+        } else {
+            guard isLandscapeViewport else { return .singlePage }
         }
 
         switch settings.readerSpreadMode {
@@ -173,12 +182,54 @@ struct ReaderView: View {
         }
     }
 
+    private var fixedLayoutAllowsDoublePageSpread: Bool {
+        switch epubRenderer.fixedLayoutOrientation {
+        case .portrait:
+            guard !isLandscapeViewport else { return false }
+        case .landscape:
+            guard isLandscapeViewport else { return false }
+        case .auto:
+            break
+        }
+
+        switch epubRenderer.fixedLayoutSpread {
+        case .none:
+            return false
+        case .landscape:
+            return isLandscapeViewport
+        case .portrait:
+            return !isLandscapeViewport && UIDevice.current.userInterfaceIdiom == .pad
+        case .both:
+            return true
+        case .auto:
+            return isLandscapeViewport || UIDevice.current.userInterfaceIdiom == .pad
+        }
+    }
+
     private var isDoublePageSpreadActive: Bool {
         effectiveReaderSpreadMode == .doublePage
     }
 
     private var readerPageStep: Int {
         isDoublePageSpreadActive ? 2 : 1
+    }
+
+    private func nextReaderPage(after page: Int, maxPage: Int) -> Int {
+        if isDoublePageSpreadActive,
+           let pairingProvider = epubRenderer.engine as? FixedLayoutSpreadPairingProviding,
+           let next = pairingProvider.nextFixedLayoutSpreadPage(after: page) {
+            return min(maxPage, next)
+        }
+        return min(maxPage, page + readerPageStep)
+    }
+
+    private func previousReaderPage(before page: Int) -> Int {
+        if isDoublePageSpreadActive,
+           let pairingProvider = epubRenderer.engine as? FixedLayoutSpreadPairingProviding,
+           let previous = pairingProvider.previousFixedLayoutSpreadPage(before: page) {
+            return max(0, previous)
+        }
+        return max(0, page - readerPageStep)
     }
 
     /// Composed two-page spreads can't render a native page-curl (the spine sits in
@@ -740,6 +791,13 @@ struct ReaderView: View {
         return allPages[min(currentPage, allPages.count - 1)].content
     }
 
+    private var activePlaybackHighlightText: String? {
+        if mediaOverlayCoordinator.playbackState != .stopped {
+            return currentMediaOverlayHighlightText()
+        }
+        return ttsCoordinator.playbackState == .stopped ? nil : ttsCoordinator.currentSegmentText
+    }
+
     private var activeTTSChapterTitle: String {
         let index = ttsChapterIndex ?? currentChapterIndex
         guard chapters.indices.contains(index) else { return currentChapterTitle }
@@ -835,11 +893,11 @@ struct ReaderView: View {
             } else if usesFixedLayoutRenderer, let flEngine = epubRenderer.engine {
                 CoreTextPageEngineView(
                     engine: flEngine,
-                    pageTurnStyle: settings.pageTurnStyle,
+                    pageTurnStyle: effectivePageTurnStyle,
                     theme: readerTheme,
                     playbackHighlightText: nil,
-                    isRTL: false,
-                    isDoublePageSpread: false,
+                    isRTL: epubRenderer.pageProgressionDirection == .rtl,
+                    isDoublePageSpread: isDoublePageSpreadActive,
                     spreadGutter: DSLayout.readerSpreadGutter,
                     sessionCoordinator: nil,
                     externalTargetVersion: 0,
@@ -862,7 +920,7 @@ struct ReaderView: View {
                         }
                     }
                 )
-                .id(settings.pageTurnStyle)
+                .id(readerPageViewIdentity)
                 .ignoresSafeArea()
                 .transition(.opacity.animation(.easeOut(duration: 0.25)))
             } else if effectiveScrollMode {
@@ -886,9 +944,7 @@ struct ReaderView: View {
                     engine: ctEngine,
                     pageTurnStyle: effectivePageTurnStyle,
                     theme: readerTheme,
-                    playbackHighlightText: ttsCoordinator.playbackState == .stopped
-                        ? nil
-                        : ttsCoordinator.currentSegmentText,
+                    playbackHighlightText: activePlaybackHighlightText,
                     isRTL: effectiveWritingMode.isVertical,
                     isDoublePageSpread: isDoublePageSpreadActive,
                     spreadGutter: DSLayout.readerSpreadGutter,
@@ -1046,6 +1102,7 @@ struct ReaderView: View {
             }
             saveProgress()
             finishReadingStatsSession()
+            restoreFixedLayoutOrientationPreference()
             if let b = book, b.isOnline {
                 Task {
                     await readerViewModel.cancelAll(for: b.id)
@@ -1053,6 +1110,7 @@ struct ReaderView: View {
             }
             volumeHandler.stopListening()
             autoReader.pause()
+            mediaOverlayCoordinator.stop()
             setTTSFloatingOverlayVisible(false)
         }
         .onChanged(of: scenePhase) { phase in
@@ -1199,6 +1257,21 @@ struct ReaderView: View {
                 )
             }
         }
+        .sheet(isPresented: $showBookmarks) {
+            AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
+                ReaderBookmarkListView(
+                    bookTitle: book?.title ?? "",
+                    bookmarks: book?.bookmarks ?? [],
+                    pageNumber: { inChapterPageNumber(for: $0) },
+                    onSelect: { bm in
+                        showBookmarks = false
+                        jumpToBookmark(bm)
+                    },
+                    onDelete: { deleteBookmarkEntry($0) },
+                    isPresented: $showBookmarks
+                )
+            }
+        }
         .sheet(isPresented: $showTTSPanel) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 TTSPanelView(
@@ -1212,6 +1285,26 @@ struct ReaderView: View {
                     onNextChapter: { startAdjacentTTSChapter(delta: 1) },
                     onSelectChapter: { startTTSChapter($0, syncReader: true) }
                 )
+            }
+        }
+        .sheet(isPresented: $showMediaOverlayPanel) {
+            AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
+                if let chapterIndex = activeMediaOverlayChapterIndex,
+                   let overlay = epubRenderer.mediaOverlaysByChapter[chapterIndex] {
+                    EPUBMediaOverlayPlayerView(
+                        title: chapters.indices.contains(chapterIndex) ? chapters[chapterIndex].title : currentChapterTitle,
+                        overlay: overlay,
+                        chapterIndex: chapterIndex,
+                        coordinator: mediaOverlayCoordinator,
+                        resourceURL: { epubRenderer.resourceURL(for: $0) }
+                    )
+                } else {
+                    ContentUnavailableView(
+                        localized("媒體旁白"),
+                        systemImage: "waveform",
+                        description: Text(localized("目前章節沒有媒體旁白"))
+                    )
+                }
             }
         }
         .sheet(isPresented: $showAutoReadPanel) {
@@ -1246,6 +1339,9 @@ struct ReaderView: View {
                 applyInitialProgressIfNeeded()
                 updateReadingStatsPosition()
             }
+        }
+        .onChanged(of: epubRenderer.fixedLayoutOrientation) { _ in
+            updateFixedLayoutOrientationPreference()
         }
         .onChanged(of: allPages.count) { _ in
             applyInitialProgressIfNeeded()
@@ -1478,6 +1574,41 @@ struct ReaderView: View {
             .safeAreaInsets.top) ?? readerSafeAreaTop
     }
 
+    private var keyWindowScene: UIWindowScene? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { scene in
+                scene.activationState == .foregroundActive &&
+                    scene.windows.contains(where: \.isKeyWindow)
+            }
+            ?? UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .first { $0.windows.contains(where: \.isKeyWindow) }
+    }
+
+    private func updateFixedLayoutOrientationPreference() {
+        guard usesFixedLayoutRenderer else {
+            restoreFixedLayoutOrientationPreference()
+            return
+        }
+
+        let orientation = epubRenderer.fixedLayoutOrientation
+        guard orientation != .auto else {
+            restoreFixedLayoutOrientationPreference()
+            return
+        }
+
+        guard activeFixedLayoutOrientationRequest != orientation else { return }
+        activeFixedLayoutOrientationRequest = orientation
+        ReaderOrientationController.shared.request(orientation, in: keyWindowScene)
+    }
+
+    private func restoreFixedLayoutOrientationPreference() {
+        guard activeFixedLayoutOrientationRequest != nil else { return }
+        activeFixedLayoutOrientationRequest = nil
+        ReaderOrientationController.shared.restoreDefault(in: keyWindowScene)
+    }
+
     /// Returns the key window's bottom safe area inset (used for manual compensation in full-screen reading).
     private var windowSafeBottom: CGFloat {
         (UIApplication.shared.connectedScenes
@@ -1544,8 +1675,7 @@ struct ReaderView: View {
                 initialChapter: initialPos.chapter,
                 initialCharOffset: initialPos.charOffset,
                 resliceToken: scrollResliceToken,
-                playbackHighlightText: ttsCoordinator.playbackState == .stopped
-                    ? nil : ttsCoordinator.currentSegmentText,
+                playbackHighlightText: activePlaybackHighlightText,
                 textAnnotations: coreTextTextAnnotations,
                 onTap: {
                     withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
@@ -1723,7 +1853,7 @@ struct ReaderView: View {
 
     private func goToPrevPage() {
         guard currentPage > 0 else { return }
-        let targetPage = max(0, currentPage - readerPageStep)
+        let targetPage = previousReaderPage(before: currentPage)
         switch effectivePageTurnStyle {
         case .none:
             var t = Transaction()
@@ -1746,7 +1876,7 @@ struct ReaderView: View {
             maxPage = allPages.count - 1
         }
         guard currentPage < maxPage else { return }
-        let targetPage = min(maxPage, currentPage + readerPageStep)
+        let targetPage = nextReaderPage(after: currentPage, maxPage: maxPage)
         switch effectivePageTurnStyle {
         case .none:
             var t = Transaction()
@@ -1811,8 +1941,9 @@ struct ReaderView: View {
             onRefresh: { refreshCurrentChapter() },
             onOpenChangeSource: { showChangeSourceSheet = true },
             onDownloadAction: { handleDownloadAction() },
-            onOpenTTS: { showTTSPanel = true },
+            onOpenTTS: { openPlaybackPanel() },
             onOpenTOC: { showTOC = true },
+            onOpenBookmarks: { showBookmarks = true },
             onOpenSettings: { showSettings = true }
         )
     }
@@ -2172,6 +2303,53 @@ struct ReaderView: View {
         }
     }
 
+    private func openPlaybackPanel() {
+        let chapterIndex = currentChapterIndex
+        if isEPUB, epubRenderer.mediaOverlaysByChapter[chapterIndex] != nil {
+            activeMediaOverlayChapterIndex = chapterIndex
+            showMediaOverlayPanel = true
+        } else {
+            showTTSPanel = true
+        }
+    }
+
+    private func currentMediaOverlayHighlightText() -> String? {
+        guard let chapterIndex = mediaOverlayCoordinator.currentChapterIndex,
+              let fragment = mediaOverlayCoordinator.currentFragment,
+              let overlay = epubRenderer.mediaOverlaysByChapter[chapterIndex],
+              let layout = epubRenderer.engine?.layouts[chapterIndex],
+              layout.attributedString.length > 0
+        else {
+            return mediaOverlayCoordinator.currentFragment?.textFragmentID
+                ?? mediaOverlayCoordinator.currentFragment?.id
+        }
+
+        let anchorID = fragment.textFragmentID ?? fragment.id
+        guard let start = layout.anchorOffsets[anchorID],
+              start >= 0,
+              start < layout.attributedString.length
+        else {
+            return anchorID
+        }
+
+        let nextStart = overlay.fragments
+            .compactMap { next -> Int? in
+                guard next.id != fragment.id else { return nil }
+                let nextID = next.textFragmentID ?? next.id
+                guard let offset = layout.anchorOffsets[nextID], offset > start else { return nil }
+                return offset
+            }
+            .min()
+        let end = min(nextStart ?? min(layout.attributedString.length, start + 180), layout.attributedString.length)
+        guard end > start else { return anchorID }
+
+        let text = (layout.attributedString.string as NSString)
+            .substring(with: NSRange(location: start, length: end - start))
+            .replacingOccurrences(of: "\u{FFFC}", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? anchorID : text
+    }
+
     private func setTTSFloatingOverlayVisible(_ visible: Bool) {
         Task { @MainActor in
             TTSFloatingPlayerState.shared.setReaderOverlayVisible(visible)
@@ -2181,6 +2359,7 @@ struct ReaderView: View {
     @discardableResult
     private func startTTSChapter(_ chapterIndex: Int, syncReader: Bool) -> Bool {
         guard chapters.indices.contains(chapterIndex) else { return false }
+        mediaOverlayCoordinator.stop()
         let text = textForTTSChapter(chapterIndex)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             ttsLog("[TTS][Reader] startTTSChapter ignored empty chapter=\(chapterIndex)")
@@ -2302,6 +2481,25 @@ struct ReaderView: View {
             return
         }
         jumpToChapter(position.spineIndex, charOffset: position.charOffset)
+    }
+
+    /// 標註所在章節內的頁碼（1-based）；CoreText 引擎不可用時回傳 nil。
+    private func inChapterPageNumber(for bookmark: Bookmark) -> Int? {
+        guard usesCoreTextEPUB, let engine = epubRenderer.engine else { return nil }
+        let position = bookmark.position
+        if let layout = engine.layouts[position.spineIndex] {
+            return layout.pageIndex(for: position.charOffset) + 1
+        }
+        // 章節尚未排版：用引擎相同的保守估算（~400 字/頁）。
+        return max(0, position.charOffset / 400) + 1
+    }
+
+    /// 從清單刪除一筆書籤或標註；標註需同步重繪 overlay。
+    private func deleteBookmarkEntry(_ bookmark: Bookmark) {
+        store.removeBookmark(bookId: bookId, bookmarkId: bookmark.id)
+        if bookmark.kind == .underline || bookmark.kind == .highlight {
+            syncCoreTextTextAnnotations()
+        }
     }
 
     /// Navigate to a TOC entry, honoring its in-spine anchor so sub-sections of one spine file
@@ -2798,6 +2996,7 @@ struct ReaderView: View {
             renderSize: session.layoutMode == .prePaginated ? readerViewportSize : currentReaderRenderSize,
             settings: settings
         )
+        updateFixedLayoutOrientationPreference()
 
         currentPage = 0
         isLoadingPipeline = false

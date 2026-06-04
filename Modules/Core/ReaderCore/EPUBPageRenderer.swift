@@ -10,11 +10,16 @@ final class EPUBPageRenderer: ObservableObject {
 
     private(set) var engine: (any PageRenderingProvider)?
     @Published private(set) var layoutMode: EPUBLayoutMode = .reflowable
+    @Published private(set) var pageProgressionDirection: EPUBPageProgressionDirection = .default
+    @Published private(set) var fixedLayoutSpread: FixedLayoutSpread = .auto
+    @Published private(set) var fixedLayoutOrientation: FixedLayoutOrientation = .auto
     @Published private(set) var fixedLayoutViewport: FixedLayoutViewport?
+    @Published private(set) var mediaOverlaysByChapter: [Int: EPUBMediaOverlay] = [:]
     /// Holds the EPUB builder when useRenderableNodePipeline is enabled,
     /// so notifyViewportSize can update renderSize.
     private var epubBuilder: EPUBAttributedStringBuilder?
     private var onlineBuilder: OnlineProviderAttributedStringBuilder?
+    private var publicationSession: PublicationSession?
 
     /// Scroll-mode-specific engine (alongside the page engine). Created automatically when builder is available.
     @Published private(set) var scrollEngine: CoreTextScrollEngine? {
@@ -43,6 +48,10 @@ final class EPUBPageRenderer: ObservableObject {
     /// True when CSS writing-mode: vertical-rl is detected from EPUB stylesheets.
     var cssDetectedVerticalWritingMode: Bool {
         epubBuilder?.cssDetectedVerticalWritingMode ?? false
+    }
+
+    func resourceURL(for href: String) -> URL? {
+        publicationSession?.resourceURL(for: href)
     }
 
     /// Tracks the current global page index (kept in sync by ReaderView / CoreTextPageEngineView).
@@ -76,7 +85,12 @@ final class EPUBPageRenderer: ObservableObject {
         settings: ReaderRenderSettings
     ) {
         layoutMode = session.layoutMode
+        pageProgressionDirection = session.pageProgressionDirection
+        fixedLayoutSpread = session.fixedLayoutSpread
+        fixedLayoutOrientation = session.fixedLayoutOrientation
         fixedLayoutViewport = session.fixedLayoutViewport
+        mediaOverlaysByChapter = session.mediaOverlaysByChapter
+        publicationSession = session
 
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
 
@@ -175,6 +189,13 @@ final class EPUBPageRenderer: ObservableObject {
         renderSize: CGSize,
         settings: ReaderRenderSettings
     ) {
+        mediaOverlaysByChapter = [:]
+        fixedLayoutViewport = nil
+        fixedLayoutSpread = .auto
+        fixedLayoutOrientation = .auto
+        pageProgressionDirection = .default
+        layoutMode = .reflowable
+        publicationSession = nil
         let docsURL = FileManager.default.urls(
             for: .documentDirectory, in: .userDomainMask
         ).first!

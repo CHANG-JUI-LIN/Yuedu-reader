@@ -191,6 +191,13 @@ final class RSSAppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserN
         scheduleBackgroundFeedRefresh()
     }
 
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        ReaderOrientationController.shared.supportedMask(for: UIDevice.current.userInterfaceIdiom)
+    }
+
     // MARK: - Background Fetch
 
     private func scheduleBackgroundFeedRefresh() {

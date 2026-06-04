@@ -164,12 +164,17 @@ struct CoreTextAnnotationRenderer {
             let x2 = baselineX + ascent
             let lineTopY = layoutHeight - (contentOffset.y + origin.y)
 
-            rects.append(CGRect(
+            let vrect = CGRect(
                 x: min(x1, x2),
                 y: lineTopY + min(startOffset, endOffset),
                 width: max(1, abs(x2 - x1)),
                 height: max(1, abs(endOffset - startOffset))
-            ))
+            )
+            #if DEBUG
+            // [Bug3 直排標註幾何診斷] 對段落頂端選一小段直排文字後查看這些數值。
+            print("[VRECT] line=\(idx) range=\(inter.location)..<\(inter.location + inter.length) origin=(\(origin.x),\(origin.y)) ascent=\(ascent) descent=\(descent) layoutH=\(layoutHeight) lineTopY=\(lineTopY) startOff=\(startOffset) endOff=\(endOffset) rect=\(vrect)")
+            #endif
+            rects.append(vrect)
         }
         return rects
     }

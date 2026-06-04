@@ -1,4 +1,5 @@
 import Combine
+import SwiftUI
 import UIKit
 
 /// UICollectionView-backed CoreText continuous reader.
@@ -478,6 +479,11 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         }
 
         let point = gesture.location(in: collectionView)
+        if let media = mediaAttachment(at: point) {
+            presentEPUBMedia(media)
+            return
+        }
+
         if let (_, chunk, localPoint) = hitTestChunk(at: point),
            let idx = chunk.stringIndex(atLocalPoint: localPoint),
            let href = HTMLAttributedStringBuilder.linkHref(at: idx, in: chunk.attributedString) {
@@ -486,6 +492,25 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         }
 
         onTap?()
+    }
+
+    private func mediaAttachment(at point: CGPoint) -> EPUBMediaAttachment? {
+        guard let (_, chunk, localPoint) = hitTestChunk(at: point) else { return nil }
+        let attachments = chunk.attachments + chunk.blockRenderables.compactMap(\.imageAttachment)
+        return attachments.first { attachment in
+            attachment.mediaAttachment != nil
+                && attachment.rect.insetBy(dx: -8, dy: -8).contains(localPoint)
+        }?.mediaAttachment
+    }
+
+    private func presentEPUBMedia(_ media: EPUBMediaAttachment) {
+        let controller = UIHostingController(rootView: EPUBMediaPlayerView(media: media))
+        controller.modalPresentationStyle = media.kind == .video ? .fullScreen : .pageSheet
+        if media.kind == .audio, let sheet = controller.sheetPresentationController {
+            sheet.detents = [.medium()]
+            sheet.prefersGrabberVisible = true
+        }
+        present(controller, animated: true)
     }
 
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {

@@ -35,6 +35,94 @@ struct ReaderPresentationContractTests {
         #expect(!none.usesCoverOverlay)
     }
 
+    @Test("cover motion mirrors gesture and offscreen edge for RTL")
+    func coverMotionMirrorsGestureAndOffscreenEdgeForRTL() {
+        let width: CGFloat = 320
+
+        #expect(ReaderCoverPageMotion.direction(for: -24, threshold: 18, isRTL: false) == .forward)
+        #expect(ReaderCoverPageMotion.direction(for: 24, threshold: 18, isRTL: false) == .backward)
+        #expect(ReaderCoverPageMotion.direction(for: 24, threshold: 18, isRTL: true) == .forward)
+        #expect(ReaderCoverPageMotion.direction(for: -24, threshold: 18, isRTL: true) == .backward)
+
+        let ltrForward = ReaderCoverPageMotion(direction: .forward, isRTL: false)
+        #expect(ltrForward.initialX(width: width) == 0)
+        #expect(ltrForward.interactiveX(progress: 0.5, width: width) == -160)
+        #expect(ltrForward.settledX(width: width, shouldCommit: true) == -width)
+
+        let rtlForward = ReaderCoverPageMotion(direction: .forward, isRTL: true)
+        #expect(rtlForward.initialX(width: width) == 0)
+        #expect(rtlForward.interactiveX(progress: 0.5, width: width) == 160)
+        #expect(rtlForward.settledX(width: width, shouldCommit: true) == width)
+
+        let rtlBackward = ReaderCoverPageMotion(direction: .backward, isRTL: true)
+        #expect(rtlBackward.initialX(width: width) == width)
+        #expect(rtlBackward.interactiveX(progress: 0.5, width: width) == 160)
+        #expect(rtlBackward.settledX(width: width, shouldCommit: true) == 0)
+    }
+
+    @Test("fixed layout spread pairing honors page-spread sides and center pages")
+    func fixedLayoutSpreadPairingHonorsPageSpreadSidesAndCenterPages() {
+        let chapters = [
+            fixedLayoutChapter(index: 0, spreadSide: .right),
+            fixedLayoutChapter(index: 1, spreadSide: .left),
+            fixedLayoutChapter(index: 2, spreadSide: .right),
+            fixedLayoutChapter(index: 3, spreadSide: .center),
+            fixedLayoutChapter(index: 4, spreadSide: .left)
+        ]
+
+        let ltrPairs = FixedLayoutSpreadPairingBuilder.build(chapters: chapters, isRTL: false)
+
+        #expect(ltrPairs == [
+            FixedLayoutSpreadPair(leftPage: nil, rightPage: 0, isSinglePage: false),
+            FixedLayoutSpreadPair(leftPage: 1, rightPage: 2, isSinglePage: false),
+            FixedLayoutSpreadPair(leftPage: 3, rightPage: nil, isSinglePage: true),
+            FixedLayoutSpreadPair(leftPage: 4, rightPage: nil, isSinglePage: false)
+        ])
+
+        let rtlAutoPairs = FixedLayoutSpreadPairingBuilder.build(
+            chapters: [
+                fixedLayoutChapter(index: 0, spreadSide: .auto),
+                fixedLayoutChapter(index: 1, spreadSide: .auto),
+                fixedLayoutChapter(index: 2, spreadSide: .auto)
+            ],
+            isRTL: true
+        )
+
+        #expect(rtlAutoPairs == [
+            FixedLayoutSpreadPair(leftPage: 1, rightPage: 0, isSinglePage: false),
+            FixedLayoutSpreadPair(leftPage: nil, rightPage: 2, isSinglePage: false)
+        ])
+    }
+
+    @Test("fixed layout zoom metrics fit and center page content")
+    func fixedLayoutZoomMetricsFitAndCenterPageContent() {
+        let pageSize = CGSize(width: 800, height: 600)
+        let availableSize = CGSize(width: 400, height: 600)
+        let fitScale = FixedLayoutZoomMetrics.fitScale(pageSize: pageSize, availableSize: availableSize)
+
+        #expect(fitScale == 0.5)
+
+        let insets = FixedLayoutZoomMetrics.centeredInsets(
+            pageSize: pageSize,
+            boundsSize: availableSize,
+            zoomScale: 0.5
+        )
+
+        #expect(insets.left == 0)
+        #expect(insets.right == 0)
+        #expect(insets.top == 150)
+        #expect(insets.bottom == 150)
+    }
+
+    @Test("reader orientation controller keeps app default narrow and maps FXL orientation")
+    func readerOrientationControllerMapsFixedLayoutOrientation() {
+        #expect(ReaderOrientationController.defaultMask(for: .phone) == .portrait)
+        #expect(ReaderOrientationController.defaultMask(for: .pad) == .all)
+        #expect(ReaderOrientationController.mask(for: .auto) == nil)
+        #expect(ReaderOrientationController.mask(for: .portrait) == .portrait)
+        #expect(ReaderOrientationController.mask(for: .landscape) == .landscape)
+    }
+
     @Test("curl virtual indices mirror when RTL uses a right-hand spine")
     func curlVirtualIndicesMirrorForRTLSpine() {
         #expect(ReaderCurlVirtualIndex.frontIndex(forGlobalPage: 3, isRTL: false) == 6)
@@ -294,6 +382,19 @@ struct ReaderPresentationContractTests {
             positionStore: positionStore,
             bookId: bookId
         ))
+    }
+
+    private func fixedLayoutChapter(
+        index: Int,
+        spreadSide: FixedLayoutSpreadSide
+    ) -> PublicationChapterDescriptor {
+        PublicationChapterDescriptor(
+            index: index,
+            href: "page\(index).xhtml",
+            title: "Page \(index)",
+            mediaType: "application/xhtml+xml",
+            spreadSide: spreadSide
+        )
     }
 }
 
