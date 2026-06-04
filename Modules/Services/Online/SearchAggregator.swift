@@ -238,6 +238,8 @@ class SearchAggregator: ObservableObject {
         var completed: Int = 0
         var failed: Int = 0
         var timedOut: Int = 0
+        /// Sources skipped this search because they are in a timeout cooldown.
+        var skipped: Int = 0
 
         var fraction: Double {
             guard total > 0 else { return 0 }
@@ -252,8 +254,10 @@ class SearchAggregator: ObservableObject {
         min(30, max(1, GlobalSettings.shared.searchConcurrency))
     }
 
-    /// Timeout seconds per book source — increasing reduces timeout failures
-    private let perSourceTimeout: UInt64 = 25
+    /// Timeout seconds per book source. Kept tight so dead/unreachable hosts
+    /// free their concurrency slot quickly (fail-fast) instead of stalling the
+    /// whole search; repeat offenders are then skipped via `SourceHealthStore`.
+    private let perSourceTimeout: UInt64 = 12
 
     /// Current search task (used for cancellation)
     private var searchTask: Task<Void, Never>?
@@ -268,10 +272,24 @@ class SearchAggregator: ObservableObject {
         // Cancel previous search
         searchTask?.cancel()
 
+        // Skip sources cooling down from repeated timeouts — but only when
+        // searching across many sources. An explicitly chosen single source is
+        // always attempted (respect the user's pick).
+        let activeSources: [BookSource]
+        let skippedCount: Int
+        if sources.count > 1 {
+            let split = SourceHealthStore.shared.partition(sources)
+            activeSources = split.active
+            skippedCount = split.skipped.count
+        } else {
+            activeSources = sources
+            skippedCount = 0
+        }
+
         // Reset state (sources are validated, all included in search)
         results = []
         deduplicationMap = [:]
-        progress = SearchProgress(total: sources.count)
+        progress = SearchProgress(total: activeSources.count, skipped: skippedCount)
         isSearching = true
 
         let semaphore = AsyncSemaphore(limit: maxConcurrency)
@@ -279,14 +297,14 @@ class SearchAggregator: ObservableObject {
 
         searchTask = Task { [weak self] in
             await withTaskGroup(of: SearchBatchResult.self) { group in
-                for source in sources {
+                for source in activeSources {
                     group.addTask {
                         // Acquire semaphore → cap concurrency
                         await semaphore.acquire()
                         defer { Task { await semaphore.release() } }
                         // Each source has its own timeout; cancel on expiry
                         return await Self.searchSingleSource(
-                            query: q, source: source, timeout: self?.perSourceTimeout ?? 25
+                            query: q, source: source, timeout: self?.perSourceTimeout ?? 12
                         )
                     }
                 }
@@ -296,13 +314,16 @@ class SearchAggregator: ObservableObject {
                     guard !Task.isCancelled, let self = self else { break }
 
                     switch batchResult {
-                    case .success(let books):
+                    case .success(let sourceId, let books):
                         self.mergeBatch(books, query: q)
                         self.progress.completed += 1
-                    case .timeout:
+                        SourceHealthStore.shared.recordSuccess(sourceId)
+                    case .timeout(let sourceId):
                         self.progress.timedOut += 1
-                    case .failed:
+                        SourceHealthStore.shared.recordFailure(sourceId)
+                    case .failed(let sourceId):
                         self.progress.failed += 1
+                        SourceHealthStore.shared.recordFailure(sourceId)
                     }
                     // Re-sort every time new results arrive (SwiftUI @Published auto-triggers UI update)
                     self.sortResults(query: q)
@@ -328,14 +349,15 @@ class SearchAggregator: ObservableObject {
     // Whichever completes first is returned; the other is cancelAll()
 
     private enum SearchBatchResult: Sendable {
-        case success([OnlineBook])
-        case timeout
-        case failed
+        case success(UUID, [OnlineBook])
+        case timeout(UUID)
+        case failed(UUID)
     }
 
     private static func searchSingleSource(
         query: String, source: BookSource, timeout: UInt64
     ) async -> SearchBatchResult {
+        let sourceId = source.id
         do {
             return try await withThrowingTaskGroup(of: [OnlineBook].self) { group in
                 group.addTask {
@@ -349,14 +371,14 @@ class SearchAggregator: ObservableObject {
                     throw CancellationError()
                 }
                 group.cancelAll()
-                return .success(result)
+                return .success(sourceId, result)
             }
         } catch is CancellationError {
-            return .failed
+            return .failed(sourceId)
         } catch is SearchTimeoutError {
-            return .timeout
+            return .timeout(sourceId)
         } catch {
-            return .failed
+            return .failed(sourceId)
         }
     }
 

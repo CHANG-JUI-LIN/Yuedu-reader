@@ -120,6 +120,11 @@ struct BookSearchView: View {
                             .font(.system(size: 10))
                             .foregroundColor(.red)
                     }
+                    if aggregator.progress.skipped > 0 {
+                        Text(localized("暫跳") + " \(aggregator.progress.skipped)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 2)
