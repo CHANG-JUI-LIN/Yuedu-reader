@@ -688,6 +688,38 @@ final class HTMLAttributedStringBuilder {
         )
     }
 
+    /// A decorated container (border/background/padding wrapping block children, e.g. an
+    /// `aside.note` callout) draws its box by insetting the union of its child block lines
+    /// outward by border + padding. But each child block carries its own paragraph style,
+    /// so the container's own top/bottom margin + padding + border is never reserved as
+    /// vertical space — the drawn box then butts against (or overlaps) the neighbouring
+    /// block above/below, and adjacent callouts collide. Fold that inset into the first
+    /// child's `paragraphSpacingBefore` and the last child's `paragraphSpacing`. Shared by
+    /// both render pipelines (legacy `renderNode` and the RenderableNode IR renderer).
+    static func reserveContainerBlockInsets(
+        in output: NSMutableAttributedString,
+        topInset: CGFloat,
+        bottomInset: CGFloat
+    ) {
+        guard output.length > 0 else { return }
+        if topInset > 0 {
+            var range = NSRange(location: 0, length: 0)
+            if let para = output.attribute(.paragraphStyle, at: 0, effectiveRange: &range) as? NSParagraphStyle,
+               let mutable = para.mutableCopy() as? NSMutableParagraphStyle {
+                mutable.paragraphSpacingBefore += topInset
+                output.addAttribute(.paragraphStyle, value: mutable, range: range)
+            }
+        }
+        if bottomInset > 0 {
+            var range = NSRange(location: 0, length: 0)
+            if let para = output.attribute(.paragraphStyle, at: output.length - 1, effectiveRange: &range) as? NSParagraphStyle,
+               let mutable = para.mutableCopy() as? NSMutableParagraphStyle {
+                mutable.paragraphSpacing += bottomInset
+                output.addAttribute(.paragraphStyle, value: mutable, range: range)
+            }
+        }
+    }
+
     private func verticalInlineSpacer(advance: CGFloat, style: ResolvedStyle, config: Config) -> NSAttributedString {
         let font = makeFont(from: style, config: config)
         let spacer = NSMutableAttributedString(attributedString: RunDelegateProvider.makeVerticalSpacerPlaceholder(
@@ -1381,6 +1413,14 @@ final class HTMLAttributedStringBuilder {
             output.addAttribute(Self.containerBlockRenderIDAttribute, value: containerID, range: fullRange)
             if let bgColor = element.resolvedStyle.backgroundFillColor {
                 output.addAttribute(Self.blockBackgroundColorAttribute, value: bgColor, range: fullRange)
+            }
+            if !element.resolvedStyle.isVerticalWritingMode {
+                let s = element.resolvedStyle
+                Self.reserveContainerBlockInsets(
+                    in: output,
+                    topInset: s.paragraphSpacingBefore + s.paddingTop + s.borderTopWidth,
+                    bottomInset: s.paragraphSpacing + s.paddingBottom + s.borderBottomWidth
+                )
             }
         }
 
@@ -3359,7 +3399,9 @@ final class HTMLAttributedStringBuilder {
     }
 
     private func normalizeWhitespace(_ text: String) -> String {
-        let collapsed = text.replacingOccurrences(of: "[ \\n\\r\\t\\u{000C}]+", with: " ", options: .regularExpression)
+        // NB: form feed must be ICU's `\x{000C}` — `\u{000C}` is Swift escape syntax that
+        // ICU rejects, which silently invalidates the whole class so nothing collapses.
+        let collapsed = text.replacingOccurrences(of: "[ \\t\\r\\n\\x{000C}]+", with: " ", options: .regularExpression)
         return collapsed.replacingOccurrences(of: "\u{00A0}", with: " ")
     }
 

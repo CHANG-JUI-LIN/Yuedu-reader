@@ -3,7 +3,49 @@ import UIKit
 
 enum HTMLStyledASTRenderableNodeConverter {
     static func convert(body: HTMLAttributedStringBuilder.ElementNode) -> [RenderableNode] {
-        body.children.map { $0.asRenderableNode(parentFontSize: body.resolvedStyle.fontSize) }
+        mapChildren(body.children, parentFontSize: body.resolvedStyle.fontSize)
+    }
+
+    /// HTML whitespace collapsing for normal-flow text: runs of spaces, tabs, CR/LF and
+    /// form feeds collapse to a single space (and nbsp is normalized to a space). Mirrors
+    /// `HTMLAttributedStringBuilder.normalizeWhitespace` so the renderable-node pipeline
+    /// matches the legacy `renderNode` path. Without it, EPUB source line breaks and the
+    /// leading indentation of hard-wrapped `<p>` blocks rendered verbatim — every wrapped
+    /// paragraph came out as staggered, indented fragments. (`white-space: pre` is not yet
+    /// modeled here, matching the legacy path.)
+    static func normalizeWhitespace(_ text: String) -> String {
+        // NB: form feed must be ICU's `\x{000C}` — `\u{000C}` is Swift escape syntax that
+        // ICU rejects, which silently invalidates the whole class so nothing collapses.
+        let collapsed = text.replacingOccurrences(
+            of: "[ \\t\\r\\n\\x{000C}]+",
+            with: " ",
+            options: .regularExpression
+        )
+        return collapsed.replacingOccurrences(of: "\u{00A0}", with: " ")
+    }
+
+    /// Maps a child list to renderable nodes, collapsing text whitespace and dropping the
+    /// indentation-only text nodes that sit between block-level siblings. Such a collapsed
+    /// space would otherwise leak into the following block and corrupt its paragraph style
+    /// (the same reason `HTMLAttributedStringBuilder.renderBlockChildren` skips them).
+    static func mapChildren(
+        _ children: [HTMLAttributedStringBuilder.ASTNode],
+        parentFontSize: CGFloat
+    ) -> [RenderableNode] {
+        let hasBlockSibling = children.contains { node in
+            if case .element(let element) = node { return element.resolvedStyle.isBlock }
+            return false
+        }
+        return children.compactMap { node -> RenderableNode? in
+            guard case .text(let textNode) = node else {
+                return node.asRenderableNode(parentFontSize: parentFontSize)
+            }
+            let normalized = normalizeWhitespace(textNode.text)
+            if hasBlockSibling, normalized.allSatisfy({ $0 == " " }) {
+                return nil
+            }
+            return .text(normalized)
+        }
     }
 }
 
@@ -11,7 +53,7 @@ private extension HTMLAttributedStringBuilder.ASTNode {
     func asRenderableNode(parentFontSize: CGFloat) -> RenderableNode {
         switch self {
         case .text(let node):
-            return .text(node.text)
+            return .text(HTMLStyledASTRenderableNodeConverter.normalizeWhitespace(node.text))
         case .lineBreak:
             return .lineBreak
         case .pageBreak:
@@ -25,7 +67,7 @@ private extension HTMLAttributedStringBuilder.ASTNode {
 private extension HTMLAttributedStringBuilder.ElementNode {
     func asRenderableNode(parentFontSize: CGFloat) -> RenderableNode {
         let myFontSize = resolvedStyle.fontSize
-        let mappedChildren = children.map { $0.asRenderableNode(parentFontSize: myFontSize) }
+        let mappedChildren = HTMLStyledASTRenderableNodeConverter.mapChildren(children, parentFontSize: myFontSize)
         var style = RenderStyle.from(resolvedStyle: resolvedStyle, parentFontSize: parentFontSize)
         style.isInlineAnnotation = isInlineAnnotationElement
         if style.isInlineAnnotation {

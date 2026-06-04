@@ -258,6 +258,7 @@ struct NodeAttributedStringRenderer {
         if contentLength > 0 {
             if hasBlockChildren {
                 applyContainerDecorationAttributes(style: style, to: result, range: NSRange(location: 0, length: contentLength))
+                reserveContainerInsets(result, style: style)
             } else {
                 applyBlockDecorationAttributes(style: style, to: result, range: NSRange(location: 0, length: contentLength))
             }
@@ -1086,6 +1087,25 @@ struct NodeAttributedStringRenderer {
             HTMLAttributedStringBuilder.containerBlockRenderIDAttribute,
             value: blockID,
             range: range
+        )
+    }
+
+    /// A decorated container (border/background/padding wrapping block children, e.g. an
+    /// `aside.note` callout) draws its box by insetting the content rect outward by its
+    /// border + padding (`drawBlockRenderables`). But each child block overwrites the
+    /// paragraph style, so the container's own top/bottom margin + padding + border was
+    /// never reserved as vertical space — the drawn box then overlapped the neighbouring
+    /// block above and below (and adjacent callouts collided). Fold that inset back into
+    /// the first child's `paragraphSpacingBefore` and the last child's `paragraphSpacing`.
+    private func reserveContainerInsets(_ result: NSMutableAttributedString, style: RenderStyle) {
+        guard !isVertical(style),
+              style.borderTopWidth > 0 || style.borderBottomWidth > 0
+                || style.paddingTop > 0 || style.paddingBottom > 0
+        else { return }
+        HTMLAttributedStringBuilder.reserveContainerBlockInsets(
+            in: result,
+            topInset: style.paragraphSpacingBefore + style.paddingTop + style.borderTopWidth,
+            bottomInset: style.paragraphSpacingAfter + style.paddingBottom + style.borderBottomWidth
         )
     }
 

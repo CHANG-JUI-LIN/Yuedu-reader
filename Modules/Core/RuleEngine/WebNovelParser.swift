@@ -216,7 +216,7 @@ enum WebNovelParser {
             .replacingOccurrences(of: "\\r\\n", with: "\n", options: .regularExpression)
             .replacingOccurrences(of: "\\r", with: "\n")
             .replacingOccurrences(of: "\\t", with: " ")
-            .replacingOccurrences(of: "[ \\u{00A0}]+", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "[ \\x{00A0}]+", with: " ", options: .regularExpression)
             .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
