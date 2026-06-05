@@ -33,9 +33,21 @@ class BookSourceStore: ObservableObject {
         }
     }
 
-    func delete(id: UUID) {
-        sources.removeAll { $0.id == id }
-        save()
+    @discardableResult
+    func delete(id: UUID) -> Int {
+        delete(ids: Set([id]))
+    }
+
+    @discardableResult
+    func delete(ids: Set<UUID>) -> Int {
+        guard !ids.isEmpty else { return 0 }
+        let originalCount = sources.count
+        sources.removeAll { ids.contains($0.id) }
+        let removedCount = originalCount - sources.count
+        if removedCount > 0 {
+            save()
+        }
+        return removedCount
     }
 
     func toggle(id: UUID) {

@@ -170,6 +170,9 @@ struct BookSourceListView: View {
                         }
                 }
             }
+            .onChange(of: store.sources.map(\.id)) { _, sourceIds in
+                selectedIds.formIntersection(Set(sourceIds))
+            }
         }
     }
 
@@ -279,6 +282,7 @@ struct BookSourceListView: View {
                 }
                 Divider()
                 Button(role: .destructive) {
+                    selectedIds.remove(source.id)
                     store.delete(id: source.id)
                 } label: {
                     Label(localized("刪除"), systemImage: "trash")
@@ -405,10 +409,9 @@ struct BookSourceListView: View {
     }
 
     private func deleteSelected() {
-        for id in selectedIds {
-            store.delete(id: id)
-        }
+        let idsToDelete = selectedIds
         selectedIds.removeAll()
+        store.delete(ids: idsToDelete)
     }
 
     private func enableSelected() {
