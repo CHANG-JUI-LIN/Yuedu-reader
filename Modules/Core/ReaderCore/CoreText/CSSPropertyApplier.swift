@@ -137,6 +137,10 @@ private struct DisplayApplier: HTMLCSSPropertyApplier {
         style: inout HTMLAttributedStringBuilder.ResolvedStyle,
         context: HTMLCSSApplyContext
     ) {
+        // `display: none` removes the element (and its subtree) from rendering. Track it on the
+        // style so the node builder can skip it; a later cascade rule (e.g. `display: block`)
+        // correctly un-hides because each declaration re-evaluates this.
+        style.isHidden = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "none"
         style.isBlock = context.cssDisplayIsBlock(value)
     }
 }

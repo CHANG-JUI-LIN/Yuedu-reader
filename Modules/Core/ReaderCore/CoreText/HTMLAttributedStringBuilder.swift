@@ -12,6 +12,11 @@ final class HTMLAttributedStringBuilder {
     static let blockBackgroundColorAttribute = NSAttributedString.Key("ReaderBlockBackgroundColor")
     static let blockRenderStyleAttribute = NSAttributedString.Key("ReaderBlockRenderStyle")
     static let blockRenderIDAttribute = NSAttributedString.Key("ReaderBlockRenderID")
+    /// Marks a range whose block paragraph style is final and must not be flattened by an enclosing
+    /// block's segment flush. Set when an inline element (e.g. `<a>`) wraps `display:block` children
+    /// (TOC `span.toc-label` / `span.toc-desc`): the child blocks keep their own indentation instead
+    /// of inheriting the list item's. Inert in the final string (CoreText ignores unknown keys).
+    static let blockParagraphLockAttribute = NSAttributedString.Key("ReaderBlockParagraphLock")
     /// Container-level decoration (coexists with blockRenderStyle). Used for parent div border/background that spans across block children.
     static let containerBlockRenderStyleAttribute = NSAttributedString.Key("ReaderContainerBlockRenderStyle")
     static let containerBlockRenderIDAttribute = NSAttributedString.Key("ReaderContainerBlockRenderID")
@@ -28,6 +33,12 @@ final class HTMLAttributedStringBuilder {
     /// Marker attribute for tappable EPUB audio/video placeholders.
     static let mediaAttachmentAttribute = NSAttributedString.Key("ReaderEPUBMediaAttachment")
     static let rubyAnnotationAttribute = NSAttributedString.Key(kCTRubyAnnotationAttributeName as String)
+    /// Marker attribute drawing a border/background "chip" around an inline run (e.g. an EPUB
+    /// `epub:type="pagebreak"` page-number badge). Value is an `InlineBorderBoxStyle`.
+    static let inlineBorderBoxAttribute = NSAttributedString.Key("ReaderInlineBorderBox")
+    /// Default tap-affordance color applied to a link's text *only* where the author hasn't set an
+    /// explicit color (no `cssSpecifiedForegroundColorAttribute`). `.link` follows light/dark.
+    static let defaultLinkColor = UIColor.link
     private static let paragraphSeparator = "\n"
     private static let lineSeparator = "\u{2028}"
     static let pageBreakMarker = "\u{200B}"
@@ -109,6 +120,9 @@ final class HTMLAttributedStringBuilder {
         var marginLeft: CGFloat
         /// List item bullet or ordinal string (e.g. "•" / "1."). nil means not a list item.
         var listBullet: String?
+        /// CSS `list-style-type` (inherited). `"none"` suppresses the marker entirely — common in
+        /// EPUB nav/TOC documents (`ol { list-style-type: none }`) that supply their own structure.
+        var listStyleType: String? = nil
         var verticalAlign: VerticalAlign
         var isBlock: Bool
         var backgroundImage: String?
@@ -161,6 +175,22 @@ final class HTMLAttributedStringBuilder {
         /// (keyword `none`/`hidden`). Used so a borderless, background-less `<hr>` renders as an
         /// invisible separator instead of a stray rule (e.g. calibre's `.transition` scene break).
         var borderExplicitlyNone: Bool = false
+        /// True when the element generates no boxes and must be skipped entirely:
+        /// CSS `display: none` or the HTML `hidden` attribute (e.g. EPUB nav `page-list` /
+        /// `landmarks` blocks, which would otherwise paginate into many blank pages).
+        var isHidden: Bool = false
+    }
+
+    /// Visual style for an inline border/background "chip" (stored in inlineBorderBoxAttribute).
+    /// Padding is drawn as a visual inset around the run's glyphs — it does not reserve layout space,
+    /// which is exactly right for self-contained badges like EPUB page-number markers.
+    struct InlineBorderBoxStyle {
+        let borderColor: UIColor
+        let borderWidth: CGFloat
+        let cornerRadius: CGFloat
+        let fillColor: UIColor?
+        let paddingHorizontal: CGFloat
+        let paddingVertical: CGFloat
     }
 
     /// Visual style for HR dividers (stored in hrDividerAttribute).
@@ -503,7 +533,7 @@ final class HTMLAttributedStringBuilder {
     private func styleProbeSummary(_ style: ResolvedStyle) -> String {
         let width = style.width.map { "\($0)" } ?? "nil"
         let height = style.height.map { "\($0)" } ?? "nil"
-        return "fontSize=\(style.fontSize) lineHeight=\(style.lineHeight) lineHeightExplicit=\(style.lineHeightExplicit) textIndent=\(style.textIndent) paraBefore=\(style.paragraphSpacingBefore) paraAfter=\(style.paragraphSpacing) paddingL=\(style.paddingLeft) paddingR=\(style.paddingRight) width=\(width) height=\(height) block=\(style.isBlock) vertical=\(style.isVerticalWritingMode)"
+        return "fontWeight=\(style.fontWeight) isItalic=\(style.isItalic) fontFamilies=\(style.fontFamilies) fontSize=\(style.fontSize) lineHeight=\(style.lineHeight) lineHeightExplicit=\(style.lineHeightExplicit) textIndent=\(style.textIndent) paraBefore=\(style.paragraphSpacingBefore) paraAfter=\(style.paragraphSpacing) paddingL=\(style.paddingLeft) paddingR=\(style.paddingRight) width=\(width) height=\(height) block=\(style.isBlock) vertical=\(style.isVerticalWritingMode)"
     }
 
     private func buildChildren(
@@ -557,6 +587,9 @@ final class HTMLAttributedStringBuilder {
                     parentElement: parentElement,
                     config: config
                 )
+                if style.isHidden {
+                    continue
+                }
                 let children = await buildChildren(
                     from: element.getChildNodes(),
                     parentStyle: style,
@@ -589,6 +622,12 @@ final class HTMLAttributedStringBuilder {
                 parentElement: parentElement,
                 config: config
             )
+            // `display: none` / HTML `hidden`: drop the element and its whole subtree before it can
+            // emit nodes (or a page break) — both render paths consume this AST, so skipping here
+            // covers legacy renderNode and the RenderableNode IR alike.
+            if style.isHidden {
+                continue
+            }
             if style.pageBreakBefore {
                 result.append(.pageBreak)
             }
@@ -880,6 +919,17 @@ final class HTMLAttributedStringBuilder {
                 return NSAttributedString()
             }
 
+            // Inline element carrying a border → draw it as a bordered "chip" around its glyphs
+            // (e.g. an `epub:type="pagebreak"` page-number badge). Block borders are handled by the
+            // block-decoration path; this covers the inline case CoreText can't border on its own.
+            if let chip = Self.inlineBorderBoxStyle(for: element.resolvedStyle) {
+                childResult.addAttribute(
+                    Self.inlineBorderBoxAttribute,
+                    value: chip,
+                    range: NSRange(location: 0, length: childResult.length)
+                )
+            }
+
             if element.tag == "a",
                let href = element.attributes["href"],
                !href.isEmpty {
@@ -889,21 +939,13 @@ final class HTMLAttributedStringBuilder {
                     value: href,
                     range: range
                 )
-                childResult.addAttribute(
-                    .foregroundColor,
-                    value: UIColor.systemBlue,
-                    range: range
-                )
-                childResult.addAttribute(
-                    .underlineStyle,
-                    value: NSUnderlineStyle.single.rawValue,
-                    range: range
-                )
-                childResult.addAttribute(
-                    Self.cssSpecifiedForegroundColorAttribute,
-                    value: UIColor.systemBlue,
-                    range: range
-                )
+                // Give a default tap-affordance color ONLY to links the author left untouched.
+                // If the author styled the link (bold/italic/sized text, a custom color, an
+                // italic TOC description, …) we respect that and add no tint. No forced underline.
+                let baseFont = makeFont(from: inheritedStyle, config: config)
+                if Self.linkContentIsUnstyled(childResult, baseFont: baseFont) {
+                    Self.applyDefaultLinkColor(to: childResult)
+                }
             }
 
             if !element.id.isEmpty {
@@ -918,6 +960,76 @@ final class HTMLAttributedStringBuilder {
 
             return childResult
         }
+    }
+
+    /// Applies the default link color across the whole run. Stamped as
+    /// `cssSpecifiedForegroundColorAttribute` too so it survives theme recoloring
+    /// (`CoreTextPaginator.withUpdatedColors` only preserves marked ranges). Call only after
+    /// `linkContentIsUnstyled` has confirmed the author left the link untouched.
+    static func applyDefaultLinkColor(to attributed: NSMutableAttributedString) {
+        let fullRange = NSRange(location: 0, length: attributed.length)
+        guard fullRange.length > 0 else { return }
+        attributed.addAttribute(.foregroundColor, value: defaultLinkColor, range: fullRange)
+        attributed.addAttribute(cssSpecifiedForegroundColorAttribute, value: defaultLinkColor, range: fullRange)
+    }
+
+    /// True only when the author left the link's content visually untouched: every run uses the
+    /// inherited base font (no bold/italic/size/family change) and carries no author color,
+    /// underline, strikethrough, background, inline chip, or attachment. A link the author *did*
+    /// style — bold text, an italic/sized descendant (e.g. a TOC `span.toc-desc`), a custom color —
+    /// is left exactly as authored and gets no default tint.
+    static func linkContentIsUnstyled(_ attributed: NSAttributedString, baseFont: UIFont) -> Bool {
+        let fullRange = NSRange(location: 0, length: attributed.length)
+        guard fullRange.length > 0 else { return false }
+        var unstyled = true
+        attributed.enumerateAttributes(in: fullRange, options: []) { attrs, _, stop in
+            if attrs[cssSpecifiedForegroundColorAttribute] != nil
+                || attrs[.underlineStyle] != nil
+                || attrs[.strikethroughStyle] != nil
+                || attrs[.backgroundColor] != nil
+                || attrs[inlineBorderBoxAttribute] != nil
+                || attrs[mediaAttachmentAttribute] != nil
+                || attrs[.attachment] != nil {
+                unstyled = false
+                stop.pointee = true
+                return
+            }
+            if let font = attrs[.font] as? UIFont, !fontMatchesBase(font, baseFont) {
+                unstyled = false
+                stop.pointee = true
+            }
+        }
+        return unstyled
+    }
+
+    /// Compares two fonts ignoring everything but size and bold/italic — the traits an author would
+    /// change to "style" a link. Family is intentionally ignored (system font naming is noisy).
+    private static func fontMatchesBase(_ font: UIFont, _ base: UIFont) -> Bool {
+        guard abs(font.pointSize - base.pointSize) < 0.5 else { return false }
+        let mask: UIFontDescriptor.SymbolicTraits = [.traitBold, .traitItalic]
+        return font.fontDescriptor.symbolicTraits.intersection(mask)
+            == base.fontDescriptor.symbolicTraits.intersection(mask)
+    }
+
+    /// Builds an inline-chip style from a resolved style that has at least one border edge, or nil.
+    /// Used only for inline (non-block) elements — block borders go through the block decoration path.
+    private static func inlineBorderBoxStyle(for style: ResolvedStyle) -> InlineBorderBoxStyle? {
+        guard !style.isBlock else { return nil }
+        let widths = [style.borderTopWidth, style.borderBottomWidth, style.borderLeftWidth, style.borderRightWidth]
+        guard let borderWidth = widths.first(where: { $0 > 0 }) else { return nil }
+        let borderColor = style.borderTopColor
+            ?? style.borderLeftColor
+            ?? style.borderRightColor
+            ?? style.borderBottomColor
+            ?? style.textColor
+        return InlineBorderBoxStyle(
+            borderColor: borderColor,
+            borderWidth: borderWidth,
+            cornerRadius: style.borderRadius,
+            fillColor: style.backgroundFillColor,
+            paddingHorizontal: max(style.paddingLeft, style.paddingRight),
+            paddingVertical: max(style.paddingTop, style.paddingBottom)
+        )
     }
 
     static func makePageBreakMarker(attributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
@@ -1128,10 +1240,18 @@ final class HTMLAttributedStringBuilder {
         mediaStyle.textIndent = 0
         let font = makeFont(from: mediaStyle, config: config)
         let mediaTextColor = mediaStyle.textColor
+        // Honor the element's CSS box (e.g. `#video1 { width:360px; height:200px }`) so the video
+        // placeholder keeps the author's aspect ratio.
+        let intrinsicSize: CGSize? = {
+            guard let w = element.resolvedStyle.width, w > 0 else { return nil }
+            if let h = element.resolvedStyle.height, h > 0 { return CGSize(width: w, height: h) }
+            return CGSize(width: w, height: w * 9.0 / 16.0)
+        }()
         let image = await MainActor.run {
             EPUBMediaPlaceholderRenderer.image(
                 for: media,
                 maxWidth: config.renderWidth,
+                intrinsicSize: intrinsicSize,
                 font: font,
                 textColor: mediaTextColor,
                 backgroundColor: config.backgroundColor
@@ -1140,6 +1260,10 @@ final class HTMLAttributedStringBuilder {
         mediaStyle.width = image.size.width
         mediaStyle.height = image.size.height
         let metrics = resolvedImageMetrics(image: image, config: config, style: mediaStyle)
+        // Use the clamped draw size for the box/centering so the paragraph centers what we actually
+        // draw (the placeholder reserves `metrics`, so they must agree).
+        mediaStyle.width = metrics.drawWidth
+        mediaStyle.height = metrics.drawHeight
         let placeholder = NSMutableAttributedString(
             attributedString: makeImagePlaceholder(
                 image: image,
@@ -1300,9 +1424,9 @@ final class HTMLAttributedStringBuilder {
                 segment.insert(verticalInlineSpacer(advance: segmentStyle.visualOffsetBefore, style: segmentStyle, config: config), at: 0)
             }
             let paragraphRange = NSRange(location: 0, length: segment.length)
-            segment.addAttribute(
-                .paragraphStyle,
-                value: makeParagraphStyle(for: segmentStyle, config: config),
+            applyFlattenedParagraphStyle(
+                makeParagraphStyle(for: segmentStyle, config: config),
+                to: segment,
                 range: paragraphRange
             )
             if let backgroundFillColor = segmentStyle.backgroundFillColor {
@@ -1920,6 +2044,14 @@ final class HTMLAttributedStringBuilder {
         if let kern = style.letterSpacing {
             attrs[.kern] = kern as NSNumber
         }
+        // Synthetic italic: when CSS asks for italic but the resolved font has no italic face (common
+        // with embedded EPUB fonts that ship only an upright file, e.g. `font-style:italic` on a
+        // family whose only @font-face is regular), shear the glyphs the way browsers fake oblique.
+        // NOTE: CoreText's CTFrameDraw ignores the `.obliqueness` attribute (it's a TextKit-only
+        // attribute), so the slant must be baked into the font's transform matrix instead.
+        if style.isItalic, !font.fontDescriptor.symbolicTraits.contains(.traitItalic) {
+            attrs[.font] = Self.synthesizedObliqueFont(from: font)
+        }
         if style.hasCSSColor {
             attrs[Self.cssSpecifiedForegroundColorAttribute] = style.textColor
         }
@@ -1941,7 +2073,26 @@ final class HTMLAttributedStringBuilder {
         return attributes
     }
 
+    /// Bakes a synthetic oblique (italic) slant into `font` via a shear matrix. Needed because the
+    /// reader draws with CoreText (`CTFrameDraw`), which ignores the `.obliqueness` attribute — the
+    /// slant only renders if it lives in the font's transformation matrix. Size, descriptor, and the
+    /// cascade (fallback) list are preserved; horizontal advances are unchanged, so pagination is not
+    /// affected. `slant` is the shear ratio (tan of the angle); 0.2 ≈ 11° matches typical oblique.
+    static func synthesizedObliqueFont(from font: UIFont, slant: CGFloat = 0.2) -> UIFont {
+        var matrix = CGAffineTransform(a: 1, b: 0, c: slant, d: 1, tx: 0, ty: 0)
+        let ctFont = CTFontCreateWithFontDescriptor(
+            font.fontDescriptor as CTFontDescriptor, font.pointSize, &matrix
+        )
+        return ctFont as UIFont
+    }
+
     private func makeFont(from style: ResolvedStyle, config: Config) -> UIFont {
+        resolveFontUncached(from: style, config: config)
+    }
+
+    /// Resolves the concrete `UIFont` for a style, without logging. `makeFont` wraps this so the
+    /// bold/italic diagnostics see the exact font that will be used.
+    private func resolveFontUncached(from style: ResolvedStyle, config: Config) -> UIFont {
         let weight = uiFontWeight(from: style.fontWeight)
         if let resolvedFont = resolvedFont?(style.fontFamilies, style.fontWeight, style.isItalic, style.fontSize) {
             return resolvedFont
@@ -2118,6 +2269,25 @@ final class HTMLAttributedStringBuilder {
         return [.cascadeList: fallbacks]
     }
 
+    /// Applies a block's paragraph style across `range`, but skips any sub-range already locked by a
+    /// nested block (see `blockParagraphLockAttribute`), then locks the whole range. For ordinary
+    /// content nothing is pre-locked, so this is identical to a blanket apply; only an inline element
+    /// wrapping `display:block` children (e.g. a TOC `<a>` around two spans) is affected — its child
+    /// blocks keep their own indentation instead of being flattened to the enclosing block's.
+    private func applyFlattenedParagraphStyle(
+        _ paragraphStyle: NSParagraphStyle,
+        to attributed: NSMutableAttributedString,
+        range: NSRange
+    ) {
+        guard range.length > 0 else { return }
+        attributed.enumerateAttribute(Self.blockParagraphLockAttribute, in: range, options: []) { value, subRange, _ in
+            if value == nil {
+                attributed.addAttribute(.paragraphStyle, value: paragraphStyle, range: subRange)
+            }
+        }
+        attributed.addAttribute(Self.blockParagraphLockAttribute, value: true, range: range)
+    }
+
     private func makeParagraphStyle(for style: ResolvedStyle, config: Config) -> NSParagraphStyle {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = style.textAlign
@@ -2140,14 +2310,21 @@ final class HTMLAttributedStringBuilder {
             paragraph.tabStops = [tabStop]
             paragraph.defaultTabInterval = style.marginLeft + bulletWidth
         } else {
+            let structuralLeft = style.marginLeft + style.borderLeftWidth + style.paddingLeft + style.inheritedBlockMarginLeft
+            let structuralRight = style.marginRight + style.borderRightWidth + style.paddingRight + style.inheritedBlockMarginRight
+            // Center within the containing block's CONTENT box (after inherited padding/margins), not
+            // the full render width. Centering against renderWidth and then ALSO adding the inherited
+            // insets double-counts them, pushing the element off-centre and past the right edge
+            // (e.g. a width-pinned <video>/<img> inside a padded <section>).
             let widthInset: CGFloat
             if style.isHorizontallyCentered, let width = style.width {
-                widthInset = max(0, (config.renderWidth - width) / 2)
+                let contentBoxWidth = max(width, config.renderWidth - structuralLeft - structuralRight)
+                widthInset = max(0, (contentBoxWidth - width) / 2)
             } else {
                 widthInset = 0
             }
-            let leftInset = widthInset + style.marginLeft + style.borderLeftWidth + style.paddingLeft + style.inheritedBlockMarginLeft
-            let rightInset = widthInset + style.marginRight + style.borderRightWidth + style.paddingRight + style.inheritedBlockMarginRight
+            let leftInset = structuralLeft + widthInset
+            let rightInset = structuralRight + widthInset
             paragraph.headIndent = leftInset
             paragraph.firstLineHeadIndent = leftInset + style.textIndent
             paragraph.tailIndent = -rightInset
@@ -2192,8 +2369,14 @@ final class HTMLAttributedStringBuilder {
         config: Config,
         style: ResolvedStyle
     ) -> ImageMetrics {
-        // 1. Compute available max width
-        let maxDrawWidth = max(1, config.renderWidth - style.paddingLeft - style.paddingRight)
+        // 1. Compute available max width. Subtract the element's own box insets AND the inherited
+        // block margins/padding (e.g. a padded <section> the image lives in) so a width-pinned image
+        // fits the real content box instead of overflowing it.
+        let maxDrawWidth = max(1, config.renderWidth
+            - style.paddingLeft - style.paddingRight
+            - style.marginLeft - style.marginRight
+            - style.borderLeftWidth - style.borderRightWidth
+            - style.inheritedBlockMarginLeft - style.inheritedBlockMarginRight)
         // Estimated max safe height to prevent tall vertical images from exceeding screen bounds (capped at 1.5x width)
         let maxDrawHeight = max(1, config.renderWidth * 1.5)
         
@@ -2529,8 +2712,10 @@ final class HTMLAttributedStringBuilder {
             }
         }
 
-        // Determine bullet string based on parent element type
-        if element.tagName().lowercased() == "li" {
+        // Determine bullet string based on parent element type.
+        // `list-style-type: none` (inherited from the enclosing list) suppresses the marker — EPUB
+        // nav/TOC documents rely on this, otherwise every entry gets a stray "1."/"•".
+        if element.tagName().lowercased() == "li", style.listStyleType != "none" {
             let parentTag = parentElement?.tagName().lowercased() ?? ""
             if parentTag == "ol" {
                 var idx = 1
@@ -2555,6 +2740,15 @@ final class HTMLAttributedStringBuilder {
         default: break
         }
 
+        // The HTML `hidden` boolean attribute maps to the UA rule `[hidden] { display: none }`.
+        // We don't run scripts, so the `removeHidden()` reveal pattern won't fire — but for a static
+        // reader, honoring `hidden` is what keeps EPUB nav `page-list`/`landmarks` blocks (and other
+        // off-screen content) from paginating into a run of blank pages. `until-found` stays visible.
+        if element.hasAttr("hidden"),
+           ((try? element.attr("hidden")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != "until-found" {
+            style.isHidden = true
+        }
+
         // Accumulate block margins so nested block children inherit the parent content box.
         // CoreText uses a single frame — parent block margins must compound into child paragraph indents.
         if style.isBlock {
@@ -2564,6 +2758,7 @@ final class HTMLAttributedStringBuilder {
 
         let tag = element.tagName().lowercased()
         let classes = Array((try? element.classNames()) ?? [])
+
         if let key = styleProbeKey(tag: tag, classes: classes, style: style),
            shouldLogEPUBFlow(key: key, limit: key == "style.span.small" ? 8 : 4) {
             let matchedDeclarationKeys = matchedRules
@@ -2596,6 +2791,7 @@ final class HTMLAttributedStringBuilder {
             visualOffsetBefore: 0,
             marginLeft: 0,
             listBullet: nil,
+            listStyleType: parent.listStyleType,
             verticalAlign: .baseline,
             isBlock: false,
             backgroundImage: nil,
@@ -2655,6 +2851,7 @@ final class HTMLAttributedStringBuilder {
             visualOffsetBefore: 0,
             marginLeft: 0,
             listBullet: nil,
+            listStyleType: nil,
             verticalAlign: .baseline,
             isBlock: true,
             backgroundImage: nil,
@@ -2828,7 +3025,18 @@ final class HTMLAttributedStringBuilder {
             style.textAlign = cssAlignment(textAlign)
         }
         if !handledProperties.contains("display"), let display = declarations["display"] {
+            style.isHidden = display.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "none"
             style.isBlock = cssDisplayIsBlock(display)
+        }
+        if let listStyleType = declarations["list-style-type"] {
+            style.listStyleType = listStyleType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        // `list-style` shorthand: a `none` token clears the marker type (and image).
+        if let listStyle = declarations["list-style"] {
+            let tokens = listStyle.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+            if tokens.contains("none") {
+                style.listStyleType = "none"
+            }
         }
         if !handledProperties.contains("color"), let color = declarations["color"], let resolved = parseColor(color) {
             style.textColor = resolved
@@ -3197,6 +3405,10 @@ final class HTMLAttributedStringBuilder {
         percentageBase: CGFloat? = nil
     ) -> CGFloat? {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // Relative font-size keywords (CSS uses ~1.2× steps). Only meaningful for `font-size`, but
+        // these keywords never appear on length properties so resolving them here is harmless.
+        if value == "smaller" { return relativeBase / 1.2 }
+        if value == "larger" { return relativeBase * 1.2 }
         if value.hasPrefix("calc("), value.hasSuffix(")") {
             return resolveCalc(String(value.dropFirst(5).dropLast()), currentFontSize: currentFontSize, rootFontSize: rootFontSize, relativeBase: relativeBase)
         }
@@ -3592,29 +3804,73 @@ struct CSSRule {
 }
 
 struct CSSSelector {
+    /// A single `[attr]` / `[attr=val]` / `[attr~=val]` … condition. `name` is already normalized to
+    /// the DOM attribute form (namespace pipe `epub|type` and escaped `epub\:type` both → `epub:type`).
+    struct AttributeSelector {
+        enum Op {
+            case exists      // [attr]
+            case equals      // [attr=val]
+            case includes    // [attr~=val]  (whitespace-separated list contains val)
+            case dashMatch   // [attr|=val]  (val or val-…)
+            case prefix      // [attr^=val]
+            case suffix      // [attr$=val]
+            case substring   // [attr*=val]
+        }
+        let name: String
+        let op: Op
+        let value: String
+    }
+
+    /// How a component connects to the component on its left (its ancestor side). Only descendant
+    /// (` `) and child (`>`) are modeled; sibling combinators (`+`/`~`) make the whole selector
+    /// unsupported so the rule is dropped — see `CSSParser.parseSelector`.
+    enum Combinator {
+        case descendant
+        case child
+    }
+
     struct Component {
         let tag: String?
         let id: String?
         let classes: Set<String>
+        let attributes: [AttributeSelector]
         let firstChild: Bool
+        /// Combinator linking this component to the previous (left) one. Ignored for the first.
+        let combinator: Combinator
     }
 
+    /// Components in source order: `components[0]` is the leftmost (outermost ancestor),
+    /// `components.last` is the subject matched against the candidate element itself.
     let components: [Component]
 
+    /// Matches the full complex selector by walking the component chain right-to-left. Descendant
+    /// steps backtrack across every ancestor; child steps require the direct parent. Supports an
+    /// arbitrary number of components (e.g. `nav[epub|type~='toc'] a > span.toc-label`).
     func matches(element: Element, parent: Element?) -> Bool {
-        guard let last = components.last, matches(component: last, element: element, parent: parent) else {
+        matchChain(index: components.count - 1, element: element, parent: parent)
+    }
+
+    private func matchChain(index: Int, element: Element, parent: Element?) -> Bool {
+        guard index >= 0 else { return true }
+        let component = components[index]
+        guard matches(component: component, element: element, parent: parent) else { return false }
+        guard index > 0 else { return true }
+
+        // `component.combinator` describes how this component connects to components[index - 1].
+        switch component.combinator {
+        case .child:
+            guard let parent else { return false }
+            return matchChain(index: index - 1, element: parent, parent: parent.parent())
+        case .descendant:
+            var ancestor = parent
+            while let current = ancestor {
+                if matchChain(index: index - 1, element: current, parent: current.parent()) {
+                    return true
+                }
+                ancestor = current.parent()
+            }
             return false
         }
-        guard components.count == 2, let first = components.first else { return true }
-        var ancestor = parent
-        while let current = ancestor {
-            let currentParent = current.parent()
-            if matches(component: first, element: current, parent: currentParent) {
-                return true
-            }
-            ancestor = currentParent
-        }
-        return false
     }
 
     private func matches(component: Component, element: Element, parent: Element?) -> Bool {
@@ -3628,10 +3884,49 @@ struct CSSSelector {
         if !component.classes.isSubset(of: classNames) {
             return false
         }
+        for attribute in component.attributes where !Self.matches(attribute: attribute, element: element) {
+            return false
+        }
         if component.firstChild, !isFirstElementChild(element, parent: parent) {
             return false
         }
         return true
+    }
+
+    private static func matches(attribute: AttributeSelector, element: Element) -> Bool {
+        let actual = attributeValue(named: attribute.name, of: element)
+        switch attribute.op {
+        case .exists:
+            return actual != nil
+        case .equals:
+            return actual == attribute.value
+        case .includes:
+            guard let actual, !attribute.value.isEmpty else { return false }
+            return actual
+                .split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" || $0 == "\u{0C}" })
+                .contains { $0 == Substring(attribute.value) }
+        case .dashMatch:
+            guard let actual else { return false }
+            return actual == attribute.value || actual.hasPrefix(attribute.value + "-")
+        case .prefix:
+            guard let actual, !attribute.value.isEmpty else { return false }
+            return actual.hasPrefix(attribute.value)
+        case .suffix:
+            guard let actual, !attribute.value.isEmpty else { return false }
+            return actual.hasSuffix(attribute.value)
+        case .substring:
+            guard let actual, !attribute.value.isEmpty else { return false }
+            return actual.contains(attribute.value)
+        }
+    }
+
+    /// Reads an attribute by name, falling back to a lowercased lookup (HTML attribute names are
+    /// ASCII case-insensitive; EPUB content is lowercase, so exact match almost always hits first).
+    private static func attributeValue(named name: String, of element: Element) -> String? {
+        if element.hasAttr(name) { return try? element.attr(name) }
+        let lower = name.lowercased()
+        if lower != name, element.hasAttr(lower) { return try? element.attr(lower) }
+        return nil
     }
 
     private func isFirstElementChild(_ element: Element, parent: Element?) -> Bool {
@@ -3646,8 +3941,25 @@ struct CSSSelector {
 }
 
 enum CSSParser {
+    /// Strips CSS comments and statement at-rules (`@charset`, `@namespace`, stray `@import`) that
+    /// carry no `{ }` block. The rule regex below treats everything up to the first `{` as the
+    /// selector, so leaving these in front of the first style rule fuses them into that rule's
+    /// selector — making it unmatchable and silently dropping its declarations. In practice the
+    /// first rule is `body { … }`, so the document-wide `font-family` (and the embedded-font cascade
+    /// that depends on it) vanishes. Block at-rules like `@font-face` are removed upstream; `@media`
+    /// blocks are left untouched (still unsupported, but no longer able to break a neighbor).
+    private static func sanitize(_ css: String) -> String {
+        css
+            .replacingOccurrences(of: #"/\*.*?\*/"#, with: "", options: .regularExpression)
+            .replacingOccurrences(
+                of: #"@(?:charset|namespace|import)\b[^{};]*;"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+    }
+
     static func parse(css: String, orderOffset: Int = 0) -> [CSSRule] {
-        let stripped = css.replacingOccurrences(of: #"/\*.*?\*/"#, with: "", options: .regularExpression)
+        let stripped = sanitize(css)
         guard let regex = try? NSRegularExpression(
             pattern: #"([^{}]+)\{([^{}]+)\}"#,
             options: [.dotMatchesLineSeparators]
@@ -3675,7 +3987,7 @@ enum CSSParser {
 
     /// Parses CSS and returns (regular rules, first-letter rules).
     static func parseWithFirstLetter(css: String, orderOffset: Int = 0) -> (regular: [CSSRule], firstLetter: [CSSRule]) {
-        let stripped = css.replacingOccurrences(of: #"/\*.*?\*/"#, with: "", options: .regularExpression)
+        let stripped = sanitize(css)
         guard let regex = try? NSRegularExpression(
             pattern: #"([^{}]+)\{([^{}]+)\}"#,
             options: [.dotMatchesLineSeparators]
@@ -3732,28 +4044,78 @@ enum CSSParser {
         return declarations
     }
 
+    /// Splits a complex selector into components joined by descendant (whitespace) and child (`>`)
+    /// combinators. Bracket-aware so a combinator-like character inside an attribute value (e.g.
+    /// `[title='a > b']`) is not treated as a separator. Any unparseable component (sibling
+    /// combinators `+`/`~`, pseudo-classes, `*`) drops the whole rule — matching prior behavior.
     private static func parseSelector(_ raw: String) -> CSSSelector? {
-        let pieces = raw
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(whereSeparator: \.isWhitespace)
-            .map(String.init)
-        guard !pieces.isEmpty, pieces.count <= 2 else { return nil }
+        var tokens: [(combinator: CSSSelector.Combinator, text: String)] = []
+        var current = ""
+        var pendingCombinator: CSSSelector.Combinator = .descendant
+        var bracketDepth = 0
 
-        let components = pieces.compactMap(parseComponent)
-        guard components.count == pieces.count else { return nil }
+        func flush() {
+            guard !current.isEmpty else { return }
+            tokens.append((pendingCombinator, current))
+            current = ""
+            pendingCombinator = .descendant
+        }
+
+        for char in raw.trimmingCharacters(in: .whitespacesAndNewlines) {
+            if char == "[" { bracketDepth += 1; current.append(char); continue }
+            if char == "]" { bracketDepth = max(0, bracketDepth - 1); current.append(char); continue }
+            if bracketDepth > 0 { current.append(char); continue }
+
+            if char == ">" {
+                flush()
+                pendingCombinator = .child
+            } else if char.isWhitespace {
+                flush()
+            } else {
+                current.append(char)
+            }
+        }
+        flush()
+
+        guard !tokens.isEmpty else { return nil }
+        var components: [CSSSelector.Component] = []
+        for token in tokens {
+            guard let component = parseComponent(token.text, combinator: token.combinator) else { return nil }
+            components.append(component)
+        }
         return CSSSelector(components: components)
     }
 
-    private static func parseComponent(_ raw: String) -> CSSSelector.Component? {
-        if raw.contains(">") || raw.contains("+") || raw.contains("~") || raw.contains("*") || raw.contains("[") {
-            return nil
-        }
-
+    private static func parseComponent(_ raw: String, combinator: CSSSelector.Combinator) -> CSSSelector.Component? {
         var token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return nil }
+
         var firstChild = false
         if token.lowercased().hasSuffix(":first-child") {
             firstChild = true
             token = String(token.dropLast(":first-child".count))
+        }
+
+        // Pull out every `[ … ]` attribute selector, then strip them so the remainder is a plain
+        // tag/id/class token. Anything unparseable inside the brackets makes the whole rule unsupported.
+        var attributes: [CSSSelector.AttributeSelector] = []
+        if token.contains("[") {
+            guard let regex = try? NSRegularExpression(pattern: "\\[[^\\]]*\\]") else { return nil }
+            let ns = token as NSString
+            let fullRange = NSRange(location: 0, length: ns.length)
+            for match in regex.matches(in: token, range: fullRange) {
+                let body = String(ns.substring(with: match.range).dropFirst().dropLast())
+                guard let attribute = parseAttributeSelector(body) else { return nil }
+                attributes.append(attribute)
+            }
+            token = regex.stringByReplacingMatches(in: token, range: fullRange, withTemplate: "")
+        }
+
+        // Combinators / pseudo-elements in the remainder are unsupported.
+        if token.contains(">") || token.contains("+") || token.contains("~")
+            || token.contains("*") || token.contains("[") || token.contains("]")
+            || token.contains("(") || token.contains(":") {
+            return nil
         }
 
         var tag: String?
@@ -3787,7 +4149,66 @@ enum CSSParser {
         }
         flush()
 
-        return CSSSelector.Component(tag: tag, id: id, classes: classes, firstChild: firstChild)
+        guard tag != nil || id != nil || !classes.isEmpty || !attributes.isEmpty else { return nil }
+
+        return CSSSelector.Component(tag: tag, id: id, classes: classes, attributes: attributes, firstChild: firstChild, combinator: combinator)
+    }
+
+    /// Parses the inside of one `[ … ]` block, e.g. `epub|type~='pagebreak'`.
+    private static func parseAttributeSelector(_ raw: String) -> CSSSelector.AttributeSelector? {
+        let body = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return nil }
+
+        guard let eqIndex = body.firstIndex(of: "=") else {
+            guard let name = normalizeAttributeName(body) else { return nil }
+            return CSSSelector.AttributeSelector(name: name, op: .exists, value: "")
+        }
+
+        let op: CSSSelector.AttributeSelector.Op
+        let nameEnd: String.Index
+        let opChar = eqIndex > body.startIndex ? body[body.index(before: eqIndex)] : nil
+        switch opChar {
+        case "~": op = .includes;   nameEnd = body.index(before: eqIndex)
+        case "|": op = .dashMatch;  nameEnd = body.index(before: eqIndex)
+        case "^": op = .prefix;     nameEnd = body.index(before: eqIndex)
+        case "$": op = .suffix;     nameEnd = body.index(before: eqIndex)
+        case "*": op = .substring;  nameEnd = body.index(before: eqIndex)
+        default:  op = .equals;     nameEnd = eqIndex
+        }
+
+        guard let name = normalizeAttributeName(String(body[body.startIndex..<nameEnd])) else { return nil }
+        let value = unquoteAttributeValue(String(body[body.index(after: eqIndex)...]))
+        return CSSSelector.AttributeSelector(name: name, op: op, value: value)
+    }
+
+    /// `epub|type` (CSS namespace) and `epub\:type` (escaped colon) both map to the XHTML DOM
+    /// attribute name `epub:type`. A leading `|` / `*|` (no/any namespace) is dropped.
+    private static func normalizeAttributeName(_ raw: String) -> String? {
+        var name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        name = name.replacingOccurrences(of: "\\:", with: ":")
+        name = name.replacingOccurrences(of: "\\", with: "")
+        if name.hasPrefix("*|") {
+            name = String(name.dropFirst(2))
+        } else if name.hasPrefix("|") {
+            name = String(name.dropFirst())
+        } else {
+            name = name.replacingOccurrences(of: "|", with: ":")
+        }
+        name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
+    }
+
+    private static func unquoteAttributeValue(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Drop a trailing case-insensitivity flag (`[attr=val i]`).
+        if value.hasSuffix(" i") || value.hasSuffix(" I") {
+            value = String(value.dropLast(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if value.count >= 2,
+           (value.hasPrefix("\"") && value.hasSuffix("\"")) || (value.hasPrefix("'") && value.hasSuffix("'")) {
+            value = String(value.dropFirst().dropLast())
+        }
+        return value
     }
 
     private static func specificity(of selector: CSSSelector) -> Int {
@@ -3795,6 +4216,7 @@ enum CSSParser {
             partial
             + (component.id == nil ? 0 : 100)
             + component.classes.count * 10
+            + component.attributes.count * 10
             + (component.firstChild ? 10 : 0)
             + (component.tag == nil ? 0 : 1)
         }

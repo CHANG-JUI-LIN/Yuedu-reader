@@ -17,7 +17,7 @@ struct EPUBMediaPlayerView: View {
                 audioBody
             }
         }
-        .onAppear(perform: load)
+        .task { await load() }
         .onDisappear { player?.pause() }
     }
 
@@ -112,18 +112,80 @@ struct EPUBMediaPlayerView: View {
         return media.kind == .video ? "EPUB Video" : "EPUB Audio"
     }
 
-    private func load() {
+    private func load() async {
         guard player == nil else { return }
         guard let url = URL(string: media.sourceHref) else {
             errorMessage = localized("無效的媒體網址")
             return
         }
-        let nextPlayer = AVPlayer(url: url)
+
+        let playableURL: URL
+        if url.isFileURL || url.scheme == "http" || url.scheme == "https" {
+            playableURL = url
+        } else {
+            // EPUB resources are served over a custom scheme (`reader-book://…`) that AVPlayer
+            // cannot read. Extract the resource out of the archive to a temp file and play that.
+            do {
+                playableURL = try await Self.localPlaybackURL(for: url)
+            } catch {
+                errorMessage = localized("無法載入媒體")
+                return
+            }
+        }
+
+        let item = AVPlayerItem(url: playableURL)
+        observeFailure(of: item)
+        let nextPlayer = AVPlayer(playerItem: item)
         player = nextPlayer
         if media.kind == .video {
             nextPlayer.play()
             isPlaying = true
         }
+    }
+
+    /// Surfaces an AVPlayerItem that fails to load/play (codec unsupported, corrupt extraction, …)
+    /// instead of leaving a silent black screen. Polls status briefly because AVPlayerItem has no
+    /// async status stream, and asset-load failures surface a short while after play() is called.
+    @MainActor
+    private func observeFailure(of item: AVPlayerItem) {
+        Task { @MainActor in
+            for _ in 0..<20 {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                switch item.status {
+                case .failed:
+                    errorMessage = localized("無法播放此影片")
+                    return
+                case .readyToPlay:
+                    return
+                default:
+                    continue
+                }
+            }
+        }
+    }
+
+    /// Resolves a `reader-book://<bookId>/<path>` resource URL to a local file AVPlayer can open,
+    /// extracting the bytes from the EPUB archive once and caching them in the temp directory.
+    private static func localPlaybackURL(for url: URL) async throws -> URL {
+        guard let bookId = url.host,
+              let session = PublicationSessionRegistry.shared.session(for: bookId) else {
+            throw PublicationSessionError.resourceNotFound(url.absoluteString)
+        }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("epub_media", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Keep the original extension so AVPlayer can infer the container type.
+        let ext = url.pathExtension
+        let safeStem = (bookId + url.path)
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: ":", with: "_")
+            .replacingOccurrences(of: ".", with: "_")
+        let dest = dir.appendingPathComponent(ext.isEmpty ? safeStem : "\(safeStem).\(ext)")
+        if FileManager.default.fileExists(atPath: dest.path) {
+            return dest
+        }
+        let response = try await session.response(for: url)
+        try response.data.write(to: dest, options: .atomic)
+        return dest
     }
 
     private func togglePlayback() {

@@ -797,6 +797,14 @@ _layouts[spineIndex] == nil else { return }
             guard let self else { return nil }
             return await self.loadImageResource(from: src, chapterHref: chapterHref)
         }
+        // Resolve <audio>/<video> source hrefs to the book's `reader-book://` resource URL so the
+        // player can extract & play them. Without this the raw relative href (e.g. `../video/x.mp4`)
+        // reaches AVPlayer with no scheme and playback fails. Mirrors `cssLoader`'s resolution.
+        localBuilder.mediaURLResolver = { [weak resourceProvider] src in
+            guard let resourceProvider else { return nil }
+            let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
+            return resourceProvider.resourceURL(for: resolved).absoluteString
+        }
         localBuilder.cssLoader = { [weak resourceProvider] href in
             guard let resourceProvider else { return nil }
             let resolved = EPUBStyleResolver.resolveImageHref(href, chapterHref: chapterHref)

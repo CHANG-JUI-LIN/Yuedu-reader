@@ -187,12 +187,28 @@ struct NodeAttributedStringRenderer {
             }
             let tagged = NSMutableAttributedString(attributedString: rendered)
             addSemanticTagIfNeeded(tag, to: tagged)
+            // Inline element with a border → draw a bordered "chip" around its glyphs (e.g. an
+            // `epub:type="pagebreak"` page-number badge). Mirrors the legacy renderNode path.
+            if tagged.length > 0, let chip = Self.inlineBorderBoxStyle(for: style) {
+                tagged.addAttribute(
+                    HTMLAttributedStringBuilder.inlineBorderBoxAttribute,
+                    value: chip,
+                    range: NSRange(location: 0, length: tagged.length)
+                )
+            }
             return tagged
 
         case .anchor(let href, let children):
             var childCtx = ctx
             childCtx.linkHref = href
-            return await renderInlineChildren(children, ctx: childCtx)
+            let rendered = NSMutableAttributedString(attributedString: await renderInlineChildren(children, ctx: childCtx))
+            // Default tap-affordance color only for links the author left untouched (no bold/italic/
+            // sized/colored content). `ctx.font` is the inherited base the link's text builds on.
+            if !href.isEmpty,
+               HTMLAttributedStringBuilder.linkContentIsUnstyled(rendered, baseFont: ctx.font) {
+                HTMLAttributedStringBuilder.applyDefaultLinkColor(to: rendered)
+            }
+            return rendered
 
         case .commentBadge(let count, let reviewURL, let title):
             return await renderCommentBadge(count: count, reviewURL: reviewURL, title: title, ctx: ctx)
@@ -316,6 +332,25 @@ struct NodeAttributedStringRenderer {
         return result
     }
 
+    /// Builds an inline-chip style from an inline element's border, or nil when it has none.
+    private static func inlineBorderBoxStyle(for style: RenderStyle) -> HTMLAttributedStringBuilder.InlineBorderBoxStyle? {
+        let widths = [style.borderTopWidth, style.borderBottomWidth, style.borderLeftWidth, style.borderRightWidth]
+        guard let borderWidth = widths.first(where: { $0 > 0 }) else { return nil }
+        let borderColor = (style.borderTopColor
+            ?? style.borderLeftColor
+            ?? style.borderRightColor
+            ?? style.borderBottomColor
+            ?? style.color)?.uiColor ?? .label
+        return HTMLAttributedStringBuilder.InlineBorderBoxStyle(
+            borderColor: borderColor,
+            borderWidth: borderWidth,
+            cornerRadius: style.borderRadius,
+            fillColor: style.backgroundColor?.uiColor,
+            paddingHorizontal: max(style.paddingLeft, style.paddingRight),
+            paddingVertical: max(style.paddingTop, style.paddingBottom)
+        )
+    }
+
     // MARK: - Apply Block Style to Context
 
     private func applyBlockStyle(
@@ -433,6 +468,18 @@ struct NodeAttributedStringRenderer {
     // MARK: - Font
 
     private func makeFont(families: [String], size: CGFloat, weight: Int, italic: Bool) -> UIFont {
+        var font = makeFontResolved(families: families, size: size, weight: weight, italic: italic)
+        // Synthetic italic: like the legacy builder, when CSS asks for italic but the resolved face
+        // has no italic variant (embedded EPUB fonts often ship only an upright file), bake the slant
+        // into the font matrix. CoreText's CTFrameDraw ignores the `.obliqueness` attribute, so the
+        // shear has to live in the font itself — otherwise the italic silently renders flat here.
+        if italic && !font.fontDescriptor.symbolicTraits.contains(.traitItalic) {
+            font = HTMLAttributedStringBuilder.synthesizedObliqueFont(from: font)
+        }
+        return font
+    }
+
+    private func makeFontResolved(families: [String], size: CGFloat, weight: Int, italic: Bool) -> UIFont {
         let bold = weight >= 600
         let candidateFamilies = families + (config.fontFamily.map { [$0] } ?? [])
         if let resolved = config.resolvedFont?(candidateFamilies, weight, italic, size) {
@@ -791,10 +838,16 @@ struct NodeAttributedStringRenderer {
             title: media.title,
             posterHref: media.posterHref.flatMap { config.mediaURLResolver?($0) ?? $0 }
         )
+        let intrinsicSize: CGSize? = {
+            guard let w = style.width, w > 0 else { return nil }
+            if let h = style.height, h > 0 { return CGSize(width: w, height: h) }
+            return CGSize(width: w, height: w * 9.0 / 16.0)
+        }()
         let image = await MainActor.run {
             EPUBMediaPlaceholderRenderer.image(
                 for: resolvedMedia,
                 maxWidth: maxWidth,
+                intrinsicSize: intrinsicSize,
                 font: blockCtx.font,
                 textColor: blockCtx.textColor,
                 backgroundColor: config.backgroundColor
@@ -805,6 +858,9 @@ struct NodeAttributedStringRenderer {
         mediaStyle.width = image.size.width
         mediaStyle.height = image.size.height
         let metrics = await resolvedImageMetrics(image: image, style: mediaStyle, font: blockCtx.font, displayMode: .block)
+        // Center/lay out using the clamped draw size the placeholder actually reserves.
+        mediaStyle.width = metrics.drawWidth
+        mediaStyle.height = metrics.drawHeight
         let placeholder = NSMutableAttributedString(
             attributedString: await makeImagePlaceholder(
                 image: image,
@@ -1028,6 +1084,12 @@ struct NodeAttributedStringRenderer {
         case .anchor(let target, let children):
             guard children.count == 1 else { return nil }
             return unwrapSingleImage(from: children[0], anchorID: anchorID, href: href ?? target)
+        case .inline(_, let children, _):
+            // An anchor that styles its own text wraps its children in an inline node (see the
+            // converter); unwrap it so a linked single image is still detected. The text styling
+            // is irrelevant for an image-only anchor.
+            guard children.count == 1 else { return nil }
+            return unwrapSingleImage(from: children[0], anchorID: anchorID, href: href)
         case .image(let src, let alt, let style, let svgContent):
             return SingleImagePayload(src: src, alt: alt, style: style, anchorID: anchorID, href: href, svgContent: svgContent)
         default:
@@ -1217,10 +1279,9 @@ struct NodeAttributedStringRenderer {
                 attrs[HTMLAttributedStringBuilder.cssSpecifiedForegroundColorAttribute] = textColor
             }
             if let href = linkHref {
+                // Tappable. Default link tint is applied in the `.anchor` case (only for links the
+                // author left untouched), not here — keep the run's authored/inherited color.
                 attrs[HTMLAttributedStringBuilder.internalLinkAttribute] = href
-                attrs[.foregroundColor] = UIColor.systemBlue
-                attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
-                attrs[HTMLAttributedStringBuilder.cssSpecifiedForegroundColorAttribute] = UIColor.systemBlue
             }
             if underline {
                 attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue

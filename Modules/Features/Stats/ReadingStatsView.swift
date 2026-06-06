@@ -148,6 +148,9 @@ struct ReadingStatsView: View {
             let data = dailyMinutes()
             let maxVal = data.map { $0.minutes }.max() ?? 1
             let chartHeight: CGFloat = 120
+            // Cap each bar's width so a sparse dataset (e.g. "全部" with a single month of data)
+            // renders as a real bar instead of one full-bleed block filling the whole plot.
+            let barMaxWidth: CGFloat = 44
 
             HStack(alignment: .bottom, spacing: DSSpacing.xs) {
                 ForEach(data.indices, id: \.self) { i in
@@ -158,6 +161,7 @@ struct ReadingStatsView: View {
                     VStack(spacing: DSSpacing.xs) {
                         Rectangle()
                             .fill(DSColor.accent.opacity(0.8))
+                            .frame(maxWidth: barMaxWidth)
                             .frame(height: max(2, barHeight))
                             .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm))
                         Text(entry.label)

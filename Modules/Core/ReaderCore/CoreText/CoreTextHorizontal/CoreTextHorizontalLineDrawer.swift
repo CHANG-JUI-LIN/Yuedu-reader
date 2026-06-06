@@ -122,8 +122,87 @@ enum CoreTextHorizontalLineDrawer {
                 nsString: nsString
             )
 
+            // Inline border "chips" (e.g. page-number badges) are drawn behind the glyphs so the
+            // text sits on top of any fill. Offsets are read from the original (un-justified) line;
+            // chips occur on centered/short lines that are never justified.
+            drawInlineBorderBoxes(
+                line: line,
+                origin: origin,
+                lineStart: lineStart,
+                lineLength: lineRange.length,
+                attrStr: attrStr,
+                stringLength: stringLength,
+                in: ctx
+            )
+
             ctx.textPosition = origin
             CTLineDraw(lineToDraw, ctx)
+        }
+    }
+
+    // MARK: - Inline border chip
+
+    private static func drawInlineBorderBoxes(
+        line: CTLine,
+        origin: CGPoint,
+        lineStart: Int,
+        lineLength: Int,
+        attrStr: NSAttributedString,
+        stringLength: Int,
+        in ctx: CGContext
+    ) {
+        guard lineStart >= 0, lineStart < stringLength else { return }
+        let length = min(max(0, lineLength), stringLength - lineStart)
+        guard length > 0 else { return }
+
+        var hasChip = false
+        attrStr.enumerateAttribute(
+            HTMLAttributedStringBuilder.inlineBorderBoxAttribute,
+            in: NSRange(location: lineStart, length: length),
+            options: []
+        ) { value, _, stop in
+            if value != nil { hasChip = true; stop.pointee = true }
+        }
+        guard hasChip else { return }
+
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+
+        attrStr.enumerateAttribute(
+            HTMLAttributedStringBuilder.inlineBorderBoxAttribute,
+            in: NSRange(location: lineStart, length: length),
+            options: []
+        ) { value, range, _ in
+            guard let style = value as? HTMLAttributedStringBuilder.InlineBorderBoxStyle,
+                  range.length > 0 else { return }
+
+            let startOffset = CTLineGetOffsetForStringIndex(line, range.location, nil)
+            let endOffset = CTLineGetOffsetForStringIndex(line, range.location + range.length, nil)
+            let x0 = origin.x + min(startOffset, endOffset)
+            let x1 = origin.x + max(startOffset, endOffset)
+            guard x1 > x0 else { return }
+
+            let rect = CGRect(
+                x: x0 - style.paddingHorizontal,
+                y: origin.y - descent - style.paddingVertical,
+                width: (x1 - x0) + 2 * style.paddingHorizontal,
+                height: (ascent + descent) + 2 * style.paddingVertical
+            )
+            let radius = max(0, min(style.cornerRadius, min(rect.width, rect.height) / 2))
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath
+
+            ctx.saveGState()
+            if let fill = style.fillColor {
+                ctx.setFillColor(fill.cgColor)
+                ctx.addPath(path)
+                ctx.fillPath()
+            }
+            ctx.setStrokeColor(style.borderColor.cgColor)
+            ctx.setLineWidth(style.borderWidth)
+            ctx.addPath(path)
+            ctx.strokePath()
+            ctx.restoreGState()
         }
     }
 

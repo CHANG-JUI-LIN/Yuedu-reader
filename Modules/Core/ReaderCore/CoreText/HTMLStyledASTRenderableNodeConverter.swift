@@ -118,7 +118,21 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             if let marker = ReaderHTMLUtilities.decodeReviewHref(href) {
                 node = .commentBadge(count: marker.count, reviewURL: href, title: marker.title)
             } else {
-                node = .anchor(href: href, children: mappedChildren)
+                // `.anchor` carries only the href, so the anchor's own CSS (e.g. `a { font-weight:bold }`,
+                // a custom color, italic — common in TOCs) would be dropped. When the anchor styles its
+                // own text, wrap the children in an inline style node so that styling cascades, mirroring
+                // the legacy renderNode path (which renders an anchor's children with the anchor's
+                // resolved style as the inherited style). Plain links stay unwrapped so the single-image
+                // anchor detection (`unwrapSingleImage`) and minimal nesting are preserved.
+                let anchorStylesOwnText = style.bold || style.italic || style.color != nil
+                    || !style.fontFamilies.isEmpty || style.underline || style.strikethrough
+                    || style.fontSizeMultiplier != 1.0
+                node = .anchor(
+                    href: href,
+                    children: anchorStylesOwnText
+                        ? [.inline(tag: "a", children: mappedChildren, style: style)]
+                        : mappedChildren
+                )
             }
 
         case "ruby":

@@ -11,11 +11,18 @@ final class EPUBStyleResolver {
         let alias: String
         let familyName: String
         let postScriptName: String
+        var weight: Int = 400
+        var isItalic: Bool = false
     }
 
     private let resourceProvider: any BookResourceProvider
     private let fontRegistrationService: any FontRegistrationServicing
+    /// Representative face per alias (the first registered), used for CSS `font-family` rewriting.
     private(set) var registeredFontFaces: [String: RegisteredFontFace] = [:]
+    /// Every registered variant per alias — one entry per `@font-face` weight/style. Lets resolution
+    /// pick the closest match instead of collapsing a multi-face family (separate light / bold /
+    /// italic `@font-face` blocks) down to whichever happened to register first.
+    private(set) var registeredFontVariants: [String: [RegisteredFontFace]] = [:]
     private var registeredFontFileURLs: [String: URL] = [:]
 
     init(
@@ -48,28 +55,39 @@ final class EPUBStyleResolver {
         }
 
         for fontFace in fontFaces {
-            if registeredFontFaces[fontFace.alias] != nil { continue }
+            // One `@font-face` block = one variant. Key by alias + weight + style so a family's
+            // separate bold / italic faces all register instead of the first one shadowing the rest.
+            let variantKey = "\(fontFace.alias)|\(fontFace.weight)|\(fontFace.italic ? "i" : "n")"
+            if (registeredFontVariants[fontFace.alias] ?? []).contains(where: {
+                $0.weight == fontFace.weight && $0.isItalic == fontFace.italic
+            }) { continue }
             guard
                 let fontURL = URL(string: fontFace.resolvedURL),
                 let response = try? await resourceProvider.response(for: fontURL),
                 let registeredFont = fontRegistrationService.registerFont(
                     data: response.data,
-                    alias: fontFace.alias,
-                    existingTempURL: registeredFontFileURLs[fontFace.alias]
+                    alias: variantKey,
+                    existingTempURL: registeredFontFileURLs[variantKey]
                 )
             else {
-                print("[EPUBStyleResolver] font registration FAILED alias=\(fontFace.alias)")
+                print("[EPUBStyleResolver] font registration FAILED alias=\(variantKey)")
                 continue
             }
             if let tempFileURL = registeredFont.tempFileURL {
-                registeredFontFileURLs[fontFace.alias] = tempFileURL
+                registeredFontFileURLs[variantKey] = tempFileURL
             }
-            registeredFontFaces[fontFace.alias] = RegisteredFontFace(
+            let face = RegisteredFontFace(
                 alias: fontFace.alias,
                 familyName: registeredFont.familyName,
-                postScriptName: registeredFont.postScriptName
+                postScriptName: registeredFont.postScriptName,
+                weight: fontFace.weight,
+                isItalic: fontFace.italic
             )
-            print("[EPUBStyleResolver] registered font alias=\(fontFace.alias) -> family=\(registeredFont.familyName) ps=\(registeredFont.postScriptName)")
+            registeredFontVariants[fontFace.alias, default: []].append(face)
+            if registeredFontFaces[fontFace.alias] == nil {
+                registeredFontFaces[fontFace.alias] = face
+            }
+            print("[EPUBStyleResolver] registered font alias=\(fontFace.alias) weight=\(fontFace.weight) italic=\(fontFace.italic) -> family=\(registeredFont.familyName) ps=\(registeredFont.postScriptName)")
         }
 
         let stripped = stripFontFaceBlocks(from: withImports)
@@ -88,31 +106,66 @@ final class EPUBStyleResolver {
             .filter { !$0.isEmpty }
 
         for family in normalizedFamilies {
-            let matchedFace = registeredFontFaces[family]
-                ?? registeredFontFaces.values.first(where: {
-                    Self.normalizeFontName($0.familyName) == family
-                        || Self.normalizeFontName($0.postScriptName) == family
-                })
-            guard let matchedFace else { continue }
+            guard let matchedFace = bestVariant(for: family, weight: weight, italic: italic) else { continue }
 
             let baseFont =
                 UIFont(name: matchedFace.postScriptName, size: size)
                 ?? UIFont(name: matchedFace.familyName, size: size)
-            guard let baseFont else { continue }
+            guard let baseFont else {
+                print("[EPUBStyleResolver] resolveRegisteredFont matched variant but UIFont init FAILED family=\(family) ps=\(matchedFace.postScriptName) fam=\(matchedFace.familyName)")
+                continue
+            }
 
             var descriptor = baseFont.fontDescriptor
             var traits = descriptor.symbolicTraits
+            let wantBold = weight >= 600
             if italic { traits.insert(.traitItalic) }
-            if weight >= 600 { traits.insert(.traitBold) }
-            if let styledDescriptor = descriptor.withSymbolicTraits(traits) {
+            if wantBold { traits.insert(.traitBold) }
+            let traitApplied = descriptor.withSymbolicTraits(traits)
+            if let styledDescriptor = traitApplied {
                 descriptor = styledDescriptor
             }
             descriptor = descriptor.addingAttributes([.cascadeList: fontCascadeDescriptors()])
             let result = UIFont(descriptor: descriptor, size: size)
+            let finalTraits = result.fontDescriptor.symbolicTraits
+            // Did the bold/italic request actually land on a face? `withSymbolicTraits` returns nil when
+            // the embedded family has no matching face (e.g. only an upright file registered). Compare
+            // requested vs. delivered so we can see whether the embedded font silently dropped the trait.
+            print("[EPUBStyleResolver] resolveRegisteredFont req families=\(families) weight=\(weight) italic=\(italic) -> picked alias=\(family) pickedFaceWeight=\(matchedFace.weight) pickedFaceItalic=\(matchedFace.isItalic) ps=\(matchedFace.postScriptName) | withTraitsOK=\(traitApplied != nil) finalFont=\(result.fontName) finalBold=\(finalTraits.contains(.traitBold)) finalItalic=\(finalTraits.contains(.traitItalic)) (wantedBold=\(wantBold) wantedItalic=\(italic))")
             return wrapCJKFont(result, size: size)
         }
 
+        print("[EPUBStyleResolver] resolveRegisteredFont NO VARIANT families=\(families) weight=\(weight) italic=\(italic) registeredAliases=\(registeredFontVariants.keys.sorted()) variantsPerAlias=\(registeredFontVariants.mapValues { $0.map { "w\($0.weight)\($0.isItalic ? "i" : "n")/\($0.familyName)" } })")
         return nil
+    }
+
+    /// Picks the registered variant closest to the requested weight/style — weight distance first,
+    /// then a style (italic) tiebreak. With one registered face this just returns it; with several
+    /// (separate light / bold / italic `@font-face` blocks) it returns the right file instead of
+    /// whichever registered first.
+    private func bestVariant(for family: String, weight: Int, italic: Bool) -> RegisteredFontFace? {
+        let variants: [RegisteredFontFace]
+        if let direct = registeredFontVariants[family], !direct.isEmpty {
+            variants = direct
+        } else {
+            variants = registeredFontVariants.values.flatMap { $0 }.filter {
+                Self.normalizeFontName($0.familyName) == family
+                    || Self.normalizeFontName($0.postScriptName) == family
+            }
+        }
+        guard !variants.isEmpty else {
+            // Fall back to the legacy representative-face map if variants weren't recorded.
+            return registeredFontFaces[family]
+                ?? registeredFontFaces.values.first {
+                    Self.normalizeFontName($0.familyName) == family
+                        || Self.normalizeFontName($0.postScriptName) == family
+                }
+        }
+        return variants.min { lhs, rhs in
+            let l = (abs(lhs.weight - weight), lhs.isItalic == italic ? 0 : 1)
+            let r = (abs(rhs.weight - weight), rhs.isItalic == italic ? 0 : 1)
+            return l.0 != r.0 ? l.0 < r.0 : l.1 < r.1
+        }
     }
 
     // MARK: - Static EPUB Path Resolution (shared externally)
@@ -246,7 +299,7 @@ final class EPUBStyleResolver {
 
     private func extractFontFaces(
         from cssText: String, cssHref: String, chapterHref: String
-    ) -> [(alias: String, resolvedURL: String)] {
+    ) -> [(alias: String, weight: Int, italic: Bool, resolvedURL: String)] {
         guard
             let blockRegex = try? NSRegularExpression(
                 pattern: #"@font-face\s*\{.*?\}"#,
@@ -285,7 +338,32 @@ final class EPUBStyleResolver {
             let rawURL = nsBlock.substring(with: srcMatch.range(at: 1))
             let resolvedHref = Self.resolveCSSHref(rawURL, cssHref: cssHref, chapterHref: chapterHref)
             let resolvedURL = resourceProvider.resourceURL(for: resolvedHref).absoluteString
-            return alias.isEmpty ? nil : (alias, resolvedURL)
+            let weight = Self.fontDescriptorValue(in: block, property: "font-weight").map(Self.cssFontWeightValue) ?? 400
+            let style = Self.fontDescriptorValue(in: block, property: "font-style") ?? "normal"
+            let italic = style == "italic" || style == "oblique"
+            return alias.isEmpty ? nil : (alias, weight, italic, resolvedURL)
+        }
+    }
+
+    /// Reads a single descriptor value (e.g. `font-weight: 700`) from an `@font-face` block, lowercased.
+    private static func fontDescriptorValue(in block: String, property: String) -> String? {
+        guard let regex = try? NSRegularExpression(
+            pattern: "\(property)\\s*:\\s*([a-z0-9]+)",
+            options: [.caseInsensitive]
+        ) else { return nil }
+        let ns = block as NSString
+        guard let match = regex.firstMatch(in: block, range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges > 1 else { return nil }
+        return ns.substring(with: match.range(at: 1)).lowercased()
+    }
+
+    /// Maps a CSS `font-weight` keyword/number to a numeric weight (100–900). `@font-face` descriptors
+    /// only carry absolute values, so `bolder`/`lighter` are treated as bold/normal.
+    private static func cssFontWeightValue(_ raw: String) -> Int {
+        switch raw {
+        case "normal", "lighter": return 400
+        case "bold", "bolder": return 700
+        default: return Int(raw).map { min(900, max(100, $0)) } ?? 400
         }
     }
 

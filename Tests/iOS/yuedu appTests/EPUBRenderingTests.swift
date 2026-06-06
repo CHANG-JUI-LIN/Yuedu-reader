@@ -387,6 +387,99 @@ struct EPUBRenderingTests {
         #expect(overlay.fragments[0].audioHref == "OPS/audio/ch1.mp3")
         #expect(overlay.fragments[1].clipEnd == 4.0)
     }
+
+    // MARK: - CSS combinator selectors (descendant + child chains)
+
+    /// A descendant + child selector with an attribute selector (`nav[epub|type~='toc'] a > span.toc-label`)
+    /// must parse into a 3-component selector, not be dropped. Regression: the parser previously
+    /// rejected any selector with more than two whitespace pieces, so EPUB nav `display:block`
+    /// rules never applied and the TOC label/description collapsed onto one line.
+    @Test func childCombinatorSelectorIsParsedNotDropped() {
+        let rules = CSSParser.parse(css: "nav[epub|type~='toc'] a > span.toc-label { display: block; }")
+        #expect(rules.count == 1)
+        #expect(rules.first?.selector.components.count == 3)
+    }
+
+    /// Sibling combinators are still unsupported — the whole rule is dropped (safe no-op) rather
+    /// than silently matching the subject alone.
+    @Test func siblingCombinatorSelectorIsDropped() {
+        #expect(CSSParser.parse(css: "h1 + p { color: red; }").isEmpty)
+        #expect(CSSParser.parse(css: "h1 ~ p { color: red; }").isEmpty)
+    }
+
+    /// `@charset` / `@namespace` statement at-rules precede the first style rule in many EPUB
+    /// stylesheets. The rule regex treats everything up to the first `{` as a selector, so if they
+    /// aren't stripped they fuse into the first rule's selector and silently drop its declarations.
+    /// Regression: this swallowed `body { font-family: … }`, so the document font (and the embedded
+    /// `@font-face` cascade keyed off it) never applied — bold/italic collapsed to system fonts.
+    @Test func leadingAtRulesDoNotBreakFirstStyleRule() {
+        let css = """
+        @charset "UTF-8";
+        @namespace "http://www.w3.org/1999/xhtml";
+        @namespace epub "http://www.idpf.org/2007/ops";
+
+        body { font-family: 'Quicksand', Helvetica; font-weight: bold; }
+        p { color: red; }
+        """
+        let rules = CSSParser.parse(css: css)
+        let bodyRule = rules.first {
+            $0.selector.components.count == 1 && $0.selector.components.first?.tag == "body"
+        }
+        #expect(bodyRule != nil)
+        #expect(bodyRule?.declarations["font-family"] == "'Quicksand', Helvetica")
+        // The rule that follows must still parse on its own.
+        #expect(rules.contains { $0.selector.components.first?.tag == "p" })
+    }
+
+    /// End-to-end: the EPUB nav `display:block` rules now reach the spans, so the TOC label and
+    /// description render on separate lines (a paragraph break sits between them) instead of
+    /// running together inline.
+    @Test func tocLabelAndDescRenderOnSeparateLines() async {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 4,
+            paragraphSpacing: 10,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 320
+        )
+        let html = """
+        <html><head><style>
+        nav[epub|type~='toc'] a > span.toc-label { display: block; }
+        nav[epub|type~='toc'] a > span.toc-desc  { display: block; margin-left: 3em; }
+        nav ol { list-style-type: none; }
+        </style></head>
+        <body>
+          <nav epub:type="toc"><ol>
+            <li><a href="p10.xhtml"><span class="toc-label">LabelAlpha</span><span class="toc-desc">DescBeta</span></a></li>
+          </ol></nav>
+        </body></html>
+        """
+        let attributed = await builder.build(html: html, config: config).attributedString
+        let string = attributed.string as NSString
+        let label = string.range(of: "LabelAlpha")
+        let desc = string.range(of: "DescBeta")
+        #expect(label.location != NSNotFound)
+        #expect(desc.location != NSNotFound)
+        guard label.location != NSNotFound, desc.location != NSNotFound else { return }
+        let gapStart = label.location + label.length
+        let between = string.substring(with: NSRange(location: gapStart, length: desc.location - gapStart))
+        #expect(between.contains("\n"))
+
+        // The description carries `margin-left: 3em`, so its block paragraph indent must survive the
+        // enclosing list item's segment flush — i.e. be larger than the label's. Regression guard for
+        // the nested-block-in-inline-anchor flatten bug.
+        let labelPara = attributed.attribute(.paragraphStyle, at: label.location, effectiveRange: nil) as? NSParagraphStyle
+        let descPara = attributed.attribute(.paragraphStyle, at: desc.location, effectiveRange: nil) as? NSParagraphStyle
+        #expect(labelPara != nil)
+        #expect(descPara != nil)
+        if let labelPara, let descPara {
+            #expect(descPara.headIndent > labelPara.headIndent + 1)
+        }
+    }
 }
 
 private func testHTMLConfig() -> HTMLAttributedStringBuilder.Config {
