@@ -51,6 +51,7 @@ final class HTMLCSSPropertyApplierRegistry {
         FontStyleApplier(),
         TextAlignApplier(),
         DisplayApplier(),
+        FloatApplier(),
         ColorApplier(),
         LineHeightApplier(),
         BackgroundImageApplier(),
@@ -142,6 +143,30 @@ private struct DisplayApplier: HTMLCSSPropertyApplier {
         // correctly un-hides because each declaration re-evaluates this.
         style.isHidden = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "none"
         style.isBlock = context.cssDisplayIsBlock(value)
+    }
+}
+
+private struct FloatApplier: HTMLCSSPropertyApplier {
+    let key = "float"
+
+    func apply(
+        value: String,
+        style: inout HTMLAttributedStringBuilder.ResolvedStyle,
+        context: HTMLCSSApplyContext
+    ) {
+        // We don't implement text wrapping around CSS floats. To avoid a floated element (e.g. a
+        // `img.left { float:left; width:50% }`) overlapping the surrounding text, promote it to a
+        // block so it reserves its own vertical space, aligned to the float side.
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "left":
+            style.isBlock = true
+            style.textAlign = .left
+        case "right":
+            style.isBlock = true
+            style.textAlign = .right
+        default:
+            break
+        }
     }
 }
 

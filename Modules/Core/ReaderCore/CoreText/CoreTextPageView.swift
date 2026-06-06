@@ -1591,9 +1591,11 @@ final class CoreTextPageViewController: UIViewController {
 
     private func presentEPUBMedia(_ media: EPUBMediaAttachment) {
         let controller = UIHostingController(rootView: EPUBMediaPlayerView(media: media))
-        controller.modalPresentationStyle = media.kind == .video ? .fullScreen : .pageSheet
-        if media.kind == .audio, let sheet = controller.sheetPresentationController {
-            sheet.detents = [.medium()]
+        // Play in a contained sheet rather than forcing fullscreen. AVKit's own expand control
+        // (top-left arrows) still lets the user enlarge to fullscreen on demand.
+        controller.modalPresentationStyle = .pageSheet
+        if let sheet = controller.sheetPresentationController {
+            sheet.detents = media.kind == .video ? [.medium(), .large()] : [.medium()]
             sheet.prefersGrabberVisible = true
         }
         present(controller, animated: true)

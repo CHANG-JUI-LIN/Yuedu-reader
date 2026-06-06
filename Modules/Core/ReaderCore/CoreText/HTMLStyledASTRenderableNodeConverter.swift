@@ -87,7 +87,9 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             if let media = mediaAttachment {
                 node = .media(media, style: style)
             } else {
-                node = .block(tag: tag, children: mappedChildren, style: style)
+                // No player surfaced (controls-less background audio, or no source). Render nothing —
+                // never fall back to the element's `<div class="errmsg">` "unsupported" children.
+                node = .text("")
             }
 
         case "p", "div", "body":
@@ -220,6 +222,8 @@ private extension HTMLAttributedStringBuilder.ElementNode {
         let source = mediaSource
         guard !source.isEmpty else { return nil }
         let kind: EPUBMediaKind = tag == "video" ? .video : .audio
+        // Controls-less <audio> = invisible background soundtrack (matches Apple Books / Readium).
+        if kind == .audio, attributes["controls"] == nil { return nil }
         return EPUBMediaAttachment(
             kind: kind,
             sourceHref: source,

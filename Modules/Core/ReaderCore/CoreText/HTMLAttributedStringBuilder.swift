@@ -1303,8 +1303,12 @@ final class HTMLAttributedStringBuilder {
     private func mediaAttachment(from element: ElementNode) -> EPUBMediaAttachment? {
         let rawSource = mediaSource(from: element)
         guard !rawSource.isEmpty else { return nil }
-        let resolvedSource = mediaURLResolver?(rawSource) ?? rawSource
         let kind: EPUBMediaKind = element.tag == "video" ? .video : .audio
+        // A controls-less <audio> is a background/soundtrack element (e.g. `media:background`,
+        // autoplay+loop) with no visible UI per the HTML spec — Apple Books / Readium render
+        // nothing for it. Don't surface a player chip.
+        if kind == .audio, element.attributes["controls"] == nil { return nil }
+        let resolvedSource = mediaURLResolver?(rawSource) ?? rawSource
         let title = element.attributes["title"]
             ?? element.attributes["aria-label"]
             ?? element.attributes["alt"]
