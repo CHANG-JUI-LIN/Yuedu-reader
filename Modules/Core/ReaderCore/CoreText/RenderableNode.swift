@@ -145,6 +145,7 @@ public struct RenderStyle: Sendable {
     public var borderRadius: CGFloat
     public var isInlineAnnotation: Bool
     public var isVerticalWritingMode: Bool
+    public var floatSide: RenderFloatSide?
 
     public init(
         fontSizeMultiplier: CGFloat = 1.0,
@@ -186,7 +187,8 @@ public struct RenderStyle: Sendable {
         strikethrough: Bool = false,
         isInlineAnnotation: Bool = false,
         isVerticalWritingMode: Bool = false,
-        borderRadius: CGFloat = 0
+        borderRadius: CGFloat = 0,
+        floatSide: RenderFloatSide? = nil
     ) {
         self.fontSizeMultiplier = fontSizeMultiplier
         self.fontFamilies = fontFamilies
@@ -228,6 +230,7 @@ public struct RenderStyle: Sendable {
         self.borderRadius = borderRadius
         self.isInlineAnnotation = isInlineAnnotation
         self.isVerticalWritingMode = isVerticalWritingMode
+        self.floatSide = floatSide
     }
 
     /// No style override (default for inline cases).
@@ -245,6 +248,11 @@ public enum RenderTextAlignment: Sendable {
     case center
     case right
     case justify
+}
+
+public enum RenderFloatSide: Sendable {
+    case left
+    case right
 }
 
 // MARK: - RenderColor (UIKit-independent color type)

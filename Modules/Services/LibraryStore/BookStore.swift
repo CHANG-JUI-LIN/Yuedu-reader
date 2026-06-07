@@ -1191,6 +1191,21 @@ class BookStore: ObservableObject, BookProvider {
         return documentsURL(for: epubFilename)
     }
 
+    /// The on-disk book file to hand to a share sheet (the EPUB/TXT itself), or nil for online books
+    /// (no local file) and missing files.
+    func shareableFileURL(for book: ReadingBook) -> URL? {
+        guard !book.isOnline, !book.contentFilename.isEmpty else { return nil }
+        // EPUB-derived books may store an `_epub.json` sidecar; share the real `.epub`.
+        if book.contentFilename.hasSuffix(".epub") || book.contentFilename.hasSuffix("_epub.json") {
+            let epubURL = localEPUBURL(for: book)
+            if FileManager.default.fileExists(atPath: epubURL.path) {
+                return epubURL
+            }
+        }
+        let direct = documentsURL(for: book.contentFilename)
+        return FileManager.default.fileExists(atPath: direct.path) ? direct : nil
+    }
+
     private func saveMeta() {
         saveWorkItem?.cancel()
 

@@ -834,6 +834,7 @@ final class HTMLAttributedStringBuilder {
             Self.blockRenderIDAttribute,
             Self.hrDividerAttribute,
             Self.pageBreakAttribute,
+            Self.floatAttribute,
             NSAttributedString.Key(kCTRunDelegateAttributeName as String),
         ]
         for key in keys {

@@ -24,6 +24,10 @@ final class CoreTextChunk {
 
     /// Whether this chunk is a single-image block (cover / full-page illustration). When true, skip CTFrame rendering and only draw attachments.
     let isImageOnly: Bool
+    /// Horizontal scroll-mode CSS float notch in this chunk's CoreText frame path.
+    let floatNotch: CGRect?
+    /// Images drawn in the float notch. Kept separately so frame eviction/rebuild preserves them.
+    let floatAttachments: [CoreTextPaginator.RenderedAttachment]
     /// Block-level decorations (backgrounds, borders) extracted from the attributed string. Cached once during slicing or materialization.
     private(set) var blockRenderables: [CoreTextPaginator.RenderedBlockRenderable] = []
     /// Inline text annotations (span.small notes in vertical writing mode). Extracted during slicing or frame materialization.
@@ -38,6 +42,8 @@ final class CoreTextChunk {
          writingMode: ReaderWritingMode = .horizontal,
          presetAttachments: [CoreTextPaginator.RenderedAttachment]? = nil,
          isImageOnly: Bool = false,
+         floatNotch: CGRect? = nil,
+         floatAttachments: [CoreTextPaginator.RenderedAttachment] = [],
          blockRenderables: [CoreTextPaginator.RenderedBlockRenderable] = [],
          inlineAnnotations: [CoreTextPaginator.RenderedInlineAnnotation] = []) {
         self.chapterIndex = chapterIndex
@@ -49,12 +55,14 @@ final class CoreTextChunk {
         self.writingMode = writingMode
         self.frame = frame
         self.isImageOnly = isImageOnly
+        self.floatNotch = floatNotch
+        self.floatAttachments = floatAttachments
         self.blockRenderables = blockRenderables
         self.inlineAnnotations = inlineAnnotations
         if let preset = presetAttachments {
             self.attachments = preset
         } else if let f = frame {
-            self.attachments = CoreTextChunkAttachmentExtractor.extract(
+            self.attachments = floatAttachments + CoreTextChunkAttachmentExtractor.extract(
                 frame: f,
                 chunkSize: size,
                 attributedString: attributedString,
@@ -85,14 +93,17 @@ final class CoreTextChunk {
     func buildFrameData() -> BuiltFrame? {
         if isImageOnly { return nil }
         let size = CGSize(width: width, height: height)
-        let path = CGPath(rect: CGRect(origin: .zero, size: size), transform: nil)
+        let path = CoreTextPaginator.framePath(
+            contentPathRect: CGRect(origin: .zero, size: size),
+            floatNotch: floatNotch
+        )
         let f = CoreTextPaginator.makeFrame(
             framesetter: framesetter,
             range: charRange,
             path: path,
             writingMode: writingMode
         )
-        let builtAttachments = CoreTextChunkAttachmentExtractor.extract(
+        let builtAttachments = floatAttachments + CoreTextChunkAttachmentExtractor.extract(
             frame: f,
             chunkSize: size,
             attributedString: attributedString,

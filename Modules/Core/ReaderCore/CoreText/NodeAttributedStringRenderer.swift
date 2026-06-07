@@ -639,6 +639,16 @@ struct NodeAttributedStringRenderer {
                 attrs[.foregroundColor] = UIColor.secondaryLabel
                 return NSAttributedString(string: "[\(alt)]", attributes: attrs)
             }
+            if let side = style.floatSide {
+                return makeFloatPlaceholder(
+                    side: side,
+                    image: image,
+                    style: style,
+                    imageSource: "",
+                    imageAlt: alt,
+                    ctx: ctx
+                )
+            }
             let metrics = await resolvedImageMetrics(image: image, style: style, font: ctx.font, displayMode: .inline)
             return await makeImagePlaceholder(
                 image: image,
@@ -652,6 +662,16 @@ struct NodeAttributedStringRenderer {
         }
 
         if config.imageLoader == nil {
+            if let side = style.floatSide {
+                return makeFloatPlaceholder(
+                    side: side,
+                    image: nil,
+                    style: style,
+                    imageSource: src,
+                    imageAlt: alt,
+                    ctx: ctx
+                )
+            }
             guard !alt.isEmpty else { return NSAttributedString() }
             var attrs = ctx.baseAttributes
             let altFont = UIFont(name: ctx.font.fontName, size: ctx.font.pointSize - 1)
@@ -662,6 +682,16 @@ struct NodeAttributedStringRenderer {
 
         let image = src.isEmpty ? nil : await config.imageLoader?(src)
         CoreTextPaginator.debugVerticalLog("EPUBFLOW render.inlineImage.node src=\(src) alt=\(alt) imageLoaded=\(image != nil) writingMode=\(config.writingMode) fontSize=\(ctx.font.pointSize) styleWidth=\(style.width.map { "\($0)" } ?? "nil") styleHeight=\(style.height.map { "\($0)" } ?? "nil")")
+        if let side = style.floatSide {
+            return makeFloatPlaceholder(
+                side: side,
+                image: image,
+                style: style,
+                imageSource: src,
+                imageAlt: alt,
+                ctx: ctx
+            )
+        }
         return await makeImagePlaceholder(
             image: image,
             style: style,
@@ -935,6 +965,61 @@ struct NodeAttributedStringRenderer {
             }
         }
         return placeholder
+    }
+
+    private func makeFloatPlaceholder(
+        side: RenderFloatSide,
+        image: UIImage?,
+        style: RenderStyle,
+        imageSource: String,
+        imageAlt: String?,
+        ctx: RenderContext
+    ) -> NSAttributedString {
+        let renderWidth = max(1, config.renderWidth ?? 320)
+        var drawWidth: CGFloat
+        if let pct = style.rawWidthPercent {
+            drawWidth = renderWidth * pct / 100.0
+        } else if let width = style.width {
+            drawWidth = width
+        } else {
+            drawWidth = renderWidth * 0.5
+        }
+        drawWidth = max(1, min(drawWidth, renderWidth * 0.6))
+
+        var drawHeight: CGFloat
+        if let height = style.height {
+            drawHeight = height
+        } else if let image, image.size.width > 0 {
+            drawHeight = drawWidth * image.size.height / image.size.width
+        } else {
+            drawHeight = drawWidth
+        }
+        drawHeight = max(1, min(drawHeight, renderWidth * 1.5))
+
+        let placeholder = HTMLAttributedStringBuilder.FloatPlaceholder(
+            side: {
+                switch side {
+                case .left: return .left
+                case .right: return .right
+                }
+            }(),
+            image: image,
+            drawWidth: ceil(drawWidth),
+            drawHeight: ceil(drawHeight),
+            marginLeft: max(0, style.marginLeft),
+            marginRight: max(0, style.marginRight),
+            marginTop: 0,
+            marginBottom: max(0, style.paragraphSpacingAfter),
+            source: imageSource,
+            alt: imageAlt
+        )
+        let marker = NSMutableAttributedString(string: "\u{200B}", attributes: ctx.baseAttributes)
+        marker.addAttribute(
+            HTMLAttributedStringBuilder.floatAttribute,
+            value: placeholder,
+            range: NSRange(location: 0, length: marker.length)
+        )
+        return marker
     }
 
     private func imageBlockParagraphStyle(base: NSParagraphStyle, metrics: ImageMetrics, isHorizontallyCentered: Bool = false) -> NSParagraphStyle {

@@ -41,6 +41,14 @@ struct HomeView: View {
         !sortedFilteredBooks.isEmpty && selectedBookIds.count == sortedFilteredBooks.count
     }
 
+    /// Local file URLs of the currently selected books, for the share sheet. Online books (no local file)
+    /// are skipped.
+    private var selectedShareableURLs: [URL] {
+        selectedBookIds
+            .compactMap { id in store.books.first(where: { $0.id == id }) }
+            .compactMap { store.shareableFileURL(for: $0) }
+    }
+
     var body: some View {
         NavigationStack {
             AdaptiveContentContainer(maxWidth: DSLayout.readableShelfWidth) {
@@ -57,9 +65,6 @@ struct HomeView: View {
                                 bookGrid
                             } else {
                                 bookList
-                            }
-                            if editMode == .active {
-                                editActionBar
                             }
                         }
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
@@ -99,6 +104,35 @@ struct HomeView: View {
                                 .font(DSFont.toolbarIcon)
                         }
                     }
+                    // Native bottom toolbar: delete · add-to-group · share.
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        Button(role: .destructive) {
+                            if !selectedBookIds.isEmpty { showBulkDeleteAlert = true }
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .tint(.red)
+                        .disabled(selectedBookIds.isEmpty)
+                        .accessibilityLabel(localized("刪除"))
+
+                        Spacer()
+
+                        Button {
+                            if !selectedBookIds.isEmpty { showAddToGroupSheet = true }
+                        } label: {
+                            Label(localized("加入分組"), systemImage: "text.badge.plus")
+                                .labelStyle(.titleAndIcon)
+                        }
+                        .disabled(selectedBookIds.isEmpty)
+
+                        Spacer()
+
+                        ShareLink(items: selectedShareableURLs) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .disabled(selectedShareableURLs.isEmpty)
+                        .accessibilityLabel(localized("分享"))
+                    }
                 } else {
                     // Two separate glass pills. A ToolbarSpacer (iOS 26+) breaks the
                     // auto-merge so the two menus sit in their own glass instead of
@@ -114,7 +148,9 @@ struct HomeView: View {
                     }
                 }
             }
-
+            // In edit mode, hide the app tab bar so the contextual .bottomBar (delete / group / share)
+            // takes its place — the system selection pattern used by Photos / Files.
+            .toolbar(editMode == .active ? .hidden : .automatic, for: .tabBar)
             .sheet(isPresented: $showAddSheet) {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                     AddBookView()
@@ -279,67 +315,19 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Edit Mode Action Bar
-    private var editActionBar: some View {
-        HStack {
-            Button {
-                if !selectedBookIds.isEmpty { showBulkDeleteAlert = true }
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 20))
-                    .foregroundColor(selectedBookIds.isEmpty ? DSColor.textSecondary : .red)
-                    .frame(width: 44, height: 44)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(Circle())
-            }
-            .disabled(selectedBookIds.isEmpty)
-
-            Spacer()
-
-            Button {
-                if !selectedBookIds.isEmpty { showAddToGroupSheet = true }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus.circle")
-                    Text(localized("加入分組"))
-                }
-                .font(DSFont.subheadline.weight(.medium))
-                .foregroundColor(selectedBookIds.isEmpty ? DSColor.textSecondary : .primary)
-                .padding(.horizontal, 18).padding(.vertical, 10)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(Capsule())
-            }
-            .disabled(selectedBookIds.isEmpty)
-
-            Spacer()
-
-            Color.clear.frame(width: 44, height: 44)
-        }
-        .padding(.horizontal, hInset)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
-    }
 
     // MARK: - Book List
     private var bookList: some View {
-        List {
+        // Native multi-select: binding the selection Set drives the system selection circles in edit mode.
+        List(selection: $selectedBookIds) {
             ForEach(sortedFilteredBooks) { book in
                 BookRow(
                     book: book,
                     isEditing: editMode == .active,
-                    isSelected: selectedBookIds.contains(book.id),
                     transitionNamespace: bookTransition,
                     onTap: {
-                        if editMode == .active {
-                            if selectedBookIds.contains(book.id) {
-                                selectedBookIds.remove(book.id)
-                            } else {
-                                selectedBookIds.insert(book.id)
-                            }
-                        } else {
-                            store.updateLastOpened(bookId: book.id)
-                            readerBookId = book.id
-                        }
+                        store.updateLastOpened(bookId: book.id)
+                        readerBookId = book.id
                     },
                     onEdit: { editingBook = book },
                     onDelete: { bookToDelete = book }
@@ -469,7 +457,7 @@ struct EditBookSheet: View {
                     }
                 }
                 .navigationTitle(localized("書籍資訊"))
-                .toolbarTitleDisplayMode(.inlineLarge)
+                .toolbarTitleDisplayMode(.large)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button(localized("取消")) { dismiss.wrappedValue.dismiss() }
@@ -532,7 +520,6 @@ struct EmptyLibraryView: View {
 struct BookRow: View {
     let book: ReadingBook
     var isEditing: Bool = false
-    var isSelected: Bool = false
     var transitionNamespace: Namespace.ID? = nil
     let onTap: () -> Void
     let onEdit: () -> Void
@@ -544,47 +531,14 @@ struct BookRow: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
-                Button(action: onTap) {
-                    HStack(alignment: .top, spacing: 12) {
-                        if isEditing {
-                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 22))
-                                .foregroundColor(isSelected ? DSColor.accent : DSColor.textSecondary.opacity(0.5))
-                                .padding(.top, (coverH - 22) / 2)
-                        }
+                // In edit mode the row is plain content so the List's native selection circle handles
+                // taps; otherwise it's a button that opens the book.
+                if isEditing {
+                    rowContent
+                } else {
+                    Button(action: onTap) { rowContent }
+                        .buttonStyle(.plain)
 
-                        Group {
-                            if let ns = transitionNamespace {
-                                bookCover.matchedTransitionSource(id: book.id, in: ns)
-                            } else {
-                                bookCover
-                            }
-                        }
-
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(book.title)
-                                .font(.system(size: 15, weight: .medium))
-                                .lineLimit(2)
-                                .foregroundColor(.primary)
-
-                            if !book.author.isEmpty {
-                                Text(book.author)
-                                    .font(.system(size: 13))
-                                    .foregroundColor(DSColor.textSecondary)
-                                    .lineLimit(1)
-                            }
-
-                            progressBadge
-                        }
-                        .padding(.top, 2)
-
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                if !isEditing {
                     VStack {
                         Spacer(minLength: 0)
                         HStack(spacing: 12) {
@@ -606,6 +560,38 @@ struct BookRow: View {
                 .fill(Color(uiColor: .separator))
                 .frame(height: 0.5)
         }
+    }
+
+    private var rowContent: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Group {
+                if let ns = transitionNamespace {
+                    bookCover.matchedTransitionSource(id: book.id, in: ns)
+                } else {
+                    bookCover
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(book.title)
+                    .font(.system(size: 15, weight: .medium))
+                    .lineLimit(2)
+                    .foregroundColor(.primary)
+
+                if !book.author.isEmpty {
+                    Text(book.author)
+                        .font(.system(size: 13))
+                        .foregroundColor(DSColor.textSecondary)
+                        .lineLimit(1)
+                }
+
+                progressBadge
+            }
+            .padding(.top, 2)
+
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
     }
 
     /// Offline-download progress (downloaded chapters / total), or nil when the
@@ -868,7 +854,7 @@ struct BulkAddToGroupSheet: View {
                 }
             }
             .navigationTitle(localized("加入分組"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) { dismiss.wrappedValue.dismiss() }

@@ -308,7 +308,13 @@ private extension RenderStyle {
             underline: s.underline,
             strikethrough: s.strikethrough,
             isVerticalWritingMode: s.isVerticalWritingMode,
-            borderRadius: s.borderRadius
+            borderRadius: s.borderRadius,
+            floatSide: s.floatSide.map { side in
+                switch side {
+                case .left: return .left
+                case .right: return .right
+                }
+            }
         )
     }
 }

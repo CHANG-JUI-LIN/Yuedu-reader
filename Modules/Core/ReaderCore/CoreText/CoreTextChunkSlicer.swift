@@ -110,22 +110,56 @@ enum CoreTextChunkSlicer {
 
             // Ensure chunk height accommodates block images (drawHeight) within the range
             actualHeight = max(actualHeight, blockImageHeight(in: attrStr, range: actualRange))
+            actualHeight = max(actualHeight, floatImageHeight(in: attrStr, range: actualRange))
 
-            let path = CGPath(
-                rect: CGRect(x: 0, y: 0, width: contentWidth, height: actualHeight),
-                transform: nil
-            )
-            let frame = CoreTextPaginator.makeFrame(
+            var frameBuild = makeHorizontalFrame(
                 framesetter: framesetter,
+                attrStr: attrStr,
                 range: actualRange,
-                path: path,
+                chunkSize: CGSize(width: contentWidth, height: actualHeight),
                 writingMode: writingMode
             )
+
+            if let splitLocation = frameBuild.splitBeforeFloatLocation,
+               splitLocation > actualRange.location {
+                actualRange.length = splitLocation - actualRange.location
+                var frAdj = CFRange(location: 0, length: 0)
+                suggested = CTFramesetterSuggestFrameSizeWithConstraints(
+                    framesetter,
+                    actualRange,
+                    nil,
+                    CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                    &frAdj
+                )
+                actualHeight = ceil(max(suggested.height, 1))
+                actualHeight = max(actualHeight, blockImageHeight(in: attrStr, range: actualRange))
+                frameBuild = makeHorizontalFrame(
+                    framesetter: framesetter,
+                    attrStr: attrStr,
+                    range: actualRange,
+                    chunkSize: CGSize(width: contentWidth, height: actualHeight),
+                    writingMode: writingMode
+                )
+            }
+
+            let visible = CTFrameGetVisibleStringRange(frameBuild.frame)
+            if visible.location == actualRange.location,
+               visible.length > 0,
+               visible.length < actualRange.length {
+                actualRange.length = visible.length
+                frameBuild = makeHorizontalFrame(
+                    framesetter: framesetter,
+                    attrStr: attrStr,
+                    range: actualRange,
+                    chunkSize: CGSize(width: contentWidth, height: actualHeight),
+                    writingMode: writingMode
+                )
+            }
 
             let chunkSize = CGSize(width: contentWidth, height: actualHeight)
             // Extract block decorations during slicing so they survive frame eviction
             let decorations = extractBlockRenderables(
-                frame: frame,
+                frame: frameBuild.frame,
                 chunkSize: chunkSize,
                 attributedString: attrStr,
                 charRange: actualRange
@@ -137,8 +171,10 @@ enum CoreTextChunkSlicer {
                 size: chunkSize,
                 framesetter: framesetter,
                 attributedString: attrStr,
-                frame: frame,
+                frame: frameBuild.frame,
                 writingMode: writingMode,
+                floatNotch: frameBuild.floatNotch,
+                floatAttachments: frameBuild.floatAttachments,
                 blockRenderables: decorations
             ))
 
@@ -252,6 +288,108 @@ enum CoreTextChunkSlicer {
         return ceil(maxX - minX)
     }
 
+    private struct HorizontalFrameBuild {
+        let frame: CTFrame
+        let floatNotch: CGRect?
+        let floatAttachments: [CoreTextPaginator.RenderedAttachment]
+        let splitBeforeFloatLocation: Int?
+    }
+
+    private static func makeHorizontalFrame(
+        framesetter: CTFramesetter,
+        attrStr: NSAttributedString,
+        range: CFRange,
+        chunkSize: CGSize,
+        writingMode: ReaderWritingMode
+    ) -> HorizontalFrameBuild {
+        let contentRect = CGRect(origin: .zero, size: chunkSize)
+        let rectangularPath = CGPath(rect: contentRect, transform: nil)
+        guard !writingMode.isVertical,
+              let marker = CoreTextPaginator.floatMarkers(in: attrStr).first(where: { marker in
+                  marker.offset >= range.location
+                      && marker.offset < range.location + range.length
+                      && marker.placeholder.image != nil
+              })
+        else {
+            let frame = CoreTextPaginator.makeFrame(
+                framesetter: framesetter,
+                range: range,
+                path: rectangularPath,
+                writingMode: writingMode
+            )
+            return HorizontalFrameBuild(
+                frame: frame,
+                floatNotch: nil,
+                floatAttachments: [],
+                splitBeforeFloatLocation: nil
+            )
+        }
+
+        let probe = CoreTextPaginator.makeFrame(
+            framesetter: framesetter,
+            range: range,
+            path: rectangularPath,
+            writingMode: writingMode
+        )
+        guard let lineTop = CoreTextPaginator.lineTopY(in: probe, offset: marker.offset, contentPathRect: contentRect),
+              let image = marker.placeholder.image else {
+            return HorizontalFrameBuild(
+                frame: probe,
+                floatNotch: nil,
+                floatAttachments: [],
+                splitBeforeFloatLocation: nil
+            )
+        }
+
+        let p = marker.placeholder
+        let notchWidth = p.drawWidth + p.marginLeft + p.marginRight
+        let notchHeight = min(contentRect.height, p.drawHeight + p.marginTop + p.marginBottom)
+        let notchBottom = lineTop - notchHeight
+        if notchBottom < contentRect.minY, marker.offset > range.location {
+            return HorizontalFrameBuild(
+                frame: probe,
+                floatNotch: nil,
+                floatAttachments: [],
+                splitBeforeFloatLocation: marker.offset
+            )
+        }
+
+        let clampedBottom = max(contentRect.minY, notchBottom)
+        let uiTop = chunkSize.height - lineTop + p.marginTop
+        let notch: CGRect
+        let attachmentRect: CGRect
+        switch p.side {
+        case .left:
+            notch = CGRect(x: contentRect.minX, y: clampedBottom, width: notchWidth, height: lineTop - clampedBottom)
+            attachmentRect = CGRect(x: contentRect.minX + p.marginLeft, y: uiTop, width: p.drawWidth, height: p.drawHeight)
+        case .right:
+            notch = CGRect(x: contentRect.maxX - notchWidth, y: clampedBottom, width: notchWidth, height: lineTop - clampedBottom)
+            attachmentRect = CGRect(x: contentRect.maxX - p.marginRight - p.drawWidth, y: uiTop, width: p.drawWidth, height: p.drawHeight)
+        }
+
+        let path = CoreTextPaginator.framePath(contentPathRect: contentRect, floatNotch: notch)
+        let frame = CoreTextPaginator.makeFrame(
+            framesetter: framesetter,
+            range: range,
+            path: path,
+            writingMode: writingMode
+        )
+        let attachment = CoreTextPaginator.RenderedAttachment(
+            rect: attachmentRect,
+            image: image,
+            opacity: 1,
+            sourceHref: p.source.isEmpty ? nil : p.source,
+            alt: p.alt,
+            originalSize: image.size
+        )
+        return HorizontalFrameBuild(
+            frame: frame,
+            floatNotch: notch,
+            floatAttachments: [attachment],
+            splitBeforeFloatLocation: nil
+        )
+    }
+
     /// Scans the specified range for block images with CTRunDelegate and returns the maximum drawHeight.
     /// Ensures the chunk path height is large enough to contain the entire image (CoreText measurement may be slightly smaller than drawHeight).
     private static func blockImageHeight(in attrStr: NSAttributedString, range: CFRange) -> CGFloat {
@@ -271,6 +409,19 @@ enum CoreTextChunkSlicer {
             }
         }
         return maxHeight
+    }
+
+    private static func floatImageHeight(in attrStr: NSAttributedString, range: CFRange) -> CGFloat {
+        CoreTextPaginator.floatMarkers(in: attrStr)
+            .filter { marker in
+                marker.offset >= range.location && marker.offset < range.location + range.length
+            }
+            .map { marker in
+                marker.placeholder.drawHeight
+                    + marker.placeholder.marginTop
+                    + marker.placeholder.marginBottom
+            }
+            .max() ?? 0
     }
 
     // MARK: - Block renderable extraction

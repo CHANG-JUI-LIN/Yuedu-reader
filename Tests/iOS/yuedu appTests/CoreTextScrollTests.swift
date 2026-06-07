@@ -409,6 +409,115 @@ struct CoreTextScrollTests {
         }
     }
 
+    @Test("scroll chunks wrap text around CSS float images")
+    func scrollChunksWrapTextAroundCSSFloatImages() async throws {
+        let floatImage = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 120)).image { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 100, height: 120))
+        }
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { href in
+            href == "float.png" ? floatImage : nil
+        }
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.2,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            renderWidth: 240
+        )
+        let html = """
+        <html>
+        <body>
+        <img style="float: left; width: 100px;" src="float.png" alt="float"/>
+        <p style="margin: 0; text-indent: 0;">Wrapped text should start beside the floated image and keep flowing beside it for several lines before returning to the full width content column.</p>
+        </body>
+        </html>
+        """
+
+        let attr = await builder.build(html: html, config: config).attributedString
+        #expect(CoreTextPaginator.floatMarkers(in: attr).count == 1)
+
+        let output = CoreTextChunkSlicer.slice(
+            attributedString: attr,
+            chapterIndex: 0,
+            contentWidth: 240,
+            heightCap: 360
+        )
+
+        let chunk = try #require(output.chunks.first)
+        let attachment = try #require(chunk.attachments.first { $0.sourceHref == "float.png" })
+        #expect(attachment.rect.minX < 1)
+        #expect(abs(attachment.rect.width - 100) < 1)
+
+        let frame = try #require(chunk.frame)
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        let hasIndentedWrappedLine = zip(lines, origins).contains { line, origin in
+            let lineRange = CTLineGetStringRange(line)
+            guard lineRange.location >= 0, lineRange.length > 0 else { return false }
+            let text = (attr.string as NSString).substring(
+                with: NSRange(location: lineRange.location, length: min(lineRange.length, attr.length - lineRange.location))
+            )
+            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                && origin.x >= attachment.rect.maxX - 1
+        }
+        #expect(hasIndentedWrappedLine)
+    }
+
+    @Test("scroll video media taps embed inline instead of presenting modal")
+    @MainActor
+    func scrollVideoMediaTapsEmbedInlineInsteadOfPresentingModal() async throws {
+        let html = """
+        <html><body>
+        <video src="file:///tmp/yuedu-scroll-video-test.mp4" title="Inline video" style="width: 160px; height: 90px;"></video>
+        <p>Text after video.</p>
+        </body></html>
+        """
+        let engine = CoreTextScrollEngine(
+            builder: HTMLScrollTestBuilder(html: html, renderWidth: 240),
+            renderSettings: Self.renderSettings
+        )
+        let controller = CoreTextCollectionScrollViewController(
+            engine: engine,
+            axis: .vertical,
+            horizontalInset: 12,
+            verticalInset: 20,
+            backgroundColor: .white
+        )
+        controller.setInitialPosition(chapter: 0, charOffset: 0)
+
+        let scene = try #require(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+
+        let collectionView = try #require(Self.firstCollectionView(in: controller.view))
+        for _ in 0..<50 where engine.chunks.isEmpty || collectionView.numberOfItems(inSection: 0) == 0 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            controller.view.layoutIfNeeded()
+        }
+        controller.view.layoutIfNeeded()
+        try #require(engine.chunks.first?.attachments.contains { $0.mediaAttachment?.kind == .video } == true)
+
+        let video = try #require(engine.chunks.first?.attachments.first { $0.mediaAttachment?.kind == .video }?.mediaAttachment)
+        controller.handleMediaTap(video)
+
+        #expect(controller.presentedViewController == nil)
+        #expect(controller.inlineVideoControllerCountForTesting == 1)
+        EPUBVideoPlaybackManager.shared.stopAll()
+        window.isHidden = true
+    }
+
     @Test("actual Project Hail Mary EPUB builds legacy scroll chunks")
     @MainActor
     func actualProjectHailMaryBuildsLegacyScrollChunks() async throws {
@@ -651,6 +760,48 @@ private struct StaticScrollTestBuilder: AttributedStringBuilding {
             imagePage: nil,
             pageBackgroundImage: nil,
             anchorOffsets: [:]
+        )
+    }
+}
+
+private struct HTMLScrollTestBuilder: AttributedStringBuilding {
+    let html: String
+    let renderWidth: CGFloat
+
+    var chapterCount: Int { 1 }
+
+    func chapterTitle(at index: Int) -> String { "HTML" }
+    func chapterSourceHref(at index: Int) -> String? { "chapter.xhtml" }
+    func chapterDataSize(at index: Int) async -> Int { html.utf8.count }
+    func chapterIndex(for href: String) -> Int? { nil }
+    func cssResourceHrefs() -> [String] { [] }
+
+    func buildChapter(
+        at index: Int,
+        settings: ReaderRenderSettings,
+        themeTextColor: UIColor,
+        themeBackgroundColor: UIColor
+    ) async throws -> AttributedChapterBuildResult {
+        let builder = HTMLAttributedStringBuilder()
+        let result = await builder.build(
+            html: html,
+            config: HTMLAttributedStringBuilder.Config(
+                fontSize: settings.fontSize,
+                lineHeightMultiple: settings.lineHeightMultiple,
+                lineSpacing: settings.lineSpacing,
+                paragraphSpacing: settings.paragraphSpacing,
+                firstLineIndent: 0,
+                textColor: themeTextColor,
+                backgroundColor: themeBackgroundColor,
+                renderWidth: renderWidth,
+                writingMode: settings.writingMode
+            )
+        )
+        return AttributedChapterBuildResult(
+            attributedString: result.attributedString,
+            imagePage: result.imagePage,
+            pageBackgroundImage: result.pageBackgroundImage,
+            anchorOffsets: result.anchorOffsets
         )
     }
 }
