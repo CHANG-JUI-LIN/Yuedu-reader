@@ -58,27 +58,50 @@ enum CoreTextChunkAttachmentExtractor {
                             height: info.drawHeight
                         )
                     } else {
-                        let flush: CGFloat
-                        switch paragraphStyle?.alignment ?? .natural {
-                        case .center: flush = 0.5
-                        case .right:  flush = 1
-                        default:      flush = 0
-                        }
-                        let penOffset = CGFloat(
-                            CTLineGetPenOffsetForFlush(line, Double(flush), Double(chunkSize.width))
-                        )
-                        let textAdvance = CTLineGetOffsetForStringIndex(line, runLocation, nil)
                         let baselineY = lineOrigin.y
                         let lineHeight = lineAscent + lineDescent
                         let lineBottom = baselineY - lineDescent
                         let centeredBottom = lineBottom + max(0, (lineHeight - info.drawHeight) / 2)
                         let uiY = chunkSize.height - centeredBottom - info.drawHeight
-                        rect = CGRect(
-                            x: lineOrigin.x + penOffset + textAdvance + info.paddingLeft,
-                            y: uiY,
-                            width: info.drawWidth,
-                            height: info.drawHeight
-                        )
+                        // A standalone image (alone on its line, e.g. <figure><img/><figcaption/></figure>)
+                        // reads as a figure and is centered like a block image; flushing it left leaves a
+                        // lopsided right-hand gap. Inline images that flow with text keep their flow
+                        // position. Matches CoreTextPaginator.extractImages (paged mode).
+                        if CoreTextPaginator.isStandaloneImageRun(CTRunGetStringRange(run), line: line, attrStr: attributedString) {
+                            let leftInset = min(paragraphStyle?.headIndent ?? 0, paragraphStyle?.firstLineHeadIndent ?? 0)
+                            let rightInset = (paragraphStyle?.tailIndent ?? 0) < 0 ? -(paragraphStyle?.tailIndent ?? 0) : 0
+                            let boxWidth = max(1, chunkSize.width - leftInset - rightInset)
+                            let occupiedWidth = min(boxWidth, info.width)
+                            let alignedX: CGFloat
+                            switch paragraphStyle?.alignment ?? .natural {
+                            case .left:  alignedX = leftInset
+                            case .right: alignedX = leftInset + max(0, boxWidth - occupiedWidth)
+                            default:     alignedX = leftInset + max(0, (boxWidth - occupiedWidth) / 2)
+                            }
+                            rect = CGRect(
+                                x: alignedX + info.paddingLeft,
+                                y: uiY,
+                                width: info.drawWidth,
+                                height: info.drawHeight
+                            )
+                        } else {
+                            let flush: CGFloat
+                            switch paragraphStyle?.alignment ?? .natural {
+                            case .center: flush = 0.5
+                            case .right:  flush = 1
+                            default:      flush = 0
+                            }
+                            let penOffset = CGFloat(
+                                CTLineGetPenOffsetForFlush(line, Double(flush), Double(chunkSize.width))
+                            )
+                            let textAdvance = CTLineGetOffsetForStringIndex(line, runLocation, nil)
+                            rect = CGRect(
+                                x: lineOrigin.x + penOffset + textAdvance + info.paddingLeft,
+                                y: uiY,
+                                width: info.drawWidth,
+                                height: info.drawHeight
+                            )
+                        }
                     }
                 case .block:
                     if isVertical {

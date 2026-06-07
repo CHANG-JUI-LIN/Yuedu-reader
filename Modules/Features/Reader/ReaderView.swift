@@ -63,6 +63,11 @@ struct ReaderView: View {
     @StateObject private var autoReader = AutoReadController()
     @StateObject private var ttsCoordinator = TTSCoordinator()
     @StateObject private var mediaOverlayCoordinator = EPUBMediaOverlayPlaybackCoordinator()
+    /// Plays an EPUB chapter's authored background soundtrack (controls-less autoplay/loop `<audio>`).
+    @State private var backgroundAudioCoordinator = EPUBBackgroundAudioCoordinator()
+    /// The active EPUB publication session, retained so the background-audio coordinator can read chapter
+    /// HTML and resolve resource URLs on chapter change.
+    @State private var activePublicationSession: PublicationSession?
 
     private func syncReaderBrightnessFromSystem() {
         let current = Double(UIScreen.main.brightness)
@@ -590,6 +595,10 @@ struct ReaderView: View {
 
         if chapterChanged {
             ensureChapterReady(chapterIndex: newChapter)
+            // Switch the authored background soundtrack to the new chapter's (or stop it if none).
+            if let session = activePublicationSession {
+                Task { await backgroundAudioCoordinator.update(session: session, chapterIndex: newChapter) }
+            }
             // Keep BOTH neighbors paginated, not just forward ones. Previously only
             // chapters ahead stayed warm, so turning back (or a nearby TOC jump) hit a
             // cold chapter and stalled on on-demand pagination — the "laggy" feel.
@@ -1112,6 +1121,8 @@ struct ReaderView: View {
             volumeHandler.stopListening()
             autoReader.pause()
             mediaOverlayCoordinator.stop()
+            EPUBVideoPlaybackManager.shared.stopAll()
+            backgroundAudioCoordinator.stop()
             setTTSFloatingOverlayVisible(false)
         }
         .onChanged(of: scenePhase) { phase in
@@ -1199,9 +1210,12 @@ struct ReaderView: View {
         .onReceive(NotificationCenter.default.publisher(for: .ttsFloatingPlayerOpenPanel)) { _ in
             showTTSPanel = true
         }
-        .onChanged(of: scrollVisibleChapter) { _ in
+        .onChanged(of: scrollVisibleChapter) { newChapter in
             autoSaveProgress()
             handleReaderPositionChangedForTTS()
+            if let session = activePublicationSession {
+                Task { await backgroundAudioCoordinator.update(session: session, chapterIndex: newChapter) }
+            }
         }
         .sheet(isPresented: $showSettings) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
@@ -2959,6 +2973,10 @@ struct ReaderView: View {
     ) {
         let document = BookDocumentFactory.makeEPUBDocument(book: book, session: session)
         applyDocument(document)
+
+        // Start any authored background soundtrack for the chapter we're opening on.
+        activePublicationSession = session
+        Task { await backgroundAudioCoordinator.update(session: session, chapterIndex: currentChapterIndex) }
 
         // Prefer EPUB toc.ncx / nav.xhtml entries. Only fall back to spine when TOC is missing.
         if !session.tocEntries.isEmpty {

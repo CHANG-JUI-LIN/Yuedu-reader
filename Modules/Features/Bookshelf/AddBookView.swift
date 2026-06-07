@@ -31,7 +31,7 @@ struct AddBookView: View {
                 }
             }
             .navigationTitle(localized("添加書籍"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) { presentationMode.wrappedValue.dismiss() }

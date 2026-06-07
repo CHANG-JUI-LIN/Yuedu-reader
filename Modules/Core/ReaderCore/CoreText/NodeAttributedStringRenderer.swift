@@ -920,6 +920,20 @@ struct NodeAttributedStringRenderer {
         )
         let range = NSRange(location: 0, length: placeholder.length)
         placeholder.addAttributes(ctx.baseAttributes, range: range)
+        // An inline image sharing a block with other content (e.g. <figure><img/><figcaption/></figure>)
+        // inherits the block's paragraph style, which pins maximumLineHeight to the *text* line height.
+        // CoreText would then clamp the image's reserved line, and the image would overflow upward and
+        // overlap the preceding content. Raise maximumLineHeight to fit the image; minimumLineHeight is
+        // left untouched so any text on the same line stays compact. Block images get their paragraph
+        // style overridden by the caller, so this only affects the inline case.
+        if displayMode == .inline, ctx.paragraphStyle.maximumLineHeight > 0 {
+            let required = ceil(metrics.ascent + metrics.descent)
+            if required > ctx.paragraphStyle.maximumLineHeight {
+                let relaxed = ctx.paragraphStyle.mutableCopy() as! NSMutableParagraphStyle
+                relaxed.maximumLineHeight = required
+                placeholder.addAttribute(.paragraphStyle, value: relaxed, range: range)
+            }
+        }
         return placeholder
     }
 

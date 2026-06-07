@@ -35,7 +35,7 @@ struct OPDSImportView: View {
                 }
             }
             .navigationTitle(localized("從 OPDS 匯入"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .navigationDestination(for: OPDSFeedRoute.self) { route in
                 OPDSFeedView(route: route).environmentObject(store)
             }
@@ -125,7 +125,7 @@ struct AddOPDSCatalogSheet: View {
                 }
             }
             .navigationTitle(localized("新增 OPDS 目錄"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) { dismiss() }

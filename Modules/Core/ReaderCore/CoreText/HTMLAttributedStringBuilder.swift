@@ -32,6 +32,10 @@ final class HTMLAttributedStringBuilder {
     static let semanticTagAttribute = NSAttributedString.Key("ReaderHTMLSemanticTag")
     /// Marker attribute for tappable EPUB audio/video placeholders.
     static let mediaAttachmentAttribute = NSAttributedString.Key("ReaderEPUBMediaAttachment")
+    /// Marker attribute for a CSS-floated element (e.g. `img.left { float:left; width:50% }`). Value is a
+    /// `FloatPlaceholder`. The marker itself is a zero-width character placed at the float's anchor point in
+    /// the text flow; the paginator carves a notch out of the page so following text wraps beside the float.
+    static let floatAttribute = NSAttributedString.Key("ReaderFloatPlaceholder")
     static let rubyAnnotationAttribute = NSAttributedString.Key(kCTRubyAnnotationAttributeName as String)
     /// Marker attribute drawing a border/background "chip" around an inline run (e.g. an EPUB
     /// `epub:type="pagebreak"` page-number badge). Value is an `InlineBorderBoxStyle`.
@@ -100,6 +104,52 @@ final class HTMLAttributedStringBuilder {
         case baseline
         case `super`
         case sub
+    }
+
+    enum FloatSide {
+        case left
+        case right
+    }
+
+    /// Layout payload for a CSS-floated element (stored in `floatAttribute` on a zero-width marker run).
+    /// `drawWidth`/`drawHeight` are the resolved on-page image size; margins are the float's CSS margins
+    /// (the gutter between the float and the wrapped text). The paginator uses these to size the notch and
+    /// position the drawn image.
+    final class FloatPlaceholder {
+        let side: FloatSide
+        let image: UIImage?
+        let drawWidth: CGFloat
+        let drawHeight: CGFloat
+        let marginLeft: CGFloat
+        let marginRight: CGFloat
+        let marginTop: CGFloat
+        let marginBottom: CGFloat
+        let source: String
+        let alt: String?
+
+        init(
+            side: FloatSide,
+            image: UIImage?,
+            drawWidth: CGFloat,
+            drawHeight: CGFloat,
+            marginLeft: CGFloat,
+            marginRight: CGFloat,
+            marginTop: CGFloat,
+            marginBottom: CGFloat,
+            source: String,
+            alt: String?
+        ) {
+            self.side = side
+            self.image = image
+            self.drawWidth = drawWidth
+            self.drawHeight = drawHeight
+            self.marginLeft = marginLeft
+            self.marginRight = marginRight
+            self.marginTop = marginTop
+            self.marginBottom = marginBottom
+            self.source = source
+            self.alt = alt
+        }
     }
 
     struct ResolvedStyle {
@@ -171,6 +221,9 @@ final class HTMLAttributedStringBuilder {
         var isVerticalWritingMode: Bool = false
         var pageBreakBefore: Bool = false
         var pageBreakAfter: Bool = false
+        /// CSS `float` side (`left`/`right`). Non-nil makes the element a float: the builder emits a
+        /// zero-width marker and the paginator wraps surrounding text around it. Not inherited.
+        var floatSide: FloatSide? = nil
         /// True when the author explicitly removed the border via `border: none` / `border-style: none`
         /// (keyword `none`/`hidden`). Used so a borderless, background-less `<hr>` renders as an
         /// invisible separator instead of a stray rule (e.g. calibre's `.transition` scene break).
@@ -840,6 +893,16 @@ final class HTMLAttributedStringBuilder {
                    shouldLogEPUBFlow(key: "render.img.font_patch", limit: 8) {
                     epubFlowLog("render.img.font_patch src=\(src) alt=\(element.attributes["alt"] ?? "nil") imageLoaded=\(image != nil) style=\(styleProbeSummary(imgStyle))")
                 }
+                if let side = imgStyle.floatSide {
+                    return makeFloatPlaceholder(
+                        side: side,
+                        image: image,
+                        style: imgStyle,
+                        imageSource: src,
+                        imageAlt: element.attributes["alt"],
+                        config: config
+                    )
+                }
                 return makeImagePlaceholder(
                     image: image,
                     config: config,
@@ -1429,7 +1492,10 @@ final class HTMLAttributedStringBuilder {
             }
             let paragraphRange = NSRange(location: 0, length: segment.length)
             applyFlattenedParagraphStyle(
-                makeParagraphStyle(for: segmentStyle, config: config),
+                paragraphStyleFittingInlineImages(
+                    makeParagraphStyle(for: segmentStyle, config: config),
+                    in: segment
+                ),
                 to: segment,
                 range: paragraphRange
             )
@@ -1484,8 +1550,19 @@ final class HTMLAttributedStringBuilder {
                 appendSegment(isLast: false)
             case .element(let childElement) where childElement.resolvedStyle.isBlock:
                 hasBlockChild = true
-                appendSegment(isLast: false)
-                let rendered = await renderNode(child, inheritedStyle: element.resolvedStyle, config: config)
+                // A float marker that sits alone between blocks (e.g. `</p><img class="left"/><p>`) is
+                // carried forward and anchored to the *following* block's first line, so the wrapped text
+                // begins at the float's top instead of one empty line below it.
+                let floatPrefix = takeFloatOnlyMarker(from: segment)
+                if floatPrefix == nil {
+                    appendSegment(isLast: false)
+                }
+                var rendered = await renderNode(child, inheritedStyle: element.resolvedStyle, config: config)
+                if let floatPrefix {
+                    rendered = rendered.length > 0
+                        ? prependingFloatMarker(floatPrefix, to: rendered)
+                        : floatPrefix
+                }
                 if rendered.length > 0 {
                     appendNode(rendered, to: output)
                 }
@@ -2360,6 +2437,37 @@ final class HTMLAttributedStringBuilder {
         let descent: CGFloat
     }
 
+    /// An inline `<img>` that is a sibling of block content (e.g. `<figure><img/><figcaption/></figure>`)
+    /// flows into a normal inline segment, whose paragraph style pins `minimum == maximum` line height to
+    /// the *text* line height. The image's CTRunDelegate reserves its full height as ascent, but CoreText
+    /// then clamps the line to that small text height — so the image overflows its line and draws *upward*
+    /// over the preceding content (in the figure-gallery sample the previous figure's caption ended up
+    /// visibly overlapped by the next figure's image). Raise `maximumLineHeight` to fit the tallest image
+    /// run so its line can grow. `minimumLineHeight` is left untouched, so any real text lines sharing the
+    /// paragraph keep their compact height. Non-image run delegates (vertical spacers, inline annotations)
+    /// reserve only a few points of ascent, so they never trigger the relaxation.
+    private func paragraphStyleFittingInlineImages(
+        _ base: NSParagraphStyle,
+        in segment: NSAttributedString
+    ) -> NSParagraphStyle {
+        guard base.maximumLineHeight > 0, segment.length > 0 else { return base }
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        var requiredHeight: CGFloat = 0
+        segment.enumerateAttribute(delegateKey, in: NSRange(location: 0, length: segment.length)) { value, _, _ in
+            guard let value else { return }
+            // Every run delegate created in this builder stores an ImageRunInfo (or subclass) as its
+            // refCon, so this cast is always safe. See RunDelegateProvider.
+            let info = Unmanaged<ImageRunInfo>
+                .fromOpaque(CTRunDelegateGetRefCon(value as! CTRunDelegate))
+                .takeUnretainedValue()
+            requiredHeight = max(requiredHeight, ceil(info.ascent + info.descent))
+        }
+        guard requiredHeight > base.maximumLineHeight else { return base }
+        let paragraph = base.mutableCopy() as! NSMutableParagraphStyle
+        paragraph.maximumLineHeight = requiredHeight
+        return paragraph
+    }
+
     private func imageBlockParagraphStyle(base: NSParagraphStyle, metrics: ImageMetrics) -> NSParagraphStyle {
         let paragraph = base.mutableCopy() as! NSMutableParagraphStyle
         let reservedLineHeight = ceil(max(paragraph.minimumLineHeight, metrics.ascent + metrics.descent))
@@ -2509,6 +2617,97 @@ final class HTMLAttributedStringBuilder {
         paragraph.paragraphSpacing = max(0, style.paragraphSpacing)
         placeholder.addAttribute(.paragraphStyle, value: paragraph, range: range)
         return placeholder
+    }
+
+    /// Builds the zero-width marker for a CSS-floated image. The marker sits in the text flow at the
+    /// float's anchor; the paginator reads its `FloatPlaceholder`, carves a notch out of the page on the
+    /// float side, wraps the following text beside it, and draws the image in the notch.
+    private func makeFloatPlaceholder(
+        side: FloatSide,
+        image: UIImage?,
+        style: ResolvedStyle,
+        imageSource: String,
+        imageAlt: String?,
+        config: Config
+    ) -> NSAttributedString {
+        // Resolve the float's on-page width: percentage → fraction of the content width; else explicit
+        // width; else half the column. Capped so the float never starves the wrapped text of room.
+        var drawWidth: CGFloat
+        if let pct = style.rawWidthPercent {
+            drawWidth = config.renderWidth * pct / 100.0
+        } else if let width = style.width {
+            drawWidth = width
+        } else {
+            drawWidth = config.renderWidth * 0.5
+        }
+        drawWidth = max(1, min(drawWidth, config.renderWidth * 0.6))
+
+        // Height: explicit non-percent height wins; otherwise derive from the image aspect ratio.
+        var drawHeight: CGFloat
+        if let height = style.height, style.rawHeightPercent == nil {
+            drawHeight = height
+        } else if let image, image.size.width > 0 {
+            drawHeight = drawWidth * image.size.height / image.size.width
+        } else {
+            drawHeight = drawWidth
+        }
+        drawHeight = max(1, min(drawHeight, config.renderWidth * 1.5))
+
+        let placeholder = FloatPlaceholder(
+            side: side,
+            image: image,
+            drawWidth: ceil(drawWidth),
+            drawHeight: ceil(drawHeight),
+            marginLeft: max(0, style.marginLeft),
+            marginRight: max(0, style.marginRight),
+            marginTop: 0,
+            marginBottom: max(0, style.paragraphSpacing),
+            source: imageSource,
+            alt: imageAlt
+        )
+        let marker = NSMutableAttributedString(
+            string: "\u{200B}",
+            attributes: baseTextAttributes(style: style, config: config)
+        )
+        marker.addAttribute(Self.floatAttribute, value: placeholder, range: NSRange(location: 0, length: marker.length))
+        return marker
+    }
+
+    /// If `segment` consists solely of CSS float markers (plus whitespace), removes them from the segment
+    /// and returns them, so the caller can anchor the float onto the following block. Returns nil when the
+    /// segment carries real text (the float then stays inline in that paragraph).
+    private func takeFloatOnlyMarker(from segment: NSMutableAttributedString) -> NSAttributedString? {
+        guard segment.length > 0 else { return nil }
+        let markers = NSMutableAttributedString()
+        var sawMarker = false
+        var hasRealText = false
+        segment.enumerateAttributes(in: NSRange(location: 0, length: segment.length), options: []) { attrs, range, stop in
+            if attrs[Self.floatAttribute] != nil {
+                markers.append(segment.attributedSubstring(from: range))
+                sawMarker = true
+            } else {
+                let piece = (segment.string as NSString).substring(with: range)
+                if !piece.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    hasRealText = true
+                    stop.pointee = true
+                }
+            }
+        }
+        guard sawMarker, !hasRealText else { return nil }
+        segment.deleteCharacters(in: NSRange(location: 0, length: segment.length))
+        return markers
+    }
+
+    /// Prepends a float marker to a block's rendered content so the float anchors at that block's first
+    /// line. The marker adopts the destination's leading paragraph style so it shares the first line.
+    private func prependingFloatMarker(_ marker: NSAttributedString, to content: NSAttributedString) -> NSMutableAttributedString {
+        let result = NSMutableAttributedString(attributedString: marker)
+        if content.length > 0,
+           let para = content.attribute(.paragraphStyle, at: 0, effectiveRange: nil) {
+            result.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: result.length))
+        }
+        result.append(content)
+        return result
     }
 
     private func makeImagePlaceholder(
@@ -2751,6 +2950,27 @@ final class HTMLAttributedStringBuilder {
         if element.hasAttr("hidden"),
            ((try? element.attr("hidden")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != "until-found" {
             style.isHidden = true
+        }
+
+        // The reader owns the page content box and already supplies its own page margins
+        // (baked into `config.renderWidth`). Author margin/padding on the root `html`/`body`
+        // element is page chrome authored for print/desktop and double-insets the text.
+        // Worse, with em-based values on a phone — e.g. the figure-gallery sample's
+        // `body { margin-left: 6em; margin-right: 16em }` (~22em ≈ a whole screen width) —
+        // it collapses the content box to a sliver: text wraps one word per line (reads like a
+        // vertical strip) and images clamp to ~nothing. Neutralize the horizontal box on
+        // html/body so content fills the reader frame, matching Readium/Apple Books. Vertical
+        // margins are kept so chapter-top spacing is unaffected.
+        let elementTag = element.tagName().lowercased()
+        if elementTag == "body" || elementTag == "html" {
+            if (style.marginLeft != 0 || style.marginRight != 0 || style.paddingLeft != 0 || style.paddingRight != 0),
+               shouldLogEPUBFlow(key: "style.\(elementTag).margin.neutralized") {
+                epubFlowLog("\(elementTag).margin.neutralized marginL=\(style.marginLeft) marginR=\(style.marginRight) padL=\(style.paddingLeft) padR=\(style.paddingRight) renderWidth=\(config.renderWidth)")
+            }
+            style.marginLeft = 0
+            style.marginRight = 0
+            style.paddingLeft = 0
+            style.paddingRight = 0
         }
 
         // Accumulate block margins so nested block children inherit the parent content box.

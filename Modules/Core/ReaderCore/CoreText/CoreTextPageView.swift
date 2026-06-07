@@ -1,3 +1,4 @@
+import AVKit
 import CoreText
 import SwiftUI
 import UIKit
@@ -318,7 +319,11 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             fontSize: layout.fontSize,
             writingMode: layout.writingMode
         )
-        let path = CGPath(rect: contentPathRect, transform: nil)
+        // Carve the same CSS-float notch used during pagination so the drawn text wraps beside the float.
+        let path = CoreTextPaginator.framePath(
+            contentPathRect: contentPathRect,
+            floatNotch: layout.pageFloatNotches[pageIndex]
+        )
         let frame = CoreTextPaginator.makeFrame(
             framesetter: layout.framesetter,
             range: range,
@@ -1527,6 +1532,13 @@ final class CoreTextPageViewController: UIViewController {
     private var pendingPlaybackHighlightText: String?
     private var pendingTextAnnotations: [CoreTextTextAnnotation] = []
 
+    /// The layout/page this controller is currently showing, retained so inline video views can be
+    /// (re)positioned and re-bound to their live players whenever the page is rebuilt.
+    private var currentLayout: CoreTextPaginator.ChapterLayout?
+    private var currentLocalPage: Int = 0
+    /// Embedded inline video player views for the current page, keyed by media source href.
+    private var inlineVideoControllers: [String: AVPlayerViewController] = [:]
+
     func configure(
         layout: CoreTextPaginator.ChapterLayout,
         localPage: Int,
@@ -1537,12 +1549,15 @@ final class CoreTextPageViewController: UIViewController {
         self.globalPageIndex = globalPage
         self.coreTextReadingPosition = readingPosition
         self.pendingFallbackColor = fallbackBackgroundColor
+        self.currentLayout = layout
+        self.currentLocalPage = localPage
         if isViewLoaded {
             pageView.onInternalLinkTap = onInternalLinkTap
             installImageTapHandler()
             pageView.configure(layout: layout, pageIndex: localPage, fallbackBackgroundColor: fallbackBackgroundColor)
             pageView.setTextAnnotations(pendingTextAnnotations)
             pageView.setPlaybackHighlight(text: pendingPlaybackHighlightText)
+            syncInlineVideos()
         } else {
             pendingLayout = layout
             pendingLocalPage = localPage
@@ -1573,20 +1588,110 @@ final class CoreTextPageViewController: UIViewController {
             pageView.setTextAnnotations(pendingTextAnnotations)
             pageView.setPlaybackHighlight(text: pendingPlaybackHighlightText)
             pendingLayout = nil
+            syncInlineVideos()
         }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Keep embedded inline video views aligned with their (bounds-relative) attachment rects.
+        repositionInlineVideos()
     }
 
     private func installImageTapHandler() {
         pageView.onImageAttachmentTap = { [weak self] attachment in
+            guard let self else { return }
             if let media = attachment.mediaAttachment {
-                self?.presentEPUBMedia(media)
+                if media.kind == .video {
+                    // Inline, native, background-continuing playback — see syncInlineVideos.
+                    self.startInlineVideo(media: media)
+                } else {
+                    self.presentEPUBMedia(media)
+                }
             } else if let href = attachment.linkHref,
                let target = ReaderHTMLUtilities.reviewTarget(fromHref: href) {
-                self?.presentReviewSheet(target: target)
+                self.presentReviewSheet(target: target)
             } else {
-                self?.presentImagePreview(for: attachment)
+                self.presentImagePreview(for: attachment)
             }
         }
+    }
+
+    // MARK: - Inline video
+
+    /// Video attachments on the current page, paired with their on-page rect.
+    private func currentVideoAttachments() -> [(media: EPUBMediaAttachment, rect: CGRect)] {
+        guard let layout = currentLayout else { return [] }
+        let attachments = (layout.inlineAttachments[currentLocalPage] ?? [])
+            + (layout.blockAttachments[currentLocalPage] ?? [])
+        return attachments.compactMap { attachment in
+            guard let media = attachment.mediaAttachment, media.kind == .video else { return nil }
+            return (media, attachment.rect)
+        }
+    }
+
+    /// Reconciles embedded inline video views with the videos on the current page. A live player is only
+    /// embedded once the user has started it (`EPUBVideoPlaybackManager.isActive`); until then the page
+    /// shows the drawn poster placeholder and a tap starts playback. Views for videos no longer on this
+    /// page are removed, but their players are left running in the manager (background audio across pages).
+    private func syncInlineVideos() {
+        let videos = currentVideoAttachments()
+        let activeKeys = Set(videos.map(\.media.sourceHref))
+        for (key, controller) in inlineVideoControllers where !activeKeys.contains(key) {
+            detachVideoController(key: key, controller: controller)
+        }
+        for video in videos where EPUBVideoPlaybackManager.shared.isActive(video.media) {
+            embedInlineVideo(media: video.media, rect: video.rect)
+        }
+    }
+
+    private func startInlineVideo(media: EPUBMediaAttachment) {
+        guard let rect = currentVideoAttachments().first(where: { $0.media.sourceHref == media.sourceHref })?.rect else { return }
+        embedInlineVideo(media: media, rect: rect)
+    }
+
+    private func embedInlineVideo(media: EPUBMediaAttachment, rect: CGRect) {
+        if let existing = inlineVideoControllers[media.sourceHref] {
+            existing.view.frame = rect
+            return
+        }
+        let controller = AVPlayerViewController()
+        controller.view.frame = rect
+        controller.view.backgroundColor = .black
+        controller.videoGravity = .resizeAspect
+        controller.allowsPictureInPicturePlayback = true
+        addChild(controller)
+        view.addSubview(controller.view)
+        controller.didMove(toParent: self)
+        inlineVideoControllers[media.sourceHref] = controller
+
+        // Bind the persistent player (resolving/extracting the URL on first use) and start playing. On a
+        // page revisit the manager already holds a live, playing player, so the picture resumes in sync.
+        let startedFresh = !EPUBVideoPlaybackManager.shared.isActive(media)
+        Task { @MainActor [weak self, weak controller] in
+            guard let player = await EPUBVideoPlaybackManager.shared.player(for: media) else {
+                if let self, let controller { self.detachVideoController(key: media.sourceHref, controller: controller) }
+                return
+            }
+            controller?.player = player
+            if startedFresh { player.play() }
+        }
+    }
+
+    private func repositionInlineVideos() {
+        for video in currentVideoAttachments() {
+            inlineVideoControllers[video.media.sourceHref]?.view.frame = video.rect
+        }
+    }
+
+    private func detachVideoController(key: String, controller: AVPlayerViewController) {
+        // Detach the view only — the AVPlayer stays alive in EPUBVideoPlaybackManager so audio keeps
+        // playing after the page scrolls away.
+        controller.willMove(toParent: nil)
+        controller.view.removeFromSuperview()
+        controller.removeFromParent()
+        controller.player = nil
+        inlineVideoControllers[key] = nil
     }
 
     private func presentEPUBMedia(_ media: EPUBMediaAttachment) {

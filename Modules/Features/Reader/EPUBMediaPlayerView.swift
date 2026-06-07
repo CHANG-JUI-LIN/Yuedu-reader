@@ -1,5 +1,6 @@
 import AVKit
 import SwiftUI
+import UIKit
 
 struct EPUBMediaPlayerView: View {
     let media: EPUBMediaAttachment
@@ -114,23 +115,16 @@ struct EPUBMediaPlayerView: View {
 
     private func load() async {
         guard player == nil else { return }
-        guard let url = URL(string: media.sourceHref) else {
-            errorMessage = localized("無效的媒體網址")
-            return
-        }
 
         let playableURL: URL
-        if url.isFileURL || url.scheme == "http" || url.scheme == "https" {
-            playableURL = url
-        } else {
-            // EPUB resources are served over a custom scheme (`reader-book://…`) that AVPlayer
-            // cannot read. Extract the resource out of the archive to a temp file and play that.
-            do {
-                playableURL = try await Self.localPlaybackURL(for: url)
-            } catch {
-                errorMessage = localized("無法載入媒體")
-                return
-            }
+        do {
+            playableURL = try await EPUBMediaURLResolver.playableURL(for: media)
+        } catch EPUBMediaURLError.invalidURL {
+            errorMessage = localized("無效的媒體網址")
+            return
+        } catch {
+            errorMessage = localized("無法載入媒體")
+            return
         }
 
         let item = AVPlayerItem(url: playableURL)
@@ -164,8 +158,92 @@ struct EPUBMediaPlayerView: View {
         }
     }
 
-    /// Resolves a `reader-book://<bookId>/<path>` resource URL to a local file AVPlayer can open,
-    /// extracting the bytes from the EPUB archive once and caching them in the temp directory.
+    private func togglePlayback() {
+        guard let player else { return }
+        if isPlaying {
+            player.pause()
+        } else {
+            player.play()
+        }
+        isPlaying.toggle()
+    }
+}
+
+enum EPUBMediaURLError: Error {
+    case invalidURL
+}
+
+/// Owns the live `AVPlayer` instances for inline EPUB videos. Playback lives here — not on the recycled
+/// reader page views — so it survives page turns: when the page scrolls away its embedded player view is
+/// torn down, but the `AVPlayer` keeps running here and audio continues in the background (the same model
+/// as TTS). When the reader returns to the video's page, the freshly-created page view re-binds this same
+/// live player, so the picture resumes already in sync with the audio. Players are keyed by source href, so
+/// a given video has exactly one player regardless of how many times its page is rebuilt.
+@MainActor
+final class EPUBVideoPlaybackManager {
+    static let shared = EPUBVideoPlaybackManager()
+
+    private var players: [String: AVPlayer] = [:]
+    private var audioSessionActivated = false
+
+    private init() {}
+
+    /// True once a player exists for this media (i.e. the user has started it). The page view uses this to
+    /// decide whether to re-embed a live player on (re)appearance vs. just show the poster placeholder.
+    func isActive(_ media: EPUBMediaAttachment) -> Bool {
+        players[media.sourceHref] != nil
+    }
+
+    func existingPlayer(for media: EPUBMediaAttachment) -> AVPlayer? {
+        players[media.sourceHref]
+    }
+
+    /// Returns the persistent player for this media, creating it (and resolving/extracting the playable URL)
+    /// on first use. Activates a `.playback` audio session so sound keeps going across page turns.
+    func player(for media: EPUBMediaAttachment) async -> AVPlayer? {
+        if let existing = players[media.sourceHref] { return existing }
+        guard let url = try? await EPUBMediaURLResolver.playableURL(for: media) else { return nil }
+        activateAudioSessionIfNeeded()
+        let player = AVPlayer(url: url)
+        players[media.sourceHref] = player
+        return player
+    }
+
+    func stop(_ media: EPUBMediaAttachment) {
+        players[media.sourceHref]?.pause()
+        players[media.sourceHref] = nil
+    }
+
+    /// Stops and releases every inline video. Call when the reader closes so nothing keeps playing after
+    /// the user leaves the book.
+    func stopAll() {
+        for player in players.values { player.pause() }
+        players.removeAll()
+    }
+
+    private func activateAudioSessionIfNeeded() {
+        guard !audioSessionActivated else { return }
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback)
+        try? session.setActive(true)
+        audioSessionActivated = true
+    }
+}
+
+/// Resolves an EPUB media attachment's href to a URL `AVPlayer` can open. `http(s)` and `file` URLs are
+/// used directly; resources served over the reader's custom `reader-book://<bookId>/<path>` scheme are
+/// extracted out of the EPUB archive into a cached temp file (AVPlayer can't read the custom scheme).
+enum EPUBMediaURLResolver {
+    static func playableURL(for media: EPUBMediaAttachment) async throws -> URL {
+        guard let url = URL(string: media.sourceHref) else {
+            throw EPUBMediaURLError.invalidURL
+        }
+        if url.isFileURL || url.scheme == "http" || url.scheme == "https" {
+            return url
+        }
+        return try await localPlaybackURL(for: url)
+    }
+
     private static func localPlaybackURL(for url: URL) async throws -> URL {
         guard let bookId = url.host,
               let session = PublicationSessionRegistry.shared.session(for: bookId) else {
@@ -186,15 +264,5 @@ struct EPUBMediaPlayerView: View {
         let response = try await session.response(for: url)
         try response.data.write(to: dest, options: .atomic)
         return dest
-    }
-
-    private func togglePlayback() {
-        guard let player else { return }
-        if isPlaying {
-            player.pause()
-        } else {
-            player.play()
-        }
-        isPlaying.toggle()
     }
 }

@@ -81,7 +81,7 @@ struct WebDAVImportView: View {
             }
         }
         .navigationTitle(localized("從 WebDAV 匯入"))
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbarTitleDisplayMode(.large)
     }
 }
 

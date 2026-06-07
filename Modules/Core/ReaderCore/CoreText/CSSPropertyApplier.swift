@@ -154,16 +154,16 @@ private struct FloatApplier: HTMLCSSPropertyApplier {
         style: inout HTMLAttributedStringBuilder.ResolvedStyle,
         context: HTMLCSSApplyContext
     ) {
-        // We don't implement text wrapping around CSS floats. To avoid a floated element (e.g. a
-        // `img.left { float:left; width:50% }`) overlapping the surrounding text, promote it to a
-        // block so it reserves its own vertical space, aligned to the float side.
+        // Record the float side. The builder emits a zero-width float marker for the element and the
+        // paginator carves a notch out of the page so the surrounding text wraps beside it (magazine
+        // style). `float` is not inherited, so children reset to nil below.
         switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "left":
-            style.isBlock = true
-            style.textAlign = .left
+            style.floatSide = .left
         case "right":
-            style.isBlock = true
-            style.textAlign = .right
+            style.floatSide = .right
+        case "none":
+            style.floatSide = nil
         default:
             break
         }

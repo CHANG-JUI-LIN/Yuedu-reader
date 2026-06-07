@@ -84,6 +84,10 @@ final class CoreTextPaginator {
         /// Content edge insets used during layout (UIEdgeInsets; CoreText path is already offset accordingly)
         let contentInsets: UIEdgeInsets
         var writingMode: ReaderWritingMode = .horizontal
+        /// pageIndex → the CSS-float exclusion rect (CoreText coords) carved out of that page so text wraps
+        /// around the float. Empty for the common no-float case. Used to rebuild the notched frame path at
+        /// both draw time and attachment extraction so layout matches pagination.
+        var pageFloatNotches: [Int: CGRect] = [:]
 
         /// Updates only text colors without repaginating (color does not affect line wrapping).
         /// Ranges with explicitly CSS-specified foreground colors (marked with cssSpecifiedForegroundColorAttribute) retain their original color.
@@ -161,7 +165,8 @@ final class CoreTextPaginator {
                 fontSize: fontSize,
                 backgroundColor: backgroundColor,
                 contentInsets: contentInsets,
-                writingMode: writingMode
+                writingMode: writingMode,
+                pageFloatNotches: pageFloatNotches
             )
         }
     }
@@ -422,6 +427,11 @@ final class CoreTextPaginator {
         var pageRanges: [CFRange] = []
         var currentLocation = 0
         let forcedPageBreakRanges = forcedPageBreakRanges(in: attrStr)
+        // CSS floats (horizontal layout only): each carves a notch out of the page it lands on so text
+        // wraps beside it. Stored per page for reuse at draw time and attachment extraction.
+        let floatMarkers = writingMode.isVertical ? [] : Self.floatMarkers(in: attrStr)
+        var pageFloatNotches: [Int: CGRect] = [:]
+        var pageFloatAttachments: [Int: [RenderedAttachment]] = [:]
 
         while currentLocation < attrStr.length {
             if let breakRange = forcedPageBreakRanges.first(where: { $0.location <= currentLocation && currentLocation < $0.location + $0.length }) {
@@ -437,7 +447,53 @@ final class CoreTextPaginator {
             }
 
             let searchRange = CFRangeMake(currentLocation, remainingLength)
-            let frame = makeFrame(framesetter: framesetter, range: searchRange, path: pagePath, writingMode: writingMode)
+            let pageIndex = pageRanges.count
+
+            // ── CSS float on this page ─────────────────────────────────────
+            var notch: CGRect?
+            var floatAttachment: RenderedAttachment?
+            if let marker = floatMarkers.first(where: { $0.offset >= currentLocation && $0.offset < nextForcedBreak }),
+               let image = marker.placeholder.image {
+                let p = marker.placeholder
+                let notchWidth = p.drawWidth + p.marginLeft + p.marginRight
+                let notchHeight = min(contentPathRect.height, p.drawHeight + p.marginTop + p.marginBottom)
+                // Probe with a rectangular frame to find the y of the float's anchor line.
+                let probe = makeFrame(framesetter: framesetter, range: searchRange, path: pagePath, writingMode: writingMode)
+                if let lineTop = Self.lineTopY(in: probe, offset: marker.offset, contentPathRect: contentPathRect) {
+                    let notchBottom = lineTop - notchHeight
+                    if notchBottom < contentPathRect.minY, marker.offset > currentLocation {
+                        // The float won't fit below its anchor on this page: end the page just before the
+                        // float so it starts the next page at full height (avoids clipping).
+                        let advance = max(1, marker.offset - currentLocation)
+                        pageRanges.append(CFRangeMake(currentLocation, advance))
+                        currentLocation += advance
+                        continue
+                    }
+                    let clampedBottom = max(contentPathRect.minY, notchBottom)
+                    let uiTop = renderSize.height - lineTop + p.marginTop
+                    switch p.side {
+                    case .left:
+                        notch = CGRect(x: contentPathRect.minX, y: clampedBottom, width: notchWidth, height: lineTop - clampedBottom)
+                        floatAttachment = RenderedAttachment(
+                            rect: CGRect(x: contentPathRect.minX + p.marginLeft, y: uiTop, width: p.drawWidth, height: p.drawHeight),
+                            image: image, opacity: 1,
+                            sourceHref: p.source.isEmpty ? nil : p.source, alt: p.alt,
+                            originalSize: image.size
+                        )
+                    case .right:
+                        notch = CGRect(x: contentPathRect.maxX - notchWidth, y: clampedBottom, width: notchWidth, height: lineTop - clampedBottom)
+                        floatAttachment = RenderedAttachment(
+                            rect: CGRect(x: contentPathRect.maxX - p.marginRight - p.drawWidth, y: uiTop, width: p.drawWidth, height: p.drawHeight),
+                            image: image, opacity: 1,
+                            sourceHref: p.source.isEmpty ? nil : p.source, alt: p.alt,
+                            originalSize: image.size
+                        )
+                    }
+                }
+            }
+
+            let path = Self.framePath(contentPathRect: contentPathRect, floatNotch: notch)
+            let frame = makeFrame(framesetter: framesetter, range: searchRange, path: path, writingMode: writingMode)
             let visibleRange = CTFrameGetVisibleStringRange(frame)
 
             // Prevent infinite loop: if visibleRange.length == 0, force advance by one character
@@ -450,6 +506,8 @@ final class CoreTextPaginator {
             )
             let advance = min(remainingLength, max(1, protectedEnd - currentLocation))
             pageRanges.append(CFRangeMake(currentLocation, advance))
+            if let notch { pageFloatNotches[pageIndex] = notch }
+            if let floatAttachment { pageFloatAttachments[pageIndex, default: []].append(floatAttachment) }
             currentLocation += advance
         }
         if writingMode.isVertical {
@@ -459,20 +517,27 @@ final class CoreTextPaginator {
         let rangePreview = pageRanges.prefix(6).map { "(\($0.location),\($0.length))" }.joined(separator: ",")
         debugVerticalLog("EPUBFLOW paginator.pageRanges spine=\(spineIndex) count=\(pageRanges.count) first=\(rangePreview)")
 
-        let (inlineAttachments, blockAttachments, pageKinds) = extractImages(
+        let (inlineAttachments, blockAttachmentsBase, pageKinds) = extractImages(
             framesetter: framesetter,
             pageRanges: pageRanges,
             renderSize: renderSize,
             contentPathRect: contentPathRect,
             attrStr: attrStr,
-            writingMode: writingMode
+            writingMode: writingMode,
+            floatNotches: pageFloatNotches
         )
+        // Merge in the floated images (drawn via the block-attachment path) for pages that carry them.
+        var blockAttachments = blockAttachmentsBase
+        for (pageIdx, attachments) in pageFloatAttachments {
+            blockAttachments[pageIdx, default: []].append(contentsOf: attachments)
+        }
         let inlineAnnotations = extractInlineAnnotations(
             framesetter: framesetter,
             pageRanges: pageRanges,
             renderSize: renderSize,
             contentPathRect: contentPathRect,
-            writingMode: writingMode
+            writingMode: writingMode,
+            floatNotches: pageFloatNotches
         )
         let blockRenderables = extractBlockRenderables(
             framesetter: framesetter,
@@ -480,7 +545,8 @@ final class CoreTextPaginator {
             contentPathRect: contentPathRect,
             renderSize: renderSize,
             attrStr: attrStr,
-            writingMode: writingMode
+            writingMode: writingMode,
+            floatNotches: pageFloatNotches
         )
         let inlineAttachmentCount = inlineAttachments.values.reduce(0) { $0 + $1.count }
         let inlineAnnotationCount = inlineAnnotations.values.reduce(0) { $0 + $1.count }
@@ -504,7 +570,8 @@ final class CoreTextPaginator {
             fontSize: fontSize,
             backgroundColor: pageBackgroundColor(from: attrStr),
             contentInsets: contentInsets,
-            writingMode: writingMode
+            writingMode: writingMode,
+            pageFloatNotches: pageFloatNotches
         )
     }
 
@@ -581,6 +648,90 @@ final class CoreTextPaginator {
         let attributes = frameAttributes(for: writingMode)
         let frameAttributes = attributes.isEmpty ? nil : attributes as CFDictionary
         return CTFramesetterCreateFrame(framesetter, range, path, frameAttributes)
+    }
+
+    // MARK: - CSS float support
+
+    struct FloatMarker {
+        let offset: Int
+        let placeholder: HTMLAttributedStringBuilder.FloatPlaceholder
+    }
+
+    /// All CSS-float anchor markers in the string, in document order.
+    static func floatMarkers(in attrStr: NSAttributedString) -> [FloatMarker] {
+        guard attrStr.length > 0 else { return [] }
+        var result: [FloatMarker] = []
+        attrStr.enumerateAttribute(
+            HTMLAttributedStringBuilder.floatAttribute,
+            in: NSRange(location: 0, length: attrStr.length),
+            options: []
+        ) { value, range, _ in
+            if let placeholder = value as? HTMLAttributedStringBuilder.FloatPlaceholder {
+                result.append(FloatMarker(offset: range.location, placeholder: placeholder))
+            }
+        }
+        return result
+    }
+
+    /// The CoreText frame path for a page: the content rect, with a rectangular notch carved out of one
+    /// vertical edge when a CSS float occupies the page. CoreText then wraps lines beside the float. With no
+    /// notch this is just the content rect (the common, unchanged case).
+    static func framePath(contentPathRect: CGRect, floatNotch: CGRect?) -> CGPath {
+        guard let notch = floatNotch, notch.width > 0, notch.height > 0 else {
+            return CGPath(rect: contentPathRect, transform: nil)
+        }
+        let minX = contentPathRect.minX
+        let maxX = contentPathRect.maxX
+        let minY = contentPathRect.minY
+        let maxY = contentPathRect.maxY
+        let yb = max(minY, notch.minY)
+        let yt = min(maxY, notch.maxY)
+        guard yt > yb else { return CGPath(rect: contentPathRect, transform: nil) }
+
+        let path = CGMutablePath()
+        if notch.minX <= minX + 0.5 {
+            // Notch on the LEFT edge (float:left).
+            let nx = min(maxX, minX + notch.width)
+            path.move(to: CGPoint(x: minX, y: minY))
+            path.addLine(to: CGPoint(x: minX, y: yb))
+            path.addLine(to: CGPoint(x: nx, y: yb))
+            path.addLine(to: CGPoint(x: nx, y: yt))
+            path.addLine(to: CGPoint(x: minX, y: yt))
+            path.addLine(to: CGPoint(x: minX, y: maxY))
+            path.addLine(to: CGPoint(x: maxX, y: maxY))
+            path.addLine(to: CGPoint(x: maxX, y: minY))
+        } else {
+            // Notch on the RIGHT edge (float:right).
+            let nx = max(minX, maxX - notch.width)
+            path.move(to: CGPoint(x: minX, y: minY))
+            path.addLine(to: CGPoint(x: minX, y: maxY))
+            path.addLine(to: CGPoint(x: maxX, y: maxY))
+            path.addLine(to: CGPoint(x: maxX, y: yt))
+            path.addLine(to: CGPoint(x: nx, y: yt))
+            path.addLine(to: CGPoint(x: nx, y: yb))
+            path.addLine(to: CGPoint(x: maxX, y: yb))
+            path.addLine(to: CGPoint(x: maxX, y: minY))
+        }
+        path.closeSubpath()
+        return path
+    }
+
+    /// The top edge (CoreText y-up, absolute coords) of the line containing `offset` within `frame`.
+    static func lineTopY(in frame: CTFrame, offset: Int, contentPathRect: CGRect) -> CGFloat? {
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        guard !lines.isEmpty else { return nil }
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        for (i, line) in lines.enumerated() {
+            let r = CTLineGetStringRange(line)
+            if offset >= r.location, offset < r.location + max(1, r.length) {
+                var ascent: CGFloat = 0
+                var descent: CGFloat = 0
+                _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+                return contentPathRect.origin.y + origins[i].y + ascent
+            }
+        }
+        return nil
     }
 
     /// Vertical mode: glyph-aware normalization → font cascade → paragraph style → vertical forms → ASCII exceptions.
@@ -1046,15 +1197,46 @@ final class CoreTextPaginator {
         }
     }
 
+    /// True when `imageRunRange` is the only visible content on its CTLine — every other character on the
+    /// line is whitespace (no text, and no second image). Used to decide whether an inline image should be
+    /// centered like a figure rather than flushed to its text-flow position. A line carrying a second image
+    /// (its `\u{FFFC}` is not whitespace) is treated as a flowed gallery row and left as-is.
+    static func isStandaloneImageRun(
+        _ imageRunRange: CFRange,
+        line: CTLine,
+        attrStr: NSAttributedString
+    ) -> Bool {
+        let lineRange = CTLineGetStringRange(line)
+        let start = max(0, lineRange.location)
+        let end = min(attrStr.length, lineRange.location + lineRange.length)
+        guard end > start else { return true }
+        let ns = attrStr.string as NSString
+        var idx = start
+        while idx < end {
+            if idx >= imageRunRange.location, idx < imageRunRange.location + imageRunRange.length {
+                idx += 1
+                continue
+            }
+            let composed = ns.rangeOfComposedCharacterSequence(at: idx)
+            let pieceEnd = min(end, composed.location + composed.length)
+            let piece = ns.substring(with: NSRange(location: composed.location, length: max(0, pieceEnd - composed.location)))
+            if !piece.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return false
+            }
+            idx = composed.location + composed.length
+        }
+        return true
+    }
+
     private static func extractImages(
         framesetter: CTFramesetter,
         pageRanges: [CFRange],
         renderSize: CGSize,
         contentPathRect: CGRect,
         attrStr: NSAttributedString,
-        writingMode: ReaderWritingMode
+        writingMode: ReaderWritingMode,
+        floatNotches: [Int: CGRect] = [:]
     ) -> (inline: [Int: [RenderedAttachment]], block: [Int: [RenderedAttachment]], kinds: [PageKind]) {
-        let pagePath = CGPath(rect: contentPathRect, transform: nil)
         var inlineAttachments: [Int: [RenderedAttachment]] = [:]
         var blockAttachments: [Int: [RenderedAttachment]] = [:]
         var kinds = Array(repeating: PageKind.text, count: pageRanges.count)
@@ -1062,6 +1244,7 @@ final class CoreTextPaginator {
         let isVertical = writingMode.isVertical
 
         for (pageIdx, range) in pageRanges.enumerated() { autoreleasepool {
+            let pagePath = framePath(contentPathRect: contentPathRect, floatNotch: floatNotches[pageIdx])
             let frame = makeFrame(framesetter: framesetter, range: range, path: pagePath, writingMode: writingMode)
             let lines = CTFrameGetLines(frame) as! [CTLine]
             var origins = [CGPoint](repeating: .zero, count: lines.count)
@@ -1156,17 +1339,43 @@ final class CoreTextPaginator {
                                 )
                                 debugVerticalLog("imageRun page=\(pageIdx) line=\(lineIdx) loc=\(runLocation) src=\(info.source) alt=\(info.alt ?? "nil") lineOrigin=\(lineOrigin) contentPathRect=\(contentPathRect) columnBaselineX=\(columnBaselineX) lineAscent=\(lineAscent) lineDescent=\(lineDescent) lineTypographicCenterX=\(lineTypographicCenterX) centerMinusBaseline=\(lineTypographicCenterX - columnBaselineX) textAdvance=\(textAdvance) runPosition0=\(firstRunPosition) runImageBounds=\(runBounds) coreTextRunBounds=\(coreTextRunBounds) computedY=\(uiY) draw=\(info.drawWidth)x\(info.drawHeight) ascent=\(info.ascent) descent=\(info.descent) widthAdvance=\(info.width) finalRect=\(rect) midXMinusCenter=\(rect.midX - lineTypographicCenterX)", verbose: true)
                             } else {
-                                let textAdvance = CTLineGetOffsetForStringIndex(
-                                    line,
-                                    CTRunGetStringRange(run).location,
-                                    nil
-                                )
-                                rect = CGRect(
-                                    x: contentPathRect.origin.x + lineOrigin.x + penOffset + textAdvance + info.paddingLeft,
-                                    y: uiY,
-                                    width: info.drawWidth,
-                                    height: info.drawHeight
-                                )
+                                let runRange = CTRunGetStringRange(run)
+                                // A standalone image — alone on its line, e.g. the <img> in
+                                // <figure><img/><figcaption/></figure> — reads as a figure and should be
+                                // centered in the content box like a block image. Flushing it to the
+                                // text-flow position leaves a lopsided right-hand gap (the reported uneven
+                                // margins). Images that flow inline with text keep their flow position.
+                                // Explicit author alignment (left/right) is honored; the default `.natural`
+                                // is treated as "center this figure", matching Apple Books / Readium.
+                                if Self.isStandaloneImageRun(runRange, line: line, attrStr: attrStr) {
+                                    let leftInset = min(paragraphStyle?.headIndent ?? 0, paragraphStyle?.firstLineHeadIndent ?? 0)
+                                    let rightInset = (paragraphStyle?.tailIndent ?? 0) < 0 ? -(paragraphStyle?.tailIndent ?? 0) : 0
+                                    let boxWidth = max(1, contentPathRect.width - leftInset - rightInset)
+                                    let occupiedWidth = min(boxWidth, info.width)
+                                    let alignedX: CGFloat
+                                    switch paragraphStyle?.alignment ?? .natural {
+                                    case .left:
+                                        alignedX = contentPathRect.origin.x + leftInset
+                                    case .right:
+                                        alignedX = contentPathRect.origin.x + leftInset + max(0, boxWidth - occupiedWidth)
+                                    default: // .natural / .center / .justified → center the figure
+                                        alignedX = contentPathRect.origin.x + leftInset + max(0, (boxWidth - occupiedWidth) / 2)
+                                    }
+                                    rect = CGRect(
+                                        x: alignedX + info.paddingLeft,
+                                        y: uiY,
+                                        width: info.drawWidth,
+                                        height: info.drawHeight
+                                    )
+                                } else {
+                                    let textAdvance = CTLineGetOffsetForStringIndex(line, runRange.location, nil)
+                                    rect = CGRect(
+                                        x: contentPathRect.origin.x + lineOrigin.x + penOffset + textAdvance + info.paddingLeft,
+                                        y: uiY,
+                                        width: info.drawWidth,
+                                        height: info.drawHeight
+                                    )
+                                }
                             }
                         case .block:
                             let leftInset = min(paragraphStyle?.headIndent ?? 0, paragraphStyle?.firstLineHeadIndent ?? 0)
@@ -1251,8 +1460,12 @@ final class CoreTextPaginator {
         pageRanges: [CFRange],
         renderSize: CGSize,
         contentPathRect: CGRect,
-        writingMode: ReaderWritingMode
+        writingMode: ReaderWritingMode,
+        floatNotches: [Int: CGRect] = [:]
     ) -> [Int: [RenderedInlineAnnotation]] {
+        // Inline annotations are a vertical-writing feature; CSS floats are horizontal-only, so the notch
+        // map is irrelevant here and the rectangular path is correct.
+        _ = floatNotches
         guard writingMode.isVertical else { return [:] }
         let pagePath = CGPath(rect: contentPathRect, transform: nil)
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
@@ -1315,12 +1528,13 @@ final class CoreTextPaginator {
         contentPathRect: CGRect,
         renderSize: CGSize,
         attrStr: NSAttributedString,
-        writingMode: ReaderWritingMode
+        writingMode: ReaderWritingMode,
+        floatNotches: [Int: CGRect] = [:]
     ) -> [Int: [RenderedBlockRenderable]] {
-        let pagePath = CGPath(rect: contentPathRect, transform: nil)
         var pageRenderables: [Int: [RenderedBlockRenderable]] = [:]
 
         for (pageIdx, range) in pageRanges.enumerated() { autoreleasepool {
+            let pagePath = framePath(contentPathRect: contentPathRect, floatNotch: floatNotches[pageIdx])
             let frame = makeFrame(framesetter: framesetter, range: range, path: pagePath, writingMode: writingMode)
             let lines = CTFrameGetLines(frame) as! [CTLine]
             guard !lines.isEmpty else { return }

@@ -35,7 +35,7 @@ struct DownloadManagementView: View {
             }
             .navigationTitle(localized("下載管理"))
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("關閉")) { presentationMode.wrappedValue.dismiss() }
                 }
             }
