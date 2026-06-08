@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% if page.title %}{{ page.title }} | {% endif %}{{ site.title }}</title>
+    <meta name="description" content="{{ page.description | default: site.description }}">
+    <link rel="alternate" type="application/atom+xml" title="{{ site.title }}" href="{{ site.baseurl }}/feed.xml">
+    <style>
+      :root {
+        color-scheme: light dark;
+        --text: #1f2328;
+        --muted: #656d76;
+        --border: #d0d7de;
+        --link: #0969da;
+        --bg: #ffffff;
+        --code: #f6f8fa;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --text: #e6edf3;
+          --muted: #8b949e;
+          --border: #30363d;
+          --link: #58a6ff;
+          --bg: #0d1117;
+          --code: #161b22;
+        }
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.65;
+      }
+
+      main {
+        box-sizing: border-box;
+        max-width: 820px;
+        margin: 0 auto;
+        padding: 40px 24px 72px;
+      }
+
+      h1, h2, h3 {
+        line-height: 1.2;
+      }
+
+      h1 {
+        font-size: clamp(2rem, 6vw, 3.25rem);
+        margin-bottom: 0.25em;
+      }
+
+      h2 {
+        margin-top: 2.2em;
+        padding-top: 0.2em;
+      }
+
+      a {
+        color: var(--link);
+      }
+
+      img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+      }
+
+      pre, code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      pre {
+        overflow-x: auto;
+        padding: 16px;
+        background: var(--code);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+
+      code {
+        background: var(--code);
+        border-radius: 4px;
+        padding: 0.1em 0.25em;
+      }
+
+      pre code {
+        padding: 0;
+        background: transparent;
+      }
+
+      .subtitle, .meta {
+        color: var(--muted);
+      }
+
+      hr {
+        border: 0;
+        border-top: 1px solid var(--border);
+        margin: 32px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      {{ content }}
+    </main>
+  </body>
+</html>
