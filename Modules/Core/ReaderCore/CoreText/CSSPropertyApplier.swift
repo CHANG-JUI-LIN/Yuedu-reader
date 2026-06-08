@@ -57,10 +57,81 @@ final class HTMLCSSPropertyApplierRegistry {
         BackgroundImageApplier(),
         BackgroundColorApplier(),
         LetterSpacingApplier(),
+        DirectionApplier(),
         WritingModeApplier(),
         WebkitWritingModeApplier(),
         EPUBWritingModeApplier(),
     ])
+}
+
+enum HTMLWritingDirectionResolver {
+    private static let rtlLanguageCodes: Set<String> = [
+        "ar", "arc", "ckb", "dv", "fa", "ha", "he", "iw", "khw", "ks", "ku",
+        "nqo", "prs", "ps", "sd", "syr", "ug", "ur", "yi"
+    ]
+
+    static func defaultDirection(forLanguage language: String?) -> NSWritingDirection {
+        guard let language else { return .natural }
+        let primaryCode = language
+            .split { $0 == "-" || $0 == "_" }
+            .first
+            .map { String($0).lowercased() }
+        guard let primaryCode else { return .natural }
+        return rtlLanguageCodes.contains(primaryCode) ? .rightToLeft : .natural
+    }
+
+    static func resolve(
+        _ raw: String,
+        autoText: String? = nil,
+        inherited: NSWritingDirection = .natural
+    ) -> NSWritingDirection? {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "rtl":
+            return .rightToLeft
+        case "ltr":
+            return .leftToRight
+        case "auto":
+            return autoText.flatMap(firstStrongDirection(in:)) ?? (inherited == .natural ? nil : inherited)
+        case "inherit":
+            return inherited
+        case "initial", "unset":
+            return .natural
+        default:
+            return nil
+        }
+    }
+
+    private static func firstStrongDirection(in text: String) -> NSWritingDirection? {
+        for scalar in text.unicodeScalars {
+            if isStrongRTL(scalar) {
+                return .rightToLeft
+            }
+            if isStrongLTR(scalar) {
+                return .leftToRight
+            }
+        }
+        return nil
+    }
+
+    private static func isStrongRTL(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x0590...0x08FF, 0xFB1D...0xFDFF, 0xFE70...0xFEFF,
+             0x10800...0x10FFF, 0x1E800...0x1EDFF, 0x1EE00...0x1EEFF:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isStrongLTR(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x0041...0x005A, 0x0061...0x007A, 0x00C0...0x02AF,
+             0x0370...0x052F, 0x1E00...0x1EFF:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 private struct FontSizeApplier: HTMLCSSPropertyApplier {
@@ -240,6 +311,23 @@ private struct LetterSpacingApplier: HTMLCSSPropertyApplier {
         }
         if let resolved = context.resolveLength(trimmed, style.fontSize, context.rootFontSize, style.fontSize) {
             style.letterSpacing = resolved
+        }
+    }
+}
+
+private struct DirectionApplier: HTMLCSSPropertyApplier {
+    let key = "direction"
+
+    func apply(
+        value: String,
+        style: inout HTMLAttributedStringBuilder.ResolvedStyle,
+        context: HTMLCSSApplyContext
+    ) {
+        if let direction = HTMLWritingDirectionResolver.resolve(
+            value,
+            inherited: context.parentStyle.baseWritingDirection
+        ) {
+            style.baseWritingDirection = direction
         }
     }
 }

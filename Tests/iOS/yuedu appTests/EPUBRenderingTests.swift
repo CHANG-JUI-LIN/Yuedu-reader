@@ -152,6 +152,38 @@ struct EPUBRenderingTests {
         #expect(media?.mediaType == "audio/mpeg")
     }
 
+    @Test func htmlBuilderHonorsDirAttributeAndCSSDirection() async {
+        let builder = HTMLAttributedStringBuilder()
+        let result = await builder.build(html: """
+        <html><body dir="rtl">
+          <p>שלום עולם</p>
+          <p style="direction: ltr">English override</p>
+        </body></html>
+        """, config: testHTMLConfig())
+
+        let attributed = result.attributedString
+        let text = attributed.string as NSString
+        let hebrewRange = text.range(of: "שלום")
+        let englishRange = text.range(of: "English")
+        #expect(hebrewRange.location != NSNotFound)
+        #expect(englishRange.location != NSNotFound)
+        guard hebrewRange.location != NSNotFound,
+              englishRange.location != NSNotFound,
+              let hebrewParagraph = attributed.attribute(
+                .paragraphStyle,
+                at: hebrewRange.location,
+                effectiveRange: nil
+              ) as? NSParagraphStyle,
+              let englishParagraph = attributed.attribute(
+                .paragraphStyle,
+                at: englishRange.location,
+                effectiveRange: nil
+              ) as? NSParagraphStyle
+        else { return }
+        #expect(hebrewParagraph.baseWritingDirection == .rightToLeft)
+        #expect(englishParagraph.baseWritingDirection == .leftToRight)
+    }
+
     @Test func smilParserExtractsFragmentsAndClockValues() {
         let overlay = SMILMediaOverlayParser.parse(xml: """
         <smil><body><seq>
@@ -227,6 +259,122 @@ struct EPUBRenderingTests {
         #expect(session.fixedLayoutViewport?.pageViewports[1] == CGSize(width: 1024, height: 768))
         #expect(session.chapters.map(\.spreadSide) == [.right, .left, .right, .center])
         #expect(session.chapters[1].orientationOverride == .landscape)
+    }
+
+    @Test @MainActor func hebrewLanguageMetadataDefaultsReflowableTextToRTL() async throws {
+        let epubURL = try await makeEPUBArchive(entries: [
+            "mimetype": Data("application/epub+zip".utf8),
+            "META-INF/container.xml": Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+              <rootfiles>
+                <rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/>
+              </rootfiles>
+            </container>
+            """.utf8),
+            "OPS/package.opf": Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <package version="3.0"
+                     unique-identifier="bookid"
+                     xmlns="http://www.idpf.org/2007/opf">
+              <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <dc:identifier id="bookid">urn:uuid:hebrew-rtl</dc:identifier>
+                <dc:title>מפליגים בישראל</dc:title>
+                <dc:language>he</dc:language>
+              </metadata>
+              <manifest>
+                <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+                <item id="ch1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+              </manifest>
+              <spine page-progression-direction="rtl">
+                <itemref idref="ch1"/>
+              </spine>
+            </package>
+            """.utf8),
+            "OPS/nav.xhtml": Data(epubXHTML(title: "Nav", body: """
+            <nav epub:type="toc"><ol><li><a href="chapter1.xhtml">פרק ראשון</a></li></ol></nav>
+            """).utf8),
+            "OPS/chapter1.xhtml": Data(epubXHTML(title: "פרק ראשון", body: """
+            <p>שלום 123 עולם.</p>
+            """).utf8)
+        ])
+
+        let session = try await PublicationSession.open(sourceURL: epubURL)
+        #expect(session.pageProgressionDirection == .rtl)
+        // page-progression-direction="rtl" must NOT force vertical writing for an
+        // RTL bidi script (Hebrew/Arabic). Only CJK vertical-rl books are vertical.
+        #expect(session.epubWritingMode != .verticalRL)
+
+        for pipeline in [EPUBAttributedStringBuilder.Pipeline.legacyHTML, .renderableNode] {
+            let builder = EPUBAttributedStringBuilder(
+                session: session,
+                renderSize: CGSize(width: 360, height: 640),
+                pipeline: pipeline
+            )
+            let result = try await builder.buildChapter(
+                at: 0,
+                settings: testRenderSettings(),
+                themeTextColor: .black,
+                themeBackgroundColor: .white
+            )
+            let text = result.attributedString.string as NSString
+            let range = text.range(of: "שלום")
+            #expect(range.location != NSNotFound)
+            guard range.location != NSNotFound,
+                  let paragraph = result.attributedString.attribute(
+                    .paragraphStyle,
+                    at: range.location,
+                    effectiveRange: nil
+                  ) as? NSParagraphStyle
+            else { return }
+            #expect(paragraph.baseWritingDirection == .rightToLeft)
+        }
+    }
+
+    @Test @MainActor func cjkRTLPageProgressionDefaultsToVerticalWriting() async throws {
+        // Mirror of the Hebrew case: a CJK book with page-progression-direction="rtl"
+        // and no explicit writing-mode metadata must still resolve to vertical-rl via
+        // the legacy heuristic, proving the language gate only spares RTL bidi scripts.
+        let epubURL = try await makeEPUBArchive(entries: [
+            "mimetype": Data("application/epub+zip".utf8),
+            "META-INF/container.xml": Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+              <rootfiles>
+                <rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/>
+              </rootfiles>
+            </container>
+            """.utf8),
+            "OPS/package.opf": Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <package version="3.0"
+                     unique-identifier="bookid"
+                     xmlns="http://www.idpf.org/2007/opf">
+              <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <dc:identifier id="bookid">urn:uuid:jp-vertical</dc:identifier>
+                <dc:title>草枕</dc:title>
+                <dc:language>ja</dc:language>
+              </metadata>
+              <manifest>
+                <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+                <item id="ch1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+              </manifest>
+              <spine page-progression-direction="rtl">
+                <itemref idref="ch1"/>
+              </spine>
+            </package>
+            """.utf8),
+            "OPS/nav.xhtml": Data(epubXHTML(title: "Nav", body: """
+            <nav epub:type="toc"><ol><li><a href="chapter1.xhtml">一</a></li></ol></nav>
+            """).utf8),
+            "OPS/chapter1.xhtml": Data(epubXHTML(title: "一", body: """
+            <p>山路を登りながら、こう考えた。</p>
+            """).utf8)
+        ])
+
+        let session = try await PublicationSession.open(sourceURL: epubURL)
+        #expect(session.pageProgressionDirection == .rtl)
+        #expect(session.epubWritingMode == .verticalRL)
     }
 
     @Test func publicationSessionServesFixedLayoutRelativeResources() async throws {
@@ -480,6 +628,98 @@ struct EPUBRenderingTests {
             #expect(descPara.headIndent > labelPara.headIndent + 1)
         }
     }
+
+    @Test @MainActor func hebrewRTLParagraphsStayFlushRight() async throws {
+        // Regression: CoreText double-counts a negative tailIndent on the leading (right)
+        // edge of RTL right-aligned text, over-insetting body paragraphs so short lines
+        // drift left of the right margin. Both pipelines must keep lines flush to the right
+        // content edge (minus only the CSS right margin), not ~3x the margin inward.
+        let epubURL = try await makeEPUBArchive(entries: [
+            "mimetype": Data("application/epub+zip".utf8),
+            "META-INF/container.xml": Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+              <rootfiles><rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/></rootfiles>
+            </container>
+            """.utf8),
+            "OPS/package.opf": Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <package version="3.0" unique-identifier="bookid" xmlns="http://www.idpf.org/2007/opf">
+              <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <dc:identifier id="bookid">urn:uuid:hebrew-flush</dc:identifier>
+                <dc:title>מפליגים</dc:title>
+                <dc:language>he</dc:language>
+              </metadata>
+              <manifest>
+                <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+                <item id="css" href="default.css" media-type="text/css"/>
+                <item id="ch1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+              </manifest>
+              <spine page-progression-direction="rtl"><itemref idref="ch1"/></spine>
+            </package>
+            """.utf8),
+            "OPS/default.css": Data("body { padding-left: 0pt; } p { text-align:right; margin: 8px; }".utf8),
+            "OPS/nav.xhtml": Data(epubXHTML(title: "Nav", body: "<nav epub:type=\"toc\"><ol><li><a href=\"chapter1.xhtml\">פרק</a></li></ol></nav>").utf8),
+            "OPS/chapter1.xhtml": Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE html>
+            <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="he">
+            <head><link href="default.css" rel="stylesheet" type="text/css"/></head>
+            <body style="text-align:right" dir="rtl">
+            <p>אבישי נכנס לבניין מנהלת המרינה בכניסה פגש את אמיר מנהל המרינה שלום אבישי חפשה אותך היום בחורה מצרפת פנה אליו אמיר<br/>בדיקהקצרה</p>
+            </body></html>
+            """.utf8)
+        ])
+
+        let session = try await PublicationSession.open(sourceURL: epubURL)
+        let W: CGFloat = 360
+        for pipeline in [EPUBAttributedStringBuilder.Pipeline.legacyHTML, .renderableNode] {
+            let builder = EPUBAttributedStringBuilder(
+                session: session,
+                renderSize: CGSize(width: W, height: 640),
+                pipeline: pipeline
+            )
+            let result = try await builder.buildChapter(
+                at: 1,
+                settings: testRenderSettings(),
+                themeTextColor: .black,
+                themeBackgroundColor: .white
+            )
+            let attr = result.attributedString
+            let s = attr.string as NSString
+            let aIdx = s.range(of: "אבישי").location
+            #expect(aIdx != NSNotFound)
+            if aIdx != NSNotFound, let ps = attr.attribute(.paragraphStyle, at: aIdx, effectiveRange: nil) as? NSParagraphStyle {
+                #expect(ps.alignment == .right)
+                #expect(ps.baseWritingDirection == .rightToLeft)
+                // The fix carries the right margin in headIndent and zeroes tailIndent for RTL.
+                #expect(ps.tailIndent == 0)
+            }
+            // Frame width must equal the builder's renderWidth (renderSize.width - insets).
+            let fs = CTFramesetterCreateWithAttributedString(attr as CFAttributedString)
+            let frame = CTFramesetterCreateFrame(
+                fs, CFRangeMake(0, attr.length),
+                CGPath(rect: CGRect(x: 0, y: 0, width: W, height: 4000), transform: nil), nil
+            )
+            let lines = CTFrameGetLines(frame) as! [CTLine]
+            var origins = [CGPoint](repeating: .zero, count: lines.count)
+            CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+            var shortRight: CGFloat? = nil
+            for (i, line) in lines.enumerated() {
+                let lr = CTLineGetStringRange(line)
+                let sub = s.substring(with: NSRange(location: lr.location, length: max(0, lr.length)))
+                if sub.contains("בדיקהקצרה") {
+                    let w = CTLineGetTypographicBounds(line, nil, nil, nil)
+                    shortRight = origins[i].x + w
+                }
+            }
+            #expect(shortRight != nil)
+            if let shortRight {
+                // Bug: right edge ~3x the 8px margin inward (≈ W-24). Fix: within ~1x (≈ W-8).
+                #expect(shortRight > W - 16, "RTL short line not flush right: rightEdge=\(shortRight) frameWidth=\(W) pipeline=\(pipeline)")
+            }
+        }
+    }
 }
 
 private func testHTMLConfig() -> HTMLAttributedStringBuilder.Config {
@@ -493,6 +733,24 @@ private func testHTMLConfig() -> HTMLAttributedStringBuilder.Config {
         backgroundColor: .systemBackground,
         fontFamilyName: nil,
         renderWidth: 320
+    )
+}
+
+private func testRenderSettings() -> ReaderRenderSettings {
+    ReaderRenderSettings(
+        theme: "test",
+        textColor: .black,
+        backgroundColor: .white,
+        fontSize: 17,
+        lineHeightMultiple: 1.5,
+        lineSpacing: 0,
+        paragraphSpacing: 8,
+        letterSpacing: 0,
+        marginH: 0,
+        marginV: 0,
+        footerHeight: 0,
+        contentInsets: .zero,
+        writingMode: .horizontal
     )
 }
 

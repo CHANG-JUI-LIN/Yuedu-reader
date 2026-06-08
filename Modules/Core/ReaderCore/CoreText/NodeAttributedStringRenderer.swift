@@ -30,6 +30,7 @@ struct NodeAttributedStringRenderer {
         let imageLoader: ((String) async -> UIImage?)?
         let mediaURLResolver: ((String) -> String?)?
         let writingMode: ReaderWritingMode
+        let baseWritingDirection: NSWritingDirection
 
         init(
             from settings: ReaderRenderSettings,
@@ -37,7 +38,8 @@ struct NodeAttributedStringRenderer {
             renderWidth: CGFloat? = nil,
             resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
             imageLoader: ((String) async -> UIImage?)? = nil,
-            mediaURLResolver: ((String) -> String?)? = nil
+            mediaURLResolver: ((String) -> String?)? = nil,
+            baseWritingDirection: NSWritingDirection = .natural
         ) {
             self.baseFontSize = settings.fontSize
             self.lineHeightMultiple = settings.lineHeightMultiple
@@ -51,6 +53,7 @@ struct NodeAttributedStringRenderer {
             self.imageLoader = imageLoader
             self.mediaURLResolver = mediaURLResolver
             self.writingMode = settings.writingMode
+            self.baseWritingDirection = baseWritingDirection
         }
     }
 
@@ -115,6 +118,7 @@ struct NodeAttributedStringRenderer {
             hrPara.maximumLineHeight = fontSize
             hrPara.paragraphSpacingBefore = fontSize * 0.5
             hrPara.paragraphSpacing = fontSize * 0.5
+            hrPara.baseWritingDirection = style.baseWritingDirection
             attrs[.paragraphStyle] = hrPara
             return NSAttributedString(string: "\n", attributes: attrs)
 
@@ -414,11 +418,26 @@ struct NodeAttributedStringRenderer {
         }
         let cumulativeMarginLeft = ctx.inheritedBlockMarginLeft + style.marginLeft
         let cumulativeMarginRight = ctx.inheritedBlockMarginRight + style.marginRight
-        para.firstLineHeadIndent = cumulativeMarginLeft + style.borderLeftWidth + style.paddingLeft + style.textIndent
-        para.headIndent = cumulativeMarginLeft + style.borderLeftWidth + style.paddingLeft
+        let leftInset = cumulativeMarginLeft + style.borderLeftWidth + style.paddingLeft
         let rightInset = cumulativeMarginRight + style.borderRightWidth + style.paddingRight
-        para.tailIndent = rightInset > 0 ? -rightInset : 0
+        let rtlRightAligned = style.baseWritingDirection == .rightToLeft
+            && (style.textAlign == .right || style.textAlign == .natural)
+            && !isVertical(style)
+        if rtlRightAligned {
+            // CoreText double-counts a negative tailIndent on the leading (right) edge of
+            // RTL right-aligned text, over-insetting it. Carry the right margin in headIndent
+            // (the leading inset) and leave tailIndent at 0. See HTMLAttributedStringBuilder.
+            // Only for right/natural alignment — centered/justified need symmetric indents.
+            para.headIndent = rightInset
+            para.firstLineHeadIndent = rightInset + style.textIndent
+            para.tailIndent = 0
+        } else {
+            para.firstLineHeadIndent = leftInset + style.textIndent
+            para.headIndent = leftInset
+            para.tailIndent = rightInset > 0 ? -rightInset : 0
+        }
         para.alignment = nsTextAlignment(from: style.textAlign)
+        para.baseWritingDirection = style.baseWritingDirection
         newCtx.paragraphStyle = para
         newCtx.baselineOffset = ReaderTypographyCorrection.baselineOffset(
             font: newCtx.font,
@@ -1403,6 +1422,7 @@ struct NodeAttributedStringRenderer {
             para.maximumLineHeight = targetLineHeight
             para.paragraphSpacing = config.paragraphSpacing
             para.alignment = .natural
+            para.baseWritingDirection = config.baseWritingDirection
             return RenderContext(
                 font: font,
                 fontFamilies: config.fontFamily.map { [$0] } ?? [],

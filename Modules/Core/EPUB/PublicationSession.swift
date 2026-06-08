@@ -417,6 +417,7 @@ final class PublicationSession {
     let publication: Publication
     let bookTitle: String
     let author: String
+    let language: String?
     let chapters: [PublicationChapterDescriptor]
     let tocEntries: [EPUBTocEntry]
     let epubWritingMode: EPUBWritingMode
@@ -441,6 +442,7 @@ final class PublicationSession {
         publication: Publication,
         bookTitle: String,
         author: String,
+        language: String?,
         chapters: [PublicationChapterDescriptor],
         tocEntries: [EPUBTocEntry],
         epubWritingMode: EPUBWritingMode,
@@ -461,6 +463,7 @@ final class PublicationSession {
         self.publication = publication
         self.bookTitle = bookTitle
         self.author = author
+        self.language = language
         self.chapters = chapters
         self.tocEntries = tocEntries
         self.epubWritingMode = epubWritingMode
@@ -499,6 +502,9 @@ final class PublicationSession {
         let publication = try await openPublication(sourceURL: sourceURL)
         let opfMetadata = await parseOPFMetadata(from: sourceURL)
         let epubWritingMode = opfMetadata.writingMode
+        let rtlBidiVerify = "[RTLVerify] file=\(sourceURL.lastPathComponent) lang=\(opfMetadata.language ?? "nil") pageProgression=\(opfMetadata.pageProgressionDirection.rawValue) writingMode=\(epubWritingMode.rawValue) → \(epubWritingMode == .verticalRL ? "VERTICAL" : "HORIZONTAL")"
+        print(rtlBidiVerify)
+        NSLog("%@", rtlBidiVerify)
         let tocEntries = flattenTableOfContents(publication.manifest.tableOfContents)
 
         let cacheURL = getCacheURL(for: sourceURL)
@@ -647,6 +653,7 @@ final class PublicationSession {
             publication: publication,
             bookTitle: finalTitle,
             author: finalAuthor,
+            language: opfMetadata.language,
             chapters: chapters,
             tocEntries: tocEntries,
             epubWritingMode: epubWritingMode,
@@ -1057,6 +1064,7 @@ final class PublicationSession {
     }
 
     private struct OPFMetadataResult {
+        let language: String?
         let writingMode: EPUBWritingMode
         let pageProgressionDirection: EPUBPageProgressionDirection
         let layoutMode: EPUBLayoutMode
@@ -1092,6 +1100,7 @@ final class PublicationSession {
 
     private static func parseOPFMetadata(from sourceURL: URL) async -> OPFMetadataResult {
         let fallback = OPFMetadataResult(
+            language: nil,
             writingMode: .unspecified,
             pageProgressionDirection: .default,
             layoutMode: .reflowable,
@@ -1113,6 +1122,7 @@ final class PublicationSession {
 
     private static func parseOPFMetadataXML(_ opfXML: String, opfPath: String) -> OPFMetadataResult {
         var writingMode: EPUBWritingMode = .unspecified
+        let language = firstLanguageValue(in: opfXML)
 
         // <meta name="primary-writing-mode" content="vertical-rl"/>
         if let wm = firstMatch(in: opfXML, pattern: #"<meta[^>]*name\s*=\s*"primary-writing-mode"[^>]*content\s*=\s*"([^"]+)"[^>]*>"#)?.lowercased() {
@@ -1147,12 +1157,19 @@ final class PublicationSession {
         let fixedLayoutSpread = FixedLayoutSpread.parse(firstMetaPropertyValue(in: opfXML, property: "rendition:spread"))
         let fixedLayoutOrientation = FixedLayoutOrientation.parse(firstMetaPropertyValue(in: opfXML, property: "rendition:orientation"))
 
-        // spine page-progression-direction="rtl" → vertical
+        // spine page-progression-direction controls page-turn flow only (rtl = pages
+        // advance right-to-left). It is independent of writing mode. Historically `rtl`
+        // also implied CJK vertical-rl, but RTL bidi scripts (Hebrew, Arabic, …) are
+        // horizontal RTL and must never be forced vertical. Gate the vertical fallback
+        // on language, and only apply it when no explicit writing mode was declared.
         let pageProgressionDirection: EPUBPageProgressionDirection
         if let ppd = firstMatch(in: opfXML, pattern: #"<spine[^>]*page-progression-direction\s*=\s*"([^"]+)"[^>]*>"#)?.lowercased() {
             if ppd == "rtl" {
                 pageProgressionDirection = .rtl
-                writingMode = .verticalRL
+                let isRTLScript = HTMLWritingDirectionResolver.defaultDirection(forLanguage: language) == .rightToLeft
+                if writingMode == .unspecified && !isRTLScript {
+                    writingMode = .verticalRL
+                }
             } else if ppd == "ltr" {
                 pageProgressionDirection = .ltr
             } else {
@@ -1171,6 +1188,7 @@ final class PublicationSession {
         }
 
         return OPFMetadataResult(
+            language: language,
             writingMode: writingMode,
             pageProgressionDirection: pageProgressionDirection,
             layoutMode: layoutMode,
@@ -1180,6 +1198,21 @@ final class PublicationSession {
             defaultViewport: defaultViewport,
             spineMetadataByHref: parseSpineMetadata(in: opfXML, opfPath: opfPath)
         )
+    }
+
+    private static func firstLanguageValue(in opfXML: String) -> String? {
+        if let value = firstMatch(
+            in: opfXML,
+            pattern: #"<(?:[A-Za-z0-9_-]+:)?language\b[^>]*>\s*([^<]+?)\s*</(?:[A-Za-z0-9_-]+:)?language>"#,
+            dotMatchesLineSeparators: true
+        )?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+            return value
+        }
+        if let value = firstMetaPropertyValue(in: opfXML, property: "dcterms:language")?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+            return value
+        }
+        return nil
     }
 
     private static func parseSpineMetadata(in opfXML: String, opfPath: String) -> [String: OPFSpineItemMetadata] {

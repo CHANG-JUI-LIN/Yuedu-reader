@@ -277,6 +277,7 @@ private extension RenderStyle {
             backgroundColor: s.backgroundFillColor.flatMap { RenderColor(uiColor: $0) },
             textIndent: s.textIndent,
             textAlign: .from(nsTextAlignment: s.textAlign),
+            baseWritingDirection: s.baseWritingDirection,
             lineHeightMultiplier: s.lineHeightExplicit
                 ? max(1.0, s.lineHeight / max(s.fontSize, 1))
                 : 1.0,

@@ -71,6 +71,7 @@ final class HTMLAttributedStringBuilder {
         var fontFamilyName: String?
         var renderWidth: CGFloat
         var writingMode: ReaderWritingMode = .horizontal
+        var baseWritingDirection: NSWritingDirection = .natural
         var firstLetterRules: [CSSRule] = []
     }
 
@@ -159,6 +160,7 @@ final class HTMLAttributedStringBuilder {
         var isItalic: Bool
         var textColor: UIColor
         var textAlign: NSTextAlignment
+        var baseWritingDirection: NSWritingDirection
         var textIndent: CGFloat
         var lineHeight: CGFloat
         /// Whether CSS explicitly specifies line-height (true = skip clamping)
@@ -586,7 +588,7 @@ final class HTMLAttributedStringBuilder {
     private func styleProbeSummary(_ style: ResolvedStyle) -> String {
         let width = style.width.map { "\($0)" } ?? "nil"
         let height = style.height.map { "\($0)" } ?? "nil"
-        return "fontWeight=\(style.fontWeight) isItalic=\(style.isItalic) fontFamilies=\(style.fontFamilies) fontSize=\(style.fontSize) lineHeight=\(style.lineHeight) lineHeightExplicit=\(style.lineHeightExplicit) textIndent=\(style.textIndent) paraBefore=\(style.paragraphSpacingBefore) paraAfter=\(style.paragraphSpacing) paddingL=\(style.paddingLeft) paddingR=\(style.paddingRight) width=\(width) height=\(height) block=\(style.isBlock) vertical=\(style.isVerticalWritingMode)"
+        return "fontWeight=\(style.fontWeight) isItalic=\(style.isItalic) fontFamilies=\(style.fontFamilies) fontSize=\(style.fontSize) lineHeight=\(style.lineHeight) lineHeightExplicit=\(style.lineHeightExplicit) textIndent=\(style.textIndent) direction=\(style.baseWritingDirection.rawValue) paraBefore=\(style.paragraphSpacingBefore) paraAfter=\(style.paragraphSpacing) paddingL=\(style.paddingLeft) paddingR=\(style.paddingRight) width=\(width) height=\(height) block=\(style.isBlock) vertical=\(style.isVerticalWritingMode)"
     }
 
     private func buildChildren(
@@ -2373,6 +2375,7 @@ final class HTMLAttributedStringBuilder {
     private func makeParagraphStyle(for style: ResolvedStyle, config: Config) -> NSParagraphStyle {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = style.textAlign
+        paragraph.baseWritingDirection = style.baseWritingDirection
         paragraph.lineBreakMode = .byWordWrapping
         let isVertical = style.isVerticalWritingMode || config.writingMode.isVertical
         if isVertical {
@@ -2407,9 +2410,23 @@ final class HTMLAttributedStringBuilder {
             }
             let leftInset = structuralLeft + widthInset
             let rightInset = structuralRight + widthInset
-            paragraph.headIndent = leftInset
-            paragraph.firstLineHeadIndent = leftInset + style.textIndent
-            paragraph.tailIndent = -rightInset
+            let rtlRightAligned = style.baseWritingDirection == .rightToLeft
+                && (style.textAlign == .right || style.textAlign == .natural)
+                && !isVertical
+            if rtlRightAligned {
+                // CoreText double-counts a negative tailIndent on the leading (right) edge
+                // of RTL right-aligned text, over-insetting it so the text drifts left of
+                // the right margin. Carry the right margin in headIndent (the leading inset)
+                // and leave tailIndent at 0; the left margin falls out of the wrap width.
+                // Only for right/natural alignment — centered/justified need symmetric indents.
+                paragraph.headIndent = rightInset
+                paragraph.firstLineHeadIndent = rightInset + style.textIndent
+                paragraph.tailIndent = 0
+            } else {
+                paragraph.headIndent = leftInset
+                paragraph.firstLineHeadIndent = leftInset + style.textIndent
+                paragraph.tailIndent = -rightInset
+            }
         }
 
         // Use min/maxLineHeight to fix line height, without also setting lineSpacing (which would double the spacing).
@@ -2862,6 +2879,7 @@ final class HTMLAttributedStringBuilder {
             rootFontSize: rootFontSize,
             percentageBase: pct
         )
+        applyHTMLDirectionAttribute(from: element, to: &style, inheritedDirection: parent.baseWritingDirection)
 
         let matchedRules = rules
             .filter { $0.selector.matches(element: element, parent: parentElement) }
@@ -3000,6 +3018,25 @@ final class HTMLAttributedStringBuilder {
         return style
     }
 
+    private func applyHTMLDirectionAttribute(
+        from element: Element,
+        to style: inout ResolvedStyle,
+        inheritedDirection: NSWritingDirection
+    ) {
+        guard element.hasAttr("dir") else { return }
+        let raw = (try? element.attr("dir")) ?? ""
+        let autoText = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "auto"
+            ? ((try? element.text()) ?? "")
+            : nil
+        if let direction = HTMLWritingDirectionResolver.resolve(
+            raw,
+            autoText: autoText,
+            inherited: inheritedDirection
+        ) {
+            style.baseWritingDirection = direction
+        }
+    }
+
     private func inheritedStyle(from parent: ResolvedStyle, tag: String) -> ResolvedStyle {
         ResolvedStyle(
             fontSize: parent.fontSize,
@@ -3008,6 +3045,7 @@ final class HTMLAttributedStringBuilder {
             isItalic: parent.isItalic,
             textColor: parent.textColor,
             textAlign: parent.textAlign,
+            baseWritingDirection: parent.baseWritingDirection,
             textIndent: parent.textIndent,
             lineHeight: parent.lineHeight,
             lineHeightExplicit: parent.lineHeightExplicit,
@@ -3068,6 +3106,7 @@ final class HTMLAttributedStringBuilder {
             isItalic: false,
             textColor: config.textColor,
             textAlign: .natural,
+            baseWritingDirection: config.baseWritingDirection,
             textIndent: config.firstLineIndent,
             lineHeight: defaultLineHeight,
             lineHeightExplicit: false,

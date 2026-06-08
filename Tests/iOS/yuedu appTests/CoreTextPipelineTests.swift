@@ -202,6 +202,7 @@ struct CSSPropertyApplierTests {
             isItalic: false,
             textColor: .black,
             textAlign: .natural,
+            baseWritingDirection: .natural,
             textIndent: 0,
             lineHeight: fontSize * 1.4,
             lineHeightExplicit: false,

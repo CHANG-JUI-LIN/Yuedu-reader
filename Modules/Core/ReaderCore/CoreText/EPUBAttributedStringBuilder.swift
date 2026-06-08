@@ -206,7 +206,8 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                     guard let self else { return nil }
                     let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
                     return self.resourceProvider.resourceURL(for: resolved).absoluteString
-                }
+                },
+                baseWritingDirection: config.baseWritingDirection
             )
         )
         if localBuilder.detectedVerticalWritingMode {
@@ -308,7 +309,8 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             backgroundColor: backgroundColor,
             fontFamilyName: nil,
             renderWidth: max(1, effectiveWidth - horizontalInsets),
-            writingMode: settings.writingMode
+            writingMode: settings.writingMode,
+            baseWritingDirection: HTMLWritingDirectionResolver.defaultDirection(forLanguage: session.language)
         )
     }
 }

@@ -955,7 +955,9 @@ struct ReaderView: View {
                     pageTurnStyle: effectivePageTurnStyle,
                     theme: readerTheme,
                     playbackHighlightText: activePlaybackHighlightText,
-                    isRTL: effectiveWritingMode.isVertical,
+                    // RTL page-turn flow applies to both vertical-rl CJK and
+                    // horizontal RTL bidi scripts (Hebrew, Arabic, …).
+                    isRTL: epubRenderer.pageProgressionDirection == .rtl || effectiveWritingMode.isVertical,
                     isDoublePageSpread: isDoublePageSpreadActive,
                     spreadGutter: DSLayout.readerSpreadGutter,
                     sessionCoordinator: readerSessionCoordinator,
