@@ -1,7 +1,7 @@
 # 閱讀
 
 <p align="center">
-  <img src="iOS/Assets.xcassets/AppIcon.appiconset/ios_app_icon_novel_reader_1024_no_alpha.png" width="112" alt="閱讀 icon">
+  <img src="Resources/Assets.xcassets/AppIcon.appiconset/ios_app_icon_novel_reader_1024_no_alpha.png" width="112" alt="閱讀 icon">
 </p>
 
 <p align="center">
