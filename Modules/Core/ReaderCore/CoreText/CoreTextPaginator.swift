@@ -1301,7 +1301,12 @@ final class CoreTextPaginator {
                     let lineHeight = lineAscent + lineDescent
                     let lineBottom = baselineY - lineDescent
                     let centeredBottom = lineBottom + max(0, (lineHeight - info.drawHeight) / 2)
-                    let uiY = renderSize.height - centeredBottom - info.drawHeight
+                    let uiY: CGFloat
+                    if info.source == "mathml:", info.displayMode == .inline, !isVertical {
+                        uiY = renderSize.height - (baselineY - info.descent) - info.drawHeight
+                    } else {
+                        uiY = renderSize.height - centeredBottom - info.drawHeight
+                    }
                     if let img = info.image {
                         let hasBlockRenderable = attrs[HTMLAttributedStringBuilder.blockRenderStyleAttribute] != nil
                         let rect: CGRect

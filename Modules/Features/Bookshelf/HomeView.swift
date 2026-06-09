@@ -120,10 +120,11 @@ struct HomeView: View {
                         Button {
                             if !selectedBookIds.isEmpty { showAddToGroupSheet = true }
                         } label: {
-                            Label(localized("加入分組"), systemImage: "text.badge.plus")
+                            Label(" "+localized("加入分組"), systemImage: "text.badge.plus")
                                 .labelStyle(.titleAndIcon)
                         }
                         .disabled(selectedBookIds.isEmpty)
+                        .buttonStyle(.borderless)
 
                         Spacer()
 

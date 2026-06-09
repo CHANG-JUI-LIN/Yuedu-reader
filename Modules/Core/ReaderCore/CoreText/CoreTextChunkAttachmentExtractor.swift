@@ -62,7 +62,12 @@ enum CoreTextChunkAttachmentExtractor {
                         let lineHeight = lineAscent + lineDescent
                         let lineBottom = baselineY - lineDescent
                         let centeredBottom = lineBottom + max(0, (lineHeight - info.drawHeight) / 2)
-                        let uiY = chunkSize.height - centeredBottom - info.drawHeight
+                        let uiY: CGFloat
+                        if info.source == "mathml:" {
+                            uiY = chunkSize.height - (baselineY - info.descent) - info.drawHeight
+                        } else {
+                            uiY = chunkSize.height - centeredBottom - info.drawHeight
+                        }
                         // A standalone image (alone on its line, e.g. <figure><img/><figcaption/></figure>)
                         // reads as a figure and is centered like a block image; flushing it left leaves a
                         // lopsided right-hand gap. Inline images that flow with text keep their flow

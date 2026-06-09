@@ -1,0 +1,11 @@
+schemaVersion: 1
+sessionDefaults:
+  projectPath: /Users/zhangruilin/Desktop/Yuedu-reader/Yuedu-Reader.xcodeproj
+  scheme: Yuedu-Reader
+  configuration: Debug
+  simulatorName: iPhone 17 Pro Max
+  simulatorId: 0F649CCB-518A-4047-BBAD-9213025D14CD
+  useLatestOS: true
+  preferXcodebuild: true
+  platform: iOS Simulator
+  simulatorPlatform: iOS Simulator

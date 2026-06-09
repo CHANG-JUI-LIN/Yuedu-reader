@@ -46,7 +46,7 @@ struct ExploreHomeView: View {
 
                 switch tab {
                 case .discover: discoverContent
-                case .web: webScroll
+                case .web: webForm
                 }
             }
             .background(DSColor.groupedBackground.ignoresSafeArea())
@@ -132,7 +132,7 @@ struct ExploreHomeView: View {
     private var sourceMenu: some View {
         Menu {
             Button { showDiscoverSourcePicker = true } label: {
-                Label(localized("切換發現書源"), systemImage: "books.vertical")
+                Label(localized("切換發現頁"), systemImage: "books.vertical")
             }
             .disabled(discover.exploreSources.count <= 1)
             Button { discover.reload() } label: {
@@ -162,101 +162,54 @@ struct ExploreHomeView: View {
 
     // MARK: - Web Segment
 
-    private var webScroll: some View {
-        ScrollView {
-            VStack(spacing: DSSpacing.lg) {
-                webContent
-            }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.top, DSSpacing.sm)
-            .padding(.bottom, 130)
+    private var webForm: some View {
+        Form {
+            searchEnginesSection
+            quickEntrySection
+            recentSection
         }
         .scrollDismissesKeyboard(.immediately)
     }
 
-    @ViewBuilder
-    private var webContent: some View {
-        searchEnginesCard
-        quickEntryCard
-        recentCard
-    }
-
-    private var searchEnginesCard: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.md) {
-            Text(localized("常用搜尋")).font(DSFont.headline)
+    private var searchEnginesSection: some View {
+        Section(header: Text(localized("常用搜尋"))) {
             HStack(spacing: DSSpacing.xl) {
                 ForEach(SearchEngine.allCases) { engine in
-                    Button {
-                        onNavigate(engine.startURL)
-                    } label: {
-                        VStack(spacing: 6) {
-                            ZStack {
-                                Circle().fill(DSColor.surface).frame(width: 52, height: 52)
-                                AsyncImage(url: URL(string: engine.faviconURL)) { phase in
-                                    if let image = phase.image {
-                                        image.resizable().scaledToFit().frame(width: 28, height: 28)
-                                    } else {
-                                        Text(engine.icon)
-                                            .font(.system(size: 18, weight: .bold))
-                                            .foregroundColor(engine.color)
-                                    }
-                                }
-                            }
-                            Text(engine.rawValue).font(DSFont.caption)
-                        }
-                    }
-                    .buttonStyle(.plain)
+                    searchEngineButton(engine)
                 }
                 Spacer(minLength: 0)
             }
+            .padding(.vertical, DSSpacing.sm)
         }
-        .padding(DSSpacing.lg)
-        .background(DSColor.background)
-        .clipShape(RoundedRectangle(cornerRadius: DSRadius.xl))
     }
 
-    private var quickEntryCard: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.md) {
-            Text(localized("快捷入口")).font(DSFont.headline)
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: DSSpacing.md), count: 4),
-                spacing: DSSpacing.md
-            ) {
-                quickEntry(localized("番茄登入"), system: "person.crop.circle.badge.plus", color: .orange) {
-                    onNavigate("https://fanqienovel.com/")
-                }
-                quickEntry(localized("書源網站"), system: "globe", color: .blue) {
-                    showSourceSites = true
-                }
-                quickEntry(localized("最近瀏覽"), system: "clock.arrow.circlepath", color: .green) {
-                    showHistory = true
-                }
-                quickEntry(localized("書源管理"), system: "slider.horizontal.3", color: .purple) {
-                    showSourceManager = true
-                }
-            }
+    private var quickEntrySection: some View {
+        Section(header: Text(localized("快捷入口"))) {
+            DSSettingsRow(
+                icon: "person.crop.circle.badge.plus",
+                title: localized("番茄登入"),
+                action: { onNavigate("https://fanqienovel.com/") }
+            )
+            DSSettingsRow(
+                icon: "globe",
+                title: localized("書源網站"),
+                action: { showSourceSites = true }
+            )
+            DSSettingsRow(
+                icon: "clock.arrow.circlepath",
+                title: localized("最近瀏覽"),
+                action: { showHistory = true }
+            )
+            DSSettingsRow(
+                icon: "slider.horizontal.3",
+                title: localized("書源管理"),
+                action: { showSourceManager = true }
+            )
         }
-        .padding(DSSpacing.lg)
-        .background(DSColor.background)
-        .clipShape(RoundedRectangle(cornerRadius: DSRadius.xl))
     }
 
-    private var recentCard: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.md) {
-            HStack {
-                Text(localized("最近瀏覽")).font(DSFont.headline)
-                Spacer()
-                if !history.entries.isEmpty {
-                    Button { showHistory = true } label: {
-                        HStack(spacing: 2) {
-                            Text(localized("查看全部"))
-                            Image(systemName: "chevron.right")
-                        }
-                        .font(DSFont.caption)
-                        .foregroundColor(DSColor.accent)
-                    }
-                }
-            }
+    private var recentSection: some View {
+        Section(header: recentSectionHeader) {
             if history.entries.isEmpty {
                 Text(localized("尚無瀏覽記錄"))
                     .font(DSFont.caption)
@@ -264,26 +217,37 @@ struct ExploreHomeView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, DSSpacing.lg)
             } else {
-                VStack(spacing: 0) {
-                    let recent = Array(history.entries.prefix(5))
-                    ForEach(Array(recent.enumerated()), id: \.element.id) { index, entry in
-                        Button { onNavigate(entry.url) } label: {
-                            HistoryRow(entry: entry, faviconURL: history.faviconURL(for: entry))
+                let recent = Array(history.entries.prefix(5))
+                ForEach(recent) { entry in
+                    Button { onNavigate(entry.url) } label: {
+                        HistoryRow(entry: entry, faviconURL: history.faviconURL(for: entry))
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button(role: .destructive) { history.remove(entry) } label: {
+                            Label(localized("刪除"), systemImage: "trash")
                         }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button(role: .destructive) { history.remove(entry) } label: {
-                                Label(localized("刪除"), systemImage: "trash")
-                            }
-                        }
-                        if index < recent.count - 1 { Divider() }
                     }
                 }
             }
         }
-        .padding(DSSpacing.lg)
-        .background(DSColor.background)
-        .clipShape(RoundedRectangle(cornerRadius: DSRadius.xl))
+    }
+
+    private var recentSectionHeader: some View {
+        HStack {
+            Text(localized("最近瀏覽"))
+            Spacer()
+            if !history.entries.isEmpty {
+                Button { showHistory = true } label: {
+                    HStack(spacing: 2) {
+                        Text(localized("查看全部"))
+                        Image(systemName: "chevron.right")
+                    }
+                    .font(DSFont.caption)
+                }
+                .textCase(nil)
+            }
+        }
     }
 
     // MARK: - Sheets
@@ -316,7 +280,7 @@ struct ExploreHomeView: View {
                 }
             }
             .navigationTitle(localized("最近瀏覽"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(localized("完成")) { showHistory = false }
@@ -361,7 +325,7 @@ struct ExploreHomeView: View {
                 .buttonStyle(.plain)
             }
             .navigationTitle(localized("書源網站"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(localized("完成")) { showSourceSites = false }
@@ -373,23 +337,29 @@ struct ExploreHomeView: View {
 
     // MARK: - Reusable bits
 
-    private func quickEntry(_ title: String, system: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    private func searchEngineButton(_ engine: SearchEngine) -> some View {
+        Button {
+            onNavigate(engine.startURL)
+        } label: {
             VStack(spacing: 6) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: DSRadius.md)
-                        .fill(color.opacity(0.12))
-                        .frame(width: 48, height: 48)
-                    Image(systemName: system)
-                        .font(.system(size: 20))
-                        .foregroundColor(color)
+                    Circle()
+                        .fill(DSColor.surface)
+                        .frame(width: 52, height: 52)
+                    AsyncImage(url: URL(string: engine.faviconURL)) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFit().frame(width: 28, height: 28)
+                        } else {
+                            Text(engine.icon)
+                                .font(.headline.weight(.bold))
+                                .foregroundColor(engine.color)
+                        }
+                    }
                 }
-                Text(title)
-                    .font(.system(size: 11))
-                    .foregroundColor(DSColor.textPrimary)
-                    .lineLimit(1)
+                Text(engine.rawValue)
+                    .font(DSFont.caption)
             }
-            .frame(maxWidth: .infinity)
+            .frame(minWidth: 60)
         }
         .buttonStyle(.plain)
     }
@@ -404,9 +374,20 @@ private struct DiscoverSourcePickerView: View {
     let onSelect: (BookSource) -> Void
     let onDismiss: () -> Void
 
+    @State private var searchText = ""
+
+    private var filteredSources: [BookSource] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return sources }
+        return sources.filter {
+            $0.bookSourceName.localizedCaseInsensitiveContains(trimmed)
+                || $0.bookSourceUrl.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
     var body: some View {
         List {
-            ForEach(sources) { source in
+            ForEach(filteredSources) { source in
                 Button {
                     onSelect(source)
                 } label: {
@@ -434,8 +415,18 @@ private struct DiscoverSourcePickerView: View {
                 .buttonStyle(.plain)
             }
         }
-        .navigationTitle(localized("切換發現書源"))
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .overlay {
+            if filteredSources.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+            }
+        }
+        .navigationTitle(localized("切換發現頁"))
+        .toolbarTitleDisplayMode(.large)
+        .searchable(
+            text: $searchText,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: localized("搜尋書源名稱或網址")
+        )
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button(localized("完成")) { onDismiss() }

@@ -1,5 +1,5 @@
 {
-  "originHash" : "9378d11292021717372aef8b52a46bdd7e26141884213b3eef5150722a3dda7f",
+  "originHash" : "3d2e3e831a654d297ef400f28c80c22ec90fd688a537ee50346ace46dfaff4c8",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -152,6 +152,15 @@
       "state" : {
         "revision" : "040d087ac2267d2ddd4cca36c757d1c6a05fdbfe",
         "version" : "101.0.0"
+      }
+    },
+    {
+      "identity" : "iosmath",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kostub/iosMath.git",
+      "state" : {
+        "revision" : "302585fd9609f8525423f531924087fc4cfade16",
+        "version" : "2.3.1"
       }
     },
     {

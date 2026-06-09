@@ -100,27 +100,34 @@ private struct DiscoverFilterBar: View {
         )
     }
 
+    /// A compact, single-line filter pill with Apple's continuous (squircle)
+    /// corners. When the filter sits on its default (first) option the pill stays
+    /// neutral and shows the category name; once the reader picks another option it
+    /// tints to the accent and shows that value, so the active filters read at a
+    /// glance across the bar.
     private func chip(for filter: DiscoverFilter) -> some View {
-        HStack(spacing: DSSpacing.xs) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(filterLabel(filter.title))
-                    .font(DSFont.caption2)
-                    .foregroundColor(DSColor.textSecondary)
-                    .lineLimit(1)
-                Text(displayName(filter.selected))
-                    .font(DSFont.caption)
-                    .foregroundColor(DSColor.textPrimary)
-                    .lineLimit(1)
-            }
+        let isActive = filter.selected != filter.options.first
+        let label = isActive ? displayName(filter.selected) : filterLabel(filter.title)
+        let shape = RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+        return HStack(spacing: DSSpacing.xs) {
+            Text(label)
+                .font(DSFont.caption.weight(isActive ? .semibold : .regular))
+                .lineLimit(1)
             Image(systemName: "chevron.down")
-                .font(DSFont.caption2.weight(.semibold))
+                .font(.system(size: 9, weight: .semibold))
         }
-        .foregroundColor(DSColor.textPrimary)
-        .padding(.horizontal, DSSpacing.md)
-        .padding(.vertical, DSSpacing.xs)
-        .frame(minHeight: 44)
-        .background(DSColor.surface)
-        .clipShape(Capsule())
+        .foregroundColor(isActive ? DSColor.accent : DSColor.textPrimary)
+        .padding(.horizontal, DSSpacing.sm + 2)
+        .padding(.vertical, DSSpacing.xs + 2)
+        .background(isActive ? DSColor.accent.opacity(0.15) : DSColor.surface)
+        .clipShape(shape)
+        .overlay(
+            shape.strokeBorder(
+                isActive ? DSColor.accent.opacity(0.35) : DSColor.separator,
+                lineWidth: 0.5
+            )
+        )
+        .contentShape(shape)
     }
 
     private func filterLabel(_ title: String) -> String {

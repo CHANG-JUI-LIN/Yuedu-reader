@@ -42,6 +42,7 @@
 		54FF42D1FA99075B5C91D59B /* ReadiumShared in Frameworks */ = {isa = PBXBuildFile; productRef = 54FF42D2FA99075B5C91D59B /* ReadiumShared */; };
 		54FF42D3FA99075B5C91D59B /* ReadiumStreamer in Frameworks */ = {isa = PBXBuildFile; productRef = 54FF42D4FA99075B5C91D59B /* ReadiumStreamer */; };
 		59196CD4E2AC41958E276886 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E661223F57364063B509666C /* GoogleService-Info.plist */; };
+		6B865095660449D830AF13C4 /* iosMath in Frameworks */ = {isa = PBXBuildFile; productRef = 3F2758F4003B483DCE6CFC1C /* iosMath */; };
 		8A11B0E32F9A1C7300A1B001 /* ReadiumFuzi in Frameworks */ = {isa = PBXBuildFile; productRef = 8A11B0E22F9A1C7300A1B001 /* ReadiumFuzi */; };
 		9345BAE6E7C14A44A078A749 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E661223F57364063B509666C /* GoogleService-Info.plist */; };
 		AAAA1111AAAA1111AAAA0001 /* Nuke in Frameworks */ = {isa = PBXBuildFile; productRef = AAAA1111AAAA1111AAAA0002 /* Nuke */; };
@@ -204,6 +205,7 @@
 				46A6AB852FCD4ED60071B397 /* FirebaseMessaging in Frameworks */,
 				463C854D2FA4F48E008F9AD7 /* GoogleSignIn in Frameworks */,
 				46A6AB832FCD4ED60071B397 /* FirebaseMLModelDownloader in Frameworks */,
+				6B865095660449D830AF13C4 /* iosMath in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -360,6 +362,7 @@
 				46A6AB882FCD4ED60071B397 /* FirebaseRemoteConfig */,
 				46A6AB8A2FCD4ED60071B397 /* FirebaseStorage */,
 				46A6AB8C2FCD4ED60071B397 /* FirebaseStorageCombine-Community */,
+				3F2758F4003B483DCE6CFC1C /* iosMath */,
 			);
 			productName = "yuedu app";
 			productReference = 460D36592F51C5B8006E774C /* YueduReader.app */;
@@ -477,6 +480,7 @@
 				460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */,
 				463C854A2FA4F38E008F9AD7 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 				46A6AB5D2FCD4ED60071B397 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				4F766A6C466F0B91C61C6FB1 /* XCRemoteSwiftPackageReference "iosMath" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 460D365A2F51C5B8006E774C /* Products */;
@@ -1136,6 +1140,14 @@
 				minimumVersion = 12.14.0;
 			};
 		};
+		4F766A6C466F0B91C61C6FB1 /* XCRemoteSwiftPackageReference "iosMath" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kostub/iosMath.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.3.1;
+			};
+		};
 		8A11B0E12F9A1C7300A1B001 /* XCRemoteSwiftPackageReference "Fuzi" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/readium/Fuzi.git";
@@ -1155,6 +1167,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		3F2758F4003B483DCE6CFC1C /* iosMath */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4F766A6C466F0B91C61C6FB1 /* XCRemoteSwiftPackageReference "iosMath" */;
+			productName = iosMath;
+		};
 		460274842F710D7500486947 /* ReadiumAdapterLCPSQLite */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */;

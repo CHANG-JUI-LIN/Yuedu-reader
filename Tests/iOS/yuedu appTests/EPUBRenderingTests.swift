@@ -1,4 +1,5 @@
 import Testing
+import CoreText
 import Foundation
 import ReadiumZIPFoundation
 import UIKit
@@ -127,6 +128,108 @@ struct EPUBRenderingTests {
             }
         }
         #expect(foundTable)
+    }
+
+    @Test func htmlBuilderRendersMathMLAsCoreTextAttachment() async {
+        let builder = HTMLAttributedStringBuilder()
+        let result = await builder.build(html: """
+        <html><body>
+          <p>Euler
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <msup><mi>x</mi><mn>2</mn></msup>
+            </math>
+          </p>
+        </body></html>
+        """, config: testHTMLConfig())
+
+        #expect(result.attributedString.string.contains("\u{FFFC}"))
+
+        var foundMathAttachment = false
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        result.attributedString.enumerateAttributes(
+            in: NSRange(location: 0, length: result.attributedString.length)
+        ) { attributes, _, stop in
+            if attributes[delegateKey] != nil,
+               attributes[HTMLAttributedStringBuilder.semanticTagAttribute] as? String == "math" {
+                foundMathAttachment = true
+                stop.pointee = true
+            }
+        }
+        #expect(foundMathAttachment)
+    }
+
+    @Test func htmlBuilderRendersAlignStarMathMLTableAsAttachment() async {
+        let builder = HTMLAttributedStringBuilder()
+        let result = await builder.build(html: """
+        <html><body>
+          <p class="p d4p_eqn_block">
+            <math alttext="Alternative text not available" xmlns="http://www.w3.org/1998/Math/MathML">
+              <mtable columnalign="left" class="align-star">
+                <mtr>
+                  <mtd columnalign="right" class="align-odd">
+                    <mn>2</mn><mi>x</mi><mo>+</mo><mn>3</mn><mi>y</mi><mo>−</mo><mn>4</mn><mi>z</mi>
+                  </mtd>
+                  <mtd class="align-even">
+                    <mo>=</mo><mn>1</mn><mn>3</mn><mspace width="2em"/>
+                  </mtd>
+                  <mtd columnalign="right" class="align-odd">
+                    <mn>4</mn><msub><mrow><mi>x</mi></mrow><mrow><mn>1</mn></mrow></msub><mo>+</mo><mn>5</mn><msub><mrow><mi>x</mi></mrow><mrow><mn>2</mn></mrow></msub>
+                  </mtd>
+                  <mtd class="align-even">
+                    <mo>=</mo><mn>0</mn><mspace width="2em"/>
+                  </mtd>
+                  <mtd columnalign="right" class="align-label"/>
+                  <mtd class="align-label"><mspace width="2em"/></mtd>
+                </mtr>
+              </mtable>
+            </math>
+          </p>
+        </body></html>
+        """, config: testHTMLConfig())
+
+        #expect(result.attributedString.string.contains("\u{FFFC}"))
+        #expect(!result.attributedString.string.contains("\\begin"))
+        #expect(!result.attributedString.string.contains("aligned"))
+        #expect(!result.attributedString.string.contains("[math]"))
+
+        let info = firstMathImageRunInfo(in: result.attributedString)
+        #expect(info?.source == "mathml:")
+        #expect(info?.image != nil)
+        #expect((info?.drawWidth ?? 0) > 0)
+        #expect((info?.descent ?? 0) > 0)
+    }
+
+    @Test func renderableNodeRendererRendersMathMLAsCoreTextAttachment() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let ast = try #require(await builder.buildStyledAST(html: """
+        <html><body>
+          <p>
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <mfrac><mn>1</mn><mi>λ</mi></mfrac>
+            </math>
+          </p>
+        </body></html>
+        """, config: testHTMLConfig()))
+        let nodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
+        let renderer = NodeAttributedStringRenderer(
+            config: NodeAttributedStringRenderer.Config(
+                from: testRenderSettings(),
+                textColor: .label,
+                renderWidth: 320
+            )
+        )
+        let attributed = await renderer.render(nodes)
+
+        var foundMathAttachment = false
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        attributed.enumerateAttributes(in: NSRange(location: 0, length: attributed.length)) { attributes, _, stop in
+            if attributes[delegateKey] != nil,
+               attributes[HTMLAttributedStringBuilder.semanticTagAttribute] as? String == "math" {
+                foundMathAttachment = true
+                stop.pointee = true
+            }
+        }
+        #expect(foundMathAttachment)
     }
 
     @Test func htmlBuilderEmitsEPUBMediaAttachmentForAudioVideo() async {
@@ -720,6 +823,23 @@ struct EPUBRenderingTests {
             }
         }
     }
+}
+
+private func firstMathImageRunInfo(in attributedString: NSAttributedString) -> ImageRunInfo? {
+    let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+    var result: ImageRunInfo?
+    attributedString.enumerateAttributes(
+        in: NSRange(location: 0, length: attributedString.length)
+    ) { attributes, _, stop in
+        guard attributes[HTMLAttributedStringBuilder.semanticTagAttribute] as? String == "math",
+              let value = attributes[delegateKey]
+        else { return }
+        let delegate = value as! CTRunDelegate
+        let pointer = CTRunDelegateGetRefCon(delegate)
+        result = Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue()
+        stop.pointee = true
+    }
+    return result
 }
 
 private func testHTMLConfig() -> HTMLAttributedStringBuilder.Config {

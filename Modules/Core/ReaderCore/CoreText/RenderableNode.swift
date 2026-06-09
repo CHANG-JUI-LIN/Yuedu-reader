@@ -63,6 +63,9 @@ public indirect enum RenderableNode: Sendable {
     /// svgContent carries inline SVG XML for rasterization instead of src loading.
     case image(src: String, alt: String, style: RenderStyle = .none, svgContent: String? = nil)
 
+    /// MathML converted to LaTeX and rasterized with iosMath into a CoreText attachment.
+    case mathML(latex: String, alt: String, style: RenderStyle = .none, displayMode: MathDisplayMode = .inline)
+
     /// Rasterized HTML table. Keeps row/cell semantics intact until the final renderer stage.
     case table(HTMLTableModel, style: RenderStyle = .none)
 
@@ -256,6 +259,11 @@ public enum RenderTextAlignment: Sendable {
 public enum RenderFloatSide: Sendable {
     case left
     case right
+}
+
+public enum MathDisplayMode: Sendable {
+    case inline
+    case block
 }
 
 // MARK: - RenderColor (UIKit-independent color type)

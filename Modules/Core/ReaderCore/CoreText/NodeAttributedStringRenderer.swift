@@ -138,6 +138,9 @@ struct NodeAttributedStringRenderer {
         case .image(let src, let alt, let style, let svgContent):
             return await renderInlineImage(src: src, alt: alt, style: style, svgContent: svgContent, ctx: ctx)
 
+        case .mathML(let latex, let alt, let style, let displayMode):
+            return await renderMathML(latex: latex, alt: alt, style: style, displayMode: displayMode, ctx: ctx)
+
         case .table(let table, let style):
             return await renderTable(table, style: style, ctx: ctx)
 
@@ -721,6 +724,61 @@ struct NodeAttributedStringRenderer {
         )
     }
 
+    private func renderMathML(
+        latex: String,
+        alt: String,
+        style: RenderStyle,
+        displayMode: MathDisplayMode,
+        ctx: RenderContext
+    ) async -> NSAttributedString {
+        let mathCtx = applyInlineStyle(style, to: ctx)
+        let runMode: ImageRunInfo.DisplayMode = displayMode == .block ? .block : .inline
+        let maxWidth = max(1, config.renderWidth ?? 320)
+        let rendered = await MathMLImageRenderer.render(
+            latex: latex,
+            fontSize: mathCtx.font.pointSize,
+            textColor: mathCtx.textColor,
+            displayMode: runMode,
+            maxWidth: maxWidth
+        )
+        guard let rendered else {
+            var attrs = mathCtx.baseAttributes
+            attrs[.foregroundColor] = UIColor.secondaryLabel
+            return NSAttributedString(
+                string: MathMLLatexConverter.fallbackText(alt: alt, latex: latex),
+                attributes: attrs
+            )
+        }
+        let image = rendered.image
+
+        let metrics = await resolvedMathImageMetrics(
+            image: image,
+            style: style,
+            font: mathCtx.font,
+            displayMode: runMode,
+            descentFraction: rendered.descentFraction
+        )
+        let placeholder = NSMutableAttributedString(
+            attributedString: await makeImagePlaceholder(
+                image: image,
+                style: style,
+                ctx: mathCtx,
+                imageSource: "mathml:",
+                imageAlt: alt,
+                displayMode: runMode,
+                precomputedMetrics: metrics
+            )
+        )
+        if placeholder.length > 0 {
+            placeholder.addAttribute(
+                HTMLAttributedStringBuilder.semanticTagAttribute,
+                value: "math",
+                range: NSRange(location: 0, length: placeholder.length)
+            )
+        }
+        return placeholder
+    }
+
     private func renderImageOnlyBlock(
         payload: SingleImagePayload,
         blockStyle: RenderStyle,
@@ -1168,6 +1226,34 @@ struct NodeAttributedStringRenderer {
             drawHeight: drawHeight,
             totalWidth: totalWidth,
             ascent: ascent,
+            descent: descent
+        )
+    }
+
+    private func resolvedMathImageMetrics(
+        image: UIImage,
+        style: RenderStyle,
+        font: UIFont,
+        displayMode: ImageRunInfo.DisplayMode,
+        descentFraction: CGFloat
+    ) async -> ImageMetrics {
+        let metrics = await resolvedImageMetrics(
+            image: image,
+            style: style,
+            font: font,
+            displayMode: displayMode
+        )
+        guard displayMode == .inline, !isVertical(style) else {
+            return metrics
+        }
+        // Place the math baseline (descentFraction of the image height below its top-of-text) on the
+        // surrounding text baseline, instead of guessing a descent from the font metrics.
+        let descent = max(0, min(metrics.drawHeight, metrics.drawHeight * descentFraction))
+        return ImageMetrics(
+            drawWidth: metrics.drawWidth,
+            drawHeight: metrics.drawHeight,
+            totalWidth: metrics.totalWidth,
+            ascent: max(1, metrics.drawHeight - descent),
             descent: descent
         )
     }

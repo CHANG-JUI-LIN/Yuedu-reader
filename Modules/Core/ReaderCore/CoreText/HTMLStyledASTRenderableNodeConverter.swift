@@ -83,6 +83,15 @@ private extension HTMLAttributedStringBuilder.ElementNode {
                 node = .block(tag: tag, children: mappedChildren, style: style)
             }
 
+        case "math":
+            if let latex = MathMLLatexConverter.latex(from: self) {
+                let alt = attributes["alttext"] ?? attributes["alt"] ?? latex
+                let mode: MathDisplayMode = attributes["display"] == "block" || resolvedStyle.isBlock ? .block : .inline
+                node = .mathML(latex: latex, alt: alt, style: style, displayMode: mode)
+            } else {
+                node = .inline(tag: tag, children: mappedChildren, style: style)
+            }
+
         case "audio", "video":
             if let media = mediaAttachment {
                 node = .media(media, style: style)

@@ -879,6 +879,10 @@ final class HTMLAttributedStringBuilder {
                 return makeReviewBadgePlaceholder(marker: marker, href: href, style: element.resolvedStyle, config: config)
             }
 
+            if element.tag == "math" {
+                return await makeMathMLPlaceholder(element: element, config: config)
+            }
+
             if element.tag == "table" {
                 return await renderTableElement(element, config: config)
             }
@@ -2580,6 +2584,30 @@ final class HTMLAttributedStringBuilder {
         )
     }
 
+    private func resolvedMathImageMetrics(
+        image: UIImage,
+        config: Config,
+        style: ResolvedStyle,
+        font: UIFont,
+        displayMode: ImageRunInfo.DisplayMode,
+        descentFraction: CGFloat
+    ) -> ImageMetrics {
+        let metrics = resolvedImageMetrics(image: image, config: config, style: style)
+        guard displayMode == .inline, !config.writingMode.isVertical else {
+            return metrics
+        }
+        // Place the math baseline (descentFraction of the image height below its top-of-text) on the
+        // surrounding text baseline, instead of guessing a descent from the font metrics.
+        let descent = max(0, min(metrics.drawHeight, metrics.drawHeight * descentFraction))
+        return ImageMetrics(
+            drawWidth: metrics.drawWidth,
+            drawHeight: metrics.drawHeight,
+            totalWidth: metrics.totalWidth,
+            ascent: max(1, metrics.drawHeight - descent),
+            descent: descent
+        )
+    }
+
     private func makeSVGPlaceholder(
         svgContent: String,
         element: ElementNode,
@@ -2634,6 +2662,65 @@ final class HTMLAttributedStringBuilder {
         paragraph.paragraphSpacingBefore = style.paragraphSpacingBefore
         paragraph.paragraphSpacing = max(0, style.paragraphSpacing)
         placeholder.addAttribute(.paragraphStyle, value: paragraph, range: range)
+        return placeholder
+    }
+
+    private func makeMathMLPlaceholder(
+        element: ElementNode,
+        config: Config
+    ) async -> NSAttributedString {
+        guard let latex = MathMLLatexConverter.latex(from: element) else {
+            return NSAttributedString()
+        }
+
+        let style = element.resolvedStyle
+        let displayMode: ImageRunInfo.DisplayMode = (style.isBlock || element.attributes["display"] == "block") ? .block : .inline
+        let font = makeFont(from: style, config: config)
+        let rendered = await MathMLImageRenderer.render(
+            latex: latex,
+            fontSize: font.pointSize,
+            textColor: style.textColor,
+            displayMode: displayMode,
+            maxWidth: config.renderWidth
+        )
+
+        guard let rendered else {
+            var attrs = baseTextAttributes(style: style, config: config)
+            attrs[.foregroundColor] = UIColor.secondaryLabel
+            let fallback = MathMLLatexConverter.fallbackText(
+                alt: element.attributes["alttext"] ?? element.attributes["alt"],
+                latex: latex
+            )
+            return NSAttributedString(string: fallback, attributes: attrs)
+        }
+        let image = rendered.image
+
+        let metrics = resolvedMathImageMetrics(
+            image: image,
+            config: config,
+            style: style,
+            font: font,
+            displayMode: displayMode,
+            descentFraction: rendered.descentFraction
+        )
+        let placeholder = NSMutableAttributedString(
+            attributedString: makeImagePlaceholder(
+                image: image,
+                config: config,
+                style: style,
+                imageSource: "mathml:",
+                imageAlt: element.attributes["alttext"] ?? element.attributes["alt"] ?? latex,
+                displayMode: displayMode,
+                precomputedMetrics: metrics
+            )
+        )
+        if placeholder.length > 0 {
+            placeholder.addAttribute(
+                Self.semanticTagAttribute,
+                value: "math",
+                range: NSRange(location: 0, length: placeholder.length)
+            )
+        }
         return placeholder
     }
 
