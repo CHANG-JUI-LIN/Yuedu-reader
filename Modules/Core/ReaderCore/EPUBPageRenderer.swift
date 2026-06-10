@@ -232,19 +232,20 @@ final class EPUBPageRenderer: ObservableObject {
             chapterSourceHrefs: chapterSourceHrefs,
             customScheme: customScheme
         )
-        let newEngine = CoreTextPageEngine(
+        let effectiveSizeForBuilder = renderSize.width > 0 ? renderSize : lastViewportSize
+        let onlineBuilder = OnlineProviderAttributedStringBuilder(
+            provider: contentProvider,
+            renderSize: effectiveSizeForBuilder,
             resourceProvider: resourceAdapter,
+            chapterSourceHrefs: chapterSourceHrefs
+        )
+        let newEngine = CoreTextPageEngine(
+            attributedBuilder: onlineBuilder,
             renderSettings: settings,
             offsetStore: store
         )
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         self.engine = newEngine
-        // Online book: create a separate OnlineProviderAttributedStringBuilder for scrollEngine.
-        let effectiveSizeForBuilder = renderSize.width > 0 ? renderSize : lastViewportSize
-        let onlineBuilder = OnlineProviderAttributedStringBuilder(
-            provider: contentProvider,
-            renderSize: effectiveSizeForBuilder
-        )
         self.onlineBuilder = onlineBuilder
         self.scrollEngine = CoreTextScrollEngine(builder: onlineBuilder, renderSettings: settings)
         isCoreTextReady = false
