@@ -806,6 +806,7 @@ class ModernParserBridge {
 
     private func dumpRuntimeVariables() -> [String: String]? {
         var map = sourceRuleData.variableMap
+        map.merge(jsEngine.bookBridge.runtimeStateVariables()) { _, new in new }
         for (key, value) in jsEngine.bookBridge.runtimeVariables() where !value.isEmpty {
             map["book.variable.\(key)"] = value
         }

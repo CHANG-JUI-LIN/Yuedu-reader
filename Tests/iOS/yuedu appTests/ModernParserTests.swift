@@ -2285,6 +2285,30 @@ struct EdgeCaseTests {
         #expect(rule.rule == "")
     }
 
+    @Test("Legado book bridge exports media type runtime state")
+    func legadoBookBridgeExportsMediaTypeRuntimeState() {
+        let bridge = LegadoBookBridge(
+            durChapterIndex: 2,
+            durChapterTitle: "第 3 集",
+            order: 1,
+            type: 1,
+            imageStyle: "FULL",
+            name: "聚合聽書",
+            author: "主播",
+            coverUrl: "https://example.com/cover.jpg",
+            abstract: "簡介"
+        )
+
+        let state = bridge.runtimeStateVariables()
+
+        #expect(state["book.durChapterIndex"] == "2")
+        #expect(state["book.durChapterTitle"] == "第 3 集")
+        #expect(state["book.type"] == "1")
+        #expect(state["book.imageStyle"] == "FULL")
+        #expect(state["book.name"] == "聚合聽書")
+        #expect(state["book.author"] == "主播")
+    }
+
     @Test("LRUCache with capacity 1")
     func cacheCapacityOne() {
         let cache = LRUCache<String, Int>(capacity: 1)

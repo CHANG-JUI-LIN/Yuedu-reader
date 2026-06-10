@@ -80,6 +80,33 @@ import JavaScriptCore
     func runtimeVariables() -> [String: String] {
         variables
     }
+
+    func runtimeStateVariables() -> [String: String] {
+        var state: [String: String] = [
+            "book.durChapterIndex": "\(durChapterIndex)",
+            "book.order": "\(order)",
+            "book.type": "\(type)"
+        ]
+        if !durChapterTitle.isEmpty {
+            state["book.durChapterTitle"] = durChapterTitle
+        }
+        if !imageStyle.isEmpty {
+            state["book.imageStyle"] = imageStyle
+        }
+        if !name.isEmpty {
+            state["book.name"] = name
+        }
+        if !author.isEmpty {
+            state["book.author"] = author
+        }
+        if !coverUrl.isEmpty {
+            state["book.coverUrl"] = coverUrl
+        }
+        if !abstract.isEmpty {
+            state["book.abstract"] = abstract
+        }
+        return state
+    }
 }
 
 @objc protocol LegadoChapterBridgeExport: JSExport {
