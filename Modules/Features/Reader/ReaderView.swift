@@ -322,13 +322,59 @@ struct ReaderView: View {
             currentSpineIndex: spineIndex,
             currentCharOffset: charOffset
         ) { chapter in
-            guard let fragment = chapter.fragment, !fragment.isEmpty,
-                  let engine = epubRenderer.engine
-            else {
-                return 0
-            }
-            return engine.charOffset(forSpine: chapter.index, fragment: fragment)
+            guard let engine = epubRenderer.engine else { return 0 }
+            return tocAnchorOffset(for: chapter, engine: engine)
         }
+    }
+
+    private func tocAnchorOffset(
+        for chapter: BookChapter,
+        engine: any PageRenderingProvider
+    ) -> Int? {
+        guard let fragment = chapter.fragment, !fragment.isEmpty else { return 0 }
+
+        if let cfi = EPUBCFIResolver.parse(fragment),
+           let session = activePublicationSession {
+            let resolver = EPUBCFIResolver(
+                spineReferences: session.opfSpineReferences,
+                manifestItemsByID: session.opfManifestItemsByID
+            )
+            let spineIndex = resolver.resolveSpineIndex(cfi, chapters: session.chapters) ?? chapter.index
+            guard let layout = engine.layouts[spineIndex] else { return nil }
+            return resolver.resolveCharOffset(
+                cfi,
+                anchorOffsets: layout.anchorOffsets,
+                contentLength: layout.attributedString.length
+            )
+        }
+
+        return engine.charOffset(forSpine: chapter.index, fragment: fragment)
+    }
+
+    private func tocPosition(
+        for chapter: BookChapter,
+        engine: (any PageRenderingProvider)?
+    ) -> CoreTextReadingPosition {
+        guard usesCoreTextEPUB,
+              let engine,
+              let fragment = chapter.fragment,
+              !fragment.isEmpty
+        else {
+            return CoreTextReadingPosition(spineIndex: chapter.index, charOffset: 0)
+        }
+
+        var spineIndex = chapter.index
+        if let cfi = EPUBCFIResolver.parse(fragment),
+           let session = activePublicationSession {
+            let resolver = EPUBCFIResolver(
+                spineReferences: session.opfSpineReferences,
+                manifestItemsByID: session.opfManifestItemsByID
+            )
+            spineIndex = resolver.resolveSpineIndex(cfi, chapters: session.chapters) ?? chapter.index
+        }
+
+        let charOffset = tocAnchorOffset(for: chapter, engine: engine) ?? 0
+        return CoreTextReadingPosition(spineIndex: spineIndex, charOffset: charOffset)
     }
 
     private var tocPageOffsets: [UUID: Int] {
@@ -337,10 +383,11 @@ struct ReaderView: View {
         for chapter in chapters {
             // Resolve the entry's anchor to a char offset so sub-sections of one spine map to
             // distinct pages; fall back to the spine start when the anchor isn't laid out yet.
-            let charOffset = chapter.fragment.flatMap {
-                engine.charOffset(forSpine: chapter.index, fragment: $0)
-            } ?? 0
-            offsets[chapter.id] = engine.pageIndex(forSpine: chapter.index, charOffset: charOffset)
+            let position = tocPosition(for: chapter, engine: engine)
+            offsets[chapter.id] = engine.pageIndex(
+                forSpine: position.spineIndex,
+                charOffset: position.charOffset
+            )
         }
         return offsets
     }
@@ -2553,15 +2600,8 @@ struct ReaderView: View {
     /// Navigate to a TOC entry, honoring its in-spine anchor so sub-sections of one spine file
     /// land on their own page instead of the file's start.
     private func jumpToTOCEntry(_ chapter: BookChapter) {
-        let charOffset: Int
-        if let engine = epubRenderer.engine, usesCoreTextEPUB,
-           let fragment = chapter.fragment,
-           let resolved = engine.charOffset(forSpine: chapter.index, fragment: fragment) {
-            charOffset = resolved
-        } else {
-            charOffset = 0
-        }
-        jumpToChapter(chapter.index, charOffset: charOffset)
+        let position = tocPosition(for: chapter, engine: epubRenderer.engine)
+        jumpToChapter(position.spineIndex, charOffset: position.charOffset)
     }
 
     private func jumpToChapter(_ idx: Int, charOffset: Int = 0) {
@@ -2982,51 +3022,7 @@ struct ReaderView: View {
 
         // Prefer EPUB toc.ncx / nav.xhtml entries. Only fall back to spine when TOC is missing.
         if !session.tocEntries.isEmpty {
-            let spineIndexByHref: [String: Int] = Dictionary(
-                session.chapters.map { ($0.href, $0.index) },
-                uniquingKeysWith: { first, _ in first }
-            )
-
-            var seenTitles: Set<String> = []
-            chapters = session.tocEntries.compactMap { entry -> BookChapter? in
-                // Split the TOC href into spine path + anchor fragment. The path matches the
-                // spine file; the fragment (e.g. "part0005.html#anchor" → "anchor") locates the
-                // entry *within* that file so sub-sections sharing one spine resolve to distinct
-                // pages instead of all collapsing to the file's start.
-                let hrefWithoutFragment: String
-                let entryFragment: String?
-                if let hashIndex = entry.href.firstIndex(of: "#") {
-                    hrefWithoutFragment = String(entry.href[..<hashIndex])
-                    let frag = String(entry.href[entry.href.index(after: hashIndex)...])
-                    entryFragment = frag.isEmpty ? nil : frag
-                } else {
-                    hrefWithoutFragment = entry.href
-                    entryFragment = nil
-                }
-
-                let resolvedIndex = spineIndexByHref[hrefWithoutFragment]
-                    ?? spineIndexByHref.first(where: {
-                        hrefWithoutFragment.hasSuffix($0.key) || $0.key.hasSuffix(hrefWithoutFragment)
-                    })?.value
-                    ?? 0
-
-                // Dedupe consecutive identically-titled entries (e.g. multiple Contents pages),
-                // keyed by anchor too so distinct sub-sections in one spine survive.
-                let normalizedTitle = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                if normalizedTitle.isEmpty { return nil }
-                let dedupeKey = "\(resolvedIndex):\(entryFragment ?? ""):\(normalizedTitle)"
-                if seenTitles.contains(dedupeKey) { return nil }
-                seenTitles.insert(dedupeKey)
-
-                return BookChapter(
-                    index: resolvedIndex,
-                    title: entry.title,
-                    content: "",
-                    href: hrefWithoutFragment,
-                    level: entry.level,
-                    fragment: entryFragment
-                )
-            }
+            chapters = ReaderTOCChapterMapper.chapters(from: session.tocEntries, session: session)
         } else {
             // Fallback: spine-only
             chapters = session.chapters.map { chapter in

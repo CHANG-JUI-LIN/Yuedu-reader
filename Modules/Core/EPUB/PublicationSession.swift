@@ -427,6 +427,9 @@ final class PublicationSession {
     let fixedLayoutSpread: FixedLayoutSpread
     let fixedLayoutOrientation: FixedLayoutOrientation
     let fixedLayoutViewport: FixedLayoutViewport?
+    let opfManifestItemsByID: [String: EPUBManifestReference]
+    let opfSpineReferences: [EPUBSpineReference]
+    let pronunciationLexicons: [PLSLexicon]
     let mediaOverlaysByChapter: [Int: EPUBMediaOverlay]
     /// Pre-scanned chapter byte sizes loaded from SpinesCache. nil = not yet available.
     let cachedChapterByteSizes: [Int]?
@@ -452,6 +455,9 @@ final class PublicationSession {
         fixedLayoutSpread: FixedLayoutSpread,
         fixedLayoutOrientation: FixedLayoutOrientation,
         fixedLayoutViewport: FixedLayoutViewport?,
+        opfManifestItemsByID: [String: EPUBManifestReference],
+        opfSpineReferences: [EPUBSpineReference],
+        pronunciationLexicons: [PLSLexicon],
         mediaOverlaysByChapter: [Int: EPUBMediaOverlay],
         cachedChapterByteSizes: [Int]?,
         obfuscationIdentifier: String?,
@@ -473,6 +479,9 @@ final class PublicationSession {
         self.fixedLayoutSpread = fixedLayoutSpread
         self.fixedLayoutOrientation = fixedLayoutOrientation
         self.fixedLayoutViewport = fixedLayoutViewport
+        self.opfManifestItemsByID = opfManifestItemsByID
+        self.opfSpineReferences = opfSpineReferences
+        self.pronunciationLexicons = pronunciationLexicons
         self.mediaOverlaysByChapter = mediaOverlaysByChapter
         self.cachedChapterByteSizes = cachedChapterByteSizes
         self.obfuscationIdentifier = obfuscationIdentifier
@@ -625,6 +634,10 @@ final class PublicationSession {
             from: sourceURL,
             chapters: chapters
         )
+        let pronunciationLexicons = await parsePronunciationLexicons(
+            from: sourceURL,
+            manifestItemsByID: opfMetadata.manifestItemsByID
+        )
 
         let obfuscationIdentifier: String?
         let encryptionAlgorithmsByHref: [String: String]
@@ -666,6 +679,9 @@ final class PublicationSession {
                 defaultViewport: opfMetadata.defaultViewport,
                 pageViewports: fixedLayoutPageViewports
             ),
+            opfManifestItemsByID: opfMetadata.manifestItemsByID,
+            opfSpineReferences: opfMetadata.spineReferences,
+            pronunciationLexicons: pronunciationLexicons,
             mediaOverlaysByChapter: mediaOverlaysByChapter,
             cachedChapterByteSizes: cachedByteSizes,
             obfuscationIdentifier: obfuscationIdentifier,
@@ -1073,6 +1089,8 @@ final class PublicationSession {
         let fixedLayoutOrientation: FixedLayoutOrientation
         let defaultViewport: CGSize?
         let spineMetadataByHref: [String: OPFSpineItemMetadata]
+        let manifestItemsByID: [String: EPUBManifestReference]
+        let spineReferences: [EPUBSpineReference]
     }
 
     private struct OPFSpineItemMetadata {
@@ -1108,7 +1126,9 @@ final class PublicationSession {
             fixedLayoutSpread: .auto,
             fixedLayoutOrientation: .auto,
             defaultViewport: nil,
-            spineMetadataByHref: [:]
+            spineMetadataByHref: [:],
+            manifestItemsByID: [:],
+            spineReferences: []
         )
         guard let archive = try? await Archive(url: sourceURL, accessMode: .read) else { return fallback }
         guard
@@ -1196,7 +1216,9 @@ final class PublicationSession {
             fixedLayoutSpread: fixedLayoutSpread,
             fixedLayoutOrientation: fixedLayoutOrientation,
             defaultViewport: defaultViewport,
-            spineMetadataByHref: parseSpineMetadata(in: opfXML, opfPath: opfPath)
+            spineMetadataByHref: parseSpineMetadata(in: opfXML, opfPath: opfPath),
+            manifestItemsByID: parseManifestReferences(in: opfXML, opfPath: opfPath),
+            spineReferences: parseSpineReferences(in: opfXML, opfPath: opfPath)
         )
     }
 
@@ -1253,6 +1275,58 @@ final class PublicationSession {
         }
 
         return metadataByHref
+    }
+
+    private static func parseManifestReferences(in opfXML: String, opfPath: String) -> [String: EPUBManifestReference] {
+        let basePath = (opfPath as NSString).deletingLastPathComponent
+        return manifestItemsByID(in: opfXML, relativeTo: basePath).reduce(into: [:]) { result, entry in
+            result[entry.key] = EPUBManifestReference(
+                id: entry.key,
+                href: normalizedResourcePath(entry.value.href, relativeTo: basePath),
+                mediaType: entry.value.mediaType
+            )
+        }
+    }
+
+    private static func parseSpineReferences(in opfXML: String, opfPath: String) -> [EPUBSpineReference] {
+        let basePath = (opfPath as NSString).deletingLastPathComponent
+        let manifestItems = manifestItemsByID(in: opfXML, relativeTo: basePath)
+        let itemrefPattern = #"<itemref\b([^>]*)>"#
+        guard let regex = try? NSRegularExpression(pattern: itemrefPattern, options: [.caseInsensitive]) else {
+            return []
+        }
+
+        let nsXML = opfXML as NSString
+        var references: [EPUBSpineReference] = []
+        for match in regex.matches(in: opfXML, range: NSRange(location: 0, length: nsXML.length)) {
+            guard match.numberOfRanges > 1 else { continue }
+            let attrs = attributes(in: nsXML.substring(with: match.range(at: 1)))
+            guard let idref = attrs["idref"], let item = manifestItems[idref] else { continue }
+            references.append(EPUBSpineReference(
+                index: references.count,
+                idref: idref,
+                itemrefID: attrs["id"],
+                href: normalizedResourcePath(item.href, relativeTo: basePath),
+                linear: attrs["linear"]?.lowercased() != "no"
+            ))
+        }
+        return references
+    }
+
+    private static func parsePronunciationLexicons(
+        from sourceURL: URL,
+        manifestItemsByID: [String: EPUBManifestReference]
+    ) async -> [PLSLexicon] {
+        guard let archive = try? await Archive(url: sourceURL, accessMode: .read) else { return [] }
+        var lexicons: [PLSLexicon] = []
+        for item in manifestItemsByID.values
+        where item.mediaType?.lowercased() == "application/pls+xml" {
+            guard let xml = await readArchiveEntry(item.href, archive: archive),
+                  let lexicon = PLSLexicon.parse(data: Data(xml.utf8), href: item.href)
+            else { continue }
+            lexicons.append(lexicon)
+        }
+        return lexicons
     }
 
     private static func parseMediaOverlays(
