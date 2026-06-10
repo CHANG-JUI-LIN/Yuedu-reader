@@ -364,7 +364,6 @@ struct CoreTextScrollTests {
 
     @Test("styled EPUB scroll chunks keep block renderables and continuous ranges")
     func styledEPUBScrollChunksKeepBlockRenderables() async {
-        let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
             fontSize: 18,
             lineHeightMultiple: 1.4,
@@ -391,7 +390,7 @@ struct CoreTextScrollTests {
         </html>
         """
 
-        let attr = await builder.build(html: html, config: config).attributedString
+        let attr = await EPUBTestFixtures.renderIR(html: html, config: config)
         let output = CoreTextChunkSlicer.slice(
             attributedString: attr,
             chapterIndex: 0,
@@ -438,7 +437,7 @@ struct CoreTextScrollTests {
         </html>
         """
 
-        let attr = await builder.build(html: html, config: config).attributedString
+        let attr = await EPUBTestFixtures.renderIR(html: html, config: config, builder: builder)
         #expect(CoreTextPaginator.floatMarkers(in: attr).count == 1)
 
         let output = CoreTextChunkSlicer.slice(

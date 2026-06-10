@@ -14,7 +14,7 @@ struct UserFontSettingsTests {
 
         let selectedFont = try #require(UIFont(name: "Courier", size: 18))
         GlobalSettings.shared.selectedReaderFontPostScript = selectedFont.fontName
-        let builder = TXTAttributedStringBuilder(
+        let builder = NodeAttributedStringBuilder(
             chapters: [
                 UnifiedChapter(
                     index: 0,

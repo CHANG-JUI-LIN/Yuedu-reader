@@ -85,6 +85,17 @@ enum EPUBTestFixtures {
         )
     }
 
+    /// Renders raw HTML through the unified IR pipeline (buildStyledAST → RenderableNode →
+    /// NodeAttributedStringRenderer), the same path production uses for every chapter.
+    @MainActor
+    static func renderIR(
+        html: String,
+        config: HTMLAttributedStringBuilder.Config,
+        builder: HTMLAttributedStringBuilder = HTMLAttributedStringBuilder()
+    ) async -> NSAttributedString {
+        await builder.build(html: html, config: config).attributedString
+    }
+
     static func imageRunInfos(in attributedString: NSAttributedString) -> [(range: NSRange, info: ImageRunInfo)] {
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
         var runs: [(NSRange, ImageRunInfo)] = []
@@ -285,3 +296,106 @@ enum EPUBTestFixtures {
     }
 }
 
+// MARK: - IR build shim
+//
+// The legacy `HTMLAttributedStringBuilder.build(html:config:)` render path was deleted when the
+// pipelines were unified onto the RenderableNode IR. A large body of tests was written against
+// that entry point; this shim keeps their call sites intact while routing every one of them
+// through the production IR pipeline, so they now act as IR regression tests.
+extension HTMLAttributedStringBuilder {
+    struct IRShimBuildResult {
+        let attributedString: NSAttributedString
+        let imagePage: HTMLAttributedStringBuilder.ImagePage?
+        let pageBackgroundImage: UIImage?
+        let pageBackgroundImageSource: String?
+        let anchorOffsets: [String: Int]
+    }
+
+    @MainActor
+    func build(html: String, config: Config) async -> IRShimBuildResult {
+        guard let ast = await buildStyledAST(html: html, config: config) else {
+            return IRShimBuildResult(
+                attributedString: NSAttributedString(),
+                imagePage: nil,
+                pageBackgroundImage: nil,
+                pageBackgroundImageSource: nil,
+                anchorOffsets: [:]
+            )
+        }
+        let nodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
+        let settings = ReaderRenderSettings(
+            theme: "test",
+            textColor: config.textColor,
+            backgroundColor: config.backgroundColor,
+            fontSize: config.fontSize,
+            lineHeightMultiple: config.lineHeightMultiple,
+            lineSpacing: config.lineSpacing,
+            paragraphSpacing: config.paragraphSpacing,
+            letterSpacing: 0,
+            marginH: 0,
+            marginV: 0,
+            footerHeight: 0,
+            contentInsets: .zero,
+            writingMode: config.writingMode
+        )
+        // Mirror the legacy font delegation: prefer the builder's resolvedFont hook, then fall
+        // back to the resolvedFontFamily alias map (EPUB embedded-font aliases in production).
+        let resolvedFontHook = resolvedFont
+        let resolvedFamilyHook = resolvedFontFamily
+        let rendererConfig = NodeAttributedStringRenderer.Config(
+            from: settings,
+            textColor: config.textColor,
+            fontFamily: config.fontFamilyName,
+            renderWidth: config.renderWidth,
+            resolvedFont: { families, weight, italic, size in
+                if let font = resolvedFontHook?(families, weight, italic, size) {
+                    return font
+                }
+                guard let resolvedFamilyHook else { return nil }
+                for raw in families {
+                    let normalized = raw
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+                        .lowercased()
+                    guard !normalized.isEmpty,
+                          let mapped = resolvedFamilyHook(normalized),
+                          let font = UIFont(name: mapped, size: size)
+                    else { continue }
+                    return font
+                }
+                return nil
+            },
+            imageLoader: imageLoader,
+            mediaURLResolver: mediaURLResolver,
+            baseWritingDirection: config.baseWritingDirection
+        )
+        let attributed = NSMutableAttributedString(
+            attributedString: await NodeAttributedStringRenderer(config: rendererConfig).render(nodes)
+        )
+        let background = await pageBackgroundImage(from: ast)
+        // The legacy build() stamped the reader background across the whole chapter (minus block
+        // backgrounds, and not at all under a page background image); several render tests sample
+        // pixels relying on it.
+        if attributed.length > 0 {
+            let fullRange = NSRange(location: 0, length: attributed.length)
+            if background == nil {
+                attributed.addAttribute(.backgroundColor, value: config.backgroundColor, range: fullRange)
+                attributed.enumerateAttribute(
+                    HTMLAttributedStringBuilder.blockBackgroundColorAttribute,
+                    in: fullRange
+                ) { value, range, _ in
+                    if value != nil {
+                        attributed.removeAttribute(.backgroundColor, range: range)
+                    }
+                }
+            }
+        }
+        return IRShimBuildResult(
+            attributedString: attributed,
+            imagePage: await imagePage(from: ast),
+            pageBackgroundImage: background,
+            pageBackgroundImageSource: backgroundImageSource(from: ast),
+            anchorOffsets: anchorOffsets(in: attributed)
+        )
+    }
+}

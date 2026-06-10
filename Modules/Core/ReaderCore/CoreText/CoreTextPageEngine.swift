@@ -98,30 +98,6 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
     }
 }
 
-private final class EmptyBookResourceProvider: BookResourceProvider {
-    static let shared = EmptyBookResourceProvider()
-
-    var customScheme: String { "reader-empty" }
-    var chapters: [BookResourceChapterDescriptor] { [] }
-
-    func cssResourceHrefs() -> [String] { [] }
-    func resourceURL(for href: String) -> URL {
-        URL(string: "reader-empty://book/\(href)")!
-    }
-    func chapterDataSize(at index: Int) async throws -> Int { 0 }
-    func chapterIndex(for href: String) -> Int? {
-        _ = href
-        return nil
-    }
-    func chapterHTML(at index: Int) async throws -> String {
-        _ = index
-        throw PublicationSessionError.resourceNotFound("empty")
-    }
-    func response(for requestURL: URL) async throws -> PublicationResourceResponse {
-        throw PublicationSessionError.resourceNotFound(requestURL.absoluteString)
-    }
-}
-
 @MainActor
 final class CoreTextPageEngine: PageRenderingProvider {
 
@@ -147,11 +123,8 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private var preloadTasks: [Int: Task<Void, Never>] = [:]
     private var layoutGeneration: Int = 0
 
-    private let resourceProvider: any BookResourceProvider
-    private let attributedBuilder: (any AttributedStringBuilding)?
+    private let attributedBuilder: any AttributedStringBuilding
     private let paginationManager: PaginationManager
-    private let fontRegistrationService: any FontRegistrationServicing
-    private let styleResolver: EPUBStyleResolver
     let offsetStore: CharOffsetStore
 
     private(set) var renderSettings: ReaderRenderSettings
@@ -174,7 +147,6 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     deinit {
         chapterByteScanTask?.cancel()
-        styleResolver.cleanupFontFiles()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -217,42 +189,15 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     init(
-        resourceProvider: any BookResourceProvider,
-        renderSettings: ReaderRenderSettings,
-        fontRegistrationService: any FontRegistrationServicing = CoreTextFontRegistrationService(),
-        paginationManager: PaginationManager? = nil,
-        offsetStore: CharOffsetStore
-    ) {
-        self.resourceProvider = resourceProvider
-        self.attributedBuilder = nil
-        self.renderSettings = renderSettings
-        self.fontRegistrationService = fontRegistrationService
-        self.paginationManager = paginationManager ?? PaginationManager()
-        self.offsetStore = offsetStore
-        self.styleResolver = EPUBStyleResolver(
-            resourceProvider: resourceProvider,
-            fontRegistrationService: fontRegistrationService
-        )
-        subscribeMemoryWarning()
-    }
-
-    init(
         attributedBuilder: any AttributedStringBuilding,
         renderSettings: ReaderRenderSettings,
-        fontRegistrationService: any FontRegistrationServicing = CoreTextFontRegistrationService(),
         paginationManager: PaginationManager? = nil,
         offsetStore: CharOffsetStore
     ) {
-        self.resourceProvider = EmptyBookResourceProvider.shared
         self.attributedBuilder = attributedBuilder
         self.renderSettings = renderSettings
-        self.fontRegistrationService = fontRegistrationService
         self.paginationManager = paginationManager ?? PaginationManager()
         self.offsetStore = offsetStore
-        self.styleResolver = EPUBStyleResolver(
-            resourceProvider: EmptyBookResourceProvider.shared,
-            fontRegistrationService: fontRegistrationService
-        )
         subscribeMemoryWarning()
     }
 
@@ -264,9 +209,8 @@ final class CoreTextPageEngine: PageRenderingProvider {
         offsetStore: CharOffsetStore
     ) {
         self.init(
-            resourceProvider: ReadiumBookResourceAdapter(session: session),
+            attributedBuilder: EPUBAttributedStringBuilder(session: session, renderSize: .zero),
             renderSettings: renderSettings,
-            fontRegistrationService: fontRegistrationService,
             paginationManager: paginationManager,
             offsetStore: offsetStore
         )
@@ -282,35 +226,25 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     private var chapterCount: Int {
-        attributedBuilder?.chapterCount ?? resourceProvider.chapters.count
+        attributedBuilder.chapterCount
     }
 
     private func chapterTitle(at index: Int) -> String {
-        if let attributedBuilder {
-            return attributedBuilder.chapterTitle(at: index)
-        }
-        guard resourceProvider.chapters.indices.contains(index) else { return "" }
-        return resourceProvider.chapters[index].title
+        attributedBuilder.chapterTitle(at: index)
     }
 
     private func chapterSourceHref(at index: Int) -> String {
-        if let attributedBuilder {
-            return attributedBuilder.chapterSourceHref(at: index) ?? ""
-        }
-        guard resourceProvider.chapters.indices.contains(index) else { return "" }
-        return resourceProvider.chapters[index].href
+        attributedBuilder.chapterSourceHref(at: index) ?? ""
     }
 
     private func chapterIndex(for href: String) -> Int? {
-        if let attributedBuilder {
-            return attributedBuilder.chapterIndex(for: href)
-        }
-        return resourceProvider.chapterIndex(for: href)
+        attributedBuilder.chapterIndex(for: href)
     }
 
     func start(renderSize: CGSize, bookId: String) async {
         startupBeganUptime = ProcessInfo.processInfo.systemUptime
         self.renderSize = renderSize
+        updateBuilderRenderSize(renderSize)
         self.currentBookId = bookId
         didLogProgressFallback = false
         didLogProgressByteMode = false
@@ -348,11 +282,11 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     private func scanChapterByteSizes(for bookId: String) async {
-        startupTrace("byteScan begin bookId=\(bookId) chapters=\(chapterCount) mode=\(attributedBuilder != nil ? "builder" : "resource")")
+        startupTrace("byteScan begin bookId=\(bookId) chapters=\(chapterCount) mode=builder")
 
         // Lazy path: online books skip the full O(N) scan.
         // Sizes are filled incrementally via notifyChapterDataChanged.
-        if let attributedBuilder, attributedBuilder.prefersLazyByteScan {
+        if attributedBuilder.prefersLazyByteScan {
             guard !Task.isCancelled else { return }
             guard currentBookId == bookId else { return }
             chapterByteSizes = [Int](repeating: 0, count: attributedBuilder.chapterCount)
@@ -362,43 +296,12 @@ final class CoreTextPageEngine: PageRenderingProvider {
             return
         }
 
-        // Fast path: use pre-scanned sizes from SpinesCache (no ZIP I/O)
-        if let adapter = resourceProvider as? ReadiumBookResourceAdapter,
-           let cached = adapter.cachedChapterByteSizes(),
-           cached.count == chapterCount {
-            guard !Task.isCancelled else { return }
-            guard currentBookId == bookId else { return }
-            chapterByteSizes = cached
-            let totalBytes = cached.reduce(0, +)
-            startupTrace("byteScan cached chapters=\(cached.count) totalBytes=\(totalBytes)")
-            rebuildPageOffsets()
-            onChapterReady?(nil)
-            return
-        }
-
-        let sizes: [Int]
-        if let attributedBuilder {
-            var computed = [Int](repeating: 0, count: attributedBuilder.chapterCount)
-            for i in 0..<attributedBuilder.chapterCount {
-                if Task.isCancelled { return }
-                computed[i] = await attributedBuilder.chapterDataSize(at: i)
-                if i == 0 || i == attributedBuilder.chapterCount - 1 || i % 200 == 0 {
-                    startupTrace("byteScan progress=\(i + 1)/\(attributedBuilder.chapterCount)")
-                }
-            }
-            sizes = computed
-        } else {
-            sizes = await withTaskGroup(of: (Int, Int).self) { group in
-                for i in resourceProvider.chapters.indices {
-                    group.addTask {
-                        if Task.isCancelled { return (i, 0) }
-                        let size = (try? await self.resourceProvider.chapterDataSize(at: i)) ?? 0
-                        return (i, size)
-                    }
-                }
-                var computed = [Int](repeating: 0, count: resourceProvider.chapters.count)
-                for await (idx, size) in group { computed[idx] = size }
-                return computed
+        var sizes = [Int](repeating: 0, count: attributedBuilder.chapterCount)
+        for i in 0..<attributedBuilder.chapterCount {
+            if Task.isCancelled { return }
+            sizes[i] = await attributedBuilder.chapterDataSize(at: i)
+            if i == 0 || i == attributedBuilder.chapterCount - 1 || i % 200 == 0 {
+                startupTrace("byteScan progress=\(i + 1)/\(attributedBuilder.chapterCount)")
             }
         }
 
@@ -409,11 +312,6 @@ final class CoreTextPageEngine: PageRenderingProvider {
         startupTrace("byteScan done chapters=\(sizes.count) totalBytes=\(totalBytes)")
         rebuildPageOffsets()
         onChapterReady?(nil)
-
-        // Persist sizes to SpinesCache so next open skips the scan entirely
-        if let adapter = resourceProvider as? ReadiumBookResourceAdapter {
-            adapter.saveChapterByteSizes(sizes)
-        }
     }
 
     /// Global progress (0.0 ~ 1.0).
@@ -426,7 +324,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         let totalChapters = max(chapterCount, 1)
         let clampedSpine = min(max(spineIndex, 0), totalChapters - 1)
 
-        if attributedBuilder?.prefersLazyByteScan == true {
+        if attributedBuilder.prefersLazyByteScan {
             let layout = _layouts[clampedSpine]
             let charLen = layout?.attributedString.length ?? 0
             let chapterFraction: Double
@@ -471,7 +369,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         guard totalChapters > 0 else { return (0, 0) }
 
         // Online books: align with totalProgress's chapter-index-based approach to avoid jumping to wrong chapters when dragging the slider
-        if attributedBuilder?.prefersLazyByteScan == true {
+        if attributedBuilder.prefersLazyByteScan {
             let scaled = progress * Double(totalChapters)
             let idx = max(0, min(Int(scaled), totalChapters - 1))
             let chapterFraction = max(0.0, min(1.0, scaled - Double(idx)))
@@ -700,13 +598,11 @@ _layouts[spineIndex] = nil
         chapterSnapshots.removeObject(forKey: NSNumber(value: spineIndex))
 
         // 2. Incrementally update the chapter's byte size (O(1), no full rescan)
-        if let builder = attributedBuilder {
-            let size = await builder.chapterDataSize(at: spineIndex)
-            if spineIndex < chapterByteSizes.count {
-                chapterByteSizes[spineIndex] = size
-            } else if chapterByteSizes.count == spineIndex {
-                chapterByteSizes.append(size)
-            }
+        let size = await attributedBuilder.chapterDataSize(at: spineIndex)
+        if spineIndex < chapterByteSizes.count {
+            chapterByteSizes[spineIndex] = size
+        } else if chapterByteSizes.count == spineIndex {
+            chapterByteSizes.append(size)
         }
 
         // 3. Reload the chapter (preloadChapter checks layouts[spineIndex] == nil before executing)
@@ -727,125 +623,25 @@ _layouts[spineIndex] == nil else { return }
         guard !shouldAbortPreload(generation: generation) else { return }
         print("[FlipTrace] preload begin spine=\(spineIndex) generation=\(generation) layouts=\(_layouts.keys.sorted())")
 
-        if let attributedBuilder {
-            guard let buildResult = try? await attributedBuilder.buildChapter(
-                at: spineIndex,
-                settings: renderSettings,
-                themeTextColor: themeTextColor,
-                themeBackgroundColor: themeBackgroundColor
-            ) else {
-                print("[CoreTextEngine] preloadChapter[\(spineIndex)] FAILED to build attributed string")
-                return
-            }
-            guard !shouldAbortPreload(generation: generation) else { return }
-
-            let request = PaginationRequest(
-                spineIndex: spineIndex,
-                attributedString: buildResult.attributedString,
-                imagePage: buildResult.imagePage,
-                pageBackgroundImage: buildResult.pageBackgroundImage,
-                anchorOffsets: buildResult.anchorOffsets,
-                renderSize: renderSize,
-                fontSize: renderSettings.fontSize,
-                lineSpacing: renderSettings.lineSpacing,
-                paragraphSpacing: renderSettings.paragraphSpacing,
-                letterSpacing: renderSettings.letterSpacing,
-                contentInsets: currentContentInsets(),
-                writingMode: renderSettings.writingMode
-            )
-            let layout = await paginationManager.paginate(request).layout
-            guard !shouldAbortPreload(generation: generation) else { return }
-
-            _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
-            print("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
-            generateSnapshot(for: spineIndex)
-            rebuildPageOffsets()
-            return
-        }
-
-        if spineIndex == 0 {
-            let cssHrefs = resourceProvider.cssResourceHrefs()
-            print("[CoreTextEngine] Publication CSS hrefs: \(cssHrefs)")
-        }
-
-        guard let html = try? await resourceProvider.chapterHTML(at: spineIndex) else {
-            print("[CoreTextEngine] preloadChapter[\(spineIndex)] FAILED to get HTML")
+        guard let buildResult = try? await attributedBuilder.buildChapter(
+            at: spineIndex,
+            settings: renderSettings,
+            themeTextColor: themeTextColor,
+            themeBackgroundColor: themeBackgroundColor
+        ) else {
+            print("[CoreTextEngine] preloadChapter[\(spineIndex)] FAILED to build attributed string")
             return
         }
         guard !shouldAbortPreload(generation: generation) else { return }
 
-        let chapterHref = chapterSourceHref(at: spineIndex)
-        let localBuilder = HTMLAttributedStringBuilder()
-        localBuilder.resolvedFont = { [weak self] families, weight, italic, size in
-            self?.styleResolver.resolveRegisteredFont(
-                families: families,
-                weight: weight,
-                italic: italic,
-                size: size
-            )
-        }
-        localBuilder.resolvedFontFamily = { [weak self] rawName in
-            guard let self else { return nil }
-            let normalized = rawName
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
-                .lowercased()
-            return self.styleResolver.registeredFontFaces[normalized]?.postScriptName
-                ?? self.styleResolver.registeredFontFaces[normalized]?.familyName
-        }
-        localBuilder.imageLoader = { [weak self] src in
-            guard let self else { return nil }
-            return await self.loadImageResource(from: src, chapterHref: chapterHref)
-        }
-        // Resolve <audio>/<video> source hrefs to the book's `reader-book://` resource URL so the
-        // player can extract & play them. Without this the raw relative href (e.g. `../video/x.mp4`)
-        // reaches AVPlayer with no scheme and playback fails. Mirrors `cssLoader`'s resolution.
-        localBuilder.mediaURLResolver = { [weak resourceProvider] src in
-            guard let resourceProvider else { return nil }
-            let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
-            return resourceProvider.resourceURL(for: resolved).absoluteString
-        }
-        localBuilder.cssLoader = { [weak resourceProvider] href in
-            guard let resourceProvider else { return nil }
-            let resolved = EPUBStyleResolver.resolveImageHref(href, chapterHref: chapterHref)
-            let url = resourceProvider.resourceURL(for: resolved)
-            CoreTextPaginator.debugVerticalLog("EPUBFLOW engine.css.fetch spine=\(spineIndex) href=\(href) chapter=\(chapterHref) resolved=\(resolved)")
-            print("[CoreTextEngine] cssLoader href=\(href) → resolved=\(resolved) → url=\(url)")
-            do {
-                let response = try await resourceProvider.response(for: url)
-                let cssText = String(data: response.data, encoding: .utf8) ?? ""
-                let processed = await self.styleResolver.processStylesheet(cssText, cssHref: resolved, chapterHref: chapterHref)
-                CoreTextPaginator.debugVerticalLog("EPUBFLOW engine.css.loaded spine=\(spineIndex) href=\(href) rawLen=\(cssText.count) processedLen=\(processed.count)")
-                print("[CoreTextEngine] cssLoader OK len=\(processed.count)")
-                return processed.isEmpty ? nil : processed
-            } catch {
-                CoreTextPaginator.debugVerticalLog("EPUBFLOW engine.css.failed spine=\(spineIndex) href=\(href) error=\(error)")
-                print("[CoreTextEngine] cssLoader ERROR: \(error)")
-                return nil
-            }
-        }
-        let config = currentBuilderConfig()
-        CoreTextPaginator.debugVerticalLog("EPUBFLOW engine.preload.begin spine=\(spineIndex) href=\(chapterHref) htmlLen=\(html.count) configWritingMode=\(config.writingMode) fontSize=\(config.fontSize) renderWidth=\(config.renderWidth)")
-        print("[CoreTextEngine] preloadChapter[\(spineIndex)] htmlLen=\(html.count) fontSize=\(config.fontSize) renderSize=\(renderSize)")
-        let buildResult = await localBuilder.build(html: html, config: config)
-        guard !shouldAbortPreload(generation: generation) else { return }
-        let attrStr = buildResult.attributedString
-        let pageBackgroundImage = await resolvedPageBackgroundImage(
-            initial: buildResult.pageBackgroundImage,
-            source: buildResult.pageBackgroundImageSource,
-            chapterHref: chapterHref
-        )
-        guard !shouldAbortPreload(generation: generation) else { return }
-        print("[CoreTextEngine] preloadChapter[\(spineIndex)] attrStrLen=\(attrStr.length)")
-        CoreTextPaginator.debugVerticalLog("EPUBFLOW engine.preload.built spine=\(spineIndex) attrLen=\(attrStr.length) cssDetectedVertical=\(localBuilder.detectedVerticalWritingMode)")
         let request = PaginationRequest(
             spineIndex: spineIndex,
-            attributedString: attrStr,
+            attributedString: buildResult.attributedString,
             imagePage: buildResult.imagePage,
-            pageBackgroundImage: pageBackgroundImage,
+            pageBackgroundImage: buildResult.pageBackgroundImage,
             anchorOffsets: buildResult.anchorOffsets,
             renderSize: renderSize,
-            fontSize: config.fontSize,
+            fontSize: renderSettings.fontSize,
             lineSpacing: renderSettings.lineSpacing,
             paragraphSpacing: renderSettings.paragraphSpacing,
             letterSpacing: renderSettings.letterSpacing,
@@ -854,102 +650,11 @@ _layouts[spineIndex] == nil else { return }
         )
         let layout = await paginationManager.paginate(request).layout
         guard !shouldAbortPreload(generation: generation) else { return }
-        print("[CoreTextEngine] preloadChapter[\(spineIndex)] pageCount=\(layout.pageRanges.count)")
-        // Apply the current theme colors to prevent preload tasks that started before a theme change
-        // from overwriting the new theme with stale colors after the change completes.
-_layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
+
+        _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
         print("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
         generateSnapshot(for: spineIndex)
         rebuildPageOffsets()
-    }
-
-    private func resolvedPageBackgroundImage(
-        initial: UIImage?,
-        source: String?,
-        chapterHref: String
-    ) async -> UIImage? {
-        if let initial {
-            return initial
-        }
-        guard let source, !source.isEmpty else { return nil }
-        if let image = await loadImageResource(from: source, chapterHref: chapterHref) {
-            return image
-        }
-        print("[CoreTextEngine] page background load FAILED source=\(source) chapter=\(chapterHref)")
-        return nil
-    }
-
-    private func loadImageResource(from source: String, chapterHref: String) async -> UIImage? {
-        let candidates = imageCandidateHrefs(for: source, chapterHref: chapterHref)
-        print("[ImageLoader] src=\(source) chapter=\(chapterHref) candidates=\(candidates)")
-        for candidate in candidates {
-            if let absolute = URL(string: candidate), absolute.scheme != nil {
-                if let response = try? await resourceProvider.response(for: absolute),
-                   let image = UIImage(data: response.data) {
-                    print("[ImageLoader] loaded via absolute URL: \(candidate)")
-                    return image
-                }
-                if absolute.scheme == resourceProvider.customScheme {
-                    let fallbackHref = absolute.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                    let fallbackURL = resourceProvider.resourceURL(for: fallbackHref)
-                    if let response = try? await resourceProvider.response(for: fallbackURL),
-                       let image = UIImage(data: response.data) {
-                        print("[ImageLoader] loaded via scheme fallback: \(fallbackHref)")
-                        return image
-                    }
-                    print("[ImageLoader] scheme fallback failed: \(fallbackHref)")
-                } else {
-                    print("[ImageLoader] absolute URL failed: \(candidate)")
-                }
-            } else if let response = try? await resourceProvider.response(for: resourceProvider.resourceURL(for: candidate)),
-                      let image = UIImage(data: response.data) {
-                print("[ImageLoader] loaded via relative path: \(candidate)")
-                return image
-            } else {
-                let url = resourceProvider.resourceURL(for: candidate)
-                if let response = try? await resourceProvider.response(for: url) {
-                    print("[ImageLoader] UIImage decode failed for: \(candidate) dataLen=\(response.data.count) url=\(url)")
-                } else {
-                    print("[ImageLoader] session.response failed for: \(candidate) url=\(url)")
-                }
-            }
-        }
-        print("[ImageLoader] ALL candidates failed for src=\(source)")
-        return nil
-    }
-
-    private func imageCandidateHrefs(for source: String, chapterHref: String) -> [String] {
-        guard !source.isEmpty else { return [] }
-        var candidates: [String] = []
-
-        if source.hasPrefix(resourceProvider.customScheme + "://") || source.hasPrefix("http://") || source.hasPrefix("https://") {
-            candidates.append(source)
-            if let absolute = URL(string: source), absolute.scheme == resourceProvider.customScheme {
-                let fallbackHref = absolute.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                if !fallbackHref.isEmpty {
-                    candidates.append(fallbackHref)
-                }
-            }
-        } else {
-            candidates.append(EPUBStyleResolver.resolveImageHref(source, chapterHref: chapterHref))
-            let raw = source.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            if !raw.isEmpty {
-                candidates.append(raw)
-            }
-            let basename = (raw as NSString).lastPathComponent
-            if !basename.isEmpty {
-                candidates.append(basename)
-            }
-        }
-
-        var deduped: [String] = []
-        var seen = Set<String>()
-        for candidate in candidates where !candidate.isEmpty {
-            if seen.insert(candidate).inserted {
-                deduped.append(candidate)
-            }
-        }
-        return deduped
     }
 
     func invalidateLayout(newSize: CGSize) async {
@@ -958,6 +663,7 @@ _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backg
         cancelPendingWork()
         isRelaying = true
         renderSize = newSize
+        updateBuilderRenderSize(newSize)
         paginationManager.invalidate(reason: .viewSizeChanged)
 
         // Only re-layout chapters currently held in memory
@@ -1354,21 +1060,8 @@ _layouts[spineIndex] = _layouts[spineIndex]?.withUpdatedColors(textColor: textCo
         renderSettings.contentInsets
     }
 
-    private func currentBuilderConfig() -> HTMLAttributedStringBuilder.Config {
-        let fontSize = renderSettings.fontSize
-        let horizontalInsets = renderSettings.contentInsets.left + renderSettings.contentInsets.right
-        return HTMLAttributedStringBuilder.Config(
-            fontSize: fontSize,
-            lineHeightMultiple: renderSettings.lineHeightMultiple,
-            lineSpacing: renderSettings.lineSpacing,
-            paragraphSpacing: renderSettings.paragraphSpacing,
-            firstLineIndent: 0,
-            textColor: currentTextColor(),
-            backgroundColor: currentBackgroundColor(),
-            fontFamilyName: nil,
-            renderWidth: max(1, renderSize.width - horizontalInsets),
-            writingMode: renderSettings.writingMode
-        )
+    private func updateBuilderRenderSize(_ size: CGSize) {
+        (attributedBuilder as? RenderSizeAwareAttributedStringBuilding)?.updateRenderSize(size)
     }
 
     /// Returns appropriate text color. GlobalSettings does not expose a theme enum,

@@ -107,8 +107,7 @@ struct EPUBRenderingTests {
     }
 
     @Test func htmlBuilderRasterizesTablesAndPreservesSemanticTag() async {
-        let builder = HTMLAttributedStringBuilder()
-        let result = await builder.build(html: """
+        let attributed = await EPUBTestFixtures.renderIR(html: """
         <html><body>
           <article>
             <table><caption>Schedule</caption><tr><th>Time</th><th>Title</th></tr><tr><td>09:00</td><td>Intro</td></tr></table>
@@ -116,11 +115,11 @@ struct EPUBRenderingTests {
         </body></html>
         """, config: testHTMLConfig())
 
-        #expect(result.attributedString.string.contains("\u{FFFC}"))
+        #expect(attributed.string.contains("\u{FFFC}"))
         var foundTable = false
-        result.attributedString.enumerateAttribute(
+        attributed.enumerateAttribute(
             HTMLAttributedStringBuilder.semanticTagAttribute,
-            in: NSRange(location: 0, length: result.attributedString.length)
+            in: NSRange(location: 0, length: attributed.length)
         ) { value, _, stop in
             if value as? String == "table" {
                 foundTable = true
@@ -131,8 +130,7 @@ struct EPUBRenderingTests {
     }
 
     @Test func htmlBuilderRendersMathMLAsCoreTextAttachment() async {
-        let builder = HTMLAttributedStringBuilder()
-        let result = await builder.build(html: """
+        let attributed = await EPUBTestFixtures.renderIR(html: """
         <html><body>
           <p>Euler
             <math xmlns="http://www.w3.org/1998/Math/MathML">
@@ -142,12 +140,12 @@ struct EPUBRenderingTests {
         </body></html>
         """, config: testHTMLConfig())
 
-        #expect(result.attributedString.string.contains("\u{FFFC}"))
+        #expect(attributed.string.contains("\u{FFFC}"))
 
         var foundMathAttachment = false
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
-        result.attributedString.enumerateAttributes(
-            in: NSRange(location: 0, length: result.attributedString.length)
+        attributed.enumerateAttributes(
+            in: NSRange(location: 0, length: attributed.length)
         ) { attributes, _, stop in
             if attributes[delegateKey] != nil,
                attributes[HTMLAttributedStringBuilder.semanticTagAttribute] as? String == "math" {
@@ -159,8 +157,7 @@ struct EPUBRenderingTests {
     }
 
     @Test func htmlBuilderRendersAlignStarMathMLTableAsAttachment() async {
-        let builder = HTMLAttributedStringBuilder()
-        let result = await builder.build(html: """
+        let attributed = await EPUBTestFixtures.renderIR(html: """
         <html><body>
           <p class="p d4p_eqn_block">
             <math alttext="Alternative text not available" xmlns="http://www.w3.org/1998/Math/MathML">
@@ -187,12 +184,12 @@ struct EPUBRenderingTests {
         </body></html>
         """, config: testHTMLConfig())
 
-        #expect(result.attributedString.string.contains("\u{FFFC}"))
-        #expect(!result.attributedString.string.contains("\\begin"))
-        #expect(!result.attributedString.string.contains("aligned"))
-        #expect(!result.attributedString.string.contains("[math]"))
+        #expect(attributed.string.contains("\u{FFFC}"))
+        #expect(!attributed.string.contains("\\begin"))
+        #expect(!attributed.string.contains("aligned"))
+        #expect(!attributed.string.contains("[math]"))
 
-        let info = firstMathImageRunInfo(in: result.attributedString)
+        let info = firstMathImageRunInfo(in: attributed)
         #expect(info?.source == "mathml:")
         #expect(info?.image != nil)
         #expect((info?.drawWidth ?? 0) > 0)
@@ -235,14 +232,14 @@ struct EPUBRenderingTests {
     @Test func htmlBuilderEmitsEPUBMediaAttachmentForAudioVideo() async {
         let builder = HTMLAttributedStringBuilder()
         builder.mediaURLResolver = { "reader-book://test/\($0)" }
-        let result = await builder.build(html: """
-        <html><body><audio title="Narration"><source src="audio/ch1.mp3" type="audio/mpeg"/></audio></body></html>
-        """, config: testHTMLConfig())
+        let attributed = await EPUBTestFixtures.renderIR(html: """
+        <html><body><audio title="Narration" controls="controls"><source src="audio/ch1.mp3" type="audio/mpeg"/></audio></body></html>
+        """, config: testHTMLConfig(), builder: builder)
 
         var media: EPUBMediaAttachment?
-        result.attributedString.enumerateAttribute(
+        attributed.enumerateAttribute(
             HTMLAttributedStringBuilder.mediaAttachmentAttribute,
-            in: NSRange(location: 0, length: result.attributedString.length)
+            in: NSRange(location: 0, length: attributed.length)
         ) { value, _, stop in
             if let value = value as? EPUBMediaAttachment {
                 media = value
@@ -256,15 +253,12 @@ struct EPUBRenderingTests {
     }
 
     @Test func htmlBuilderHonorsDirAttributeAndCSSDirection() async {
-        let builder = HTMLAttributedStringBuilder()
-        let result = await builder.build(html: """
+        let attributed = await EPUBTestFixtures.renderIR(html: """
         <html><body dir="rtl">
           <p>שלום עולם</p>
           <p style="direction: ltr">English override</p>
         </body></html>
         """, config: testHTMLConfig())
-
-        let attributed = result.attributedString
         let text = attributed.string as NSString
         let hebrewRange = text.range(of: "שלום")
         let englishRange = text.range(of: "English")
@@ -691,7 +685,6 @@ struct EPUBRenderingTests {
     /// description render on separate lines (a paragraph break sits between them) instead of
     /// running together inline.
     @Test func tocLabelAndDescRenderOnSeparateLines() async {
-        let builder = HTMLAttributedStringBuilder()
         let config = HTMLAttributedStringBuilder.Config(
             fontSize: 18,
             lineHeightMultiple: 1.4,
@@ -714,7 +707,7 @@ struct EPUBRenderingTests {
           </ol></nav>
         </body></html>
         """
-        let attributed = await builder.build(html: html, config: config).attributedString
+        let attributed = await EPUBTestFixtures.renderIR(html: html, config: config)
         let string = attributed.string as NSString
         let label = string.range(of: "LabelAlpha")
         let desc = string.range(of: "DescBeta")
