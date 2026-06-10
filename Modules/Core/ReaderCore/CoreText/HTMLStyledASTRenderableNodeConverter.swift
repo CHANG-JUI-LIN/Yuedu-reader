@@ -72,6 +72,12 @@ private extension HTMLAttributedStringBuilder.ElementNode {
         let myFontSize = resolvedStyle.fontSize
         let mappedChildren = HTMLStyledASTRenderableNodeConverter.mapChildren(children, parentFontSize: myFontSize)
         var style = RenderStyle.from(resolvedStyle: resolvedStyle, parentFontSize: parentFontSize)
+        let ssmlAlphabet = attributes["ssml:alphabet"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let ssmlIPA = attributes["ssml:ph"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !ssmlIPA.isEmpty,
+           ssmlAlphabet == nil || ssmlAlphabet == "ipa" {
+            style.ssmlIPA = ssmlIPA
+        }
         style.isInlineAnnotation = isInlineAnnotationElement
         if style.isInlineAnnotation {
             CoreTextPaginator.debugVerticalLog("EPUBFLOW converter.inlineAnnotation tag=\(tag) class=\(classes.joined(separator: ".")) fontMultiplier=\(style.fontSizeMultiplier) childCount=\(mappedChildren.count)")

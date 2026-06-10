@@ -37,6 +37,57 @@ struct TTSCoordinatorTests {
         #expect(CustomHTTPProvider().displayName == "網路語音")
     }
 
+    @Test func directChapterAudioResolverAcceptsAudioURL() {
+        let request = DirectChapterAudioResolver.request(from: "https://audio.example.com/book/001.mp3")
+
+        #expect(request?.url?.absoluteString == "https://audio.example.com/book/001.mp3")
+    }
+
+    @Test func directChapterAudioResolverAcceptsLegadoURLHeaders() {
+        let text = #"https://audio.example.com/book/001.m4a,{"headers":{"Referer":"https://book.example.com","User-Agent":"Yuedu"}}"#
+
+        let request = DirectChapterAudioResolver.request(from: text)
+
+        #expect(request?.url?.absoluteString == "https://audio.example.com/book/001.m4a")
+        #expect(request?.value(forHTTPHeaderField: "Referer") == "https://book.example.com")
+        #expect(request?.value(forHTTPHeaderField: "User-Agent") == "Yuedu")
+    }
+
+    @Test func directChapterAudioResolverExtractsPlaybackLinkLine() {
+        let text = """
+        本章音訊
+        播放直鏈：
+        https://cdn.example.com/audio/episode.aac?token=abc
+        """
+
+        let request = DirectChapterAudioResolver.request(from: text)
+
+        #expect(request?.url?.absoluteString == "https://cdn.example.com/audio/episode.aac?token=abc")
+    }
+
+    @Test func directChapterAudioResolverRejectsNormalChapterText() {
+        let request = DirectChapterAudioResolver.request(from: "第一章\n這是一段正常小說內容，裡面沒有音訊。")
+
+        #expect(request == nil)
+    }
+
+    @Test func playbackRoutingUsesHTTPForDirectChapterAudioWithoutTemplate() {
+        #expect(
+            TTSPlaybackRouting.shouldUseHTTP(
+                text: "https://audio.example.com/book/001.mp3",
+                httpTemplate: "",
+                useSystemVoice: false
+            )
+        )
+        #expect(
+            !TTSPlaybackRouting.shouldUseHTTP(
+                text: "第一章\n普通章節文字",
+                httpTemplate: "",
+                useSystemVoice: false
+            )
+        )
+    }
+
     @Test func legadoVoiceSourceJSONParsesNameURLAndNumericID() throws {
         let json = """
         [

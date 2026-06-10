@@ -507,7 +507,8 @@ struct NodeAttributedStringRenderer {
 
     private func applyInlineStyle(_ style: RenderStyle, to ctx: RenderContext) -> RenderContext {
         guard style.bold || style.italic || style.color != nil || !style.fontFamilies.isEmpty
-                || style.underline || style.strikethrough || style.fontSizeMultiplier != 1.0 else { return ctx }
+                || style.underline || style.strikethrough || style.fontSizeMultiplier != 1.0
+                || style.ssmlIPA != nil else { return ctx }
         var newCtx = ctx
         let families = style.fontFamilies.isEmpty ? ctx.fontFamilies : style.fontFamilies
         let bold = style.bold || ctx.font.isBold
@@ -521,6 +522,7 @@ struct NodeAttributedStringRenderer {
         if let c = style.color { newCtx.textColor = c.uiColor; newCtx.hasCSSColor = true }
         if style.underline { newCtx.underline = true }
         if style.strikethrough { newCtx.strikethrough = true }
+        if let ipa = style.ssmlIPA { newCtx.ipaPronunciation = ipa }
         return newCtx
     }
 
@@ -1543,6 +1545,7 @@ struct NodeAttributedStringRenderer {
         var baselineOffset: CGFloat
         var lineHeightMultiple: CGFloat
         var linkHref: String?
+        var ipaPronunciation: String?
         var underline: Bool
         var strikethrough: Bool
         var inheritedBlockMarginLeft: CGFloat
@@ -1566,6 +1569,9 @@ struct NodeAttributedStringRenderer {
                 // Tappable. Default link tint is applied in the `.anchor` case (only for links the
                 // author left untouched), not here — keep the run's authored/inherited color.
                 attrs[HTMLAttributedStringBuilder.internalLinkAttribute] = href
+            }
+            if let ipaPronunciation {
+                attrs[HTMLAttributedStringBuilder.ipaPronunciationAttribute] = ipaPronunciation
             }
             if underline {
                 attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue

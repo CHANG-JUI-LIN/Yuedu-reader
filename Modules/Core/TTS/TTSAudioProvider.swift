@@ -158,6 +158,93 @@ protocol TTSAudioProvider: AnyObject {
     func audioData(for text: String, title: String, rate: Float) async throws -> Data
 }
 
+enum DirectChapterAudioResolver {
+    private static let audioExtensions: Set<String> = [
+        "aac", "aiff", "aif", "flac", "m4a", "m4b", "mp3", "oga", "ogg", "opus", "wav"
+    ]
+
+    static func request(from content: String) -> URLRequest? {
+        for candidate in candidates(from: content) {
+            guard isAudioCandidate(candidate) else { continue }
+            if let request = AnalyzeUrl(ruleUrl: candidate).toURLRequest() {
+                return request
+            }
+            if let url = URL(string: stripLegadoOptions(from: candidate)) {
+                return URLRequest(url: url)
+            }
+        }
+        return nil
+    }
+
+    private static func candidates(from content: String) -> [String] {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        var values: [String] = [trimmed]
+        values.append(contentsOf: urlLikeMatches(in: trimmed))
+        values.append(contentsOf: htmlMediaSources(in: trimmed))
+        return values
+    }
+
+    private static func urlLikeMatches(in text: String) -> [String] {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"https?://[^\s<>"']+(?:\s*,\s*\{[^ \n\r]*\})?"#,
+            options: [.caseInsensitive]
+        ) else {
+            return []
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.matches(in: text, range: range).compactMap { match in
+            Range(match.range, in: text).map { String(text[$0]) }
+        }
+    }
+
+    private static func htmlMediaSources(in text: String) -> [String] {
+        guard text.localizedCaseInsensitiveContains("<audio"),
+              let regex = try? NSRegularExpression(
+                pattern: #"<audio\b[^>]*\bsrc\s*=\s*["']([^"']+)["']"#,
+                options: [.caseInsensitive]
+              )
+        else {
+            return []
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.matches(in: text, range: range).compactMap { match in
+            Range(match.range(at: 1), in: text).map { String(text[$0]) }
+        }
+    }
+
+    private static func isAudioCandidate(_ candidate: String) -> Bool {
+        let rawURL = stripLegadoOptions(from: candidate)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: rawURL),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else {
+            return false
+        }
+
+        let pathExtension = url.pathExtension.lowercased()
+        if audioExtensions.contains(pathExtension) {
+            return true
+        }
+
+        let lowered = rawURL.lowercased()
+        return lowered.contains("mime=audio")
+            || lowered.contains("content-type=audio")
+            || lowered.contains("/audio/")
+            || lowered.contains("/audiobook/")
+            || lowered.contains("/tts/")
+    }
+
+    private static func stripLegadoOptions(from candidate: String) -> String {
+        if let range = candidate.range(of: #"\s*,\s*\{"#, options: .regularExpression) {
+            return String(candidate[..<range.lowerBound])
+        }
+        return candidate
+    }
+}
+
 enum TTSAudioProviderError: LocalizedError {
     case emptyTemplate
     case invalidURL
@@ -187,6 +274,16 @@ final class CustomHTTPProvider: TTSAudioProvider {
     }
 
     func audioData(for text: String, title: String, rate: Float) async throws -> Data {
+        if var request = DirectChapterAudioResolver.request(from: text) {
+            for (field, value) in GlobalSettings.shared.httpTtsHeaders {
+                if request.value(forHTTPHeaderField: field) == nil {
+                    request.setValue(value, forHTTPHeaderField: field)
+                }
+            }
+            ttsLog("[TTS][Provider] direct audio request url=\(request.url?.absoluteString ?? "")")
+            return try await fetchAudioData(request: request)
+        }
+
         let template = GlobalSettings.shared.httpTtsUrlTemplate
             .trimmingCharacters(in: .whitespacesAndNewlines)
         ttsLog("[TTS][Provider] template empty=\(template.isEmpty) textCount=\(text.count) title=\(title) rate=\(rate)")
@@ -204,6 +301,10 @@ final class CustomHTTPProvider: TTSAudioProvider {
         }
         ttsLog("[TTS][Provider] request method=\(request.httpMethod ?? "GET") url=\(request.url?.absoluteString ?? "")")
 
+        return try await fetchAudioData(request: request)
+    }
+
+    private func fetchAudioData(request: URLRequest) async throws -> Data {
         let (data, response) = try await URLSession.shared.data(for: request)
         if let http = response as? HTTPURLResponse {
             let contentType = http.value(forHTTPHeaderField: "Content-Type") ?? ""

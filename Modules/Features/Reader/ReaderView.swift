@@ -1133,7 +1133,7 @@ struct ReaderView: View {
             autoReader.onNextPage = { goToNextPage() }
             ttsCoordinator.showsGlobalFloatingPlayer = true
             setTTSFloatingOverlayVisible(showBars)
-            ttsCoordinator.onPageFinished = {
+            ttsCoordinator.onPageFinishedWithPronunciation = {
                 ttsLog("[TTS][Reader] onChapterFinished ttsChapter=\(ttsChapterIndex.map(String.init) ?? "nil") currentChapter=\(currentChapterIndex)")
                 return advanceTTSChapterFromEngine()
             }
@@ -2455,7 +2455,8 @@ struct ReaderView: View {
     private func startTTSChapter(_ chapterIndex: Int, syncReader: Bool) -> Bool {
         guard chapters.indices.contains(chapterIndex) else { return false }
         mediaOverlayCoordinator.stop()
-        let text = textForTTSChapter(chapterIndex)
+        let narration = narrationForTTSChapter(chapterIndex)
+        let text = narration.text
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             ttsLog("[TTS][Reader] startTTSChapter ignored empty chapter=\(chapterIndex)")
             if syncReader {
@@ -2473,7 +2474,8 @@ struct ReaderView: View {
             title: chapters[chapterIndex].title,
             bookTitle: ttsNowPlayingBookTitle,
             author: ttsNowPlayingAuthor,
-            artwork: ttsNowPlayingArtwork()
+            artwork: ttsNowPlayingArtwork(),
+            pronunciationHints: narration.pronunciationHints
         )
         ttsCoordinator.refreshNowPlayingForSystemSurfaces()
         return true
@@ -2487,14 +2489,15 @@ struct ReaderView: View {
         return startTTSChapter(target, syncReader: true)
     }
 
-    private func advanceTTSChapterFromEngine() -> String? {
+    private func advanceTTSChapterFromEngine() -> TTSNarrationUnit? {
         let baseChapter = ttsChapterIndex ?? currentChapterIndex
         let target = baseChapter + 1
         guard chapters.indices.contains(target) else {
             ttsChapterIndex = nil
             return nil
         }
-        let text = textForTTSChapter(target)
+        let narration = narrationForTTSChapter(target)
+        let text = narration.text
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             ensureChapterReady(chapterIndex: target, priority: .jump)
             return nil
@@ -2502,7 +2505,7 @@ struct ReaderView: View {
         ttsChapterIndex = target
         setActiveTTSAnchor(.chapterStart(target), alignReader: true)
         ttsCoordinator.updateNowPlayingChapter(title: chapters[target].title, text: text)
-        return text
+        return narration
     }
 
     private func handleReaderPositionChangedForTTS() {
@@ -2542,21 +2545,32 @@ struct ReaderView: View {
         _ = startTTSChapter(target, syncReader: false)
     }
 
-    private func textForTTSChapter(_ chapterIndex: Int) -> String {
-        guard chapters.indices.contains(chapterIndex) else { return "" }
+    private func narrationForTTSChapter(_ chapterIndex: Int) -> TTSNarrationUnit {
+        guard chapters.indices.contains(chapterIndex) else {
+            return TTSNarrationUnit(text: "")
+        }
         if let engine = epubRenderer.engine,
            usesCoreTextEPUB,
            let layout = engine.layouts[chapterIndex],
            layout.attributedString.length > 0 {
-            return layout.attributedString.string
+            let hints = TTSPronunciationAnnotator.hints(
+                in: layout.attributedString,
+                lexicons: activePublicationSession?.pronunciationLexicons ?? [],
+                bookLanguage: activePublicationSession?.language
+            )
+            return TTSNarrationUnit(text: layout.attributedString.string, pronunciationHints: hints)
         }
         let pageText = allPages
             .filter { $0.chapterIndex == chapterIndex }
             .map(\.content)
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !pageText.isEmpty { return pageText }
-        return chapters[chapterIndex].content
+        if !pageText.isEmpty { return TTSNarrationUnit(text: pageText) }
+        return TTSNarrationUnit(text: chapters[chapterIndex].content)
+    }
+
+    private func textForTTSChapter(_ chapterIndex: Int) -> String {
+        narrationForTTSChapter(chapterIndex).text
     }
 
     // MARK: - Logic

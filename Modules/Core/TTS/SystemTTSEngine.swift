@@ -11,13 +11,14 @@ import UIKit
 final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     var isPlaying: Bool = false
-    var onPageFinished: (() -> String?)?
+    var onPageFinished: (() -> TTSNarrationUnit?)?
     var onStop: (() -> Void)?
     var onPlaybackStarted: ((TimeInterval) -> Void)?
     var onSegmentChanged: ((Int, Int, String) -> Void)?
 
     private let synthesizer = AVSpeechSynthesizer()
     private var chunks: [String] = []
+    private var chunkPronunciationHints: [[TTSPronunciationHint]] = []
     private var currentIndex = 0
     private var isPaused = false
     private var lastRate: Float = 0.5
@@ -42,10 +43,19 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         ttsLog("[TTS][SystemEngine] configureAudioSessionOwnership ignored enabled=\(enabled)")
     }
 
-    func speak(text: String, title: String, rate: Float) {
+    func speak(
+        text: String,
+        title: String,
+        rate: Float,
+        pronunciationHints: [TTSPronunciationHint]
+    ) {
         ttsLog("[TTS][SystemEngine] speak requested textCount=\(text.count) title=\(title) rate=\(rate)")
         resetPlaybackState()
-        chunks = TTSTextChunker.split(text, targetChunkLength: targetChunkLength)
+        let chunkRanges = TTSTextChunker.splitWithRanges(text, targetChunkLength: targetChunkLength)
+        chunks = chunkRanges.map(\.text)
+        chunkPronunciationHints = chunkRanges.map {
+            TTSPronunciationProjector.project(pronunciationHints, into: $0.sourceRange)
+        }
         guard !chunks.isEmpty else {
             ttsLog("[TTS][SystemEngine] speak aborted no chunks")
             return
@@ -144,8 +154,12 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         currentIndex = index
         publishSegmentChanged(index: index)
 
-        let utterance = AVSpeechUtterance(string: chunks[index])
-        utterance.rate = Self.utteranceRate(forUIRate: lastRate)
+        let hints = chunkPronunciationHints.indices.contains(index) ? chunkPronunciationHints[index] : []
+        let utterance = Self.makeUtterance(
+            text: chunks[index],
+            rate: lastRate,
+            pronunciationHints: hints
+        )
         utterance.voice = preferredVoice(for: chunks[index])
         activeUtterance = utterance
         isPlaying = true
@@ -177,8 +191,13 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         guard token == playbackToken else { return }
         ttsLog("[TTS][SystemEngine] page chunks finished count=\(chunks.count)")
 
-        if let nextText = onPageFinished?(), !nextText.isEmpty {
-            speak(text: nextText, title: "", rate: lastRate)
+        if let next = onPageFinished?(), !next.text.isEmpty {
+            speak(
+                text: next.text,
+                title: "",
+                rate: lastRate,
+                pronunciationHints: next.pronunciationHints
+            )
         } else {
             resetPlaybackState()
             onStop?()
@@ -200,6 +219,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private func resetPlaybackState() {
         stopSynthesizer()
         chunks.removeAll()
+        chunkPronunciationHints.removeAll()
         currentIndex = 0
         isPaused = false
         isPlaying = false
@@ -245,6 +265,29 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         default:
             return false
         }
+    }
+
+    static func makeUtterance(
+        text: String,
+        rate: Float,
+        pronunciationHints: [TTSPronunciationHint]
+    ) -> AVSpeechUtterance {
+        let utterance: AVSpeechUtterance
+        if pronunciationHints.isEmpty {
+            utterance = AVSpeechUtterance(string: text)
+        } else {
+            let attributed = NSMutableAttributedString(string: text)
+            let key = NSAttributedString.Key(rawValue: AVSpeechSynthesisIPANotationAttribute)
+            let bounds = NSRange(location: 0, length: attributed.length)
+            for hint in pronunciationHints {
+                let range = NSIntersectionRange(hint.range, bounds)
+                guard range.length > 0 else { continue }
+                attributed.addAttribute(key, value: hint.ipa, range: range)
+            }
+            utterance = AVSpeechUtterance(attributedString: attributed)
+        }
+        utterance.rate = utteranceRate(forUIRate: rate)
+        return utterance
     }
 
     /// Maps the UI rate (0.10–0.65, where 0.5 is "normal") onto an `AVSpeechUtterance` rate

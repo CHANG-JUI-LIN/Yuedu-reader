@@ -9,6 +9,18 @@ enum TTSPlaybackState {
     case paused
 }
 
+enum TTSPlaybackRouting {
+    static func shouldUseHTTP(text: String, httpTemplate: String, useSystemVoice: Bool) -> Bool {
+        if DirectChapterAudioResolver.request(from: text) != nil {
+            return true
+        }
+        if useSystemVoice {
+            return false
+        }
+        return !httpTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
 extension Notification.Name {
     static let ttsFloatingPlayerOpenPanel = Notification.Name("ttsFloatingPlayerOpenPanel")
 }
@@ -126,6 +138,9 @@ final class TTSCoordinator: ObservableObject {
     var onPageFinished: (() -> String?)? {
         didSet { rewireCallbacks() }
     }
+    var onPageFinishedWithPronunciation: (() -> TTSNarrationUnit?)? {
+        didSet { rewireCallbacks() }
+    }
     var onStop: (() -> Void)? {
         didSet { rewireCallbacks() }
     }
@@ -141,12 +156,15 @@ final class TTSCoordinator: ObservableObject {
     private var currentEngine: TTSPlayable { activeEngine }
     private static weak var activeSystemMediaCoordinator: TTSCoordinator?
 
-    /// Use the on-device offline voice when the user forces it, or as an automatic fallback
-    /// whenever no HTTP TTS source is configured. Otherwise use the HTTP engine.
-    private func resolveEngine() -> TTSPlayable {
-        if GlobalSettings.shared.ttsUseSystemVoice { return systemEngine }
+    /// Use the HTTP audio player for direct chapter audio and configured HTTP TTS sources.
+    /// Fall back to the on-device voice only for plain text without a network TTS template.
+    private func resolveEngine(for text: String) -> TTSPlayable {
         let template = GlobalSettings.shared.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
-        return template.isEmpty ? systemEngine : httpEngine
+        return TTSPlaybackRouting.shouldUseHTTP(
+            text: text,
+            httpTemplate: template,
+            useSystemVoice: GlobalSettings.shared.ttsUseSystemVoice
+        ) ? httpEngine : systemEngine
     }
 
     private var sleepTimer: Timer?
@@ -180,13 +198,14 @@ final class TTSCoordinator: ObservableObject {
         title: String = "",
         bookTitle: String = "",
         author: String = "",
-        artwork: UIImage? = nil
+        artwork: UIImage? = nil,
+        pronunciationHints: [TTSPronunciationHint] = []
     ) {
         guard !text.isEmpty else {
             ttsLog("[TTS][Coordinator] speak ignored empty text")
             return
         }
-        activeEngine = resolveEngine()
+        activeEngine = resolveEngine(for: text)
         ttsLog("[TTS][Coordinator] speak requested engine=\(currentEngine === systemEngine ? "system" : "http") textCount=\(text.count) title=\(title) rate=\(speechRate)")
         guard activateAudioSession() else {
             ttsLog("[TTS][Coordinator] speak aborted audio session activation failed")
@@ -204,7 +223,12 @@ final class TTSCoordinator: ObservableObject {
         currentSegmentIndex = 0
         totalSegments = 0
         currentSegmentText = ""
-        currentEngine.speak(text: text, title: title, rate: speechRate)
+        currentEngine.speak(
+            text: text,
+            title: title,
+            rate: speechRate,
+            pronunciationHints: pronunciationHints
+        )
         ttsLog("[TTS][Coordinator] engine speak returned enginePlaying=\(currentEngine.isPlaying)")
         guard currentEngine.isPlaying else {
             ttsLog("[TTS][Coordinator] engine not playing after speak; stopping")
@@ -390,7 +414,10 @@ final class TTSCoordinator: ObservableObject {
     private func wireCallbacks(to engine: TTSPlayable) {
         engine.onPageFinished = { [weak self] in
             guard let self, self.isPlaying else { return nil }
-            return self.onPageFinished?()
+            if let next = self.onPageFinishedWithPronunciation?() {
+                return next
+            }
+            return self.onPageFinished?().map { TTSNarrationUnit(text: $0) }
         }
         engine.onStop = { [weak self] in
             let handleStop = {

@@ -150,6 +150,7 @@ public struct RenderStyle: Sendable {
     public var isInlineAnnotation: Bool
     public var isVerticalWritingMode: Bool
     public var floatSide: RenderFloatSide?
+    public var ssmlIPA: String?
 
     public init(
         fontSizeMultiplier: CGFloat = 1.0,
@@ -193,7 +194,8 @@ public struct RenderStyle: Sendable {
         isInlineAnnotation: Bool = false,
         isVerticalWritingMode: Bool = false,
         borderRadius: CGFloat = 0,
-        floatSide: RenderFloatSide? = nil
+        floatSide: RenderFloatSide? = nil,
+        ssmlIPA: String? = nil
     ) {
         self.fontSizeMultiplier = fontSizeMultiplier
         self.fontFamilies = fontFamilies
@@ -237,6 +239,7 @@ public struct RenderStyle: Sendable {
         self.isInlineAnnotation = isInlineAnnotation
         self.isVerticalWritingMode = isVerticalWritingMode
         self.floatSide = floatSide
+        self.ssmlIPA = ssmlIPA
     }
 
     /// No style override (default for inline cases).

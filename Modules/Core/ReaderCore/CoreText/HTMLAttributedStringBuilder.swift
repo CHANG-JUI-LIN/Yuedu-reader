@@ -30,6 +30,10 @@ final class HTMLAttributedStringBuilder {
     static let pageBreakAttribute = NSAttributedString.Key("ReaderForcedPageBreak")
     /// Marker attribute preserving HTML5 semantic element identity through CoreText rendering.
     static let semanticTagAttribute = NSAttributedString.Key("ReaderHTMLSemanticTag")
+    /// IPA pronunciation hint parsed from SSML/PLS metadata for system TTS.
+    static let ipaPronunciationAttribute = NSAttributedString.Key("ReaderIPAPronunciation")
+    /// Marker attribute for unsupported interactive EPUB objects rendered as graceful placeholders.
+    static let unsupportedInteractiveAttribute = NSAttributedString.Key("ReaderUnsupportedInteractive")
     /// Marker attribute for tappable EPUB audio/video placeholders.
     static let mediaAttachmentAttribute = NSAttributedString.Key("ReaderEPUBMediaAttachment")
     /// Marker attribute for a CSS-floated element (e.g. `img.left { float:left; width:50% }`). Value is a
@@ -4103,7 +4107,8 @@ final class HTMLAttributedStringBuilder {
         var attributes: [String: String] = [:]
         for key in [
             "id", "class", "style", "src", "href", "xlink:href", "width", "height",
-            "alt", "title", "aria-label", "poster", "type", "controls", "colspan", "rowspan", "scope"
+            "alt", "alttext", "display", "data", "title", "aria-label", "poster", "type",
+            "controls", "colspan", "rowspan", "scope", "ssml:ph", "ssml:alphabet"
         ] {
             let value = (try? element.attr(key)) ?? ""
             if !value.isEmpty {

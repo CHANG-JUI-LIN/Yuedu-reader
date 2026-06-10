@@ -8,7 +8,7 @@ import UIKit
 final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     var isPlaying: Bool = false
-    var onPageFinished: (() -> String?)?
+    var onPageFinished: (() -> TTSNarrationUnit?)?
     var onStop: (() -> Void)?
     var onPlaybackStarted: ((TimeInterval) -> Void)?
     var onSegmentChanged: ((Int, Int, String) -> Void)?
@@ -42,15 +42,23 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         ttsLog("[TTS][HTTPEngine] configureAudioSessionOwnership ignored enabled=\(enabled)")
     }
 
-    func speak(text: String, title: String, rate: Float) {
+    func speak(
+        text: String,
+        title: String,
+        rate: Float,
+        pronunciationHints: [TTSPronunciationHint] = []
+    ) {
         ttsLog("[TTS][HTTPEngine] speak requested textCount=\(text.count) title=\(title) rate=\(rate)")
-        guard !GlobalSettings.shared.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let isDirectChapterAudio = DirectChapterAudioResolver.request(from: text) != nil
+        guard isDirectChapterAudio
+            || !GlobalSettings.shared.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
             ttsLog("[TTS][HTTPEngine] speak aborted empty template")
             return
         }
 
         resetPlaybackState()
-        chunks = splitText(text)
+        chunks = isDirectChapterAudio ? [text] : splitText(text)
         guard !chunks.isEmpty else {
             ttsLog("[TTS][HTTPEngine] speak aborted no chunks")
             return
@@ -379,8 +387,13 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         guard token == playbackToken else { return }
         ttsLog("[TTS][HTTPEngine] page chunks finished count=\(chunks.count)")
 
-        if let nextText = onPageFinished?(), !nextText.isEmpty {
-            speak(text: nextText, title: "", rate: lastRate)
+        if let next = onPageFinished?(), !next.text.isEmpty {
+            speak(
+                text: next.text,
+                title: "",
+                rate: lastRate,
+                pronunciationHints: next.pronunciationHints
+            )
         } else {
             resetPlaybackState()
             onStop?()
