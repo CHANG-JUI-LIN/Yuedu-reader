@@ -283,14 +283,22 @@ enum MathMLImageRenderer {
     /// A rasterised equation plus the metric needed to align it inline with surrounding text.
     final class Rendered {
         let image: UIImage
+        /// Absolute height above/below the math baseline in image points. The bitmap is rendered at
+        /// exactly `ascent + descent` tall (no label padding), so these map 1:1 onto the raster.
+        let ascent: CGFloat
+        let descent: CGFloat
         /// Height below the math baseline as a fraction of the image height (0...1). Multiply by the
         /// drawn image height to recover the inline descent, so the math baseline lands on the text
         /// baseline regardless of any later width-scaling the caller applies.
-        let descentFraction: CGFloat
+        var descentFraction: CGFloat {
+            let total = ascent + descent
+            return total > 0 ? max(0, min(1, descent / total)) : 0
+        }
 
-        init(image: UIImage, descentFraction: CGFloat) {
+        init(image: UIImage, ascent: CGFloat, descent: CGFloat) {
             self.image = image
-            self.descentFraction = descentFraction
+            self.ascent = ascent
+            self.descent = descent
         }
     }
 
@@ -318,34 +326,30 @@ enum MathMLImageRenderer {
         label.latex = latex
         guard label.error == nil else { return nil }
 
-        var naturalSize = label.sizeThatFits(
-            CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        )
-        naturalSize.width = ceil(max(1, naturalSize.width))
-        naturalSize.height = ceil(max(1, naturalSize.height))
-        guard naturalSize.width.isFinite, naturalSize.height.isFinite else { return nil }
-
-        let widthLimit = max(1, maxWidth)
-        let scaleFactor = min(1, widthLimit / naturalSize.width)
-        let imageSize = CGSize(
-            width: ceil(naturalSize.width * scaleFactor),
-            height: ceil(naturalSize.height * scaleFactor)
-        )
-        guard imageSize.width > 0, imageSize.height > 0 else { return nil }
-
-        label.frame = CGRect(origin: .zero, size: naturalSize)
+        // Force a layout pass so the label materialises its MTMathListDisplay; we then bypass the
+        // label entirely for rasterisation. `MTMathUILabel.layoutSubviews` vertically centres the
+        // display list and pads short formulas up to a minimum height of fontSize/2, so a `label.draw`
+        // screenshot embeds padding the declared baseline metrics know nothing about — short inline
+        // formulas would sit visibly below the surrounding text baseline.
+        label.frame = CGRect(origin: .zero, size: CGSize(width: 1, height: 1))
         label.setNeedsLayout()
         label.layoutIfNeeded()
+        guard let display = label.displayList else { return nil }
+        display.textColor = textColor
 
-        // The true math baseline: iosMath lays the equation out with `descent` points below the baseline
-        // and `ascent` above. Express descent as a fraction of total height so it survives later scaling.
-        let descentFraction: CGFloat
-        if let display = label.displayList {
-            let total = display.ascent + display.descent
-            descentFraction = total > 0 ? max(0, min(1, display.descent / total)) : 0
-        } else {
-            descentFraction = 0
-        }
+        let naturalWidth = ceil(max(1, display.width))
+        let naturalHeight = max(1, display.ascent + display.descent)
+        guard naturalWidth.isFinite, naturalHeight.isFinite else { return nil }
+
+        let widthLimit = max(1, maxWidth)
+        let scaleFactor = min(1, widthLimit / naturalWidth)
+        let ascent = display.ascent * scaleFactor
+        let descent = display.descent * scaleFactor
+        let imageSize = CGSize(
+            width: ceil(naturalWidth * scaleFactor),
+            height: ceil(naturalHeight * scaleFactor)
+        )
+        guard imageSize.width > 0, imageSize.height > 0 else { return nil }
 
         let format = UIGraphicsImageRendererFormat()
         format.opaque = false
@@ -356,18 +360,19 @@ enum MathMLImageRenderer {
             UIColor.clear.setFill()
             UIRectFill(CGRect(origin: .zero, size: imageSize))
             cg.saveGState()
-            // MTMathUILabel draws through a layer whose `geometryFlipped = YES` (see MTMathUILabel.m), which
-            // Core Animation honours when compositing on screen but a direct `draw(_:)` into this bitmap
-            // context does not. Without that flip, MTMathListDisplay lays its CoreText glyphs into an
-            // unflipped (y-down) context and the equation comes out vertically mirrored (upside down).
-            // Replicate the geometry flip here so the rasterised math matches the on-screen orientation.
+            // MTMathListDisplay lays its CoreText glyphs out in a y-up coordinate system (`position`
+            // is the baseline origin). UIGraphicsImageRenderer hands us a y-down context, so flip it;
+            // the equation would otherwise come out vertically mirrored (upside down).
             cg.translateBy(x: 0, y: imageSize.height)
             cg.scaleBy(x: 1, y: -1)
             cg.scaleBy(x: scaleFactor, y: scaleFactor)
-            label.draw(label.bounds)
+            // Baseline sits exactly `descent` points above the bitmap's bottom edge — matching the
+            // ascent/descent this Rendered reports, with no centering padding.
+            display.position = CGPoint(x: 0, y: display.descent)
+            display.draw(cg)
             cg.restoreGState()
         }
-        let rendered = Rendered(image: image, descentFraction: descentFraction)
+        let rendered = Rendered(image: image, ascent: ascent, descent: descent)
         cache.setObject(rendered, forKey: cacheKey)
         return rendered
     }

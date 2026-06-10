@@ -803,7 +803,7 @@ struct NodeAttributedStringRenderer {
             style: style,
             font: mathCtx.font,
             displayMode: runMode,
-            descentFraction: rendered.descentFraction
+            mathDescent: rendered.descent
         )
         let placeholder = NSMutableAttributedString(
             attributedString: await makeImagePlaceholder(
@@ -1313,7 +1313,7 @@ struct NodeAttributedStringRenderer {
         style: RenderStyle,
         font: UIFont,
         displayMode: ImageRunInfo.DisplayMode,
-        descentFraction: CGFloat
+        mathDescent: CGFloat
     ) async -> ImageMetrics {
         let metrics = await resolvedImageMetrics(
             image: image,
@@ -1324,9 +1324,11 @@ struct NodeAttributedStringRenderer {
         guard displayMode == .inline, !isVertical(style) else {
             return metrics
         }
-        // Place the math baseline (descentFraction of the image height below its top-of-text) on the
-        // surrounding text baseline, instead of guessing a descent from the font metrics.
-        let descent = max(0, min(metrics.drawHeight, metrics.drawHeight * descentFraction))
+        // Place the math baseline on the surrounding text baseline, instead of guessing a descent
+        // from the font metrics. The renderer reports absolute baseline metrics for the bitmap; if
+        // resolvedImageMetrics rescaled the bitmap (width clamp), rescale the descent with it.
+        let rescale = image.size.height > 0 ? metrics.drawHeight / image.size.height : 1
+        let descent = max(0, min(metrics.drawHeight, mathDescent * rescale))
         return ImageMetrics(
             drawWidth: metrics.drawWidth,
             drawHeight: metrics.drawHeight,
