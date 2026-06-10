@@ -35,6 +35,7 @@ struct NodeAttributedStringRenderer {
         init(
             from settings: ReaderRenderSettings,
             textColor: UIColor? = nil,
+            fontFamily: String? = nil,
             renderWidth: CGFloat? = nil,
             resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
             imageLoader: ((String) async -> UIImage?)? = nil,
@@ -47,7 +48,7 @@ struct NodeAttributedStringRenderer {
             self.letterSpacing = settings.letterSpacing
             self.textColor = textColor ?? settings.textColor
             self.backgroundColor = settings.backgroundColor
-            self.fontFamily = nil
+            self.fontFamily = fontFamily
             self.renderWidth = renderWidth
             self.resolvedFont = resolvedFont
             self.imageLoader = imageLoader
@@ -68,7 +69,9 @@ struct NodeAttributedStringRenderer {
         for node in nodes {
             result.append(await render(node: node, ctx: ctx))
         }
-        return CJKTypographyProcessor.apply(to: result)
+        let processed = NSMutableAttributedString(attributedString: CJKTypographyProcessor.apply(to: result))
+        relaxParagraphsContainingTallRuns(processed)
+        return processed
     }
 
     // MARK: - Node Rendering (Recursive)
@@ -325,8 +328,39 @@ struct NodeAttributedStringRenderer {
             }
         }
 
+        if !hasBlockChildren {
+            applyBlockBreakContinuationIndent(result)
+        }
         result.append(NSAttributedString(string: "\n", attributes: childCtx.baseAttributes))
         return result
+    }
+
+    /// A block-level `<br>` injects a hard "\n" inside the paragraph's content. CoreText treats
+    /// the following text as a new paragraph, which would re-apply the first-line indent; the
+    /// legacy pipeline rendered such continuations flush with the body, so drop the indent here.
+    private func applyBlockBreakContinuationIndent(_ output: NSMutableAttributedString) {
+        guard output.length > 0, output.string.contains("\n") else { return }
+        let ns = output.string as NSString
+        var location = 0
+        var isFirstParagraph = true
+        while location < ns.length {
+            let paragraphRange = ns.paragraphRange(for: NSRange(location: location, length: 0))
+            defer {
+                location = paragraphRange.location + max(paragraphRange.length, 1)
+                isFirstParagraph = false
+            }
+            guard !isFirstParagraph, paragraphRange.length > 0 else { continue }
+            guard let style = output.attribute(
+                .paragraphStyle,
+                at: paragraphRange.location,
+                effectiveRange: nil
+            ) as? NSParagraphStyle,
+                style.firstLineHeadIndent != style.headIndent
+            else { continue }
+            let continuation = style.mutableCopy() as! NSMutableParagraphStyle
+            continuation.firstLineHeadIndent = style.headIndent
+            output.addAttribute(.paragraphStyle, value: continuation, range: paragraphRange)
+        }
     }
 
     // MARK: - Inline Children
@@ -421,8 +455,21 @@ struct NodeAttributedStringRenderer {
         }
         let cumulativeMarginLeft = ctx.inheritedBlockMarginLeft + style.marginLeft
         let cumulativeMarginRight = ctx.inheritedBlockMarginRight + style.marginRight
-        let leftInset = cumulativeMarginLeft + style.borderLeftWidth + style.paddingLeft
-        let rightInset = cumulativeMarginRight + style.borderRightWidth + style.paddingRight
+        let structuralLeft = cumulativeMarginLeft + style.borderLeftWidth + style.paddingLeft
+        let structuralRight = cumulativeMarginRight + style.borderRightWidth + style.paddingRight
+        // A fixed-width block with `margin: auto` centers within the containing block's CONTENT
+        // box (after inherited padding/margins), not the full render width — centering against
+        // renderWidth and then ALSO adding the inherited insets would double-count them.
+        let widthInset: CGFloat
+        if style.isHorizontallyCentered, let blockWidth = style.width, blockWidth > 0,
+           let renderWidth = config.renderWidth {
+            let contentBoxWidth = max(blockWidth, renderWidth - structuralLeft - structuralRight)
+            widthInset = max(0, (contentBoxWidth - blockWidth) / 2)
+        } else {
+            widthInset = 0
+        }
+        let leftInset = structuralLeft + widthInset
+        let rightInset = structuralRight + widthInset
         let rtlRightAligned = style.baseWritingDirection == .rightToLeft
             && (style.textAlign == .right || style.textAlign == .natural)
             && !isVertical(style)
@@ -1027,21 +1074,52 @@ struct NodeAttributedStringRenderer {
         )
         let range = NSRange(location: 0, length: placeholder.length)
         placeholder.addAttributes(ctx.baseAttributes, range: range)
-        // An inline image sharing a block with other content (e.g. <figure><img/><figcaption/></figure>)
-        // inherits the block's paragraph style, which pins maximumLineHeight to the *text* line height.
-        // CoreText would then clamp the image's reserved line, and the image would overflow upward and
-        // overlap the preceding content. Raise maximumLineHeight to fit the image; minimumLineHeight is
-        // left untouched so any text on the same line stays compact. Block images get their paragraph
-        // style overridden by the caller, so this only affects the inline case.
-        if displayMode == .inline, ctx.paragraphStyle.maximumLineHeight > 0 {
-            let required = ceil(metrics.ascent + metrics.descent)
-            if required > ctx.paragraphStyle.maximumLineHeight {
-                let relaxed = ctx.paragraphStyle.mutableCopy() as! NSMutableParagraphStyle
-                relaxed.maximumLineHeight = required
-                placeholder.addAttribute(.paragraphStyle, value: relaxed, range: range)
+        return placeholder
+    }
+
+    private func relaxParagraphsContainingTallRuns(_ attributedString: NSMutableAttributedString) {
+        guard attributedString.length > 0 else { return }
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        let fullRange = NSRange(location: 0, length: attributedString.length)
+        let nsString = attributedString.string as NSString
+        var paragraphs: [(range: NSRange, requiredHeight: CGFloat)] = []
+
+        attributedString.enumerateAttributes(in: fullRange) { attributes, range, _ in
+            guard attributes[HTMLAttributedStringBuilder.spacerRunAttribute] == nil,
+                  attributes[HTMLAttributedStringBuilder.inlineAnnotationRunAttribute] == nil,
+                  let delegateValue = attributes[delegateKey]
+            else { return }
+            let delegate = delegateValue as! CTRunDelegate
+            let info = Unmanaged<ImageRunInfo>
+                .fromOpaque(CTRunDelegateGetRefCon(delegate))
+                .takeUnretainedValue()
+            guard info.image != nil else { return }
+
+            let requiredHeight = ceil(info.ascent + info.descent)
+            guard requiredHeight > 0 else { return }
+            let paragraphRange = nsString.paragraphRange(for: range)
+            if let index = paragraphs.firstIndex(where: { NSEqualRanges($0.range, paragraphRange) }) {
+                paragraphs[index].requiredHeight = max(paragraphs[index].requiredHeight, requiredHeight)
+            } else {
+                paragraphs.append((paragraphRange, requiredHeight))
             }
         }
-        return placeholder
+
+        for paragraph in paragraphs {
+            var updates: [(range: NSRange, style: NSParagraphStyle)] = []
+            attributedString.enumerateAttribute(.paragraphStyle, in: paragraph.range) { value, range, _ in
+                guard let style = value as? NSParagraphStyle,
+                      style.maximumLineHeight > 0,
+                      style.maximumLineHeight < paragraph.requiredHeight
+                else { return }
+                let relaxed = style.mutableCopy() as! NSMutableParagraphStyle
+                relaxed.maximumLineHeight = paragraph.requiredHeight
+                updates.append((range, relaxed))
+            }
+            for update in updates {
+                attributedString.addAttribute(.paragraphStyle, value: update.style, range: update.range)
+            }
+        }
     }
 
     private func makeFloatPlaceholder(

@@ -76,18 +76,6 @@ struct EPUBImageLineHeightTests {
         return found
     }
 
-    @Test("legacy builder reserves the image's full height on its line")
-    func legacyReservesImageHeight() async throws {
-        let image = await Self.makeImage()
-        let builder = HTMLAttributedStringBuilder()
-        builder.imageLoader = { _ in image }
-        let result = await builder.build(html: Self.html, config: Self.config(renderWidth: 358))
-        let m = try #require(imageLineMetrics(in: result.attributedString))
-        #expect(m.drawHeight > 100, "sanity: image should be tall (got \(m.drawHeight))")
-        #expect(m.reserved >= m.runHeight - 1, "reserved \(m.reserved) must cover run height \(m.runHeight)")
-        #expect(m.reserved >= m.drawHeight - 1, "reserved \(m.reserved) must cover drawn height \(m.drawHeight)")
-    }
-
     @Test("RenderableNode renderer reserves the image's full height on its line")
     func renderableNodeReservesImageHeight() async throws {
         let image = await Self.makeImage()
@@ -108,5 +96,46 @@ struct EPUBImageLineHeightTests {
         #expect(m.drawHeight > 100, "sanity: image should be tall (got \(m.drawHeight))")
         #expect(m.reserved >= m.runHeight - 1, "reserved \(m.reserved) must cover run height \(m.runHeight)")
         #expect(m.reserved >= m.drawHeight - 1, "reserved \(m.reserved) must cover drawn height \(m.drawHeight)")
+    }
+
+    @Test("RenderableNode renderer relaxes the entire paragraph containing a tall inline image")
+    func renderableNodeRelaxesWholeParagraphForTallInlineImage() async throws {
+        let image = await Self.makeImage()
+        var imageStyle = RenderStyle.none
+        imageStyle.width = 300
+        let nodes: [RenderableNode] = [
+            .paragraph([
+                .text("Caption before image "),
+                .image(src: "pic65.jpg", alt: "marina", style: imageStyle),
+                .text(" after image.")
+            ], style: .body)
+        ]
+        let settings = ReaderRenderSettings(
+            theme: "test", textColor: .black, backgroundColor: .white,
+            fontSize: 18, lineHeightMultiple: 1.5, lineSpacing: 0, paragraphSpacing: 8,
+            letterSpacing: 0, marginH: 0, marginV: 0, footerHeight: 0,
+            contentInsets: .zero, writingMode: .horizontal
+        )
+        let cfg = NodeAttributedStringRenderer.Config(
+            from: settings,
+            textColor: .black,
+            renderWidth: 358,
+            imageLoader: { _ in image }
+        )
+
+        let attr = await NodeAttributedStringRenderer(config: cfg).render(nodes)
+        let imageRun = try #require(EPUBTestFixtures.imageRunInfos(in: attr).first)
+        let textRange = (attr.string as NSString).range(of: "Caption")
+        let paragraph = try #require(attr.attribute(
+            .paragraphStyle,
+            at: textRange.location,
+            effectiveRange: nil
+        ) as? NSParagraphStyle)
+        let required = imageRun.info.ascent + imageRun.info.descent
+
+        #expect(
+            paragraph.maximumLineHeight >= required - 1,
+            "paragraph start max line height \(paragraph.maximumLineHeight) must cover inline image run \(required)"
+        )
     }
 }

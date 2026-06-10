@@ -54,8 +54,11 @@ private extension HTMLAttributedStringBuilder.ASTNode {
         switch self {
         case .text(let node):
             return .text(HTMLStyledASTRenderableNodeConverter.normalizeWhitespace(node.text))
-        case .lineBreak:
-            return .lineBreak
+        case .lineBreak(let node):
+            // A `<br>` the CSS promotes to display:block terminates the visual paragraph (real
+            // paragraph break, no first-line indent on the continuation) instead of emitting a
+            // soft line separator. Common in Calibre copyright pages (`<br class="calibre1">`).
+            return node.resolvedStyle.isBlock ? .text("\n") : .lineBreak
         case .pageBreak:
             return .pageBreak
         case .element(let node):
@@ -147,11 +150,7 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             }
 
         case "ruby":
-            node = .ruby(
-                base: rubyBaseChildren(parentFontSize: myFontSize),
-                text: rubyAnnotationText,
-                style: style
-            )
+            node = rubySegments(parentFontSize: myFontSize, style: style)
 
         case "img", "image":
             let src = attributes["src"] ?? attributes["xlink:href"] ?? attributes["href"] ?? ""
@@ -179,26 +178,32 @@ private extension HTMLAttributedStringBuilder.ElementNode {
         return .anchorTarget(id: id, child: node)
     }
 
-    private func rubyBaseChildren(parentFontSize: CGFloat) -> [RenderableNode] {
-        children.compactMap { child in
-            guard case .element(let element) = child,
-                  element.isRubyAnnotationElement
-            else {
-                return child.asRenderableNode(parentFontSize: parentFontSize)
+    /// Pairs each run of base content with the `<rt>` that follows it, so
+    /// `<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>` produces one annotation per base character
+    /// instead of one merged annotation across the whole element.
+    private func rubySegments(parentFontSize: CGFloat, style: RenderStyle) -> RenderableNode {
+        var segments: [RenderableNode] = []
+        var pendingBase: [RenderableNode] = []
+        for child in children {
+            if case .element(let element) = child, element.isRubyAnnotationElement {
+                guard element.tag == "rt" else { continue }
+                let annotation = element.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !pendingBase.isEmpty else { continue }
+                if annotation.isEmpty {
+                    segments.append(contentsOf: pendingBase)
+                } else {
+                    segments.append(.ruby(base: pendingBase, text: annotation, style: style))
+                }
+                pendingBase = []
+            } else {
+                pendingBase.append(child.asRenderableNode(parentFontSize: parentFontSize))
             }
-            return nil
         }
-    }
-
-    private var rubyAnnotationText: String {
-        children.compactMap { child -> String? in
-            guard case .element(let element) = child,
-                  element.isRubyAnnotationElement
-            else { return nil }
-            return element.plainText
+        segments.append(contentsOf: pendingBase)
+        if segments.count == 1, let only = segments.first {
+            return only
         }
-        .joined(separator: " ")
-        .trimmingCharacters(in: .whitespacesAndNewlines)
+        return .inline(tag: "ruby", children: segments, style: style)
     }
 
     private var plainText: String {

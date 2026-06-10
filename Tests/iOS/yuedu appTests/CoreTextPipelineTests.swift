@@ -93,8 +93,11 @@ struct CJKTypographyProcessorTests {
         #expect(kern == -25.0)
     }
 
-    @Test("中文和半形英文數字邊界加小幅正 kern 且不改字串長度")
+    @Test("中文和半形英文數字邊界不再插入自動 kern 且不改字串長度")
     func cjkLatinBoundariesApplyPositiveKernWithoutChangingStringLength() {
+        // CJK↔Latin auto-spacing ("pangu" kern) was removed deliberately (see
+        // CJKTypographyProcessor: glyph-level spacing broke text selection rects);
+        // the processor must leave these boundaries untouched.
         let font = UIFont.systemFont(ofSize: 16)
         let attr = NSAttributedString(string: "使用Swift 6的CoreText", attributes: [.font: font])
 
@@ -104,8 +107,8 @@ struct CJKTypographyProcessorTests {
         #expect(result.length == attr.length)
         let cjkToLatin = result.attribute(.kern, at: 1, effectiveRange: nil) as? CGFloat ?? 0
         let latinToCJK = result.attribute(.kern, at: 8, effectiveRange: nil) as? CGFloat ?? 0
-        #expect(cjkToLatin == 2.0)
-        #expect(latinToCJK == 2.0)
+        #expect(cjkToLatin == 0)
+        #expect(latinToCJK == 0)
     }
 
     @Test("英文雙引號轉為左右彎引號")

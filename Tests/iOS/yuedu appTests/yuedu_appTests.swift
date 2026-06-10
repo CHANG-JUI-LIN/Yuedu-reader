@@ -1068,9 +1068,10 @@ struct yuedu_appTests {
         let underline = result.attribute(.underlineStyle, at: linkRange.location, effectiveRange: nil) as? Int
 
         #expect(link == "#chapter-2")
-        #expect(foreground.map { colorsApproximatelyEqual($0, .systemBlue) } == true)
-        #expect(preservedForeground.map { colorsApproximatelyEqual($0, .systemBlue) } == true)
-        #expect(underline == NSUnderlineStyle.single.rawValue)
+        // Unstyled links get the default tap-affordance tint (UIColor.link); no forced underline.
+        #expect(foreground.map { colorsApproximatelyEqual($0, HTMLAttributedStringBuilder.defaultLinkColor) } == true)
+        #expect(preservedForeground.map { colorsApproximatelyEqual($0, HTMLAttributedStringBuilder.defaultLinkColor) } == true)
+        #expect(underline == nil)
     }
 
     @Test func renderableNodeRendererStylesInternalLinks() async throws {
@@ -1130,9 +1131,10 @@ struct yuedu_appTests {
         let underline = result.attribute(.underlineStyle, at: linkRange.location, effectiveRange: nil) as? Int
 
         #expect(link == "#chapter-2")
-        #expect(foreground.map { colorsApproximatelyEqual($0, .systemBlue) } == true)
-        #expect(preservedForeground.map { colorsApproximatelyEqual($0, .systemBlue) } == true)
-        #expect(underline == NSUnderlineStyle.single.rawValue)
+        // Unstyled links get the default tap-affordance tint (UIColor.link); no forced underline.
+        #expect(foreground.map { colorsApproximatelyEqual($0, HTMLAttributedStringBuilder.defaultLinkColor) } == true)
+        #expect(preservedForeground.map { colorsApproximatelyEqual($0, HTMLAttributedStringBuilder.defaultLinkColor) } == true)
+        #expect(underline == nil)
     }
 
     @Test func htmlBuilderDelegatesFontSelectionWithWeightAndItalic() async {
