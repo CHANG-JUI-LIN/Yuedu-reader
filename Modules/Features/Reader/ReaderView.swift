@@ -3220,22 +3220,12 @@ struct ReaderView: View {
                         )
                         self.applyDocument(document)
 
-                        if GlobalSettings.shared.useRenderableNodePipeline {
-                            self.epubRenderer.loadTXT(
-                                attributedBuilder: markdownBuilder,
-                                bookIdentifier: targetBook.id.uuidString,
-                                renderSize: self.currentReaderRenderSize,
-                                settings: settings
-                            )
-                        } else {
-                            let legacyBuilder = TXTAttributedStringBuilder(chapters: markdownChapters)
-                            self.epubRenderer.loadTXT(
-                                attributedBuilder: legacyBuilder,
-                                bookIdentifier: targetBook.id.uuidString,
-                                renderSize: self.currentReaderRenderSize,
-                                settings: settings
-                            )
-                        }
+                        self.epubRenderer.loadTXT(
+                            attributedBuilder: markdownBuilder,
+                            bookIdentifier: targetBook.id.uuidString,
+                            renderSize: self.currentReaderRenderSize,
+                            settings: settings
+                        )
 
                         if document.tableOfContents.count > 0 {
                             self.chapters = document.tableOfContents.enumerated().map { i, chapter in

@@ -408,30 +408,27 @@ struct EPUBRenderingTests {
         // RTL bidi script (Hebrew/Arabic). Only CJK vertical-rl books are vertical.
         #expect(session.epubWritingMode != .verticalRL)
 
-        for pipeline in [EPUBAttributedStringBuilder.Pipeline.legacyHTML, .renderableNode] {
-            let builder = EPUBAttributedStringBuilder(
-                session: session,
-                renderSize: CGSize(width: 360, height: 640),
-                pipeline: pipeline
-            )
-            let result = try await builder.buildChapter(
-                at: 0,
-                settings: testRenderSettings(),
-                themeTextColor: .black,
-                themeBackgroundColor: .white
-            )
-            let text = result.attributedString.string as NSString
-            let range = text.range(of: "שלום")
-            #expect(range.location != NSNotFound)
-            guard range.location != NSNotFound,
-                  let paragraph = result.attributedString.attribute(
-                    .paragraphStyle,
-                    at: range.location,
-                    effectiveRange: nil
-                  ) as? NSParagraphStyle
-            else { return }
-            #expect(paragraph.baseWritingDirection == .rightToLeft)
-        }
+        let builder = EPUBAttributedStringBuilder(
+            session: session,
+            renderSize: CGSize(width: 360, height: 640)
+        )
+        let result = try await builder.buildChapter(
+            at: 0,
+            settings: testRenderSettings(),
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+        let text = result.attributedString.string as NSString
+        let range = text.range(of: "שלום")
+        #expect(range.location != NSNotFound)
+        guard range.location != NSNotFound,
+              let paragraph = result.attributedString.attribute(
+                .paragraphStyle,
+                at: range.location,
+                effectiveRange: nil
+              ) as? NSParagraphStyle
+        else { return }
+        #expect(paragraph.baseWritingDirection == .rightToLeft)
     }
 
     @Test @MainActor func cjkRTLPageProgressionDefaultsToVerticalWriting() async throws {
@@ -560,7 +557,15 @@ struct EPUBRenderingTests {
 
         #expect(session.layoutMode == .prePaginated)
         #expect(session.chapters.map(\.href) == ["OEBPS/page1.xhtml", "OEBPS/page2.xhtml"])
-        #expect(session.fixedLayoutViewport?.pageViewports[0] == CGSize(width: 600, height: 800))
+        let viewportResolver = FixedLayoutViewportResolver(
+            defaultViewport: session.fixedLayoutViewport?.defaultViewport,
+            pageViewports: session.fixedLayoutViewport?.pageViewports ?? [:]
+        )
+        let viewport = await viewportResolver.viewport(
+            for: 0,
+            resourceProvider: ReadiumBookResourceAdapter(session: session)
+        )
+        #expect(viewport == CGSize(width: 600, height: 800))
         let fixedPageRefs = await FixedLayoutEPUBPageProvider.chapterRefs(from: session)
         #expect(fixedPageRefs.map(\.title) == ["Page 1", "Page 2"])
         #expect(fixedPageRefs.map(\.url) == ["OEBPS/page1.xhtml", "OEBPS/page2.xhtml"])
@@ -776,51 +781,49 @@ struct EPUBRenderingTests {
 
         let session = try await PublicationSession.open(sourceURL: epubURL)
         let W: CGFloat = 360
-        for pipeline in [EPUBAttributedStringBuilder.Pipeline.legacyHTML, .renderableNode] {
-            let builder = EPUBAttributedStringBuilder(
-                session: session,
-                renderSize: CGSize(width: W, height: 640),
-                pipeline: pipeline
-            )
-            let result = try await builder.buildChapter(
-                at: 1,
-                settings: testRenderSettings(),
-                themeTextColor: .black,
-                themeBackgroundColor: .white
-            )
-            let attr = result.attributedString
-            let s = attr.string as NSString
-            let aIdx = s.range(of: "אבישי").location
-            #expect(aIdx != NSNotFound)
-            if aIdx != NSNotFound, let ps = attr.attribute(.paragraphStyle, at: aIdx, effectiveRange: nil) as? NSParagraphStyle {
-                #expect(ps.alignment == .right)
-                #expect(ps.baseWritingDirection == .rightToLeft)
-                // The fix carries the right margin in headIndent and zeroes tailIndent for RTL.
-                #expect(ps.tailIndent == 0)
+        let chapterIndex = try #require(session.chapterIndex(for: "OPS/chapter1.xhtml") ?? session.chapterIndex(for: "chapter1.xhtml"))
+        let builder = EPUBAttributedStringBuilder(
+            session: session,
+            renderSize: CGSize(width: W, height: 640)
+        )
+        let result = try await builder.buildChapter(
+            at: chapterIndex,
+            settings: testRenderSettings(),
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+        let attr = result.attributedString
+        let s = attr.string as NSString
+        let aIdx = s.range(of: "אבישי").location
+        #expect(aIdx != NSNotFound)
+        if aIdx != NSNotFound, let ps = attr.attribute(.paragraphStyle, at: aIdx, effectiveRange: nil) as? NSParagraphStyle {
+            #expect(ps.alignment == .right)
+            #expect(ps.baseWritingDirection == .rightToLeft)
+            // The fix carries the right margin in headIndent and zeroes tailIndent for RTL.
+            #expect(ps.tailIndent == 0)
+        }
+        // Frame width must equal the builder's renderWidth (renderSize.width - insets).
+        let fs = CTFramesetterCreateWithAttributedString(attr as CFAttributedString)
+        let frame = CTFramesetterCreateFrame(
+            fs, CFRangeMake(0, attr.length),
+            CGPath(rect: CGRect(x: 0, y: 0, width: W, height: 4000), transform: nil), nil
+        )
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        var shortRight: CGFloat? = nil
+        for (i, line) in lines.enumerated() {
+            let lr = CTLineGetStringRange(line)
+            let sub = s.substring(with: NSRange(location: lr.location, length: max(0, lr.length)))
+            if sub.contains("בדיקהקצרה") {
+                let w = CTLineGetTypographicBounds(line, nil, nil, nil)
+                shortRight = origins[i].x + w
             }
-            // Frame width must equal the builder's renderWidth (renderSize.width - insets).
-            let fs = CTFramesetterCreateWithAttributedString(attr as CFAttributedString)
-            let frame = CTFramesetterCreateFrame(
-                fs, CFRangeMake(0, attr.length),
-                CGPath(rect: CGRect(x: 0, y: 0, width: W, height: 4000), transform: nil), nil
-            )
-            let lines = CTFrameGetLines(frame) as! [CTLine]
-            var origins = [CGPoint](repeating: .zero, count: lines.count)
-            CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
-            var shortRight: CGFloat? = nil
-            for (i, line) in lines.enumerated() {
-                let lr = CTLineGetStringRange(line)
-                let sub = s.substring(with: NSRange(location: lr.location, length: max(0, lr.length)))
-                if sub.contains("בדיקהקצרה") {
-                    let w = CTLineGetTypographicBounds(line, nil, nil, nil)
-                    shortRight = origins[i].x + w
-                }
-            }
-            #expect(shortRight != nil)
-            if let shortRight {
-                // Bug: right edge ~3x the 8px margin inward (≈ W-24). Fix: within ~1x (≈ W-8).
-                #expect(shortRight > W - 16, "RTL short line not flush right: rightEdge=\(shortRight) frameWidth=\(W) pipeline=\(pipeline)")
-            }
+        }
+        #expect(shortRight != nil)
+        if let shortRight {
+            // Bug: right edge ~3x the 8px margin inward (≈ W-24). Fix: within ~1x (≈ W-8).
+            #expect(shortRight > W - 16, "RTL short line not flush right: rightEdge=\(shortRight) frameWidth=\(W)")
         }
     }
 }

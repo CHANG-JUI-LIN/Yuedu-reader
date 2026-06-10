@@ -14,19 +14,13 @@ import UIKit
 // EPUBPageRenderer updates this value during notifyViewportSize.
 
 @MainActor
-final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuilding {
-
-    enum Pipeline {
-        case legacyHTML
-        case renderableNode
-    }
+final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuilding, RenderSizeAwareAttributedStringBuilding {
 
     // MARK: - Stored Properties
 
     let session: PublicationSession
     let resourceProvider: ReadiumBookResourceAdapter
     private let styleResolver: EPUBStyleResolver
-    private let pipeline: Pipeline
     /// Current render area size (injected by EPUBPageRenderer during load / notifyViewportSize).
     var renderSize: CGSize
     /// Set to true when CSS writing-mode: vertical-rl is detected from any chapter's stylesheet or body element.
@@ -37,14 +31,12 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
     init(
         session: PublicationSession,
         renderSize: CGSize,
-        pipeline: Pipeline = .renderableNode,
         fontRegistrationService: any FontRegistrationServicing = CoreTextFontRegistrationService()
     ) {
         let adapter = ReadiumBookResourceAdapter(session: session)
         self.session = session
         self.resourceProvider = adapter
         self.renderSize = renderSize
-        self.pipeline = pipeline
         self.styleResolver = EPUBStyleResolver(
             resourceProvider: adapter,
             fontRegistrationService: fontRegistrationService
@@ -54,6 +46,10 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
     // MARK: - AttributedStringBuilding Basic Info
 
     var chapterCount: Int { session.chapters.count }
+
+    func updateRenderSize(_ size: CGSize) {
+        renderSize = size
+    }
 
     func chapterTitle(at index: Int) -> String {
         guard session.chapters.indices.contains(index) else { return "" }
@@ -141,25 +137,6 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             backgroundColor: themeBackgroundColor
         )
         CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.chapter.begin index=\(index) href=\(chapterHref) htmlLen=\(html.count) settingsWritingMode=\(settings.writingMode) configWritingMode=\(config.writingMode) renderWidth=\(config.renderWidth)")
-
-        if pipeline == .legacyHTML {
-            let buildResult = await localBuilder.build(html: html, config: config)
-            if localBuilder.detectedVerticalWritingMode {
-                cssDetectedVerticalWritingMode = true
-            }
-            let pageBackgroundImage = await resolvedPageBackgroundImage(
-                initial: buildResult.pageBackgroundImage,
-                source: buildResult.pageBackgroundImageSource,
-                chapterHref: chapterHref
-            )
-            CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.legacyRendered index=\(index) href=\(chapterHref) attrLen=\(buildResult.attributedString.length) cssDetectedVerticalGlobal=\(cssDetectedVerticalWritingMode) prefix=\"\(debugTextPreview(buildResult.attributedString.string))\"")
-            return AttributedChapterBuildResult(
-                attributedString: buildResult.attributedString,
-                imagePage: buildResult.imagePage,
-                pageBackgroundImage: pageBackgroundImage,
-                anchorOffsets: buildResult.anchorOffsets
-            )
-        }
 
         guard let ast = await localBuilder.buildStyledAST(html: html, config: config) else {
             return AttributedChapterBuildResult(

@@ -6,10 +6,7 @@ import UIKit
 // Takes [UnifiedChapter] as input, produces NSAttributedString via the RenderableNode IR path.
 // Implements AttributedStringBuilding, directly replacing TXTAttributedStringBuilder.
 //
-// Migration strategy:
-//   TXTPageEngine.init selects either NodeAttributedStringBuilder or TXTAttributedStringBuilder
-//   based on GlobalSettings.shared.useRenderableNodePipeline,
-//   allowing both pipelines to run in the same session for comparison.
+// TXTPageEngine uses this builder directly so TXT/Markdown content shares the same IR renderer.
 
 struct NodeAttributedStringBuilder: AttributedStringBuilding {
 
@@ -65,7 +62,11 @@ struct NodeAttributedStringBuilder: AttributedStringBuilding {
         let nodes = TXTRenderableNodeConverter.convert(chapter: chapter)
 
         // 2. [RenderableNode] → NSAttributedString
-        let rendererConfig = NodeAttributedStringRenderer.Config(from: settings, textColor: themeTextColor)
+        let rendererConfig = NodeAttributedStringRenderer.Config(
+            from: settings,
+            textColor: themeTextColor,
+            fontFamily: UserReaderFontResolver.selectedPostScriptName
+        )
         let renderer = NodeAttributedStringRenderer(config: rendererConfig)
         let rendered = await renderer.render(nodes)
 
@@ -277,7 +278,11 @@ struct OnlineNodeAttributedStringBuilder: AttributedStringBuilding {
             nodes = TXTRenderableNodeConverter.convert(chapter: chapter)
         }
 
-        let rendererConfig = NodeAttributedStringRenderer.Config(from: settings, textColor: themeTextColor)
+        let rendererConfig = NodeAttributedStringRenderer.Config(
+            from: settings,
+            textColor: themeTextColor,
+            fontFamily: UserReaderFontResolver.selectedPostScriptName
+        )
         let renderer = NodeAttributedStringRenderer(config: rendererConfig)
         return AttributedChapterBuildResult(
             attributedString: await renderer.render(nodes ?? []),

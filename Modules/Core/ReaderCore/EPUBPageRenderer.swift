@@ -15,8 +15,7 @@ final class EPUBPageRenderer: ObservableObject {
     @Published private(set) var fixedLayoutOrientation: FixedLayoutOrientation = .auto
     @Published private(set) var fixedLayoutViewport: FixedLayoutViewport?
     @Published private(set) var mediaOverlaysByChapter: [Int: EPUBMediaOverlay] = [:]
-    /// Holds the EPUB builder when useRenderableNodePipeline is enabled,
-    /// so notifyViewportSize can update renderSize.
+    /// Holds the EPUB builder so notifyViewportSize can update renderSize.
     private var epubBuilder: EPUBAttributedStringBuilder?
     private var onlineBuilder: OnlineProviderAttributedStringBuilder?
     private var publicationSession: PublicationSession?
@@ -112,38 +111,18 @@ final class EPUBPageRenderer: ObservableObject {
         )
         let store = CharOffsetStore(directoryURL: progressDir)
 
-        // ── Phase 7 A/B branch ─────────────────────────────────────────────
         self.onlineBuilder = nil
-        let newEngine: CoreTextPageEngine
-        if GlobalSettings.shared.useRenderableNodePipeline {
-            let builder = EPUBAttributedStringBuilder(
-                session: session,
-                renderSize: effectiveSize,
-                pipeline: .renderableNode
-            )
-            self.epubBuilder = builder
-            newEngine = CoreTextPageEngine(
-                attributedBuilder: builder,
-                renderSettings: settings,
-                offsetStore: store
-            )
-            self.scrollEngine = CoreTextScrollEngine(builder: builder, renderSettings: settings)
-        } else {
-            // The paged engine uses the resourceProvider path, but scroll mode still needs AttributedStringBuilding.
-            // Keep it on the legacy HTML path so scroll mode does not restyle chapter titles or English text differently.
-            let builder = EPUBAttributedStringBuilder(
-                session: session,
-                renderSize: effectiveSize,
-                pipeline: .legacyHTML
-            )
-            self.epubBuilder = builder
-            newEngine = CoreTextPageEngine(
-                resourceProvider: ReadiumBookResourceAdapter(session: session),
-                renderSettings: settings,
-                offsetStore: store
-            )
-            self.scrollEngine = CoreTextScrollEngine(builder: builder, renderSettings: settings)
-        }
+        let builder = EPUBAttributedStringBuilder(
+            session: session,
+            renderSize: effectiveSize
+        )
+        self.epubBuilder = builder
+        let newEngine = CoreTextPageEngine(
+            attributedBuilder: builder,
+            renderSettings: settings,
+            offsetStore: store
+        )
+        self.scrollEngine = CoreTextScrollEngine(builder: builder, renderSettings: settings)
 
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         self.engine = newEngine
@@ -174,7 +153,7 @@ final class EPUBPageRenderer: ObservableObject {
         preparedChapters: [UnifiedChapter]? = nil
     ) {
         let chapters = preparedChapters ?? TXTChapterParser.parseUnifiedChapters(text, bookTitle: title)
-        let builder = TXTAttributedStringBuilder(chapters: chapters)
+        let builder = NodeAttributedStringBuilder(chapters: chapters)
         loadTXT(
             attributedBuilder: builder,
             bookIdentifier: bookIdentifier,

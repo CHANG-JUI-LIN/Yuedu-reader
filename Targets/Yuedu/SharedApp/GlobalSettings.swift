@@ -384,12 +384,6 @@ class GlobalSettings: ObservableObject {
         didSet { UserDefaults.standard.set(ttsSystemVoiceIdentifier, forKey: "yd_tts_system_voice_id") }
     }
 
-    // MARK: - Experimental Feature Flags
-
-    @Published var useRenderableNodePipeline: Bool {
-        didSet { UserDefaults.standard.set(useRenderableNodePipeline, forKey: "yd_use_renderable_node_pipeline") }
-    }
-
     private init() {
         UserDefaults.standard.removeObject(forKey: "yd_app_lang")
         isLoggedIn = UserDefaults.standard.bool(forKey: "yd_account_logged_in")
@@ -464,8 +458,6 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_search_cache_days") as? Int) ?? 5
         iCloudAutoSync =
             (UserDefaults.standard.object(forKey: "yd_icloud_auto_sync") as? Bool) ?? true
-        useRenderableNodePipeline =
-            UserDefaults.standard.bool(forKey: "yd_use_renderable_node_pipeline")
         httpTtsUrlTemplate = UserDefaults.standard.string(forKey: "yd_http_tts_url_template") ?? ""
         httpTtsHeaders = Self.loadTTSHeaders()
         importedTTSSources = Self.loadImportedTTSSources()

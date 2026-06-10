@@ -41,6 +41,11 @@ protocol AttributedStringBuilding {
     ) async throws -> AttributedChapterBuildResult
 }
 
+@MainActor
+protocol RenderSizeAwareAttributedStringBuilding: AnyObject {
+    func updateRenderSize(_ size: CGSize)
+}
+
 extension AttributedStringBuilding {
     var prefersLazyByteScan: Bool { false }
     func chapterSourceHref(at index: Int) -> String? { nil }

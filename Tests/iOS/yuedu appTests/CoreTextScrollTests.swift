@@ -518,16 +518,15 @@ struct CoreTextScrollTests {
         window.isHidden = true
     }
 
-    @Test("actual Project Hail Mary EPUB builds legacy scroll chunks")
+    @Test("actual Project Hail Mary EPUB builds IR scroll chunks")
     @MainActor
-    func actualProjectHailMaryBuildsLegacyScrollChunks() async throws {
+    func actualProjectHailMaryBuildsIRScrollChunks() async throws {
         guard let sourceURL = Self.fixtureURL(Self.projectHailMaryPath) else { return }
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let chapterIndex = try #require(session.chapterIndex(for: "text/part0005.html"))
         let builder = EPUBAttributedStringBuilder(
             session: session,
-            renderSize: Self.fixtureRenderSize,
-            pipeline: .legacyHTML
+            renderSize: Self.fixtureRenderSize
         )
 
         let result = try await builder.buildChapter(
@@ -550,17 +549,16 @@ struct CoreTextScrollTests {
         Self.expectContinuousChunks(output.chunks, totalLength: result.attributedString.length)
     }
 
-    @Test("actual Hated Courage EPUB keeps title in vertical legacy scroll chunks")
+    @Test("actual Hated Courage EPUB keeps title in vertical IR scroll chunks")
     @MainActor
-    func actualHatedCourageKeepsTitleInVerticalLegacyScrollChunks() async throws {
+    func actualHatedCourageKeepsTitleInVerticalIRScrollChunks() async throws {
         guard let sourceURL = Self.fixtureURL(Self.hatedCouragePath) else { return }
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
         let settings = Self.makeRenderSettings(writingMode: .verticalRTL)
         let builder = EPUBAttributedStringBuilder(
             session: session,
-            renderSize: Self.fixtureRenderSize,
-            pipeline: .legacyHTML
+            renderSize: Self.fixtureRenderSize
         )
 
         let result = try await builder.buildChapter(
