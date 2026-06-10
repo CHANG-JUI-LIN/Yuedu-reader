@@ -110,6 +110,19 @@ private extension HTMLAttributedStringBuilder.ElementNode {
                 node = .text("")
             }
 
+        case "object":
+            let type = attributes["type"] ?? ""
+            if !type.lowercased().hasPrefix("image/") {
+                node = .unsupportedInteractive(
+                    type: type,
+                    title: attributes["title"] ?? attributes["aria-label"] ?? type,
+                    children: mappedChildren,
+                    style: style
+                )
+            } else {
+                node = .block(tag: tag, children: mappedChildren, style: style)
+            }
+
         case "p", "div", "body":
             node = .paragraph(mappedChildren, style: style)
 

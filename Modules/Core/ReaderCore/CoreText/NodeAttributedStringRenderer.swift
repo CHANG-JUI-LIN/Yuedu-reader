@@ -150,6 +150,15 @@ struct NodeAttributedStringRenderer {
         case .media(let media, let style):
             return await renderMedia(media, style: style, ctx: ctx)
 
+        case .unsupportedInteractive(let type, let title, let children, let style):
+            return await renderUnsupportedInteractive(
+                type: type,
+                title: title,
+                children: children,
+                style: style,
+                ctx: ctx
+            )
+
         // ──────────────── Paragraph ────────────────
 
         case .paragraph(let children, let style):
@@ -1038,6 +1047,78 @@ struct NodeAttributedStringRenderer {
         )
         let output = NSMutableAttributedString(attributedString: placeholder)
         output.append(NSAttributedString(string: "\n", attributes: blockCtx.baseAttributes))
+        return output
+    }
+
+    private func renderUnsupportedInteractive(
+        type: String,
+        title: String,
+        children: [RenderableNode],
+        style: RenderStyle,
+        ctx: RenderContext
+    ) async -> NSAttributedString {
+        let blockCtx = applyBlockStyle(style, to: ctx, isHeading: false)
+        let maxWidth: CGFloat
+        if let renderWidth = config.renderWidth {
+            maxWidth = renderWidth
+        } else {
+            maxWidth = await MainActor.run { UIScreen.main.bounds.width }
+        }
+        let image = await MainActor.run {
+            EPUBMediaPlaceholderRenderer.interactiveImage(
+                title: localized("Interactive content isn't supported"),
+                detail: title,
+                maxWidth: maxWidth,
+                font: blockCtx.font,
+                textColor: blockCtx.textColor
+            )
+        }
+
+        var placeholderStyle = style
+        placeholderStyle.width = image.size.width
+        placeholderStyle.height = image.size.height
+        let metrics = await resolvedImageMetrics(
+            image: image,
+            style: placeholderStyle,
+            font: blockCtx.font,
+            displayMode: .block
+        )
+        placeholderStyle.width = metrics.drawWidth
+        placeholderStyle.height = metrics.drawHeight
+
+        let placeholder = NSMutableAttributedString(
+            attributedString: await makeImagePlaceholder(
+                image: image,
+                style: placeholderStyle,
+                ctx: blockCtx,
+                imageSource: "",
+                imageAlt: localized("Interactive content isn't supported"),
+                displayMode: .block,
+                precomputedMetrics: metrics
+            )
+        )
+        let range = NSRange(location: 0, length: placeholder.length)
+        placeholder.addAttribute(
+            HTMLAttributedStringBuilder.unsupportedInteractiveAttribute,
+            value: type,
+            range: range
+        )
+        placeholder.addAttribute(
+            HTMLAttributedStringBuilder.semanticTagAttribute,
+            value: "unsupported-interactive",
+            range: range
+        )
+        placeholder.addAttribute(
+            .paragraphStyle,
+            value: imageBlockParagraphStyle(base: blockCtx.paragraphStyle, metrics: metrics),
+            range: range
+        )
+
+        let output = NSMutableAttributedString(attributedString: placeholder)
+        output.append(NSAttributedString(string: "\n", attributes: blockCtx.baseAttributes))
+        if !children.isEmpty {
+            output.append(await renderBlock(children: children, style: style, ctx: ctx, isHeading: false))
+        }
         return output
     }
 
