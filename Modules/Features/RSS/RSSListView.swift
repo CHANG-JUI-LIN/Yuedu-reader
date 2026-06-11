@@ -891,15 +891,17 @@ private struct RSSOPMLImportSheet: View {
                     }
                 }
             }
-            .navigationTitle(localized("匯入 OPML"))
-            .toolbarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) {
-                        isPresented = false
+                .navigationTitle(localized("匯入 OPML"))
+                .toolbarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            isPresented = false
+                        } label: {
+                            Image(systemName: "xmark")
+                        }
                     }
                 }
-            }
             .disabled(isLoading)
             .overlay {
                 if isLoading {

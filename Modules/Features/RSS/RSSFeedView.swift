@@ -197,12 +197,17 @@ struct RSSFeedView: View {
     private var unreadCount: Int {
         store.unreadCount(for: currentSource.id)
     }
-
     var body: some View {
-        Group {
+        List {
             if fetcher.isLoading && articles.isEmpty {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, minHeight: 300)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
             } else if let errorMsg = fetcher.error, articles.isEmpty {
                 VStack(spacing: 12) {
@@ -214,13 +219,10 @@ struct RSSFeedView: View {
                         .foregroundColor(DSColor.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
-
-                    Button(localized("重試")) {
-                        Task { await refresh() }
-                    }
-                    .foregroundColor(DSColor.accent)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, minHeight: 300)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
             } else if articles.isEmpty {
                 VStack(spacing: 12) {
@@ -230,60 +232,55 @@ struct RSSFeedView: View {
 
                     Text(emptyMessage)
                         .foregroundColor(DSColor.textSecondary)
-
-                    Button(localized("重新載入")) {
-                        Task { await refresh() }
-                    }
-                    .foregroundColor(DSColor.accent)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, minHeight: 300)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
             } else {
-                List {
-                    ForEach(articles) { article in
+                ForEach(articles) { article in
+                    Button {
+                        store.markRead(articleId: article.id, isRead: true)
+                        selectedArticleID = article.id
+                    } label: {
+                        RSSArticleRow(
+                            source: currentSource,
+                            article: article,
+                            timeFormatter: timeFormatter
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .swipeActions(edge: .leading) {
                         Button {
-                            store.markRead(articleId: article.id, isRead: true)
-                            selectedArticleID = article.id
+                            store.toggleFavorite(articleId: article.id)
                         } label: {
-                            RSSArticleRow(
-                                source: currentSource,
-                                article: article,
-                                timeFormatter: timeFormatter
+                            Label(
+                                article.isFavorite ? localized("取消收藏") : localized("收藏"),
+                                systemImage: article.isFavorite ? "star.slash" : "star"
                             )
                         }
-                        .buttonStyle(.plain)
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .swipeActions(edge: .leading) {
-                            Button {
-                                store.toggleFavorite(articleId: article.id)
-                            } label: {
-                                Label(
-                                    article.isFavorite ? localized("取消收藏") : localized("收藏"),
-                                    systemImage: article.isFavorite ? "star.slash" : "star"
-                                )
-                            }
-                            .tint(.yellow)
+                        .tint(.yellow)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button {
+                            store.markRead(articleId: article.id, isRead: !article.isRead)
+                        } label: {
+                            Label(
+                                article.isRead ? localized("標為未讀") : localized("標為已讀"),
+                                systemImage: article.isRead ? "envelope.badge" : "envelope.open"
+                            )
                         }
-                        .swipeActions(edge: .trailing) {
-                            Button {
-                                store.markRead(articleId: article.id, isRead: !article.isRead)
-                            } label: {
-                                Label(
-                                    article.isRead ? localized("標為未讀") : localized("標為已讀"),
-                                    systemImage: article.isRead ? "envelope.badge" : "envelope.open"
-                                )
-                            }
-                            .tint(.blue)
-                        }
+                        .tint(.blue)
                     }
                 }
-                .listStyle(.plain)
-                .refreshable {
-                    await refresh()
-                }
             }
+        }
+        .listStyle(.plain)
+        .refreshable {
+            await refresh()
         }
         .toolbarTitleDisplayMode(.inlineLarge)
         .toolbar(.hidden, for: .tabBar)
