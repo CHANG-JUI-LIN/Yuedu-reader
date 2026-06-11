@@ -83,10 +83,13 @@ Import/Export: OPML 2.0 and Legado JSON formats
 
 ## Dependencies
 
+Detailed package versions and their transitive dependencies are recorded in [Dependencies.md](file:///Users/zhangruilin/Desktop/Yuedu-reader/Technotes/Dependencies.md).
+
 - **Readium** (BSD) — EPUB parsing (ReadiumShared, ReadiumStreamer, ReadiumZIPFoundation, ReadiumFuzi)
 - **SwiftSoup** (MIT) — HTML parsing for RSS and rule engine
 - **GoogleSignIn** (Apache 2.0) — Optional Google sign-in
 - **CryptoSwift**, **SQLite.swift**, **Zip**, **DifferenceKit**, **GCDWebServer**
+
 
 ## Key Documentation
 
