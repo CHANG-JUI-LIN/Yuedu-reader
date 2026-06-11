@@ -195,7 +195,7 @@ struct OPDSFeedView: View {
             }
         }
         .navigationTitle(route.title)
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbarTitleDisplayMode(.large)
         .searchableWhen(searchDescURL != nil, text: $searchText, prompt: localized("搜尋此目錄"))
         .onSubmit(of: .search) { Task { await runSearch() } }
         .task(id: route.url) { await loadInitial() }

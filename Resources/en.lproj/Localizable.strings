@@ -650,7 +650,7 @@
 "更多" = "More";
 "訂閱" = "Feeds";
 "Fixed-layout EPUB detected" = "Fixed-layout EPUB detected (in development)";
-"這是一段測試文字，用來測試字體大小和行距、字距、段落間距，以及不同主題下的閱讀舒適度。調整設定時，可以觀察文字密度、換行節奏與背景對比是否符合你的閱讀習慣。" = "This is sample text for checking font size, line spacing, character spacing, paragraph spacing, and reading comfort across themes. As you adjust settings, watch the text density, line rhythm, and background contrast to see whether they fit your reading habits.";
+"  這是一段測試文字，用來測試字體大小和行距、字距、段落間距，以及不同主題下的閱讀舒適度。調整設定時，可以觀察文字密度、換行節奏與背景對比是否符合你的閱讀習慣。" = "  This is sample text for checking font size, line spacing, character spacing, paragraph spacing, and reading comfort across themes. As you adjust settings, watch the text density, line rhythm, and background contrast to see whether they fit your reading habits.";
 "已取消 Apple 登錄" = "Apple sign-in was canceled";
 "Apple 登錄失敗，請稍後再試" = "Apple sign-in failed. Please try again later.";
 "Apple 登錄回應無效" = "Apple sign-in returned an invalid response.";

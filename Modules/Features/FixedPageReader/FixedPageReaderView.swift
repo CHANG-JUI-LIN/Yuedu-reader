@@ -284,7 +284,7 @@ struct FixedPageChapterListView: View {
                 }
             }
             .navigationTitle(localized("目錄"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(localized("關閉")) { dismiss() }

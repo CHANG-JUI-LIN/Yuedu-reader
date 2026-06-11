@@ -35,7 +35,7 @@ struct BookSourceLoginWebView: View {
                     .edgesIgnoringSafeArea(.bottom)
             }
             .navigationTitle(localized("Cookie 驗證登入"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) { onDismiss() }

@@ -18,7 +18,7 @@ struct JsBridgeBrowserView: View {
             JsBridgeBrowserRepresentable(urlString: urlString, bridge: bridge)
                 .edgesIgnoringSafeArea(.bottom)
                 .navigationTitle(title.isEmpty ? "瀏覽器" : title)
-                .toolbarTitleDisplayMode(.inlineLarge)
+                .toolbarTitleDisplayMode(.large)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button("取消") { onDismiss(nil) }

@@ -79,7 +79,7 @@ struct BookSourceFormLoginView: View {
             }
             .disabled(isLoading)
             .navigationTitle(source.bookSourceName.isEmpty ? localized("書源登入") : source.bookSourceName)
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) { onDismiss() }

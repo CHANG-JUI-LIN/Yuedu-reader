@@ -306,7 +306,7 @@ struct FontSettingsView: View {
             }
             .animation(.easeInOut(duration: 0.22), value: theme)
             .navigationTitle(localized("閱讀設定"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(localized("完成")) { presentationMode.wrappedValue.dismiss() }

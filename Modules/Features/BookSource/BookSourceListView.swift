@@ -520,7 +520,7 @@ struct BookSourceListView: View {
                 Spacer()
             }
             .navigationTitle(localized("匯入書源"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) {
@@ -617,7 +617,7 @@ struct BookSourceListView: View {
                 Spacer()
             }
             .navigationTitle(localized("網路導入"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) {

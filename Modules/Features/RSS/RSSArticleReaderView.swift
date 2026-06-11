@@ -10,9 +10,7 @@ struct RSSArticleReaderView: View {
     @State private var isLoadingFullText = false
     @State private var fullTextError: String?
     @State private var selectedURL: URL?
-    @State private var showSearch = false
-    @State private var searchText = ""
-    @State private var searchCommand: RSSArticleSearchCommand?
+    @State private var findRequestID: UUID?
     @State private var sourceFaviconURLs: [URL] = []
 
     private var article: RSSArticleRecord? {
@@ -30,7 +28,7 @@ struct RSSArticleReaderView: View {
                 RSSArticleWebReaderView(
                     document: document(for: article),
                     restoreScrollY: article.readerScrollY,
-                    searchCommand: $searchCommand,
+                    findRequestID: $findRequestID,
                     onScrollYChange: { scrollY in
                         store.updateReaderScrollY(articleId: article.id, scrollY: scrollY)
                     },
@@ -40,24 +38,8 @@ struct RSSArticleReaderView: View {
                 )
                 .ignoresSafeArea(.container, edges: .bottom)
                 .navigationTitle(navigationTitle(for: article))
-                .toolbarTitleDisplayMode(.inlineLarge)
+                .toolbarTitleDisplayMode(.large)
                 .toolbar(.hidden, for: .tabBar)
-                .safeAreaInset(edge: .bottom) {
-                    if showSearch {
-                        RSSArticleFindBar(
-                            searchText: $searchText,
-                            onPrevious: { submitSearch(.previous) },
-                            onNext: { submitSearch(.next) },
-                            onDone: {
-                                showSearch = false
-                                searchText = ""
-                            }
-                        )
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.bar)
-                    }
-                }
                 .toolbar {
                     ToolbarItemGroup(placement: .navigationBarTrailing) {
                         Button {
@@ -70,7 +52,7 @@ struct RSSArticleReaderView: View {
                         }
 
                         Button {
-                            showSearch.toggle()
+                            findRequestID = UUID()
                         } label: {
                             Label(localized("搜尋文章"), systemImage: "magnifyingglass")
                         }
@@ -104,10 +86,6 @@ struct RSSArticleReaderView: View {
                 }
                 .task(id: sourceFaviconLoadKey(for: article)) {
                     await loadSourceFaviconURLs()
-                }
-                .onChange(of: searchText) { _, newValue in
-                    guard !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                    submitSearch(.next)
                 }
             } else {
                 ContentUnavailableView(
@@ -195,12 +173,6 @@ struct RSSArticleReaderView: View {
         }
     }
 
-    private func submitSearch(_ direction: RSSArticleSearchDirection) {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return }
-        searchCommand = RSSArticleSearchCommand(query: query, direction: direction)
-    }
-
     private func loadFullTextIfNeeded(_ article: RSSArticleRecord) async {
         guard readerMode == .reader,
               !shouldPreferFeedContent(article),
@@ -257,52 +229,10 @@ struct RSSArticleReaderView: View {
     }
 }
 
-private struct RSSArticleFindBar: View {
-    @Binding var searchText: String
-    let onPrevious: () -> Void
-    let onNext: () -> Void
-    let onDone: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            TextField(localized("搜尋文章"), text: $searchText)
-                .textInputAutocapitalization(.never)
-                .disableAutocorrection(true)
-                .textFieldStyle(.roundedBorder)
-                .submitLabel(.search)
-                .onSubmit(onNext)
-
-            Button(action: onPrevious) {
-                Image(systemName: "chevron.up")
-            }
-            .disabled(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            Button(action: onNext) {
-                Image(systemName: "chevron.down")
-            }
-            .disabled(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            Button(localized("完成"), action: onDone)
-                .font(.subheadline.weight(.semibold))
-        }
-    }
-}
-
-struct RSSArticleSearchCommand: Equatable {
-    let id = UUID()
-    var query: String
-    var direction: RSSArticleSearchDirection
-}
-
-enum RSSArticleSearchDirection: Equatable {
-    case previous
-    case next
-}
-
 private struct RSSArticleWebReaderView: UIViewRepresentable {
     let document: RSSArticleHTMLDocument
     let restoreScrollY: Double
-    @Binding var searchCommand: RSSArticleSearchCommand?
+    @Binding var findRequestID: UUID?
     let onScrollYChange: (Double) -> Void
     let onOpenURL: (URL) -> Void
 
@@ -321,6 +251,9 @@ private struct RSSArticleWebReaderView: UIViewRepresentable {
         webView.isOpaque = false
         webView.scrollView.backgroundColor = .clear
         webView.allowsBackForwardNavigationGestures = false
+        // Native Safari-style find-in-page (find bar, match count, prev/next,
+        // highlighting). Also enables ⌘F with a hardware keyboard.
+        webView.isFindInteractionEnabled = true
         return webView
     }
 
@@ -333,10 +266,9 @@ private struct RSSArticleWebReaderView: UIViewRepresentable {
             webView.loadHTMLString(document.html, baseURL: document.baseURL)
         }
 
-        if let command = searchCommand,
-           context.coordinator.lastSearchCommandID != command.id {
-            context.coordinator.lastSearchCommandID = command.id
-            context.coordinator.runSearch(command, in: webView)
+        if let id = findRequestID, context.coordinator.lastFindRequestID != id {
+            context.coordinator.lastFindRequestID = id
+            webView.findInteraction?.presentFindNavigator(showingReplace: false)
         }
     }
 
@@ -344,7 +276,7 @@ private struct RSSArticleWebReaderView: UIViewRepresentable {
         var parent: RSSArticleWebReaderView
         var loadedHTML: String?
         var pendingRestoreScrollY: Double?
-        var lastSearchCommandID: UUID?
+        var lastFindRequestID: UUID?
 
         init(_ parent: RSSArticleWebReaderView) {
             self.parent = parent
@@ -379,12 +311,6 @@ private struct RSSArticleWebReaderView: UIViewRepresentable {
             } else if let value = message.body as? Int {
                 parent.onScrollYChange(Double(value))
             }
-        }
-
-        func runSearch(_ command: RSSArticleSearchCommand, in webView: WKWebView) {
-            let encoded = Data(command.query.utf8).base64EncodedString()
-            let backwards = command.direction == .previous ? "true" : "false"
-            webView.evaluateJavaScript(#"window.yueduFind("\#(encoded)", \#(backwards));"#)
         }
     }
 }

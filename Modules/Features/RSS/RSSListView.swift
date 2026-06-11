@@ -892,7 +892,7 @@ private struct RSSOPMLImportSheet: View {
                 }
             }
             .navigationTitle(localized("匯入 OPML"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) {
@@ -1156,7 +1156,7 @@ private struct ImportLegadoJSONURLSheet: View {
                 }
             }
             .navigationTitle(localized("從網址匯入 Legado JSON"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) {
@@ -1246,7 +1246,7 @@ private struct AddRSSSourceSheet: View {
                 }
             }
             .navigationTitle(localized("新增 RSS 訂閱"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) {
@@ -1340,7 +1340,7 @@ private struct AddRSSFolderSheet: View {
                 }
             }
             .navigationTitle(localized("新增資料夾"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) {
@@ -1386,7 +1386,7 @@ private struct RenameRSSFolderSheet: View {
                 }
             }
             .navigationTitle(localized("重新命名"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) {
@@ -1452,7 +1452,7 @@ private struct RSSSourceInfoSheet: View {
                 }
             }
             .navigationTitle(localized("取得資訊"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(localized("完成")) {

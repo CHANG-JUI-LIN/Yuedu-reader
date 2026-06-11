@@ -113,7 +113,7 @@ struct BookSourceRuleDebugView: View {
                 }
             }
             .navigationTitle(source.bookSourceName.isEmpty ? localized("書源調試") : source.bookSourceName)
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(localized("關閉")) { dismiss() }

@@ -185,7 +185,7 @@ struct OnlineBookView: View {
         }
         .scrollIndicators(.hidden)
         .background(DSColor.background)
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbarTitleDisplayMode(.large)
         .toolbar(.hidden, for: .tabBar)
         .environment(\.locale, Locale(identifier: gs.localeIdentifier))
         .safeAreaInset(edge: .bottom) { bottomBar }

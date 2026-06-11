@@ -1165,18 +1165,6 @@ enum RSSArticleHTMLRenderer {
               postScrollY();
             });
           };
-          window.yueduFind = function(encodedQuery, backwards) {
-            var query = "";
-            try {
-              query = decodeURIComponent(Array.prototype.map.call(atob(encodedQuery), function(c) {
-                return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
-              }).join(""));
-            } catch (e) {
-              query = "";
-            }
-            if (!query) { return false; }
-            return window.find(query, false, !!backwards, true, false, false, false);
-          };
           window.yueduFallbackImage = function(image) {
             if (!image) { return; }
             var index = Number(image.getAttribute("data-fallback-index") || "0");

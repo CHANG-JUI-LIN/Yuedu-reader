@@ -91,10 +91,20 @@ struct ReaderSettingsView: View {
             }
             .background(pageBackground.ignoresSafeArea())
             .navigationTitle(localized("閱讀設定"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("完成")) { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss() // 點擊叉叉直接離開
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {dismiss() } label: {
+                        Image(systemName: "checkmark")
+                    }
                 }
             }
         }
@@ -212,7 +222,7 @@ struct ReaderSettingsView: View {
                     .font(.system(size: 18, weight: .regular))
                     .baselineOffset(-6)
             }
-            Text(localized("這是一段測試文字，用來測試字體大小和行距、字距、段落間距，以及不同主題下的閱讀舒適度。調整設定時，可以觀察文字密度、換行節奏與背景對比是否符合你的閱讀習慣。"))
+            Text(localized("  這是一段測試文字，用來測試字體大小和行距、字距、段落間距，以及不同主題下的閱讀舒適度。調整設定時，可以觀察文字密度、換行節奏與背景對比是否符合你的閱讀習慣。"))
                 .font(.system(size: min(max(fontSize, 17), 24), weight: .regular))
                 .lineSpacing(readerConfig.lineSpacing)
                 .tracking(readerConfig.letterSpacing)

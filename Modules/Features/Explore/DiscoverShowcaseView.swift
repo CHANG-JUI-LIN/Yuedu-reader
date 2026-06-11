@@ -398,7 +398,7 @@ private struct DiscoverCategoryView: View {
         }
         .listStyle(.plain)
         .navigationTitle(section.title)
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbarTitleDisplayMode(.large)
     }
 }
 

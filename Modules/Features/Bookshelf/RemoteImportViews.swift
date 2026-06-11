@@ -131,7 +131,7 @@ struct WebDAVDirectoryView: View {
             }
         }
         .navigationTitle(title)
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbarTitleDisplayMode(.large)
         .task(id: folderURL) { await load() }
     }
 

@@ -219,7 +219,7 @@ struct TTSPanelView: View {
                 }
             }
             .navigationTitle(localized("語音朗讀"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(localized("完成")) { dismiss() }
@@ -244,7 +244,7 @@ struct TTSPanelView: View {
                         }
                     }
                     .navigationTitle(localized("目錄"))
-                    .toolbarTitleDisplayMode(.inlineLarge)
+                    .toolbarTitleDisplayMode(.large)
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
                             Button(localized("關閉")) { showChapterPicker = false }
@@ -317,7 +317,7 @@ struct AutoReadPanelView: View {
                 }
             }
             .navigationTitle(localized("自動閱讀"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(localized("完成")) { dismiss() }

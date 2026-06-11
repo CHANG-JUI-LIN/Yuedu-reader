@@ -3503,7 +3503,7 @@ private struct ReaderDownloadOptionsView: View {
                 }
             }
             .navigationTitle(localized("下載章節"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(localized("取消")) { onCancel() }

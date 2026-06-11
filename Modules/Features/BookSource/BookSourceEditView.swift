@@ -28,7 +28,7 @@ struct BookSourceEditView: View {
                 advancedSection
             }
             .navigationTitle(source.bookSourceName.isEmpty ? localized("新建書源") : source.bookSourceName)
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(localized("取消")) { dismiss.wrappedValue.dismiss() }
