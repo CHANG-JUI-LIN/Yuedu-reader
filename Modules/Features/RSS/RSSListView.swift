@@ -64,7 +64,7 @@ struct RSSListView: View {
                 .scrollIndicators(.visible)
             }
             .navigationTitle(localized("RSS 訂閱"))
-            .toolbarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 // Two separate glass pills. A ToolbarSpacer (iOS 26+) breaks the

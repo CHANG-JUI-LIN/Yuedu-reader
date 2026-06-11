@@ -63,7 +63,7 @@ struct BookSearchView: View {
         }
         .background(DSColor.background.ignoresSafeArea())
         .navigationTitle(localized("搜索書籍"))
-        .toolbarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inlineLarge)
         .searchable(text: $query, prompt: localized("輸入書名或作者"))
         .onSubmit(of: .search) { doSearch() }
         .onChange(of: query) { _, newValue in

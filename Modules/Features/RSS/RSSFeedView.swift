@@ -97,7 +97,7 @@ struct RSSSmartFeedView: View {
                 .listStyle(.plain)
             }
         }
-        .toolbarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inlineLarge)
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedArticleID) { articleID in
             RSSArticleReaderView(articleID: articleID)
@@ -282,7 +282,7 @@ struct RSSFeedView: View {
         .refreshable {
             await refresh()
         }
-        .toolbarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inlineLarge)
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedArticleID) { articleID in
             RSSArticleReaderView(articleID: articleID)
