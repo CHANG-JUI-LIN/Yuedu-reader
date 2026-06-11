@@ -218,7 +218,7 @@ struct ReaderSettingsView: View {
                 .tracking(readerConfig.letterSpacing)
                 .foregroundStyle(theme.textColor)
         }
-        .padding(.horizontal, 34)
+        .padding(.horizontal, readerConfig.pageMarginH)
         .padding(.top, 26)
         .padding(.bottom, 22)
         .frame(maxWidth: .infinity, minHeight: previewTextHeight, maxHeight: previewTextHeight, alignment: .topLeading)
