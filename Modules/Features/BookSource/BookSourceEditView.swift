@@ -57,7 +57,7 @@ struct BookSourceEditView: View {
                             Label(localized("網路日誌"), systemImage: "network")
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(systemName: "ellipsis")
                     }
                 }
             }

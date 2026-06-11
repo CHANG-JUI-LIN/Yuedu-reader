@@ -23,13 +23,14 @@ struct RSSListView: View {
     @State private var showImportResult = false
     @State private var didBackfillSourceMetadata = false
     @State private var safariURL: URL?
-    @State private var sourceToRename: RSSSource?
+    @State private var sourceToEdit: RSSSource?
     @State private var folderToRename: RSSFolder?
     @State private var sourceForInfo: RSSSource?
     @State private var deleteTarget: RSSDeleteTarget?
     @State private var isRefreshingAll = false
     @State private var refreshProgress = RSSRefreshProgress()
     @State private var showSettings = false
+    @State private var showOrganize = false
 
     private var folders: [RSSFolder] {
         store.orderedFolders()
@@ -66,7 +67,10 @@ struct RSSListView: View {
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
+                // Two separate glass pills. A ToolbarSpacer (iOS 26+) breaks the
+                // auto-merge so the add (+) and options (…) menus sit in their own
+                // glass instead of fusing into one.
+                ToolbarItem(placement: .topBarTrailing) {
                     RSSHomeAddMenu(
                         isRefreshingAll: isRefreshingAll,
                         hasSources: !store.sources.isEmpty,
@@ -80,13 +84,20 @@ struct RSSListView: View {
                             }
                         }
                     )
+                }
 
+                if #available(iOS 26.0, *) {
+                    ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
                     RSSHomeTopMenu(
                         hideReadFeeds: hideReadFeeds,
                         hasSources: !store.sources.isEmpty,
                         hasUnreadArticles: store.totalUnreadCount() > 0,
                         onToggleHideRead: { hideReadFeeds.toggle() },
                         onMarkAllRead: { store.markAllRead() },
+                        onOrganize: { showOrganize = true },
                         onExportOPML: {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                                 showOPMLExporter = true
@@ -136,8 +147,11 @@ struct RSSListView: View {
                 SafariView(url: url)
                     .ignoresSafeArea()
             }
-            .sheet(item: $sourceToRename) { source in
-                RenameRSSSourceSheet(source: source, store: store)
+            .sheet(item: $sourceToEdit) { source in
+                EditRSSSourceSheet(source: source, store: store)
+            }
+            .sheet(isPresented: $showOrganize) {
+                RSSOrganizeSheet(store: store)
             }
             .sheet(item: $folderToRename) { folder in
                 RenameRSSFolderSheet(folder: folder, store: store)
@@ -235,7 +249,7 @@ struct RSSListView: View {
         ) {
             if hideReadFeeds && visibleFolders.isEmpty && rootSources.isEmpty && !store.sources.isEmpty {
                 Text(localized("沒有未讀訂閱"))
-                    .font(.system(size: 16, weight: .regular))
+                    .font(DSFont.body)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 26)
@@ -367,9 +381,9 @@ struct RSSListView: View {
             }
 
             Button {
-                sourceToRename = source
+                sourceToEdit = source
             } label: {
-                Label(localized("重新命名"), systemImage: "pencil")
+                Label(localized("編輯訂閱"), systemImage: "pencil")
             }
 
             Button(role: .destructive) {
@@ -396,9 +410,9 @@ struct RSSListView: View {
             }
 
             Button {
-                sourceToRename = source
+                sourceToEdit = source
             } label: {
-                Label(localized("重新命名"), systemImage: "pencil")
+                Label(localized("編輯訂閱"), systemImage: "pencil")
             }
             .tint(.orange)
         }
@@ -649,14 +663,14 @@ private struct RSSHomeSection<Content: View>: View {
             } label: {
                 HStack {
                     Text(title)
-                        .font(.system(size: 21, weight: .bold))
+                        .font(DSFont.title3.weight(.bold))
                         .foregroundStyle(.primary)
 
                     Spacer()
 
                     if !isExpanded && unreadCount > 0 {
                         Text(unreadCount.formatted())
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(DSFont.subheadline.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
 
@@ -734,7 +748,7 @@ private struct RSSHomeAddMenu: View {
             }
             .disabled(isRefreshingAll || !hasSources)
         } label: {
-            Image(systemName: "plus.circle")
+            Image(systemName: "plus")
         }
         .accessibilityLabel(localized("新增或匯入"))
     }
@@ -746,6 +760,7 @@ private struct RSSHomeTopMenu: View {
     let hasUnreadArticles: Bool
     let onToggleHideRead: () -> Void
     let onMarkAllRead: () -> Void
+    let onOrganize: () -> Void
     let onExportOPML: () -> Void
     let onExportJSON: () -> Void
     let onSettings: () -> Void
@@ -767,6 +782,13 @@ private struct RSSHomeTopMenu: View {
                     systemImage: hideReadFeeds ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
                 )
             }
+
+            Button {
+                onOrganize()
+            } label: {
+                Label(localized("整理訂閱"), systemImage: "arrow.up.arrow.down")
+            }
+            .disabled(!hasSources)
 
             Divider()
 
@@ -792,7 +814,7 @@ private struct RSSHomeTopMenu: View {
                 Label(localized("設定"), systemImage: "gearshape")
             }
         } label: {
-            Image(systemName: "line.3.horizontal")
+            Image(systemName: "ellipsis")
         }
         .accessibilityLabel(localized("更多"))
     }
@@ -996,7 +1018,7 @@ private struct RSSMainFeedFolderRow: View {
                 .frame(width: 32, height: 32)
 
             Text(title)
-                .font(.system(size: 18, weight: .regular))
+                .font(DSFont.body)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
@@ -1004,7 +1026,7 @@ private struct RSSMainFeedFolderRow: View {
 
             if !isExpanded && unreadCount > 0 {
                 Text(unreadCount.formatted())
-                    .font(.system(size: 18, weight: .regular))
+                    .font(DSFont.body)
                     .foregroundStyle(.secondary)
             }
 
@@ -1032,7 +1054,7 @@ private struct RSSMainFeedRow: View {
             iconView
 
             Text(title)
-                .font(.system(size: 18, weight: .regular))
+                .font(DSFont.body)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
@@ -1040,7 +1062,7 @@ private struct RSSMainFeedRow: View {
 
             if unreadCount > 0 {
                 Text(unreadCount.formatted())
-                    .font(.system(size: 18, weight: .regular))
+                    .font(DSFont.body)
                     .foregroundStyle(.secondary)
             }
         }
@@ -1340,50 +1362,6 @@ private struct AddRSSFolderSheet: View {
     private func addFolder() {
         _ = store.addFolder(named: name)
         isPresented = false
-    }
-}
-
-private struct RenameRSSSourceSheet: View {
-    let source: RSSSource
-    @ObservedObject var store: RSSStore
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var name: String
-
-    init(source: RSSSource, store: RSSStore) {
-        self.source = source
-        self.store = store
-        _name = State(initialValue: source.name)
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section(header: Text(localized("來源名稱"))) {
-                    TextField(localized("來源名稱"), text: $name)
-                }
-            }
-            .navigationTitle(localized("重新命名"))
-            .toolbarTitleDisplayMode(.inlineLarge)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) {
-                        dismiss()
-                    }
-                    .foregroundColor(DSColor.accent)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("完成")) {
-                        var updated = source
-                        updated.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        store.updateSource(updated)
-                        dismiss()
-                    }
-                    .foregroundColor(DSColor.accent)
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-        }
     }
 }
 

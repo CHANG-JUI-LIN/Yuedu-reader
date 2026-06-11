@@ -73,7 +73,7 @@ struct OPDSImportView: View {
                         Button {
                             catalogStore.add(name: preset.name, url: preset.url, username: nil, password: nil)
                         } label: {
-                            Label(preset.name, systemImage: "plus.circle")
+                            Label(preset.name, systemImage: "plus")
                                 .foregroundColor(DSColor.accent)
                         }
                     }

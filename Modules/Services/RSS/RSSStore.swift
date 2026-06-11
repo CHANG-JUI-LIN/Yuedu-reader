@@ -185,6 +185,17 @@ final class RSSStore: ObservableObject {
         save()
     }
 
+    func moveFolders(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        var ordered = orderedFolders()
+        ordered.move(fromOffsets: offsets, toOffset: destination)
+
+        for (sortOrder, folder) in ordered.enumerated() {
+            guard let index = folders.firstIndex(where: { $0.id == folder.id }) else { continue }
+            folders[index].sortOrder = sortOrder
+        }
+        save()
+    }
+
     func orderedFolders() -> [RSSFolder] {
         folders.sorted { lhs, rhs in
             if lhs.sortOrder == rhs.sortOrder {
@@ -373,6 +384,15 @@ final class RSSStore: ObservableObject {
 
     func feedMetadata(for sourceID: String) -> RSSFeedFetchMetadata? {
         feedMetadataBySource[sourceID]
+    }
+
+    /// Drops cached conditional-GET metadata (etag/last-modified) for a source.
+    /// Call this when the feed URL changes so the next fetch is unconditional and
+    /// a stale validator can't trigger a false `notModified` against the new URL.
+    func clearFeedMetadata(for sourceID: String) {
+        guard feedMetadataBySource[sourceID] != nil else { return }
+        feedMetadataBySource[sourceID] = nil
+        save()
     }
 
     func searchArticles(query: String) -> [RSSArticleRecord] {

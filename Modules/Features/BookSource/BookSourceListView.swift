@@ -103,7 +103,7 @@ struct BookSourceListView: View {
                             Label(localized("匯出全部"), systemImage: "square.and.arrow.up.fill")
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(systemName: "ellipsis")
                     }
                 }
             }

@@ -860,3 +860,10 @@
 "在閱讀時選取文字，加入底線或螢光筆即可在此查看。" = "Select text while reading and add an underline or highlight to see it here.";
 "無法播放此影片" = "Unable to play this video";
 "Interactive content isn't supported" = "Interactive content isn't supported";
+"整理訂閱" = "Organize Feeds";
+"編輯訂閱" = "Edit Feed";
+"未分類" = "Uncategorized";
+"正在驗證網址…" = "Validating URL…";
+"無法解析此網址" = "Can't Reach This URL";
+"此 RSS 網址無法取得內容，是否仍要儲存？" = "This RSS URL returned no content. Save it anyway?";
+"仍要儲存" = "Save Anyway";

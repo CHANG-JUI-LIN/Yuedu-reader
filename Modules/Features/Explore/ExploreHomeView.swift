@@ -143,7 +143,7 @@ struct ExploreHomeView: View {
                 Label(localized("書源設定"), systemImage: "gearshape")
             }
         } label: {
-            Image(systemName: "ellipsis.circle")
+            Image(systemName: "ellipsis")
         }
         .accessibilityLabel(localized("書源設定"))
     }

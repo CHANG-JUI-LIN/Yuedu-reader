@@ -76,6 +76,8 @@ enum DSFont {
     static let bodyBold = Font.body.weight(.semibold)
     /// Headline (17pt bold)
     static let headline = Font.headline
+    /// Title 3 (20pt)
+    static let title3 = Font.title3
     /// Title 2 (22pt)
     static let title2 = Font.title2
     /// Title (28pt)
