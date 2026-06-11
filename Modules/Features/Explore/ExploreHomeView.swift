@@ -51,7 +51,7 @@ struct ExploreHomeView: View {
             }
             .background(DSColor.groupedBackground.ignoresSafeArea())
             .navigationTitle(localized("探索"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 if tab == .discover, discover.hasExploreSource {
                     ToolbarItem(placement: .topBarTrailing) { sourceMenu }
@@ -280,10 +280,16 @@ struct ExploreHomeView: View {
                 }
             }
             .navigationTitle(localized("最近瀏覽"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(localized("完成")) { showHistory = false }
+                    Button {
+                        showHistory = false
+                    } label: {
+                        Label(localized("完成"), systemImage: "checkmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel(localized("完成"))
                 }
                 if !history.entries.isEmpty {
                     ToolbarItem(placement: .destructiveAction) {
@@ -325,10 +331,16 @@ struct ExploreHomeView: View {
                 .buttonStyle(.plain)
             }
             .navigationTitle(localized("書源網站"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(localized("完成")) { showSourceSites = false }
+                    Button {
+                        showSourceSites = false
+                    } label: {
+                        Label(localized("完成"), systemImage: "checkmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel(localized("完成"))
                 }
             }
         }
@@ -421,7 +433,7 @@ private struct DiscoverSourcePickerView: View {
             }
         }
         .navigationTitle(localized("切換發現頁"))
-        .toolbarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.inline)
         .searchable(
             text: $searchText,
             placement: .navigationBarDrawer(displayMode: .always),
@@ -429,7 +441,13 @@ private struct DiscoverSourcePickerView: View {
         )
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button(localized("完成")) { onDismiss() }
+                Button {
+                    onDismiss()
+                } label: {
+                    Label(localized("完成"), systemImage: "checkmark")
+                        .labelStyle(.iconOnly)
+                }
+                .accessibilityLabel(localized("完成"))
             }
         }
     }

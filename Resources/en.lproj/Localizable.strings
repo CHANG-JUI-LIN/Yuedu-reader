@@ -867,3 +867,4 @@
 "無法解析此網址" = "Can't Reach This URL";
 "此 RSS 網址無法取得內容，是否仍要儲存？" = "This RSS URL returned no content. Save it anyway?";
 "仍要儲存" = "Save Anyway";
+"瀏覽器" = "Browser";

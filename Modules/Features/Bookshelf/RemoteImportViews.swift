@@ -40,7 +40,13 @@ struct WebDAVImportView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        Label(localized("取消"), systemImage: "xmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel(localized("取消"))
                 }
             }
         }
@@ -81,7 +87,7 @@ struct WebDAVImportView: View {
             }
         }
         .navigationTitle(localized("從 WebDAV 匯入"))
-        .toolbarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.inline)
     }
 }
 
@@ -131,7 +137,7 @@ struct WebDAVDirectoryView: View {
             }
         }
         .navigationTitle(title)
-        .toolbarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.inline)
         .task(id: folderURL) { await load() }
     }
 

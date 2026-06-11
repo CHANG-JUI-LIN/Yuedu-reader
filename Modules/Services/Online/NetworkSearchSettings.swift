@@ -1,8 +1,19 @@
 import Foundation
 
 enum NetworkSearchSettings {
+    static let largeSourcePackThreshold = 300
+    static let largeSourcePackAutoPauseCount = 10
+
     static func clampedConcurrency(_ value: Int) -> Int {
         min(30, max(1, value))
+    }
+
+    static func effectiveAutoPauseCount(configured value: Int, sourceCount: Int) -> Int {
+        let configured = max(0, value)
+        guard configured == 0, sourceCount >= largeSourcePackThreshold else {
+            return configured
+        }
+        return largeSourcePackAutoPauseCount
     }
 }
 

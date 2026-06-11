@@ -28,10 +28,16 @@ struct BookSourceEditView: View {
                 advancedSection
             }
             .navigationTitle(source.bookSourceName.isEmpty ? localized("新建書源") : source.bookSourceName)
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) { dismiss.wrappedValue.dismiss() }
+                    Button {
+                        dismiss.wrappedValue.dismiss()
+                    } label: {
+                        Label(localized("取消"), systemImage: "xmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel(localized("取消"))
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {

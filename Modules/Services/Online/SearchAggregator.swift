@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-import SwiftUI
 
 // MARK: - Book Origin (link info provided by a single book source)
 
@@ -262,7 +261,11 @@ class SearchAggregator: ObservableObject {
         isSearching = true
 
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let autoPausePolicy = SearchAutoPausePolicy(count: GlobalSettings.shared.searchAutoPauseCount)
+        let autoPauseCount = NetworkSearchSettings.effectiveAutoPauseCount(
+            configured: GlobalSettings.shared.searchAutoPauseCount,
+            sourceCount: activeSources.count
+        )
+        let autoPausePolicy = SearchAutoPausePolicy(count: autoPauseCount)
         let concurrency = min(maxConcurrency, activeSources.count)
         let timeout = perSourceTimeout
 
@@ -287,7 +290,9 @@ class SearchAggregator: ObservableObject {
                     enqueueNextSource()
                 }
 
-                // Streaming: on each result, immediately merge + sort + refresh UI
+                // Streaming: merge and sort each returned source without animation.
+                // Large imported packs can contain 1000+ sources, so animated
+                // mutations here overwhelm SwiftUI's list diffing on iOS 18.
                 while let batchResult = await group.next() {
                     guard !Task.isCancelled, let self = self else { break }
 
@@ -442,9 +447,7 @@ class SearchAggregator: ObservableObject {
 
             if let existingIndex {
                 // Compatible match → merge into existing result's origin array
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    results[existingIndex].origins.append(origin)
-                }
+                results[existingIndex].origins.append(origin)
             } else {
                 // New book → create new SearchBook
                 let searchBook = SearchBook(
@@ -452,10 +455,8 @@ class SearchAggregator: ObservableObject {
                     author: book.author,
                     origins: [origin]
                 )
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    deduplicationMap[nameKey, default: []].append(results.count)
-                    results.append(searchBook)
-                }
+                deduplicationMap[nameKey, default: []].append(results.count)
+                results.append(searchBook)
             }
         }
     }
@@ -470,22 +471,20 @@ class SearchAggregator: ObservableObject {
             .replacingOccurrences(of: " ", with: "")
             ?? query.lowercased()
 
-        withAnimation(.easeInOut(duration: 0.3)) {
-            results.sort { a, b in
-                let aScore = matchScore(name: a.name, query: q)
-                let bScore = matchScore(name: b.name, query: q)
+        results.sort { a, b in
+            let aScore = matchScore(name: a.name, query: q)
+            let bScore = matchScore(name: b.name, query: q)
 
-                if aScore != bScore { return aScore > bScore }
+            if aScore != bScore { return aScore > bScore }
 
-                // Tie-breaker: shorter name is more precise
-                // (e.g. a short precise name beats a long one with extra description)
-                if a.name.count != b.name.count { return a.name.count < b.name.count }
+            // Tie-breaker: shorter name is more precise
+            // (e.g. a short precise name beats a long one with extra description)
+            if a.name.count != b.name.count { return a.name.count < b.name.count }
 
-                return a.origins.count > b.origins.count
-            }
-
-            rebuildDeduplicationMap()
+            return a.origins.count > b.origins.count
         }
+
+        rebuildDeduplicationMap()
     }
 
     /// Match score: 3 = name exactly equals keyword, 2 = name starts with keyword,

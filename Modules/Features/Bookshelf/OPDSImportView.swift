@@ -35,13 +35,19 @@ struct OPDSImportView: View {
                 }
             }
             .navigationTitle(localized("從 OPDS 匯入"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .navigationDestination(for: OPDSFeedRoute.self) { route in
                 OPDSFeedView(route: route).environmentObject(store)
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        Label(localized("取消"), systemImage: "xmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel(localized("取消"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showAddSheet = true } label: { Image(systemName: "plus") }
@@ -125,10 +131,16 @@ struct AddOPDSCatalogSheet: View {
                 }
             }
             .navigationTitle(localized("新增 OPDS 目錄"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        Label(localized("取消"), systemImage: "xmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel(localized("取消"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(localized("加入目錄")) {

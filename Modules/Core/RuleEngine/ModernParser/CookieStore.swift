@@ -77,6 +77,30 @@ final class CookieStore {
         save()
     }
 
+    /// Returns the value of a single cookie named `key` for the host of `url`.
+    /// Mirrors Legado's `cookie.getKey(tag, key)`. `url` may be a bare domain
+    /// (e.g. `"fanqienovel.com"`) or a full URL; a missing scheme is treated as https.
+    /// Returns the whole cookie string when `key` is empty, or "" when not found.
+    func getKey(url: String, key: String) -> String {
+        let cookieStr = get(url: Self.normalizedURLString(url))
+        guard !key.isEmpty else { return cookieStr }
+        for segment in cookieStr.components(separatedBy: ";") {
+            let parts = segment.split(separator: "=", maxSplits: 1).map {
+                $0.trimmingCharacters(in: .whitespaces)
+            }
+            if parts.count == 2, parts[0] == key { return parts[1] }
+        }
+        return ""
+    }
+
+    /// Normalize a cookie "tag" to a URL string: bare domains gain an https scheme
+    /// so `URL(string:)` exposes a `host` for `HTTPCookieStorage` lookups.
+    static func normalizedURLString(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+        return trimmed.contains("://") ? trimmed : "https://" + trimmed
+    }
+
     /// Removes all cookies for the host of `url`.
     func remove(url: String) {
         if let cookieURL = URL(string: url),

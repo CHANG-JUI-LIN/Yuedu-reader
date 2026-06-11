@@ -73,7 +73,7 @@ struct HomeView: View {
             }
             .animation(DSAnimation.standard, value: store.books.isEmpty)
             .navigationTitle(localized("書架"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 if editMode == .active {
                     // Select-all kept as its own pill via the prominent + clear-tint

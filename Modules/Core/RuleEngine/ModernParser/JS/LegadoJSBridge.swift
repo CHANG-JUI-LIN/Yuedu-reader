@@ -12,11 +12,17 @@ import UIKit
     func ajax(_ urlStr: String) -> String
     func ajaxAll(_ urlArray: [String]) -> [String]
     func connect(_ urlStr: String) -> String
+    func post(_ urlStr: String, _ body: String, _ headers: JSValue) -> LegadoStrResponse
+    func importScript(_ url: String) -> String
+
+    // Headless WebView (Legado java.webView(html, url, js) — runs js after load, returns result)
+    func webView(_ html: JSValue, _ url: JSValue, _ js: JSValue) -> String
 
     // Cookie helpers (used by sources like 光遇)
     func getCookie(_ url: String) -> String
     func getCookie(_ url: String, _ key: String) -> String
     func getCookieValue(_ url: String, _ key: String) -> String
+    func removeCookie(_ url: String)
     func getWebViewUA() -> String
 
     // Variable storage
@@ -74,6 +80,8 @@ import UIKit
     func deviceID() -> String
     func androidId() -> String
     func openVideoPlayer(_ url: String, _ title: String)
+    func upLoginData(_ data: JSValue)
+    func qread()
 }
 
 // MARK: - Cookie Bridge
@@ -82,6 +90,7 @@ import UIKit
 @objc protocol LegadoCookieBridgeExport: JSExport {
     func get(_ url: String) -> String
     func getCookie(_ url: String) -> String
+    func getKey(_ url: String, _ key: String) -> String
     func set(_ url: String, _ cookie: String)
     func setCookie(_ url: String, _ cookie: String)
     func remove(_ url: String)
@@ -92,6 +101,11 @@ import UIKit
 
     func get(_ url: String) -> String {
         CookieStore.shared.get(url: url)
+    }
+
+    /// Legado `cookie.getKey(tag, key)` — value of a single cookie for a domain/URL.
+    func getKey(_ url: String, _ key: String) -> String {
+        CookieStore.shared.getKey(url: url, key: key)
     }
 
     func getCookie(_ url: String) -> String {
@@ -189,6 +203,21 @@ import UIKit
         return performRequest(urlStr)
     }
 
+    /// Legado `java.post(url, body, headers)` — HTTP POST returning a `StrResponse` (`.body()`).
+    /// `body` is sent verbatim; `headers` is a JS object. Defaults to
+    /// `application/x-www-form-urlencoded` when no Content-Type is supplied.
+    func post(_ urlStr: String, _ body: String, _ headers: JSValue) -> LegadoStrResponse {
+        return performPost(urlStr, body: body, headers: Self.headerDict(from: headers))
+    }
+
+    /// Legado `java.importScript(url)` — fetch a remote JS library and return its text.
+    /// Sources typically wrap this in `eval(...)` to load shared helpers at runtime.
+    func importScript(_ url: String) -> String {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("http") else { return trimmed }
+        return performRequest(trimmed)
+    }
+
     // MARK: Cookie Helpers
 
     func getCookie(_ url: String) -> String {
@@ -212,6 +241,12 @@ import UIKit
                 return pieces[1]
             }
             .first ?? ""
+    }
+
+    /// Legado `java.removeCookie(url)` — clears cookies for the host of `url`.
+    /// (The `cookie.removeCookie` bridge has the same effect; some sources call it via `java`.)
+    func removeCookie(_ url: String) {
+        CookieStore.shared.remove(url: url)
     }
 
     func getWebViewUA() -> String {
@@ -519,6 +554,65 @@ import UIKit
         startBrowser(url, title)
     }
 
+    /// Legado `java.upLoginData(map)` — refresh stored login data. No-op in parser-only flows
+    /// (login state is managed by LoginManager via `source.putLoginInfo`).
+    func upLoginData(_ data: JSValue) {
+        #if DEBUG
+        print("[JSBridge] upLoginData() called")
+        #endif
+    }
+
+    /// Legado `java.qread()` — switch into "quick read" mode. No-op stub.
+    func qread() {
+        #if DEBUG
+        print("[JSBridge] qread() called")
+        #endif
+    }
+
+    // MARK: Headless WebView (Legado java.webView)
+
+    /// Legado `java.webView(html, url, js)` — load `url` (or raw `html`) in an offscreen
+    /// WebView, run `js` after the page finishes loading, and return the string result.
+    /// Cookies acquired during the load are copied into `HTTPCookieStorage` so later
+    /// `java.ajax`/`cookie.getCookie` calls see them. Blocks the JS serial queue (not main).
+    func webView(_ html: JSValue, _ url: JSValue, _ js: JSValue) -> String {
+        let htmlArg = Self.optionalString(html)
+        let urlArg = Self.optionalString(url)
+        let jsArg = Self.optionalString(js) ?? "document.documentElement.outerHTML"
+        let ua = sourceHeaders.first { $0.key.lowercased() == "user-agent" }?.value ?? getWebViewUA()
+
+        let sem = DispatchSemaphore(value: 0)
+        let box = WebViewResultBox()
+        Task { @MainActor in
+            box.value = await LegadoHeadlessWebView.run(
+                html: htmlArg, url: urlArg, js: jsArg, userAgent: ua, timeout: 30
+            )
+            sem.signal()
+        }
+        _ = sem.wait(timeout: .now() + 35)
+        return box.value
+    }
+
+    /// Extract a non-empty String from a JS argument, treating undefined/null/"null" as nil.
+    private static func optionalString(_ value: JSValue) -> String? {
+        guard !value.isUndefined, !value.isNull else { return nil }
+        guard let s = value.toString(), s != "null", s != "undefined", !s.isEmpty else { return nil }
+        return s
+    }
+
+    /// Convert a JS headers object into a `[String: String]` dictionary.
+    private static func headerDict(from value: JSValue) -> [String: String] {
+        guard !value.isUndefined, !value.isNull, value.isObject,
+              let dict = value.toDictionary() as? [String: Any] else { return [:] }
+        var result: [String: String] = [:]
+        for (key, val) in dict {
+            if let str = val as? String { result[key] = str }
+            else if let num = val as? NSNumber { result[key] = num.stringValue }
+            else { result[key] = "\(val)" }
+        }
+        return result
+    }
+
     // MARK: - UTC Time Formatting
 
     /// Format a Unix millisecond timestamp in UTC with a timezone offset.
@@ -541,6 +635,37 @@ import UIKit
         fmt.dateFormat = fmtStr
         fmt.timeZone = TimeZone(secondsFromGMT: sh * 3600) ?? .current
         return fmt.string(from: date)
+    }
+
+    /// Synchronous HTTP POST used by `java.post`. Blocks the calling (JS serial queue) thread.
+    private func performPost(_ urlStr: String, body: String, headers: [String: String]) -> LegadoStrResponse {
+        guard let url = URL(string: urlStr.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return LegadoStrResponse(url: urlStr, body: "")
+        }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        request.httpMethod = "POST"
+        request.httpBody = body.data(using: .utf8)
+        request.setValue(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
+            forHTTPHeaderField: "User-Agent"
+        )
+        // Source headers first, then explicit per-call headers override.
+        sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+        headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+        if request.value(forHTTPHeaderField: "Content-Type") == nil {
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        }
+
+        var responseBody = ""
+        let semaphore = DispatchSemaphore(value: 0)
+        let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+            defer { semaphore.signal() }
+            guard let data = data else { return }
+            responseBody = Self.decodeData(data, response: response)
+        }
+        task.resume()
+        _ = semaphore.wait(timeout: .now() + 15)
+        return LegadoStrResponse(url: urlStr, body: responseBody)
     }
 
     private func performRequest(_ urlStr: String) -> String {
@@ -698,4 +823,13 @@ import UIKit
     func body() -> String {
         return responseBody
     }
+}
+
+// MARK: - WebView Result Box
+
+/// Mutable, lock-free carrier for a `java.webView` result handed across the
+/// MainActor → JS-queue boundary. Safe because access is serialized by the
+/// DispatchSemaphore (write-before-signal, read-after-wait).
+final class WebViewResultBox: @unchecked Sendable {
+    var value: String = ""
 }
