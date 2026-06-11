@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Firestore sync merge", .serialized)
 struct FirestoreSyncMergeTests {
-    private struct Item: Equatable {
+    private struct Item: Codable, Equatable {
         var id: String
         var value: String
     }
@@ -107,5 +107,29 @@ struct FirestoreSyncMergeTests {
 
         #expect(result.values.isEmpty)
         #expect(result.shadow["deleted-here"]?.deleted == true)
+    }
+
+    @Test("iCloud metadata upload skips unchanged canonical payloads")
+    func iCloudMetadataUploadSkipsUnchangedCanonicalPayloads() throws {
+        let records = [
+            CloudSyncRecord(
+                id: "b",
+                value: Item(id: "b", value: "second"),
+                updatedAt: Date(timeIntervalSince1970: 200),
+                deleted: false
+            ),
+            CloudSyncRecord(
+                id: "a",
+                value: Item(id: "a", value: "first"),
+                updatedAt: Date(timeIntervalSince1970: 100),
+                deleted: false
+            )
+        ]
+        let sameRecordsDifferentOrder = [records[1], records[0]]
+        let remoteHash = try ICloudSyncManager.cloudSyncPayloadHash(sameRecordsDifferentOrder)
+
+        #expect(try ICloudSyncManager.cloudSyncPayloadHash(records) == remoteHash)
+        #expect(try ICloudSyncManager.shouldUploadCloudSyncRecords(records, remotePayloadHash: remoteHash) == false)
+        #expect(try ICloudSyncManager.shouldUploadCloudSyncRecords(records, remotePayloadHash: nil) == true)
     }
 }

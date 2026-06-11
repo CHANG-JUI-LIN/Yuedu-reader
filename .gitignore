@@ -26,6 +26,15 @@ docs/superpowers/
 # OAuth / credentials
 *.plist
 !Info.plist
+# App Store Connect API keys & signing material — NEVER commit
+*.p8
+AuthKey_*
+*.mobileprovision
+*.cer
+*.certSigningRequest
+serviceAccount*.json
+.env
+.env.*
 
 # Xcode build artifacts
 .derivedData/

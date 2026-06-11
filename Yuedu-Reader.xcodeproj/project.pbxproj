@@ -30,7 +30,6 @@
 		46A6AB792FCD4ED60071B397 /* FirebaseFirestoreCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB782FCD4ED60071B397 /* FirebaseFirestoreCombine-Community */; };
 		46A6AB7B2FCD4ED60071B397 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB7A2FCD4ED60071B397 /* FirebaseFunctions */; };
 		46A6AB7D2FCD4ED60071B397 /* FirebaseFunctionsCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB7C2FCD4ED60071B397 /* FirebaseFunctionsCombine-Community */; };
-		46A6AB7F2FCD4ED60071B397 /* FirebaseInAppMessaging-Beta in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB7E2FCD4ED60071B397 /* FirebaseInAppMessaging-Beta */; };
 		46A6AB812FCD4ED60071B397 /* FirebaseInstallations in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB802FCD4ED60071B397 /* FirebaseInstallations */; };
 		46A6AB832FCD4ED60071B397 /* FirebaseMLModelDownloader in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB822FCD4ED60071B397 /* FirebaseMLModelDownloader */; };
 		46A6AB852FCD4ED60071B397 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB842FCD4ED60071B397 /* FirebaseMessaging */; };
@@ -189,7 +188,6 @@
 				46A6AB772FCD4ED60071B397 /* FirebaseFirestore in Frameworks */,
 				46A6AB652FCD4ED60071B397 /* FirebaseAnalyticsCore in Frameworks */,
 				46A6AB6B2FCD4ED60071B397 /* FirebaseAppDistribution-Beta in Frameworks */,
-				46A6AB7F2FCD4ED60071B397 /* FirebaseInAppMessaging-Beta in Frameworks */,
 				46A6AB7D2FCD4ED60071B397 /* FirebaseFunctionsCombine-Community in Frameworks */,
 				54FF42D3FA99075B5C91D59B /* ReadiumStreamer in Frameworks */,
 				46A6AB752FCD4ED60071B397 /* FirebaseDatabase in Frameworks */,
@@ -315,6 +313,7 @@
 				460D36562F51C5B8006E774C /* Frameworks */,
 				460D36572F51C5B8006E774C /* Resources */,
 				5FFE0D9ED24A85A7ACED161A /* Embed Foundation Extensions */,
+				46C7A511D5F0480000000001 /* Crashlytics Upload Symbols */,
 			);
 			buildRules = (
 			);
@@ -354,7 +353,6 @@
 				46A6AB782FCD4ED60071B397 /* FirebaseFirestoreCombine-Community */,
 				46A6AB7A2FCD4ED60071B397 /* FirebaseFunctions */,
 				46A6AB7C2FCD4ED60071B397 /* FirebaseFunctionsCombine-Community */,
-				46A6AB7E2FCD4ED60071B397 /* FirebaseInAppMessaging-Beta */,
 				46A6AB802FCD4ED60071B397 /* FirebaseInstallations */,
 				46A6AB822FCD4ED60071B397 /* FirebaseMLModelDownloader */,
 				46A6AB842FCD4ED60071B397 /* FirebaseMessaging */,
@@ -539,6 +537,26 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		46C7A511D5F0480000000001 /* Crashlytics Upload Symbols */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
+				"$(SRCROOT)/$(BUILT_PRODUCTS_DIR)/$(INFOPLIST_PATH)",
+			);
+			name = "Crashlytics Upload Symbols";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"${CONFIGURATION}\" != \"Debug\" ]; then\n  \"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		294F7FDF7FF0212C35C6AC00 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -671,7 +689,7 @@
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -738,7 +756,7 @@
 				DEVELOPMENT_TEAM = 65DHH783G3;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -1266,11 +1284,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 46A6AB5D2FCD4ED60071B397 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = "FirebaseFunctionsCombine-Community";
-		};
-		46A6AB7E2FCD4ED60071B397 /* FirebaseInAppMessaging-Beta */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 46A6AB5D2FCD4ED60071B397 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = "FirebaseInAppMessaging-Beta";
 		};
 		46A6AB802FCD4ED60071B397 /* FirebaseInstallations */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -180,6 +180,10 @@ final class RSSAppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserN
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         FirebaseApp.configure()
+        // Crash/diagnostics context must come up right after Firebase is configured,
+        // so launch-time crashes and MetricKit payloads carry breadcrumbs.
+        MetricKitDiagnosticReporter.shared.start()
+        CrashContext.breadcrumb("app launch (build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
         UNUserNotificationCenter.current().delegate = self
         RSSNotificationManager.shared.start()
         scheduleBackgroundFeedRefresh()

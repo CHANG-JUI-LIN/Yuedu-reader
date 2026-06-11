@@ -20,10 +20,19 @@ struct BookReaderView: View {
             }
         }
         .onAppear {
-            if store.books.first(where: { $0.id == bookId })?.lastOpenedDate == nil {
-                store.updateLastOpened(bookId: bookId)
+            if let book = store.books.first(where: { $0.id == bookId }) {
+                // Tag crash/diagnostic reports with the book being read — most
+                // reader crashes are content-specific, so this is the fastest clue.
+                CrashContext.setKey("current_book", "\(book.title) [\(book.id.uuidString.prefix(8))]")
+                CrashContext.setKey("current_book_kind", "\(book.resolvedPipelineKind)")
+                CrashContext.setKey("current_book_online", book.isOnline)
+                CrashContext.breadcrumb("open reader: \(book.title) (\(book.resolvedPipelineKind))")
+                if book.lastOpenedDate == nil {
+                    store.updateLastOpened(bookId: bookId)
+                }
             }
         }
+        .onDisappear { CrashContext.breadcrumb("close reader") }
     }
 
     private var shouldUseFixedPageReader: Bool {
