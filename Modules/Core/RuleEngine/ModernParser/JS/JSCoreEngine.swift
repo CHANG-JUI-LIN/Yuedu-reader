@@ -290,14 +290,13 @@ class JSCoreEngine {
         }
         ctx.setObject(printBlock, forKeyedSubscript: "print" as NSString)
 
-        // Block eval() — book sources must not use dynamic code evaluation
-        ctx.evaluateScript("""
-        (function() {
-            eval = function(code) {
-                throw new Error('eval() is disabled in sandbox');
-            };
-        })();
-        """)
+        // Note: eval() is intentionally LEFT ENABLED. The sandbox boundary for book
+        // source JS is the bridge layer (java.*/source.*/cookie.*): JavaScriptCore code
+        // can only reach the network/filesystem through those bridges, and eval()'d code
+        // is confined to exactly the same surface as ordinary code. Many legitimate Legado
+        // sources require eval — e.g. obfuscated jsLib loaders (`eval(java.importScript(url))`)
+        // and explore builders (`eval('sort'+i+'.push(json)')`). Disabling it broke those
+        // sources without adding real isolation, so native eval is used.
 
         // JSON is always natively available in JSContext — this guard is a safety net only.
         // The eval() fallback from the original Legado port has been removed (eval is disabled).

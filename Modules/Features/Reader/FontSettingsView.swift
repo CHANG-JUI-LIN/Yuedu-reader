@@ -306,10 +306,16 @@ struct FontSettingsView: View {
             }
             .animation(.easeInOut(duration: 0.22), value: theme)
             .navigationTitle(localized("閱讀設定"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("完成")) { presentationMode.wrappedValue.dismiss() }
+                    Button {
+                        presentationMode.wrappedValue.dismiss()
+                    } label: {
+                        Label(localized("完成"), systemImage: "checkmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel(localized("完成"))
                 }
             }
         }

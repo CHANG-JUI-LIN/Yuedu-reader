@@ -1055,10 +1055,16 @@ struct WebTOCSheet: View {
                 .background(Color(UIColor.systemBackground))
             }
             .navigationTitle(localized("偵測到章節目錄"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) { isPresented = false }
+                    Button {
+                        isPresented = false
+                    } label: {
+                        Label(localized("取消"), systemImage: "xmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel(localized("取消"))
                 }
             }
         }

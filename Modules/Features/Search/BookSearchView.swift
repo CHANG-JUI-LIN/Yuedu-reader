@@ -63,7 +63,7 @@ struct BookSearchView: View {
         }
         .background(DSColor.background.ignoresSafeArea())
         .navigationTitle(localized("搜索書籍"))
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: localized("輸入書名或作者"))
         .onSubmit(of: .search) { doSearch() }
         .onChange(of: query) { _, newValue in
@@ -139,7 +139,7 @@ struct BookSearchView: View {
     // MARK: Source Selector
     private var sourceSelector: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            LazyHStack(spacing: 8) {
                 sourceChip(id: nil, name: localized("全部"))
                 ForEach(enabledSources) { src in
                     sourceChip(id: src.id, name: src.bookSourceName)
@@ -158,6 +158,7 @@ struct BookSearchView: View {
         } label: {
             Text(name)
                 .font(.caption)
+                .lineLimit(1)
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(selectedSourceId == id ? Color.blue : Color(UIColor.systemGray5))
                 .foregroundColor(selectedSourceId == id ? .white : .primary)

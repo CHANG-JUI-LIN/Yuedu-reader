@@ -219,10 +219,16 @@ struct TTSPanelView: View {
                 }
             }
             .navigationTitle(localized("語音朗讀"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("完成")) { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        Label(localized("完成"), systemImage: "checkmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel(localized("完成"))
                 }
             }
             .sheet(isPresented: $showChapterPicker) {
@@ -321,10 +327,16 @@ struct AutoReadPanelView: View {
                 }
             }
             .navigationTitle(localized("自動閱讀"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("完成")) { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        Label(localized("完成"), systemImage: "checkmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel(localized("完成"))
                 }
             }
         }
