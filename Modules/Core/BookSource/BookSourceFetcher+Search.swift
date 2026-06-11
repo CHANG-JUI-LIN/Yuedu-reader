@@ -6,12 +6,27 @@ extension BookSourceFetcher {
 
     func search(query: String, in source: BookSource) async throws -> [OnlineBook] {
         guard !source.searchUrl.isEmpty else { throw FetchError.noSearchURL }
+        let cacheDays = GlobalSettings.shared.searchCacheDays
+        if let cached = SearchResultCache.shared.freshBooks(
+            query: query,
+            source: source,
+            days: cacheDays
+        ) {
+            return cached
+        }
 
         if source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) {
             let books = try await ModernParserBridge(source: source)
                 .searchBooks(keyword: query, page: 1)
-            return filterSearchResultsByCheckKeyWord(
+            let filtered = filterSearchResultsByCheckKeyWord(
                 books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
+            SearchResultCache.shared.store(
+                books: filtered,
+                query: query,
+                source: source,
+                days: cacheDays
+            )
+            return filtered
         }
 
         let requestSpec = source.renderSearchRequest(query: query)
@@ -62,8 +77,15 @@ extension BookSourceFetcher {
         } catch {
             return []
         }
-        return filterSearchResultsByCheckKeyWord(
+        let filtered = filterSearchResultsByCheckKeyWord(
             books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
+        SearchResultCache.shared.store(
+            books: filtered,
+            query: query,
+            source: source,
+            days: cacheDays
+        )
+        return filtered
     }
 
     /// Legado compatible: filter search results by checkKeyWord (keep only items matching keyword in title/author)

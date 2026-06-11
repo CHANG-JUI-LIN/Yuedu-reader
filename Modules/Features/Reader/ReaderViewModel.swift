@@ -206,29 +206,45 @@ final class ReaderViewModel: ObservableObject {
         // then yield zero results. We dedup by book URL instead, so every distinct
         // channel/source is offered (minus the exact origin already being read).
         let sources = enabledSources
-        let concurrency = min(30, max(1, GlobalSettings.shared.searchConcurrency))
+        let concurrency = NetworkSearchSettings.clampedConcurrency(GlobalSettings.shared.searchConcurrency)
+        let autoPausePolicy = SearchAutoPausePolicy(count: GlobalSettings.shared.searchAutoPauseCount)
 
         changeSourceSearchTask?.cancel()
         changeSourceSearchTask = Task { [weak self] in
             guard let self else { return }
-            let semaphore = AsyncSemaphore(limit: concurrency)
             var seenBookUrls = Set<String>()
+            let bookSourceFetcher = self.bookSourceFetcher
 
-            // Fan out: one bounded, timed task per source. Results are consumed on the
-            // MainActor as they stream in, so dedup state stays single-threaded and the
-            // list fills progressively.
+            // Fan out with a bounded active window. Results are consumed on the
+            // MainActor as they stream in, so dedup state stays single-threaded,
+            // the list fills progressively, and auto-pause can stop enqueueing
+            // untouched sources.
             await withTaskGroup(of: [OnlineBook]?.self) { group in
-                for source in sources {
+                var nextSourceIndex = 0
+                let activeLimit = min(concurrency, sources.count)
+
+                func enqueueNextSource() {
+                    guard nextSourceIndex < sources.count else { return }
+                    let source = sources[nextSourceIndex]
+                    nextSourceIndex += 1
                     group.addTask {
-                        await semaphore.acquire()
-                        defer { Task { await semaphore.release() } }
-                        return await Self.searchSourceWithTimeout(query: bookTitle, source: source)
+                        guard !Task.isCancelled else { return nil }
+                        return await Self.searchSourceWithTimeout(
+                            query: bookTitle,
+                            source: source,
+                            bookSourceFetcher: bookSourceFetcher
+                        )
                     }
                 }
 
-                for await list in group {
+                for _ in 0..<activeLimit {
+                    enqueueNextSource()
+                }
+
+                while let list = await group.next() {
                     if Task.isCancelled { break }
                     guard let list else { continue }
+                    var shouldPause = false
                     for ob in list {
                         let matched = SearchBook.isLikelySameBook(
                             name: bookTitle, author: bookAuthor,
@@ -256,7 +272,19 @@ final class ReaderViewModel: ObservableObject {
                                 runtimeVariables: ob.runtimeVariables
                             )
                         )
+                        if autoPausePolicy.shouldPause(
+                            exactCount: self.changeSourceOrigins.count,
+                            fuzzyCount: 0
+                        ) {
+                            shouldPause = true
+                            break
+                        }
                     }
+                    if shouldPause {
+                        group.cancelAll()
+                        break
+                    }
+                    enqueueNextSource()
                 }
             }
 
@@ -296,11 +324,14 @@ final class ReaderViewModel: ObservableObject {
     /// or timeout so a slow/hung source can't stall the whole 換源 search.
     /// `nonisolated` so concurrent tasks don't serialize back onto the MainActor.
     nonisolated private static func searchSourceWithTimeout(
-        query: String, source: BookSource, seconds: UInt64 = 20
+        query: String,
+        source: BookSource,
+        bookSourceFetcher: BookSourceFetching,
+        seconds: UInt64 = 20
     ) async -> [OnlineBook]? {
         await withTaskGroup(of: [OnlineBook]?.self) { group in
             group.addTask {
-                try? await BookSourceFetcher.shared.search(query: query, in: source)
+                try? await bookSourceFetcher.search(query: query, in: source)
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)

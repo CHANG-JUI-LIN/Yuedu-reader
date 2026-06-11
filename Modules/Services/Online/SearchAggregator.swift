@@ -187,41 +187,10 @@ class SearchBook: Identifiable, ObservableObject {
     }
 }
 
-// MARK: - Async Semaphore (limits concurrency)
-
-actor AsyncSemaphore {
-    private let limit: Int
-    private var count: Int = 0
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    init(limit: Int) {
-        self.limit = limit
-    }
-
-    func acquire() async {
-        if count < limit {
-            count += 1
-            return
-        }
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
-        }
-    }
-
-    func release() {
-        if !waiters.isEmpty {
-            let next = waiters.removeFirst()
-            next.resume()
-        } else {
-            count -= 1
-        }
-    }
-}
-
 // MARK: - Search Aggregation Engine
 //
 // Core design:
-// 1. TaskGroup + AsyncSemaphore manages concurrency (user-configurable via GlobalSettings.searchConcurrency)
+// 1. TaskGroup schedules at most GlobalSettings.searchConcurrency active source tasks
 // 2. Each book source independently bound to a 15s timeout; timed-out tasks are cancelled to free resources
 // 3. As soon as any single source returns results, immediately mergeItems + re-sort + refresh UI
 // 4. Uses @Published with SwiftUI to automatically trigger view updates (streaming mechanism)
@@ -251,7 +220,7 @@ class SearchAggregator: ObservableObject {
     /// User-configurable via `GlobalSettings.searchConcurrency` (網路設定 → 並發數);
     /// resolved per search so changes take effect on the next search.
     private var maxConcurrency: Int {
-        min(30, max(1, GlobalSettings.shared.searchConcurrency))
+        NetworkSearchSettings.clampedConcurrency(GlobalSettings.shared.searchConcurrency)
     }
 
     /// Timeout seconds per book source. Kept tight so dead/unreachable hosts
@@ -292,25 +261,34 @@ class SearchAggregator: ObservableObject {
         progress = SearchProgress(total: activeSources.count, skipped: skippedCount)
         isSearching = true
 
-        let semaphore = AsyncSemaphore(limit: maxConcurrency)
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let autoPausePolicy = SearchAutoPausePolicy(count: GlobalSettings.shared.searchAutoPauseCount)
+        let concurrency = min(maxConcurrency, activeSources.count)
+        let timeout = perSourceTimeout
 
         searchTask = Task { [weak self] in
             await withTaskGroup(of: SearchBatchResult.self) { group in
-                for source in activeSources {
+                var nextSourceIndex = 0
+
+                func enqueueNextSource() {
+                    guard nextSourceIndex < activeSources.count else { return }
+                    let source = activeSources[nextSourceIndex]
+                    nextSourceIndex += 1
                     group.addTask {
-                        // Acquire semaphore → cap concurrency
-                        await semaphore.acquire()
-                        defer { Task { await semaphore.release() } }
+                        guard !Task.isCancelled else { return .failed(source.id) }
                         // Each source has its own timeout; cancel on expiry
                         return await Self.searchSingleSource(
-                            query: q, source: source, timeout: self?.perSourceTimeout ?? 12
+                            query: q, source: source, timeout: timeout
                         )
                     }
                 }
 
+                for _ in 0..<concurrency {
+                    enqueueNextSource()
+                }
+
                 // Streaming: on each result, immediately merge + sort + refresh UI
-                for await batchResult in group {
+                while let batchResult = await group.next() {
                     guard !Task.isCancelled, let self = self else { break }
 
                     switch batchResult {
@@ -327,6 +305,13 @@ class SearchAggregator: ObservableObject {
                     }
                     // Re-sort every time new results arrive (SwiftUI @Published auto-triggers UI update)
                     self.sortResults(query: q)
+
+                    if self.shouldAutoPause(query: q, policy: autoPausePolicy) {
+                        group.cancelAll()
+                        break
+                    }
+
+                    enqueueNextSource()
                 }
             }
 
@@ -380,6 +365,20 @@ class SearchAggregator: ObservableObject {
         } catch {
             return .failed(sourceId)
         }
+    }
+
+    private func shouldAutoPause(query: String, policy: SearchAutoPausePolicy) -> Bool {
+        guard policy.isEnabled else { return false }
+        var exactCount = 0
+        var fuzzyCount = 0
+        for result in results {
+            if matchScore(name: result.name, query: query) == 3 {
+                exactCount += 1
+            } else {
+                fuzzyCount += 1
+            }
+        }
+        return policy.shouldPause(exactCount: exactCount, fuzzyCount: fuzzyCount)
     }
 
     // MARK: - Merge a batch of results (dedup + aggregate)
