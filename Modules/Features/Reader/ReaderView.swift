@@ -3503,14 +3503,20 @@ private struct ReaderDownloadOptionsView: View {
                 }
             }
             .navigationTitle(localized("下載章節"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(localized("取消")) { onCancel() }
+                    Button {
+                        onCancel()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(localized("開始下載")) {
+                    Button {
                         onStart(selectedStartIndex, Int(chapterCount.rounded()))
+                    } label: {
+                        Image(systemName: "checkmark")
                     }
                     .disabled(totalChapters <= 0)
                 }

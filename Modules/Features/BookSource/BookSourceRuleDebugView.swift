@@ -113,10 +113,14 @@ struct BookSourceRuleDebugView: View {
                 }
             }
             .navigationTitle(source.bookSourceName.isEmpty ? localized("書源調試") : source.bookSourceName)
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("關閉")) { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
                 }
             }
         }

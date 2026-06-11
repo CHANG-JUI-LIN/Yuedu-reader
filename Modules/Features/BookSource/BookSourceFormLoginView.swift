@@ -79,24 +79,34 @@ struct BookSourceFormLoginView: View {
             }
             .disabled(isLoading)
             .navigationTitle(source.bookSourceName.isEmpty ? localized("書源登入") : source.bookSourceName)
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) { onDismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        onDismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
                 }
                 if !fields.contains(where: { $0.type == .button }) {
-                    ToolbarItem(placement: .navigationBarTrailing) {
+                    ToolbarItem(placement: .topBarTrailing) {
                         if isLoading {
                             ProgressView()
                         } else {
-                            Button(localized("確認")) { doLogin() }
-                                .font(.body.weight(.semibold))
+                            Button {
+                                doLogin()
+                            } label: {
+                                Image(systemName: "checkmark")
+                            }
                         }
                     }
                 } else {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(localized("完成")) { onDismiss() }
-                            .font(.body.weight(.semibold))
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            onDismiss()
+                        } label: {
+                            Image(systemName: "checkmark")
+                        }
                     }
                 }
             }

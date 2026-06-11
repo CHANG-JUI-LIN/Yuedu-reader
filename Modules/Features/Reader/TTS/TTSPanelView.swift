@@ -244,10 +244,14 @@ struct TTSPanelView: View {
                         }
                     }
                     .navigationTitle(localized("目錄"))
-                    .toolbarTitleDisplayMode(.large)
+                    .toolbarTitleDisplayMode(.inline)
                     .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button(localized("關閉")) { showChapterPicker = false }
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                showChapterPicker = false
+                            } label: {
+                                Image(systemName: "xmark")
+                            }
                         }
                     }
                 }

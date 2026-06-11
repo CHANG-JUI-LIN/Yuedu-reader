@@ -1156,19 +1156,21 @@ private struct ImportLegadoJSONURLSheet: View {
                 }
             }
             .navigationTitle(localized("從網址匯入 Legado JSON"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
                         isPresented = false
+                    } label: {
+                        Image(systemName: "xmark")
                     }
-                    .foregroundColor(DSColor.accent)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("匯入")) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         Task { await importFromURL() }
+                    } label: {
+                        Image(systemName: "checkmark")
                     }
-                    .foregroundColor(DSColor.accent)
                     .disabled(urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
                 }
             }
@@ -1246,19 +1248,21 @@ private struct AddRSSSourceSheet: View {
                 }
             }
             .navigationTitle(localized("新增 RSS 訂閱"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
                         isPresented = false
+                    } label: {
+                        Image(systemName: "xmark")
                     }
-                    .foregroundColor(DSColor.accent)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("新增")) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         Task { await addSource() }
+                    } label: {
+                        Image(systemName: "checkmark")
                     }
-                    .foregroundColor(DSColor.accent)
                     .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
                 }
             }
@@ -1340,19 +1344,21 @@ private struct AddRSSFolderSheet: View {
                 }
             }
             .navigationTitle(localized("新增資料夾"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
                         isPresented = false
+                    } label: {
+                        Image(systemName: "xmark")
                     }
-                    .foregroundColor(DSColor.accent)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("新增")) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         addFolder()
+                    } label: {
+                        Image(systemName: "checkmark")
                     }
-                    .foregroundColor(DSColor.accent)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -1386,22 +1392,24 @@ private struct RenameRSSFolderSheet: View {
                 }
             }
             .navigationTitle(localized("重新命名"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
                         dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
                     }
-                    .foregroundColor(DSColor.accent)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("完成")) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         var updated = folder
                         updated.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         store.updateFolder(updated)
                         dismiss()
+                    } label: {
+                        Image(systemName: "checkmark")
                     }
-                    .foregroundColor(DSColor.accent)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }

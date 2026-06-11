@@ -42,17 +42,20 @@ struct ReplaceRuleListView: View {
                 }
             }
             .navigationTitle(localized("替換規則"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("關閉")) { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showingAdd = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack {
-                        EditButton()
-                        Button { showingAdd = true } label: {
-                            Image(systemName: "plus")
-                        }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "checkmark")
                     }
                 }
             }
@@ -167,18 +170,23 @@ struct ReplaceRuleEditView: View {
                 }
             }
             .navigationTitle(rule.name.isEmpty ? localized("新增規則") : rule.name)
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("儲存")) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         onSave(rule)
                         dismiss()
+                    } label: {
+                        Image(systemName: "checkmark")
                     }
                     .disabled(rule.pattern.isEmpty)
-                    .font(.body.weight(.semibold))
                 }
             }
         }

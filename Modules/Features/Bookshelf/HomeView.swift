@@ -458,17 +458,21 @@ struct EditBookSheet: View {
                     }
                 }
                 .navigationTitle(localized("書籍資訊"))
-                .toolbarTitleDisplayMode(.large)
+                .toolbarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button(localized("取消")) { dismiss.wrappedValue.dismiss() }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            dismiss.wrappedValue.dismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                        }
                     }
-                    ToolbarItem(placement: .navigationBarTrailing) {
+                    ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             onSave(titleInput, authorInput, groupInput)
                             dismiss.wrappedValue.dismiss()
                         } label: {
-                            Text(localized("儲存")).font(.body.weight(.semibold))
+                            Image(systemName: "checkmark")
                         }
                         .disabled(titleInput.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
@@ -855,17 +859,21 @@ struct BulkAddToGroupSheet: View {
                 }
             }
             .navigationTitle(localized("加入分組"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) { dismiss.wrappedValue.dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss.wrappedValue.dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         onConfirm(groupInput)
                         dismiss.wrappedValue.dismiss()
                     } label: {
-                        Text(localized("確定")).font(.body.weight(.semibold))
+                        Image(systemName: "checkmark")
                     }
                 }
             }

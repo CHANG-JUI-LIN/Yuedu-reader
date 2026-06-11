@@ -47,6 +47,7 @@ struct TTSSettingsView: View {
                 }
             }
             .navigationTitle(localized("語音朗讀設定"))
+            .toolbarTitleDisplayMode(.inline)
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
@@ -54,7 +55,9 @@ struct TTSSettingsView: View {
             )
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("關閉")) { dismissSettings() }
+                    Button { dismissSettings() } label: {
+                        Image(systemName: "xmark")
+                    }
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Menu {
@@ -69,7 +72,7 @@ struct TTSSettingsView: View {
                             Label(localized("網路導入"), systemImage: "network")
                         }
                     } label: {
-                        Image(systemName: "square.and.arrow.down")
+                        Image(systemName: "plus")
                     }
                     .disabled(isImportingSources)
                 }
@@ -467,18 +470,21 @@ struct TTSSettingsView: View {
                 Spacer()
             }
             .navigationTitle(localized("網路導入"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
                         showNetworkImport = false
+                    } label: {
+                        Image(systemName: "xmark")
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("匯入")) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         Task { await importTTSSources() }
+                    } label: {
+                        Image(systemName: "checkmark")
                     }
-                    .font(.body.weight(.semibold))
                     .disabled(sourceListURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isImportingSources)
                 }
             }

@@ -21,9 +21,9 @@ struct ICloudSyncView: View {
                 statusSection
             }
             .navigationTitle(localized("iCloud 同步"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
                         dismiss()
                     } label: {

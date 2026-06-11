@@ -75,8 +75,12 @@ struct BookSearchView: View {
         }
         .toolbar {
             if showsCloseButton {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("關閉")) { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
                 }
             }
         }
@@ -385,10 +389,14 @@ struct SourcePickerSheet: View {
                 .listStyle(.plain)
             }
             .navigationTitle(localized("選擇來源") + "（\(searchBook.origins.count) " + localized("個") + "）")
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("關閉")) { dismiss.wrappedValue.dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss.wrappedValue.dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
                 }
             }
         }

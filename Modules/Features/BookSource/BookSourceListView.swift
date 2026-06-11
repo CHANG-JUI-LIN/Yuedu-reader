@@ -49,15 +49,19 @@ struct BookSourceListView: View {
                 }
             }
             .navigationTitle(localized("書源管理"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
                 prompt: localized("搜索書源")
             )
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("關閉")) { dismiss.wrappedValue.dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss.wrappedValue.dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Menu {
@@ -520,19 +524,22 @@ struct BookSourceListView: View {
                 Spacer()
             }
             .navigationTitle(localized("匯入書源"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
                         showImport = false
                         importJSON = ""
+                    } label: {
+                        Image(systemName: "xmark")
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("匯入")) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         doImport(importJSON)
+                    } label: {
+                        Image(systemName: "checkmark")
                     }
-                    .font(.body.weight(.semibold))
                     .disabled(importJSON.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -617,19 +624,22 @@ struct BookSourceListView: View {
                 Spacer()
             }
             .navigationTitle(localized("網路導入"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
                         showNetworkImport = false
                         importURLString = ""
+                    } label: {
+                        Image(systemName: "xmark")
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("匯入")) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         doNetworkImport()
+                    } label: {
+                        Image(systemName: "checkmark")
                     }
-                    .font(.body.weight(.semibold))
                     .disabled(
                         importURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || networkImportLoading)

@@ -35,23 +35,28 @@ struct BookSourceLoginWebView: View {
                     .edgesIgnoringSafeArea(.bottom)
             }
             .navigationTitle(localized("Cookie 驗證登入"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("取消")) { onDismiss() }
-                        .disabled(isSyncing)
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        onDismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .disabled(isSyncing)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     if isSyncing {
                         ProgressView().scaleEffect(0.85)
                     } else {
-                        Button(localized("完成")) {
+                        Button {
                             isSyncing = true
                             bridge.syncCookiesAndDismiss? {
                                 onDismiss()
                             }
+                        } label: {
+                            Image(systemName: "checkmark")
                         }
-                        .font(.body.weight(.semibold))
                     }
                 }
             }

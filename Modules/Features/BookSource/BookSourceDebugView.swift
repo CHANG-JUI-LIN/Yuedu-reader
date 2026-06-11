@@ -29,7 +29,16 @@ struct BookSourceDebugView: View {
                 .listStyle(.plain)
             }
             .navigationTitle(localized("書源除錯大師"))
-            .navigationBarItems(trailing: Button(localized("關閉")) { dismiss() })
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                }
+            }
         }
     }
 }

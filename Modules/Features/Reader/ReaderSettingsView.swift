@@ -67,27 +67,22 @@ struct ReaderSettingsView: View {
             VStack(spacing: 0) {
                 previewPanel
                 Divider()
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 26) {
-                        if supportsUserFont || supportsFontSize {
-                            textStyleSection
-                        }
 
-                        if supportsSpacing || supportsLineHeight {
-                            layoutDetailsSection
-                        }
-
-                        if supportsBackground || supportsLineHeight {
-                            quickSettingsSection
-                        }
-
-                        displaySection
+                Form {
+                    if supportsUserFont || supportsFontSize {
+                        textStyleSection
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 26)
-                    .padding(.bottom, 30)
+
+                    if supportsSpacing || supportsLineHeight {
+                        layoutDetailsSection
+                    }
+
+                    if supportsBackground || supportsLineHeight {
+                        quickSettingsSection
+                    }
+
+                    displaySection
                 }
-                .background(pageBackground)
             }
             .background(pageBackground.ignoresSafeArea())
             .navigationTitle(localized("閱讀設定"))
@@ -137,38 +132,31 @@ struct ReaderSettingsView: View {
     }
 
     private var quickSettingsSection: some View {
-        SettingsSection(title: localized("外觀與翻頁")) {
-            VStack(spacing: 0) {
-                if supportsBackground {
-                    themeSelector
-                }
+        Section(header: Text(localized("外觀與翻頁"))) {
+            if supportsBackground {
+                themeSelector
+            }
 
-                if supportsBackground && supportsLineHeight {
-                    SettingsDivider()
-                }
+            if supportsLineHeight {
+                SegmentedPickerRow(
+                    title: localized("翻頁"),
+                    selection: pageTurnOptionBinding,
+                    items: availablePageTurnOptions,
+                    titleProvider: { option in
+                        localized(scrollTitleKey(for: option))
+                    }
+                )
+            }
 
-                if supportsLineHeight {
-                    SegmentedPickerRow(
-                        title: localized("翻頁"),
-                        selection: pageTurnOptionBinding,
-                        items: availablePageTurnOptions,
-                        titleProvider: { option in
-                            localized(scrollTitleKey(for: option))
-                        }
-                    )
-                }
-
-                if supportsLineHeight && !settings.scrollMode {
-                    SettingsDivider()
-                    SegmentedPickerRow(
-                        title: localized("頁面顯示"),
-                        selection: $settings.readerSpreadMode,
-                        items: ReaderSpreadMode.allCases,
-                        titleProvider: { mode in
-                            localized(spreadTitleKey(for: mode))
-                        }
-                    )
-                }
+            if supportsLineHeight && !settings.scrollMode {
+                SegmentedPickerRow(
+                    title: localized("頁面顯示"),
+                    selection: $settings.readerSpreadMode,
+                    items: ReaderSpreadMode.allCases,
+                    titleProvider: { mode in
+                        localized(spreadTitleKey(for: mode))
+                    }
+                )
             }
         }
     }
@@ -189,25 +177,19 @@ struct ReaderSettingsView: View {
     }
 
     private var textStyleSection: some View {
-        SettingsSection(title: localized("文字")) {
-            VStack(spacing: 0) {
-                if supportsUserFont {
-                    fontSelector
-                }
+        Section(header: Text(localized("文字"))) {
+            if supportsUserFont {
+                fontSelector
+            }
 
-                if supportsUserFont && supportsFontSize {
-                    SettingsDivider()
-                }
-
-                if supportsFontSize {
-                    StepperValueRow(
-                        title: localized("字體大小"),
-                        valueText: "\(Int(fontSize)) pt",
-                        value: fontSizeBinding,
-                        range: 12...32,
-                        step: 1
-                    )
-                }
+            if supportsFontSize {
+                StepperValueRow(
+                    title: localized("字體大小"),
+                    valueText: "\(Int(fontSize)) pt",
+                    value: fontSizeBinding,
+                    range: 12...32,
+                    step: 1
+                )
             }
         }
     }
@@ -296,121 +278,103 @@ struct ReaderSettingsView: View {
                 Label(localized("匯入字體..."), systemImage: "plus")
             }
         } label: {
-            HStack(spacing: 16) {
-                SettingSymbolIcon(systemName: "textformat")
+            HStack {
                 Text(localized("字體"))
-                    .font(.body)
                     .foregroundStyle(.primary)
                 Spacer()
                 Text(currentFontName)
-                    .font(.body)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Image(systemName: "textformat.alt")
-                    .font(.body.weight(.semibold))
+                Image(systemName: "chevron.up.down")
+                    .font(.footnote)
                     .foregroundStyle(.tertiary)
             }
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
     private var layoutDetailsSection: some View {
-        SettingsSection(title: localized("輔助使用與佈局選項")) {
-            VStack(spacing: 0) {
-                Toggle(localized("自訂"), isOn: customLayoutBinding)
-                    .font(.body)
-                    .toggleStyle(.switch)
+        Section(header: Text(localized("輔助使用與佈局選項"))) {
+            Toggle(localized("自訂"), isOn: customLayoutBinding)
+                .font(.body)
 
-                if customLayoutEnabled {
-                    if supportsSpacing {
-                        SettingsDivider()
-                        LayoutSliderRow(
-                            title: localized("行距"),
-                            icon: .lineSpacing,
-                            valueText: String(format: "%.2f", readerConfig.lineHeightMultiple),
-                            value: $readerConfig.lineHeightMultiple,
-                            range: 1.0...2.4,
-                            step: 0.05
-                        )
+            if customLayoutEnabled {
+                if supportsSpacing {
+                    LayoutSliderRow(
+                        title: localized("行距"),
+                        icon: .lineSpacing,
+                        valueText: String(format: "%.2f", readerConfig.lineHeightMultiple),
+                        value: $readerConfig.lineHeightMultiple,
+                        range: 1.0...2.4,
+                        step: 0.05
+                    )
 
-                        SettingsDivider()
-                        LayoutSliderRow(
-                            title: localized("字距"),
-                            icon: .characterSpacing,
-                            valueText: "\(String(format: "%.1f", readerConfig.letterSpacing)) pt",
-                            value: $readerConfig.letterSpacing,
-                            range: 0...12,
-                            step: 0.5
-                        )
+                    LayoutSliderRow(
+                        title: localized("字距"),
+                        icon: .characterSpacing,
+                        valueText: "\(String(format: "%.1f", readerConfig.letterSpacing)) pt",
+                        value: $readerConfig.letterSpacing,
+                        range: 0...12,
+                        step: 0.5
+                    )
 
-                        SettingsDivider()
-                        LayoutSliderRow(
-                            title: localized("段距"),
-                            icon: .paragraphSpacing,
-                            valueText: String(format: "%.2f", readerConfig.paragraphSpacingMultiplier),
-                            value: $readerConfig.paragraphSpacingMultiplier,
-                            range: 0.3...1.2,
-                            step: 0.05
-                        )
-                    }
+                    LayoutSliderRow(
+                        title: localized("段距"),
+                        icon: .paragraphSpacing,
+                        valueText: String(format: "%.2f", readerConfig.paragraphSpacingMultiplier),
+                        value: $readerConfig.paragraphSpacingMultiplier,
+                        range: 0.3...1.2,
+                        step: 0.05
+                    )
+                }
 
-                    if supportsLineHeight {
-                        SettingsDivider()
-                        LayoutSliderRow(
-                            title: localized("頁面留白"),
-                            icon: .pageMargin,
-                            valueText: "\(Int(readerConfig.pageMarginH))",
-                            value: $readerConfig.pageMarginH,
-                            range: 8...48,
-                            step: 2
-                        )
+                if supportsLineHeight {
+                    LayoutSliderRow(
+                        title: localized("頁面留白"),
+                        icon: .pageMargin,
+                        valueText: "\(Int(readerConfig.pageMarginH))",
+                        value: $readerConfig.pageMarginH,
+                        range: 8...48,
+                        step: 2
+                    )
 
-                        SettingsDivider()
-                        LayoutSliderRow(
-                            title: localized("底欄離底"),
-                            icon: .footerBottom,
-                            valueText: "\(Int(readerConfig.footerBottomPadding)) pt",
-                            value: $readerConfig.footerBottomPadding,
-                            range: 0...36,
-                            step: 1
-                        )
+                    LayoutSliderRow(
+                        title: localized("底欄離底"),
+                        icon: .footerBottom,
+                        valueText: "\(Int(readerConfig.footerBottomPadding)) pt",
+                        value: $readerConfig.footerBottomPadding,
+                        range: 0...36,
+                        step: 1
+                    )
 
-                        SettingsDivider()
-                        LayoutSliderRow(
-                            title: localized("正文到底欄"),
-                            icon: .footerTextGap,
-                            valueText: "\(Int(readerConfig.footerTextGap)) pt",
-                            value: $readerConfig.footerTextGap,
-                            range: 0...48,
-                            step: 1
-                        )
-                    }
+                    LayoutSliderRow(
+                        title: localized("正文到底欄"),
+                        icon: .footerTextGap,
+                        valueText: "\(Int(readerConfig.footerTextGap)) pt",
+                        value: $readerConfig.footerTextGap,
+                        range: 0...48,
+                        step: 1
+                    )
                 }
             }
         }
     }
 
     private var displaySection: some View {
-        SettingsSection(title: localized("亮度與顯示")) {
-            VStack(spacing: 0) {
-                ToggleRow(
-                    title: localized("跟隨系統亮度"),
-                    subtitle: localized("建議保持開啟，閱讀時更自然"),
-                    isOn: followSystemBrightnessBinding
-                )
+        Section(header: Text(localized("亮度與顯示"))) {
+            ToggleRow(
+                title: localized("跟隨系統亮度"),
+                subtitle: localized("建議保持開啟，閱讀時更自然"),
+                isOn: followSystemBrightnessBinding
+            )
 
-                SettingsDivider()
-
-                ValueSliderRow(
-                    title: localized("閱讀亮度"),
-                    valueText: "\(Int(settings.readerBrightness * 100))%",
-                    value: readerBrightnessBinding,
-                    range: 0.05...1.0,
-                    step: 0.05,
-                    isDisabled: settings.followSystemBrightness
-                )
-            }
+            ValueSliderRow(
+                title: localized("閱讀亮度"),
+                valueText: "\(Int(settings.readerBrightness * 100))%",
+                value: readerBrightnessBinding,
+                range: 0.05...1.0,
+                step: 0.05,
+                isDisabled: settings.followSystemBrightness
+            )
         }
     }
 
@@ -515,6 +479,7 @@ struct ReaderSettingsView: View {
         return settings.userFonts.first { $0.postScriptName == selected }?.displayName ?? selected
     }
 
+
     private func syncBrightnessFromSystem() {
         settings.readerBrightness = Double(UIScreen.main.brightness)
     }
@@ -551,41 +516,7 @@ private enum LayoutMetricIconKind {
     case footerTextGap
 }
 
-private struct SettingsSection<Content: View>: View {
-    let title: String
-    let content: Content
 
-    init(title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.title2.weight(.bold))
-                .foregroundStyle(.primary)
-                .padding(.leading, 28)
-
-            VStack(spacing: 0) {
-                content
-                    .padding(.horizontal, 26)
-                    .padding(.vertical, 18)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        }
-    }
-}
-
-private struct SettingsDivider: View {
-    var body: some View {
-        Divider()
-            .padding(.leading, 58)
-            .padding(.vertical, 16)
-    }
-}
 
 private struct SettingRowHeader: View {
     let title: String

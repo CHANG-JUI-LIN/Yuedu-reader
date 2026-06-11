@@ -22,10 +22,14 @@ struct WebDAVSyncView: View {
                 statusSection
             }
             .navigationTitle(localized("WebDAV 同步"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("關閉")) { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
                 }
             }
             .disabled(manager.isSyncing)

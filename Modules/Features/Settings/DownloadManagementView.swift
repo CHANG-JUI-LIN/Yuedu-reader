@@ -34,9 +34,14 @@ struct DownloadManagementView: View {
                 downloadedBooksSection
             }
             .navigationTitle(localized("下載管理"))
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(localized("關閉")) { presentationMode.wrappedValue.dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        presentationMode.wrappedValue.dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
                 }
             }
             .task {

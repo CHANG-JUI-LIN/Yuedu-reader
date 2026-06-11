@@ -67,16 +67,22 @@ struct EditRSSSourceSheet: View {
                 }
             }
             .navigationTitle(localized("編輯訂閱"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(localized("取消")) { dismiss() }
-                        .foregroundColor(DSColor.accent)
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(localized("儲存")) { Task { await save() } }
-                        .foregroundColor(DSColor.accent)
-                        .disabled(!canSave)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await save() }
+                    } label: {
+                        Image(systemName: "checkmark")
+                    }
+                    .disabled(!canSave)
                 }
             }
             .disabled(isSaving)

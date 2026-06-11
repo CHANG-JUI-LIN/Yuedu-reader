@@ -31,6 +31,10 @@ struct SettingsView: View {
         return String(format: template, appName)
     }
 
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    }
+
     var body: some View {
         NavigationStack {
                 Form {
@@ -125,12 +129,7 @@ struct SettingsView: View {
                         HStack {
                             Text(localized("版本"))
                             Spacer()
-                            Text("1.0.0").foregroundColor(DSColor.textSecondary)
-                        }
-                        HStack {
-                            Text(localized("支援格式"))
-                            Spacer()
-                            Text(localized("TXT、EPUB、Web、書源")).foregroundColor(DSColor.textSecondary)
+                            Text(appVersion).foregroundColor(DSColor.textSecondary)
                         }
                         Button {
                             if let url = feedbackMailURL {
