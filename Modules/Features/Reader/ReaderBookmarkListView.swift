@@ -71,7 +71,7 @@ struct ReaderBookmarkListView: View {
                 if !isEditing { selection.removeAll() }
             }
         } label: {
-            Image(systemName: isEditing ? "checkmark" : "checklist")
+            Image(systemName: isEditing ? "xmark" : "checklist")
         }
         .accessibilityLabel(localized(isEditing ? "完成" : "編輯"))
     }

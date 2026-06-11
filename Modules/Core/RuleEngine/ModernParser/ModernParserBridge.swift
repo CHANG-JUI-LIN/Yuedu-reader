@@ -132,9 +132,6 @@ class ModernParserBridge {
                   let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
             LoginManager.shared.storeLoginHeaders(sourceUrl: sourceUrl, headers: dict)
         }
-        jsEngine.sourceBridge.getLoginHeaderHandler = {
-            LoginManager.shared.getLoginHeader(sourceUrl: sourceUrl)
-        }
         jsEngine.sourceBridge.removeLoginHeaderHandler = {
             LoginManager.shared.clearLogin(sourceUrl: sourceUrl)
         }

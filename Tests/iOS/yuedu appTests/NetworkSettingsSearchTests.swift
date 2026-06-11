@@ -16,19 +16,6 @@ struct NetworkSettingsSearchTests {
         #expect(sources.contains { !$0.searchUrl.isEmpty && !$0.ruleSearch.bookList.isEmpty })
     }
 
-    @Test("large 11780 source pack decodes into enabled searchable sources")
-    func large11780SourcePackDecodes() throws {
-        let path = "/Users/zhangruilin/Desktop/Test document/RULE/11780_51b655a48db62802c20dcb56a8802d4d.json"
-        guard FileManager.default.fileExists(atPath: path) else { return }
-
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        let sources = try JSONDecoder().decode([BookSource].self, from: data)
-
-        #expect(sources.count == 1607)
-        #expect(sources.filter(\.enabled).count == 1607)
-        #expect(sources.contains { !$0.searchUrl.isEmpty && !$0.ruleSearch.bookList.isEmpty })
-    }
-
     @Test("search cache reuses fresh results and remaps to current source identity")
     func searchCacheReusesFreshResults() throws {
         let directory = try makeTemporaryDirectory()
@@ -79,22 +66,6 @@ struct NetworkSettingsSearchTests {
         #expect(!policy.shouldPause(exactCount: 1, fuzzyCount: 9))
         #expect(policy.shouldPause(exactCount: 2, fuzzyCount: 0))
         #expect(policy.shouldPause(exactCount: 0, fuzzyCount: 10))
-    }
-
-    @Test("large source packs get a safety auto pause when unset")
-    func largeSourcePackSafetyAutoPause() {
-        #expect(NetworkSearchSettings.effectiveAutoPauseCount(
-            configured: 0,
-            sourceCount: NetworkSearchSettings.largeSourcePackThreshold - 1
-        ) == 0)
-        #expect(NetworkSearchSettings.effectiveAutoPauseCount(
-            configured: 0,
-            sourceCount: NetworkSearchSettings.largeSourcePackThreshold
-        ) == NetworkSearchSettings.largeSourcePackAutoPauseCount)
-        #expect(NetworkSearchSettings.effectiveAutoPauseCount(
-            configured: 3,
-            sourceCount: 1607
-        ) == 3)
     }
 
     @MainActor

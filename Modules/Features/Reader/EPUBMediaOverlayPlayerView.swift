@@ -67,13 +67,7 @@ struct EPUBMediaOverlayPlayerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Label(localized("完成"), systemImage: "checkmark")
-                            .labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel(localized("完成"))
+                    Button(localized("完成")) { dismiss() }
                 }
             }
         }

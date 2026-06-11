@@ -31,16 +31,10 @@ struct AddBookView: View {
                 }
             }
             .navigationTitle(localized("添加書籍"))
-            .toolbarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        presentationMode.wrappedValue.dismiss()
-                    } label: {
-                        Label(localized("取消"), systemImage: "xmark")
-                            .labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel(localized("取消"))
+                    Button(localized("取消")) { presentationMode.wrappedValue.dismiss() }
                 }
             }
         }

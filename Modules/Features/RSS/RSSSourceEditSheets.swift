@@ -183,7 +183,7 @@ struct EditRSSSourceSheet: View {
 struct RSSOrganizeSheet: View {
     @ObservedObject var store: RSSStore
     @Environment(\.dismiss) private var dismiss
-    @State private var editMode: EditMode = .inactive
+    @Environment(\.editMode) private var editMode
 
     @State private var sourceToEdit: RSSSource?
 
@@ -230,17 +230,16 @@ struct RSSOrganizeSheet: View {
                     }
                 }
             }
-            .environment(\.editMode, $editMode)
             .navigationTitle(localized("整理訂閱"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         withAnimation {
-                            editMode = (editMode == .active) ? .inactive : .active
+                            editMode?.wrappedValue = (editMode?.wrappedValue == .active) ? .inactive : .active
                         }
                     } label: {
-                        Image(systemName: editMode == .active ? "xmark" : "checklist")
+                        Image(systemName: (editMode?.wrappedValue == .active) ? "xmark" : "checklist")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {

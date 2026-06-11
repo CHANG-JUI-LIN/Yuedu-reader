@@ -34,13 +34,9 @@ struct LoginView: View {
                 .padding(.top, 20)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
-                        Button {
+                        Button(localized("取消")) {
                             dismiss()
-                        } label: {
-                            Label(localized("取消"), systemImage: "xmark")
-                                .labelStyle(.iconOnly)
                         }
-                        .accessibilityLabel(localized("取消"))
                     }
                 }
 

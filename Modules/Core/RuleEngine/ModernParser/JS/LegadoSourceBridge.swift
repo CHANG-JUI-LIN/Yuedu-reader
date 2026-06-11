@@ -13,7 +13,6 @@ import JavaScriptCore
     func getLoginInfoMap() -> [String: Any]
     func removeLoginInfo()
     func putLoginHeader(_ header: String)
-    func getLoginHeader() -> String?
     func removeLoginHeader()
     func getHeaderMap() -> [String: String]
     func loginUi() -> String
@@ -70,9 +69,6 @@ import JavaScriptCore
 
     /// Stores login header JSON string.
     var putLoginHeaderHandler: ((String) -> Void)?
-
-    /// Returns the stored login header JSON string (or nil).
-    var getLoginHeaderHandler: (() -> String?)?
 
     /// Clears login headers.
     var removeLoginHeaderHandler: (() -> Void)?
@@ -141,10 +137,6 @@ import JavaScriptCore
 
     func putLoginHeader(_ header: String) {
         putLoginHeaderHandler?(header)
-    }
-
-    func getLoginHeader() -> String? {
-        return getLoginHeaderHandler?()
     }
 
     func removeLoginHeader() {

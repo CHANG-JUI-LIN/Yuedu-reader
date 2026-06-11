@@ -1587,52 +1587,6 @@ struct JSCoreEngineTests {
 
         #expect(result == "<html>done</html>")
     }
-
-    // MARK: Login-source bridge methods (番茄/起点/企点 special sources)
-
-    @Test("eval() is enabled for Legado sources")
-    func evalEnabled() {
-        let engine = JSCoreEngine()
-        #expect(engine.evaluate("eval('1 + 2')") == "3")
-        // Explore-builder pattern used by 番茄 discovery rules: eval('sort'+i+'.push(...)')
-        let r = engine.evaluate("var sort0 = []; eval('sort' + 0 + '.push(7)'); sort0[0]")
-        #expect(r == "7")
-    }
-
-    @Test("cookie.getKey returns a named cookie value")
-    func cookieGetKey() {
-        let host = "https://ck-\(UUID().uuidString).example.com"
-        CookieStore.shared.set(url: host, cookie: "sessionid=sid789")
-        defer { CookieStore.shared.remove(url: host) }
-        let engine = JSCoreEngine()
-        #expect(engine.evaluate("cookie.getKey('\(host)', 'sessionid')") == "sid789")
-    }
-
-    @Test("cookie.getKey accepts a bare domain tag")
-    func cookieGetKeyBareDomain() {
-        let domain = "fq-\(UUID().uuidString.prefix(8)).example.com"
-        CookieStore.shared.set(url: "https://\(domain)", cookie: "token=t123")
-        defer { CookieStore.shared.remove(url: "https://\(domain)") }
-        let engine = JSCoreEngine()
-        #expect(engine.evaluate("cookie.getKey('\(domain)', 'token')") == "t123")
-    }
-
-    @Test("source.getLoginHeader bridges to handler")
-    func sourceGetLoginHeader() {
-        let engine = JSCoreEngine()
-        engine.sourceBridge.getLoginHeaderHandler = { "{\"Cookie\":\"a=b\"}" }
-        let result = engine.evaluate("source.getLoginHeader()")
-        #expect(result != nil)
-        #expect(result!.contains("a=b"))
-    }
-
-    @Test("java.importScript returns inline (non-http) text verbatim")
-    func javaImportScriptInline() {
-        let engine = JSCoreEngine()
-        // Non-URL input is returned unchanged (no network), so eval() can consume it.
-        let result = engine.evaluate("eval(java.importScript('1 + 4'))")
-        #expect(result == "5")
-    }
 }
 
 // MARK: - 9. JSSandbox Tests

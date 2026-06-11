@@ -207,11 +207,7 @@ final class ReaderViewModel: ObservableObject {
         // channel/source is offered (minus the exact origin already being read).
         let sources = enabledSources
         let concurrency = NetworkSearchSettings.clampedConcurrency(GlobalSettings.shared.searchConcurrency)
-        let autoPauseCount = NetworkSearchSettings.effectiveAutoPauseCount(
-            configured: GlobalSettings.shared.searchAutoPauseCount,
-            sourceCount: sources.count
-        )
-        let autoPausePolicy = SearchAutoPausePolicy(count: autoPauseCount)
+        let autoPausePolicy = SearchAutoPausePolicy(count: GlobalSettings.shared.searchAutoPauseCount)
 
         changeSourceSearchTask?.cancel()
         changeSourceSearchTask = Task { [weak self] in

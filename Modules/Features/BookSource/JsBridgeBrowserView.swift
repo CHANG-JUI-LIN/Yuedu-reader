@@ -2,10 +2,8 @@ import SwiftUI
 import WebKit
 import Combine
 // Modal WebView launched by `java.startBrowser` / `java.startBrowserAwait`.
-// Shows a loading state (spinner + top progress bar) while the page loads so
-// slow login/key servers don't appear as a frozen blank sheet, plus an error
-// state with retry. Syncs WKWebView cookies into CookieStore and
-// HTTPCookieStorage when the user taps "Done" (and on each navigation finish).
+// Syncs WKWebView cookies into CookieStore and HTTPCookieStorage when the user
+// taps "Done" (and also on each navigation finish for non-CF scenarios).
 
 struct JsBridgeBrowserView: View {
     let urlString: String
@@ -15,119 +13,39 @@ struct JsBridgeBrowserView: View {
     @StateObject private var bridge = JsBridgeBrowserBridge()
     @State private var isSyncing = false
 
-    private var navTitle: String { title.isEmpty ? localized("瀏覽器") : title }
-
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .top) {
-                JsBridgeBrowserRepresentable(urlString: urlString, bridge: bridge)
-                    .edgesIgnoringSafeArea(.bottom)
-
-                // Full-screen state until the page delivers its first content.
-                switch bridge.phase {
-                case .loading:
-                    loadingOverlay
-                case .failed:
-                    errorOverlay
-                case .committed, .finished:
-                    EmptyView()
-                }
-
-                // Safari-style thin progress bar across the top while loading.
-                if (bridge.phase == .loading || bridge.phase == .committed), bridge.progress < 1 {
-                    ProgressView(value: max(bridge.progress, 0.03))
-                        .progressViewStyle(.linear)
-                        .tint(DSColor.accent)
-                        .transition(.opacity)
-                }
-            }
-            .animation(DSAnimation.fast, value: bridge.phase)
-            .animation(DSAnimation.fast, value: bridge.progress)
-            .navigationTitle(navTitle)
-            .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        onDismiss(nil)
-                    } label: {
-                        Label(localized("取消"), systemImage: "xmark")
-                            .labelStyle(.iconOnly)
+            JsBridgeBrowserRepresentable(urlString: urlString, bridge: bridge)
+                .edgesIgnoringSafeArea(.bottom)
+                .navigationTitle(title.isEmpty ? "瀏覽器" : title)
+                .toolbarTitleDisplayMode(.large)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("取消") { onDismiss(nil) }
+                            .disabled(isSyncing)
                     }
-                    .accessibilityLabel(localized("取消"))
-                    .disabled(isSyncing)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if isSyncing {
-                        ProgressView().scaleEffect(0.85)
-                    } else {
-                        Button {
-                            isSyncing = true
-                            bridge.syncCookiesAndDismiss? { body in
-                                onDismiss(body)
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        if isSyncing {
+                            ProgressView().scaleEffect(0.85)
+                        } else {
+                            Button("完成") {
+                                isSyncing = true
+                                bridge.syncCookiesAndDismiss? { body in
+                                    onDismiss(body)
+                                }
                             }
-                        } label: {
-                            Label(localized("完成"), systemImage: "checkmark")
-                                .labelStyle(.iconOnly)
+                            .font(.body.weight(.semibold))
                         }
-                        .accessibilityLabel(localized("完成"))
                     }
                 }
-            }
         }
-    }
-
-    // MARK: - Overlays
-
-    private var loadingOverlay: some View {
-        ZStack {
-            DSColor.background.ignoresSafeArea()
-            VStack(spacing: DSSpacing.md) {
-                ProgressView()
-                    .controlSize(.large)
-                Text(localized("載入中…"))
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(DSColor.textSecondary)
-            }
-        }
-        .transition(.opacity)
-    }
-
-    private var errorOverlay: some View {
-        ZStack {
-            DSColor.background.ignoresSafeArea()
-            VStack(spacing: DSSpacing.md) {
-                Image(systemName: "wifi.exclamationmark")
-                    .font(.largeTitle)
-                    .foregroundStyle(DSColor.textSecondary)
-                Text(localized("載入失敗"))
-                    .font(DSFont.headline)
-                if let detail = bridge.errorText, !detail.isEmpty {
-                    Text(detail)
-                        .font(DSFont.caption)
-                        .foregroundStyle(DSColor.textSecondary)
-                        .multilineTextAlignment(.center)
-                }
-                Button(localized("重試")) { bridge.reload?() }
-                    .buttonStyle(.bordered)
-                    .tint(DSColor.accent)
-            }
-            .padding(DSSpacing.lg)
-        }
-        .transition(.opacity)
     }
 }
 
 // MARK: - JsBridgeBrowserBridge
 
 final class JsBridgeBrowserBridge: ObservableObject {
-    enum Phase { case loading, committed, finished, failed }
-
     var syncCookiesAndDismiss: ((@escaping (String?) -> Void) -> Void)?
-    var reload: (() -> Void)?
-
-    @Published var progress: Double = 0
-    @Published var phase: Phase = .loading
-    @Published var errorText: String?
 }
 
 // MARK: - UIViewRepresentable
@@ -148,25 +66,11 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         wv.navigationDelegate = context.coordinator
         context.coordinator.webView = wv
-        context.coordinator.bridge = bridge
-
-        // Drive the progress bar from the live load estimate.
-        context.coordinator.progressObservation = wv.observe(\.estimatedProgress, options: [.new]) { [weak bridge] web, _ in
-            DispatchQueue.main.async { bridge?.progress = web.estimatedProgress }
-        }
 
         let coordinator = context.coordinator
-        bridge.syncCookiesAndDismiss = { [weak coordinator] completion in
-            guard let wv = coordinator?.webView else { completion(nil); return }
-            coordinator?.syncCookiesAndDismiss(from: wv, completion: completion)
-        }
-        bridge.reload = { [weak coordinator, weak bridge] in
-            guard let coordinator, let wv = coordinator.webView,
-                  let url = URL(string: urlString) else { return }
-            bridge?.phase = .loading
-            bridge?.errorText = nil
-            bridge?.progress = 0
-            coordinator.load(url: url, in: wv)
+        bridge.syncCookiesAndDismiss = { completion in
+            guard let wv = coordinator.webView else { completion(nil); return }
+            coordinator.syncCookiesAndDismiss(from: wv, completion: completion)
         }
 
         if let url = URL(string: urlString) {
@@ -180,15 +84,6 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         weak var webView: WKWebView?
-        weak var bridge: JsBridgeBrowserBridge?
-        var progressObservation: NSKeyValueObservation?
-
-        private func setPhase(_ phase: JsBridgeBrowserBridge.Phase, error: String? = nil) {
-            DispatchQueue.main.async { [weak self] in
-                self?.bridge?.phase = phase
-                if let error { self?.bridge?.errorText = error }
-            }
-        }
 
         func webView(
             _ webView: WKWebView,
@@ -226,32 +121,8 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             }
         }
 
-        // MARK: Navigation phases (drive the loading / error UI)
-
-        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            setPhase(.loading)
-        }
-
-        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-            setPhase(.committed)
-        }
-
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            DispatchQueue.main.async { [weak self] in
-                self?.bridge?.progress = 1
-                self?.bridge?.phase = .finished
-            }
             syncCookiesAndDismiss(from: webView, completion: nil)
-        }
-
-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            setPhase(.failed, error: error.localizedDescription)
-        }
-
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            // Ignore the benign "cancelled" that follows decidePolicy(.cancel) for yuedu:// links.
-            if (error as NSError).code == NSURLErrorCancelled { return }
-            setPhase(.failed, error: error.localizedDescription)
         }
 
         func syncCookiesAndDismiss(from webView: WKWebView, completion: ((String?) -> Void)?) {
@@ -333,14 +204,4 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             HTTPCookieStorage.shared.cookies(for: url) ?? []
         }
     }
-}
-
-// MARK: - Preview
-
-#Preview {
-    JsBridgeBrowserView(
-        urlString: "https://example.com",
-        title: "密鑰獲取",
-        onDismiss: { _ in }
-    )
 }

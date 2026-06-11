@@ -122,51 +122,11 @@ struct BookSourceFormLoginView: View {
     // MARK: - Setup
 
     private func loadUI() {
-        let rawUi = source.loginUi.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Some sources (e.g. 起点) define `loginUi` as JS (`@js:` / `<js>…</js>`) that
-        // builds the form by calling a jsLib helper like `Menu()`. Evaluate it first,
-        // then parse the JSON it returns. Plain JSON-array loginUi takes the fast path.
-        if rawUi.hasPrefix("@js:") || rawUi.hasPrefix("<js>") {
-            isLoading = true
-            let src = source
-            Task.detached(priority: .userInitiated) {
-                let json = Self.evaluateJsLoginUi(source: src)
-                let parsed = LoginUIField.parse(from: json)
-                let stored = LoginManager.shared.getLoginInfo(sourceUrl: src.bookSourceUrl)
-                await MainActor.run {
-                    self.fields = parsed
-                    if let stored { self.values = stored }
-                    self.isLoading = false
-                }
-            }
-            return
-        }
-
         fields = LoginUIField.parse(from: source.loginUi)
         // Pre-fill with stored credentials
         if let stored = LoginManager.shared.getLoginInfo(sourceUrl: source.bookSourceUrl) {
             values = stored
         }
-    }
-
-    /// Evaluate a JS-based `loginUi` (with jsLib + source runtime wired) and return
-    /// the JSON form definition it produces (via `result = JSON.stringify(...)`).
-    nonisolated private static func evaluateJsLoginUi(source: BookSource) -> String {
-        let engine = JSCoreEngine()
-        engine.bookSource = source
-        configureLegadoRuntime(engine, source: source)
-        engine.toastHandler = { msg in
-            Task { @MainActor in BookSourceFormLoginView.presentToastAlert(message: msg) }
-        }
-
-        let raw = source.loginUi.trimmingCharacters(in: .whitespacesAndNewlines)
-        let jsBody = LoginManager.shared.extractLoginJs(raw) ?? raw
-        // Run the body (which assigns `result`), then return `result`.
-        let wrapped = """
-        \(jsBody)
-        ;(typeof result !== 'undefined' && result !== null ? result : '')
-        """
-        return engine.evaluate(wrapped, bindings: ["baseUrl": source.bookSourceUrl]) ?? ""
     }
 
     private func binding(for name: String) -> Binding<String> {

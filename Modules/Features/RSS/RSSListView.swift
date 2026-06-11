@@ -64,7 +64,7 @@ struct RSSListView: View {
                 .scrollIndicators(.visible)
             }
             .navigationTitle(localized("RSS 訂閱"))
-            .toolbarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inlineLarge)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 // Two separate glass pills. A ToolbarSpacer (iOS 26+) breaks the
@@ -828,13 +828,9 @@ private struct RSSSettingsContentView: View {
             .environmentObject(BookStore())
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
+                    Button(localized("完成")) {
                         isPresented = false
-                    } label: {
-                        Label(localized("完成"), systemImage: "checkmark")
-                            .labelStyle(.iconOnly)
                     }
-                    .accessibilityLabel(localized("完成"))
                 }
             }
     }
@@ -1466,16 +1462,12 @@ private struct RSSSourceInfoSheet: View {
                 }
             }
             .navigationTitle(localized("取得資訊"))
-            .toolbarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
+                    Button(localized("完成")) {
                         dismiss()
-                    } label: {
-                        Label(localized("完成"), systemImage: "checkmark")
-                            .labelStyle(.iconOnly)
                     }
-                    .accessibilityLabel(localized("完成"))
                     .foregroundColor(DSColor.accent)
                 }
             }
