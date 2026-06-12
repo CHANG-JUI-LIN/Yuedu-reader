@@ -64,6 +64,7 @@ Yuedu Reader is an iOS-first reading app for serious long-form reading. It focus
 | Local books | EPUB reflowable reading with chapter navigation, images, links, bookmarks, highlights, annotations, and TTS | Available |
 | Local books | TXT and Markdown reading | Available |
 | Manga | Local `.cbz` / `.zip` manga archives and compatible source-based manga reading | Available |
+| Audiobooks | Book-source audiobook streaming and player | Available |
 | Reader modes | Paged and scroll reading modes | Available |
 | CJK typography | Vertical writing, right-to-left flow, CJK punctuation handling, and vertical table of contents | Available |
 | Library import | OPDS catalog import | Available |
@@ -71,7 +72,7 @@ Yuedu Reader is an iOS-first reading app for serious long-form reading. It focus
 | Online reading | RSS / Atom feeds and native article reading | Beta |
 | Online reading | Web article normalization into clean long-form reading content | Beta |
 | Book sources | Legado-compatible source rules for user-provided online reading workflows | Beta |
-| Rendering quality | EPUB regression samples and compatibility checklist | Available |
+| Rendering quality | IDPF EPUB3 sample suite validated (up to Linear Algebra), MathML rendering, EPUB regression samples and compatibility checklist | Available |
 | EPUB layout | Fixed-layout EPUB prototype | Experimental |
 | Accessibility | Broader VoiceOver, Dynamic Type, and touch target work | Planned |
 
@@ -81,6 +82,7 @@ Yuedu Reader is an iOS-first reading app for serious long-form reading. It focus
 | --- | --- | --- |
 | Local books | EPUB, TXT, Markdown | EPUB support focuses on reflowable books and native CoreText rendering. |
 | Manga archives | CBZ, ZIP | Opened in a dedicated image reader. |
+| Audiobooks | M4A, M4B, MP3, FLAC, OGG, WAV, AAC, AIFF | Played through book-source audiobook pipeline and local TTS engine. |
 | Online feeds | RSS, Atom | Articles are extracted and read inside the native reader. |
 | Catalogs and sync | OPDS, WebDAV | Import books from catalogs and WebDAV servers; sync through WebDAV. |
 | Source rules | Legado-compatible rules | Format compatibility only; no third-party source rules are bundled. |
@@ -225,22 +227,13 @@ Start here:
 ## Repository Layout
 
 ```text
-iOS/
-├── Models/
-│   ├── App/              # Global settings, DesignTokens, AppDependencies
-│   ├── Book/             # ReadingBook, Bookmark, BookStore
-│   ├── BookSource/       # Book source definitions and fetch pipeline
-│   ├── LocalBook/        # EPUB/TXT/Markdown parsers
-│   ├── Online/           # Online reading and web normalization
-│   ├── RSS/              # RSS models, feed parser
-│   ├── Reader/CoreText/  # CoreText page engine, scroll engine, CSS parser, rendering
-│   ├── RuleEngine/       # CSS/XPath/Regex/JSON extraction rules
-│   ├── Sync/             # WebDAV sync manager
-│   └── TTS/              # Text-to-speech coordination
-├── Views/                # SwiftUI screens
-├── ViewModels/           # ObservableObject view models
-├── Assets/               # Asset catalogs and rule engine resources
-└── *.lproj/              # Localization: zh-Hant, zh-Hans, en
+Modules/
+├── Core/                 # EPUB/TXT/MD parsers, CoreText engine, BookSource, RuleEngine, TTS, Comic
+├── Features/             # SwiftUI screens: Bookshelf, Reader, RSS, BookSource, Search, Settings...
+├── Services/             # LibraryStore, Online, WebDAV, iCloud, OPDS, Network, Account...
+└── SharedUI/             # DesignSystem, Components, Extensions, Adaptive layout
+Resources/                # Assets.xcassets, Assets/, en.lproj, zh-Hans.lproj, zh-Hant.lproj
+Targets/Yuedu/            # SharedApp, iPhone/, iPad/ entry points
 ```
 
 ## Development Notes

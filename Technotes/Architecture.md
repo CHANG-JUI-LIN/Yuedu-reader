@@ -18,37 +18,13 @@ The app supports paged and scroll reading, bookmark annotation, TTS, RSS subscri
 ## Source Layout
 
 ```
-yuedu app/
-├── Models/
-│   ├── App/          # GlobalSettings, DesignTokens, AppDependencies
-│   ├── Book/         # ReadingBook, Bookmark, BookStore, BookChapter
-│   ├── BookSource/   # Book source definitions and fetch pipeline
-│   ├── LocalBook/    # EPUB/TXT/Markdown parsers and ingestors
-│   ├── Online/       # Online reading pipeline and chapter fetching
-│   ├── RSS/          # RSS models, feed parser, Legado rule engine
-│   ├── Reader/       # CoreText layout engine, page rendering, EPUB renderer
-│   ├── RuleEngine/   # CSS/XPath/Regex/JSON extraction rules
-│   ├── TTS/          # Text-to-speech coordination and HTTP TTS
-│   ├── Network/      # HTTP fetching, WebView fetcher
-│   ├── Sync/         # WebDAV sync manager
-│   ├── Migration/    # Legado data migration
-│   └── Extensions/   # Color, String extensions
-├── Views/
-│   ├── Reader/       # Reader UI, controls, settings, scroll views
-│   ├── Bookshelf/    # Home bookshelf and book management
-│   ├── BookSource/   # Book source list, debug, and login views
-│   ├── RSS/          # RSS subscription list, feed view, article reader
-│   ├── Settings/     # Global settings, profile, WebDAV, TTS, migration
-│   ├── Online/       # Browser view, web novel discovery
-│   ├── Search/       # Book search interface
-│   ├── Book/         # Add book views
-│   ├── Common/       # Shared UI components
-│   └── ...           # TTS, Stats, Download, Login, Replace
-├── ViewModels/       # ObservableObject view models
-├── Assets/           # Asset catalog and book source engine JS
-├── en.lproj/         # English localization
-├── zh-Hans.lproj/    # Simplified Chinese localization
-└── zh-Hant.lproj/    # Traditional Chinese localization
+Modules/
+├── Core/                  # EPUB/TXT/MD parsers, CoreText engine, BookSource, RuleEngine, TTS, Comic, Replace
+├── Features/              # SwiftUI screens: Bookshelf, Reader, RSS, BookSource, Settings, Search, WebBrowser...
+├── Services/              # LibraryStore, Online, WebDAV, iCloud, OPDS, Network, Account, RSS, Migration...
+└── SharedUI/              # DesignSystem (DSColor, DSFont, DSSpacing), Components, Extensions, Utilities, Adaptive layout
+Resources/                 # Assets.xcassets, Assets/ (book source engine JS), en.lproj, zh-Hans.lproj, zh-Hant.lproj
+Targets/Yuedu/             # SharedApp, iPhone/, iPad/ entry points
 ```
 
 ## Reader Pipeline
