@@ -62,6 +62,7 @@ Yuedu Reader is an iOS-first reading app for serious long-form reading. It focus
 | Area | Capability | Status |
 | --- | --- | --- |
 | Local books | EPUB reflowable reading with chapter navigation, images, links, bookmarks, highlights, annotations, and TTS | Available |
+| EPUB3 features | MathML, SVG, embedded fonts, media overlays, fixed-layout, BIDI/RTL, canvas, CSS multi-column, PLS/SSML, CFI, bindings, epub:switch, indexes, multiple renditions | Available |
 | Local books | TXT and Markdown reading | Available |
 | Manga | Local `.cbz` / `.zip` manga archives and compatible source-based manga reading | Available |
 | Audiobooks | Book-source audiobook streaming and player | Available |
@@ -69,11 +70,11 @@ Yuedu Reader is an iOS-first reading app for serious long-form reading. It focus
 | CJK typography | Vertical writing, right-to-left flow, CJK punctuation handling, and vertical table of contents | Available |
 | Library import | OPDS catalog import | Available |
 | Sync/import | WebDAV import and sync | Available |
-| Online reading | RSS / Atom feeds and native article reading | Beta |
-| Online reading | Web article normalization into clean long-form reading content | Beta |
-| Book sources | Legado-compatible source rules for user-provided online reading workflows | Beta |
+| Online reading | RSS / Atom feeds and native article reading | Available |
+| Online reading | Web article normalization into clean long-form reading content | Available |
+| Book sources | Legado-compatible source rules for user-provided online reading workflows | Available |
 | Rendering quality | IDPF EPUB3 sample suite validated (up to Linear Algebra), MathML rendering, EPUB regression samples and compatibility checklist | Available |
-| EPUB layout | Fixed-layout EPUB prototype | Experimental |
+| EPUB layout | Fixed-layout EPUB | Available |
 | Accessibility | Broader VoiceOver, Dynamic Type, and touch target work | Planned |
 
 ## Supported Formats
@@ -82,7 +83,6 @@ Yuedu Reader is an iOS-first reading app for serious long-form reading. It focus
 | --- | --- | --- |
 | Local books | EPUB, TXT, Markdown | EPUB support focuses on reflowable books and native CoreText rendering. |
 | Manga archives | CBZ, ZIP | Opened in a dedicated image reader. |
-| Audiobooks | M4A, M4B, MP3, FLAC, OGG, WAV, AAC, AIFF | Played through book-source audiobook pipeline and local TTS engine. |
 | Online feeds | RSS, Atom | Articles are extracted and read inside the native reader. |
 | Catalogs and sync | OPDS, WebDAV | Import books from catalogs and WebDAV servers; sync through WebDAV. |
 | Source rules | Legado-compatible rules | Format compatibility only; no third-party source rules are bundled. |
@@ -138,16 +138,12 @@ Yuedu Reader currently targets iOS 18.0+.
 
 ### Now
 
-- Improve EPUB rendering compatibility.
-- Polish CJK vertical reading and TOC behavior.
-- Add EPUB rendering bug templates and regression samples.
-- Improve RSS loading error handling.
+- Polish audiobook streaming experience.
 
 ### Next
 
 - Better web article normalization.
 - Richer manga sources and reader gestures.
-- Fixed-layout EPUB prototype.
 
 ### Later
 

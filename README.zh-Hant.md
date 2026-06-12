@@ -62,6 +62,7 @@
 | 領域 | 能力 | 狀態 |
 | --- | --- | --- |
 | 本地書籍 | EPUB reflowable 閱讀，含章節導航、圖片、連結、書籤、高亮、標註和 TTS | Available |
+| EPUB3 特性 | MathML、SVG、嵌入字體、媒體覆蓋、固定版面、BIDI/RTL、canvas、CSS 多欄、PLS/SSML、CFI、bindings、epub:switch、索引、多呈現 | Available |
 | 本地書籍 | TXT 和 Markdown 閱讀 | Available |
 | 漫畫 | 本地 `.cbz` / `.zip` 漫畫壓縮檔與相容書源漫畫閱讀 | Available |
 | 有聲書 | 書源有聲書串流播放器 | Available |
@@ -69,11 +70,11 @@
 | CJK 排版 | 直排、由右至左閱讀流、CJK 標點處理與直排目錄 | Available |
 | 書庫匯入 | OPDS 目錄匯入 | Available |
 | 同步／匯入 | WebDAV 匯入與同步 | Available |
-| 線上閱讀 | RSS / Atom feed 與原生文章閱讀 | Beta |
-| 線上閱讀 | 網頁文章轉碼成乾淨的長文本閱讀內容 | Beta |
-| 書源 | 使用者自行提供的 Legado 相容書源規則 | Beta |
+| 線上閱讀 | RSS / Atom feed 與原生文章閱讀 | Available |
+| 線上閱讀 | 網頁文章轉碼成乾淨的長文本閱讀內容 | Available |
+| 書源 | 使用者自行提供的 Legado 相容書源規則 | Available |
 | 渲染品質 | IDPF EPUB3 官方樣本集已驗證（至 Linear Algebra），MathML 渲染，EPUB regression samples 與相容性 checklist | Available |
-| EPUB 版面 | Fixed-layout EPUB prototype | Experimental |
+| EPUB 版面 | Fixed-layout EPUB | Available |
 | 無障礙 | 更完整的 VoiceOver、Dynamic Type 與觸控目標改善 | Planned |
 
 ## 支援格式
@@ -82,7 +83,6 @@
 | --- | --- | --- |
 | 本地書籍 | EPUB、TXT、Markdown | EPUB 支援聚焦 reflowable 書籍與 CoreText 原生渲染。 |
 | 漫畫壓縮檔 | CBZ、ZIP | 使用專屬圖片閱讀器開啟。 |
-| 有聲書 | M4A、M4B、MP3、FLAC、OGG、WAV、AAC、AIFF | 透過書源有聲管線與本地 TTS 引擎播放。 |
 | 線上訂閱 | RSS、Atom | 文章會擷取後在原生閱讀器內閱讀。 |
 | 目錄與同步 | OPDS、WebDAV | 從目錄與 WebDAV 伺服器匯入書籍，並透過 WebDAV 同步。 |
 | 書源規則 | Legado 相容規則 | 只代表格式相容；不內建第三方書源規則。 |
@@ -138,16 +138,12 @@ CJK 直排、高亮、標註與 TTS 都屬於原生閱讀介面的一部分。
 
 ### 現在
 
-- 改善 EPUB 渲染相容性。
-- 打磨 CJK 直排閱讀與目錄行為。
-- 增加 EPUB 渲染 bug template 與 regression samples。
-- 改善 RSS 載入錯誤處理。
+- 打磨有聲書串流體驗。
 
 ### 接下來
 
 - 更好的網頁文章轉碼。
 - 更完整的漫畫書源與閱讀器手勢。
-- Fixed-layout EPUB prototype。
 
 ### 之後
 
