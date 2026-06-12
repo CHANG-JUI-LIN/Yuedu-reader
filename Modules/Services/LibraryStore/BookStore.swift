@@ -7,6 +7,19 @@ import UIKit
 import WidgetKit
 import ReadiumShared
 
+extension OnlineBookContentKind {
+    var pipelineKind: BookPipelineKind {
+        switch self {
+        case .audio:
+            return .audio
+        case .manga:
+            return .manga
+        case .text:
+            return .html
+        }
+    }
+}
+
 // Widget data model — matched with Widget target's BookProgress
 struct WidgetBookProgress: Codable {
     var title: String
@@ -16,12 +29,37 @@ struct WidgetBookProgress: Codable {
     var lastReadDate: Date
 }
 
+private struct PersistedPositionSnapshot: Equatable {
+    let currentPosition: Double
+    let mangaChapterIndex: Int
+    let mangaPage: Int
+    let audioChapterIndex: Int
+    let audioTimeSeconds: Double
+
+    init(book: ReadingBook) {
+        currentPosition = book.currentPosition
+        mangaChapterIndex = book.mangaChapterIndex
+        mangaPage = book.mangaPage
+        audioChapterIndex = book.audioChapterIndex
+        audioTimeSeconds = book.audioTimeSeconds
+    }
+}
+
 class BookStore: ObservableObject, BookProvider {
     @Published var books: [ReadingBook] = []
 
     // Legacy UserDefaults key kept only for one-time migration.
     private let legacyMetaKey = "yd_books_meta"
     private var saveWorkItem: DispatchWorkItem?
+    private var saveGeneration = 0
+    private let metadataFileURL: URL
+    private var lastPersistedMetadataData: Data?
+    private var lastPersistedPositionSnapshots: [UUID: PersistedPositionSnapshot] = [:]
+    private var lastPersistedPositionSaveUptimeByBook: [UUID: TimeInterval] = [:]
+
+    private static let minimumProgressDeltaForMetadataWrite = 0.0025
+    private static let minimumAudioTimeDeltaForMetadataWrite: TimeInterval = 30
+    private static let maximumPositionMetadataWriteInterval: TimeInterval = 60
 
     /// Persistent storage location for the book-library JSON.
     /// Stored in Documents so it is included in iTunes / iCloud backups and is
@@ -32,7 +70,10 @@ class BookStore: ObservableObject, BookProvider {
             .appendingPathComponent("books_meta.json")
     }
 
-    init() { loadMeta() }
+    init(metadataFileURL: URL = BookStore.booksMetaFileURL) {
+        self.metadataFileURL = metadataFileURL
+        loadMeta()
+    }
 
     // MARK: Read Book Content
 
@@ -62,6 +103,8 @@ class BookStore: ObservableObject, BookProvider {
             throw ReaderError.unsupportedFormat("漫畫使用獨立的圖片閱讀器，無 CoreText 套件")
         case .fixedPage:
             throw ReaderError.unsupportedFormat("固定頁面文件使用獨立的固定頁面閱讀器，無 CoreText 套件")
+        case .audio:
+            throw ReaderError.unsupportedFormat("有聲書使用獨立的音訊播放器，無 CoreText 套件")
         }
     }
 
@@ -484,23 +527,47 @@ class BookStore: ObservableObject, BookProvider {
 
     // MARK: Update Reading Progress
 
-    func updatePosition(bookId: UUID, position: Double) {
+    func updatePosition(bookId: UUID, position: Double, forceSave: Bool = false) {
         if let idx = books.firstIndex(where: { $0.id == bookId }) {
             books[idx].currentPosition = position
-            saveMeta()
+            persistPositionUpdateIfNeeded(bookId: bookId, updatedBook: books[idx], force: forceSave)
         }
     }
 
     /// Persist manga reading position (chapter index + page) plus an overall
     /// progress fraction so the bookshelf progress bar stays meaningful.
-    func updateMangaPosition(bookId: UUID, chapter: Int, page: Int, totalChapters: Int) {
+    func updateMangaPosition(
+        bookId: UUID,
+        chapter: Int,
+        page: Int,
+        totalChapters: Int,
+        forceSave: Bool = false
+    ) {
         guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
         books[idx].mangaChapterIndex = chapter
         books[idx].mangaPage = page
         if totalChapters > 0 {
             books[idx].currentPosition = min(1.0, Double(chapter) / Double(totalChapters))
         }
-        saveMeta()
+        persistPositionUpdateIfNeeded(bookId: bookId, updatedBook: books[idx], force: forceSave)
+    }
+
+    /// Persist audiobook playback position (chapter index + elapsed seconds) plus
+    /// an overall progress fraction so the bookshelf progress bar stays meaningful.
+    func updateAudioPosition(
+        bookId: UUID,
+        chapter: Int,
+        time: Double,
+        totalChapters: Int,
+        forceSave: Bool = false
+    ) {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        books[idx].audioChapterIndex = chapter
+        books[idx].audioTimeSeconds = max(0, time)
+        if totalChapters > 0 {
+            books[idx].currentPosition = min(1.0, Double(chapter) / Double(totalChapters))
+        }
+        persistPositionUpdateIfNeeded(bookId: bookId, updatedBook: books[idx], force: forceSave)
     }
 
     func updateLastOpened(bookId: UUID) {
@@ -814,13 +881,20 @@ class BookStore: ObservableObject, BookProvider {
         sourceId: UUID, bookInfoURL: String, tocURL: String? = nil,
         coverUrl: String = "",
         runtimeVariables: [String: String]? = nil,
+        contentKind: OnlineBookContentKind? = nil,
         chapters: [OnlineChapterRef]
     ) -> ReadingBook {
         var book = ReadingBook(
             title: name, author: author, source: bookInfoURL, contentFilename: "")
         book.isOnline = true
-        let sourceType = BookSourceStore.shared.sources.first { $0.id == sourceId }?.bookSourceType ?? 0
-        book.contentPipelineKind = (sourceType == 2) ? .manga : .html
+        let source = BookSourceStore.shared.sources.first { $0.id == sourceId }
+        let inferredKind = contentKind ?? OnlineBookContentInference.infer(
+            sourceType: source?.bookSourceType,
+            runtimeVariables: runtimeVariables,
+            urls: [bookInfoURL, tocURL ?? ""],
+            metadataText: OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
+        )
+        book.contentPipelineKind = inferredKind.pipelineKind
         book.bookSourceId = sourceId
         book.bookInfoURL = bookInfoURL
         book.tocURL = tocURL
@@ -834,6 +908,17 @@ class BookStore: ObservableObject, BookProvider {
         saveMeta()
         downloadCoverIfNeeded(bookId: book.id, coverUrl: coverUrl, sourceId: sourceId)
         return book
+    }
+
+    @discardableResult
+    func updateOnlineBookContentKind(bookId: UUID, kind: OnlineBookContentKind) -> Bool {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return false }
+        guard books[idx].isOnline else { return false }
+        let pipelineKind = kind.pipelineKind
+        guard books[idx].contentPipelineKind != pipelineKind else { return false }
+        books[idx].contentPipelineKind = pipelineKind
+        saveMeta()
+        return true
     }
 
     /// Promote an online book to the manga pipeline once a fetched chapter turns out
@@ -850,6 +935,27 @@ class BookStore: ObservableObject, BookProvider {
         saveMeta()
         ReaderTelemetry.shared.log(
             "manga_autodetect",
+            attributes: ["bookId": bookId.uuidString]
+        )
+        return true
+    }
+
+    /// Promote an online book to the audio pipeline once a fetched chapter turns
+    /// out to be an audiobook stream. Aggregation sources report `bookSourceType
+    /// == 0` (text) even when serving audiobooks, so the content itself is the
+    /// only reliable signal. After this flips, `BookReaderView` reactively swaps
+    /// to the audio player and the change persists for future opens. Idempotent.
+    @discardableResult
+    func upgradeToAudioIfDetected(bookId: UUID, content: String) -> Bool {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return false }
+        guard books[idx].isOnline,
+              books[idx].contentPipelineKind != .manga,
+              books[idx].contentPipelineKind != .audio else { return false }
+        guard DirectChapterAudioResolver.looksLikeAudioContent(content) else { return false }
+        books[idx].contentPipelineKind = .audio
+        saveMeta()
+        ReaderTelemetry.shared.log(
+            "audio_autodetect",
             attributes: ["bookId": bookId.uuidString]
         )
         return true
@@ -970,9 +1076,16 @@ class BookStore: ObservableObject, BookProvider {
 
     // MARK: Update Online Book TOC (called after progressive TOC load completes)
 
-    func updateOnlineChapters(bookId: UUID, chapters: [OnlineChapterRef]) {
+    func updateOnlineChapters(
+        bookId: UUID,
+        chapters: [OnlineChapterRef],
+        runtimeVariables: [String: String]? = nil
+    ) {
         guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
         books[idx].onlineChapters = chapters
+        if let runtimeVariables, !runtimeVariables.isEmpty {
+            books[idx].runtimeVariables = runtimeVariables
+        }
         saveMeta()
     }
 
@@ -1208,12 +1321,14 @@ class BookStore: ObservableObject, BookProvider {
 
     private func saveMeta() {
         saveWorkItem?.cancel()
+        saveGeneration += 1
+        let generation = saveGeneration
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            guard let data = try? JSONEncoder().encode(self.books) else { return }
-            try? data.write(to: BookStore.booksMetaFileURL, options: .atomic)
-            self.syncWidgetData()
+            guard self.saveGeneration == generation else { return }
+            self.saveWorkItem = nil
+            self.persistMetadataIfChanged()
         }
 
         saveWorkItem = workItem
@@ -1241,9 +1356,85 @@ class BookStore: ObservableObject, BookProvider {
 
     private func saveMetaImmediately() {
         saveWorkItem?.cancel()
-        guard let data = try? JSONEncoder().encode(books) else { return }
-        try? data.write(to: BookStore.booksMetaFileURL, options: .atomic)
-        syncWidgetData()
+        saveGeneration += 1
+        saveWorkItem = nil
+        persistMetadataIfChanged()
+    }
+
+    private func persistPositionUpdateIfNeeded(
+        bookId: UUID,
+        updatedBook: ReadingBook,
+        force: Bool
+    ) {
+        guard shouldPersistPositionUpdate(bookId: bookId, updatedBook: updatedBook, force: force) else {
+            return
+        }
+        if force {
+            saveMetaImmediately()
+        } else {
+            saveMeta()
+        }
+    }
+
+    private func shouldPersistPositionUpdate(
+        bookId: UUID,
+        updatedBook: ReadingBook,
+        force: Bool
+    ) -> Bool {
+        if force { return true }
+
+        let snapshot = PersistedPositionSnapshot(book: updatedBook)
+        guard let persisted = lastPersistedPositionSnapshots[bookId] else {
+            return true
+        }
+
+        if abs(snapshot.currentPosition - persisted.currentPosition) >= Self.minimumProgressDeltaForMetadataWrite {
+            return true
+        }
+        if snapshot.mangaChapterIndex != persisted.mangaChapterIndex {
+            return true
+        }
+        if snapshot.audioChapterIndex != persisted.audioChapterIndex {
+            return true
+        }
+        if abs(snapshot.audioTimeSeconds - persisted.audioTimeSeconds) >= Self.minimumAudioTimeDeltaForMetadataWrite {
+            return true
+        }
+
+        guard snapshot != persisted else { return false }
+        let now = ProcessInfo.processInfo.systemUptime
+        let lastSave = lastPersistedPositionSaveUptimeByBook[bookId] ?? now
+        return now - lastSave >= Self.maximumPositionMetadataWriteInterval
+    }
+
+    private func persistMetadataIfChanged() {
+        guard let data = encodeBooksMetadata() else { return }
+        guard data != lastPersistedMetadataData else { return }
+
+        do {
+            try data.write(to: metadataFileURL, options: .atomic)
+            markMetadataPersisted(data)
+            syncWidgetData()
+        } catch {
+            Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to write metadata: \(error)")
+        }
+    }
+
+    private func encodeBooksMetadata() -> Data? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try? encoder.encode(books)
+    }
+
+    private func markMetadataPersisted(_ data: Data) {
+        lastPersistedMetadataData = data
+        let now = ProcessInfo.processInfo.systemUptime
+        lastPersistedPositionSnapshots = Dictionary(
+            uniqueKeysWithValues: books.map { ($0.id, PersistedPositionSnapshot(book: $0)) }
+        )
+        lastPersistedPositionSaveUptimeByBook = Dictionary(
+            uniqueKeysWithValues: books.map { ($0.id, now) }
+        )
     }
 
     // MARK: - Widget Data Sync
@@ -1283,10 +1474,11 @@ class BookStore: ObservableObject, BookProvider {
 
     private func loadMeta() {
         // Prefer the file-based store.
-        if let data = try? Data(contentsOf: BookStore.booksMetaFileURL),
+        if let data = try? Data(contentsOf: metadataFileURL),
            let decoded = try? JSONDecoder().decode([ReadingBook].self, from: data)
         {
             books = decoded
+            markMetadataPersisted(data)
             sanitizePersistedChapterURLs()
             return
         }
@@ -1298,8 +1490,9 @@ class BookStore: ObservableObject, BookProvider {
         {
             books = decoded
             sanitizePersistedChapterURLs()
-            if let migrated = try? JSONEncoder().encode(books) {
-                try? migrated.write(to: BookStore.booksMetaFileURL, options: .atomic)
+            if let migrated = encodeBooksMetadata() {
+                try? migrated.write(to: metadataFileURL, options: .atomic)
+                markMetadataPersisted(migrated)
             }
             UserDefaults.standard.removeObject(forKey: legacyMetaKey)
         }

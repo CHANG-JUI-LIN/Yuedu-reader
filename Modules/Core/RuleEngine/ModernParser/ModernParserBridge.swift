@@ -333,16 +333,26 @@ class ModernParserBridge {
 
         let name = engine.getString(ruleStr: source.ruleBookInfo.name)
         let author = engine.getString(ruleStr: source.ruleBookInfo.author)
-        let coverUrl = engine.getString(ruleStr: source.ruleBookInfo.coverUrl, isUrl: true)
+        // An empty cover rule must NOT fall back to baseUrl (getString's isUrl path does that),
+        // otherwise sources with an empty ruleBookInfo (七猫/书旗) get the site URL as a "cover"
+        // and clobber the real search-result cover. Empty rule → empty cover → UI keeps search cover.
+        let coverRule = source.ruleBookInfo.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        let coverUrl = coverRule.isEmpty ? "" : engine.getString(ruleStr: coverRule, isUrl: true)
         let intro = engine.getString(ruleStr: source.ruleBookInfo.intro)
         let kind = engine.getString(ruleStr: source.ruleBookInfo.kind)
         let wordCount = engine.getString(ruleStr: source.ruleBookInfo.wordCount)
         let lastChapter = engine.getString(ruleStr: source.ruleBookInfo.lastChapter)
-        let tocUrlRaw = engine.getString(ruleStr: source.ruleBookInfo.tocUrl, isUrl: true)
+        // Same guard for tocUrl: an empty rule would otherwise resolve to baseUrl (site root) and
+        // we'd scrape the homepage as a TOC. Empty rule → fall back to the book's own URL.
+        let tocRule = source.ruleBookInfo.tocUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tocUrlRaw = tocRule.isEmpty ? "" : engine.getString(ruleStr: tocRule, isUrl: true)
         let tocUrl = tocUrlRaw.isEmpty ? bookUrl : tocUrlRaw
 
         return OnlineBook(
-            name: name.isEmpty ? "Unknown Title" : name,
+            // Leave empty when the source has no/empty ruleBookInfo (e.g. 七猫/书旗 ship `{}`)
+            // or the name rule yields nothing — the detail UI then falls back to the search
+            // result's title instead of clobbering it with a placeholder.
+            name: name,
             author: author,
             intro: intro,
             coverUrl: coverUrl,

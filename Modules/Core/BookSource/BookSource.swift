@@ -264,8 +264,14 @@ struct BookSource: Identifiable, Codable {
     var ruleContent: ContentRule = ContentRule()
     var ruleReview: ReviewRule = ReviewRule()      // Legado: review rule
 
-    /// Whether this book source requires WebView JS rendering
-    var needsWebView: Bool { bookSourceType == 1 }
+    /// Whether this book source must be fetched through a real WebView.
+    ///
+    /// `bookSourceType` is a CONTENT type (0=text, 1=audio, 2=image, 3=file), NOT a transport
+    /// hint — audio sources are ordinary HTTP/JSON APIs and must never be forced through a
+    /// WebView (doing so broke audiobook search/detail). Genuine WebView needs are driven
+    /// per-request (`requestSpec.useWebView`), by chapter JS (`hasWebJs`), or by the
+    /// empty-result WebView retry in TOC/chapter fetch — none of which depend on this flag.
+    var needsWebView: Bool { false }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -345,6 +351,247 @@ struct OnlineBook: Identifiable {
     var runtimeVariables: [String: String]? = nil
 }
 
+enum OnlineBookContentKind: Equatable {
+    case text
+    case audio
+    case manga
+}
+
+enum OnlineBookContentInference {
+    static func infer(
+        sourceType: Int?,
+        runtimeVariables: [String: String]? = nil,
+        urls: [String] = [],
+        metadataText: [String] = []
+    ) -> OnlineBookContentKind {
+        if let sourceKind = kind(fromSourceType: sourceType), sourceKind != .text {
+            return sourceKind
+        }
+        if let runtimeKind = kind(fromRuntimeVariables: runtimeVariables) {
+            return runtimeKind
+        }
+        for url in urls {
+            if let urlKind = kind(fromURL: url) {
+                return urlKind
+            }
+        }
+        for text in metadataText {
+            if let metadataKind = kind(fromMetadataText: text) {
+                return metadataKind
+            }
+        }
+        return .text
+    }
+
+    private static func kind(fromSourceType sourceType: Int?) -> OnlineBookContentKind? {
+        switch sourceType {
+        case 1: return .audio
+        case 2: return .manga
+        default: return .text
+        }
+    }
+
+    private static func kind(fromRuntimeVariables vars: [String: String]?) -> OnlineBookContentKind? {
+        guard let vars, !vars.isEmpty else { return nil }
+
+        for key in ["book.type", "type", "media", "tab", "find_tab", "contentType"] {
+            if let kind = kind(fromStructuredValue: vars[key]) {
+                return kind
+            }
+        }
+
+        for (key, value) in vars where key.lowercased().contains("type") || key.lowercased().contains("tab") {
+            if let kind = kind(fromStructuredValue: value) {
+                return kind
+            }
+        }
+
+        return nil
+    }
+
+    private static func kind(fromURL rawURL: String) -> OnlineBookContentKind? {
+        let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        for payload in dataURLPayloads(from: trimmed) {
+            if let kind = kind(fromJSONObject: payload) {
+                return kind
+            }
+        }
+
+        let requestURL = trimmed.split(separator: ",", maxSplits: 1).first.map(String.init) ?? trimmed
+        guard let components = URLComponents(string: requestURL) else { return nil }
+        for item in components.queryItems ?? [] {
+            if ["tab", "type", "media", "mode", "category"].contains(item.name.lowercased()),
+               let kind = kind(fromStructuredValue: item.value) {
+                return kind
+            }
+        }
+        return nil
+    }
+
+    private static func dataURLPayloads(from text: String) -> [[String: Any]] {
+        let marker = "data:;base64,"
+        var payloads: [[String: Any]] = []
+        var searchStart = text.startIndex
+
+        while let markerRange = text.range(
+            of: marker,
+            options: [.caseInsensitive],
+            range: searchStart..<text.endIndex
+        ) {
+            let base64Start = markerRange.upperBound
+            let base64End = text[base64Start...].firstIndex(of: ",") ?? text.endIndex
+            let rawBase64 = String(text[base64Start..<base64End])
+            let decodedBase64 = rawBase64.removingPercentEncoding ?? rawBase64
+            if let data = Data(base64Encoded: decodedBase64),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                payloads.append(json)
+            }
+            searchStart = base64End
+        }
+
+        return payloads
+    }
+
+    private static func kind(fromJSONObject object: Any) -> OnlineBookContentKind? {
+        if let dictionary = object as? [String: Any] {
+            for (key, value) in dictionary {
+                if isContentKindKey(key), let kind = kind(fromStructuredValue: value) {
+                    return kind
+                }
+                if let kind = kind(fromJSONObject: value) {
+                    return kind
+                }
+            }
+        } else if let array = object as? [Any] {
+            for value in array {
+                if let kind = kind(fromJSONObject: value) {
+                    return kind
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func isContentKindKey(_ key: String) -> Bool {
+        let normalized = key
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+        return normalized == "tab"
+            || normalized == "type"
+            || normalized == "media"
+            || normalized == "mode"
+            || normalized == "category"
+            || normalized == "findtab"
+            || normalized == "booktype"
+            || normalized == "contenttype"
+    }
+
+    private static func kind(fromStructuredValue value: Any?) -> OnlineBookContentKind? {
+        guard let value else { return nil }
+        if let intValue = value as? Int {
+            return kind(fromTypeNumber: intValue)
+        }
+        if let doubleValue = value as? Double {
+            return kind(fromTypeNumber: Int(doubleValue))
+        }
+
+        let text = String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        if let intValue = Int(text) {
+            return kind(fromTypeNumber: intValue)
+        }
+
+        let normalized = text
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+        if normalized == "听书" || normalized == "聽書" || normalized == "有声"
+            || normalized == "有聲" || normalized == "audio" || normalized == "audiobook" {
+            return .audio
+        }
+        if normalized == "漫画" || normalized == "漫畫" || normalized == "comic"
+            || normalized == "manga" || normalized == "image" {
+            return .manga
+        }
+        return nil
+    }
+
+    private static func kind(fromTypeNumber value: Int) -> OnlineBookContentKind? {
+        switch value {
+        case 1, 32:
+            return .audio
+        case 2, 64:
+            return .manga
+        default:
+            return nil
+        }
+    }
+
+    private static func kind(fromMetadataText text: String) -> OnlineBookContentKind? {
+        let normalized = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "")
+        guard !normalized.isEmpty else { return nil }
+
+        let audioMarkers = ["当前模式：听书", "当前模式:听书", "目前模式：聽書", "模式：听书", "模式:听书"]
+        if audioMarkers.contains(where: { normalized.contains($0) }) {
+            return .audio
+        }
+
+        let mangaMarkers = ["当前模式：漫画", "当前模式:漫画", "目前模式：漫畫", "模式：漫画", "模式:漫画"]
+        if mangaMarkers.contains(where: { normalized.contains($0) }) {
+            return .manga
+        }
+
+        return kind(fromStructuredValue: normalized)
+    }
+
+    /// Mode markers (听书 / 漫画 / 小说…) read from the *source's* persisted runtime
+    /// variables. Aggregate sources (光遇 family) keep the active 类型/搜索模式 there
+    /// — individual search/discover results often carry no per-book marker at all,
+    /// so the source's current mode is the only signal left for routing. Feed these
+    /// into `infer`'s `metadataText` (weakest priority: any per-book marker wins).
+    static func sourceRuntimeModeMarkers(for source: BookSource?) -> [String] {
+        guard let source,
+              let json = BookSourceRuntimeStateStore.shared
+                  .sourceVariableJSON(for: source.bookSourceUrl),
+              let data = json.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [] }
+
+        var markers: [String] = []
+        for key in ["发现页类型", "搜索模式"] {
+            if let value = dict[key] as? String,
+               !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                markers.append(value)
+            }
+        }
+        if let more = dict["更多设置"] as? [String: Any],
+           let value = more["搜索模式"] as? String,
+           !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            markers.append(value)
+        }
+        return markers
+    }
+}
+
+extension OnlineBook {
+    func inferredContentKind(source: BookSource?) -> OnlineBookContentKind {
+        OnlineBookContentInference.infer(
+            sourceType: source?.bookSourceType,
+            runtimeVariables: runtimeVariables,
+            urls: [bookUrl, tocUrl],
+            metadataText: [kind, intro, lastChapter, sourceName]
+                + OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
+        )
+    }
+}
+
 // MARK: - Online Chapter Reference
 
 struct OnlineChapterRef: Identifiable, Codable {
@@ -370,5 +617,30 @@ extension BookSource {
             || url.contains(",{")
             || url.hasPrefix("<js>")
             || url.hasPrefix("@js:")
+            || (usesLegadoRuntimeSession && urlContainsRuntimeTemplate(url))
     }
+
+    private func urlContainsRuntimeTemplate(_ url: String) -> Bool {
+        guard url.contains("{{") else { return false }
+        guard let regex = try? NSRegularExpression(pattern: #"\{\{([\s\S]*?)\}\}"#) else {
+            return false
+        }
+
+        let nsRange = NSRange(url.startIndex..., in: url)
+        return regex.matches(in: url, range: nsRange).contains { match in
+            guard let range = Range(match.range(at: 1), in: url) else { return false }
+            let expression = String(url[range])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: " ", with: "")
+                .lowercased()
+            return !Self.fastSearchTemplateExpressions.contains(expression)
+        }
+    }
+
+    private static let fastSearchTemplateExpressions: Set<String> = [
+        "key",
+        "page",
+        "key,gb2312",
+        "key,gbk"
+    ]
 }

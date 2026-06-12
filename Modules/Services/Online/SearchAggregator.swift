@@ -24,6 +24,19 @@ struct BookOrigin: Identifiable, Codable {
     }
 }
 
+extension BookOrigin {
+    func inferredContentKind(sourceStore: BookSourceStore = .shared) -> OnlineBookContentKind {
+        let source = sourceStore.sources.first { $0.id == sourceId }
+        return OnlineBookContentInference.infer(
+            sourceType: source?.bookSourceType,
+            runtimeVariables: runtimeVariables,
+            urls: [bookUrl, tocUrl],
+            metadataText: [kind, intro, lastChapter, sourceName]
+                + OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
+        )
+    }
+}
+
 // MARK: - Aggregated Search Results (merge info from multiple sources for the same book)
 
 class SearchBook: Identifiable, ObservableObject {
@@ -114,6 +127,20 @@ class SearchBook: Identifiable, ObservableObject {
     /// Primary category
     var kind: String {
         origins.first(where: { !$0.kind.isEmpty })?.kind ?? ""
+    }
+
+    func inferredContentKind(sourceStore: BookSourceStore = .shared) -> OnlineBookContentKind {
+        if origins.contains(where: { $0.inferredContentKind(sourceStore: sourceStore) == .audio }) {
+            return .audio
+        }
+        if origins.contains(where: { $0.inferredContentKind(sourceStore: sourceStore) == .manga }) {
+            return .manga
+        }
+        return origins.first?.inferredContentKind(sourceStore: sourceStore) ?? .text
+    }
+
+    func preferredOrigin(for kind: OnlineBookContentKind, sourceStore: BookSourceStore = .shared) -> BookOrigin? {
+        origins.first { $0.inferredContentKind(sourceStore: sourceStore) == kind }
     }
 
     /// Intro for list display: filter out tag lines (e.g. "标签 (tags):", "#xxx") and truncate

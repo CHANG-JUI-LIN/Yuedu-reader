@@ -370,7 +370,9 @@ final class ReaderViewModel: ObservableObject {
                 book: book, chapterIndex: chapterIndex, priority: priority, store: store),
                   !package.content.isEmpty
             else { return }
-            store.upgradeToMangaIfDetected(bookId: book.id, content: package.content)
+            if !store.upgradeToMangaIfDetected(bookId: book.id, content: package.content) {
+                store.upgradeToAudioIfDetected(bookId: book.id, content: package.content)
+            }
         }
     }
 
@@ -408,10 +410,12 @@ final class ReaderViewModel: ObservableObject {
                         let imgs = MangaChapterParser.imageURLs(from: package.content)
                         let head = package.content.prefix(600)
                             .replacingOccurrences(of: "\n", with: "⏎")
-                        print("[MangaDetect] ch=\(chapterIndex) len=\(package.content.count) imgURLs=\(imgs.count) looksManga=\(MangaChapterParser.looksLikeMangaContent(package.content)) head=\(head)")
+                        print("[MangaDetect] ch=\(chapterIndex) len=\(package.content.count) imgURLs=\(imgs.count) looksManga=\(MangaChapterParser.looksLikeMangaContent(package.content)) looksAudio=\(DirectChapterAudioResolver.looksLikeAudioContent(package.content)) audioURL=\(DirectChapterAudioResolver.request(from: package.content)?.url?.absoluteString ?? "nil") head=\(head)")
                     }
                     #endif
-                    store.upgradeToMangaIfDetected(bookId: book.id, content: package.content)
+                    if !store.upgradeToMangaIfDetected(bookId: book.id, content: package.content) {
+                        store.upgradeToAudioIfDetected(bookId: book.id, content: package.content)
+                    }
                 }
                 self.finishFetch(chapterIndex: chapterIndex, token: token, result: result)
             } catch is CancellationError {

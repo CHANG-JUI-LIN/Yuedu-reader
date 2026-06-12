@@ -190,6 +190,10 @@ struct ReadingBook: Identifiable, Codable {
     var mangaChapterIndex: Int = 0
     var mangaPage: Int = 0
 
+    // Audiobook reading position: chapter index + playback time (seconds)
+    var audioChapterIndex: Int = 0
+    var audioTimeSeconds: Double = 0
+
     init(
         title: String, author: String = "未知作者",
         source: String = "local", contentFilename: String
@@ -261,6 +265,8 @@ struct ReadingBook: Identifiable, Codable {
         group = (try? c.decode(String.self, forKey: .group)) ?? ""
         mangaChapterIndex = (try? c.decode(Int.self, forKey: .mangaChapterIndex)) ?? 0
         mangaPage = (try? c.decode(Int.self, forKey: .mangaPage)) ?? 0
+        audioChapterIndex = (try? c.decode(Int.self, forKey: .audioChapterIndex)) ?? 0
+        audioTimeSeconds = (try? c.decode(Double.self, forKey: .audioTimeSeconds)) ?? 0
     }
 
     enum CodingKeys: String, CodingKey {
@@ -269,6 +275,7 @@ struct ReadingBook: Identifiable, Codable {
         case coverImagePath, rendererPreference, compatibilityState
         case offlineDownloadState, downloadedChapterCount, offlineDownloadTask, group, lastOpenedDate
         case mangaChapterIndex, mangaPage
+        case audioChapterIndex, audioTimeSeconds
     }
 
     private static func inferPipelineKind(
@@ -294,7 +301,8 @@ struct ReadingBook: Identifiable, Codable {
 
 extension ReadingBook {
     var resolvedPipelineKind: BookPipelineKind {
-        if contentPipelineKind == .manga || contentPipelineKind == .fixedPage {
+        if contentPipelineKind == .manga || contentPipelineKind == .fixedPage
+            || contentPipelineKind == .audio {
             return contentPipelineKind
         }
         if isOnline { return .html }
@@ -305,7 +313,7 @@ extension ReadingBook {
     }
 
     var allowsUserSelectedReaderFont: Bool {
-        if resolvedPipelineKind == .manga { return false }
+        if resolvedPipelineKind == .manga || resolvedPipelineKind == .audio { return false }
         if isOnline { return true }
         return resolvedPipelineKind.allowsUserSelectedReaderFont
     }
@@ -321,12 +329,13 @@ enum BookPipelineKind: String, Codable {
     case html
     case manga
     case fixedPage
+    case audio
 
     var allowsUserSelectedReaderFont: Bool {
         switch self {
         case .txt:
             return true
-        case .epub, .html, .manga, .fixedPage:
+        case .epub, .html, .manga, .fixedPage, .audio:
             return false
         }
     }
@@ -730,7 +739,7 @@ final class ReaderFeatureFlags {
             key = txtWebKey
         case .html:
             key = htmlWebKey
-        case .manga, .fixedPage:
+        case .manga, .fixedPage, .audio:
             return false
         }
         return defaults.object(forKey: key) as? Bool ?? true

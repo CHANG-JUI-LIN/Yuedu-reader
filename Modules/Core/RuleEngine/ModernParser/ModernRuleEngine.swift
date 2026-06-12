@@ -290,7 +290,12 @@ final class ModernRuleEngine {
             let rule = sourceRule.rule
             switch sourceRule.mode {
             case .js:
-                result = evalJS(rule, result: result)
+                // JS list rules (e.g. chapterList `@js:...reduce(...)`) return an array of
+                // objects, but the JS bridge serialises arrays/objects to a JSON string.
+                // Re-hydrate that JSON array back into `[Any]` so each item becomes one element
+                // (matching the JSONPath path); otherwise the whole list collapses to a single
+                // string element and every field rule resolves empty → 0 chapters.
+                result = Self.rehydrateJSListResult(evalJS(rule, result: result))
             case .regex:
                 result = extractRegexElements(content: result!, rule: rule)
             case .json, .xpath, .default:
@@ -541,6 +546,32 @@ final class ModernRuleEngine {
     private func evalJS(_ jsStr: String, result: Any?) -> Any? {
         guard !jsStr.isEmpty else { return nil }
         return jsEvaluator?(jsStr, result)
+    }
+
+    /// JS list rules return an array, but the JS bridge serialises arrays to a JSON string.
+    /// If `value` is a JSON-array string, parse it back into `[Any]` so `getElements` yields one
+    /// element per item; otherwise pass the value through unchanged.
+    private static func rehydrateJSListResult(_ value: Any?) -> Any? {
+        guard let str = value as? String else { return value }
+        let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("["),
+              let data = trimmed.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(
+                  with: data, options: .fragmentsAllowed) as? [Any]
+        else { return value }
+        // Each item must be a JSON *string*, matching the JSONPath element path
+        // (JsonExtractor.extractList → [String]). A raw Swift dict would fail detectJSON
+        // (String-only) when set as content, so every field rule (chapterName/chapterUrl)
+        // would resolve empty even though the element count is correct.
+        return array.map { item -> Any in
+            if let s = item as? String { return s }
+            if JSONSerialization.isValidJSONObject(item),
+               let d = try? JSONSerialization.data(withJSONObject: item),
+               let json = String(data: d, encoding: .utf8) {
+                return json
+            }
+            return Self.toString(item)
+        }
     }
 
     private func evalJSToString(_ jsStr: String, result: Any?) -> String? {

@@ -91,7 +91,11 @@ struct ExploreHomeView: View {
             .sheet(isPresented: $showHistory) { historySheet }
             .sheet(isPresented: $showSourceSites) { sourceSitesSheet }
             .navigationDestination(item: $openingBook) { book in
-                OnlineBookView(book: book).environmentObject(store)
+                if BookSourceStore.shared.isAudiobook(book) {
+                    AudiobookDetailView(book: book).environmentObject(store)
+                } else {
+                    OnlineBookView(book: book).environmentObject(store)
+                }
             }
         }
     }

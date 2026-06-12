@@ -650,6 +650,11 @@ struct JsonExtractor: RuleExtractor {
         if r.lowercased().hasPrefix("@json:") {
             r = String(r.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
         }
+        if r.hasPrefix(".") {
+            r = "$" + r
+        } else if !r.isEmpty, !r.hasPrefix("$") {
+            r = "$." + r
+        }
         return r
     }
 

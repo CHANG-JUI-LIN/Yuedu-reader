@@ -182,9 +182,45 @@ class AnalyzeUrl {
             if let result = evaluator(cleanJs, bindings) {
                 return textBefore + result
             }
+            if let fallback = evaluateBuildRequestArgument(
+                from: cleanJs, evaluator: evaluator, bindings: bindings
+            ) {
+                return textBefore + fallback
+            }
         }
 
         return textBefore
+    }
+
+    private func evaluateBuildRequestArgument(
+        from jsCode: String,
+        evaluator: (String, [String: Any]) -> String?,
+        bindings: [String: Any]
+    ) -> String? {
+        let pattern = #"(?s)^\s*buildRequest\s*\(\s*(`(?:\\.|[^`])*`|"(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*(?:,\s*[\s\S]*)?\)\s*;?\s*$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                  in: jsCode,
+                  range: NSRange(jsCode.startIndex..., in: jsCode)
+              ),
+              let range = Range(match.range(at: 1), in: jsCode)
+        else {
+            return nil
+        }
+
+        let argument = String(jsCode[range])
+        if let evaluated = evaluator(argument, bindings),
+           !evaluated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return evaluated
+        }
+        if argument.count >= 2,
+           let first = argument.first,
+           let last = argument.last,
+           (first == "\"" || first == "'"),
+           first == last {
+            return String(argument.dropFirst().dropLast())
+        }
+        return nil
     }
 
     // MARK: - Step 2: Template & Page-Rule Replacement

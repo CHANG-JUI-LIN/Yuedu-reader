@@ -309,6 +309,22 @@ class JSCoreEngine {
             }
         """)
 
+        // setResult() exposes JSON-string content to JS as an object so rules can do
+        // `result.field` after a `$.data` step. But just as many Legado sources call
+        // `JSON.parse(result)` expecting a string (e.g. 七猫/书旗 chapterList:
+        // `JSON.parse(result).data.lists`). Native JSON.parse would stringify the object
+        // to "[object Object]" and throw, killing the whole rule. Make JSON.parse return
+        // an already-parsed object as-is; normal string parsing is unaffected.
+        ctx.evaluateScript("""
+            (function () {
+                var __nativeParse = JSON.parse;
+                JSON.parse = function (value, reviver) {
+                    if (value !== null && typeof value === 'object') { return value; }
+                    return __nativeParse(value, reviver);
+                };
+            })();
+        """)
+
         // Legado helper functions frequently used by complex sources.
         // getArgument(key) reads source-level variables; setArgument(key, val) writes them.
         ctx.evaluateScript("""

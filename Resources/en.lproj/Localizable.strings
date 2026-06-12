@@ -868,3 +868,13 @@
 "此 RSS 網址無法取得內容，是否仍要儲存？" = "This RSS URL returned no content. Save it anyway?";
 "仍要儲存" = "Save Anyway";
 "瀏覽器" = "Browser";
+
+/* Audiobook */
+"有聲書" = "Audiobook";
+"定時" = "Timer";
+"睡眠定時" = "Sleep Timer";
+"本章結束" = "End of Chapter";
+"未找到音訊" = "Audio not found";
+"共 %d 章" = "%d chapters";
+"開始播放" = "Play";
+"繼續播放" = "Resume";

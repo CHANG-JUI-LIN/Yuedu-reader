@@ -606,6 +606,21 @@ struct JsonExtractorTests {
         #expect(result == "Bob")
     }
 
+    @Test("extractValue from @json bare field")
+    func extractWithJsonBareField() throws {
+        let result = try extractor.extractValue(from: #"{"BookName":"斗罗大陆","AuthorName":"唐家三少"}"#, rule: "@json:BookName", baseURL: "")
+        #expect(result == "斗罗大陆")
+    }
+
+    @Test("JSON content treats bare field rule as current object property")
+    func jsonContentBareFieldRule() {
+        let engine = ModernRuleEngine()
+        engine.setContent(#"{"BookName":"斗罗大陆","AuthorName":"唐家三少"}"#)
+
+        #expect(engine.getString(ruleStr: "BookName") == "斗罗大陆")
+        #expect(engine.getString(ruleStr: "AuthorName") == "唐家三少")
+    }
+
     @Test("extractValue from empty/null JSON returns empty")
     func extractFromEmptyJSON() throws {
         let result = try extractor.extractValue(from: "", rule: "$.data", baseURL: "")
@@ -910,6 +925,42 @@ struct RuleDataTests {
     }
 }
 
+// MARK: - BookSource Runtime Routing
+
+@Suite("BookSource runtime routing", .serialized)
+struct BookSourceRuntimeRoutingTests {
+
+    @Test("jsLib-backed template variables use Legado runtime")
+    func jsLibBackedTemplateVariablesUseRuntime() {
+        var source = BookSource()
+        source.jsLib = """
+        const CONFIG = { api: { baseUrl: 'https://api.example.com' } };
+        const qt = 'https://qt.example.com';
+        function zdym() { return 'https://domain.example.com'; }
+        """
+
+        #expect(source.shouldUseLegadoRuntimeFetch(for: "{{CONFIG.api.baseUrl}}/search.php?keyword={{key}}&page={{page}}"))
+        #expect(source.shouldUseLegadoRuntimeFetch(for: "{{qt}}/search?keyword={{key}}&page={{page}}"))
+        #expect(source.shouldUseLegadoRuntimeFetch(for: "{{this.zdym()}}/shuqi/search.php?wd={{key}}&page={{page}}"))
+    }
+
+    @Test("jsLib-backed arithmetic template uses Legado runtime")
+    func jsLibBackedArithmeticTemplateUsesRuntime() {
+        var source = BookSource()
+        source.jsLib = "function noop() { return ''; }"
+
+        #expect(source.shouldUseLegadoRuntimeFetch(for: "/api/search?query={{key}}&page={{(page-1)*10}}&tab_type=3"))
+    }
+
+    @Test("simple key and page templates keep fast search path")
+    func simpleKeyAndPageTemplatesKeepFastPath() {
+        var source = BookSource()
+        source.jsLib = "function noop() { return ''; }"
+
+        #expect(!source.shouldUseLegadoRuntimeFetch(for: "https://example.com/search?q={{key}}&page={{page}}"))
+    }
+}
+
 // MARK: - 7. AnalyzeUrl Tests
 
 @Suite("AnalyzeUrl", .serialized)
@@ -956,6 +1007,29 @@ struct AnalyzeUrlTests {
             source: data
         )
         #expect(au.url.contains("abc123"))
+    }
+
+    @Test("buildRequest JS fallback evaluates URL argument")
+    func buildRequestFallbackEvaluatesURLArgument() throws {
+        let au = AnalyzeUrl(
+            ruleUrl: #"@js: buildRequest(`${backend}/69/search?key={{key}}&page={{page}}`)"#,
+            key: "斗罗大陆",
+            page: 2,
+            jsEvaluator: { jsCode, _ in
+                let trimmed = jsCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.hasPrefix("buildRequest") { return nil }
+                if trimmed.hasPrefix("`") {
+                    return "https://no.skybook.qzz.io/69/search?key={{key}}&page={{page}}"
+                }
+                return nil
+            }
+        )
+
+        let request = try #require(au.toURLRequest())
+        let url = try #require(request.url?.absoluteString)
+        #expect(url.contains("https://no.skybook.qzz.io/69/search"))
+        #expect(url.contains("page=2"))
+        #expect(url.contains("%E6%96%97%E7%BD%97%E5%A4%A7%E9%99%86"))
     }
 
     @Test("relative URL resolution against base")

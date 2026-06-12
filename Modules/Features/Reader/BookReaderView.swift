@@ -13,7 +13,9 @@ struct BookReaderView: View {
 
     var body: some View {
         Group {
-            if shouldUseFixedPageReader {
+            if isAudiobook {
+                AudiobookReaderView(bookId: bookId)
+            } else if shouldUseFixedPageReader {
                 FixedPageReaderView(bookId: bookId)
             } else {
                 ReaderView(bookId: bookId)
@@ -40,5 +42,9 @@ struct BookReaderView: View {
             return false
         }
         return kind == .manga || kind == .fixedPage
+    }
+
+    private var isAudiobook: Bool {
+        store.books.first(where: { $0.id == bookId })?.resolvedPipelineKind == .audio
     }
 }

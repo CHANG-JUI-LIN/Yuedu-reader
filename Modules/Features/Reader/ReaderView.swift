@@ -2735,14 +2735,15 @@ struct ReaderView: View {
         return previousLength + min(max(0, charOffset), currentLength)
     }
 
-    private func autoSaveProgress() {
+    private func autoSaveProgress(force: Bool = false) {
         guard !isRestoringPosition else { return }
 
         if effectiveScrollMode {
             progressTrace("autoSave scroll visibleChapter=\(scrollVisibleChapter)")
             store.updatePosition(
                 bookId: bookId,
-                position: Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
+                position: Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1)),
+                forceSave: force
             )
             return
         }
@@ -2768,7 +2769,7 @@ struct ReaderView: View {
             progressTrace(
                 "autoSave coreText page=\(candidatePage) spine=\(spineIndex) charOffset=\(charOffset) pct=\(String(format: "%.6f", normalized))"
             )
-            store.updatePosition(bookId: bookId, position: normalized)
+            store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
         } else if !effectiveScrollMode && !allPages.isEmpty {
             let page = allPages[min(currentPage, allPages.count - 1)]
             currentChapterIndex = page.chapterIndex
@@ -2778,14 +2779,14 @@ struct ReaderView: View {
             progressTrace(
                 "autoSave paged currentPage=\(currentPage) chapter=\(page.chapterIndex) pageInChapter=\(page.pageInChapter) pct=\(String(format: "%.6f", normalized))"
             )
-            store.updatePosition(bookId: bookId, position: normalized)
+            store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
         } else {
             let progress = Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
             let normalized = min(1.0, max(0.0, progress))
             progressTrace(
                 "autoSave scroll visibleChapter=\(scrollVisibleChapter) pct=\(String(format: "%.6f", normalized))"
             )
-            store.updatePosition(bookId: bookId, position: normalized)
+            store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
         }
     }
 
@@ -2793,7 +2794,7 @@ struct ReaderView: View {
         let wasRestoring = isRestoringPosition
         progressTrace("saveProgress begin wasRestoring=\(wasRestoring)")
         isRestoringPosition = false
-        autoSaveProgress()
+        autoSaveProgress(force: true)
         isRestoringPosition = wasRestoring
         if let navigator = readerSessionCoordinator?.navigator {
             Task {

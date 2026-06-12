@@ -13,6 +13,14 @@ struct yuedu_appApp: App {
                 .environment(\.appDependencies, .live)
                 .onAppear {
                     CoreTextFontRegistrationService.cleanupStaleTemporaryFonts()
+                    // Remove the retired discover-page cache directory written by
+                    // earlier test builds; nothing reads it anymore. No-op once gone.
+                    Task.detached(priority: .background) {
+                        let dir = FileManager.default
+                            .urls(for: .documentDirectory, in: .userDomainMask)[0]
+                            .appendingPathComponent("discover_cache")
+                        try? FileManager.default.removeItem(at: dir)
+                    }
                     UserFontStorageManager.shared.registerAllOnLaunch()
                     // Bind the book store before the auth listener fires, so the
                     // first post-launch sync (triggered by the listener) sees it.

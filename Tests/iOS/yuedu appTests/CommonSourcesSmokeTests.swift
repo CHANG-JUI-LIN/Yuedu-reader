@@ -9,7 +9,17 @@ import Testing
 @Suite("CommonSourcesSmoke", .serialized)
 struct CommonSourcesSmokeTests {
 
-    static let jsonPath = "/Users/zhangruilin/Desktop/Test document/RULE/常用书源.json"
+    static var jsonPath: String {
+        ProcessInfo.processInfo.environment["COMMON_SOURCES_JSON"]
+            ?? ProcessInfo.processInfo.environment["TEST_RUNNER_COMMON_SOURCES_JSON"]
+            ?? "/Users/zhangruilin/Desktop/Test document/RULE/常用书源.json"
+    }
+
+    static var searchKeyword: String {
+        ProcessInfo.processInfo.environment["COMMON_SOURCES_QUERY"]
+            ?? ProcessInfo.processInfo.environment["TEST_RUNNER_COMMON_SOURCES_QUERY"]
+            ?? "斗罗大陆"
+    }
 
     private func loadSources() -> [BookSource] {
         guard let data = FileManager.default.contents(atPath: Self.jsonPath) else {
@@ -113,7 +123,7 @@ struct CommonSourcesSmokeTests {
 
             // SEARCH
             do {
-                let books = try await BookSourceFetcher.shared.search(query: "斗破苍穹", in: source)
+                let books = try await BookSourceFetcher.shared.search(query: Self.searchKeyword, in: source)
                 let sample = books.prefix(3).map { "\($0.name)/\($0.author)" }.joined(separator: ", ")
                 log("    🔎 search → \(books.count) results\(books.isEmpty ? "" : " · \(sample)")")
             } catch {
@@ -132,5 +142,83 @@ struct CommonSourcesSmokeTests {
         }
         log("\n========== SMOKE TEST DONE ==========")
         try? out.write(toFile: Self.resultPath, atomically: true, encoding: .utf8)
+    }
+
+    static let detailResultPath = "/tmp/yuedu_detail_smoke.txt"
+
+    /// Full pipeline probe: for every source run search → take first result →
+    /// fetch book detail → fetch TOC, logging exactly which step goes empty / throws.
+    /// Answers "search works but detail/TOC don't" by isolating the failing stage per source.
+    @Test("live search → detail → toc for every source")
+    func smokeDetailAndToc() async {
+        var out = ""
+        func log(_ s: String) {
+            out += s + "\n"
+            print(s)
+            try? out.write(toFile: Self.detailResultPath, atomically: true, encoding: .utf8)
+        }
+
+        // Clear detail/TOC caches so we exercise the live path, not a stale package.
+        let fetcher = BookSourceFetcher.shared
+        try? FileManager.default.removeItem(at: fetcher.bookInfoCacheDir())
+        try? FileManager.default.removeItem(at: fetcher.tocCacheDir())
+
+        let sources = loadSources()
+        guard !sources.isEmpty else {
+            print("⏭️  Skipping detail smoke: \(Self.jsonPath) not found")
+            return
+        }
+        log("========== 常用书源 DETAIL+TOC SMOKE (\(sources.count) sources, query=\(Self.searchKeyword)) ==========")
+
+        for (i, source) in sources.enumerated() {
+            log("\n──[\(i)] \(source.bookSourceName)")
+
+            // 1. SEARCH
+            var first: OnlineBook?
+            do {
+                let books = try await fetcher.search(query: Self.searchKeyword, in: source)
+                first = books.first
+                log("    🔎 search → \(books.count) results")
+                if let b = first {
+                    log("       first.name=\(b.name) | author=\(b.author)")
+                    log("       first.bookUrl=\(String(b.bookUrl.prefix(140)))")
+                    log("       first.runtimeVars=\(b.runtimeVariables?.count ?? 0)")
+                }
+            } catch {
+                log("    🔎 search → ERROR: \(error.localizedDescription)")
+                continue
+            }
+            guard let book = first, !book.bookUrl.isEmpty else {
+                log("    ⏭️  no usable search result — skip detail/toc")
+                continue
+            }
+
+            // 2. DETAIL
+            var tocURL = book.bookUrl
+            var runtimeVars = book.runtimeVariables
+            do {
+                let pkg = try await fetcher.fetchBookInfoPackage(
+                    url: book.bookUrl, source: source, runtimeVariables: runtimeVars)
+                runtimeVars = pkg.runtimeVariables
+                if !pkg.tocUrl.isEmpty { tocURL = pkg.tocUrl }
+                log("    📖 detail → name=\(pkg.name) | author=\(pkg.author) | "
+                    + "coverEmpty=\(pkg.coverUrl.isEmpty) | introLen=\(pkg.intro.count) | "
+                    + "tocUrl=\(String(pkg.tocUrl.prefix(100)))")
+            } catch {
+                log("    📖 detail → ERROR: \(error.localizedDescription)")
+            }
+
+            // 3. TOC
+            do {
+                let tocPkg = try await fetcher.fetchTOCPackage(
+                    tocUrl: tocURL, source: source, runtimeVariables: runtimeVars)
+                let sample = tocPkg.chapters.prefix(2).map { $0.title }.joined(separator: " / ")
+                log("    📑 toc → \(tocPkg.chapters.count) chapters"
+                    + (tocPkg.chapters.isEmpty ? "" : " · \(sample)"))
+            } catch {
+                log("    📑 toc → ERROR: \(error.localizedDescription)")
+            }
+        }
+        log("\n========== DETAIL+TOC SMOKE DONE ==========")
     }
 }

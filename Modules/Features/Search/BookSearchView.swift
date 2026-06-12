@@ -171,8 +171,13 @@ struct BookSearchView: View {
     private var resultList: some View {
         List(aggregator.results) { book in
             NavigationLink {
-                OnlineBookView(searchBook: book)
-                    .environmentObject(bookStore)
+                if BookSourceStore.shared.isAudiobook(book) {
+                    AudiobookDetailView(searchBook: book)
+                        .environmentObject(bookStore)
+                } else {
+                    OnlineBookView(searchBook: book)
+                        .environmentObject(bookStore)
+                }
             } label: {
                 AggregatedResultRow(book: book)
             }
