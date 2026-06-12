@@ -29,6 +29,12 @@ final class AudiobookPlayer: NSObject, ObservableObject {
 
     static let shared = AudiobookPlayer()
 
+    private struct CoverFallback {
+        let urlString: String
+        let sourceBaseURL: String?
+        let sourceHeaders: [String: String]
+    }
+
     // MARK: - Published State (bound to AudiobookReaderView)
 
     @Published private(set) var bookId: UUID?
@@ -51,6 +57,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     private weak var store: BookStore?
     private var activeBook: ReadingBook?
     private var persistsPositionInStore = true
+    private var coverFallbacks: [UUID: CoverFallback] = [:]
     private let chapterAudioProvider: ChapterAudioProvider
 
     // MARK: - Engine
@@ -82,6 +89,25 @@ final class AudiobookPlayer: NSObject, ObservableObject {
 
     /// Whether a given book is the one currently loaded into the coordinator.
     func isActive(bookId id: UUID) -> Bool { bookId == id }
+
+    func prepareCoverFallback(
+        bookId: UUID,
+        coverUrl: String,
+        sourceBaseURL: String?,
+        sourceHeaders: [String: String]
+    ) {
+        let trimmed = coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let fallback = CoverFallback(
+            urlString: trimmed,
+            sourceBaseURL: sourceBaseURL,
+            sourceHeaders: sourceHeaders
+        )
+        coverFallbacks[bookId] = fallback
+        if self.bookId == bookId, coverImage == nil {
+            loadRemoteCoverIfNeeded(for: bookId, fallback: fallback)
+        }
+    }
 
     /// Attach to (or start) playback for a book. If the same book is already
     /// loaded, keep the live session unless the stored chapters/runtime changed.
@@ -121,6 +147,9 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         bookId = book.id
         bookTitle = book.title
         coverImage = Self.loadCover(book.coverImagePath)
+        if coverImage == nil, let fallback = coverFallbacks[book.id] {
+            loadRemoteCoverIfNeeded(for: book.id, fallback: fallback)
+        }
         loadedRuntimeVariables = book.runtimeVariables
 
         chapters = book.onlineChapters ?? []
@@ -569,6 +598,23 @@ final class AudiobookPlayer: NSObject, ObservableObject {
             .appendingPathComponent(filename)
         guard let data = try? Data(contentsOf: url) else { return nil }
         return UIImage(data: data)
+    }
+
+    private func loadRemoteCoverIfNeeded(for id: UUID, fallback: CoverFallback) {
+        let headers = BookCoverLoader.headers(
+            sourceBaseURL: fallback.sourceBaseURL,
+            sourceHeaders: fallback.sourceHeaders
+        )
+        Task { [weak self] in
+            guard let image = await BookCoverLoader.loadImage(
+                urlString: fallback.urlString,
+                headers: headers
+            ) else { return }
+            await MainActor.run {
+                guard let self, self.bookId == id, self.coverImage == nil else { return }
+                self.coverImage = image
+            }
+        }
     }
 }
 

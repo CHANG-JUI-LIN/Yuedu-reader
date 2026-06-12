@@ -598,6 +598,15 @@ struct AudiobookDetailView: View {
         addingToShelf = false
     }
 
+    private func preparePlayerCoverFallback(bookId: UUID, source: BookSource) {
+        AudiobookPlayer.shared.prepareCoverFallback(
+            bookId: bookId,
+            coverUrl: displayCoverUrl,
+            sourceBaseURL: source.bookSourceUrl,
+            sourceHeaders: source.parsedHeaders
+        )
+    }
+
     private func transientAudiobook(
         source: BookSource,
         runtimeVariables: [String: String]?,
@@ -641,6 +650,7 @@ struct AudiobookDetailView: View {
             bookStore.updateAudioPosition(
                 bookId: existing, chapter: chapterIndex, time: 0,
                 totalChapters: chapters.count, forceSave: true)
+            preparePlayerCoverFallback(bookId: existing, source: source)
             activePlayerBookId = existing
         } else {
             let transient = transientAudiobook(
@@ -648,6 +658,7 @@ struct AudiobookDetailView: View {
                 runtimeVariables: runtimeVars,
                 chapterIndex: chapterIndex
             )
+            preparePlayerCoverFallback(bookId: transient.id, source: source)
             AudiobookPlayer.shared.startTransient(book: transient, store: bookStore)
             activePlayerBookId = transient.id
         }

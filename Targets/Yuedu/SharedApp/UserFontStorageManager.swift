@@ -32,6 +32,12 @@ final class UserFontStorageManager {
 
     private let fileManager: FileManager
 
+    private struct FontMetadata {
+        let familyName: String
+        let postScriptName: String
+        let styleName: String
+    }
+
     private init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
     }
@@ -121,16 +127,47 @@ final class UserFontStorageManager {
 
     private static func fontMetadata(from url: URL) -> (familyName: String, postScriptName: String)? {
         guard
-            let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [[CFString: Any]],
-            let descriptor = descriptors.first
+            let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor],
+            let metadata = preferredMetadata(from: descriptors)
         else { return nil }
 
-        let postScriptName = descriptor[kCTFontNameAttribute] as? String ?? ""
-        let familyName = descriptor[kCTFontFamilyNameAttribute] as? String ?? ""
-        guard !postScriptName.isEmpty || !familyName.isEmpty else { return nil }
         return (
+            familyName: metadata.familyName,
+            postScriptName: metadata.postScriptName
+        )
+    }
+
+    private static func preferredMetadata(from descriptors: [CTFontDescriptor]) -> FontMetadata? {
+        let candidates = descriptors.compactMap { metadata(from: $0) }
+        guard !candidates.isEmpty else { return nil }
+
+        return candidates.first { $0.styleName.localizedCaseInsensitiveCompare("Regular") == .orderedSame }
+            ?? candidates.first { $0.postScriptName.localizedCaseInsensitiveContains("Regular") }
+            ?? candidates.first
+    }
+
+    private static func metadata(from descriptor: CTFontDescriptor) -> FontMetadata? {
+        let postScriptName = CTFontDescriptorCopyAttribute(
+            descriptor,
+            kCTFontNameAttribute
+        ) as? String ?? ""
+        let familyName = CTFontDescriptorCopyAttribute(
+            descriptor,
+            kCTFontFamilyNameAttribute
+        ) as? String ?? ""
+        let styleName = CTFontDescriptorCopyAttribute(
+            descriptor,
+            kCTFontStyleNameAttribute
+        ) as? String ?? ""
+
+        guard !postScriptName.isEmpty || !familyName.isEmpty else {
+            return nil
+        }
+
+        return FontMetadata(
             familyName: familyName.isEmpty ? postScriptName : familyName,
-            postScriptName: postScriptName.isEmpty ? familyName : postScriptName
+            postScriptName: postScriptName.isEmpty ? familyName : postScriptName,
+            styleName: styleName
         )
     }
 }

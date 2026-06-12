@@ -7,6 +7,23 @@ import UIKit
 @MainActor
 struct UserFontSettingsTests {
 
+    @Test("font import reads real TrueType metadata")
+    func fontImportReadsRealTrueTypeMetadata() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Ahem.ttf")
+        #expect(FileManager.default.fileExists(atPath: fixtureURL.path))
+
+        let info = try UserFontStorageManager.shared.importFont(fileURL: fixtureURL)
+        defer { UserFontStorageManager.shared.delete(info) }
+
+        #expect(info.displayName == "Ahem")
+        #expect(info.familyName == "Ahem")
+        #expect(info.postScriptName == "Ahem")
+        #expect(info.fileName.hasSuffix(".ttf"))
+        #expect(UIFont(name: info.postScriptName, size: 18) != nil)
+    }
+
     @Test("TXT builder uses selected reader font")
     func txtBuilderUsesSelectedReaderFont() async throws {
         let previousFont = GlobalSettings.shared.selectedReaderFontPostScript
