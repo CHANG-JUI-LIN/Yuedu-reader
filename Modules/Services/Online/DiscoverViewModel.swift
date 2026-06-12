@@ -269,6 +269,7 @@ final class DiscoverViewModel: ObservableObject {
                 if ok {
                     self.sections[idx].books = loaded
                     self.sections[idx].phase = .loaded
+                    self.prefetchCovers(loaded, source: source)
                 } else {
                     self.sections[idx].phase = .failed
                     self.sections[idx].errorReason = reason
@@ -282,6 +283,29 @@ final class DiscoverViewModel: ObservableObject {
     private func cancelSectionTasks() {
         sectionQueue = []
         isPumpingSections = false
+    }
+
+    /// Warm the cover cache for a freshly loaded section so its cards paint right away
+    /// instead of each fetching lazily on appear (covers used to trickle in until you
+    /// opened 查看全部 — which warmed the cache as a side effect — and came back).
+    private func prefetchCovers(_ books: [OnlineBook], source: BookSource) {
+        let headers = BookCoverLoader.headers(
+            sourceBaseURL: source.bookSourceUrl,
+            sourceHeaders: source.parsedHeaders
+        )
+        let urls = books
+            .map { $0.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && BookCoverLoader.cachedImage(for: $0) == nil }
+        guard !urls.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            await withTaskGroup(of: Void.self) { group in
+                for url in urls {
+                    group.addTask {
+                        _ = await BookCoverLoader.loadImage(urlString: url, headers: headers)
+                    }
+                }
+            }
+        }
     }
 
     /// Section render style derived from the source's category title. The book

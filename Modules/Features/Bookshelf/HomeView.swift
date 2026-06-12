@@ -639,6 +639,9 @@ struct BookRow: View {
                 .frame(width: coverW, height: coverH)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
+                .overlay(alignment: .bottomTrailing) {
+                    if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 7) }
+                }
         } else {
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 4)
@@ -651,6 +654,9 @@ struct BookRow: View {
                     .padding(5)
             }
             .frame(width: coverW, height: coverH)
+            .overlay(alignment: .bottomTrailing) {
+                if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 7) }
+            }
         }
     }
 
@@ -770,6 +776,9 @@ struct BookGridCell: View {
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
+            .overlay(alignment: .bottomTrailing) {
+                if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 11) }
+            }
         } else {
             base.overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -784,6 +793,9 @@ struct BookGridCell: View {
                         alignment: .topLeading
                     )
             )
+            .overlay(alignment: .bottomTrailing) {
+                if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 11) }
+            }
         }
     }
 

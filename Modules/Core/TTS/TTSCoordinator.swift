@@ -25,18 +25,44 @@ extension Notification.Name {
     static let ttsFloatingPlayerOpenPanel = Notification.Name("ttsFloatingPlayerOpenPanel")
 }
 
-@MainActor
-final class TTSFloatingPlayerState: ObservableObject {
-    static let shared = TTSFloatingPlayerState()
+/// Which kind of audio is currently feeding the global mini-player.
+enum NowPlayingSource {
+    case none
+    case tts        // reader-scoped TTS narration (lives only while a reader is open)
+    case audiobook  // app-global audiobook playback (persists across all pages)
+}
 
+/// Shared hub that backs the `NowPlayingMiniPlayer` mini-player and routes its
+/// controls to whichever audio engine is active — TTS narration inside the reader,
+/// or the long-lived `AudiobookPlayer` that keeps playing across every page.
+///
+/// Two visibility surfaces:
+/// - `isVisible`: the in-reader TTS mini-player (`.reader` placement), gated by the
+///   reader's bar visibility.
+/// - `showsGlobalBar`: the app-wide audiobook mini-player (`.global` placement),
+///   shown on any page while an audiobook is loaded.
+@MainActor
+final class NowPlayingHub: ObservableObject {
+    static let shared = NowPlayingHub()
+
+    @Published private(set) var source: NowPlayingSource = .none
     @Published private(set) var isVisible = false
+    @Published private(set) var showsGlobalBar = false
     @Published private(set) var title = ""
     @Published private(set) var playbackState: TTSPlaybackState = .stopped
     @Published private(set) var currentSegmentIndex = 0
     @Published private(set) var totalSegments = 0
+    @Published private(set) var audiobookBookId: UUID?
+    @Published private(set) var coverImage: UIImage?
+    /// Book title, used to render the title-card placeholder disc when there is no cover art.
+    @Published private(set) var coverTitle: String = ""
     @Published var isPanelPresented = false
+    /// Drives the app-root full-screen audiobook player presentation (tap the global bar).
+    @Published var isPresentingAudiobook = false
 
     private weak var coordinator: TTSCoordinator?
+    private weak var audiobook: AudiobookPlayer?
+    private var audiobookCancellable: AnyCancellable?
     private var allowsReaderOverlay = false
 
     var progressText: String {
@@ -44,14 +70,24 @@ final class TTSFloatingPlayerState: ObservableObject {
         return "\(currentSegmentIndex + 1)/\(totalSegments)"
     }
 
+    // MARK: - TTS source (reader-scoped)
+
     func attach(_ coordinator: TTSCoordinator) {
+        // TTS narration takes over the audio session from any playing audiobook.
+        if source == .audiobook {
+            audiobook?.stop()
+            clearAudiobook()
+        }
         self.coordinator = coordinator
+        source = .tts
         update(from: coordinator)
     }
 
     func update(from coordinator: TTSCoordinator) {
-        guard self.coordinator === coordinator else { return }
+        guard self.coordinator === coordinator, source == .tts else { return }
         title = coordinator.floatingTitle
+        if coverImage !== coordinator.floatingCoverImage { coverImage = coordinator.floatingCoverImage }
+        if coverTitle != coordinator.floatingCoverTitle { coverTitle = coordinator.floatingCoverTitle }
         playbackState = coordinator.playbackState
         currentSegmentIndex = coordinator.currentSegmentIndex
         totalSegments = coordinator.totalSegments
@@ -61,42 +97,123 @@ final class TTSFloatingPlayerState: ObservableObject {
     func detach(_ coordinator: TTSCoordinator) {
         guard self.coordinator === coordinator else { return }
         self.coordinator = nil
-        title = ""
-        playbackState = .stopped
-        currentSegmentIndex = 0
-        totalSegments = 0
+        guard source == .tts else { return }
+        source = .none
+        resetPlaybackFields()
         isVisible = false
         isPanelPresented = false
     }
 
     func setReaderOverlayVisible(_ visible: Bool) {
         allowsReaderOverlay = visible
-        if let coordinator {
+        if source == .tts, let coordinator {
             update(from: coordinator)
         } else {
             isVisible = false
         }
     }
 
+    /// Stop TTS narration only (used when an audiobook takes over the audio session).
+    func stopTTSIfActive() {
+        if source == .tts { coordinator?.stop(reason: "audiobook takeover") }
+    }
+
+    // MARK: - Audiobook source (app-global)
+
+    /// Bind the hub to the live audiobook session so the global mini-player can mirror
+    /// and control it from any page. Idempotent — safe to call on every `start`.
+    func attachAudiobook(_ player: AudiobookPlayer) {
+        audiobook = player
+        source = .audiobook
+        isVisible = false
+        audiobookCancellable = player.objectWillChange.sink { [weak self, weak player] _ in
+            guard let self, let player else { return }
+            // objectWillChange fires before the value settles; defer the read.
+            Task { @MainActor in self.refreshFromAudiobook(player) }
+        }
+        refreshFromAudiobook(player)
+    }
+
+    private func refreshFromAudiobook(_ player: AudiobookPlayer) {
+        guard source == .audiobook, audiobook === player else { return }
+        guard player.bookId != nil else { clearAudiobook(); return }
+        // `currentTime` ticks every second; only publish fields that actually changed
+        // so the mini-player doesn't re-render needlessly.
+        if audiobookBookId != player.bookId { audiobookBookId = player.bookId }
+        if coverImage !== player.coverImage { coverImage = player.coverImage }
+        if coverTitle != player.bookTitle { coverTitle = player.bookTitle }
+        let newTitle = player.currentChapterTitle.isEmpty ? player.bookTitle : player.currentChapterTitle
+        if title != newTitle { title = newTitle }
+        let newState: TTSPlaybackState = player.isPlaying ? .playing : .paused
+        if playbackState != newState { playbackState = newState }
+        if !showsGlobalBar { showsGlobalBar = true }
+    }
+
+    private func clearAudiobook() {
+        audiobookCancellable = nil
+        audiobook = nil
+        audiobookBookId = nil
+        coverImage = nil
+        coverTitle = ""
+        if source == .audiobook { source = .none }
+        showsGlobalBar = false
+        isPresentingAudiobook = false
+        resetPlaybackFields()
+    }
+
+    private func resetPlaybackFields() {
+        title = ""
+        coverImage = nil
+        coverTitle = ""
+        playbackState = .stopped
+        currentSegmentIndex = 0
+        totalSegments = 0
+    }
+
+    // MARK: - Unified controls (routed by source)
+
     func openPanel() {
-        NotificationCenter.default.post(name: .ttsFloatingPlayerOpenPanel, object: nil)
-        isPanelPresented = true
+        switch source {
+        case .tts:
+            NotificationCenter.default.post(name: .ttsFloatingPlayerOpenPanel, object: nil)
+            isPanelPresented = true
+        case .audiobook:
+            isPresentingAudiobook = true
+        case .none:
+            break
+        }
     }
 
     func togglePlayback() {
-        coordinator?.toggle()
+        switch source {
+        case .tts: coordinator?.toggle()
+        case .audiobook: audiobook?.togglePlayPause()
+        case .none: break
+        }
     }
 
     func skipBackward() {
-        coordinator?.skipBackward()
+        switch source {
+        case .tts: coordinator?.skipBackward()
+        case .audiobook: audiobook?.skipBackward()
+        case .none: break
+        }
     }
 
     func skipForward() {
-        coordinator?.skipForward()
+        switch source {
+        case .tts: coordinator?.skipForward()
+        case .audiobook: audiobook?.skipForward()
+        case .none: break
+        }
     }
 
     func stop() {
-        coordinator?.stop(reason: "floating player stop")
+        switch source {
+        case .tts: coordinator?.stop(reason: "floating player stop")
+        case .audiobook: audiobook?.stop()  // clears bookId → refresh detaches the bar
+        case .none: break
+        }
     }
 
 #if DEBUG
@@ -106,6 +223,7 @@ final class TTSFloatingPlayerState: ObservableObject {
         currentSegmentIndex: Int,
         totalSegments: Int
     ) {
+        source = .tts
         self.title = title
         self.playbackState = playbackState
         self.currentSegmentIndex = currentSegmentIndex
@@ -173,6 +291,9 @@ final class TTSCoordinator: ObservableObject {
     private var nowPlayingAuthor = ""
     private var nowPlayingChapterTitle = ""
     private var nowPlayingArtwork: MPMediaItemArtwork?
+    /// Raw cover image (book cover, or generated title-card for cover-less books) kept so
+    /// the floating mini-player can spin it like a record. Mirrors `nowPlayingArtwork`.
+    private(set) var floatingCoverImage: UIImage?
     private var nowPlayingElapsed: TimeInterval = 0
     private var nowPlayingDuration: TimeInterval = 1
     private var nowPlayingStartedAt: Date?
@@ -183,6 +304,11 @@ final class TTSCoordinator: ObservableObject {
 
     var floatingTitle: String {
         displayNowPlayingTitle
+    }
+
+    /// Book title, used to render the title-card placeholder disc when there's no cover.
+    var floatingCoverTitle: String {
+        nowPlayingBookTitle
     }
 
     init() {
@@ -370,6 +496,7 @@ final class TTSCoordinator: ObservableObject {
         nowPlayingAuthor = ""
         nowPlayingChapterTitle = ""
         nowPlayingArtwork = nil
+        floatingCoverImage = nil
         nowPlayingElapsed = 0
         nowPlayingDuration = 1
         nowPlayingStartedAt = nil
@@ -378,7 +505,7 @@ final class TTSCoordinator: ObservableObject {
         currentSegmentText = ""
         Task { @MainActor [weak self] in
             guard let self else { return }
-            TTSFloatingPlayerState.shared.detach(self)
+            NowPlayingHub.shared.detach(self)
         }
         if ownsSystemMedia {
             setRemoteCommandsEnabled(false)
@@ -455,9 +582,9 @@ final class TTSCoordinator: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             if self.playbackState == .stopped {
-                TTSFloatingPlayerState.shared.detach(self)
+                NowPlayingHub.shared.detach(self)
             } else {
-                TTSFloatingPlayerState.shared.attach(self)
+                NowPlayingHub.shared.attach(self)
             }
         }
     }
@@ -688,6 +815,7 @@ final class TTSCoordinator: ObservableObject {
         nowPlayingAuthor = author.trimmingCharacters(in: .whitespacesAndNewlines)
         nowPlayingChapterTitle = trimmedChapterTitle
         nowPlayingArtwork = Self.makeNowPlayingArtwork(from: artwork)
+        floatingCoverImage = artwork
     }
 
     private func prepareNowPlayingForText(_ text: String) {

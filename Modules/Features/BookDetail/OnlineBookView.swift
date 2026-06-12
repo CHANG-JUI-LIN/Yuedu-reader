@@ -177,7 +177,7 @@ struct OnlineBookView: View {
                 header
                 if !tags.isEmpty { tagStrip }
                 if !displayIntro.isEmpty { introSection }
-                sourceRow
+                sourceSection
                 tocSection
             }
             .padding(.top, DSSpacing.md)
@@ -320,50 +320,50 @@ struct OnlineBookView: View {
         .padding(.horizontal, DSSpacing.lg)
     }
 
-    // MARK: Source Row (above TOC; tap to switch source)
+    // MARK: Source Section ("來源" header outside; box shows source name, tap to switch)
 
-    private var sourceRow: some View {
-        Button {
-            if canSwitchSource { showSourcePicker = true }
-        } label: {
-            HStack(spacing: DSSpacing.md) {
-                Image(systemName: "globe")
-                    .font(.subheadline)
-                    .foregroundStyle(DSColor.accent)
+    private var sourceSection: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            Text(localized("來源"))
+                .font(.headline)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(localized("來源"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            Button {
+                if canSwitchSource { showSourcePicker = true }
+            } label: {
+                HStack(spacing: DSSpacing.md) {
+                    Image(systemName: "globe")
+                        .font(.subheadline)
+                        .foregroundStyle(DSColor.accent)
+
                     Text(sourceName)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                }
 
-                Spacer(minLength: DSSpacing.sm)
+                    Spacer(minLength: DSSpacing.sm)
 
-                if canSwitchSource {
-                    Text(localized("換源"))
-                        .font(.caption)
-                        .foregroundStyle(DSColor.accent)
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                    if canSwitchSource {
+                        Text(localized("換源"))
+                            .font(.caption)
+                            .foregroundStyle(DSColor.accent)
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.vertical, DSSpacing.md)
+                .frame(maxWidth: .infinity)
+                .background(DSColor.surface)
+                .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.md)
-            .frame(maxWidth: .infinity)
-            .background(DSColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .allowsHitTesting(canSwitchSource)
+            .accessibilityLabel(localized("來源") + " " + sourceName)
+            .accessibilityHint(canSwitchSource ? localized("換源") : "")
         }
-        .buttonStyle(.plain)
-        .allowsHitTesting(canSwitchSource)
         .padding(.horizontal, DSSpacing.lg)
-        .accessibilityLabel(localized("來源") + " " + sourceName)
-        .accessibilityHint(canSwitchSource ? localized("換源") : "")
     }
 
     // MARK: TOC

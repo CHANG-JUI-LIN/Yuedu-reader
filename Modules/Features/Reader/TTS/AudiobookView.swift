@@ -55,6 +55,8 @@ struct AudiobookReaderView: View {
         .onAppear {
             if let book = store.books.first(where: { $0.id == bookId }) {
                 player.start(book: book, store: store)
+            } else if !player.isActive(bookId: bookId) {
+                dismiss()
             }
             updateBaseColor()
         }

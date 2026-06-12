@@ -258,6 +258,11 @@ struct AggregatedResultRow: View {
                 }
             }
             .frame(width: 72, height: 96)
+            .overlay(alignment: .bottomTrailing) {
+                if BookSourceStore.shared.isAudiobookForBadge(book) {
+                    AudiobookCoverBadge(glyphSize: 9)
+                }
+            }
 
             // ── Info ──
             VStack(alignment: .leading, spacing: 3) {

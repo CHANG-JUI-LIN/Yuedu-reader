@@ -1075,10 +1075,11 @@ struct ReaderView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(20)
             }
-            if showBars {
-                TTSFloatingPlayerOverlay()
-                    .zIndex(50)
-            }
+            // Always present (even with the reader bars hidden); it self-hides when
+            // nothing is playing. `barsVisible` lets it lift above the bottom toolbar
+            // when the bars appear, and drop lower while they're hidden.
+            NowPlayingMiniPlayer(placement: .reader, barsVisible: showBars)
+                .zIndex(50)
         }
         .background(
             GeometryReader { g in
@@ -1132,7 +1133,9 @@ struct ReaderView: View {
             if volumeHandler.isEnabled { volumeHandler.startListening() }
             autoReader.onNextPage = { goToNextPage() }
             ttsCoordinator.showsGlobalFloatingPlayer = true
-            setTTSFloatingOverlayVisible(showBars)
+            // Allow the in-reader mini-player the whole time the reader is on screen,
+            // independent of the bars — bar visibility only repositions it now.
+            setTTSFloatingOverlayVisible(true)
             ttsCoordinator.onPageFinishedWithPronunciation = {
                 ttsLog("[TTS][Reader] onChapterFinished ttsChapter=\(ttsChapterIndex.map(String.init) ?? "nil") currentChapter=\(currentChapterIndex)")
                 return advanceTTSChapterFromEngine()
@@ -1245,9 +1248,6 @@ struct ReaderView: View {
         }
         .onChanged(of: book?.bookmarks ?? []) { _ in
             syncCoreTextTextAnnotations()
-        }
-        .onChanged(of: showBars) { visible in
-            setTTSFloatingOverlayVisible(visible)
         }
         .onChanged(of: currentChapterIndex) { _ in
             handleReaderPositionChangedForTTS()
@@ -2447,7 +2447,7 @@ struct ReaderView: View {
 
     private func setTTSFloatingOverlayVisible(_ visible: Bool) {
         Task { @MainActor in
-            TTSFloatingPlayerState.shared.setReaderOverlayVisible(visible)
+            NowPlayingHub.shared.setReaderOverlayVisible(visible)
         }
     }
 

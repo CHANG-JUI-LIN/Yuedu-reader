@@ -72,6 +72,23 @@ extension BookCoverImage {
     }
 }
 
+/// Headphones badge marking an audiobook cover, matching the audiobook detail page.
+/// Overlay it at a cover's `.bottomTrailing` (after the cover's own `clipShape`) so
+/// audiobooks are distinguishable wherever covers are listed.
+struct AudiobookCoverBadge: View {
+    var glyphSize: CGFloat = 9
+
+    var body: some View {
+        Image(systemName: "headphones")
+            .font(.system(size: glyphSize, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(glyphSize * 0.5)
+            .background(DSColor.accent, in: Circle())
+            .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 0.5))
+            .padding(2)
+    }
+}
+
 /// The shared no-cover placeholder: title text on a neutral card, matching the
 /// bookshelf. Used wherever a cover is missing.
 struct TitleCardPlaceholder: View {

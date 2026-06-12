@@ -49,6 +49,8 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     // MARK: - Context
 
     private weak var store: BookStore?
+    private var activeBook: ReadingBook?
+    private var persistsPositionInStore = true
     private let chapterAudioProvider: ChapterAudioProvider
 
     // MARK: - Engine
@@ -84,15 +86,34 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     /// Attach to (or start) playback for a book. If the same book is already
     /// loaded, keep the live session unless the stored chapters/runtime changed.
     func start(book: ReadingBook, store: BookStore) {
+        start(book: book, store: store, persistsPositionInStore: true)
+    }
+
+    /// Start playback from a detail-page book that has not been added to the bookshelf.
+    /// Progress is intentionally kept in-memory so this path does not create or mutate
+    /// a `BookStore.books` entry.
+    func startTransient(book: ReadingBook, store: BookStore) {
+        start(book: book, store: store, persistsPositionInStore: false)
+    }
+
+    private func start(
+        book: ReadingBook,
+        store: BookStore,
+        persistsPositionInStore: Bool
+    ) {
         self.store = store
+        self.activeBook = book
+        self.persistsPositionInStore = persistsPositionInStore
         if bookId == book.id, player != nil {
             refreshActiveBookIfNeeded(book)
+            NowPlayingHub.shared.attachAudiobook(self)
             audiobookLog("start: already active book=\(book.title) — attaching to live session")
             return
         }
 
-        // Take over the audio session from any active TTS playback.
-        TTSFloatingPlayerState.shared.stop()
+        // Take over the audio session from any active TTS narration (audiobook only
+        // displaces TTS, never another audiobook).
+        NowPlayingHub.shared.stopTTSIfActive()
 
         stopInternal()
         error = nil
@@ -110,6 +131,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         configureRemoteCommandsIfNeeded()
         activateAudioSession()
 
+        NowPlayingHub.shared.attachAudiobook(self)
         audiobookLog("start: book=\(book.title) chapters=\(chapters.count) restoreCh=\(restoredIndex) resumeT=\(pendingResumeTime)")
         loadCurrentChapter(autoPlay: true)
     }
@@ -177,6 +199,8 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         currentChapterTitle = ""
         bookTitle = ""
         coverImage = nil
+        activeBook = nil
+        persistsPositionInStore = true
         loadedRuntimeVariables = nil
         currentTime = 0
         duration = 0
@@ -279,7 +303,8 @@ final class AudiobookPlayer: NSObject, ObservableObject {
             return
         }
         guard let id = bookId,
-              let book = store.books.first(where: { $0.id == id }) else { return }
+              let book = store.books.first(where: { $0.id == id })
+                ?? (activeBook?.id == id ? activeBook : nil) else { return }
 
         let ref = chapters[chapterIndex]
         currentChapterTitle = ref.title
@@ -410,6 +435,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     // MARK: - Persistence
 
     private func persistPosition(force: Bool) {
+        guard persistsPositionInStore else { return }
         guard let id = bookId else { return }
         if !force, Date().timeIntervalSince(lastPersist) < 10 { return }
         lastPersist = Date()

@@ -523,13 +523,13 @@ private struct SettingRowHeader: View {
     let systemImage: String
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: DSSpacing.sm) {
             Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .regular))
+                .font(DSFont.toolbarIcon)
                 .frame(width: 34, height: 26)
             Text(title)
-                .font(.body)
-                .foregroundStyle(.secondary)
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textSecondary)
         }
     }
 }
@@ -544,16 +544,16 @@ private struct LayoutSliderRow: View {
     var isEnabled = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: DSSpacing.sm) {
                 LayoutMetricIcon(kind: icon)
                 Text(title)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textSecondary)
                 Spacer()
                 Text(valueText)
-                    .font(.body.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(DSFont.body.monospacedDigit())
+                    .foregroundStyle(DSColor.textSecondary)
             }
 
             Slider(value: $value, in: range, step: step)
@@ -569,7 +569,7 @@ private struct LayoutMetricIcon: View {
     var body: some View {
         icon
             .frame(width: 34, height: 24)
-            .foregroundStyle(.primary)
+            .foregroundStyle(DSColor.textPrimary)
     }
 
     @ViewBuilder
@@ -660,7 +660,7 @@ private struct SettingSymbolIcon: View {
         Image(systemName: systemName)
             .font(.system(size: 22, weight: .regular))
             .frame(width: 34, height: 28)
-            .foregroundStyle(.primary)
+            .foregroundStyle(DSColor.textPrimary)
     }
 }
 
@@ -673,14 +673,14 @@ private struct ValueSliderRow: View {
     var isDisabled = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            HStack(spacing: DSSpacing.sm) {
                 Text(title)
-                    .font(.body)
+                    .font(DSFont.body)
                 Spacer()
                 Text(valueText)
-                    .font(.body.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(DSFont.body.monospacedDigit())
+                    .foregroundStyle(DSColor.textSecondary)
             }
 
             Slider(value: $value, in: range, step: step)

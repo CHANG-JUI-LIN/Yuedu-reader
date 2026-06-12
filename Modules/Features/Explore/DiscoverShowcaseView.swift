@@ -297,6 +297,11 @@ private struct DiscoverFeaturedCard: View {
             BookCoverImage(onlineBook: book)
                 .frame(width: 104, height: 138)
                 .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
+                .overlay(alignment: .bottomTrailing) {
+                    if BookSourceStore.shared.isAudiobookForBadge(book) {
+                        AudiobookCoverBadge(glyphSize: 11)
+                    }
+                }
             Text(book.name)
                 .font(DSFont.caption.weight(.medium))
                 .foregroundColor(DSColor.textPrimary)
@@ -329,6 +334,11 @@ private struct DiscoverRankedRow: View {
             BookCoverImage(onlineBook: book)
                 .frame(width: 52, height: 70)
                 .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm))
+                .overlay(alignment: .bottomTrailing) {
+                    if BookSourceStore.shared.isAudiobookForBadge(book) {
+                        AudiobookCoverBadge(glyphSize: 7)
+                    }
+                }
 
             VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 Text(book.name)
@@ -398,7 +408,7 @@ private struct DiscoverCategoryView: View {
         }
         .listStyle(.plain)
         .navigationTitle(section.title)
-        .toolbarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.inline)
     }
 }
 

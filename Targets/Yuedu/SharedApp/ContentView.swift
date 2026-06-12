@@ -5,6 +5,7 @@ struct ContentView: View {
     @ObservedObject private var gs = GlobalSettings.shared
     @StateObject private var rssStore = RSSStore.shared
     @ObservedObject private var importDrainer = SharedImportQueueDrainer.shared
+    @StateObject private var nowPlaying = NowPlayingHub.shared
 
     private var rssUnreadCount: Int {
         rssStore.totalUnreadCount()
@@ -46,9 +47,26 @@ struct ContentView: View {
                     }
             }
         }
+        .overlay {
+            // App-wide audiobook mini-player: controls the long-lived audiobook session
+            // from any tab. Naturally hidden while a full-screen reader/player is presented.
+            // No reader toolbar here, so allow dragging down to just above the tab bar.
+            NowPlayingMiniPlayer(placement: .global, minBottomClearance: 90)
+        }
         .iPadAdaptiveRootTabStyle()
         .rootTabBarMinimizeStyle()
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: importDrainer.lastOutcome)
+        .fullScreenCover(isPresented: $nowPlaying.isPresentingAudiobook) {
+            if let bookId = nowPlaying.audiobookBookId {
+                if store.books.contains(where: { $0.id == bookId }) {
+                    BookReaderView(bookId: bookId)
+                        .environmentObject(store)
+                } else {
+                    AudiobookReaderView(bookId: bookId)
+                        .environmentObject(store)
+                }
+            }
+        }
     }
 }
 
@@ -86,16 +104,59 @@ private struct SharedImportToast: View {
     }
 }
 
-struct TTSFloatingPlayerOverlay: View {
-    @StateObject private var player = TTSFloatingPlayerState.shared
+struct NowPlayingMiniPlayer: View {
+    /// Where the mini-player lives. `.reader` is the in-reader TTS bar; `.global` is the
+    /// app-root bar that controls audiobook playback from any page.
+    enum Placement { case reader, global }
+    var placement: Placement = .reader
+
+    /// Whether the host reader's top/bottom bars are showing. Only meaningful for
+    /// `.reader`: when the bars appear the player lifts above the bottom toolbar; while
+    /// they're hidden it may be dragged lower (no toolbar to clear).
+    var barsVisible: Bool = true
+
+    @StateObject private var hub = NowPlayingHub.shared
     @State private var offset = CGSize(width: 0, height: 0)
     @State private var dragStartOffset: CGSize?
     @State private var lastDragEndedAt = Date.distantPast
+    /// Where the player sat before the bars appeared and lifted it above the toolbar.
+    /// Kept so it can drop back to that spot once the bars hide again; cleared the moment
+    /// the user drags it somewhere new.
+    @State private var liftedFromOffsetHeight: CGFloat?
+    /// Resting distance of the bar's bottom edge from the screen bottom.
     var defaultBottomClearance: CGFloat = 136
+    /// Lowest the bar can be dragged on tab pages (clears the tab bar). `.global` only.
+    var minBottomClearance: CGFloat? = nil
+    /// Lowest the bar can be dragged in the reader while the bars are hidden (no toolbar).
+    var immersiveBottomClearance: CGFloat = 44
+
+    /// How close to the screen bottom the bar may be dragged, by context.
+    private var dragFloorClearance: CGFloat {
+        switch placement {
+        case .global:
+            return minBottomClearance ?? defaultBottomClearance
+        case .reader:
+            return barsVisible ? defaultBottomClearance : immersiveBottomClearance
+        }
+    }
+
+    /// Max downward drag from the resting position (size-independent: the resting line is
+    /// `defaultBottomClearance` and the floor is `dragFloorClearance`).
+    private var bottomOffsetLimit: CGFloat {
+        defaultBottomClearance - dragFloorClearance
+    }
+
+    private var isVisible: Bool {
+        switch placement {
+        // In the reader, show for this book's TTS *or* a background audiobook.
+        case .reader: return hub.isVisible || hub.showsGlobalBar
+        case .global: return hub.showsGlobalBar
+        }
+    }
 
     var body: some View {
         GeometryReader { proxy in
-            if player.isVisible {
+            if isVisible {
                 miniPlayerView
                     .frame(width: contentWidth)
                     .position(position(in: proxy.size))
@@ -104,30 +165,44 @@ struct TTSFloatingPlayerOverlay: View {
             }
         }
         .ignoresSafeArea(.keyboard)
-        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: player.isVisible)
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: isVisible)
+        .onChange(of: barsVisible) { _, visible in
+            withAnimation(.easeInOut(duration: 0.25)) {
+                if visible {
+                    // Bars appeared: lift the player just above the bottom toolbar (only if
+                    // it was dragged into that zone), remembering where it sat so it can
+                    // drop back once the bars hide again.
+                    if offset.height > bottomOffsetLimit {
+                        liftedFromOffsetHeight = offset.height
+                        offset.height = bottomOffsetLimit
+                    }
+                } else if let resting = liftedFromOffsetHeight {
+                    // Bars hidden again: if we lifted it earlier and the user hasn't moved
+                    // it since, return it to its original spot.
+                    offset.height = resting
+                    liftedFromOffsetHeight = nil
+                }
+            }
+        }
     }
 
     private var miniPlayerView: some View {
         HStack(spacing: 12) {
             Button {
                 performTapAction {
-                    player.openPanel()
+                    hub.openPanel()
                 }
             } label: {
-                Image(systemName: "waveform")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 56, height: 56)
-                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                leadingArtwork
             }
             .buttonStyle(.plain)
 
             Button {
                 performTapAction {
-                    player.togglePlayback()
+                    hub.togglePlayback()
                 }
             } label: {
-                Image(systemName: player.playbackState == .playing ? "pause.fill" : "play.fill")
+                Image(systemName: hub.playbackState == .playing ? "pause.fill" : "play.fill")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.secondary)
                     .frame(width: 48, height: 48)
@@ -137,7 +212,7 @@ struct TTSFloatingPlayerOverlay: View {
 
             Button {
                 performTapAction {
-                    player.stop()
+                    hub.stop()
                 }
             } label: {
                 Image(systemName: "xmark")
@@ -153,7 +228,23 @@ struct TTSFloatingPlayerOverlay: View {
         .background(.regularMaterial, in: Capsule())
         .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
         .contentShape(Capsule())
-        .accessibilityLabel(player.title.isEmpty ? localized("語音朗讀") : player.title)
+        .accessibilityLabel(hub.title.isEmpty ? localized("語音朗讀") : hub.title)
+    }
+
+    /// The leading 56pt tappable artwork: both TTS and audiobook spin the book cover
+    /// like a record — the real cover when present, otherwise the same title-card
+    /// placeholder the bookshelf gives cover-less books.
+    private var leadingArtwork: some View {
+        SpinningCoverIcon(isPlaying: hub.playbackState == .playing) {
+            if let cover = hub.coverImage {
+                Image(uiImage: cover)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                TitleCardPlaceholder(title: hub.coverTitle)
+            }
+        }
+        .frame(width: 56, height: 56)
     }
 
     private var contentWidth: CGFloat {
@@ -184,7 +275,7 @@ struct TTSFloatingPlayerOverlay: View {
         let horizontalLimitRight = maxCenter - leadingCenter
         let defaultCenterY = defaultCenterY(in: size)
         let topCenter = contentHeight / 2 + 14
-        let bottomCenter = size.height - defaultBottomClearance - contentHeight / 2
+        let bottomCenter = size.height - dragFloorClearance - contentHeight / 2
         let topLimit = topCenter - defaultCenterY
         let bottomLimit = bottomCenter - defaultCenterY
         return CGSize(
@@ -198,6 +289,9 @@ struct TTSFloatingPlayerOverlay: View {
             .onChanged { value in
                 if dragStartOffset == nil {
                     dragStartOffset = offset
+                    // User is repositioning by hand — forget the auto-lift origin so we
+                    // don't snap it back when the bars next hide.
+                    liftedFromOffsetHeight = nil
                 }
                 let start = dragStartOffset ?? .zero
                 offset = clampedOffset(
@@ -218,6 +312,53 @@ struct TTSFloatingPlayerOverlay: View {
     private func performTapAction(_ action: () -> Void) {
         guard Date().timeIntervalSince(lastDragEndedAt) > 0.18 else { return }
         action()
+    }
+}
+
+/// A circular disc that spins like a vinyl record while playing and freezes (keeping its
+/// angle) when paused. The disc face is supplied by the caller — a real cover image or the
+/// title-card placeholder. Rotation is time-driven via `TimelineView`, so the angle stays
+/// continuous across pause/resume and costs nothing while paused.
+private struct SpinningCoverIcon<Face: View>: View {
+    let isPlaying: Bool
+    @ViewBuilder var face: () -> Face
+
+    private let degreesPerSecond = 36.0          // one full turn per 10s
+    @State private var baseAngle: Double = 0     // degrees accrued before the current run
+    @State private var runStart: Date = .now     // when the current spinning run began
+
+    var body: some View {
+        TimelineView(.animation(paused: !isPlaying)) { context in
+            let angle = isPlaying
+                ? baseAngle + context.date.timeIntervalSince(runStart) * degreesPerSecond
+                : baseAngle
+            record
+                .rotationEffect(.degrees(angle))
+        }
+        .onAppear { if isPlaying { runStart = Date() } }
+        .onChange(of: isPlaying) { _, playing in
+            let now = Date()
+            if playing {
+                runStart = now
+            } else {
+                // Fold the elapsed run into the accumulated angle so it freezes in place.
+                baseAngle += now.timeIntervalSince(runStart) * degreesPerSecond
+            }
+        }
+    }
+
+    private var record: some View {
+        face()
+            .frame(width: 56, height: 56)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.black.opacity(0.18), lineWidth: 1))
+            .overlay(
+                // Center spindle hole, to read as a record.
+                Circle()
+                    .fill(.regularMaterial)
+                    .frame(width: 12, height: 12)
+                    .overlay(Circle().stroke(Color.black.opacity(0.15), lineWidth: 0.5))
+            )
     }
 }
 
