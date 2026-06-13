@@ -284,6 +284,14 @@ struct ReadingBook: Identifiable, Codable {
         isOnline: Bool
     ) -> BookPipelineKind {
         if isOnline { return .html }
+        if source == "local_audio"
+            || contentFilename.hasPrefix("local_audio/")
+            || LocalAudiobookArchive.allowedAudioExtensions.contains(
+                (contentFilename as NSString).pathExtension.lowercased()
+            )
+        {
+            return .audio
+        }
         if source == "local_epub" || contentFilename.hasSuffix("_epub.json")
             || contentFilename.hasSuffix(".epub")
         {

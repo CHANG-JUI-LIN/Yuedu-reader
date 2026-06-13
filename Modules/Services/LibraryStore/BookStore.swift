@@ -249,6 +249,93 @@ class BookStore: ObservableObject, BookProvider {
         }
     }
 
+    // MARK: Import Local Audiobook
+
+    @discardableResult
+    func importLocalAudiobook(
+        url: URL,
+        title: String? = nil,
+        author: String? = nil
+    ) async throws -> ReadingBook {
+        let info = try await LocalAudiobookArchive.inspect(url: url)
+        let uuid = UUID().uuidString
+        let contentFilename = info.isArchive
+            ? "local_audio/\(uuid)"
+            : "\(uuid).\(url.pathExtension.lowercased())"
+        let contentURL = documentsURL(for: contentFilename)
+        var coverFilename: String?
+
+        func cleanupImportedFiles() {
+            try? FileManager.default.removeItem(at: contentURL)
+            if let coverFilename {
+                try? FileManager.default.removeItem(at: documentsURL(for: coverFilename))
+            }
+        }
+
+        do {
+            let resolvedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? title!.trimmingCharacters(in: .whitespacesAndNewlines)
+                : info.title
+            let resolvedAuthor = author?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? author!.trimmingCharacters(in: .whitespacesAndNewlines)
+                : info.author
+
+            let chapters: [OnlineChapterRef]
+            if info.isArchive {
+                let extracted = try await LocalAudiobookArchive.extractAudioEntries(from: url, to: contentURL)
+                chapters = extracted.enumerated().map { index, chapter in
+                    OnlineChapterRef(
+                        index: index,
+                        title: chapter.title,
+                        url: "local_audio/\(uuid)/\(chapter.filename)"
+                    )
+                }
+            } else {
+                if FileManager.default.fileExists(atPath: contentURL.path) {
+                    try FileManager.default.removeItem(at: contentURL)
+                }
+                try FileManager.default.copyItem(at: url, to: contentURL)
+                chapters = info.chapterSeeds.enumerated().map { index, seed in
+                    OnlineChapterRef(
+                        index: index,
+                        title: seed.title,
+                        url: contentFilename,
+                        audioStartSeconds: seed.audioStartSeconds,
+                        audioDurationSeconds: seed.audioDurationSeconds
+                    )
+                }
+            }
+
+            if let data = info.coverImageData,
+               let image = UIImage(data: data),
+               let jpeg = image.jpegData(compressionQuality: 0.88) {
+                let candidate = "\(uuid)_cover.jpg"
+                try jpeg.write(to: documentsURL(for: candidate))
+                coverFilename = candidate
+            }
+
+            var imported = ReadingBook(
+                title: resolvedTitle,
+                author: resolvedAuthor,
+                source: "local_audio",
+                contentFilename: contentFilename
+            )
+            imported.contentPipelineKind = .audio
+            imported.onlineChapters = chapters
+            imported.coverImagePath = coverFilename
+
+            let importedBook = imported
+            await MainActor.run {
+                self.books.insert(importedBook, at: 0)
+                self.saveMeta()
+            }
+            return importedBook
+        } catch {
+            cleanupImportedFiles()
+            throw error
+        }
+    }
+
     private func importLocalTextFile(
         url: URL,
         title: String,

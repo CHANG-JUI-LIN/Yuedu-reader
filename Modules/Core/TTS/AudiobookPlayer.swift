@@ -58,18 +58,24 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     private var activeBook: ReadingBook?
     private var persistsPositionInStore = true
     private var coverFallbacks: [UUID: CoverFallback] = [:]
-    private let chapterAudioProvider: ChapterAudioProvider
+    private let onlineChapterAudioProvider: ChapterAudioProvider
+    private let localChapterAudioProvider: ChapterAudioProvider
 
     // MARK: - Engine
 
     private var player: AVPlayer?
     private var timeObserverToken: Any?
+    private var boundaryObserverToken: Any?
     private var cancellables: Set<AnyCancellable> = []
     private var loadToken = UUID()
     private var pendingResumeTime: TimeInterval = 0
     private var didSeekForResume = false
     private var lastPersist: Date = .distantPast
     private var loadedRuntimeVariables: [String: String]?
+    private var currentItemSourceURL: URL?
+    private var chapterStartSeconds: TimeInterval = 0
+    private var chapterDurationOverride: TimeInterval?
+    private var chapterFinishHandled = false
 
     // MARK: - Sleep timer
 
@@ -81,7 +87,8 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     private var remoteCommandsConfigured = false
 
     private override init() {
-        self.chapterAudioProvider = OnlineChapterAudioProvider()
+        self.onlineChapterAudioProvider = OnlineChapterAudioProvider()
+        self.localChapterAudioProvider = LocalChapterAudioProvider()
         super.init()
     }
 
@@ -196,6 +203,8 @@ final class AudiobookPlayer: NSObject, ObservableObject {
                 || old.title != new.title
                 || old.url != new.url
                 || old.runtimeVariables != new.runtimeVariables
+                || old.audioStartSeconds != new.audioStartSeconds
+                || old.audioDurationSeconds != new.audioDurationSeconds
         }
     }
 
@@ -244,11 +253,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
 
     func seek(to time: TimeInterval) {
         let clamped = max(0, min(time, duration > 0 ? duration : time))
-        player?.seek(
-            to: CMTime(seconds: clamped, preferredTimescale: 600),
-            toleranceBefore: .zero, toleranceAfter: .zero
-        )
-        currentTime = clamped
+        seekWithinCurrentChapter(to: clamped)
         persistPosition(force: true)
         updateNowPlaying()
     }
@@ -347,7 +352,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let audio = try await self.chapterAudioProvider.audio(
+                let audio = try await self.chapterAudioProvider(for: book).audio(
                     for: book,
                     chapterIndex: self.chapterIndex,
                     store: store
@@ -372,8 +377,41 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     }
 
     private func play(audio: ChapterAudio, autoPlay: Bool) {
+        let startSeconds = max(0, audio.chapterStartSeconds ?? 0)
+        let durationOverride = audio.chapterDurationSeconds.flatMap { value in
+            value.isFinite && value > 0 ? value : nil
+        }
+        let resumeTime = max(0, pendingResumeTime)
+
+        if currentItemSourceURL == audio.url,
+           let currentPlayer = player,
+           currentPlayer.currentItem?.status == .readyToPlay {
+            chapterStartSeconds = startSeconds
+            chapterDurationOverride = durationOverride
+            chapterFinishHandled = false
+            didSeekForResume = true
+            pendingResumeTime = 0
+            isLoading = false
+            teardownBoundaryObserver()
+            updateDuration()
+            installBoundaryObserverIfNeeded(on: currentPlayer)
+            seekWithinCurrentChapter(to: resumeTime)
+            if autoPlay {
+                currentPlayer.rate = playbackRate
+                isPlaying = true
+            }
+            updateNowPlaying()
+            audiobookLog("reuse current audio item ch=\(chapterIndex) start=\(startSeconds) duration=\(durationOverride ?? -1)")
+            return
+        }
+
         // Stop the previous item but keep session/remote commands alive.
         teardownPlayerObservers()
+
+        currentItemSourceURL = audio.url
+        chapterStartSeconds = startSeconds
+        chapterDurationOverride = durationOverride
+        chapterFinishHandled = false
 
         let options: [String: Any] = audio.headers.isEmpty
             ? [:] : ["AVURLAssetHTTPHeaderFieldsKey": audio.headers]
@@ -395,14 +433,13 @@ final class AudiobookPlayer: NSObject, ObservableObject {
                 case .readyToPlay:
                     self.isLoading = false
                     self.updateDuration()
-                    if !self.didSeekForResume, self.pendingResumeTime > 1 {
+                    self.teardownBoundaryObserver()
+                    self.installBoundaryObserverIfNeeded(on: newPlayer)
+                    if !self.didSeekForResume {
                         self.didSeekForResume = true
-                        let t = self.pendingResumeTime
+                        let t = max(0, self.pendingResumeTime)
                         self.pendingResumeTime = 0
-                        self.player?.seek(
-                            to: CMTime(seconds: t, preferredTimescale: 600),
-                            toleranceBefore: .zero, toleranceAfter: .zero)
-                        self.currentTime = t
+                        self.seekWithinCurrentChapter(to: t)
                     }
                     if autoPlay {
                         self.player?.rate = self.playbackRate
@@ -426,8 +463,13 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         ) { [weak self] time in
             Task { @MainActor in
                 guard let self, self.isPlaying else { return }
-                self.currentTime = time.seconds
                 self.updateDuration()
+                let relative = max(0, time.seconds - self.chapterStartSeconds)
+                self.currentTime = min(relative, self.duration > 0 ? self.duration : relative)
+                if let limit = self.chapterDurationOverride, relative > limit + 0.75 {
+                    self.finishCurrentChapterIfNeeded()
+                    return
+                }
                 self.persistPosition(force: false)
             }
         }
@@ -436,8 +478,44 @@ final class AudiobookPlayer: NSObject, ObservableObject {
             for: AVPlayerItem.didPlayToEndTimeNotification, object: item
         )
         .receive(on: DispatchQueue.main)
-        .sink { [weak self] _ in self?.handleChapterFinished() }
+        .sink { [weak self] _ in self?.finishCurrentChapterIfNeeded() }
         .store(in: &cancellables)
+    }
+
+    private func chapterAudioProvider(for book: ReadingBook) -> ChapterAudioProvider {
+        book.isOnline ? onlineChapterAudioProvider : localChapterAudioProvider
+    }
+
+    private func seekWithinCurrentChapter(to relativeTime: TimeInterval) {
+        let upperBound = duration > 0 ? duration : relativeTime
+        let clamped = max(0, min(relativeTime, upperBound))
+        let target = chapterStartSeconds + clamped
+        player?.seek(
+            to: CMTime(seconds: target, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        )
+        currentTime = clamped
+    }
+
+    private func installBoundaryObserverIfNeeded(on player: AVPlayer) {
+        guard let chapterDurationOverride, chapterDurationOverride > 0 else { return }
+        let boundary = chapterStartSeconds + chapterDurationOverride
+        guard boundary.isFinite, boundary > 0 else { return }
+        boundaryObserverToken = player.addBoundaryTimeObserver(
+            forTimes: [NSValue(time: CMTime(seconds: boundary, preferredTimescale: 600))],
+            queue: .main
+        ) { [weak self] in
+            Task { @MainActor in
+                self?.finishCurrentChapterIfNeeded()
+            }
+        }
+    }
+
+    private func finishCurrentChapterIfNeeded() {
+        guard !chapterFinishHandled else { return }
+        chapterFinishHandled = true
+        handleChapterFinished()
     }
 
     private func handleChapterFinished() {
@@ -481,17 +559,31 @@ final class AudiobookPlayer: NSObject, ObservableObject {
 
     private func updateDuration() {
         guard let item = player?.currentItem, item.status == .readyToPlay else { return }
+        if let chapterDurationOverride, chapterDurationOverride > 0 {
+            duration = chapterDurationOverride
+            return
+        }
         let d = item.duration.seconds
-        if d.isFinite, d > 0 { duration = d }
+        if d.isFinite, d > 0 {
+            duration = max(0, d - chapterStartSeconds)
+        }
     }
 
     // MARK: - Teardown
+
+    private func teardownBoundaryObserver() {
+        if let token = boundaryObserverToken {
+            player?.removeTimeObserver(token)
+            boundaryObserverToken = nil
+        }
+    }
 
     private func teardownPlayerObservers() {
         if let token = timeObserverToken {
             player?.removeTimeObserver(token)
             timeObserverToken = nil
         }
+        teardownBoundaryObserver()
         cancellables.removeAll()
     }
 
@@ -501,6 +593,10 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         teardownPlayerObservers()
         player?.replaceCurrentItem(with: nil)
         player = nil
+        currentItemSourceURL = nil
+        chapterStartSeconds = 0
+        chapterDurationOverride = nil
+        chapterFinishHandled = false
     }
 
     // MARK: - Audio session

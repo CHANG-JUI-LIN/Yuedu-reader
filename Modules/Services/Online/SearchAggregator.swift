@@ -254,6 +254,21 @@ class SearchAggregator: ObservableObject {
     /// whole search; repeat offenders are then skipped via `SourceHealthStore`.
     private let perSourceTimeout: UInt64 = 12
 
+    /// Longer budget for JS-driven (`<js>`/`@js:`) search sources. Aggregate
+    /// sources (光遇/大灰狼…) fan out to dozens of sub-sites server-side and take
+    /// ~12–15s to return; the tight per-source timeout would cut them off and the
+    /// search would look broken even when the cloud is aggregating correctly.
+    private let perAggregateSourceTimeout: UInt64 = 30
+
+    /// JS-built searchUrls (aggregators + some API sources) get the longer budget;
+    /// plain `{{key}}`-template sources stay fail-fast.
+    nonisolated private static func searchTimeout(
+        for source: BookSource, normal: UInt64, aggregate: UInt64
+    ) -> UInt64 {
+        let s = source.searchUrl.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return (s.hasPrefix("<js>") || s.hasPrefix("@js:")) ? aggregate : normal
+    }
+
     /// Current search task (used for cancellation)
     private var searchTask: Task<Void, Never>?
 
@@ -295,6 +310,7 @@ class SearchAggregator: ObservableObject {
         let autoPausePolicy = SearchAutoPausePolicy(count: autoPauseCount)
         let concurrency = min(maxConcurrency, activeSources.count)
         let timeout = perSourceTimeout
+        let aggregateTimeout = perAggregateSourceTimeout
 
         searchTask = Task { [weak self] in
             await withTaskGroup(of: SearchBatchResult.self) { group in
@@ -304,11 +320,14 @@ class SearchAggregator: ObservableObject {
                     guard nextSourceIndex < activeSources.count else { return }
                     let source = activeSources[nextSourceIndex]
                     nextSourceIndex += 1
+                    let sourceTimeout = Self.searchTimeout(
+                        for: source, normal: timeout, aggregate: aggregateTimeout
+                    )
                     group.addTask {
                         guard !Task.isCancelled else { return .failed(source.id) }
                         // Each source has its own timeout; cancel on expiry
                         return await Self.searchSingleSource(
-                            query: q, source: source, timeout: timeout
+                            query: q, source: source, timeout: sourceTimeout
                         )
                     }
                 }

@@ -706,9 +706,8 @@ final class ICloudSyncManager: ObservableObject {
         var payloads: [ICloudSyncPayloadFile] = []
         var seen = Set<String>()
         for book in books {
-            // Content file only for local books (online books have an empty one);
-            // cover for every book.
-            let names = [book.isOnline ? nil : book.contentFilename, book.coverImagePath]
+            // Content file only for syncable local books; cover for every book.
+            let names = [Self.syncableContentFilename(for: book), book.coverImagePath]
             for name in names.compactMap({ $0 }) where !name.isEmpty {
                 guard seen.insert(name).inserted else { continue }
                 payloads.append(
@@ -720,6 +719,10 @@ final class ICloudSyncManager: ObservableObject {
             }
         }
         return payloads
+    }
+
+    static func syncableContentFilename(for book: ReadingBook) -> String? {
+        (book.isOnline || book.resolvedPipelineKind == .audio) ? nil : book.contentFilename
     }
 
     private func uploadBookFiles() async throws -> Int {

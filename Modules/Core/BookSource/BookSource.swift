@@ -604,6 +604,8 @@ struct OnlineChapterRef: Identifiable, Codable {
     var isPay: Bool = false
     var cachedFilename: String? = nil  // nil means not yet fetched
     var runtimeVariables: [String: String]? = nil
+    var audioStartSeconds: Double? = nil
+    var audioDurationSeconds: Double? = nil
 }
 
 extension BookSource {

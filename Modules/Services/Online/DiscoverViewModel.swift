@@ -144,9 +144,16 @@ final class DiscoverViewModel: ObservableObject {
     /// (read by the JS on its next run), then reload. Mirrors the source's own
     /// `show()` — switching 类型 resets the platform and syncs the search mode,
     /// because each 类型 has its own platform list.
+    ///
+    /// Important: the per-类型 platform the user picks on the *discover* page is
+    /// kept in the app-private `__discoverSourceByMode` key, NOT in `更多设置[类型]`.
+    /// Aggregate sources (光遇/大灰狼…) read `更多设置[类型]` as their *search*
+    /// sub-site filter (`sourcesKey`), so writing a single platform there would
+    /// pin search to one site instead of `全部`. Discover itself reads
+    /// `发现页来源`/`发现页类型`, so it is unaffected.
     func selectFilter(_ filter: DiscoverFilter, value: String) {
         guard value != filter.selected, let source = selectedSource else { return }
-        var dict = currentVariableDict(for: source)
+        var dict = Self.sanitizeDiscoverVariable(currentVariableDict(for: source))
         var moreSettings = (dict["更多设置"] as? [String: Any]) ?? [:]
         let currentMode = discoverMode(from: dict, moreSettings: moreSettings)
 
@@ -154,15 +161,15 @@ final class DiscoverViewModel: ObservableObject {
 
         switch filter.paramKey {
         case "发现页类型":
-            let platform = discoverPlatform(for: value, moreSettings: moreSettings)
+            let platform = discoverPlatform(for: value, dict: dict)
             dict["发现页来源"] = platform
             moreSettings["搜索模式"] = value
-            moreSettings[value] = platform
             dict["更多设置"] = moreSettings
+            Self.setDiscoverPlatform(platform, forMode: value, in: &dict)
         case "发现页来源":
             moreSettings["搜索模式"] = currentMode
-            moreSettings[currentMode] = value
             dict["更多设置"] = moreSettings
+            Self.setDiscoverPlatform(value, forMode: currentMode, in: &dict)
         default:
             break
         }
@@ -427,36 +434,102 @@ final class DiscoverViewModel: ObservableObject {
         return "小说"
     }
 
-    private func discoverPlatform(for mode: String, moreSettings: [String: Any]) -> String {
-        if let saved = Self.nonEmptyString(moreSettings[mode]) {
+    private func discoverPlatform(for mode: String, dict: [String: Any]) -> String {
+        let memory = (dict[Self.discoverPlatformMemoryKey] as? [String: Any]) ?? [:]
+        if let saved = Self.nonEmptyString(memory[mode]) {
             return saved
+        }
+        // Back-compat: honor a legacy per-类型 platform still sitting in 更多设置
+        // (sanitize will have moved it out, but be defensive).
+        if let moreSettings = dict["更多设置"] as? [String: Any],
+           let legacy = Self.nonEmptyString(moreSettings[mode]) {
+            return legacy
         }
         return defaultDiscoverPlatform
     }
 
+    // MARK: - Discover platform memory (app-private, kept out of 更多设置)
+
+    /// App-private key holding the user's per-类型 discover platform choice.
+    /// Aggregate-source JS never reads this, so it cannot leak into search.
+    nonisolated static let discoverPlatformMemoryKey = "__discoverSourceByMode"
+
+    /// Keys inside `更多设置` that are the source's own meta-settings (read by its
+    /// search/discover JS) rather than an app-written per-类型 platform selection.
+    /// Everything else the app previously persisted under 更多设置 was a single
+    /// discover platform that the search JS misreads as its sub-site filter.
+    nonisolated private static let moreSettingsMetaKeys: Set<String> = ["搜索模式", "强制搜索"]
+
+    private static func setDiscoverPlatform(
+        _ platform: String, forMode mode: String, in dict: inout [String: Any]
+    ) {
+        guard !mode.isEmpty else { return }
+        var memory = (dict[discoverPlatformMemoryKey] as? [String: Any]) ?? [:]
+        memory[mode] = platform
+        dict[discoverPlatformMemoryKey] = memory
+    }
+
+    /// One-time normalization: move any legacy per-类型 platform entries out of
+    /// `更多设置` (where an aggregate source's search JS reads them as `sourcesKey`)
+    /// into the app-private memory key. This restores search to `全部` for users
+    /// whose runtime state was polluted by earlier builds. No-op once clean.
+    nonisolated static func sanitizeDiscoverVariable(_ dict: [String: Any]) -> [String: Any] {
+        guard var moreSettings = dict["更多设置"] as? [String: Any] else { return dict }
+        var memory = (dict[discoverPlatformMemoryKey] as? [String: Any]) ?? [:]
+        var moved = false
+        for (key, value) in moreSettings {
+            guard !moreSettingsMetaKeys.contains(key), value is String else { continue }
+            if memory[key] == nil { memory[key] = value }
+            moreSettings.removeValue(forKey: key)
+            moved = true
+        }
+        guard moved else { return dict }
+        var result = dict
+        result["更多设置"] = moreSettings
+        result[discoverPlatformMemoryKey] = memory
+        return result
+    }
+
     private func repairHardcodedDiscoverSourceIfNeeded(for source: BookSource) {
         let dict = currentVariableDict(for: source)
-        let repaired = Self.repairHardcodedDiscoverSource(in: dict)
-        guard (dict["发现页来源"] as? String) != (repaired["发现页来源"] as? String) else { return }
+        // Strip legacy per-类型 platform keys out of 更多设置 first (fixes aggregate
+        // search pinned to one sub-site on already-polluted state), then apply the
+        // hardcoded-source repair. Persist if either step changed anything.
+        let sanitized = Self.sanitizeDiscoverVariable(dict)
+        let repaired = Self.repairHardcodedDiscoverSource(in: sanitized)
+        guard Self.canonicalJSON(dict) != Self.canonicalJSON(repaired) else { return }
         writeVariableDict(repaired, for: source)
     }
 
     /// Older builds mirrored the source JS too literally and persisted
-    /// `发现页来源 = 番茄` whenever the mode changed. If a per-mode source already
-    /// exists in `更多设置`, treat that as the user's intended source.
+    /// `发现页来源 = 番茄` whenever the mode changed. If a per-mode source is
+    /// remembered (now in the app-private memory key, legacy: in `更多设置`),
+    /// treat that as the user's intended source.
     nonisolated static func repairHardcodedDiscoverSource(in dict: [String: Any]) -> [String: Any] {
-        guard (dict["发现页来源"] as? String) == "番茄",
-              let moreSettings = dict["更多设置"] as? [String: Any]
-        else { return dict }
+        guard (dict["发现页来源"] as? String) == "番茄" else { return dict }
 
+        let moreSettings = (dict["更多设置"] as? [String: Any]) ?? [:]
+        let memory = (dict[discoverPlatformMemoryKey] as? [String: Any]) ?? [:]
         let mode = nonEmptyString(dict["发现页类型"])
             ?? nonEmptyString(moreSettings["搜索模式"])
             ?? "小说"
-        guard let saved = nonEmptyString(moreSettings[mode]), saved != "番茄" else { return dict }
+        guard let saved = nonEmptyString(memory[mode]) ?? nonEmptyString(moreSettings[mode]),
+              saved != "番茄"
+        else { return dict }
 
         var repaired = dict
         repaired["发现页来源"] = saved
         return repaired
+    }
+
+    /// Stable JSON serialization (sorted keys) used to detect whether a runtime
+    /// variable actually changed before persisting it.
+    nonisolated static func canonicalJSON(_ dict: [String: Any]) -> String? {
+        guard JSONSerialization.isValidJSONObject(dict),
+              let data = try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys]),
+              let string = String(data: data, encoding: .utf8)
+        else { return nil }
+        return string
     }
 
     nonisolated private static func nonEmptyString(_ value: Any?) -> String? {

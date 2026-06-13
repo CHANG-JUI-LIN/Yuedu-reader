@@ -161,10 +161,12 @@
 "支援格式：TXT / Markdown / EPUB" = "Supported formats: TXT / Markdown / EPUB";
 "支援格式：TXT / Markdown / JSON / EPUB" = "Supported formats: TXT / Markdown / JSON / EPUB";
 "支援格式：TXT / Markdown / JSON / EPUB / CBZ / ZIP" = "Supported formats: TXT / Markdown / JSON / EPUB / CBZ / ZIP";
+"支援格式：TXT / Markdown / JSON / EPUB / CBZ / ZIP / 音訊" = "Supported formats: TXT / Markdown / JSON / EPUB / CBZ / ZIP / Audio";
 "支援的佔位符：" = "Supported placeholders:";
 "支援純文字（.txt / .md / .markdown）與電子書（.epub）格式。選取後系統自動識別章節結構。" = "Supports plain text (.txt / .md / .markdown) and ebook (.epub) formats. Chapter structure is detected automatically.";
 "支援純文字（.txt / .md / .markdown / .json）與電子書（.epub）格式。選取後系統自動識別章節結構。" = "Supports plain text (.txt / .md / .markdown / .json) and ebook (.epub) formats. Chapter structure is detected automatically.";
 "支援純文字（.txt / .md / .markdown / .json）、電子書（.epub）與本地漫畫（.cbz / .zip）格式。選取後系統自動識別內容。" = "Supports plain text (.txt / .md / .markdown / .json), ebooks (.epub), and local manga (.cbz / .zip). Content is detected automatically.";
+"支援純文字（.txt / .md / .markdown / .json）、電子書（.epub）、本地漫畫（.cbz / .zip）與音訊（.mp3 / .m4a / .m4b / .aac / .flac / .wav）格式。選取後系統自動識別內容。" = "Supports plain text (.txt / .md / .markdown / .json), ebooks (.epub), local manga (.cbz / .zip), and audio (.mp3 / .m4a / .m4b / .aac / .flac / .wav). Content is detected automatically.";
 "放棄" = "Give Up";
 "文字轉換" = "Text Conversion";
 "新增" = "Add";
@@ -277,6 +279,7 @@
 "移除" = "Remove";
 "章" = "ch.";
 "章節 URL" = "Chapter URL";
+"章節" = "Chapter";
 "章節列表" = "Chapter List";
 "章節名" = "Chapter Title";
 "章節標題（URL 編碼）" = "Chapter Title (URL-encoded)";
@@ -381,6 +384,7 @@
 "點擊右上角 + 手動新增\\n或 ↓ 貼上 Legado 書源 JSON 匯入" = "Tap + in the top-right to add one manually\\nor use ↓ to paste Legado source JSON for import";
 "點擊選取 TXT / EPUB 文件" = "Tap to Select a TXT / EPUB File";
 "點擊選取 TXT / EPUB / 漫畫文件" = "Tap to Select a TXT / EPUB / Manga File";
+"點擊選取 TXT / EPUB / 漫畫 / 音訊文件" = "Tap to Select a TXT / EPUB / Manga / Audio File";
 
 // Bookshelf toolbar menu
 "選取" = "Select";
@@ -794,6 +798,15 @@
 "漫畫壓縮檔中未找到圖片" = "No images found in the manga archive";
 "漫畫圖片解壓失敗" = "Failed to extract manga images";
 "無法讀取漫畫壓縮檔" = "Unable to read manga archive";
+"不支援的音訊格式" = "Unsupported audio format";
+"已解析有聲書，共 %d 章" = "Audiobook parsed, %d chapters";
+"壓縮檔中未找到音訊檔案" = "No audio files found in the archive";
+"音訊解壓失敗" = "Failed to extract audio files";
+"無法讀取音訊壓縮檔" = "Unable to read audio archive";
+"音訊檔案不在此裝置上，請重新匯入" = "The audio file is not on this device. Please import it again.";
+"總時長" = "Total duration";
+"無法複製音訊檔案：" = "Unable to copy audio file: ";
+"無法複製壓縮檔案：" = "Unable to copy archive: ";
 "第 %d 章" = "Chapter %d";
 "第 %d / %d 頁" = "Page %d / %d";
 "使用帳號同步書庫、進度與偏好" = "Use an account to sync your library, progress, and preferences";

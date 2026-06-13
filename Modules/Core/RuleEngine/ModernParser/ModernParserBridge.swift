@@ -519,7 +519,32 @@ class ModernParserBridge {
         let (body, finalUrl) = try await fetch(
             ruleUrl: source.searchUrl, key: keyword, page: page
         )
+        // #region agent log
+        _dbgLog("聚合/JS 搜尋", data: [
+            "source": source.bookSourceName,
+            "变量": String(
+                (BookSourceRuntimeStateStore.shared
+                    .sourceVariableJSON(for: source.bookSourceUrl) ?? "(空)").prefix(300)),
+            "搜索参数": Self.searchParamsPreview(from: finalUrl),
+        ], hyp: "S1")
+        // #endregion
         return try parseSearchResults(html: body, baseURL: finalUrl, source: source)
+    }
+
+    /// For logging: if `url` is the aggregate sources' `data:;base64,…` pseudo-URL,
+    /// decode it so the resolved search params (e.g. `sourcesKey`/`server`) are
+    /// visible on-device. Returns a short prefix of the URL otherwise.
+    private static func searchParamsPreview(from url: String) -> String {
+        guard url.hasPrefix("data:"),
+              let range = url.range(of: ";base64,") else {
+            return String(url.prefix(120))
+        }
+        let payload = String(url[range.upperBound...])
+        guard let data = Data(base64Encoded: payload, options: .ignoreUnknownCharacters),
+              let json = String(data: data, encoding: .utf8) else {
+            return String(url.prefix(120))
+        }
+        return String(json.prefix(200))
     }
 
     func getBookInfo(url: String) async throws -> OnlineBook {

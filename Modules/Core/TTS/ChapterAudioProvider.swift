@@ -3,15 +3,32 @@ import Foundation
 struct ChapterAudio {
     let url: URL
     let headers: [String: String]
+    let chapterStartSeconds: Double?
+    let chapterDurationSeconds: Double?
+
+    init(
+        url: URL,
+        headers: [String: String] = [:],
+        chapterStartSeconds: Double? = nil,
+        chapterDurationSeconds: Double? = nil
+    ) {
+        self.url = url
+        self.headers = headers
+        self.chapterStartSeconds = chapterStartSeconds
+        self.chapterDurationSeconds = chapterDurationSeconds
+    }
 }
 
 enum ChapterAudioProviderError: LocalizedError {
     case missingAudio(contentLength: Int, preview: String)
+    case missingLocalAudio
 
     var errorDescription: String? {
         switch self {
         case .missingAudio:
             return localized("未找到音訊")
+        case .missingLocalAudio:
+            return localized("音訊檔案不在此裝置上，請重新匯入")
         }
     }
 }
@@ -64,5 +81,35 @@ final class OnlineChapterAudioProvider: ChapterAudioProvider {
             sourceBaseURL: source?.bookSourceUrl,
             sourceHeaders: source?.parsedHeaders ?? [:]
         )
+    }
+}
+
+@MainActor
+final class LocalChapterAudioProvider: ChapterAudioProvider {
+    func audio(
+        for book: ReadingBook,
+        chapterIndex: Int,
+        store: BookStore
+    ) async throws -> ChapterAudio {
+        guard let refs = book.onlineChapters, refs.indices.contains(chapterIndex) else {
+            throw ChapterAudioProviderError.missingAudio(contentLength: 0, preview: "")
+        }
+        let ref = refs[chapterIndex]
+
+        let url = Self.documentsURL(for: ref.url)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw ChapterAudioProviderError.missingLocalAudio
+        }
+
+        return ChapterAudio(
+            url: url,
+            chapterStartSeconds: ref.audioStartSeconds,
+            chapterDurationSeconds: ref.audioDurationSeconds
+        )
+    }
+
+    private static func documentsURL(for relativePath: String) -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(relativePath)
     }
 }
