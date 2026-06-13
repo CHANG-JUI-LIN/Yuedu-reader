@@ -78,6 +78,10 @@ final class SearchResultCache {
             else { return nil }
             let maxAge = TimeInterval(days) * 86_400
             guard now.timeIntervalSince(entry.timestamp) < maxAge else { return nil }
+            // Never serve an empty cached result. A transient 0 (request timed out,
+            // searched before logging in, server hiccup) must not get pinned for
+            // `days` — fall through to a live re-fetch instead of returning [].
+            guard !entry.books.isEmpty else { return nil }
             return entry.books.map { $0.onlineBook(for: source) }
         }
     }
@@ -89,7 +93,9 @@ final class SearchResultCache {
         days: Int,
         now: Date = Date()
     ) {
-        guard days > 0, let key = cacheKey(query: query, source: source) else { return }
+        // Don't persist empty results: caching a 0 would make a transient failure
+        // (timeout / not-yet-logged-in / server hiccup) sticky for `days`.
+        guard days > 0, !books.isEmpty, let key = cacheKey(query: query, source: source) else { return }
         let entry = Entry(books: books.map(CachedBook.init), timestamp: now)
         queue.sync {
             guard let data = try? JSONEncoder().encode(entry) else { return }
