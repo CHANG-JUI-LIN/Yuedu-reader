@@ -582,6 +582,12 @@ class ModernParserBridge {
             ruleUrl: source.searchUrl, key: keyword, page: page
         )
         // #region agent log
+        #if DEBUG
+        if source.bookSourceName.contains("企点") {
+            print("[企點診斷] searchBooks fetch URL → \(finalUrl)")
+            print("[企點診斷] searchBooks response body(前200字) → \(String(body.prefix(200)))")
+        }
+        #endif
         _dbgLog("聚合/JS 搜尋", data: [
             "source": source.bookSourceName,
             "变量": String(

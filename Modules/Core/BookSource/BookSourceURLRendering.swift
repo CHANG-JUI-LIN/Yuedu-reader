@@ -103,6 +103,11 @@ extension BookSource {
                let opt = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 let method = (opt["method"] as? String)?.uppercased() == "POST" ? "POST" : "GET"
                 let body = (opt["body"] as? String).map { applyVars($0) }
+                #if DEBUG
+                if bookSourceName.contains("企点") {
+                    print("[企點診斷] renderSearchURL(JSON) → url: \(urlPart), method: \(method), body: \(body ?? "nil")")
+                }
+                #endif
                 return (urlPart, method, body)
             }
         }
@@ -114,9 +119,19 @@ extension BookSource {
             let urlStr = applyVars(parts[0].trimmingCharacters(in: .whitespacesAndNewlines))
             let bodyTemplate = parts.count >= 3 ? parts[2...].joined(separator: ",") : ""
             let body = applyVars(bodyTemplate)
+            #if DEBUG
+            if bookSourceName.contains("企点") {
+                print("[企點診斷] renderSearchURL(POST) → url: \(urlStr), body: \(body ?? "nil")")
+            }
+            #endif
             return (urlStr, "POST", body.isEmpty ? nil : body)
         } else {
             let finalURL = applyVars(parts[0].trimmingCharacters(in: .whitespacesAndNewlines))
+            #if DEBUG
+            if bookSourceName.contains("企点") {
+                print("[企點診斷] renderSearchURL(GET) → url: \(finalURL)")
+            }
+            #endif
             return (finalURL, "GET", nil)
         }
     }
@@ -294,6 +309,13 @@ extension BookSource {
             }
         }
         templateContextLock.unlock()
+
+        #if DEBUG
+        if source.bookSourceName.contains("企点") {
+            let val = context.evaluateScript(expression)
+            print("[企點診斷] evaluateTemplateExpression(\(expression)) → \(val?.toString() ?? "nil")")
+        }
+        #endif
 
         // Attempt evaluation
         let candidates = [
