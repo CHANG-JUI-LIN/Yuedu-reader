@@ -636,6 +636,25 @@ struct JsonExtractor: RuleExtractor {
             .joined(separator: "\n")
     }
 
+        /// Extract raw JSON objects (for `getElements` pipeline).
+    /// Unlike `extractList` (which stringifies everything), this returns
+    /// raw `[String: Any]` / `[Any]` objects so that a subsequent `<js>` filter
+    /// can access properties like `item.BookName` directly.
+    func extractRawElements(from content: String, rule: String) -> [Any] {
+        guard let json = parseJSON(content) else { return [] }
+        let path = cleanRule(rule)
+        let results = JSONPathEvaluator.query(path, on: json)
+        var objects: [Any] = []
+        for r in results {
+            if let arr = r as? [Any] {
+                objects.append(contentsOf: arr)
+            } else {
+                objects.append(r)
+            }
+        }
+        return objects
+    }
+
     // MARK: - Private Helpers
 
     private func parseJSON(_ content: String) -> Any? {

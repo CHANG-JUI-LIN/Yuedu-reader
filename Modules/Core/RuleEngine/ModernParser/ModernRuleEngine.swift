@@ -748,6 +748,11 @@ final class ModernRuleEngine {
         }
         let contentStr = extractorContentString(content, usesJSON: extractor is JsonExtractor)
         let elementRule = elementExtractionRule(rule, extractor: extractor)
+
+        if let jsonExt = extractor as? JsonExtractor {
+            return jsonExt.extractRawElements(from: contentStr, rule: elementRule)
+        }
+
         return try? extractor.extractList(
             from: contentStr, rule: elementRule, baseURL: baseUrl
         )
