@@ -94,7 +94,12 @@ struct ChapterFetcher {
 
         // Rewrite Legado iOS paragraph-review markers into anchors before parsing, so the
         // markers survive the SwiftSoup round-trip regardless of how <comment> is handled.
-        let rawHTMLContent = ReaderHTMLUtilities.rewriteReviewComments(cleanedRawHTML)
+        // Then, if the content is newline-separated plain-text paragraphs with only inline runs
+        // (no block tags) — e.g. 段評-injected content joins paragraphs with "\n" + inline bubble
+        // <img>s — wrap each line in <p> so SwiftSoup doesn't collapse the breaks into one block.
+        let rawHTMLContent = ReaderHTMLUtilities.wrapNewlineParagraphsIfNeeded(
+            ReaderHTMLUtilities.rewriteReviewComments(cleanedRawHTML)
+        )
         AppLogger.parse("⟐ reviewHTML rewrite", context: [
             "title": title,
             "cleanLen": cleanedRawHTML.count,
@@ -120,12 +125,16 @@ struct ChapterFetcher {
             return buildNormalizedHTML(title: title, content: plainTextContent)
         }
 
-        let trimmedTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: title)
+        // A chapter title may carry a 本章说 comment bubble appended as a bare `data:image/...` URI
+        // (起點: `titleRow = title + Bubble`). Split it off so the text becomes the heading and the
+        // bubble is rendered as the source's image (text-sized, like body 段評), not literal text.
+        let (titleTextPart, titleBubbleHTML) = Self.splitTitleBubble(title, reviewContext: reviewContext)
+        let trimmedTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: titleTextPart)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let escapedTitle = ReaderHTMLUtilities.escapeHTML(trimmedTitle.isEmpty ? "Untitled" : trimmedTitle)
-        let heading = trimmedTitle.isEmpty
+        let heading = (trimmedTitle.isEmpty && titleBubbleHTML == nil)
             ? ""
-            : "<h1>\(ReaderHTMLUtilities.escapeHTML(trimmedTitle))</h1>\n"
+            : "<h1>\(ReaderHTMLUtilities.escapeHTML(trimmedTitle))\(titleBubbleHTML ?? "")</h1>\n"
 
         return """
         <!DOCTYPE html>
@@ -142,6 +151,26 @@ struct ChapterFetcher {
         </body>
         </html>
         """
+    }
+
+    /// Splits a chapter title into its text part and an optional comment-bubble `<img>` HTML.
+    /// 起點 appends a 本章说 bubble to the title as a bare `data:image/...,{clickconfig}` URI; we
+    /// wrap that into an `<img>` and run it through the same sanitizer as body bubbles (strips the
+    /// click-config suffix, adds the review anchor + text-size marker). Returns `(title, nil)` when
+    /// no bubble is present.
+    private static func splitTitleBubble(
+        _ title: String,
+        reviewContext: ReaderHTMLUtilities.LegadoReviewContext?
+    ) -> (text: String, bubbleHTML: String?) {
+        guard let r = title.range(of: "data:image") else { return (title, nil) }
+        let textPart = String(title[..<r.lowerBound])
+        let bubbleURI = String(title[r.lowerBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !bubbleURI.isEmpty else { return (textPart, nil) }
+        let sanitized = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            "<img src=\"\(bubbleURI)\">",
+            reviewContext: reviewContext
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (textPart, sanitized.isEmpty ? nil : sanitized)
     }
 
     private static func containsLikelyHTMLTags(_ text: String) -> Bool {

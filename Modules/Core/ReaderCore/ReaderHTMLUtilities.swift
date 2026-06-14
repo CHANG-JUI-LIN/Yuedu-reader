@@ -72,6 +72,36 @@ enum ReaderHTMLUtilities {
         return sentenceChunks(from: onlyParagraph)
     }
 
+    /// Wraps newline-separated segments in `<p>` when the HTML has no block-level structure.
+    ///
+    /// Online sources frequently deliver chapter bodies as plain-text paragraphs joined by "\n"
+    /// with only *inline* markup mixed in (links, 段評 bubble `<img>`s). Handed straight to
+    /// SwiftSoup, the newlines collapse to whitespace and the whole chapter renders as a single
+    /// run-on block. This restores paragraph breaks generically (not per-source): if the content
+    /// already contains block tags (`<p>`/`<div>`/`<br>`/…) it is returned unchanged.
+    static func wrapNewlineParagraphsIfNeeded(_ html: String) -> String {
+        guard !containsBlockLevelTag(html) else { return html }
+        let segments = html
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard segments.count > 1 else { return html }
+        return segments.map { "<p>\($0)</p>" }.joined(separator: "\n")
+    }
+
+    private static func containsBlockLevelTag(_ html: String) -> Bool {
+        let lower = html.lowercased()
+        let blockTags = [
+            "<p", "<div", "<br", "<li", "<ul", "<ol", "<h1", "<h2", "<h3", "<h4", "<h5", "<h6",
+            "<blockquote", "<section", "<article", "<table", "<figure", "<pre", "<dl", "<dd", "<dt",
+            // A raw inline <svg> document may contain internal newlines — never split it into <p>.
+            "<svg"
+        ]
+        return blockTags.contains { lower.contains($0) }
+    }
+
     static func bodyParagraphs(fromPlainText text: String, excludingLeadingTitle title: String) -> [String] {
         let titleKey = normalizedTitleKey(title)
         guard !titleKey.isEmpty else { return paragraphs(fromPlainText: text) }
@@ -424,6 +454,14 @@ enum ReaderHTMLUtilities {
             cleanedTag.removeSubrange(range)
         }
 
+        // Honor the click-config `style:"text"` directive: render the bubble inline at text size
+        // (a small icon at the line end) instead of the SVG's intrinsic 180×144. We carry it as a
+        // marker attribute the renderer reads — the suffix itself must be stripped so SwiftSoup's
+        // `src` parsing doesn't choke on its inner quotes.
+        if legadoClickStyle(fromConfigSuffix: suffix)?.lowercased() == "text" {
+            cleanedTag = markImageAsTextSized(cleanedTag)
+        }
+
         guard let action = legadoClickAction(fromConfigSuffix: suffix),
               let target = reviewTarget(forLegadoAction: action, context: reviewContext),
               let href = reviewHref(count: "", url: target.url, title: target.title)
@@ -432,6 +470,29 @@ enum ReaderHTMLUtilities {
         }
 
         return "<a href=\"\(href)\" class=\"yd-review-image\">\(cleanedTag)</a>"
+    }
+
+    /// Extracts the `style` field from a Legado `,{json}` click-config suffix (e.g. "text" / "FULL").
+    private static func legadoClickStyle(fromConfigSuffix suffix: String) -> String? {
+        var json = suffix.trimmingCharacters(in: .whitespacesAndNewlines)
+        if json.hasPrefix(",") { json.removeFirst() }
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let value = object["style"] as? String
+        else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Inserts a `data-yd-imgstyle="text"` marker as the first attribute of an `<img>` tag so the
+    /// renderer sizes it to the surrounding text height. Idempotent.
+    private static func markImageAsTextSized(_ tag: String) -> String {
+        guard tag.range(of: "data-yd-imgstyle", options: .caseInsensitive) == nil,
+              let r = tag.range(of: "<img", options: .caseInsensitive)
+        else { return tag }
+        var result = tag
+        result.replaceSubrange(r, with: "<img data-yd-imgstyle=\"text\"")
+        return result
     }
 
     private static func legadoClickConfigMatch(in text: String) -> NSTextCheckingResult? {

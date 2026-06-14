@@ -183,6 +183,7 @@ public struct RenderStyle: Sendable {
         paragraphSpacingAfter: CGFloat = 0,
         width: CGFloat? = nil,
         height: CGFloat? = nil,
+        isTextSizedImage: Bool = false,
         opacity: CGFloat = 1.0,
         borderTopWidth: CGFloat = 0,
         borderBottomWidth: CGFloat = 0,
@@ -227,6 +228,7 @@ public struct RenderStyle: Sendable {
         self.paragraphSpacingAfter = paragraphSpacingAfter
         self.width = width
         self.height = height
+        self.isTextSizedImage = isTextSizedImage
         self.opacity = opacity
         self.borderTopWidth = borderTopWidth
         self.borderBottomWidth = borderBottomWidth

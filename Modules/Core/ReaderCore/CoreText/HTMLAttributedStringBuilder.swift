@@ -2089,7 +2089,8 @@ final class HTMLAttributedStringBuilder {
         for key in [
             "id", "class", "style", "src", "href", "xlink:href", "width", "height",
             "alt", "alttext", "display", "data", "title", "aria-label", "poster", "type",
-            "controls", "colspan", "rowspan", "scope", "ssml:ph", "ssml:alphabet"
+            "controls", "colspan", "rowspan", "scope", "ssml:ph", "ssml:alphabet",
+            "data-yd-imgstyle"
         ] {
             let value = (try? element.attr(key)) ?? ""
             if !value.isEmpty {

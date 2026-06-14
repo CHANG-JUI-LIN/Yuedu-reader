@@ -1358,6 +1358,14 @@ struct NodeAttributedStringRenderer {
                 let ratio = explicitHeight / max(image.size.height, 1)
                 drawWidth = image.size.width * ratio
                 drawHeight = explicitHeight
+            } else if style.isTextSizedImage {
+                // Legado `style:"text"`: scale the image so its height matches the surrounding text
+                // line height — a small inline icon (段評 comment bubble) that sits at the line end,
+                // not a full-size illustration. Preserve aspect ratio from the rasterized bitmap.
+                let targetHeight = max(font.lineHeight, font.pointSize)
+                let ratio = targetHeight / max(image.size.height, 1)
+                drawWidth = image.size.width * ratio
+                drawHeight = targetHeight
             } else {
                 drawWidth = image.size.width
                 drawHeight = image.size.height

@@ -178,6 +178,11 @@ private extension HTMLAttributedStringBuilder.ElementNode {
         case "img", "image":
             let src = attributes["src"] ?? attributes["xlink:href"] ?? attributes["href"] ?? ""
             let alt = attributes["alt"] ?? ""
+            // Legado `style:"text"` click-config directive → render at the surrounding text size
+            // (small inline 段評 bubble), not the SVG's intrinsic 180×144.
+            if attributes["data-yd-imgstyle"]?.lowercased() == "text" {
+                style.isTextSizedImage = true
+            }
             node = .image(src: src, alt: alt, style: style)
 
         case "svg":
