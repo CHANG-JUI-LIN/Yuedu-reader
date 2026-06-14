@@ -152,7 +152,7 @@ struct ReaderSettingsView: View {
                 SegmentedPickerRow(
                     title: localized("頁面顯示"),
                     selection: $settings.readerSpreadMode,
-                    items: ReaderSpreadMode.allCases,
+                    items: ReaderSpreadMode.settingsCases,
                     titleProvider: { mode in
                         localized(spreadTitleKey(for: mode))
                     }
@@ -171,8 +171,8 @@ struct ReaderSettingsView: View {
     private func spreadTitleKey(for mode: ReaderSpreadMode) -> String {
         switch mode {
         case .singlePage: return "單頁"
-        case .auto: return "自動"
         case .doublePage: return "雙頁"
+        case .auto: return "單頁"
         }
     }
 

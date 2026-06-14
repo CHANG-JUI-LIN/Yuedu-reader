@@ -133,6 +133,86 @@ enum ReaderSpreadMode: String, CaseIterable, Codable, Equatable, Hashable {
     case singlePage
     case doublePage
     case auto
+
+    static let settingsCases: [ReaderSpreadMode] = [.singlePage, .doublePage]
+
+    var normalizedForUserSelection: ReaderSpreadMode {
+        self == .auto ? .singlePage : self
+    }
+}
+
+enum ReaderSpreadPolicy {
+    static let minimumDoublePageWindowWidth: CGFloat = 960
+
+    static func effectiveMode(
+        preferredMode: ReaderSpreadMode,
+        viewportSize: CGSize,
+        horizontalSizeClassIsRegular: Bool,
+        idiom: UIUserInterfaceIdiom,
+        isScrollMode: Bool,
+        fixedLayoutSpread: FixedLayoutSpread? = nil,
+        fixedLayoutOrientation: FixedLayoutOrientation? = nil
+    ) -> ReaderSpreadMode {
+        guard preferredMode.normalizedForUserSelection == .doublePage,
+              canUseDoublePageWindow(
+                viewportSize: viewportSize,
+                horizontalSizeClassIsRegular: horizontalSizeClassIsRegular,
+                idiom: idiom
+              ),
+              !isScrollMode
+        else {
+            return .singlePage
+        }
+
+        if let fixedLayoutSpread, let fixedLayoutOrientation {
+            guard fixedLayoutAllowsDoublePageSpread(
+                spread: fixedLayoutSpread,
+                orientation: fixedLayoutOrientation,
+                viewportSize: viewportSize
+            ) else {
+                return .singlePage
+            }
+        }
+
+        return .doublePage
+    }
+
+    static func canUseDoublePageWindow(
+        viewportSize: CGSize,
+        horizontalSizeClassIsRegular: Bool,
+        idiom: UIUserInterfaceIdiom
+    ) -> Bool {
+        idiom == .pad &&
+            horizontalSizeClassIsRegular &&
+            viewportSize.width > viewportSize.height &&
+            viewportSize.width >= minimumDoublePageWindowWidth
+    }
+
+    private static func fixedLayoutAllowsDoublePageSpread(
+        spread: FixedLayoutSpread,
+        orientation: FixedLayoutOrientation,
+        viewportSize: CGSize
+    ) -> Bool {
+        let isLandscape = viewportSize.width > viewportSize.height
+
+        switch orientation {
+        case .portrait:
+            return false
+        case .landscape:
+            guard isLandscape else { return false }
+        case .auto:
+            break
+        }
+
+        switch spread {
+        case .none:
+            return false
+        case .landscape, .auto, .both:
+            return isLandscape
+        case .portrait:
+            return false
+        }
+    }
 }
 
 struct ReaderAppearance: Equatable {

@@ -121,6 +121,7 @@ class JSCoreEngine {
                         bookSourceComment: "", loginUrl: "", header: "", loginCheckJs: ""
                     )
                     cacheBridge = LegadoCacheBridge(sourceId: "")
+                    bridge.requestTimeoutSeconds = 8
                     bridge.sourceHeaders = [:]
                     injectSourceObject(into: context)
                     context.setObject(cacheBridge, forKeyedSubscript: "cache" as NSString)
@@ -133,6 +134,7 @@ class JSCoreEngine {
                 injectSourceObject(into: context)
                 context.setObject(cacheBridge, forKeyedSubscript: "cache" as NSString)
                 bridge.sourceHeaders = parseHeaders(src.header)
+                bridge.requestTimeoutSeconds = Self.clampedRequestTimeoutSeconds(src.respondTime)
             }
         }
     }
@@ -156,6 +158,12 @@ class JSCoreEngine {
 
         jsQueue.setSpecific(key: jsQueueKey, value: ())
         configureContext(ctx)
+    }
+
+    private static func clampedRequestTimeoutSeconds(_ respondTimeMilliseconds: Int64) -> TimeInterval {
+        guard respondTimeMilliseconds > 0 else { return 8 }
+        let seconds = Double(respondTimeMilliseconds) / 1000.0
+        return min(30, max(8, seconds))
     }
 
     // MARK: - Public API

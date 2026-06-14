@@ -177,6 +177,10 @@ import UIKit
     /// Book source headers (for JS network requests to use correct User-Agent etc.)
     var sourceHeaders: [String: String] = [:]
 
+    /// Timeout for `java.ajax`/`java.connect` requests. Legado sources carry `respondTime`
+    /// in milliseconds; JSCoreEngine clamps it before assigning here.
+    var requestTimeoutSeconds: TimeInterval = 8
+
     /// AnalyzeUrl-based request handler. When set, `java.ajax()` routes URLs containing `,{json}`
     /// through AnalyzeUrl rather than treating the entire string as a simple URL.
     var analyzeUrlHandler: ((String) -> String?)?
@@ -849,7 +853,8 @@ import UIKit
         guard let url = URL(string: urlStr.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             return LegadoStrResponse(url: urlStr, body: "")
         }
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        let timeoutSeconds = max(15, requestTimeoutSeconds)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeoutSeconds)
         request.httpMethod = "POST"
         request.httpBody = body.data(using: .utf8)
         request.setValue(
@@ -871,7 +876,7 @@ import UIKit
             responseBody = Self.decodeData(data, response: response)
         }
         task.resume()
-        _ = semaphore.wait(timeout: .now() + 15)
+        _ = semaphore.wait(timeout: .now() + timeoutSeconds)
         return LegadoStrResponse(url: urlStr, body: responseBody)
     }
 
@@ -890,7 +895,7 @@ import UIKit
             guard let url = URL(string: urlStr.trimmingCharacters(in: .whitespacesAndNewlines)) else {
                 return ""
             }
-            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
+            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: requestTimeoutSeconds)
             sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
             return handler(request) ?? ""
         }
@@ -900,7 +905,7 @@ import UIKit
             return ""
         }
 
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: requestTimeoutSeconds)
         request.setValue(
             "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
             forHTTPHeaderField: "User-Agent"
@@ -912,7 +917,7 @@ import UIKit
 
         var responseBody = ""
         // Use a long timeout: if a CF handler is registered, the user may need to solve CAPTCHA.
-        let timeoutSeconds: Double = cloudflareChallengeHandler != nil ? 120 : 8
+        let timeoutSeconds: Double = cloudflareChallengeHandler != nil ? 120 : requestTimeoutSeconds
         let semaphore = DispatchSemaphore(value: 0)
 
         let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in

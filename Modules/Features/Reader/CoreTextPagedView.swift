@@ -93,6 +93,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         context.coordinator.currentEngine = engine
         context.coordinator.sessionCoordinator = sessionCoordinator
         context.coordinator.currentPlaybackHighlightText = playbackHighlightText
+        let spreadModeChanged = context.coordinator.isDoublePageSpread != isDoublePageSpread
+        context.coordinator.isDoublePageSpread = isDoublePageSpread
+        uiViewController.isDoubleSided = pageTurnStyle == .curl && !isDoublePageSpread
         context.coordinator.externalTargetPosition = externalTargetPosition
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: uiViewController)
         let clampedPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
@@ -102,6 +105,14 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return context.coordinator.displayViewController(for: externalTargetPosition)
             }
             return context.coordinator.displayViewController(at: clampedPage)
+        }
+        if spreadModeChanged {
+            let targetVC = targetViewController()
+            context.coordinator.applyPlaybackHighlight(to: targetVC)
+            uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: .forward, animated: false)
+            uiViewController.view.layoutIfNeeded()
+            _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
+            return
         }
         if context.coordinator.currentTheme != theme {
             context.coordinator.currentTheme = theme
@@ -240,7 +251,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
         let onTapZone: (String) -> Void
         let isRTL: Bool
-        let isDoublePageSpread: Bool
+        var isDoublePageSpread: Bool
         let spreadGutter: CGFloat
         let clearExternalTargetPosition: () -> Void
         var externalTargetPosition: CoreTextReadingPosition? {

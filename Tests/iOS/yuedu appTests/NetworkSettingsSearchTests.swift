@@ -97,6 +97,20 @@ struct NetworkSettingsSearchTests {
         ) == 3)
     }
 
+    @Test("runtime template search sources get aggregate timeout budget")
+    func runtimeTemplateSearchSourcesGetAggregateTimeoutBudget() {
+        var runtimeSource = makeSource(name: "Runtime", url: "https://example.com/source")
+        runtimeSource.jsLib = "const CONFIG = { api: { baseUrl: 'https://api.example.com' } };"
+        runtimeSource.searchUrl = "{{CONFIG.api.baseUrl}}/search.php?keyword={{key}}&page={{page}}"
+
+        var fastSource = makeSource(name: "Fast", url: "https://example.com/fast")
+        fastSource.jsLib = "function noop() { return ''; }"
+        fastSource.searchUrl = "https://example.com/search?q={{key}}&page={{page}}"
+
+        #expect(SearchAggregator.searchTimeout(for: runtimeSource, normal: 12, aggregate: 30) == 30)
+        #expect(SearchAggregator.searchTimeout(for: fastSource, normal: 12, aggregate: 30) == 12)
+    }
+
     @MainActor
     @Test("change source search auto pauses after configured exact result count")
     func changeSourceAutoPauses() async throws {

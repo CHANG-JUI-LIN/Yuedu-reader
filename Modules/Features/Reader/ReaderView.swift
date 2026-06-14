@@ -163,53 +163,16 @@ struct ReaderView: View {
         readerConfig.pageMarginH + extraReaderHorizontalInset
     }
 
-    private var isLandscapeViewport: Bool {
-        readerViewportSize.width > readerViewportSize.height
-    }
-
     private var effectiveReaderSpreadMode: ReaderSpreadMode {
-        guard usesReadableReaderWidth,
-              !effectiveScrollMode
-        else {
-            return .singlePage
-        }
-
-        if usesFixedLayoutRenderer {
-            guard fixedLayoutAllowsDoublePageSpread else { return .singlePage }
-        } else {
-            guard isLandscapeViewport else { return .singlePage }
-        }
-
-        switch settings.readerSpreadMode {
-        case .singlePage:
-            return .singlePage
-        case .auto, .doublePage:
-            return .doublePage
-        }
-    }
-
-    private var fixedLayoutAllowsDoublePageSpread: Bool {
-        switch epubRenderer.fixedLayoutOrientation {
-        case .portrait:
-            guard !isLandscapeViewport else { return false }
-        case .landscape:
-            guard isLandscapeViewport else { return false }
-        case .auto:
-            break
-        }
-
-        switch epubRenderer.fixedLayoutSpread {
-        case .none:
-            return false
-        case .landscape:
-            return isLandscapeViewport
-        case .portrait:
-            return !isLandscapeViewport && UIDevice.current.userInterfaceIdiom == .pad
-        case .both:
-            return true
-        case .auto:
-            return isLandscapeViewport || UIDevice.current.userInterfaceIdiom == .pad
-        }
+        ReaderSpreadPolicy.effectiveMode(
+            preferredMode: settings.readerSpreadMode,
+            viewportSize: readerViewportSize,
+            horizontalSizeClassIsRegular: horizontalSizeClass == .regular,
+            idiom: UIDevice.current.userInterfaceIdiom,
+            isScrollMode: effectiveScrollMode,
+            fixedLayoutSpread: usesFixedLayoutRenderer ? epubRenderer.fixedLayoutSpread : nil,
+            fixedLayoutOrientation: usesFixedLayoutRenderer ? epubRenderer.fixedLayoutOrientation : nil
+        )
     }
 
     private var isDoublePageSpreadActive: Bool {
@@ -246,7 +209,13 @@ struct ReaderView: View {
     }
 
     private var readerPageViewIdentity: String {
-        "\(effectivePageTurnStyle.rawValue)-\(effectiveReaderSpreadMode.rawValue)"
+        // Include the render size so a device rotation that keeps the same spread mode (e.g.
+        // single-page portrait↔landscape) still recreates the paged view. Otherwise the existing
+        // page views are reused with their old `layout.renderSize`, and CoreTextPageView scales the
+        // stale CTFrame to the new bounds → text renders narrow. (Double-page rotation already
+        // recreates because the spread mode toggles, which is why it never showed this bug.)
+        let size = currentReaderRenderSize
+        return "\(effectivePageTurnStyle.rawValue)-\(effectiveReaderSpreadMode.rawValue)-\(Int(size.width))x\(Int(size.height))"
     }
 
     private var currentReaderRenderSize: CGSize {
@@ -478,6 +447,30 @@ struct ReaderView: View {
             appearance: ReaderAppearance(settings: buildRenderSettings(), theme: readerTheme),
             pagingStyle: ReaderPagingStyle(pageTurnStyle: settings.pageTurnStyle)
         )
+    }
+
+    /// Recomputes the reader viewport from the foreground window on a device rotation and drives the
+    /// normal relayout path. Needed because SwiftUI doesn't re-evaluate the reader's geometry on
+    /// rotation, so the `.background` GeometryReader preference never fires. The window's two
+    /// dimensions are stable; only their order changes with orientation, and `interfaceOrientation`
+    /// is already correct when this notification fires — so we order them by it (the raw
+    /// `window.bounds` may still report the pre-rotation order at this instant).
+    private func applyRotatedViewportIfNeeded() {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first,
+              let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first
+        else { return }
+        let bounds = window.bounds.size
+        let longSide = max(bounds.width, bounds.height)
+        let shortSide = min(bounds.width, bounds.height)
+        guard longSide > 1 else { return }
+        let size = scene.interfaceOrientation.isLandscape
+            ? CGSize(width: longSide, height: shortSide)
+            : CGSize(width: shortSide, height: longSide)
+        guard abs(size.width - readerViewportSize.width) > 0.5
+            || abs(size.height - readerViewportSize.height) > 0.5
+        else { return }
+        handleReaderViewportSizeChange(size)
     }
 
     private func handleReaderViewportSizeChange(_ newSize: CGSize) {
@@ -1101,11 +1094,21 @@ struct ReaderView: View {
         .onPreferenceChange(ReaderViewportSizeKey.self) { newSize in
             handleReaderViewportSizeChange(newSize)
         }
+        // iPad rotation fix: SwiftUI does NOT re-evaluate the reader's geometry on rotation, so the
+        // `.background` GeometryReader / `onPreferenceChange` above never fires and the spread mode
+        // stays frozen (single/double only switches on a fresh reader entry). The device-orientation
+        // notification DOES fire reliably; derive the settled viewport from the window's two
+        // dimensions ordered by the (already-updated) interface orientation, and drive the same
+        // relayout path the in-app single/double toggle uses.
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            applyRotatedViewportIfNeeded()
+        }
         .animation(.easeInOut(duration: 0.25), value: chapters.isEmpty)
         .statusBarHidden(!showBars)
         .animation(.easeInOut(duration: 0.25), value: showBars)
         .modifier(HideTabBarModifier())
         .onAppear {
+            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             readerViewModel.configure(chapterFetcher: dependencies.chapterFetcher)
             ReaderTelemetry.shared.log(
                 "reader_load_start",

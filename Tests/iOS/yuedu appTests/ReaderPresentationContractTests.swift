@@ -123,6 +123,69 @@ struct ReaderPresentationContractTests {
         #expect(ReaderOrientationController.mask(for: .landscape) == .landscape)
     }
 
+    @Test("spread policy only allows double page in wide iPad landscape windows")
+    func spreadPolicyOnlyAllowsDoublePageInWideIPadLandscapeWindows() {
+        let fullLandscape = CGSize(width: 1024, height: 768)
+        let portrait = CGSize(width: 768, height: 1024)
+        let smallLandscapeWindow = CGSize(width: 900, height: 700)
+
+        #expect(ReaderSpreadPolicy.effectiveMode(
+            preferredMode: .doublePage,
+            viewportSize: fullLandscape,
+            horizontalSizeClassIsRegular: true,
+            idiom: .pad,
+            isScrollMode: false
+        ) == .doublePage)
+
+        #expect(ReaderSpreadPolicy.effectiveMode(
+            preferredMode: .singlePage,
+            viewportSize: fullLandscape,
+            horizontalSizeClassIsRegular: true,
+            idiom: .pad,
+            isScrollMode: false
+        ) == .singlePage)
+
+        #expect(ReaderSpreadPolicy.effectiveMode(
+            preferredMode: .doublePage,
+            viewportSize: portrait,
+            horizontalSizeClassIsRegular: true,
+            idiom: .pad,
+            isScrollMode: false
+        ) == .singlePage)
+
+        #expect(ReaderSpreadPolicy.effectiveMode(
+            preferredMode: .doublePage,
+            viewportSize: smallLandscapeWindow,
+            horizontalSizeClassIsRegular: true,
+            idiom: .pad,
+            isScrollMode: false
+        ) == .singlePage)
+
+        #expect(ReaderSpreadPolicy.effectiveMode(
+            preferredMode: .doublePage,
+            viewportSize: fullLandscape,
+            horizontalSizeClassIsRegular: false,
+            idiom: .pad,
+            isScrollMode: false
+        ) == .singlePage)
+
+        #expect(ReaderSpreadPolicy.effectiveMode(
+            preferredMode: .auto,
+            viewportSize: fullLandscape,
+            horizontalSizeClassIsRegular: true,
+            idiom: .pad,
+            isScrollMode: false
+        ) == .singlePage)
+
+        #expect(ReaderSpreadPolicy.effectiveMode(
+            preferredMode: .doublePage,
+            viewportSize: fullLandscape,
+            horizontalSizeClassIsRegular: true,
+            idiom: .phone,
+            isScrollMode: false
+        ) == .singlePage)
+    }
+
     @Test("curl virtual indices mirror when RTL uses a right-hand spine")
     func curlVirtualIndicesMirrorForRTLSpine() {
         #expect(ReaderCurlVirtualIndex.frontIndex(forGlobalPage: 3, isRTL: false) == 6)

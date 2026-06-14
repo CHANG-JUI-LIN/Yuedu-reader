@@ -260,13 +260,12 @@ class SearchAggregator: ObservableObject {
     /// search would look broken even when the cloud is aggregating correctly.
     private let perAggregateSourceTimeout: UInt64 = 30
 
-    /// JS-built searchUrls (aggregators + some API sources) get the longer budget;
+    /// JS-runtime searchUrls (aggregators + jsLib-backed API sources) get the longer budget;
     /// plain `{{key}}`-template sources stay fail-fast.
-    nonisolated private static func searchTimeout(
+    nonisolated static func searchTimeout(
         for source: BookSource, normal: UInt64, aggregate: UInt64
     ) -> UInt64 {
-        let s = source.searchUrl.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return (s.hasPrefix("<js>") || s.hasPrefix("@js:")) ? aggregate : normal
+        source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) ? aggregate : normal
     }
 
     /// Current search task (used for cancellation)

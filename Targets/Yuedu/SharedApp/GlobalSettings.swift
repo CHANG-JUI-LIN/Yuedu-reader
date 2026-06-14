@@ -439,7 +439,11 @@ class GlobalSettings: ObservableObject {
         let rawPageTurn = UserDefaults.standard.string(forKey: "yd_page_turn_style") ?? ""
         pageTurnStyle = PageTurnStyle(rawValue: rawPageTurn) ?? .slide
         let rawSpreadMode = UserDefaults.standard.string(forKey: "yd_reader_spread_mode") ?? ""
-        readerSpreadMode = ReaderSpreadMode(rawValue: rawSpreadMode) ?? .auto
+        let loadedSpreadMode = (ReaderSpreadMode(rawValue: rawSpreadMode) ?? .singlePage).normalizedForUserSelection
+        readerSpreadMode = loadedSpreadMode
+        if rawSpreadMode != loadedSpreadMode.rawValue {
+            UserDefaults.standard.set(loadedSpreadMode.rawValue, forKey: "yd_reader_spread_mode")
+        }
         let rawWritingMode = UserDefaults.standard.string(forKey: "yd_reader_writing_mode") ?? ""
         readerWritingMode = ReaderWritingMode(rawValue: rawWritingMode) ?? .horizontal
         selectedReaderFontPostScript = UserDefaults.standard.string(forKey: "yd_reader_font_postscript")
