@@ -582,12 +582,10 @@ class ModernParserBridge {
             ruleUrl: source.searchUrl, key: keyword, page: page
         )
         // #region agent log
-        #if DEBUG
         if source.bookSourceName.contains("企点") {
-            print("[企點診斷] searchBooks fetch URL → \(finalUrl)")
-            print("[企點診斷] searchBooks response body(前200字) → \(String(body.prefix(200)))")
+            NSLog("[企點診斷] searchBooks fetch URL → %@", finalUrl)
+            NSLog("[企點診斷] searchBooks response(前200字) → %@", String(body.prefix(200)))
         }
-        #endif
         _dbgLog("聚合/JS 搜尋", data: [
             "source": source.bookSourceName,
             "变量": String(
@@ -1047,6 +1045,13 @@ class ModernParserBridge {
 
         guard var request = analyzeUrl.toURLRequest() else {
             throw ModernParserBridgeError.invalidURL(ruleUrl)
+        }
+
+        if sourceRuleData.source.bookSourceName.contains("企点") {
+            NSLog("[企點診斷] fetch 請求 URL → %@", request.url?.absoluteString ?? "nil")
+            NSLog("[企點診斷] fetch 請求 method → %@ body → %@",
+                  request.httpMethod ?? "GET",
+                  request.httpBody.flatMap { String(data: $0, encoding: .utf8) } ?? "nil")
         }
 
         // Apply source-level headers (don't overwrite per-request ones)
