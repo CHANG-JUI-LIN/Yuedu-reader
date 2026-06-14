@@ -55,18 +55,16 @@ final class CookieStore {
 
     /// Stores `cookie` for the host of `url`.
     /// Writes to both `HTTPCookieStorage` and the persistent file.
+    /// Always splits by `;` (Cookie-header style) rather than relying on
+    /// `HTTPCookie.cookies(withResponseHeaderFields:)` which treats `;` as
+    /// attribute separator (Set-Cookie style) and drops non-standard pairs
+    /// such as the `dttoken` in `"key=xxx; dttoken=yyy"`.
     func set(url: String, cookie: String) {
         guard !cookie.isEmpty, let cookieURL = URL(string: url) else { return }
 
-        // Write to HTTPCookieStorage
-        let parsed = HTTPCookie.cookies(
-            withResponseHeaderFields: ["Set-Cookie": cookie], for: cookieURL)
-        if parsed.isEmpty {
-            makeCookies(cookie, for: cookieURL).forEach {
-                HTTPCookieStorage.shared.setCookie($0)
-            }
-        } else {
-            parsed.forEach { HTTPCookieStorage.shared.setCookie($0) }
+        // Write to HTTPCookieStorage — always use makeCookies which splits by ;
+        makeCookies(cookie, for: cookieURL).forEach {
+            HTTPCookieStorage.shared.setCookie($0)
         }
 
         // Persist: merge with existing value for this domain
@@ -159,15 +157,22 @@ final class CookieStore {
     }
 
     /// Parse a `name=value; name2=value2` string into HTTPCookie objects.
+    /// Skips standard Set-Cookie attribute names (Domain, Path, Expires, etc.)
+    /// so they are never treated as cookies.
     private func makeCookies(_ raw: String, for url: URL) -> [HTTPCookie] {
         guard let host = url.host else { return [] }
+        let knownAttributes: Set<String> = [
+            "domain", "path", "expires", "max-age", "secure", "httponly", "samesite"
+        ]
         return raw.components(separatedBy: ";").compactMap { segment in
             let trimmed = segment.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { return nil }
             let parts = trimmed.split(separator: "=", maxSplits: 1).map(String.init)
             guard parts.count == 2, !parts[0].isEmpty else { return nil }
+            let name = parts[0].trimmingCharacters(in: .whitespaces)
+            guard !knownAttributes.contains(name.lowercased()) else { return nil }
             return HTTPCookie(properties: [
-                .name: parts[0].trimmingCharacters(in: .whitespaces),
+                .name: name,
                 .value: parts[1].trimmingCharacters(in: .whitespaces),
                 .domain: host,
                 .path: "/"
