@@ -235,46 +235,65 @@ extension BookSource {
         return output
     }
 
-    /// Evaluate a single template expression using JSContext
+    /// Evaluate a single template expression using a persistent, per-source JSContext
+    /// that has the source's jsLib pre-evaluated so that `{{qt}}`, `{{ho}}` etc. resolve.
+    private static var templateContextCache: [String: JSContext] = [:]
+    private static let templateContextLock = NSLock()
+
     private static func evaluateTemplateExpression(_ expression: String, source: BookSource) -> String {
-        let context = JSContext()
-        context?.exceptionHandler = { _, _ in }
+        let cacheKey = source.bookSourceUrl
 
-        // Provide source object (Legado compatible)
-        let sourceObj: [String: Any] = [
-            "bookSourceUrl": source.bookSourceUrl,
-            "bookSourceName": source.bookSourceName,
-            "bookSourceGroup": source.bookSourceGroup,
-            "loginUrl": source.loginUrl,
-            "header": source.header,
-        ]
-        context?.setObject(sourceObj, forKeyedSubscript: "source" as NSString)
+        templateContextLock.lock()
+        let context: JSContext
+        if let cached = templateContextCache[cacheKey] {
+            context = cached
+        } else {
+            context = JSContext()
+            context.exceptionHandler = { _, _ in }
+            templateContextCache[cacheKey] = context
 
-        // Provide source.getKey() method
-        let getKeyBlock: @convention(block) () -> String = { source.bookSourceUrl }
-        context?.objectForKeyedSubscript("source")?.setObject(getKeyBlock, forKeyedSubscript: "getKey" as NSString)
+            // Provide source object (Legado compatible)
+            let sourceObj: [String: Any] = [
+                "bookSourceUrl": source.bookSourceUrl,
+                "bookSourceName": source.bookSourceName,
+                "bookSourceGroup": source.bookSourceGroup,
+                "loginUrl": source.loginUrl,
+                "header": source.header,
+            ]
+            context.setObject(sourceObj, forKeyedSubscript: "source" as NSString)
 
-        // Provide cookie bridge (cookie.removeCookie, etc. common Legado operations)
-        let cookieObj: [String: Any] = [:]
-        context?.setObject(cookieObj, forKeyedSubscript: "cookie" as NSString)
-        let removeCookieBlock: @convention(block) (String) -> String = { _ in "" }
-        context?.objectForKeyedSubscript("cookie")?.setObject(removeCookieBlock, forKeyedSubscript: "removeCookie" as NSString)
-        let getCookieBlock: @convention(block) (String) -> String = { _ in "" }
-        context?.objectForKeyedSubscript("cookie")?.setObject(getCookieBlock, forKeyedSubscript: "getCookie" as NSString)
+            // Provide source.getKey() method
+            let getKeyBlock: @convention(block) () -> String = { source.bookSourceUrl }
+            context.objectForKeyedSubscript("source")?.setObject(getKeyBlock, forKeyedSubscript: "getKey" as NSString)
 
-        // Provide java bridge (basic chainable calls, returns empty string)
-        let javaConnectBlock: @convention(block) (String) -> JSValue? = { _ in
-            guard let chainObj = JSValue(newObjectIn: context) else { return nil }
-            let rawBlock: @convention(block) () -> JSValue? = { [weak chainObj] in chainObj }
-            chainObj.setObject(rawBlock, forKeyedSubscript: "raw" as NSString)
-            let requestBlock: @convention(block) () -> JSValue? = { [weak chainObj] in chainObj }
-            chainObj.setObject(requestBlock, forKeyedSubscript: "request" as NSString)
-            let urlBlock: @convention(block) () -> String = { source.bookSourceUrl }
-            chainObj.setObject(urlBlock, forKeyedSubscript: "url" as NSString)
-            return chainObj
+            // Provide cookie bridge (cookie.removeCookie, etc. common Legado operations)
+            let cookieObj: [String: Any] = [:]
+            context.setObject(cookieObj, forKeyedSubscript: "cookie" as NSString)
+            let removeCookieBlock: @convention(block) (String) -> String = { _ in "" }
+            context.objectForKeyedSubscript("cookie")?.setObject(removeCookieBlock, forKeyedSubscript: "removeCookie" as NSString)
+            let getCookieBlock: @convention(block) (String) -> String = { _ in "" }
+            context.objectForKeyedSubscript("cookie")?.setObject(getCookieBlock, forKeyedSubscript: "getCookie" as NSString)
+
+            // Provide java bridge (basic chainable calls, returns empty string)
+            let javaConnectBlock: @convention(block) (String) -> JSValue? = { _ in
+                guard let chainObj = JSValue(newObjectIn: context) else { return nil }
+                let rawBlock: @convention(block) () -> JSValue? = { [weak chainObj] in chainObj }
+                chainObj.setObject(rawBlock, forKeyedSubscript: "raw" as NSString)
+                let requestBlock: @convention(block) () -> JSValue? = { [weak chainObj] in chainObj }
+                chainObj.setObject(requestBlock, forKeyedSubscript: "request" as NSString)
+                let urlBlock: @convention(block) () -> String = { source.bookSourceUrl }
+                chainObj.setObject(urlBlock, forKeyedSubscript: "url" as NSString)
+                return chainObj
+            }
+            context.setObject(javaConnectBlock, forKeyedSubscript: "java" as NSString)
+            context.objectForKeyedSubscript("java")?.setObject(javaConnectBlock, forKeyedSubscript: "connect" as NSString)
+
+            // Evaluate jsLib so {{qt}}, {{ho}} and jsLib functions are available
+            if !source.jsLib.isEmpty {
+                context.evaluateScript(source.jsLib)
+            }
         }
-        context?.setObject(javaConnectBlock, forKeyedSubscript: "java" as NSString)
-        context?.objectForKeyedSubscript("java")?.setObject(javaConnectBlock, forKeyedSubscript: "connect" as NSString)
+        templateContextLock.unlock()
 
         // Attempt evaluation
         let candidates = [
@@ -282,8 +301,8 @@ extension BookSource {
             "(function(){ return (\(expression)); })()",
         ]
         for candidate in candidates {
-            context?.exception = nil
-            if let value = context?.evaluateScript(candidate), !value.isUndefined, !value.isNull {
+            context.exception = nil
+            if let value = context.evaluateScript(candidate), !value.isUndefined, !value.isNull {
                 let result = value.toString() ?? ""
                 if result != "undefined" && result != "null" {
                     return result
