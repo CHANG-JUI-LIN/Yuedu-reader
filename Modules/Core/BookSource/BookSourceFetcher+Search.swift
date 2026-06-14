@@ -4,6 +4,11 @@ import Foundation
 
 extension BookSourceFetcher {
 
+    struct SearchStreamingOutcome {
+        let books: [OnlineBook]
+        let streamed: Bool
+    }
+
     func search(query: String, in source: BookSource) async throws -> [OnlineBook] {
         guard !source.searchUrl.isEmpty else { throw FetchError.noSearchURL }
         let cacheDays = GlobalSettings.shared.searchCacheDays
@@ -18,7 +23,7 @@ extension BookSourceFetcher {
         if source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) {
             let books = try await ModernParserBridge(source: source)
                 .searchBooks(keyword: query, page: 1)
-            let filtered = filterSearchResultsByCheckKeyWord(
+            let filtered = Self.filterSearchResultsByCheckKeyWord(
                 books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
             SearchResultCache.shared.store(
                 books: filtered,
@@ -77,7 +82,7 @@ extension BookSourceFetcher {
         } catch {
             return []
         }
-        let filtered = filterSearchResultsByCheckKeyWord(
+        let filtered = Self.filterSearchResultsByCheckKeyWord(
             books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
         SearchResultCache.shared.store(
             books: filtered,
@@ -88,8 +93,48 @@ extension BookSourceFetcher {
         return filtered
     }
 
+    func searchStreaming(
+        query: String,
+        in source: BookSource,
+        onBatch: @escaping @Sendable ([OnlineBook]) async -> Void
+    ) async throws -> SearchStreamingOutcome {
+        guard !source.searchUrl.isEmpty else { throw FetchError.noSearchURL }
+        let cacheDays = GlobalSettings.shared.searchCacheDays
+        if let cached = SearchResultCache.shared.freshBooks(
+            query: query,
+            source: source,
+            days: cacheDays
+        ) {
+            return SearchStreamingOutcome(books: cached, streamed: false)
+        }
+
+        if source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) {
+            let outcome = try await ModernParserBridge(source: source)
+                .searchBooksStreaming(keyword: query, page: 1) { books in
+                    let filtered = Self.filterSearchResultsByCheckKeyWord(
+                        books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
+                    guard !filtered.isEmpty else { return }
+                    await onBatch(filtered)
+                }
+            let filtered = Self.filterSearchResultsByCheckKeyWord(
+                outcome.books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
+            SearchResultCache.shared.store(
+                books: filtered,
+                query: query,
+                source: source,
+                days: cacheDays
+            )
+            return SearchStreamingOutcome(books: filtered, streamed: outcome.streamed)
+        }
+
+        return SearchStreamingOutcome(
+            books: try await search(query: query, in: source),
+            streamed: false
+        )
+    }
+
     /// Legado compatible: filter search results by checkKeyWord (keep only items matching keyword in title/author)
-    private func filterSearchResultsByCheckKeyWord(
+    private static func filterSearchResultsByCheckKeyWord(
         _ books: [OnlineBook], query: String, checkKeyWord: String
     ) -> [OnlineBook] {
         guard !checkKeyWord.isEmpty, !query.isEmpty else { return books }

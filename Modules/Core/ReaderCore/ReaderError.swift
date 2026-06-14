@@ -55,6 +55,8 @@ enum ReaderError: LocalizedError {
             switch fetchErr {
             case .httpError, .cloudflareChallengeRequired, .invalidURL, .noSearchURL, .encodingError, .emptyContent:
                 return .network(underlying: fetchErr)
+            case .volumeSeparator:
+                return .rendering(underlying: fetchErr)
             }
         }
         if error is ModernRuleEngineError {

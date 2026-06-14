@@ -1952,7 +1952,11 @@ final class CoreTextPaginator {
     ) -> CGRect {
         let contentWidth = max(1, availableRect.width - blockImage.paddingLeft - blockImage.paddingRight)
         let drawWidth = min(blockImage.drawSize.width, contentWidth)
-        let drawHeight = blockImage.drawSize.height
+        // When the image is wider than the content column it gets clamped to `contentWidth`;
+        // scale the height by the SAME factor so the aspect ratio is preserved (otherwise a
+        // wide banner sized for the full screen width gets squished vertically in the column).
+        let widthScale = blockImage.drawSize.width > 0 ? drawWidth / blockImage.drawSize.width : 1
+        let drawHeight = blockImage.drawSize.height * widthScale
         let imgX: CGFloat
         if isVertical {
             imgX = availableRect.minX + max(0, (availableRect.width - drawWidth) / 2)

@@ -36,10 +36,13 @@ struct LoginField {
     let name: String
     let type: LoginFieldType
     let action: String?
+    let options: [String]
+    let defaultValue: String?
 
     enum LoginFieldType: String {
         case text     = "text"
         case password = "password"
+        case select   = "select"
         case button   = "button"
     }
 }
@@ -356,7 +359,31 @@ final class LoginManager {
             let typeStr = dict["type"] as? String ?? "text"
             let type = LoginField.LoginFieldType(rawValue: typeStr) ?? .text
             let action = dict["action"] as? String
-            return LoginField(name: name, type: type, action: action)
+            return LoginField(
+                name: name,
+                type: type,
+                action: action,
+                options: Self.stringArray(dict["chars"]),
+                defaultValue: Self.stringValue(dict["default"])
+            )
+        }
+    }
+
+    private static func stringArray(_ value: Any?) -> [String] {
+        guard let array = value as? [Any] else { return [] }
+        return array.compactMap(stringValue)
+    }
+
+    private static func stringValue(_ value: Any?) -> String? {
+        switch value {
+        case let string as String:
+            return string
+        case let number as NSNumber:
+            return number.stringValue
+        case let value?:
+            return String(describing: value)
+        case nil:
+            return nil
         }
     }
 

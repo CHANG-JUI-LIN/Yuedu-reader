@@ -866,6 +866,14 @@ final class ModernRuleEngine {
     }
 
     private static func detectJSON(_ content: Any?) -> Bool {
+        // Already-parsed JSON (a dictionary/array) IS JSON. This matters when an upstream
+        // step set the content to a parsed object — e.g. ruleBookInfo.init runs
+        // `<js>…</js>$.Data` and parseBookInfo stores the result as `[String: Any]`. Without
+        // this, isJSON would be false and field rules WITHOUT an explicit `$.` prefix
+        // (e.g. 起点's tocUrl step `.BaseBookInfo.BookId`, name `BaseBookInfo.BookName`)
+        // would fall back to .default (CSS) mode and resolve empty → empty tocUrl → empty TOC.
+        if content is [String: Any] || content is [Any] { return true }
+        if content is NSDictionary || content is NSArray { return true }
         guard let str = content as? String else { return false }
         let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.hasPrefix("{") || trimmed.hasPrefix("[")

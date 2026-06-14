@@ -130,6 +130,10 @@ public struct RenderStyle: Sendable {
     /// Explicit width/height (common for images / card blocks)
     public var width: CGFloat?
     public var height: CGFloat?
+    /// Legado `style:"text"` image directive — render this image inline at the surrounding text's
+    /// line height (a small character-sized icon, e.g. 段評 comment bubbles), regardless of the
+    /// image's intrinsic size. Set from the click-config suffix; never from CSS.
+    public var isTextSizedImage: Bool
     /// Opacity (common for images / decoration)
     public var opacity: CGFloat
     public var borderTopWidth: CGFloat

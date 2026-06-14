@@ -647,6 +647,10 @@ struct ReaderRenderSettings: Equatable {
     let footerHeight: CGFloat
     let contentInsets: UIEdgeInsets
     var writingMode: ReaderWritingMode = .horizontal
+    /// PostScript name of the user-selected reader font (nil = system font).
+    /// Not consumed by the layout engine directly (it reads `UserReaderFontResolver`),
+    /// but included here so the relayout dedup check detects font changes.
+    var fontPostScriptName: String? = nil
 }
 
 enum ReaderWritingMode: String, CaseIterable, Codable {

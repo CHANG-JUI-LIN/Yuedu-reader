@@ -143,6 +143,10 @@ actor ChapterFetchManager {
             return false
         }
 
+        if refs[chapterIndex].shouldRenderAsVolumeSeparator {
+            return true
+        }
+
         let sanitizedURL = RuleEngine.sanitizeExtractedURL(refs[chapterIndex].url)
         var shouldClearCachedChapter = false
 
@@ -203,7 +207,25 @@ actor ChapterFetchManager {
         }
 
         // Clean up HTML fragment URLs that may remain from old caches (e.g. <a href="...">Chapter 1</a>)
-        let sanitizedURL = RuleEngine.sanitizeExtractedURL(refs[chapterIndex].url)
+        var ref = refs[chapterIndex]
+        let sanitizedURL = RuleEngine.sanitizeExtractedURL(ref.url)
+        ref.url = sanitizedURL
+
+        if ref.hasVolumeSeparatorTitle || ref.isVolume {
+            AppLogger.parse("⟐ chapterFetch gate", context: [
+                "index": chapterIndex,
+                "title": ref.title,
+                "isVolume": ref.isVolume,
+                "volumeTitle": ref.hasVolumeSeparatorTitle,
+                "shouldSkip": ref.shouldRenderAsVolumeSeparator,
+                "urlLen": sanitizedURL.count,
+                "urlHead": String(sanitizedURL.prefix(120))
+            ])
+        }
+        if ref.shouldRenderAsVolumeSeparator {
+            states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
+            throw FetchError.volumeSeparator(ref.title)
+        }
 
         var shouldClearCachedChapter = false
 
@@ -211,7 +233,7 @@ actor ChapterFetchManager {
             bookId: book.id,
             chapterIndex: chapterIndex,
             expectedSourceURL: sanitizedURL,
-            expectedTOCTitle: refs[chapterIndex].title
+            expectedTOCTitle: ref.title
         ), isReusableCachedPackage(cached, for: book)
         {
             states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
@@ -220,7 +242,7 @@ actor ChapterFetchManager {
             bookId: book.id,
             chapterIndex: chapterIndex,
             expectedSourceURL: sanitizedURL,
-            expectedTOCTitle: refs[chapterIndex].title
+            expectedTOCTitle: ref.title
         ) != nil {
             shouldClearCachedChapter = true
         }
@@ -230,7 +252,7 @@ actor ChapterFetchManager {
             bookId: book.id,
             chapterIndex: chapterIndex,
             expectedSourceURL: refs[chapterIndex].url,
-            expectedTOCTitle: refs[chapterIndex].title
+            expectedTOCTitle: ref.title
         ), isReusableCachedPackage(cached, for: book)
         {
             states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
@@ -240,7 +262,7 @@ actor ChapterFetchManager {
                     bookId: book.id,
                     chapterIndex: chapterIndex,
                     expectedSourceURL: refs[chapterIndex].url,
-                    expectedTOCTitle: refs[chapterIndex].title
+                    expectedTOCTitle: ref.title
                   ) != nil {
             shouldClearCachedChapter = true
         }
@@ -288,9 +310,6 @@ actor ChapterFetchManager {
         }
 
         states[taskKey] = .loading
-        var ref = refs[chapterIndex]
-        // Write the cleaned URL back to the ref so all downstream code uses it
-        ref.url = sanitizedURL
         if let bookRuntime = book.runtimeVariables, !bookRuntime.isEmpty {
             var mergedRuntime = bookRuntime
             if let chapterRuntime = ref.runtimeVariables {

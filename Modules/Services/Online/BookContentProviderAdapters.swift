@@ -126,7 +126,11 @@ struct OnlineHTMLContentProviderAdapter: BookContentProvider {
         }
 
         let ref = refs[index]
-        let sanitizedURL = RuleEngine.sanitizeExtractedURL(ref.url)
+        if ref.shouldRenderAsVolumeSeparator {
+            return volumeSeparatorPayload(for: ref, index: index)
+        }
+
+        let sanitizedURL = ref.sanitizedContentURL
 
         if let cached = BookSourceFetcher.shared.loadChapterPackageSync(
             bookId: book.id,
@@ -180,6 +184,40 @@ struct OnlineHTMLContentProviderAdapter: BookContentProvider {
         )
     }
 
+    private func volumeSeparatorPayload(
+        for ref: OnlineChapterRef,
+        index: Int
+    ) -> ChapterContentPayload {
+        let title = ReaderHTMLUtilities.displayText(fromHTMLFragment: ref.title)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayTitle = title.isEmpty ? localized("作品相關") : title
+        let escapedTitle = ReaderHTMLUtilities.escapeHTML(displayTitle)
+        let html = """
+        <!DOCTYPE html>
+        <html lang="zh-Hant">
+        <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>\(escapedTitle)</title>
+        </head>
+        <body>
+        <article id="reader-content">
+        <section class="yd-volume-separator">
+        <h1>\(escapedTitle)</h1>
+        </section>
+        </article>
+        </body>
+        </html>
+        """
+        return ChapterContentPayload(
+            index: index,
+            title: displayTitle,
+            content: displayTitle,
+            renderHTML: html,
+            sourceHref: "volume/\(index)"
+        )
+    }
+
     private func resolveNormalizedHTML(
         for bookId: UUID,
         chapterIndex: Int,
@@ -188,24 +226,27 @@ struct OnlineHTMLContentProviderAdapter: BookContentProvider {
         secondarySourceURL: String,
         fallbackContent: String
     ) -> String {
-        BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+        if let primary = BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
             bookId: bookId,
             chapterIndex: chapterIndex,
             expectedSourceURL: primarySourceURL,
             expectedTOCTitle: tocTitle
+        ) {
+            return primary
+        }
+        if primarySourceURL != secondarySourceURL,
+           let secondary = BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+            bookId: bookId,
+            chapterIndex: chapterIndex,
+            expectedSourceURL: secondarySourceURL,
+            expectedTOCTitle: tocTitle
+           ) {
+            return secondary
+        }
+        return ChapterFetcher.shared.buildNormalizedHTML(
+            title: tocTitle,
+            content: fallbackContent
         )
-            ?? (primarySourceURL != secondarySourceURL
-                ? BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
-                    bookId: bookId,
-                    chapterIndex: chapterIndex,
-                    expectedSourceURL: secondarySourceURL,
-                    expectedTOCTitle: tocTitle
-                )
-                : nil)
-            ?? ChapterFetcher.shared.buildNormalizedHTML(
-                title: tocTitle,
-                content: fallbackContent
-            )
     }
 }
 

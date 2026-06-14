@@ -194,18 +194,29 @@ struct ReaderSettingsView: View {
         }
     }
 
+    /// Preview font that reflects the user-selected reader font in real time;
+    /// falls back to the system font when none is selected (or it can't be loaded).
+    private func previewFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        if let postScript = settings.selectedReaderFontPostScript,
+           !postScript.isEmpty,
+           UIFont(name: postScript, size: size) != nil {
+            return .custom(postScript, fixedSize: size)
+        }
+        return .system(size: size, weight: weight)
+    }
+
     private var previewPanel: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .firstTextBaseline, spacing: 1) {
                 Text(localized("大"))
-                    .font(.system(size: 34, weight: .regular))
+                    .font(previewFont(size: 34))
 
                 Text(localized("小"))
-                    .font(.system(size: 18, weight: .regular))
+                    .font(previewFont(size: 18))
                     .baselineOffset(-6)
             }
             Text(localized("  這是一段測試文字，用來測試字體大小和行距、字距、段落間距，以及不同主題下的閱讀舒適度。調整設定時，可以觀察文字密度、換行節奏與背景對比是否符合你的閱讀習慣。"))
-                .font(.system(size: min(max(fontSize, 17), 24), weight: .regular))
+                .font(previewFont(size: min(max(fontSize, 17), 24)))
                 .lineSpacing(readerConfig.lineSpacing)
                 .tracking(readerConfig.letterSpacing)
                 .foregroundStyle(theme.textColor)

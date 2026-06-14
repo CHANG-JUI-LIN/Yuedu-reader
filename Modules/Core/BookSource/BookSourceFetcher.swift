@@ -164,6 +164,7 @@ enum FetchError: LocalizedError {
     case cloudflareChallengeRequired(String)
     case encodingError
     case emptyContent
+    case volumeSeparator(String)
 
     var errorDescription: String? {
         switch self {
@@ -173,6 +174,7 @@ enum FetchError: LocalizedError {
         case .cloudflareChallengeRequired(let url): return "CAPTCHA required: \(url)"
         case .encodingError: return "Page encoding not recognized"
         case .emptyContent: return "Fetched empty content"
+        case .volumeSeparator(let title): return "Volume separator has no chapter content: \(title)"
         }
     }
 }

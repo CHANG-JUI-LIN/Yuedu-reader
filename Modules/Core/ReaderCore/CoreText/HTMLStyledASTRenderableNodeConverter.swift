@@ -148,7 +148,11 @@ private extension HTMLAttributedStringBuilder.ElementNode {
 
         case "a":
             let href = attributes["href"] ?? ""
-            if let marker = ReaderHTMLUtilities.decodeReviewHref(href) {
+            let className = attributes["class"] ?? ""
+            let isReviewImageAnchor = className
+                .split(separator: " ")
+                .contains { $0 == "yd-review-image" }
+            if let marker = ReaderHTMLUtilities.decodeReviewHref(href), !isReviewImageAnchor {
                 node = .commentBadge(count: marker.count, reviewURL: href, title: marker.title)
             } else {
                 // `.anchor` carries only the href, so the anchor's own CSS (e.g. `a { font-weight:bold }`,

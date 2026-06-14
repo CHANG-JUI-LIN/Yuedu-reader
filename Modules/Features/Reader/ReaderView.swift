@@ -434,6 +434,13 @@ struct ReaderView: View {
     }
 
     private func isChapterContentAvailable(at chapterIndex: Int) -> Bool {
+        // Volume headers (作品相关 / 第N卷 …) render a divider page with no fetched content. Treat
+        // them as available, otherwise the "ready but no content" path refetches them forever.
+        if let refs = book?.onlineChapters,
+           refs.indices.contains(chapterIndex),
+           refs[chapterIndex].shouldRenderAsVolumeSeparator {
+            return true
+        }
         guard let package = cachedChapterPackage(for: chapterIndex) else {
             print("[CacheDebug] isChapterContentAvailable ch=\(chapterIndex) → false (no package)")
             return false
@@ -1833,7 +1840,8 @@ struct ReaderView: View {
                 bottom: bottomInset,
                 right: effectivePageMarginH
             ),
-            writingMode: effectiveWritingMode
+            writingMode: effectiveWritingMode,
+            fontPostScriptName: UserReaderFontResolver.selectedPostScriptName
         )
     }
 
@@ -3019,7 +3027,8 @@ struct ReaderView: View {
             marginV: systemVerticalPadding,
             footerHeight: footerOverlayHeight,
             contentInsets: UIEdgeInsets(top: topInset, left: marginH, bottom: bottomInset, right: marginH),
-            writingMode: effectiveWritingMode
+            writingMode: effectiveWritingMode,
+            fontPostScriptName: UserReaderFontResolver.selectedPostScriptName
         )
     }
 
@@ -3131,7 +3140,8 @@ struct ReaderView: View {
         let builder = OnlineNodeAttributedStringBuilder(
             refs: refs,
             bookId: book.id,
-            fetcher: dependencies.bookSourceFetcher
+            fetcher: dependencies.bookSourceFetcher,
+            renderSize: currentReaderRenderSize
         )
         epubRenderer.loadTXT(
             attributedBuilder: builder,

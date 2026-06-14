@@ -22,6 +22,11 @@ extension BookSourceFetcher {
     func fetchChapterPackage(
         ref: OnlineChapterRef, bookId: UUID, source: BookSource, chapterReferer: String? = nil
     ) async throws -> ChapterPackage {
+        logChapterFetchGate(ref: ref, source: source)
+        guard !ref.shouldRenderAsVolumeSeparator else {
+            throw FetchError.volumeSeparator(ref.title)
+        }
+
         if let cached = loadChapterPackageSync(
             bookId: bookId,
             chapterIndex: ref.index,
@@ -57,6 +62,11 @@ extension BookSourceFetcher {
     ) async throws
         -> ChapterPackage
     {
+        logChapterFetchGate(ref: ref, source: source)
+        guard !ref.shouldRenderAsVolumeSeparator else {
+            throw FetchError.volumeSeparator(ref.title)
+        }
+
         if let cached = loadChapterPackageSync(
             bookId: bookId,
             chapterIndex: ref.index,
@@ -220,6 +230,7 @@ extension BookSourceFetcher {
             initialURL: url,
             initialBaseURL: url.absoluteString,
             replaceRules: source.ruleContent.replaceRegex,
+            reviewContext: source.legadoReviewContext,
             parsePage: parsePage,
             extractNextURLs: extractNextPages
         ) { nextPageURL in
@@ -266,6 +277,10 @@ extension BookSourceFetcher {
         bookId: UUID,
         source: BookSource
     ) async throws -> ChapterPackage {
+        logChapterFetchGate(ref: ref, source: source)
+        guard !ref.shouldRenderAsVolumeSeparator else {
+            throw FetchError.volumeSeparator(ref.title)
+        }
         let bridge = ModernParserBridge(source: source)
         let (html, finalUrl) = try await bridge.fetch(ruleUrl: ref.url)
         let parsed = try bridge.parseChapterResult(
@@ -290,7 +305,8 @@ extension BookSourceFetcher {
         let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
             title: effectiveTitle,
             plainTextContent: content,
-            rawHTMLContent: parsed.content
+            rawHTMLContent: parsed.content,
+            reviewContext: source.legadoReviewContext
         )
         let checksum = SHA256.hash(data: Data(content.utf8)).map {
             String(format: "%02x", $0)
@@ -320,5 +336,20 @@ extension BookSourceFetcher {
             expectedSourceURL: ref.url,
             expectedTOCTitle: ref.title
         ) ?? package
+    }
+
+    private func logChapterFetchGate(ref: OnlineChapterRef, source: BookSource) {
+        guard ref.isVolume || ref.hasVolumeSeparatorTitle else { return }
+        AppLogger.parse("⟐ chapterFetch gate", context: [
+            "source": source.bookSourceName,
+            "index": ref.index,
+            "title": ref.title,
+            "isVolume": ref.isVolume,
+            "volumeTitle": ref.hasVolumeSeparatorTitle,
+            "shouldSkip": ref.shouldRenderAsVolumeSeparator,
+            "hasURL": ref.hasLoadableContentURL,
+            "urlLen": ref.sanitizedContentURL.count,
+            "urlHead": String(ref.sanitizedContentURL.prefix(120))
+        ])
     }
 }

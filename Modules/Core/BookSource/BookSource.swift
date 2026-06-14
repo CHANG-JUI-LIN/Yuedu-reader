@@ -608,7 +608,57 @@ struct OnlineChapterRef: Identifiable, Codable {
     var audioDurationSeconds: Double? = nil
 }
 
+extension OnlineChapterRef {
+    var sanitizedContentURL: String {
+        RuleEngine.sanitizeExtractedURL(url)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var hasLoadableContentURL: Bool {
+        !sanitizedContentURL.isEmpty
+    }
+
+    var shouldRenderAsVolumeSeparator: Bool {
+        isVolume || hasStrongVolumeSeparatorTitle || (!hasLoadableContentURL && hasVolumeSeparatorTitle)
+    }
+
+    var hasVolumeSeparatorTitle: Bool {
+        let title = ReaderHTMLUtilities.displayText(fromHTMLFragment: self.title)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
+        guard !title.isEmpty else { return false }
+        if Self.strongVolumeSeparatorTitles.contains(title)
+            || ["正文", "番外卷", "番外"].contains(title) {
+            return true
+        }
+        if title.range(of: #"^第[0-9一二三四五六七八九十百千万]+卷"#, options: .regularExpression) != nil,
+           title.range(of: #"[章节章回][0-9一二三四五六七八九十百千万]*"#, options: .regularExpression) == nil {
+            return true
+        }
+        return false
+    }
+
+    private var hasStrongVolumeSeparatorTitle: Bool {
+        let title = ReaderHTMLUtilities.displayText(fromHTMLFragment: self.title)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
+        return Self.strongVolumeSeparatorTitles.contains(title)
+    }
+
+    private static var strongVolumeSeparatorTitles: Set<String> {
+        ["作品相关", "作品相關", "正文卷"]
+    }
+}
+
 extension BookSource {
+    var legadoReviewContext: ReaderHTMLUtilities.LegadoReviewContext {
+        ReaderHTMLUtilities.LegadoReviewContext(
+            sourceName: bookSourceName,
+            sourceURL: bookSourceUrl,
+            sourceVariableJSON: BookSourceRuntimeStateStore.shared.sourceVariableJSON(for: bookSourceUrl)
+        )
+    }
+
     var usesLegadoRuntimeSession: Bool {
         !jsLib.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }

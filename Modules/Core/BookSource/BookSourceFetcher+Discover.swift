@@ -21,9 +21,7 @@ extension BookSourceFetcher {
         in source: BookSource
     ) async throws -> [OnlineBook] {
         guard let rawURL = item.url?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !rawURL.isEmpty,
-              !rawURL.hasPrefix("{{"),
-              !rawURL.hasPrefix("{\\{")
+              !rawURL.isEmpty
         else { return [] }
 
         let bridge = ModernParserBridge(source: source)

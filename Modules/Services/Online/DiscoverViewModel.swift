@@ -356,7 +356,7 @@ final class DiscoverViewModel: ObservableObject {
         guard !title.isEmpty, title != "--" else { return nil }
 
         let url = (raw.url ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let isAction = url.hasPrefix("{{") || url.contains("java.startBrowser")
+        let isAction = url.contains("java.startBrowser")
         let actionURL = isAction ? extractHTTPURL(from: url) : nil
         let isFetchable = !isAction && !url.isEmpty
 

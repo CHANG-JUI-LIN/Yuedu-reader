@@ -116,6 +116,19 @@ enum ReaderHTMLUtilities {
         var id: String { url }
     }
 
+    /// Minimal source context needed to recover Legado image click-configs into tappable review links.
+    struct LegadoReviewContext: Hashable {
+        let sourceName: String
+        let sourceURL: String
+        let sourceVariableJSON: String?
+
+        init(sourceName: String, sourceURL: String, sourceVariableJSON: String? = nil) {
+            self.sourceName = sourceName
+            self.sourceURL = sourceURL
+            self.sourceVariableJSON = sourceVariableJSON
+        }
+    }
+
     /// Decoded payload of a `ydreview://` review anchor: comment count + review URL + title.
     struct ReviewMarker: Equatable {
         let count: String
@@ -149,18 +162,84 @@ enum ReaderHTMLUtilities {
 
         var result = ""
         var cursor = 0
+        var converted = 0
+        var failed = 0
+        var firstFailedTag = ""
         for match in matches {
             let range = match.range
             result += ns.substring(with: NSRange(location: cursor, length: range.location - cursor))
             let tag = ns.substring(with: range)
             if let anchor = anchorMarkup(forCommentTag: tag) {
+                converted += 1
                 result += anchor
             } else {
+                failed += 1
+                if firstFailedTag.isEmpty {
+                    firstFailedTag = tag
+                }
                 result += tag
             }
             cursor = range.location + range.length
         }
         result += ns.substring(from: cursor)
+        AppLogger.parse("⟐ reviewRewrite comment", context: [
+            "tags": matches.count,
+            "converted": converted,
+            "failed": failed,
+            "outYdreview": result.components(separatedBy: "ydreview://").count - 1,
+            "failedTag": String(Self.redactedReviewLogSnippet(firstFailedTag).prefix(180))
+        ])
+        return result
+    }
+
+    /// Cleans Legado-specific markup from online chapter HTML *before* it is handed to
+    /// SwiftSoup, so the parser doesn't choke on it.
+    ///
+    /// Legado book sources embed clickable images (illustrations, comment bubbles) as
+    /// `<img src="data:image/svg+xml;base64,<B64>,{"type":"img","style":"full"}">`. The
+    /// trailing `,{json}` is a Legado convention — a click-config object appended to the URL.
+    /// Its inner double-quotes prematurely close the `src` attribute, so an HTML parser
+    /// swallows everything up to the next quote as attribute garbage and surfaces the
+    /// following tags (`<usehtml>`, `<small>`, body text) as *literal text*. Stripping the
+    /// suffix restores a clean data URI and un-breaks parsing of the rest of the chapter.
+    ///
+    /// Also unwraps `<usehtml>` markers (Legado's "render the inner content as HTML" hint),
+    /// which would otherwise survive as unknown elements.
+    static func sanitizeOnlineChapterMarkup(
+        _ html: String,
+        reviewContext: LegadoReviewContext? = nil
+    ) -> String {
+        var result = rewriteLegadoImageClickConfigs(html, reviewContext: reviewContext)
+
+        // Strip `,{…}` click-config suffixes that sit at the very end of an attribute value
+        // (immediately followed by a closing quote / tag-end / whitespace). Anchoring on the
+        // trailing delimiter keeps prose like "foo,{bar} baz" inside body text untouched.
+        if result.range(of: ",{") != nil,
+           let regex = try? NSRegularExpression(
+            pattern: #",\{(?:[^{}]|\{[^{}]*\})*\}(?=["'>\s])"#
+           ) {
+            let ns = result as NSString
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(location: 0, length: ns.length),
+                withTemplate: ""
+            )
+        }
+
+        // Unwrap <usehtml>…</usehtml> markers, keeping the inner HTML.
+        if result.range(of: "usehtml", options: .caseInsensitive) != nil,
+           let regex = try? NSRegularExpression(
+            pattern: #"</?usehtml\b[^>]*>"#,
+            options: [.caseInsensitive]
+           ) {
+            let ns = result as NSString
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(location: 0, length: ns.length),
+                withTemplate: ""
+            )
+        }
+
         return result
     }
 
@@ -171,11 +250,8 @@ enum ReaderHTMLUtilities {
         let url = unescapeHTMLEntities(args.url)
         let title = unescapeHTMLEntities(args.title)
         guard !url.isEmpty else { return nil }
-        let payload: [String: String] = ["c": count, "u": url, "t": title]
-        guard let data = try? JSONSerialization.data(withJSONObject: payload),
-              let encoded = base64URLEncode(data)
-        else { return nil }
-        return "<a href=\"\(reviewURLScheme)://r?d=\(encoded)\" class=\"yd-review\">\(escapeHTML(count))</a>"
+        guard let href = reviewHref(count: count, url: url, title: title) else { return nil }
+        return "<a href=\"\(href)\" class=\"yd-review\">\(escapeHTML(count))</a>"
     }
 
     /// Decodes a `ydreview://` href back into its comment count, review URL, and title.
@@ -290,6 +366,298 @@ enum ReaderHTMLUtilities {
         return (ns.substring(with: m.range(at: 1)), title)
     }
 
+    private static func rewriteLegadoImageClickConfigs(
+        _ html: String,
+        reviewContext: LegadoReviewContext?
+    ) -> String {
+        guard html.range(of: "<img", options: .caseInsensitive) != nil,
+              html.range(of: ",{") != nil,
+              let tagRegex = try? NSRegularExpression(
+                pattern: #"<img\b[^>]*>"#,
+                options: [.caseInsensitive]
+              )
+        else { return html }
+
+        let ns = html as NSString
+        let matches = tagRegex.matches(in: html, range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else { return html }
+
+        var result = ""
+        var cursor = 0
+        var reviewImages = 0
+        var cleanedOnly = 0
+        for match in matches {
+            let range = match.range
+            result += ns.substring(with: NSRange(location: cursor, length: range.location - cursor))
+            let tag = ns.substring(with: range)
+            let rewritten = rewriteLegadoImageTag(tag, reviewContext: reviewContext)
+            if rewritten.range(of: "yd-review-image", options: .caseInsensitive) != nil {
+                reviewImages += 1
+            } else if rewritten != tag {
+                cleanedOnly += 1
+            }
+            result += rewritten
+            cursor = range.location + range.length
+        }
+        result += ns.substring(from: cursor)
+        if reviewImages > 0 || cleanedOnly > 0 {
+            AppLogger.parse("⟐ reviewRewrite image", context: [
+                "source": reviewContext?.sourceName ?? "",
+                "imgTags": matches.count,
+                "reviewImages": reviewImages,
+                "cleanedOnly": cleanedOnly,
+                "outYdreview": result.components(separatedBy: "ydreview://").count - 1
+            ])
+        }
+        return result
+    }
+
+    private static func rewriteLegadoImageTag(
+        _ tag: String,
+        reviewContext: LegadoReviewContext?
+    ) -> String {
+        guard let configMatch = legadoClickConfigMatch(in: tag) else { return tag }
+        let ns = tag as NSString
+        let suffix = ns.substring(with: configMatch.range)
+        var cleanedTag = tag
+        if let range = Range(configMatch.range, in: cleanedTag) {
+            cleanedTag.removeSubrange(range)
+        }
+
+        guard let action = legadoClickAction(fromConfigSuffix: suffix),
+              let target = reviewTarget(forLegadoAction: action, context: reviewContext),
+              let href = reviewHref(count: "", url: target.url, title: target.title)
+        else {
+            return cleanedTag
+        }
+
+        return "<a href=\"\(href)\" class=\"yd-review-image\">\(cleanedTag)</a>"
+    }
+
+    private static func legadoClickConfigMatch(in text: String) -> NSTextCheckingResult? {
+        guard let regex = try? NSRegularExpression(
+            pattern: #",\{(?:[^{}]|\{[^{}]*\})*\}(?=["'>\s])"#
+        ) else { return nil }
+        let ns = text as NSString
+        return regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))
+    }
+
+    private static func legadoClickAction(fromConfigSuffix suffix: String) -> String? {
+        var json = suffix.trimmingCharacters(in: .whitespacesAndNewlines)
+        if json.hasPrefix(",") { json.removeFirst() }
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        for key in ["click", "js", "action"] {
+            if let value = object[key] as? String {
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { return trimmed }
+            }
+        }
+        return nil
+    }
+
+    private static func reviewTarget(
+        forLegadoAction action: String,
+        context: LegadoReviewContext?
+    ) -> ReviewTarget? {
+        let trimmed = action.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let args = legadoFunctionArgs(named: "showCmt", in: trimmed)
+            ?? legadoFunctionArgs(named: "androidshowCmt", in: trimmed) {
+            // 起點: showCmt(bookId, chapterId, paragraphId, …) → build the qidian review URL.
+            if args.count >= 3 {
+                return qidianReviewTarget(
+                    kind: .paragraph,
+                    bookId: args[0],
+                    chapterId: args[1],
+                    paragraphId: args[2],
+                    context: context
+                )
+            }
+            // 光遇 aggregation: showCmt(url, sources) → arg[0] is already the comment-page URL.
+            if args.count == 2 {
+                var url = cleanLegadoArgument(args[0])
+                if !(url.hasPrefix("http://") || url.hasPrefix("https://")),
+                   let decoded = url.removingPercentEncoding,
+                   decoded.hasPrefix("http://") || decoded.hasPrefix("https://") {
+                    url = decoded
+                }
+                guard url.hasPrefix("http://") || url.hasPrefix("https://") else { return nil }
+                let sources = cleanLegadoArgument(args[1])
+                return ReviewTarget(url: url, title: sources.isEmpty ? "段評" : "\(sources)段評")
+            }
+        }
+
+        if let args = legadoFunctionArgs(named: "showChapterComments", in: trimmed)
+            ?? legadoFunctionArgs(named: "androidshowChapterComments", in: trimmed),
+           args.count >= 2 {
+            return qidianReviewTarget(
+                kind: .chapter,
+                bookId: args[0],
+                chapterId: args[1],
+                paragraphId: nil,
+                context: context
+            )
+        }
+
+        return nil
+    }
+
+    private enum QidianReviewKind {
+        case paragraph
+        case chapter
+    }
+
+    private static func qidianReviewTarget(
+        kind: QidianReviewKind,
+        bookId: String,
+        chapterId: String,
+        paragraphId: String?,
+        context: LegadoReviewContext?
+    ) -> ReviewTarget? {
+        let cleanBookId = cleanLegadoArgument(bookId)
+        let cleanChapterId = cleanLegadoArgument(chapterId)
+        let cleanParagraphId = paragraphId.map(cleanLegadoArgument)
+        guard !cleanBookId.isEmpty, !cleanChapterId.isEmpty else { return nil }
+
+        if usesShaziQidianEndpoint(context) {
+            let path = kind == .paragraph ? "/comments" : "/chapterComments"
+            return ReviewTarget(
+                url: buildURL(
+                    base: "https://sb.shazi.tk",
+                    path: path,
+                    queryItems: [
+                        URLQueryItem(name: "bookId", value: cleanBookId),
+                        URLQueryItem(name: "chapterId", value: cleanChapterId)
+                    ] + (kind == .paragraph ? [
+                        URLQueryItem(name: "paragraphId", value: cleanParagraphId ?? "")
+                    ] : [])
+                ),
+                title: kind == .paragraph ? "起點段評" : "本章討論"
+            )
+        }
+
+        var items = [
+            URLQueryItem(name: "bookId", value: cleanBookId),
+            URLQueryItem(name: "chapterId", value: cleanChapterId)
+        ]
+        if kind == .paragraph {
+            items.append(URLQueryItem(name: "paragraphId", value: cleanParagraphId ?? ""))
+        }
+        if let token = sourceVariableValue("token", context: context), !token.isEmpty {
+            items.append(URLQueryItem(name: "token", value: token))
+        }
+        return ReviewTarget(
+            url: buildURL(base: "https://api-x.shrtxs.cn/qidth", path: "/", queryItems: items),
+            title: kind == .paragraph ? "起點段評" : "本章討論"
+        )
+    }
+
+    private static func usesShaziQidianEndpoint(_ context: LegadoReviewContext?) -> Bool {
+        guard let context else { return false }
+        return context.sourceName.contains("企點")
+            || context.sourceName.contains("企点")
+            || context.sourceURL.contains("m.qidian.com")
+    }
+
+    private static func legadoFunctionArgs(named name: String, in action: String) -> [String]? {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"\b\#(name)\s*\(([\s\S]*)\)\s*;?\s*$"#,
+            options: [.caseInsensitive]
+        ) else { return nil }
+        let ns = action as NSString
+        guard let match = regex.firstMatch(in: action, range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges >= 2
+        else { return nil }
+        let argsText = ns.substring(with: match.range(at: 1))
+        return splitLegadoArguments(argsText)
+    }
+
+    private static func splitLegadoArguments(_ text: String) -> [String] {
+        var args: [String] = []
+        var current = ""
+        var quote: Character?
+        var isEscaped = false
+
+        for ch in text {
+            if isEscaped {
+                current.append(ch)
+                isEscaped = false
+                continue
+            }
+            if ch == "\\" {
+                current.append(ch)
+                isEscaped = true
+                continue
+            }
+            if let activeQuote = quote {
+                current.append(ch)
+                if ch == activeQuote { quote = nil }
+                continue
+            }
+            if ch == "'" || ch == "\"" {
+                quote = ch
+                current.append(ch)
+                continue
+            }
+            if ch == "," {
+                args.append(current.trimmingCharacters(in: .whitespacesAndNewlines))
+                current = ""
+                continue
+            }
+            current.append(ch)
+        }
+
+        let tail = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tail.isEmpty { args.append(tail) }
+        return args
+    }
+
+    private static func cleanLegadoArgument(_ value: String) -> String {
+        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count >= 2,
+           let first = trimmed.first,
+           let last = trimmed.last,
+           (first == "'" && last == "'") || (first == "\"" && last == "\"") {
+            trimmed.removeFirst()
+            trimmed.removeLast()
+        }
+        return trimmed
+    }
+
+    private static func sourceVariableValue(
+        _ key: String,
+        context: LegadoReviewContext?
+    ) -> String? {
+        guard let json = context?.sourceVariableJSON,
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let value = object[key]
+        else { return nil }
+        if let string = value as? String { return string }
+        return "\(value)"
+    }
+
+    private static func buildURL(base: String, path: String, queryItems: [URLQueryItem]) -> String {
+        let cleanBase = base.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard var components = URLComponents(string: cleanBase + path) else {
+            let query = queryItems
+                .map { "\($0.name)=\($0.value ?? "")" }
+                .joined(separator: "&")
+            return cleanBase + path + (query.isEmpty ? "" : "?\(query)")
+        }
+        components.queryItems = queryItems.filter { ($0.value ?? "").isEmpty == false }
+        return components.string ?? cleanBase + path
+    }
+
+    private static func reviewHref(count: String, url: String, title: String) -> String? {
+        let payload: [String: String] = ["c": count, "u": url, "t": title]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let encoded = base64URLEncode(data)
+        else { return nil }
+        return "\(reviewURLScheme)://r?d=\(encoded)"
+    }
+
     private static func firstCapture(in text: String, pattern: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
         let ns = text as NSString
@@ -307,6 +675,20 @@ enum ReaderHTMLUtilities {
             .replacingOccurrences(of: "&quot;", with: "\"", options: .caseInsensitive)
             .replacingOccurrences(of: "&#39;", with: "'", options: .caseInsensitive)
             .replacingOccurrences(of: "&apos;", with: "'", options: .caseInsensitive)
+    }
+
+    private static func redactedReviewLogSnippet(_ text: String) -> String {
+        text
+            .replacingOccurrences(
+                of: #"(?i)(token=)[^'&"\s)]+"#,
+                with: "$1<redacted>",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: #"(?i)("token"\s*:\s*")[^"]+""#,
+                with: "$1<redacted>\"",
+                options: .regularExpression
+            )
     }
 
     private static func base64URLEncode(_ data: Data) -> String? {

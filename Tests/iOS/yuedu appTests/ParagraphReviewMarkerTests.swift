@@ -93,6 +93,45 @@ struct ParagraphReviewMarkerTests {
         #expect(target.title == "QQ阅读段评")
     }
 
+    @Test("rewrites qidian image click config into source-image review link")
+    func rewritesQidianImageClickConfig() throws {
+        let raw = #"<p>段落<img src="data:image/svg+xml;base64,PHN2Zy8+,{"style":"text","type":"qd","click":"showCmt(123, 456, 7, 999,'ios','改版')"}"></p>"#
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "🔅企点小说(禁止🚫分享)",
+                sourceURL: "https://m.qidian.com#禁止外传"
+            )
+        )
+
+        #expect(cleaned.contains(#"class="yd-review-image""#))
+        #expect(cleaned.contains(#"src="data:image/svg+xml;base64,PHN2Zy8+""#))
+        #expect(!cleaned.contains(#""click":"#))
+
+        let href = try #require(firstHref(in: cleaned))
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
+        #expect(marker.url == "https://sb.shazi.tk/comments?bookId=123&chapterId=456&paragraphId=7")
+        #expect(marker.title == "起點段評")
+    }
+
+    @Test("rewrites api qidian image click config with source token")
+    func rewritesAPIQidianImageClickConfigWithToken() throws {
+        let raw = #"<p>段落<img src="data:image/svg+xml;base64,PHN2Zy8+,{"style":"text","type":"qd","click":"showCmt(123,456,7,999)"}"></p>"#
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "📖起点中文",
+                sourceURL: "https://api-x.shrtxs.cn/qd/",
+                sourceVariableJSON: #"{"token":"tok-1"}"#
+            )
+        )
+
+        let href = try #require(firstHref(in: cleaned))
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
+        #expect(marker.url == "https://api-x.shrtxs.cn/qidth/?bookId=123&chapterId=456&paragraphId=7&token=tok-1")
+        #expect(marker.title == "起點段評")
+    }
+
     @Test("paged adapter rewrites raw cached review markers before rendering")
     func pagedAdapterRewritesRawCachedReviewMarkers() async throws {
         let raw = #"""
@@ -211,6 +250,32 @@ private struct SingleChapterReviewProvider: BookContentProvider {
     }
 }
 
+@Suite("Online volume separators")
+struct OnlineVolumeSeparatorTests {
+    @Test("volume ref with empty url renders separator payload")
+    func volumeRefWithEmptyURLRendersSeparatorPayload() async throws {
+        var book = ReadingBook(
+            title: "起点测试书",
+            author: "Author",
+            source: "https://api-x.shrtxs.cn/qd/",
+            contentFilename: ""
+        )
+        book.isOnline = true
+        book.bookSourceId = UUID()
+        book.onlineChapters = [
+            OnlineChapterRef(index: 0, title: "作品相关", url: "", isVolume: true)
+        ]
+
+        let adapter = OnlineHTMLContentProviderAdapter(book: book, store: nil)
+        let payload = try await adapter.contentForChapter(index: 0)
+
+        #expect(payload.title == "作品相关")
+        #expect(payload.content == "作品相关")
+        #expect(payload.sourceHref == "volume/0")
+        #expect(payload.renderHTML?.contains("yd-volume-separator") == true)
+    }
+}
+
 @Suite("Paragraph review rendering pipeline")
 @MainActor
 struct ParagraphReviewRenderingTests {
@@ -317,6 +382,66 @@ struct ParagraphReviewRenderingTests {
         #expect(foundReviewLink)
         #expect(linkHasAttachment)
         #expect(attr.string.contains("一个老旧的钨丝灯"))
+    }
+
+    @Test("online node builder renders cached HTML images")
+    func onlineNodeBuilderRendersCachedHTMLImages() async throws {
+        let bookId = UUID()
+        let ref = OnlineChapterRef(
+            index: 0,
+            title: "第一章",
+            url: "https://example.com/books/1/chapter.html"
+        )
+        let imageData = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 6)).pngData { ctx in
+            UIColor.systemRed.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 8, height: 6))
+        }
+        let html = #"""
+        <html><body>
+        <p>图前<img src="data:image/png;base64,\#(imageData.base64EncodedString())" alt="inline">图后</p>
+        </body></html>
+        """#
+        let package = ChapterPackage(
+            bookId: bookId,
+            chapterIndex: 0,
+            sourceURL: ref.url,
+            tocTitle: ref.title,
+            canonicalTitle: ref.title,
+            content: "图前图后",
+            contentChecksum: "checksum",
+            rawHTMLFilename: "0.raw.html",
+            normalizedHTMLFilename: "0.normalized.xhtml",
+            savedAt: Date(),
+            state: .cached,
+            failureReason: nil
+        )
+        let fetcher = CachedReviewHTMLFetcher(package: package, normalizedHTML: html)
+        let builder = OnlineNodeAttributedStringBuilder(
+            refs: [ref],
+            bookId: bookId,
+            fetcher: fetcher,
+            renderSize: CGSize(width: 320, height: 480)
+        )
+
+        let result = try await builder.buildChapter(
+            at: 0,
+            settings: Self.renderSettings(),
+            themeTextColor: UIColor.label,
+            themeBackgroundColor: UIColor.systemBackground
+        )
+
+        #expect(result.attributedString.string.contains("\u{FFFC}"))
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        var foundImageAttachment = false
+        result.attributedString.enumerateAttribute(
+            delegateKey,
+            in: NSRange(location: 0, length: result.attributedString.length)
+        ) { value, _, _ in
+            if value != nil {
+                foundImageAttachment = true
+            }
+        }
+        #expect(foundImageAttachment)
     }
 
     private static func renderSettings() -> ReaderRenderSettings {

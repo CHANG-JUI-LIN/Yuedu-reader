@@ -136,7 +136,8 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             marginV: renderSettings.marginV,
             footerHeight: renderSettings.footerHeight,
             contentInsets: renderSettings.contentInsets,
-            writingMode: renderSettings.writingMode
+            writingMode: renderSettings.writingMode,
+            fontPostScriptName: renderSettings.fontPostScriptName
         )
     }
 

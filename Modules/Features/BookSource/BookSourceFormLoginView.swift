@@ -1,8 +1,9 @@
 import SwiftUI
 import UIKit
+import JavaScriptCore
 
 // MARK: - BookSourceFormLoginView
-// Handles book sources whose `loginUi` JSON defines form fields (text/password/button).
+// Handles book sources whose `loginUi` JSON defines form fields (text/password/select/button).
 // After the user fills in credentials and taps "Confirm", the loginUrl JS is executed
 // with those credentials stored via LoginManager — mirroring Legado's SourceLoginDialog.
 
@@ -41,6 +42,26 @@ struct BookSourceFormLoginView: View {
                                 Spacer()
                                 SecureField(field.name, text: binding(for: field.name))
                                     .multilineTextAlignment(.trailing)
+                            }
+                        case .select:
+                            HStack {
+                                Text(field.name).foregroundColor(DSColor.textSecondary)
+                                Spacer()
+                                if field.options.isEmpty {
+                                    TextField(field.name, text: binding(for: field.name))
+                                        .multilineTextAlignment(.trailing)
+                                        .autocorrectionDisabled()
+                                        .textInputAutocapitalization(.never)
+                                } else {
+                                    Picker(field.name, selection: selectionBinding(for: field)) {
+                                        ForEach(options(for: field), id: \.self) { option in
+                                            Text(option).tag(option)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                    .pickerStyle(.menu)
+                                    .tint(DSColor.accent)
+                                }
                             }
                         case .button:
                             Button(field.name) {
@@ -135,7 +156,7 @@ struct BookSourceFormLoginView: View {
                 let stored = LoginManager.shared.getLoginInfo(sourceUrl: src.bookSourceUrl)
                 await MainActor.run {
                     self.fields = parsed
-                    if let stored { self.values = stored }
+                    self.values = Self.initialValues(for: parsed, stored: stored)
                     self.isLoading = false
                 }
             }
@@ -143,10 +164,10 @@ struct BookSourceFormLoginView: View {
         }
 
         fields = LoginUIField.parse(from: source.loginUi)
-        // Pre-fill with stored credentials
-        if let stored = LoginManager.shared.getLoginInfo(sourceUrl: source.bookSourceUrl) {
-            values = stored
-        }
+        values = Self.initialValues(
+            for: fields,
+            stored: LoginManager.shared.getLoginInfo(sourceUrl: source.bookSourceUrl)
+        )
     }
 
     /// Evaluate a JS-based `loginUi` (with jsLib + source runtime wired) and return
@@ -166,7 +187,9 @@ struct BookSourceFormLoginView: View {
         \(jsBody)
         ;(typeof result !== 'undefined' && result !== null ? result : '')
         """
-        return engine.evaluate(wrapped, bindings: ["baseUrl": source.bookSourceUrl]) ?? ""
+        let out = engine.evaluate(wrapped, bindings: ["baseUrl": source.bookSourceUrl]) ?? ""
+        AppLogger.parse("⟐ menuEval", context: ["resultLen": out.count, "head": String(out.prefix(120))])
+        return out
     }
 
     private func binding(for name: String) -> Binding<String> {
@@ -174,6 +197,52 @@ struct BookSourceFormLoginView: View {
             get: { values[name] ?? "" },
             set: { values[name] = $0 }
         )
+    }
+
+    private func selectionBinding(for field: LoginUIField) -> Binding<String> {
+        Binding(
+            get: { selectedValue(for: field) },
+            set: { newValue in
+                values[field.name] = newValue
+                persistCurrentFormValues()
+            }
+        )
+    }
+
+    private func selectedValue(for field: LoginUIField) -> String {
+        if let value = values[field.name], !value.isEmpty {
+            return value
+        }
+        if let defaultValue = field.defaultValue, !defaultValue.isEmpty {
+            return defaultValue
+        }
+        return field.options.first ?? ""
+    }
+
+    private func options(for field: LoginUIField) -> [String] {
+        let selected = selectedValue(for: field)
+        guard !selected.isEmpty, !field.options.contains(selected) else {
+            return field.options
+        }
+        return [selected] + field.options
+    }
+
+    private static func initialValues(
+        for fields: [LoginUIField],
+        stored: [String: String]?
+    ) -> [String: String] {
+        var result = stored ?? [:]
+        for field in fields where field.type == .select {
+            if let current = result[field.name], !current.isEmpty {
+                continue
+            }
+            if let defaultValue = field.defaultValue, !defaultValue.isEmpty {
+                result[field.name] = defaultValue
+            } else if let first = field.options.first {
+                result[field.name] = first
+            }
+        }
+        return result
     }
 
     static func supportsFanqieLogin(source: BookSource) -> Bool {
@@ -194,11 +263,7 @@ struct BookSourceFormLoginView: View {
         successMessage = nil
 
         // Validate: collect non-button field values
-        let credentials = fields
-            .filter { $0.type != .button }
-            .reduce(into: [String: String]()) { dict, field in
-                dict[field.name] = values[field.name] ?? ""
-            }
+        let credentials = currentFormValues()
 
         if credentials.isEmpty {
             // No credentials needed — just execute loginUrl JS directly
@@ -214,6 +279,7 @@ struct BookSourceFormLoginView: View {
     }
 
     private func handleButton(field: LoginUIField) {
+        AppLogger.parse("⟐ menuButton", context: ["name": field.name, "action": field.action ?? "nil"])
         guard let action = field.action, !action.isEmpty else { return }
         // If it's a URL, open in browser; if JS, run it
         if action.hasPrefix("http://") || action.hasPrefix("https://") {
@@ -222,13 +288,36 @@ struct BookSourceFormLoginView: View {
             }
         } else {
             // JS button action
-            let currentCredentials = fields
-                .filter { $0.type != .button }
-                .reduce(into: [String: String]()) { dict, f in
-                    dict[f.name] = values[f.name] ?? ""
-                }
+            let currentCredentials = currentFormValues()
+            if !currentCredentials.isEmpty {
+                LoginManager.shared.storeLoginInfo(
+                    sourceUrl: source.bookSourceUrl,
+                    info: currentCredentials
+                )
+            }
             runButtonJS(action: action, credentials: currentCredentials)
         }
+    }
+
+    private func currentFormValues() -> [String: String] {
+        fields
+            .filter { $0.type != .button }
+            .reduce(into: [String: String]()) { dict, field in
+                switch field.type {
+                case .select:
+                    dict[field.name] = selectedValue(for: field)
+                case .text, .password:
+                    dict[field.name] = values[field.name] ?? ""
+                case .button:
+                    break
+                }
+            }
+    }
+
+    private func persistCurrentFormValues() {
+        let current = currentFormValues()
+        guard !current.isEmpty else { return }
+        LoginManager.shared.storeLoginInfo(sourceUrl: source.bookSourceUrl, info: current)
     }
 
     // MARK: - JS Execution
@@ -354,6 +443,25 @@ struct BookSourceFormLoginView: View {
                     done()
                 }
             }
+            // `changeMenu(tag)` does `source.put("menuTag", tag); java.reLoginView()`. Re-evaluate
+            // the menu JS (which now reads the new menuTag) and refresh the displayed buttons so
+            // multi-page source menus (起点's 评论设置 → 段评开关) can actually navigate.
+            engine.reLoginViewHandler = {
+                AppLogger.parse("⟐ reLoginView FIRED", context: [:])
+                let json = Self.evaluateJsLoginUi(source: source)
+                let parsed = LoginUIField.parse(from: json)
+                AppLogger.parse("⟐ reLoginView", context: [
+                    "newFields": parsed.count,
+                    "names": parsed.prefix(8).map { $0.name }.joined(separator: "|")
+                ])
+                Task { @MainActor in
+                    self.fields = parsed
+                    self.values = Self.initialValues(
+                        for: parsed,
+                        stored: LoginManager.shared.getLoginInfo(sourceUrl: source.bookSourceUrl) ?? self.values
+                    )
+                }
+            }
 
             let bindings: [String: Any] = [
                 "result": credentials,
@@ -439,6 +547,21 @@ struct BookSourceFormLoginView: View {
             _ = semaphore.wait(timeout: .now() + 30)
             return body
         }
+        engine.upLoginDataHandler = { mapValue in
+            // `java.upLoginData(map)` from a settings menu (起点/光遇 段评颜色·气泡模版). Merge the
+            // map's key/values into the source's stored login data so `source.getLoginInfoMap()`
+            // (and the jsLib's `getConfigValue`/`Map()`) read them back.
+            let raw = mapValue.toDictionary() ?? [:]
+            var updates: [String: String] = [:]
+            for (key, value) in raw {
+                guard let name = key as? String else { continue }
+                updates[name] = (value as? String) ?? String(describing: value)
+            }
+            guard !updates.isEmpty else { return }
+            var info = LoginManager.shared.getLoginInfo(sourceUrl: sourceUrl) ?? [:]
+            info.merge(updates) { _, new in new }
+            LoginManager.shared.storeLoginInfo(sourceUrl: sourceUrl, info: info)
+        }
         if !source.jsLib.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             _ = engine.evaluate(source.jsLib, bindings: ["baseUrl": source.bookSourceUrl])
         }
@@ -517,8 +640,10 @@ struct LoginUIField: Identifiable {
     let name: String
     let type: FieldType
     let action: String?
+    let options: [String]
+    let defaultValue: String?
 
-    enum FieldType: String { case text, password, button }
+    enum FieldType: String { case text, password, select, button }
 
     static func parse(from json: String) -> [LoginUIField] {
         // Legado's loginUi is frequently authored as a JS object literal
@@ -531,7 +656,31 @@ struct LoginUIField: Identifiable {
             let typeStr = dict["type"] as? String ?? "text"
             let type = FieldType(rawValue: typeStr) ?? .text
             let action = dict["action"] as? String
-            return LoginUIField(name: name, type: type, action: action)
+            return LoginUIField(
+                name: name,
+                type: type,
+                action: action,
+                options: stringArray(dict["chars"]),
+                defaultValue: stringValue(dict["default"])
+            )
+        }
+    }
+
+    private static func stringArray(_ value: Any?) -> [String] {
+        guard let array = value as? [Any] else { return [] }
+        return array.compactMap(stringValue)
+    }
+
+    private static func stringValue(_ value: Any?) -> String? {
+        switch value {
+        case let string as String:
+            return string
+        case let number as NSNumber:
+            return number.stringValue
+        case let value?:
+            return String(describing: value)
+        case nil:
+            return nil
         }
     }
 }

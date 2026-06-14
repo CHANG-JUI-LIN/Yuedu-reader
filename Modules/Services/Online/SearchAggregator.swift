@@ -218,7 +218,7 @@ class SearchBook: Identifiable, ObservableObject {
 // Core design:
 // 1. TaskGroup schedules at most GlobalSettings.searchConcurrency active source tasks
 // 2. Each book source independently bound to a 15s timeout; timed-out tasks are cancelled to free resources
-// 3. As soon as any single source returns results, immediately mergeItems + re-sort + refresh UI
+// 3. As soon as any single source returns results, stream its visible books into the UI
 // 4. Uses @Published with SwiftUI to automatically trigger view updates (streaming mechanism)
 
 @MainActor
@@ -327,8 +327,12 @@ class SearchAggregator: ObservableObject {
                         guard !Task.isCancelled else { return .failed(source.id) }
                         // Each source has its own timeout; cancel on expiry
                         return await Self.searchSingleSource(
-                            query: q, source: source, timeout: sourceTimeout
-                        )
+                            query: q,
+                            source: source,
+                            timeout: sourceTimeout
+                        ) { [weak self] books in
+                            await self?.mergeBatch(books, query: q)
+                        }
                     }
                 }
 
@@ -336,7 +340,7 @@ class SearchAggregator: ObservableObject {
                     enqueueNextSource()
                 }
 
-                // Streaming: merge and sort each returned source without animation.
+                // Streaming: merge each returned source without animation.
                 // Large imported packs can contain 1000+ sources, so animated
                 // mutations here overwhelm SwiftUI's list diffing on iOS 18.
                 while let batchResult = await group.next() {
@@ -344,7 +348,7 @@ class SearchAggregator: ObservableObject {
 
                     switch batchResult {
                     case .success(let sourceId, let books):
-                        self.mergeBatch(books, query: q)
+                        await self.mergeBatch(books, query: q)
                         self.progress.completed += 1
                         SourceHealthStore.shared.recordSuccess(sourceId)
                     case .timeout(let sourceId):
@@ -354,9 +358,6 @@ class SearchAggregator: ObservableObject {
                         self.progress.failed += 1
                         SourceHealthStore.shared.recordFailure(sourceId)
                     }
-                    // Re-sort every time new results arrive (SwiftUI @Published auto-triggers UI update)
-                    self.sortResults(query: q)
-
                     if self.shouldAutoPause(query: q, policy: autoPausePolicy) {
                         group.cancelAll()
                         break
@@ -391,13 +392,22 @@ class SearchAggregator: ObservableObject {
     }
 
     private static func searchSingleSource(
-        query: String, source: BookSource, timeout: UInt64
+        query: String,
+        source: BookSource,
+        timeout: UInt64,
+        onBatch: @escaping @Sendable ([OnlineBook]) async -> Void
     ) async -> SearchBatchResult {
         let sourceId = source.id
         do {
-            return try await withThrowingTaskGroup(of: [OnlineBook].self) { group in
+            return try await withThrowingTaskGroup(
+                of: BookSourceFetcher.SearchStreamingOutcome.self
+            ) { group in
                 group.addTask {
-                    try await BookSourceFetcher.shared.search(query: query, in: source)
+                    try await BookSourceFetcher.shared.searchStreaming(
+                        query: query,
+                        in: source,
+                        onBatch: onBatch
+                    )
                 }
                 group.addTask {
                     try await Task.sleep(nanoseconds: timeout * 1_000_000_000)
@@ -407,7 +417,7 @@ class SearchAggregator: ObservableObject {
                     throw CancellationError()
                 }
                 group.cancelAll()
-                return .success(sourceId, result)
+                return .success(sourceId, result.streamed ? [] : result.books)
             }
         } catch is CancellationError {
             return .failed(sourceId)
@@ -440,82 +450,80 @@ class SearchAggregator: ObservableObject {
     // 3. Already exists → merge into origins array
     // 4. Does not exist → create new SearchBook
 
-    private func mergeBatch(_ books: [OnlineBook], query: String) {
-        let q = query.lowercased()
+    private func mergeBatch(_ books: [OnlineBook], query: String) async {
+        let q = Self.normalizedSearchText(query)
+        for book in books {
+            if Task.isCancelled { break }
+            guard mergeBook(book, normalizedQuery: q) else { continue }
+            sortResults(query: q)
+            await Task.yield()
+        }
+    }
+
+    @discardableResult
+    private func mergeBook(_ book: OnlineBook, normalizedQuery q: String) -> Bool {
+        // Filter out results completely unrelated to the search keyword.
+        let normalizedName = Self.normalizedSearchText(book.name)
+        let normalizedAuthor = Self.normalizedSearchText(book.author)
+
+        let isRelated = !q.isEmpty && (
+            normalizedName.contains(q) ||
+            normalizedAuthor.contains(q) ||
+            q.contains(normalizedName)
+        )
+        guard isRelated else { return false }
+
+        let origin = BookOrigin(
+            sourceId: book.sourceId,
+            sourceName: book.sourceName,
+            bookUrl: book.bookUrl,
+            tocUrl: book.tocUrl,
+            coverUrl: book.coverUrl,
+            intro: book.intro,
+            lastChapter: book.lastChapter,
+            wordCount: book.wordCount,
+            kind: book.kind,
+            runtimeVariables: book.runtimeVariables
+        )
+
+        // Bucket by title, then merge into the first same-title result whose
+        // author is compatible (equal, or one side empty). Same title with a
+        // clearly different author stays a separate book.
+        let nameKey = SearchBook.nameKey(book.name)
+        let existingIndex = deduplicationMap[nameKey]?.first { idx in
+            idx < results.count
+                && SearchBook.isLikelySameBook(
+                    name: book.name, author: book.author,
+                    name: results[idx].name, author: results[idx].author)
+        }
+
+        if let existingIndex {
+            // Compatible match -> merge into existing result's origin array.
+            results[existingIndex].origins.append(origin)
+        } else {
+            let searchBook = SearchBook(
+                name: book.name,
+                author: book.author,
+                origins: [origin]
+            )
+            deduplicationMap[nameKey, default: []].append(results.count)
+            results.append(searchBook)
+        }
+        return true
+    }
+
+    private static func normalizedSearchText(_ text: String) -> String {
+        text.lowercased()
             .applyingTransform(.fullwidthToHalfwidth, reverse: false)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: " ", with: "")
-            ?? query.lowercased()
-
-        for book in books {
-            // Filter out results completely unrelated to the search keyword
-            let normalizedName = book.name.lowercased()
-                .applyingTransform(.fullwidthToHalfwidth, reverse: false)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: " ", with: "")
-                ?? book.name.lowercased()
-            let normalizedAuthor = book.author.lowercased()
-                .applyingTransform(.fullwidthToHalfwidth, reverse: false)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: " ", with: "")
-                ?? book.author.lowercased()
-
-            let isRelated = !q.isEmpty && (
-                normalizedName.contains(q) ||
-                normalizedAuthor.contains(q) ||
-                q.contains(normalizedName)
-            )
-            guard isRelated else { continue }
-
-            let origin = BookOrigin(
-                sourceId: book.sourceId,
-                sourceName: book.sourceName,
-                bookUrl: book.bookUrl,
-                tocUrl: book.tocUrl,
-                coverUrl: book.coverUrl,
-                intro: book.intro,
-                lastChapter: book.lastChapter,
-                wordCount: book.wordCount,
-                kind: book.kind,
-                runtimeVariables: book.runtimeVariables
-            )
-
-            // Bucket by title, then merge into the first same-title result whose
-            // author is compatible (equal, or one side empty). Same title with a
-            // clearly different author stays a separate book.
-            let nameKey = SearchBook.nameKey(book.name)
-            let existingIndex = deduplicationMap[nameKey]?.first { idx in
-                idx < results.count
-                    && SearchBook.isLikelySameBook(
-                        name: book.name, author: book.author,
-                        name: results[idx].name, author: results[idx].author)
-            }
-
-            if let existingIndex {
-                // Compatible match → merge into existing result's origin array
-                results[existingIndex].origins.append(origin)
-            } else {
-                // New book → create new SearchBook
-                let searchBook = SearchBook(
-                    name: book.name,
-                    author: book.author,
-                    origins: [origin]
-                )
-                deduplicationMap[nameKey, default: []].append(results.count)
-                results.append(searchBook)
-            }
-        }
+            ?? text.lowercased()
     }
 
     // MARK: - Three-tier Sorting
 
     private func sortResults(query: String) {
-        let q =
-            query.lowercased()
-            .applyingTransform(.fullwidthToHalfwidth, reverse: false)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: " ", with: "")
-            ?? query.lowercased()
+        let q = Self.normalizedSearchText(query)
 
         results.sort { a, b in
             let aScore = matchScore(name: a.name, query: q)
@@ -538,12 +546,7 @@ class SearchAggregator: ObservableObject {
     /// Simplified-Chinese sources search simplified Chinese; for traditional Chinese
     /// search, import traditional-Chinese sources.
     private func matchScore(name: String, query: String) -> Int {
-        let normalized =
-            name.lowercased()
-            .applyingTransform(.fullwidthToHalfwidth, reverse: false)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: " ", with: "")
-            ?? name.lowercased()
+        let normalized = Self.normalizedSearchText(name)
 
         guard !query.isEmpty else { return 0 }
 

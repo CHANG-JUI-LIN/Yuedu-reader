@@ -1953,7 +1953,7 @@ struct LegadoSourceBridgeTests {
     @Test("getLoginInfoMap returns empty when no handler set")
     func getLoginInfoMapNoHandler() {
         let bridge = LegadoSourceBridge.from(BookSource())
-        #expect(bridge.getLoginInfoMap().isEmpty)
+        #expect(bridge.getLoginInfoMap().toDictionary()?.isEmpty ?? true)
     }
 
     @Test("putLoginInfo delegates to handler")
@@ -1977,7 +1977,7 @@ struct LegadoSourceBridgeTests {
     @Test("getHeaderMap returns empty when no handler set")
     func getHeaderMapNoHandler() {
         let bridge = LegadoSourceBridge.from(BookSource())
-        #expect(bridge.getHeaderMap().isEmpty)
+        #expect(bridge.getHeaderMap().toDictionary()?.isEmpty ?? true)
     }
 
     @Test("put/get key-value store with handlers")
@@ -2187,6 +2187,62 @@ struct ModernParserBridgeExploreTests {
         #expect(items.first?.title == "推薦")
         #expect(items.first?.url == "https://example.com/recommend")
         #expect(items.first?.style?["layout_flexBasisPercent"] == "0.45")
+    }
+
+    @Test("templated discover URL remains fetchable and resolves through AnalyzeUrl")
+    func templatedDiscoverURLFetchesThroughAnalyzeUrl() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com/source"
+        source.bookSourceName = "Template Discover"
+        source.jsLib = """
+        function makeDiscoverData() {
+            let payload = java.base64Encode(JSON.stringify({
+                data: {
+                    books: [{
+                        name: 'Discover Template Book',
+                        author: 'Template Author',
+                        url: 'https://example.com/book/1'
+                    }]
+                }
+            }));
+            return `data:;base64,${payload},{"type":"discover"}`;
+        }
+        """
+        source.ruleExplore.bookList = """
+        <js>
+        JSON.parse(java.hexDecodeToString(result));
+        </js>$.data.books[*]
+        """
+        source.ruleExplore.name = "$.name"
+        source.ruleExplore.author = "$.author"
+        source.ruleExplore.bookUrl = "$.url"
+
+        let raw = ModernParserBridge.DiscoverItem(
+            title: "歷史",
+            url: "{{makeDiscoverData()}}"
+        )
+
+        let card = try #require(await MainActor.run { DiscoverViewModel.mapItem(raw) })
+        #expect(!card.isAction)
+        #expect(card.isFetchable)
+
+        let books = try await BookSourceFetcher.shared.discoverBooks(from: raw, in: source)
+        #expect(books.map(\.name) == ["Discover Template Book"])
+        #expect(books.map(\.author) == ["Template Author"])
+        #expect(books.map(\.bookUrl) == ["https://example.com/book/1"])
+    }
+
+    @Test("browser script discover URL stays an action")
+    func browserScriptDiscoverURLStaysAction() async throws {
+        let raw = ModernParserBridge.DiscoverItem(
+            title: "登入",
+            url: "{{java.startBrowser('https://example.com/login','登入')}}"
+        )
+
+        let card = try #require(await MainActor.run { DiscoverViewModel.mapItem(raw) })
+        #expect(card.isAction)
+        #expect(!card.isFetchable)
+        #expect(card.actionURL == "https://example.com/login")
     }
 }
 

@@ -756,6 +756,7 @@
 "未配置網路語音源，將使用系統離線語音朗讀" = "No network voice source configured; using the system offline voice";
 
 "段評" = "Reviews";
+"作品相關" = "Related Work";
 
 "從本地匯入" = "Import from Local";
 "從 WebDAV 匯入" = "Import from WebDAV";

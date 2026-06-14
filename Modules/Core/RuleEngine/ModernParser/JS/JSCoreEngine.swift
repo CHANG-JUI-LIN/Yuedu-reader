@@ -96,6 +96,16 @@ class JSCoreEngine {
         didSet { bridge.cloudflareChallengeHandler = cloudflareChallengeHandler }
     }
 
+    /// Called when JS invokes `java.reLoginView()` — re-render the source's custom login menu.
+    var reLoginViewHandler: (() -> Void)? {
+        didSet { bridge.reLoginViewHandler = reLoginViewHandler }
+    }
+
+    /// Called when JS invokes `java.upLoginData(map)` — persist source-menu setting values.
+    var upLoginDataHandler: ((JSValue) -> Void)? {
+        didSet { bridge.upLoginDataHandler = upLoginDataHandler }
+    }
+
     /// Called when JS invokes `java.toast` / `java.longToast`.
     var toastHandler: ((String) -> Void)? {
         didSet { bridge.toastHandler = toastHandler }
@@ -186,9 +196,31 @@ class JSCoreEngine {
             for (key, value) in bindings {
                 context.setObject(value, forKeyedSubscript: key as NSString)
             }
-            guard let value = context.evaluateScript(script) else { return nil }
+            let prepared = Self.neutralizeResultRedeclaration(script)
+            guard let value = context.evaluateScript(prepared) else { return nil }
             return extractString(from: value)
         }
+    }
+
+    /// Legado rule JS sometimes both reads the injected `result` global AND later
+    /// redeclares it with `let result = …` / `const result = …` in the same scope —
+    /// e.g. 起点's chapterList reads `result` (the page body) up top, then builds the
+    /// filtered chapter list into `let result = []`. Under JavaScriptCore's ES6 rules
+    /// the `let` hoists into a Temporal Dead Zone, so the *earlier* read throws
+    /// "Cannot access 'result' before initialization" and the whole rule aborts
+    /// (symptom: empty TOC/content). Rhino (Legado on Android) has no TDZ here.
+    /// Rewriting the redeclaration to `var result` hoists without a TDZ and reuses the
+    /// injected global — verified to make 起点's 453-chapter TOC parse. Only the exact
+    /// `result` identifier is touched (not `resultList`, etc.).
+    private static let resultRedeclPattern = try! NSRegularExpression(
+        pattern: #"\b(?:let|const)(\s+result\b)"#
+    )
+    private static func neutralizeResultRedeclaration(_ script: String) -> String {
+        guard script.contains("result") else { return script }
+        let range = NSRange(script.startIndex..., in: script)
+        return resultRedeclPattern.stringByReplacingMatches(
+            in: script, range: range, withTemplate: "var$1"
+        )
     }
 
     /// Evaluate with multiple bindings injected into the context before execution.
@@ -234,6 +266,7 @@ class JSCoreEngine {
         onJSQueue {
             self.chapterBridge = bridge
             context.setObject(bridge, forKeyedSubscript: "chapter" as NSString)
+            injectChapterGlobals(bridge, into: context)
         }
     }
 
@@ -248,6 +281,13 @@ class JSCoreEngine {
             if msg.contains("eval() is disabled") {
                 AppLogger.security("Book source JS attempted to use disabled eval(); blocked", context: ["error": msg])
             }
+            // Surface uncaught rule-JS exceptions to the device log (Console) so book
+            // source failures (TOC/content not loading, etc.) are diagnosable without
+            // the in-app debug engine. Only uncaught exceptions reach this handler.
+            AppLogger.parse("Book source rule JS exception", context: [
+                "source": self?.bookSource?.bookSourceName ?? "?",
+                "error": msg
+            ])
             self?.errorHandler?(msg, "js exception")
             #if DEBUG
             print("[JSCoreEngine] JS Error: \(msg)")
@@ -281,6 +321,7 @@ class JSCoreEngine {
         // Inject mutable book/chapter bridge objects used by Legado rule JS.
         ctx.setObject(bookBridge, forKeyedSubscript: "book" as NSString)
         ctx.setObject(chapterBridge, forKeyedSubscript: "chapter" as NSString)
+        injectChapterGlobals(chapterBridge, into: ctx)
 
         // Inject a top-level `print` that delegates to java.log
         let printBlock: @convention(block) (String) -> Void = { msg in
@@ -331,6 +372,187 @@ class JSCoreEngine {
             function getArgument(key) { return java.get(key) || ''; }
             function setArgument(key, value) { java.put(key, value); }
         """)
+
+        // java.util.Map compatibility shim.
+        // Legado runs on Rhino, where `source.getLoginInfoMap()` / `source.getHeaderMap()`
+        // return real `java.util.Map` instances. Source jsLib routinely calls `.get(key)`
+        // / `.put(key,val)` / `.containsKey(key)` on them (e.g. `getConfigValue` →
+        // `infomap.get(key)`). JavaScriptCore bridges a Swift dictionary to a plain JS
+        // object with no such methods, so those calls throw `… is not a function` and
+        // abort the whole rule (symptom: book opens but TOC/content silently fail).
+        // `__yueduJavaMap` augments a plain object in place with the Map methods as
+        // non-enumerable properties, so `obj[key]` / `for..in` / `Object.keys` are
+        // unaffected while `.get()` etc. work.
+        ctx.evaluateScript("""
+            function __yueduJavaMap(o) {
+                o = o || {};
+                function def(name, fn) {
+                    Object.defineProperty(o, name, { value: fn, enumerable: false, configurable: true });
+                }
+                def('get', function (k) { var v = o[k]; return v === undefined ? null : v; });
+                def('put', function (k, v) { o[k] = v; return v; });
+                def('containsKey', function (k) { return Object.prototype.hasOwnProperty.call(o, k); });
+                def('remove', function (k) { var v = o[k]; delete o[k]; return v === undefined ? null : v; });
+                def('size', function () { return Object.keys(o).length; });
+                def('isEmpty', function () { return Object.keys(o).length === 0; });
+                def('keySet', function () { return Object.keys(o); });
+                def('values', function () { return Object.keys(o).map(function (k) { return o[k]; }); });
+                return o;
+            }
+        """)
+
+        // Java crypto interop shim (Rhino `Packages.*` / `JavaImporter`).
+        // Some Legado sources decrypt chapter content with RAW Java crypto, e.g.:
+        //   var ji = new JavaImporter(); ji.importPackage(Packages.javax.crypto, ...);
+        //   with (ji) { Cipher.getInstance("AES/CBC/PKCS5Padding").doFinal(...) }
+        // None of that exists in JavaScriptCore. This shim provides just enough of the
+        // `javax.crypto` / `java.util` surface (Cipher, SecretKeySpec, IvParameterSpec,
+        // Base64, Arrays) backed by the native `java.aes*Hex` bridge, plus a tolerant
+        // `Packages` proxy so merely importing an unsupported package never throws.
+        ctx.evaluateScript("""
+            (function () {
+                function bytesToHex(bytes) {
+                    var s = '';
+                    for (var i = 0; i < bytes.length; i++) {
+                        var h = (bytes[i] & 0xff).toString(16);
+                        if (h.length < 2) h = '0' + h;
+                        s += h;
+                    }
+                    return s;
+                }
+                var B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+                function b64ToBytes(str) {
+                    str = String(str).replace(/[^A-Za-z0-9+/]/g, ''); // drop '=' padding + whitespace
+                    var bytes = [], i = 0;
+                    while (i < str.length) {
+                        var n = str.length - i; // chars left in this (possibly partial) quartet
+                        var e1 = B64.indexOf(str.charAt(i));
+                        var e2 = (n > 1) ? B64.indexOf(str.charAt(i + 1)) : -1;
+                        var e3 = (n > 2) ? B64.indexOf(str.charAt(i + 2)) : -1;
+                        var e4 = (n > 3) ? B64.indexOf(str.charAt(i + 3)) : -1;
+                        if (e2 >= 0) bytes.push(((e1 << 2) | (e2 >> 4)) & 0xff);
+                        if (e3 >= 0) bytes.push((((e2 & 15) << 4) | (e3 >> 2)) & 0xff);
+                        if (e4 >= 0) bytes.push((((e3 & 3) << 6) | e4) & 0xff);
+                        i += 4;
+                    }
+                    return bytes;
+                }
+                if (typeof String.prototype.getBytes !== 'function') {
+                    Object.defineProperty(String.prototype, 'getBytes', {
+                        value: function () {
+                            var s = String(this), bytes = [];
+                            for (var i = 0; i < s.length; i++) {
+                                var c = s.charCodeAt(i);
+                                if (c < 0x80) { bytes.push(c); }
+                                else if (c < 0x800) { bytes.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f)); }
+                                else if (c >= 0xd800 && c <= 0xdbff) {
+                                    var c2 = s.charCodeAt(++i);
+                                    var cp = 0x10000 + (((c & 0x3ff) << 10) | (c2 & 0x3ff));
+                                    bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
+                                } else { bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f)); }
+                            }
+                            return bytes;
+                        }, enumerable: false, configurable: true, writable: true
+                    });
+                }
+                function toByteArray(x) {
+                    if (x == null) return [];
+                    if (typeof x === 'string') return x.getBytes();
+                    if (x.__bytes) return x.__bytes;
+                    return x;
+                }
+                function SecretKeySpec(keyBytes, alg) { return { __bytes: toByteArray(keyBytes), __alg: alg }; }
+                function IvParameterSpec(ivBytes) { return { __bytes: toByteArray(ivBytes) }; }
+                var Cipher = {
+                    getInstance: function (transformation) {
+                        return {
+                            __t: transformation, __mode: 0, __key: null, __iv: null,
+                            init: function (mode, key, iv) {
+                                this.__mode = mode;
+                                this.__key = key && (key.__bytes || key);
+                                this.__iv = iv && (iv.__bytes || iv);
+                            },
+                            doFinal: function (dataBytes) {
+                                var keyHex = bytesToHex(this.__key || []);
+                                var ivHex = bytesToHex(this.__iv || []);
+                                var dataHex = bytesToHex(toByteArray(dataBytes));
+                                var outHex = (this.__mode === 1)
+                                    ? java.aesEncryptHex(this.__t, keyHex, ivHex, dataHex)
+                                    : java.aesDecryptHex(this.__t, keyHex, ivHex, dataHex);
+                                return java.hexDecodeToString(outHex);
+                            }
+                        };
+                    }
+                };
+                var Base64 = {
+                    getDecoder: function () { return { decode: function (s) { return b64ToBytes(s); } }; },
+                    getEncoder: function () { return { encodeToString: function (bytes) { return java.base64Encode(java.hexDecodeToString(bytesToHex(bytes))); } }; }
+                };
+                var Arrays = { copyOfRange: function (arr, from, to) { return Array.prototype.slice.call(arr, from, to); } };
+                var members = {
+                    'javax.crypto': { Cipher: Cipher },
+                    'javax.crypto.spec': { SecretKeySpec: SecretKeySpec, IvParameterSpec: IvParameterSpec },
+                    'java.util': { Base64: Base64, Arrays: Arrays }
+                };
+                function makeNamespace(path) {
+                    var mem = members[path] || {};
+                    var target = function () {};
+                    target.__members = mem;
+                    for (var k in mem) { target[k] = mem[k]; }
+                    return new Proxy(target, {
+                        get: function (t, prop) {
+                            if (typeof prop !== 'string') { return t[prop]; }
+                            if (prop === '__members') { return mem; }
+                            if (prop in t) { return t[prop]; }
+                            return makeNamespace(path ? path + '.' + prop : prop);
+                        },
+                        apply: function () { return undefined; },
+                        // `new Packages.java.util.HashMap()` etc. — source login/menu JS builds
+                        // Java collections to hand back through java.upLoginData(map). Return a
+                        // usable map/list instead of a bare {} (which has no .put → would throw).
+                        construct: function (t, args) {
+                            var name = path.split('.').pop();
+                            if (name === 'HashMap' || name === 'LinkedHashMap' ||
+                                name === 'TreeMap' || name === 'Hashtable' || name === 'Properties') {
+                                return (typeof __yueduJavaMap === 'function') ? __yueduJavaMap({}) : {};
+                            }
+                            if (name === 'ArrayList' || name === 'LinkedList' || name === 'Vector') {
+                                return [];
+                            }
+                            return {};
+                        }
+                    });
+                }
+                this.Packages = makeNamespace('');
+                function JavaImporter() {
+                    var self = {};
+                    self.importPackage = function () {
+                        for (var i = 0; i < arguments.length; i++) {
+                            var mem = arguments[i] && arguments[i].__members;
+                            if (mem) { for (var k in mem) { self[k] = mem[k]; } }
+                        }
+                    };
+                    self.importClass = self.importPackage;
+                    return self;
+                }
+                this.JavaImporter = JavaImporter;
+            })();
+        """)
+    }
+
+    /// Some Legado/Rhino source scripts read current-chapter fields as bare globals
+    /// (`title`, `url`, `index`) instead of going through `chapter.title`.
+    /// JavaScriptCore does not synthesize those globals from the exported `chapter` object,
+    /// so keep them explicitly mirrored whenever the chapter bridge changes.
+    private func injectChapterGlobals(_ bridge: LegadoChapterBridge, into ctx: JSContext) {
+        ctx.setObject(bridge.title, forKeyedSubscript: "title" as NSString)
+        ctx.setObject(bridge.title, forKeyedSubscript: "chapterTitle" as NSString)
+        ctx.setObject(bridge.url, forKeyedSubscript: "url" as NSString)
+        ctx.setObject(bridge.url, forKeyedSubscript: "chapterUrl" as NSString)
+        ctx.setObject(bridge.index, forKeyedSubscript: "index" as NSString)
+        ctx.setObject(bridge.index, forKeyedSubscript: "chapterIndex" as NSString)
+        ctx.setObject(bridge.order, forKeyedSubscript: "order" as NSString)
+        ctx.setObject(bridge.order, forKeyedSubscript: "chapterOrder" as NSString)
     }
 
     /// Inject `source` as a Legado-compatible bridge object with methods and properties.
@@ -381,11 +603,18 @@ class JSCoreEngine {
         if lastError != nil { return nil }
         if value.isUndefined || value.isNull { return nil }
 
-        // Arrays and objects → JSON string
+        // Arrays and objects → JSON string.
+        // `value.isObject` is true for functions, Dates, RegExps, Proxies, NaN-bearing
+        // objects, etc. — and `JSONSerialization.data(withJSONObject:)` raises an
+        // *Objective-C* `NSInvalidArgumentException` (NOT a Swift error, so `try?` can't
+        // catch it) for anything that isn't a valid JSON tree. Guard with
+        // `isValidJSONObject` first, then fall through to the string form. (Previously this
+        // crashed search when a rule's JS returned a non-serialisable object.)
         if value.isArray || value.isObject {
-            if let data = try? JSONSerialization.data(
-                withJSONObject: value.toObject() as Any, options: []
-            ), let json = String(data: data, encoding: .utf8) {
+            let object = value.toObject() as Any
+            if JSONSerialization.isValidJSONObject(object),
+               let data = try? JSONSerialization.data(withJSONObject: object, options: []),
+               let json = String(data: data, encoding: .utf8) {
                 return json
             }
         }

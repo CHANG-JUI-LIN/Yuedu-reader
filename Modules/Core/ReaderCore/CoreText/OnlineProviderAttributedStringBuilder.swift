@@ -107,6 +107,11 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         for builder: HTMLAttributedStringBuilder,
         chapterHref: String
     ) {
+        // Image loading works without a resource provider: online sources embed illustrations
+        // and comment-bubble SVGs as data: URIs and absolute http(s) URLs. Wire it unconditionally.
+        builder.imageLoader = { [weak self] src in
+            await self?.loadImage(src: src, chapterHref: chapterHref)
+        }
         guard let resourceProvider else { return }
         builder.resolvedFont = { [weak self] families, weight, italic, size in
             self?.styleResolver?.resolveRegisteredFont(
@@ -125,9 +130,6 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             return styleResolver?.registeredFontFaces[normalized]?.postScriptName
                 ?? styleResolver?.registeredFontFaces[normalized]?.familyName
         }
-        builder.imageLoader = { [weak self] src in
-            await self?.loadImage(src: src, chapterHref: chapterHref)
-        }
         builder.mediaURLResolver = { src in
             let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
             return resourceProvider.resourceURL(for: resolved).absoluteString
@@ -138,8 +140,17 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
     }
 
     private func loadImage(src: String, chapterHref: String) async -> UIImage? {
+        let cleaned = OnlineImageLoader.cleanImageSource(src)
+        guard !cleaned.isEmpty else { return nil }
+        let renderWidth = max(0, renderSize.width)
+
+        if let onlineImage = await OnlineImageLoader.load(src: cleaned, renderWidth: renderWidth) {
+            return onlineImage
+        }
+
+        // EPUB-style book-local resource (only when a resource provider is present).
         guard let resourceProvider else { return nil }
-        let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
+        let resolved = EPUBStyleResolver.resolveImageHref(cleaned, chapterHref: chapterHref)
         let url = resourceProvider.resourceURL(for: resolved)
         guard let response = try? await resourceProvider.response(for: url) else { return nil }
         return UIImage(data: response.data)
@@ -214,9 +225,10 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             }
 
             let nodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
-            // Only wire resource closures when a resource provider exists: a nil imageLoader makes
-            // the renderer fall back to alt text, matching the legacy builder's behavior for plain
-            // online chapters that have no book-local resources.
+            // The image loader handles data: URIs + remote URLs even without a resource provider,
+            // so wire it unconditionally — that's what lets online illustrations / comment-bubble
+            // SVGs render instead of degrading to alt text. Media (audio/video) URL resolution
+            // still needs a book-local resource provider, so it stays gated.
             let hasResources = resourceProvider != nil
             let renderer = NodeAttributedStringRenderer(
                 config: NodeAttributedStringRenderer.Config(
@@ -232,7 +244,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                             size: size
                         )
                     },
-                    imageLoader: !hasResources ? nil : { [weak self] src in
+                    imageLoader: { [weak self] src in
                         await self?.loadImage(src: src, chapterHref: chapterHref)
                     },
                     mediaURLResolver: !hasResources ? nil : { [weak self] src in

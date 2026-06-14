@@ -878,6 +878,19 @@ struct NodeAttributedStringRenderer {
         attachmentStyle.opacity = payload.style.opacity
 
         let imageMetrics = await resolvedImageMetrics(image: image, style: attachmentStyle, font: blockCtx.font, displayMode: .block)
+        let natW = image?.size.width ?? 0
+        let natH = image?.size.height ?? 0
+        let natRatio = natH > 0 ? natW / natH : 0
+        let drawRatio = imageMetrics.drawHeight > 0 ? imageMetrics.drawWidth / imageMetrics.drawHeight : 0
+        AppLogger.parse("⟐ imgRender", context: [
+            "src": String(payload.src.prefix(56)),
+            "natural": "\(Int(natW))x\(Int(natH))",
+            "styleWH": "\(attachmentStyle.width.map { Int($0) } ?? -1)x\(attachmentStyle.height.map { Int($0) } ?? -1)",
+            "draw": "\(Int(imageMetrics.drawWidth))x\(Int(imageMetrics.drawHeight))",
+            "naturalRatio": String(format: "%.3f", natRatio),
+            "drawRatio": String(format: "%.3f", drawRatio),
+            "distorted": abs(natRatio - drawRatio) > 0.02
+        ])
         let blockImage = HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage(
             image: image,
             source: payload.src,
@@ -1350,9 +1363,12 @@ struct NodeAttributedStringRenderer {
                 drawHeight = image.size.height
             }
         } else {
-            let fallbackHeight = style.height ?? (availableWidth * 0.6)
-            drawWidth = style.width ?? availableWidth
-            drawHeight = fallbackHeight
+            // No image yet (async remote load in flight / failed). Reserve a modest SQUARE
+            // placeholder rather than a full-width 0.6-ratio box, so a thumbnail-sized image
+            // doesn't flash stretched-wide before it finishes loading.
+            let placeholderSide = min(availableWidth, 180)
+            drawWidth = style.width ?? placeholderSide
+            drawHeight = style.height ?? placeholderSide
         }
 
         if drawWidth > availableWidth {

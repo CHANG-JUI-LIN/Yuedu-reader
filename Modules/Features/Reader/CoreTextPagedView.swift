@@ -758,7 +758,16 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         ) {
             guard let sessionCoordinator else { return }
             let effects = sessionCoordinator.send(.pageTransitionSettled(visiblePage: visiblePage))
-            applyTransitionEffects(effects, on: pageViewController, showing: visiblePage)
+            guard !effects.isEmpty else { return }
+            // This runs inside the *completion* of the previous animated setViewControllers.
+            // Starting the next animated transition synchronously here makes
+            // _UIQueuingScrollView raise NSInternalInconsistencyException — it is still
+            // settling the just-finished scroll. Hop to the next runloop so the page view
+            // controller fully unwinds before the queued transition begins. (State was
+            // already advanced synchronously by `send(.pageTransitionSettled:)` above.)
+            DispatchQueue.main.async { [weak self] in
+                self?.applyTransitionEffects(effects, on: pageViewController, showing: visiblePage)
+            }
         }
 
         fileprivate func performProgrammaticTransition(

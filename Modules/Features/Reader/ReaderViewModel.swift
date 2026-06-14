@@ -76,6 +76,17 @@ final class ReaderViewModel: ObservableObject {
             return
         }
 
+        // Volume headers (作品相关 / 第N卷 …) have no fetchable content. Mark ready immediately so
+        // the builder renders a divider page instead of spinning forever on an empty fetch.
+        if refs[chapterIndex].shouldRenderAsVolumeSeparator {
+            if let existing = inFlightRequests.removeValue(forKey: chapterIndex) {
+                existing.task.cancel()
+                await chapterFetcher.cancelChapter(bookId: book.id, chapterIndex: chapterIndex)
+            }
+            chapterStates[chapterIndex] = .ready
+            return
+        }
+
         if await chapterFetcher.isChapterCached(book: book, chapterIndex: chapterIndex) {
             chapterStates[chapterIndex] = .ready
             if let existing = inFlightRequests.removeValue(forKey: chapterIndex) {

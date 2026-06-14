@@ -1,6 +1,7 @@
 import Foundation
 import JavaScriptCore
 import CryptoKit
+import CommonCrypto
 import UIKit
 
 // MARK: - JSExport Protocol
@@ -10,7 +11,7 @@ import UIKit
 @objc protocol LegadoJSBridgeExport: JSExport {
     // Networking
     func ajax(_ urlStr: String) -> String
-    func ajaxAll(_ urlArray: [String]) -> [String]
+    func ajaxAll(_ urlArray: [String]) -> [LegadoStrResponse]
     func connect(_ urlStr: String) -> String
     func post(_ urlStr: String, _ body: String, _ headers: JSValue) -> LegadoStrResponse
     func importScript(_ url: String) -> String
@@ -59,6 +60,10 @@ import UIKit
     func md5Encode16(_ str: String) -> String
     func hexDecodeToString(_ hex: String) -> String
     func hexEncodeToString(_ str: String) -> String
+    // Symmetric crypto (low-level helpers used by the javax.crypto JS shim).
+    // All args/returns are lowercase hex; empty string means failure.
+    func aesDecryptHex(_ transformation: String, _ keyHex: String, _ ivHex: String, _ dataHex: String) -> String
+    func aesEncryptHex(_ transformation: String, _ keyHex: String, _ ivHex: String, _ dataHex: String) -> String
     func encodeURI(_ str: String) -> String
     func encodeURIComponent(_ str: String) -> String
     func htmlFormat(_ str: String) -> String
@@ -149,6 +154,15 @@ import UIKit
     /// Called when JS invokes `java.toast(msg)` / `java.longToast(msg)`.
     var toastHandler: ((String) -> Void)?
 
+    /// Called when JS invokes `java.reLoginView()` — the source asks the host to re-render its
+    /// custom login menu (e.g. after `changeMenu(tag)` switches `menuTag`). Lets multi-page
+    /// source menus (起点's 评论设置/气泡模版 submenus) navigate instead of staying on page 1.
+    var reLoginViewHandler: (() -> Void)?
+
+    /// Called when JS invokes `java.upLoginData(map)` — persist a map of setting key/values into
+    /// the source's login data (read back via `source.getLoginInfoMap()`).
+    var upLoginDataHandler: ((JSValue) -> Void)?
+
     /// Delegate for rule evaluation (connected later).
     var getStringHandler: ((String) -> String?)?
     var getStringListHandler: ((String) -> [String]?)?
@@ -170,33 +184,155 @@ import UIKit
     // MARK: Networking
 
     func ajax(_ urlStr: String) -> String {
-        return performRequest(urlStr)
+        let started = Date()
+        let body = performRequest(urlStr)
+        // ⟐ ajax — reveal WHY 起点 content comes back empty: log the response of the
+        // auth/content/review API calls (get_my_token / content.php / review.php …).
+        if Self.shouldLogReviewNetwork(urlStr) {
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            AppLogger.parse("⟐ ajax", context: [
+                "kind": Self.reviewNetworkKind(urlStr),
+                "path": Self.requestPathPreview(urlStr),
+                "query": Self.redactedQueryPreview(urlStr),
+                "ms": ms,
+                "len": body.count,
+                "json": Self.responseShape(body),
+                "head": String(body.prefix(160))
+            ])
+        }
+        return body
     }
 
-    func ajaxAll(_ urlArray: [String]) -> [String] {
+    func ajaxAll(_ urlArray: [String]) -> [LegadoStrResponse] {
         guard !urlArray.isEmpty else { return [] }
-        // Throttle to at most 6 concurrent requests to avoid GCD thread-pool exhaustion.
-        // ajaxAll is called from the JS serial queue thread, which blocks here intentionally.
+        // Legado's `java.ajaxAll` returns `StrResponse[]`; sources ALWAYS call `.body()` on
+        // each element (起点 段评: `cmtData[0].body()`; 番茄 bookshelf: `r.body()`). Returning
+        // plain `[String]` made `.body()` throw → callers' try/catch swallowed it → e.g. 段评
+        // bubbles silently never injected (review.php fetched fine, just unused). Wrap each
+        // body in LegadoStrResponse so `.body()` works.
         let throttle = DispatchSemaphore(value: 6)
         var results = Array(repeating: "", count: urlArray.count)
         let resultsLock = NSLock()
         let group = DispatchGroup()
 
+        // ⟐ ajaxAll — 段评 review.php is fetched here; log entry/exit + elapsed so a hang
+        // (the suspected 段评-on infinite-loading) is visible on device.
+        let _start = Date()
+        let firstHost = URL(string: urlArray[0].components(separatedBy: ",").first ?? "")?.host ?? "?"
+        AppLogger.parse("⟐ ajaxAll start", context: [
+            "count": urlArray.count,
+            "host": firstHost,
+            "sample": urlArray.prefix(6).map { Self.requestPathPreview($0) }
+        ])
+
         for (index, urlStr) in urlArray.enumerated() {
             throttle.wait() // block until a concurrency slot is free
             group.enter()
             DispatchQueue.global(qos: .utility).async { [weak self] in
+                let itemStart = Date()
                 let body = self?.performRequest(urlStr) ?? ""
+                let itemMs = Int(Date().timeIntervalSince(itemStart) * 1000)
                 resultsLock.lock()
                 results[index] = body
                 resultsLock.unlock()
+                if index < 16 || Self.shouldLogReviewNetwork(urlStr) {
+                    AppLogger.parse("⟐ ajaxAll item", context: [
+                        "i": index,
+                        "kind": Self.reviewNetworkKind(urlStr),
+                        "path": Self.requestPathPreview(urlStr),
+                        "query": Self.redactedQueryPreview(urlStr),
+                        "ms": itemMs,
+                        "len": body.count,
+                        "json": Self.responseShape(body),
+                        "head": String(body.prefix(120))
+                    ])
+                }
                 throttle.signal()
                 group.leave()
             }
         }
 
-        group.wait()
-        return results
+        // Bounded wait: each performRequest is already capped at ~8s, so the whole batch
+        // must finish well within 30s. Never block the JS thread forever.
+        let waited = group.wait(timeout: .now() + 30)
+        let _ms = Int(Date().timeIntervalSince(_start) * 1000)
+        AppLogger.parse("⟐ ajaxAll done", context: [
+            "ms": _ms,
+            "timedOut": waited == .timedOut,
+            "empty": results.filter { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count,
+            "lens": results.map { $0.count }
+        ])
+        // Wrap into StrResponse objects so JS `.body()` works (Legado contract).
+        return zip(urlArray, results).map { url, body in
+            LegadoStrResponse(url: url.components(separatedBy: ",{").first ?? url, body: body)
+        }
+    }
+
+    private static func shouldLogReviewNetwork(_ urlStr: String) -> Bool {
+        let lower = urlStr.lowercased()
+        return lower.contains("content.php")
+            || lower.contains("api_user")
+            || lower.contains("review.php")
+            || lower.contains("chaxun")
+            || lower.contains("/qdapi/")
+            || lower.contains("list.php")
+            || lower.contains("comment")
+            || lower.contains("cmt")
+    }
+
+    private static func reviewNetworkKind(_ urlStr: String) -> String {
+        let lower = urlStr.lowercased()
+        if lower.contains("content.php") { return "content" }
+        if lower.contains("api_user") { return "auth" }
+        if lower.contains("review.php") || lower.contains("comment") || lower.contains("cmt") {
+            return "review"
+        }
+        if lower.contains("list.php") { return "list" }
+        return "other"
+    }
+
+    private static func requestPathPreview(_ urlStr: String) -> String {
+        let rawURL = urlStr.components(separatedBy: ",{").first ?? urlStr
+        guard let components = URLComponents(string: rawURL) else {
+            return String(rawURL.prefix(96))
+        }
+        let host = components.host ?? ""
+        let path = components.path.isEmpty ? "/" : components.path
+        return String((host + path).suffix(96))
+    }
+
+    private static func redactedQueryPreview(_ urlStr: String) -> String {
+        let rawURL = urlStr.components(separatedBy: ",{").first ?? urlStr
+        guard let components = URLComponents(string: rawURL),
+              let items = components.queryItems,
+              !items.isEmpty else { return "" }
+        let preview = items.prefix(8).map { item -> String in
+            let lower = item.name.lowercased()
+            if lower.contains("token") || lower.contains("cookie") || lower.contains("password") {
+                return "\(item.name)=<redacted:\((item.value ?? "").isEmpty ? "empty" : "set")>"
+            }
+            return "\(item.name)=\(item.value ?? "")"
+        }.joined(separator: "&")
+        return String(preview.prefix(180))
+    }
+
+    private static func responseShape(_ body: String) -> String {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "empty" }
+        let lower = trimmed.lowercased()
+        var flags: [String] = []
+        if trimmed.hasPrefix("{") { flags.append("jsonObject") }
+        if trimmed.hasPrefix("[") { flags.append("jsonArray") }
+        if lower.contains(#""success":false"#) { flags.append("success=false") }
+        if lower.contains(#""success":true"#) { flags.append("success=true") }
+        if lower.contains(#""message""#) { flags.append("message") }
+        if lower.contains(#""content""#) { flags.append("content") }
+        if lower.contains(#""count""#) { flags.append("count") }
+        if lower.contains("token") { flags.append("token") }
+        if lower.contains("请先登录") || lower.contains("\\u8bf7\\u5148\\u767b\\u5f55") {
+            flags.append("login-required")
+        }
+        return flags.isEmpty ? "text" : flags.joined(separator: "|")
     }
 
     func connect(_ urlStr: String) -> String {
@@ -425,6 +561,74 @@ import UIKit
         str.data(using: .utf8)?.map { String(format: "%02x", $0) }.joined() ?? ""
     }
 
+    // MARK: - Symmetric Crypto
+
+    /// AES decrypt. Inputs/output are lowercase hex; `""` on failure.
+    /// `transformation` is a Java-style spec like `AES/CBC/PKCS5Padding`.
+    /// Backs the `javax.crypto.Cipher` JS shim so Legado sources that decrypt
+    /// chapter content via raw Java crypto (e.g. 七猫-明月) work under JavaScriptCore.
+    func aesDecryptHex(_ transformation: String, _ keyHex: String, _ ivHex: String, _ dataHex: String) -> String {
+        return Self.aesCrypt(encrypt: false, transformation: transformation, keyHex: keyHex, ivHex: ivHex, dataHex: dataHex)
+    }
+
+    /// AES encrypt. Inputs/output are lowercase hex; `""` on failure.
+    func aesEncryptHex(_ transformation: String, _ keyHex: String, _ ivHex: String, _ dataHex: String) -> String {
+        return Self.aesCrypt(encrypt: true, transformation: transformation, keyHex: keyHex, ivHex: ivHex, dataHex: dataHex)
+    }
+
+    /// Hex string → bytes (nil on malformed input).
+    private static func bytesFromHex(_ hex: String) -> [UInt8]? {
+        let cleaned = hex.filter { !$0.isWhitespace }
+        guard cleaned.count % 2 == 0 else { return nil }
+        var bytes = [UInt8](); bytes.reserveCapacity(cleaned.count / 2)
+        var idx = cleaned.startIndex
+        while idx < cleaned.endIndex {
+            let next = cleaned.index(idx, offsetBy: 2)
+            guard let b = UInt8(cleaned[idx..<next], radix: 16) else { return nil }
+            bytes.append(b); idx = next
+        }
+        return bytes
+    }
+
+    private static func aesCrypt(encrypt: Bool, transformation: String, keyHex: String, ivHex: String, dataHex: String) -> String {
+        let parts = transformation.uppercased().split(separator: "/").map(String.init)
+        guard parts.first == "AES" else { return "" }
+        let mode = parts.count > 1 ? parts[1] : "ECB"
+        let padding = parts.count > 2 ? parts[2] : "PKCS5PADDING"
+
+        guard let key = bytesFromHex(keyHex), let data = bytesFromHex(dataHex), !data.isEmpty else { return "" }
+        let iv = bytesFromHex(ivHex) ?? []
+
+        var options: CCOptions = 0
+        switch padding {
+        case "PKCS5PADDING", "PKCS7PADDING": options |= CCOptions(kCCOptionPKCS7Padding)
+        case "NOPADDING": break
+        default: return "" // unsupported padding (e.g. ISO10126) — fail loudly rather than corrupt
+        }
+        if mode == "ECB" {
+            options |= CCOptions(kCCOptionECBMode)
+        } else if mode != "CBC" {
+            return "" // only ECB/CBC supported via CommonCrypto here
+        }
+        // CBC requires a 16-byte IV; ECB ignores it.
+        let ivBytes: [UInt8] = (mode == "CBC") ? (iv.count == kCCBlockSizeAES128 ? iv : [UInt8](repeating: 0, count: kCCBlockSizeAES128)) : []
+
+        var out = [UInt8](repeating: 0, count: data.count + kCCBlockSizeAES128)
+        var moved = 0
+        let status = CCCrypt(
+            CCOperation(encrypt ? kCCEncrypt : kCCDecrypt),
+            CCAlgorithm(kCCAlgorithmAES),
+            options,
+            key, key.count,
+            ivBytes.isEmpty ? nil : ivBytes,
+            data, data.count,
+            &out, out.count,
+            &moved
+        )
+        guard status == kCCSuccess else { return "" }
+        return out.prefix(moved).map { String(format: "%02x", $0) }.joined()
+    }
+
     // MARK: - URL Encoding
 
     /// Mirrors Legado's `java.encodeURI(str)`. Encodes all characters except URI-safe ones.
@@ -500,6 +704,7 @@ import UIKit
         #if DEBUG
         print("[JSBridge] reLoginView() called")
         #endif
+        reLoginViewHandler?()
     }
 
     func refreshBookInfo() {
@@ -554,12 +759,14 @@ import UIKit
         startBrowser(url, title)
     }
 
-    /// Legado `java.upLoginData(map)` — refresh stored login data. No-op in parser-only flows
-    /// (login state is managed by LoginManager via `source.putLoginInfo`).
+    /// Legado `java.upLoginData(map)` — merge the given map into the source's stored login data
+    /// (read back by source menus via `source.getLoginInfoMap()` / `getConfigValue`). Used by
+    /// custom setting menus (起点/光遇 段评颜色·气泡模版) to persist their values.
     func upLoginData(_ data: JSValue) {
         #if DEBUG
         print("[JSBridge] upLoginData() called")
         #endif
+        upLoginDataHandler?(data)
     }
 
     /// Legado `java.qread()` — switch into "quick read" mode. No-op stub.

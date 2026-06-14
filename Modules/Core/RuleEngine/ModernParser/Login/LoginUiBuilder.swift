@@ -15,6 +15,7 @@ enum LoginUiBuilder {
     /// [
     ///   {"name":"username","type":"text"},
     ///   {"name":"password","type":"password"},
+    ///   {"name":"platform","type":"select","chars":["A","B"],"default":"A"},
     ///   {"name":"login","type":"button","action":"login()"}
     /// ]
     /// ```
@@ -95,9 +96,11 @@ enum LoginUiBuilder {
         var loginData: [String: String] = [:]
         for field in fields {
             switch field.type {
-            case .text, .password:
+            case .text, .password, .select:
                 if let val = values[field.name] {
                     loginData[field.name] = val
+                } else if field.type == .select, let defaultValue = field.defaultValue {
+                    loginData[field.name] = defaultValue
                 }
             case .button:
                 break

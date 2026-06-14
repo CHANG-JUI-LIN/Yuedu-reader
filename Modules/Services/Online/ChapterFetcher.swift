@@ -44,19 +44,68 @@ struct ChapterFetcher {
     func buildRenderableNormalizedHTML(
         title: String,
         plainTextContent: String,
-        rawHTMLContent: String?
+        rawHTMLContent: String?,
+        reviewContext: ReaderHTMLUtilities.LegadoReviewContext? = nil
     ) async -> String {
-        guard
-            let originalRawHTML = rawHTMLContent,
-            !originalRawHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            Self.containsLikelyHTMLTags(originalRawHTML)
-        else {
+        let raw = rawHTMLContent ?? ""
+        let rawTrimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let looksHTML = !rawTrimmed.isEmpty && Self.containsLikelyHTMLTags(raw)
+        AppLogger.parse("⟐ buildRenderableNormalizedHTML", context: [
+            "title": title,
+            "branch": looksHTML ? "HTML(SwiftSoup)" : "PLAIN(escaped)",
+            "rawLen": rawTrimmed.count,
+            "plainLen": plainTextContent.count,
+            "hasImg": raw.contains("<img"),
+            "hasDataImg": raw.contains("data:image"),
+            "hasUsehtml": raw.range(of: "usehtml", options: .caseInsensitive) != nil,
+            "rawComment": Self.countOccurrences(of: "<comment", in: raw, caseInsensitive: true),
+            "rawShowCmt": Self.countOccurrences(of: "showCmt", in: raw, caseInsensitive: true),
+            "rawAndroidShowCmt": Self.countOccurrences(of: "androidshowCmt", in: raw, caseInsensitive: true),
+            "rawYdreview": Self.countOccurrences(of: "ydreview://", in: raw, caseInsensitive: true),
+            "plainYdreview": Self.countOccurrences(of: "ydreview://", in: plainTextContent, caseInsensitive: true),
+            "rawHead": String(rawTrimmed.prefix(240))
+        ])
+        guard looksHTML else {
             return buildNormalizedHTML(title: title, content: plainTextContent)
         }
+        let originalRawHTML = raw
+
+        // Clean Legado data-URI click-config suffixes (`,{json}`) and unwrap <usehtml> first,
+        // otherwise the unbalanced quotes inside the suffix break SwiftSoup's attribute parsing
+        // and the rest of the chapter leaks out as literal text.
+        let cleanedRawHTML = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            originalRawHTML,
+            reviewContext: reviewContext
+        )
+
+        // ⟐ sanitizeClickConfig — show whether the `,{json}` click-config suffix is actually
+        // stripped at fetch time. rawCommas vs cleanCommas: if cleanCommas > 0 the suffix
+        // SURVIVED → SwiftSoup will break on it. `sample` shows the surviving suffix + the
+        // char right after it (reveals why the strip regex's lookahead missed it).
+        AppLogger.parse("⟐ sanitizeClickConfig", context: [
+            "title": title,
+            "rawCommas": Self.countOccurrences(of: ",{", in: originalRawHTML),
+            "cleanCommas": Self.countOccurrences(of: ",{", in: cleanedRawHTML),
+            "rawImg": Self.countOccurrences(of: "<img", in: originalRawHTML, caseInsensitive: true),
+            "cleanImg": Self.countOccurrences(of: "<img", in: cleanedRawHTML, caseInsensitive: true),
+            "rawSample": Self.clickConfigSample(in: originalRawHTML),
+            "cleanSample": Self.clickConfigSample(in: cleanedRawHTML)
+        ])
 
         // Rewrite Legado iOS paragraph-review markers into anchors before parsing, so the
         // markers survive the SwiftSoup round-trip regardless of how <comment> is handled.
-        let rawHTMLContent = ReaderHTMLUtilities.rewriteReviewComments(originalRawHTML)
+        let rawHTMLContent = ReaderHTMLUtilities.rewriteReviewComments(cleanedRawHTML)
+        AppLogger.parse("⟐ reviewHTML rewrite", context: [
+            "title": title,
+            "cleanLen": cleanedRawHTML.count,
+            "outLen": rawHTMLContent.count,
+            "cleanComment": Self.countOccurrences(of: "<comment", in: cleanedRawHTML, caseInsensitive: true),
+            "outComment": Self.countOccurrences(of: "<comment", in: rawHTMLContent, caseInsensitive: true),
+            "outYdreview": Self.countOccurrences(of: "ydreview://", in: rawHTMLContent, caseInsensitive: true),
+            "reviewImage": Self.countOccurrences(of: "yd-review-image", in: rawHTMLContent, caseInsensitive: true),
+            "clickConfig": Self.countOccurrences(of: ",{", in: originalRawHTML),
+            "outHead": String(rawHTMLContent.trimmingCharacters(in: .whitespacesAndNewlines).prefix(240))
+        ])
 
         // SwiftSoup.parse is CPU-intensive synchronous work.
         // Run in a detached task to avoid blocking the cooperative thread pool.
@@ -104,6 +153,30 @@ struct ChapterFetcher {
         }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         return regex.firstMatch(in: text, range: range) != nil
+    }
+
+    /// Returns the first `,{…}` click-config suffix plus ~60 chars of trailing context (base64
+    /// collapsed), so a device log shows the exact suffix shape and the char that follows it.
+    private static func clickConfigSample(in text: String) -> String {
+        guard let r = text.range(of: ",{") else { return "(none)" }
+        // back up ~12 chars to show the tail of the data URI, then take a window forward.
+        let startIdx = text.index(r.lowerBound, offsetBy: -12, limitedBy: text.startIndex) ?? text.startIndex
+        let endIdx = text.index(r.lowerBound, offsetBy: 140, limitedBy: text.endIndex) ?? text.endIndex
+        let window = String(text[startIdx..<endIdx])
+        return window.replacingOccurrences(
+            of: #"base64,[A-Za-z0-9+/=]+"#, with: "base64,…", options: .regularExpression
+        )
+    }
+
+    private static func countOccurrences(
+        of needle: String,
+        in text: String,
+        caseInsensitive: Bool = false
+    ) -> Int {
+        guard !needle.isEmpty, !text.isEmpty else { return 0 }
+        let haystack = caseInsensitive ? text.lowercased() : text
+        let target = caseInsensitive ? needle.lowercased() : needle
+        return max(0, haystack.components(separatedBy: target).count - 1)
     }
 
     func parseChapterRequest(_ raw: String) -> ChapterRequestSpec {
@@ -167,6 +240,7 @@ struct ChapterFetcher {
         initialURL: URL,
         initialBaseURL: String,
         replaceRules: String,
+        reviewContext: ReaderHTMLUtilities.LegadoReviewContext? = nil,
         parsePage: @escaping @Sendable (String, String) async throws -> ChapterParsePayload,
         extractNextURLs: @escaping @Sendable (String, String) async -> [String],
         fetchNextPageHTML: @escaping @Sendable (URL) async throws -> String,
@@ -207,7 +281,8 @@ struct ChapterFetcher {
         let normalizedHTML = await buildRenderableNormalizedHTML(
             title: effectiveTitle,
             plainTextContent: content,
-            rawHTMLContent: parsed.content
+            rawHTMLContent: parsed.content,
+            reviewContext: reviewContext
         )
         let rawHTML = paginated.rawHTMLPages.joined(separator: "\n<!-- staged-page-break -->\n")
         let checksum = SHA256.hash(data: Data(content.utf8)).compactMap {

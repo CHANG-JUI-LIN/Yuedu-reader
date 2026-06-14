@@ -115,6 +115,42 @@ struct BookSourceLoginTests {
         #expect(registerButton.action == "register()")
     }
 
+    @Test("LoginUIField.parse() 正確解析 select 欄位與選項")
+    func parseSelectLoginUiField() throws {
+        let json = """
+        [
+            {"name":"气泡字号","type":"select","chars":["小","中","大"],"default":"中"},
+            {"name":"气泡选择","type":"select","chars":["默认","圆角"],"default":"圆角"}
+        ]
+        """
+        let fields = LoginUIField.parse(from: json)
+
+        #expect(fields.count == 2)
+        #expect(fields[0].type == .select)
+        #expect(fields[0].options == ["小", "中", "大"])
+        #expect(fields[0].defaultValue == "中")
+        #expect(fields[1].type == .select)
+        #expect(fields[1].options == ["默认", "圆角"])
+        #expect(fields[1].defaultValue == "圆角")
+
+        let loginFields = LoginManager.shared.parseLoginUi(json)
+        let size = try #require(loginFields.first)
+        #expect(size.type == .select)
+        #expect(size.options == ["小", "中", "大"])
+        #expect(size.defaultValue == "中")
+
+        let explicit = LoginUiBuilder.collectLoginData(
+            fields: loginFields,
+            values: ["气泡字号": "大", "气泡选择": "默认"]
+        )
+        #expect(explicit["气泡字号"] == "大")
+        #expect(explicit["气泡选择"] == "默认")
+
+        let fallback = LoginUiBuilder.collectLoginData(fields: loginFields, values: [:])
+        #expect(fallback["气泡字号"] == "中")
+        #expect(fallback["气泡选择"] == "圆角")
+    }
+
     @Test("LoginUIField.parse() 空 JSON 回傳空陣列")
     func parseEmptyLoginUi() {
         let fields = LoginUIField.parse(from: "")

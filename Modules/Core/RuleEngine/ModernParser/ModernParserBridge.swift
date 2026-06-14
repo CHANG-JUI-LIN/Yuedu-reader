@@ -383,7 +383,21 @@ class ModernParserBridge {
         guard !listRule.isEmpty else { return [] }
 
         let elements = engine.getElements(ruleStr: listRule)
-        guard !elements.isEmpty else { return [] }
+        guard !elements.isEmpty else {
+            // Device-visible diagnostic: an empty chapter list almost always means the
+            // chapterList rule's JS threw (e.g. a TDZ on `let result`, a failed java.ajax,
+            // or a missing jsLib symbol). Surface the source + last JS error to Console so
+            // "目录为空" is diagnosable without the in-app debug engine.
+            AppLogger.parse("TOC chapterList produced 0 chapters", context: [
+                "source": source.bookSourceName,
+                "jsError": jsEngine.lastError ?? "none",
+                "tocUrl": String(baseURL.prefix(120)),
+                "bodyLen": "\(html.count)",
+                "bodyHead": String(html.prefix(120)),
+                "rule": String(listRule.prefix(60))
+            ])
+            return []
+        }
 
         let formatJs = source.ruleToc.formatJs.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -407,15 +421,18 @@ class ModernParserBridge {
                     let isVolumeStr = engine.getString(ruleStr: source.ruleToc.isVolume)
                     let isVipStr = engine.getString(ruleStr: source.ruleToc.isVip)
                     let isPayStr = engine.getString(ruleStr: source.ruleToc.isPay)
+                    let isVolume = Self.parseBool(isVolumeStr)
+                    let isVip = Self.parseBool(isVipStr)
+                    let isPay = Self.parseBool(isPayStr)
 
                     if !formatJs.isEmpty {
                         let chapterDict: [String: Any] = [
                             "index": index,
                             "title": title,
                             "url": url,
-                            "isVolume": Self.parseBool(isVolumeStr),
-                            "isVip": Self.parseBool(isVipStr),
-                            "isPay": Self.parseBool(isPayStr)
+                            "isVolume": isVolume,
+                            "isVip": isVip,
+                            "isPay": isPay
                         ]
                         if let formatted = jsEngine.evaluate(
                             formatJs,
@@ -425,15 +442,30 @@ class ModernParserBridge {
                         }
                     }
 
-                    chapters.append(OnlineChapterRef(
+                    let ref = OnlineChapterRef(
                         index: index,
                         title: title,
                         url: url,
-                        isVolume: Self.parseBool(isVolumeStr),
-                        isVip: Self.parseBool(isVipStr),
-                        isPay: Self.parseBool(isPayStr),
+                        isVolume: isVolume,
+                        isVip: isVip,
+                        isPay: isPay,
                         runtimeVariables: dumpRuntimeVariables()
-                    ))
+                    )
+                    if ref.isVolume || ref.hasVolumeSeparatorTitle || index < 12 {
+                        AppLogger.parse("⟐ tocItem", context: [
+                            "index": index,
+                            "title": title,
+                            "isVolumeRaw": isVolumeStr,
+                            "isVolume": ref.isVolume,
+                            "volumeTitle": ref.hasVolumeSeparatorTitle,
+                            "shouldSkip": ref.shouldRenderAsVolumeSeparator,
+                            "isVip": ref.isVip,
+                            "isPay": ref.isPay,
+                            "urlLen": ref.sanitizedContentURL.count,
+                            "urlHead": String(ref.sanitizedContentURL.prefix(120))
+                        ])
+                    }
+                    chapters.append(ref)
                 }
             }
         }
@@ -479,7 +511,37 @@ class ModernParserBridge {
         let engine = makeEngine()
         engine.setContent(html, baseUrl: baseURL)
 
+        // ⟐ contentJS — diagnose 段评-on infinite-loading: if "done" never logs the
+        // ruleContent JS (getComments→ajaxAll) hung; if it logs empty the JS returned
+        // nothing; if it logs content+0 bubbles the comment injection silently failed.
+        let paraState = BookSourceRuntimeStateStore.shared.sourceVariableJSON(for: source.bookSourceUrl) ?? ""
+        AppLogger.parse("⟐ contentJS start", context: [
+            "title": chapterRef?.title ?? "",
+            "vars": String(paraState.prefix(160))
+        ])
+        let _contentStart = Date()
         let content = engine.getString(ruleStr: source.ruleContent.content)
+        let _contentMs = Int(Date().timeIntervalSince(_contentStart) * 1000)
+        let lowerContent = content.lowercased()
+        let lowerInput = html.lowercased()
+        let bubbleCount = content.components(separatedBy: "data:image/svg").count - 1
+        AppLogger.parse("⟐ contentJS done", context: [
+            "ms": _contentMs,
+            "len": content.count,
+            "bubbles": bubbleCount,
+            "commentTags": lowerContent.components(separatedBy: "<comment").count - 1,
+            "ydreview": lowerContent.components(separatedBy: "ydreview://").count - 1,
+            "showCmt": lowerContent.components(separatedBy: "showcmt").count - 1,
+            "androidShowCmt": lowerContent.components(separatedBy: "androidshowcmt").count - 1,
+            "inputLen": html.count,
+            "baseURL": String(baseURL.prefix(120)),
+            "inputHex": Self.hexPreview(html, byteLimit: 32),
+            "inputHasContent": lowerInput.contains(#""content""#),
+            "inputHasReview": lowerInput.contains("review") || lowerInput.contains("comment"),
+            "empty": content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            "jsError": jsEngine.lastError ?? "none",
+            "head": String(content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(180))
+        ])
         let title = engine.getString(ruleStr: source.ruleContent.title)
 
         let sourceRegex = source.ruleContent.sourceRegex
@@ -529,6 +591,177 @@ class ModernParserBridge {
         ], hyp: "S1")
         // #endregion
         return try parseSearchResults(html: body, baseURL: finalUrl, source: source)
+    }
+
+    func searchBooksStreaming(
+        keyword: String,
+        page: Int = 1,
+        onBatch: @escaping @Sendable ([OnlineBook]) async -> Void
+    ) async throws -> (books: [OnlineBook], streamed: Bool) {
+        let source = sourceRuleData.source
+        guard !source.searchUrl.isEmpty else { return ([], false) }
+
+        let (body, finalUrl) = try await fetch(
+            ruleUrl: source.searchUrl, key: keyword, page: page
+        )
+        // #region agent log
+        _dbgLog("聚合/JS 搜尋", data: [
+            "source": source.bookSourceName,
+            "变量": String(
+                (BookSourceRuntimeStateStore.shared
+                    .sourceVariableJSON(for: source.bookSourceUrl) ?? "(空)").prefix(300)),
+            "搜索参数": Self.searchParamsPreview(from: finalUrl),
+        ], hyp: "S1")
+        // #endregion
+
+        if let plan = aggregateSearchPlan(fromHexBody: body) {
+            let books = await searchAggregateSubsources(
+                plan: plan,
+                baseURL: finalUrl,
+                source: source,
+                onBatch: onBatch
+            )
+            return (books, true)
+        }
+
+        return (try parseSearchResults(html: body, baseURL: finalUrl, source: source), false)
+    }
+
+    private struct AggregateSearchPlan {
+        var params: [String: Any]
+        var sourceKeys: [String]
+    }
+
+    private func aggregateSearchPlan(fromHexBody body: String) -> AggregateSearchPlan? {
+        guard var params = Self.jsonDictionaryFromHexBody(body),
+              let selectedSource = params["sourcesKey"] as? String,
+              selectedSource.trimmingCharacters(in: .whitespacesAndNewlines) == "全部",
+              let tab = params["tab"] as? String,
+              !tab.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return nil
+        }
+
+        let sourceKeys = configuredAggregateSourceKeys(for: tab)
+        guard sourceKeys.count > 1 else { return nil }
+        params["sourcesKey"] = selectedSource
+        return AggregateSearchPlan(params: params, sourceKeys: sourceKeys)
+    }
+
+    private func configuredAggregateSourceKeys(for tab: String) -> [String] {
+        guard let variableJSON = runtimeStateStore.sourceVariableJSON(
+            for: sourceRuleData.source.bookSourceUrl),
+              let data = variableJSON.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return []
+        }
+
+        let config = (root["云端配置"] as? [String: Any]) ?? root
+        guard let rawList = config[tab] as? [Any] else { return [] }
+
+        var seen = Set<String>()
+        var keys: [String] = []
+        for item in rawList {
+            guard let key = Self.aggregateSourceKey(from: item) else { continue }
+            guard key != "全部", seen.insert(key).inserted else { continue }
+            keys.append(key)
+        }
+        return keys
+    }
+
+    private func searchAggregateSubsources(
+        plan: AggregateSearchPlan,
+        baseURL: String,
+        source: BookSource,
+        onBatch: @escaping @Sendable ([OnlineBook]) async -> Void
+    ) async -> [OnlineBook] {
+        let maxConcurrentSubsources = min(4, plan.sourceKeys.count)
+        let observer = debugObserver
+        var allBooks: [OnlineBook] = []
+
+        await withTaskGroup(of: [OnlineBook].self) { group in
+            var nextIndex = 0
+
+            func enqueueNext() {
+                guard nextIndex < plan.sourceKeys.count else { return }
+                let sourceKey = plan.sourceKeys[nextIndex]
+                nextIndex += 1
+
+                var params = plan.params
+                params["sourcesKey"] = sourceKey
+                guard let body = Self.hexBody(forJSONObject: params) else { return }
+
+                group.addTask {
+                    guard !Task.isCancelled else { return [] }
+                    let bridge = ModernParserBridge(source: source)
+                    bridge.debugObserver = observer
+                    return (try? bridge.parseSearchResults(
+                        html: body,
+                        baseURL: baseURL,
+                        source: source
+                    )) ?? []
+                }
+            }
+
+            for _ in 0..<maxConcurrentSubsources {
+                enqueueNext()
+            }
+
+            while let books = await group.next() {
+                if Task.isCancelled {
+                    group.cancelAll()
+                    break
+                }
+                if !books.isEmpty {
+                    allBooks.append(contentsOf: books)
+                    await onBatch(books)
+                }
+                enqueueNext()
+            }
+        }
+
+        return allBooks
+    }
+
+    private static func aggregateSourceKey(from item: Any) -> String? {
+        if let string = item as? String {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let dict = item as? [String: Any] {
+            for field in ["name", "title", "source", "sourceName", "key"] {
+                if let string = dict[field] as? String {
+                    let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { return trimmed }
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func jsonDictionaryFromHexBody(_ body: String) -> [String: Any]? {
+        var bytes: [UInt8] = []
+        var index = body.startIndex
+        while index < body.endIndex {
+            let next = body.index(index, offsetBy: 2, limitedBy: body.endIndex) ?? body.endIndex
+            guard next <= body.endIndex else { return nil }
+            let hex = body[index..<next]
+            guard hex.count == 2, let byte = UInt8(hex, radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        guard !bytes.isEmpty else { return nil }
+        return try? JSONSerialization.jsonObject(with: Data(bytes)) as? [String: Any]
+    }
+
+    private static func hexBody(forJSONObject object: [String: Any]) -> String? {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [])
+        else {
+            return nil
+        }
+        return data.map { String(format: "%02x", $0) }.joined()
     }
 
     /// For logging: if `url` is the aggregate sources' `data:;base64,…` pseudo-URL,
@@ -933,6 +1166,11 @@ class ModernParserBridge {
         return lower == "true" || lower == "1" || lower == "yes"
     }
 
+    private static func hexPreview(_ text: String, byteLimit: Int) -> String {
+        guard let data = text.data(using: .utf8), !data.isEmpty else { return "" }
+        return data.prefix(byteLimit).map { String(format: "%02x", $0) }.joined(separator: " ")
+    }
+
     private static func encodingFromCharset(_ charset: String?) -> String.Encoding {
         guard let charset = charset?.lowercased() else { return .utf8 }
         switch charset {
@@ -949,7 +1187,15 @@ class ModernParserBridge {
 
     private static func bodyForDataURI(_ analyzeUrl: AnalyzeUrl) -> String {
         guard let decoded = analyzeUrl.decodeDataUri() else { return "" }
-        if analyzeUrl.type?.isEmpty == false {
+        // A `type` key in the data-URI options means "return the payload hex-encoded"
+        // (binary-safe), which the source then decodes with `java.hexDecodeToString`.
+        // The VALUE is just a marker — 起点 uses `{"type":"X-QD"}` for tocUrl but
+        // `{"type":""}` (empty!) for chapter content, and BOTH content/toc JS call
+        // hexDecodeToString. Keying off `type?.isEmpty == false` wrongly sent the
+        // empty-type content payload back as UTF-8, so hexDecodeToString failed and the
+        // chapter stuck on "加载中". Hex whenever `type` is present (even empty); only a
+        // fully absent `type` returns the decoded string.
+        if analyzeUrl.type != nil {
             return decoded.data.map { String(format: "%02x", $0) }.joined()
         }
         return String(data: decoded.data, encoding: .utf8)

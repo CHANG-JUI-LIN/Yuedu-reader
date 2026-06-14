@@ -371,12 +371,14 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
         // 3c. Inline attachments (inline images)
         for attachment in pageInlineImages {
+            Self.logImgDraw(attachment.image, attachment.rect, "inline")
             attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
         }
 
         // 3d. Block images (decorative images with blockRenderStyle, e.g. watermarks)
         for item in layout.blockRenderables[pageIndex] ?? [] {
             if let attachment = item.imageAttachment {
+                Self.logImgDraw(attachment.image, attachment.rect, "blockRenderable")
                 attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
             }
         }
@@ -401,8 +403,25 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
     nonisolated static func drawAttachments(_ attachments: [CoreTextPaginator.RenderedAttachment]) {
         for attachment in attachments {
+            Self.logImgDraw(attachment.image, attachment.rect, "blockAttach")
             attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
         }
+    }
+
+    /// Diagnostic: logs when an image's actual draw rect aspect differs from the image's own
+    /// aspect (i.e. it's being stretched/squished at the draw stage).
+    nonisolated static func logImgDraw(_ image: UIImage, _ rect: CGRect, _ where_: String) {
+        guard image.size.height > 0, rect.height > 0 else { return }
+        let imgRatio = image.size.width / image.size.height
+        let rectRatio = rect.width / rect.height
+        AppLogger.parse("⟐ imgDraw", context: [
+            "where": where_,
+            "imgSize": "\(Int(image.size.width))x\(Int(image.size.height))",
+            "drawRect": "\(Int(rect.width))x\(Int(rect.height))",
+            "imgRatio": String(format: "%.3f", imgRatio),
+            "rectRatio": String(format: "%.3f", rectRatio),
+            "stretched": abs(imgRatio - rectRatio) > 0.02
+        ])
     }
 
     nonisolated static func drawInlineAnnotations(
