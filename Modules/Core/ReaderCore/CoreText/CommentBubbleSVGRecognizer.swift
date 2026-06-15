@@ -278,9 +278,9 @@ extension CommentBubbleSVGRecognizer {
                     
                 case .text(let text, let x, let y, let fontSize, let fontWeight, let anchor, let color):
                     let textColor = color ?? themeTextColor
-                    let weight: UIFont.Weight = (fontWeight?.lowercased().contains("bold") ?? false || fontWeight == "600") ? .bold : .medium
-                    
-                    let font = UIFont.systemFont(ofSize: fontSize, weight: weight)
+                    let isSVGBold = fontWeight?.lowercased().contains("bold") ?? false || fontWeight == "600"
+                    let isBold = isSVGBold || GlobalSettings.shared.readerFontBold
+                    let font = UserReaderFontResolver.bodyFont(size: fontSize, isBold: isBold)
                     let textAttrs: [NSAttributedString.Key: Any] = [
                         .font: font,
                         .foregroundColor: textColor

@@ -27,7 +27,7 @@ enum ReviewBadgeRenderer {
 
     private static func draw(text: String, pointSize: CGFloat, color: UIColor) -> UIImage {
         let fontSize = max(8, pointSize * 0.62)
-        let badgeFont = UIFont.systemFont(ofSize: fontSize, weight: .medium)
+        let badgeFont = UserReaderFontResolver.bodyFont(size: fontSize, isBold: GlobalSettings.shared.readerFontBold)
         let textAttrs: [NSAttributedString.Key: Any] = [
             .font: badgeFont,
             .foregroundColor: color,
@@ -87,6 +87,8 @@ enum ReviewBadgeRenderer {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         color.getRed(&r, green: &g, blue: &b, alpha: &a)
         let rgba = String(format: "%.2f-%.2f-%.2f-%.2f", r, g, b, a)
-        return "\(text)|\(Int(pointSize.rounded()))|\(rgba)" as NSString
+        let fontName = GlobalSettings.shared.selectedReaderFontPostScript ?? "system"
+        let isBold = GlobalSettings.shared.readerFontBold ? "bold" : "regular"
+        return "\(text)|\(Int(pointSize.rounded()))|\(rgba)|\(fontName)|\(isBold)" as NSString
     }
 }
