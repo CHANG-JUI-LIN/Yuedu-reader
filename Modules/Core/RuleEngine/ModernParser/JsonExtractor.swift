@@ -594,6 +594,35 @@ struct JsonExtractor: RuleExtractor {
     }
 
     func extractList(from content: String, rule: String, baseURL: String) throws -> [String] {
+        // JSONPath itself can't express Legado's `||`/`&&`/`%%` fallback/merge operators, so split
+        // them here (like the CSS extractor does) before evaluating each branch as a JSONPath.
+        let (opType, opParts) = RuleSyntaxParser.splitRuleByOperators(rule)
+        if opParts.count > 1 {
+            switch opType {
+            case "||":
+                for part in opParts {
+                    let r = try extractList(from: content, rule: part, baseURL: baseURL)
+                    if !r.isEmpty { return r }
+                }
+                return []
+            case "&&":
+                return try opParts.flatMap { try extractList(from: content, rule: $0, baseURL: baseURL) }
+            case "%%":
+                let lists = try opParts.map { try extractList(from: content, rule: $0, baseURL: baseURL) }
+                guard lists.allSatisfy({ !$0.isEmpty }) else { return [] }
+                var interleaved: [String] = []
+                var i = 0
+                while true {
+                    var appended = false
+                    for l in lists where i < l.count { interleaved.append(l[i]); appended = true }
+                    if !appended { break }
+                    i += 1
+                }
+                return interleaved
+            default:
+                break
+            }
+        }
         guard let json = parseJSON(content) else { return [] }
         let path = cleanRule(rule)
         let expanded = expandInnerRules(path, json: json)
@@ -615,6 +644,28 @@ struct JsonExtractor: RuleExtractor {
     }
 
     func extractValue(from content: String, rule: String, baseURL: String) throws -> String {
+        // Split Legado `||` (first non-empty) / `&&` (join) before JSONPath evaluation — a field
+        // rule like `$.bName||BookName` is two fallbacks, not one path. (企点 发现页/书单 name &
+        // author rules rely on this; without it every record's name resolved empty → 0 books.)
+        let (opType, opParts) = RuleSyntaxParser.splitRuleByOperators(rule)
+        if opParts.count > 1 {
+            switch opType {
+            case "||":
+                for part in opParts {
+                    let v = try extractValue(from: content, rule: part, baseURL: baseURL)
+                    if !v.isEmpty { return v }
+                }
+                return ""
+            case "&&":
+                let pieces = try opParts.compactMap { part -> String? in
+                    let v = try extractValue(from: content, rule: part, baseURL: baseURL)
+                    return v.isEmpty ? nil : v
+                }
+                return pieces.joined(separator: "\n")
+            default:
+                break
+            }
+        }
         guard let json = parseJSON(content) else { return "" }
         let path = cleanRule(rule)
         let expanded = expandInnerRules(path, json: json)

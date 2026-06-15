@@ -7,20 +7,35 @@ final class SVGWebViewRasterizer: NSObject {
 
     static let shared = SVGWebViewRasterizer()
 
-    private let webView: WKWebView
+    /// One rasterization lane: a dedicated WKWebView plus the item it is currently drawing.
+    /// A 段評-heavy 起点 chapter carries 100+ distinct bubble SVGs; a single WebView rasterizes
+    /// them one-by-one, and because the chapter renderer blocks on every image, the whole chapter
+    /// shows "infinite loading" for many seconds. A small pool drains the queue ~`poolSize`× faster
+    /// while still rendering each SVG exactly as authored.
+    private final class Worker {
+        let webView: WKWebView
+        var currentItem: SVGWorkItem?
+        /// Identifies the navigation kicked off for `currentItem`, so a stale `didFinish` from a
+        /// timed-out item can't snapshot the wrong (next) item's webView.
+        var currentNavigation: WKNavigation?
+        init(webView: WKWebView) { self.webView = webView }
+    }
+
+    private var workers: [Worker] = []
     private let cache = NSCache<NSString, UIImage>()
     private var pendingItems: [SVGWorkItem] = []
-    private var currentItem: SVGWorkItem?
-    /// Identifies the navigation kicked off for `currentItem`, so a stale `didFinish`
-    /// from a timed-out item can't snapshot the wrong (next) item's webView.
-    private var currentNavigation: WKNavigation?
-    private var isProcessing = false
+
+    /// Number of concurrent rasterization lanes. Four parallel WKWebViews drain a 100-bubble
+    /// chapter in ~¼ the wall time of the old single-WebView queue, without thrashing memory.
+    private static let poolSize = 4
 
     /// Per-item watchdog: if a WKWebView navigation never fires didFinish/didFail (malformed
-    /// SVG, stuck load) the continuation would never resume AND the serial queue would stall,
-    /// hanging EVERY following bubble → the whole chapter shows "infinite loading". The watchdog
-    /// finishes a stuck item with nil and keeps the queue moving.
+    /// SVG, stuck load) the continuation would never resume AND that lane would stall. The
+    /// watchdog finishes a stuck item with nil and frees the lane so the queue keeps moving.
     private static let itemTimeout: TimeInterval = 5
+
+    /// Workers currently busy. Drives drain telemetry and the "all lanes idle" check.
+    private var activeCount = 0
 
     // Drain telemetry (logged once per queue drain, not per-item, to avoid 100×/chapter spam).
     private var drainStart: Date?
@@ -29,24 +44,28 @@ final class SVGWebViewRasterizer: NSObject {
     private var drainCacheHits = 0
 
     private override init() {
-        let config = WKWebViewConfiguration()
-        config.suppressesIncrementalRendering = true
-        let wv = WKWebView(frame: .zero, configuration: config)
-        wv.isOpaque = false
-        wv.backgroundColor = .clear
-        wv.scrollView.isScrollEnabled = false
-        self.webView = wv
         super.init()
-        webView.navigationDelegate = self
+        for _ in 0..<Self.poolSize {
+            let config = WKWebViewConfiguration()
+            config.suppressesIncrementalRendering = true
+            let wv = WKWebView(frame: .zero, configuration: config)
+            wv.isOpaque = false
+            wv.backgroundColor = .clear
+            wv.scrollView.isScrollEnabled = false
+            wv.navigationDelegate = self
+            workers.append(Worker(webView: wv))
+        }
         // A 段評-heavy 起点 chapter can carry 100+ bubble SVGs; 64 thrashed within a single
         // chapter (re-rasterizing on every page turn). Hold a whole chapter's worth.
         cache.countLimit = 1024
     }
 
+    private var isDraining: Bool { activeCount > 0 }
+
     func render(svgString: String, size: CGSize, baseURL: URL? = nil) async -> UIImage? {
         let key = cacheKey(svgString: svgString, size: size)
         if let cached = cache.object(forKey: key) {
-            if isProcessing { drainCacheHits += 1 }
+            if isDraining { drainCacheHits += 1 }
             return cached
         }
         return await withCheckedContinuation { continuation in
@@ -57,9 +76,7 @@ final class SVGWebViewRasterizer: NSObject {
                 cacheKey: key,
                 continuation: continuation
             ))
-            if !isProcessing {
-                processNext()
-            }
+            dispatchToIdleWorkers()
         }
     }
 
@@ -152,30 +169,21 @@ final class SVGWebViewRasterizer: NSObject {
         return CGSize(width: parts[2], height: parts[3])
     }
 
-    private func processNext() {
-        guard !pendingItems.isEmpty else {
-            if isProcessing, let start = drainStart {
-                let ms = Int(Date().timeIntervalSince(start) * 1000)
-                AppLogger.render("⟐ svgRaster drained", context: [
-                    "rasterized": drainProcessed,
-                    "timeouts": drainTimeouts,
-                    "cacheHits": drainCacheHits,
-                    "ms": ms
-                ])
-            }
-            isProcessing = false
-            currentNavigation = nil
-            drainStart = nil
-            drainProcessed = 0
-            drainTimeouts = 0
-            drainCacheHits = 0
-            return
+    /// Hands queued items to any idle lane, up to the pool size.
+    private func dispatchToIdleWorkers() {
+        for worker in workers where worker.currentItem == nil {
+            guard !pendingItems.isEmpty else { break }
+            startNext(on: worker)
         }
+    }
+
+    private func startNext(on worker: Worker) {
+        guard !pendingItems.isEmpty else { return }
         if drainStart == nil { drainStart = Date() }
-        isProcessing = true
         let item = pendingItems.removeFirst()
-        currentItem = item
-        webView.frame = CGRect(origin: .zero, size: item.size)
+        worker.currentItem = item
+        activeCount += 1
+        worker.webView.frame = CGRect(origin: .zero, size: item.size)
         let size = item.size
         let html = """
         <!doctype html>
@@ -199,14 +207,14 @@ final class SVGWebViewRasterizer: NSObject {
         </body>
         </html>
         """
-        currentNavigation = webView.loadHTMLString(html, baseURL: item.baseURL)
-        // Watchdog: if this navigation never completes, finish it (nil) and keep going so a
-        // single bad SVG can't stall the whole queue and hang the chapter.
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.itemTimeout) { [weak self, weak item] in
-            guard let self, let item, !item.finished, self.currentItem === item else { return }
+        worker.currentNavigation = worker.webView.loadHTMLString(html, baseURL: item.baseURL)
+        // Watchdog: if this navigation never completes, finish it (nil) and free the lane so a
+        // single bad SVG can't stall its worker and hang the chapter.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.itemTimeout) { [weak self, weak item, weak worker] in
+            guard let self, let item, let worker, !item.finished, worker.currentItem === item else { return }
             self.drainTimeouts += 1
             AppLogger.render("⟐ svgRaster TIMEOUT", context: ["size": "\(Int(item.size.width))x\(Int(item.size.height))"])
-            self.finishItem(item, image: nil)
+            self.finishItem(item, on: worker, image: nil)
         }
     }
 
@@ -215,33 +223,55 @@ final class SVGWebViewRasterizer: NSObject {
         let hash = SHA256.hash(data: Data(input.utf8))
         return hash.compactMap { String(format: "%02x", $0) }.joined() as NSString
     }
+
+    private func logDrainIfFinished() {
+        guard pendingItems.isEmpty, activeCount == 0, let start = drainStart else { return }
+        let ms = Int(Date().timeIntervalSince(start) * 1000)
+        AppLogger.render("⟐ svgRaster drained", context: [
+            "rasterized": drainProcessed,
+            "timeouts": drainTimeouts,
+            "cacheHits": drainCacheHits,
+            "lanes": Self.poolSize,
+            "ms": ms
+        ])
+        drainStart = nil
+        drainProcessed = 0
+        drainTimeouts = 0
+        drainCacheHits = 0
+    }
 }
 
 extension SVGWebViewRasterizer: WKNavigationDelegate {
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Task { @MainActor in
-            // Ignore a stale callback whose navigation no longer matches the in-flight item
-            // (e.g. a watchdog already timed it out and moved on).
-            guard let item = self.currentItem, navigation == self.currentNavigation, !item.finished else {
+            // Locate the lane that owns this webView, and ignore a stale callback whose navigation
+            // no longer matches the in-flight item (e.g. a watchdog already timed it out).
+            guard let worker = self.workers.first(where: { $0.webView === webView }),
+                  let item = worker.currentItem,
+                  navigation == worker.currentNavigation,
+                  !item.finished else {
                 return
             }
             let config = WKSnapshotConfiguration()
             config.rect = CGRect(origin: .zero, size: item.size)
             do {
                 let image = try await webView.takeSnapshot(configuration: config)
-                self.finishItem(item, image: image)
+                self.finishItem(item, on: worker, image: image)
             } catch {
-                self.finishItem(item, image: nil)
+                self.finishItem(item, on: worker, image: nil)
             }
         }
     }
 
     nonisolated func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         Task { @MainActor in
-            guard let item = self.currentItem, navigation == self.currentNavigation, !item.finished else {
+            guard let worker = self.workers.first(where: { $0.webView === webView }),
+                  let item = worker.currentItem,
+                  navigation == worker.currentNavigation,
+                  !item.finished else {
                 return
             }
-            self.finishItem(item, image: nil)
+            self.finishItem(item, on: worker, image: nil)
         }
     }
 }
@@ -265,17 +295,25 @@ private final class SVGWorkItem {
 }
 
 private extension SVGWebViewRasterizer {
-    func finishItem(_ item: SVGWorkItem, image: UIImage?) {
+    private func finishItem(_ item: SVGWorkItem, on worker: Worker, image: UIImage?) {
         // Guard against double-finish: the watchdog and a late didFinish can both fire.
         guard !item.finished else { return }
         item.finished = true
-        if currentItem === item { currentItem = nil }
-        currentNavigation = nil
+        if worker.currentItem === item {
+            worker.currentItem = nil
+            worker.currentNavigation = nil
+        }
+        activeCount -= 1
         drainProcessed += 1
         if let image {
             cache.setObject(image, forKey: item.cacheKey)
         }
         item.continuation.resume(returning: image)
-        processNext()
+        // Free lane → pull the next queued item, or log the drain if everything is done.
+        if !pendingItems.isEmpty {
+            startNext(on: worker)
+        } else {
+            logDrainIfFinished()
+        }
     }
 }

@@ -538,6 +538,13 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
             "topNodes": nodes.count,
             "imagesLifted": Self.countCenteredImageBlocks(nodes)
         ])
+        // PREWARM: hot 起点 chapters embed 100+ distinct 段評 count-bubble SVGs as inline images.
+        // The node renderer below awaits each image one-by-one, so without this the chapter text is
+        // blocked on a fully serial rasterization of every bubble → "infinite loading". Fire all
+        // image loads concurrently up front to fill the rasterizer's parallel pool + cache; the
+        // sequential render that follows then hits warm cache for every bubble. No appearance change
+        // — every bubble is still drawn, just rasterized in parallel instead of in series.
+        await Self.prewarmOnlineImages(in: nodes, renderWidth: renderWidth)
         let renderer = NodeAttributedStringRenderer(
             config: NodeAttributedStringRenderer.Config(
                 from: settings,
@@ -568,6 +575,63 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
 
     private func currentRenderWidth() -> CGFloat {
         max(0, renderSize.width)
+    }
+
+    /// Concurrently warms the SVG rasterizer cache for every inline image in the chapter, so the
+    /// serial node renderer that follows finds them already drawn. Uses the same `renderWidth` the
+    /// renderer's image loader uses (`currentRenderWidth()`), so the cache keys line up. Only the
+    /// loader-backed `src` images (起点 段評 bubbles are `data:` URIs) are pre-warmed.
+    private static func prewarmOnlineImages(in nodes: [RenderableNode], renderWidth: CGFloat) async {
+        var srcs: [String] = []
+        var seen = Set<String>()
+        collectImageSources(nodes, into: &srcs, seen: &seen)
+        // Single-image chapters (a lone illustration) gain nothing from a concurrent pre-pass.
+        guard srcs.count > 4 else { return }
+        let started = Date()
+        AppLogger.render("⟐ imgPrewarm start", context: ["count": srcs.count])
+        await withTaskGroup(of: Void.self) { group in
+            for src in srcs {
+                group.addTask {
+                    _ = await OnlineImageLoader.load(src: src, renderWidth: renderWidth)
+                }
+            }
+        }
+        AppLogger.render("⟐ imgPrewarm done", context: [
+            "count": srcs.count,
+            "ms": Int(Date().timeIntervalSince(started) * 1000)
+        ])
+    }
+
+    private static func collectImageSources(
+        _ nodes: [RenderableNode],
+        into srcs: inout [String],
+        seen: inout Set<String>
+    ) {
+        for node in nodes {
+            switch node {
+            case .image(let src, _, _, let svgContent):
+                // svgContent images rasterize via a separate inline path; only loader-backed `src`
+                // images benefit from pre-warming. Dedup so repeated bubbles load once.
+                if (svgContent?.isEmpty ?? true), !src.isEmpty, seen.insert(src).inserted {
+                    srcs.append(src)
+                }
+            case .paragraph(let children, _),
+                 .heading(let children, _, _),
+                 .blockquote(let children),
+                 .listItem(let children, _),
+                 .block(_, let children, _),
+                 .inline(_, let children, _),
+                 .anchor(_, let children),
+                 .unsupportedInteractive(_, _, let children, _):
+                collectImageSources(children, into: &srcs, seen: &seen)
+            case .ruby(let base, _, _):
+                collectImageSources(base, into: &srcs, seen: &seen)
+            case .anchorTarget(_, let child):
+                collectImageSources([child], into: &srcs, seen: &seen)
+            default:
+                break
+            }
+        }
     }
 
     // MARK: - Content image layout

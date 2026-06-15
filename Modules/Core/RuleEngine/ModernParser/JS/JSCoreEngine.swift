@@ -204,7 +204,7 @@ class JSCoreEngine {
             for (key, value) in bindings {
                 context.setObject(value, forKeyedSubscript: key as NSString)
             }
-            let prepared = Self.neutralizeResultRedeclaration(script)
+            let prepared = Self.prepareSourceJS(script)
             guard let value = context.evaluateScript(prepared) else { return nil }
             return extractString(from: value)
         }
@@ -231,6 +231,30 @@ class JSCoreEngine {
         )
     }
 
+    /// JavaScriptCore (iOS) rejects an arrow function whose sole parameter is an array-destructuring
+    /// pattern written WITHOUT wrapping parens — `list.map([a,b]=>…)` — throwing
+    /// "SyntaxError: Unexpected token '=>'", which aborts the WHOLE script (symptom: empty 发现页 /
+    /// search for 番茄-family sources). Rhino (Legado on Android) accepts the bare form, so sources
+    /// authored there ship it. Re-insert the required parens: `[a,b]=>` → `([a,b])=>`. Only a flat
+    /// `[…]` (no nested brackets/newlines) sitting in argument position (`(`/`,` before it) and
+    /// immediately followed by `=>` is matched, so real array literals are untouched; idempotent.
+    private static let destructuringArrowPattern = try! NSRegularExpression(
+        pattern: #"([(,]\s*)\[([^\[\]\n]+)\](\s*=>)"#
+    )
+    private static func neutralizeDestructuringArrowParams(_ script: String) -> String {
+        guard script.contains("=>") else { return script }
+        let range = NSRange(script.startIndex..., in: script)
+        return destructuringArrowPattern.stringByReplacingMatches(
+            in: script, range: range, withTemplate: "$1([$2])$3"
+        )
+    }
+
+    /// Normalizes Android/Rhino-isms that JavaScriptCore rejects, so source rule JS authored for
+    /// Legado-on-Android compiles on iOS. Applied to every rule-JS evaluation path.
+    private static func prepareSourceJS(_ script: String) -> String {
+        neutralizeDestructuringArrowParams(neutralizeResultRedeclaration(script))
+    }
+
     /// Evaluate with multiple bindings injected into the context before execution.
     func evaluate(_ script: String, bindings: [String: Any]) -> String? {
         onJSQueue {
@@ -238,7 +262,7 @@ class JSCoreEngine {
             for (key, value) in bindings {
                 context.setObject(value, forKeyedSubscript: key as NSString)
             }
-            guard let val = context.evaluateScript(script) else { return nil }
+            guard let val = context.evaluateScript(Self.prepareSourceJS(script)) else { return nil }
             return extractString(from: val)
         }
     }

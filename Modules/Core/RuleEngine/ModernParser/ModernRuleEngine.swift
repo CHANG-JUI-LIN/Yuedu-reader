@@ -299,9 +299,8 @@ final class ModernRuleEngine {
             case .regex:
                 result = extractRegexElements(content: result!, rule: rule)
             case .json, .xpath, .default:
-                let qualified = modeQualifiedRule(mode: sourceRule.mode, rule: rule)
-                result = extractElementsViaExtractor(
-                    content: result!, rule: qualified
+                result = extractElementsWithOperators(
+                    content: result!, mode: sourceRule.mode, rule: rule
                 )
             }
 
@@ -735,6 +734,74 @@ final class ModernRuleEngine {
         return try? extractor.extractList(
             from: contentStr, rule: rule, baseURL: baseUrl
         )
+    }
+
+    /// Element extraction that honors Legado's list operators (`||`/`&&`/`%%`) BEFORE picking an
+    /// extractor. `getElements` previously fed the whole combined rule straight to one extractor,
+    /// so a JSON list rule like `$.data.records||$.data.list||$.Data.ServerCase.BookInfo[*]` was
+    /// handed to the JSON extractor as a single (invalid) JSONPath → 0 elements → empty 发现页
+    /// (企点). `extractValue`/`extractList` already split these operators; this brings `getElements`
+    /// to parity while preserving RAW (non-stringified) elements so per-field `$.bName` rules still
+    /// resolve against each record object.
+    private func extractElementsWithOperators(
+        content: Any, mode: RuleMode, rule: String
+    ) -> Any? {
+        let (opType, opParts) = RuleSyntaxParser.splitRuleByOperators(rule)
+        if opParts.count > 1 {
+            let parts = opParts
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            switch opType {
+            case "||":
+                for part in parts {
+                    let qualified = modeQualifiedRule(mode: mode, rule: part)
+                    if let arr = extractElementsViaExtractor(content: content, rule: qualified) as? [Any],
+                       !arr.isEmpty {
+                        return arr
+                    }
+                }
+                return []
+            case "&&":
+                var merged: [Any] = []
+                for part in parts {
+                    let qualified = modeQualifiedRule(mode: mode, rule: part)
+                    if let arr = extractElementsViaExtractor(content: content, rule: qualified) as? [Any] {
+                        merged.append(contentsOf: arr)
+                    }
+                }
+                return merged
+            case "%%":
+                var lists: [[Any]] = []
+                for part in parts {
+                    let qualified = modeQualifiedRule(mode: mode, rule: part)
+                    guard let arr = extractElementsViaExtractor(content: content, rule: qualified) as? [Any] else {
+                        return []
+                    }
+                    lists.append(arr)
+                }
+                guard !lists.isEmpty, lists.allSatisfy({ !$0.isEmpty }) else { return [] }
+                return interleaveAny(lists)
+            default:
+                break
+            }
+        }
+        let qualified = modeQualifiedRule(mode: mode, rule: rule)
+        return extractElementsViaExtractor(content: content, rule: qualified)
+    }
+
+    private func interleaveAny(_ lists: [[Any]]) -> [Any] {
+        var result: [Any] = []
+        var index = 0
+        while true {
+            var appended = false
+            for list in lists where index < list.count {
+                result.append(list[index])
+                appended = true
+            }
+            if !appended { break }
+            index += 1
+        }
+        return result
     }
 
     private func extractElementsViaExtractor(
