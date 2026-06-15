@@ -701,6 +701,20 @@ struct NodeAttributedStringRenderer {
         svgContent: String?,
         ctx: RenderContext
     ) async -> NSAttributedString {
+        if style.isTextSizedImage, let recognized = CommentBubbleSVGRecognizer.recognize(src: src, svgContent: svgContent) {
+            let image = CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: ctx.font.pointSize, themeTextColor: ctx.textColor)
+            let metrics = await resolvedImageMetrics(image: image, style: style, font: ctx.font, displayMode: .inline)
+            return await makeImagePlaceholder(
+                image: image,
+                style: style,
+                ctx: ctx,
+                imageSource: "",
+                imageAlt: alt,
+                displayMode: .inline,
+                precomputedMetrics: metrics
+            )
+        }
+
         if let svgContent, !svgContent.isEmpty {
             let screenWidth = await MainActor.run { UIScreen.main.bounds.width }
             let resolvedWidth = config.renderWidth ?? screenWidth
@@ -710,11 +724,14 @@ struct NodeAttributedStringRenderer {
                 svgString: svgContent,
                 renderWidth: resolvedWidth
             )
-            let image = await SVGWebViewRasterizer.shared.render(
+            var image = await SVGWebViewRasterizer.shared.render(
                 svgString: svgContent,
                 size: targetSize,
                 baseURL: nil
             )
+            if style.isTextSizedImage, let img = image {
+                image = img.trimmingTransparentPixels() ?? img
+            }
             if image == nil {
                 guard !alt.isEmpty else { return NSAttributedString() }
                 var attrs = ctx.baseAttributes
@@ -762,7 +779,10 @@ struct NodeAttributedStringRenderer {
             return NSAttributedString(string: "[\(alt)]\n", attributes: attrs)
         }
 
-        let image = src.isEmpty ? nil : await config.imageLoader?(src)
+        var image = src.isEmpty ? nil : await config.imageLoader?(src)
+        if style.isTextSizedImage, let img = image {
+            image = img.trimmingTransparentPixels() ?? img
+        }
         CoreTextPaginator.debugVerticalLog("EPUBFLOW render.inlineImage.node src=\(src) alt=\(alt) imageLoaded=\(image != nil) writingMode=\(config.writingMode) fontSize=\(ctx.font.pointSize) styleWidth=\(style.width.map { "\($0)" } ?? "nil") styleHeight=\(style.height.map { "\($0)" } ?? "nil")")
         if let side = style.floatSide {
             return makeFloatPlaceholder(
@@ -1167,7 +1187,8 @@ struct NodeAttributedStringRenderer {
                 imageSource: imageSource,
                 imageAlt: imageAlt,
                 displayMode: displayMode,
-                opacity: style.opacity
+                opacity: style.opacity,
+                isTextSized: style.isTextSizedImage
             )
         )
         let range = NSRange(location: 0, length: placeholder.length)

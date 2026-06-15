@@ -120,6 +120,11 @@ enum OnlineImageLoader {
 
         if isSVG {
             guard let svg = String(data: data, encoding: .utf8), svg.contains("<svg") else { return nil }
+            // Native comment bubble recognition — avoids WebView for simple count bubbles.
+            if let recognized = CommentBubbleSVGRecognizer.recognize(src: uri, svgContent: svg) {
+                let pointSize = max(14, renderWidth * 0.04)
+                return CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: pointSize, themeTextColor: .secondaryLabel)
+            }
             // Render the book source's SVG exactly as authored (no native substitution) — all
             // styling must follow the source.
             return await rasterizeSVG(svg, renderWidth: renderWidth, baseURL: nil)

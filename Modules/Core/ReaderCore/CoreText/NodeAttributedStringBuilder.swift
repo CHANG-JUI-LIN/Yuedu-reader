@@ -609,10 +609,11 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
     ) {
         for node in nodes {
             switch node {
-            case .image(let src, _, _, let svgContent):
+            case .image(let src, _, let style, let svgContent):
                 // svgContent images rasterize via a separate inline path; only loader-backed `src`
                 // images benefit from pre-warming. Dedup so repeated bubbles load once.
-                if (svgContent?.isEmpty ?? true), !src.isEmpty, seen.insert(src).inserted {
+                // Skip prewarming for text-sized inline bubble images.
+                if (svgContent?.isEmpty ?? true), !style.isTextSizedImage, !src.isEmpty, seen.insert(src).inserted {
                     srcs.append(src)
                 }
             case .paragraph(let children, _),

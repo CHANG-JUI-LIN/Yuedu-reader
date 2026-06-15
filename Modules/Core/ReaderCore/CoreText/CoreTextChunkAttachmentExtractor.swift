@@ -72,7 +72,7 @@ enum CoreTextChunkAttachmentExtractor {
                         // reads as a figure and is centered like a block image; flushing it left leaves a
                         // lopsided right-hand gap. Inline images that flow with text keep their flow
                         // position. Matches CoreTextPaginator.extractImages (paged mode).
-                        if CoreTextPaginator.isStandaloneImageRun(CTRunGetStringRange(run), line: line, attrStr: attributedString) {
+                        if CoreTextPaginator.isStandaloneImageRun(CTRunGetStringRange(run), line: line, attrStr: attributedString), !info.isTextSized {
                             let leftInset = min(paragraphStyle?.headIndent ?? 0, paragraphStyle?.firstLineHeadIndent ?? 0)
                             let rightInset = (paragraphStyle?.tailIndent ?? 0) < 0 ? -(paragraphStyle?.tailIndent ?? 0) : 0
                             let boxWidth = max(1, chunkSize.width - leftInset - rightInset)

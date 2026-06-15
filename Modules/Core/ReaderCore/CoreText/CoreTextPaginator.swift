@@ -1352,7 +1352,7 @@ final class CoreTextPaginator {
                                 // margins). Images that flow inline with text keep their flow position.
                                 // Explicit author alignment (left/right) is honored; the default `.natural`
                                 // is treated as "center this figure", matching Apple Books / Readium.
-                                if Self.isStandaloneImageRun(runRange, line: line, attrStr: attrStr) {
+                                if Self.isStandaloneImageRun(runRange, line: line, attrStr: attrStr), !info.isTextSized {
                                     let leftInset = min(paragraphStyle?.headIndent ?? 0, paragraphStyle?.firstLineHeadIndent ?? 0)
                                     let rightInset = (paragraphStyle?.tailIndent ?? 0) < 0 ? -(paragraphStyle?.tailIndent ?? 0) : 0
                                     let boxWidth = max(1, contentPathRect.width - leftInset - rightInset)

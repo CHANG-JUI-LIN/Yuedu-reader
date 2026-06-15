@@ -21,6 +21,7 @@ class ImageRunInfo {
     let alt: String?
     let displayMode: DisplayMode
     let opacity: CGFloat
+    let isTextSized: Bool
 
     init(
         image: UIImage?,
@@ -35,7 +36,8 @@ class ImageRunInfo {
         source: String,
         alt: String? = nil,
         displayMode: DisplayMode,
-        opacity: CGFloat
+        opacity: CGFloat,
+        isTextSized: Bool = false
     ) {
         self.image = image
         self.width = width
@@ -50,6 +52,7 @@ class ImageRunInfo {
         self.alt = alt
         self.displayMode = displayMode
         self.opacity = opacity
+        self.isTextSized = isTextSized
     }
 }
 
@@ -76,7 +79,8 @@ final class InlineAnnotationRunInfo: ImageRunInfo {
             paddingRight: 0,
             source: "",
             displayMode: .inline,
-            opacity: 1
+            opacity: 1,
+            isTextSized: false
         )
     }
 }
@@ -96,7 +100,8 @@ enum RunDelegateProvider {
         imageSource: String,
         imageAlt: String? = nil,
         displayMode: ImageRunInfo.DisplayMode,
-        opacity: CGFloat
+        opacity: CGFloat,
+        isTextSized: Bool = false
     ) -> NSAttributedString {
         var callbacks = CTRunDelegateCallbacks(
             version: kCTRunDelegateCurrentVersion,
@@ -127,7 +132,8 @@ enum RunDelegateProvider {
             source: imageSource,
             alt: imageAlt,
             displayMode: displayMode,
-            opacity: opacity
+            opacity: opacity,
+            isTextSized: isTextSized
         )
 
         let retained = Unmanaged.passRetained(info).toOpaque()
