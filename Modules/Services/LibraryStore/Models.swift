@@ -651,6 +651,7 @@ struct ReaderRenderSettings: Equatable {
     /// Not consumed by the layout engine directly (it reads `UserReaderFontResolver`),
     /// but included here so the relayout dedup check detects font changes.
     var fontPostScriptName: String? = nil
+    var isBold: Bool = false
 }
 
 enum ReaderWritingMode: String, CaseIterable, Codable {

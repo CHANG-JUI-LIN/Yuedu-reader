@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import Combine
+import ObjectiveC
 // Modal WebView launched by `java.startBrowser` / `java.startBrowserAwait`.
 // Shows a loading state (spinner + top progress bar) while the page loads so
 // slow login/key servers don't appear as a frozen blank sheet, plus an error
@@ -137,6 +138,11 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
     let bridge: JsBridgeBrowserBridge
 
     func makeUIView(context: Context) -> WKWebView {
+        // Let JavaScript-driven input focus raise the keyboard (SMS 验证码 fields focus a hidden
+        // <input> on tap; the 番茄 验证码 step couldn't open the keyboard otherwise). One-time,
+        // process-wide WKContentView patch.
+        _ = WKWebView.patchKeyboardFocusOnce
+
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
         let prefs = WKWebpagePreferences()
@@ -154,6 +160,8 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         context.coordinator.progressObservation = wv.observe(\.estimatedProgress, options: [.new]) { [weak bridge] web, _ in
             DispatchQueue.main.async { bridge?.progress = web.estimatedProgress }
         }
+
+        context.coordinator.installKeyboardReFocusWorkaround()
 
         let coordinator = context.coordinator
         bridge.syncCookiesAndDismiss = { [weak coordinator] completion in
@@ -182,6 +190,30 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         weak var webView: WKWebView?
         weak var bridge: JsBridgeBrowserBridge?
         var progressObservation: NSKeyValueObservation?
+        private var keyboardHideObserver: NSObjectProtocol?
+
+        /// WKWebView keeps the tapped `<input>` as `document.activeElement` after the keyboard is
+        /// dismissed, so tapping it again fires no new focus event and the keyboard never returns
+        /// (e.g. you collapse the 番茄 验证码 keyboard, then can't reopen it). Blur the active
+        /// element once the keyboard is fully gone so the next tap is a fresh focus.
+        func installKeyboardReFocusWorkaround() {
+            keyboardHideObserver = NotificationCenter.default.addObserver(
+                forName: UIResponder.keyboardDidHideNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.webView?.evaluateJavaScript(
+                    "if (document.activeElement && document.activeElement.blur) { document.activeElement.blur(); }",
+                    completionHandler: nil
+                )
+            }
+        }
+
+        deinit {
+            if let keyboardHideObserver {
+                NotificationCenter.default.removeObserver(keyboardHideObserver)
+            }
+        }
 
         private func setPhase(_ phase: JsBridgeBrowserBridge.Phase, error: String? = nil) {
             DispatchQueue.main.async { [weak self] in
@@ -333,6 +365,47 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             HTTPCookieStorage.shared.cookies(for: url) ?? []
         }
     }
+}
+
+// MARK: - Keyboard-on-programmatic-focus patch
+//
+// WKWebView suppresses the on-screen keyboard when a web page focuses an `<input>` via JavaScript
+// instead of a direct tap. SMS login pages (番茄 included) render the 验证码 field as styled boxes
+// whose tap handler calls `input.focus()` — so the phone-number field (a real `<input>` you tap)
+// raises the keyboard, but the 验证码 boxes never do. There is no public API for this, so we
+// swizzle the private `WKContentView` focus callback ONCE to always report user interaction.
+// Runtime-only: no private symbols are linked (looked up via NSClassFromString / sel_getUid).
+extension WKWebView {
+    /// Lazily-evaluated, thread-safe one-shot patch. Touch `WKWebView.patchKeyboardFocusOnce`
+    /// from any web view's `makeUIView` to install it process-wide.
+    static let patchKeyboardFocusOnce: Void = {
+        guard let contentViewClass = NSClassFromString("WKContentView") else { return }
+
+        // (self, _cmd, focusedElementInfo, userIsInteracting, blurPreviousNode,
+        //  activityStateChanges, userObject)
+        typealias FocusIMP = @convention(c) (Any, Selector, UnsafeRawPointer, Bool, Bool, UInt, Any?) -> Void
+
+        // iOS 13+ uses `activityStateChanges`; the older `changingActivityState` name is kept as a
+        // defensive fallback. Patch whichever exists.
+        let selectorNames = [
+            "_elementDidFocus:userIsInteracting:blurPreviousNode:activityStateChanges:userObject:",
+            "_elementDidFocus:userIsInteracting:blurPreviousNode:changingActivityState:userObject:",
+        ]
+
+        for name in selectorNames {
+            let selector = sel_getUid(name)
+            guard let method = class_getInstanceMethod(contentViewClass, selector) else { continue }
+            let originalIMP = method_getImplementation(method)
+            let original = unsafeBitCast(originalIMP, to: FocusIMP.self)
+            let override: @convention(block) (Any, UnsafeRawPointer, Bool, Bool, UInt, Any?) -> Void = {
+                received, element, _, blurPreviousNode, activityStateChanges, userObject in
+                // Force `userIsInteracting` = true so the keyboard appears for JS-driven focus.
+                original(received, selector, element, true, blurPreviousNode, activityStateChanges, userObject)
+            }
+            method_setImplementation(method, imp_implementationWithBlock(override))
+            return
+        }
+    }()
 }
 
 // MARK: - Preview

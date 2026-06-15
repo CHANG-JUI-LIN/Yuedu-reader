@@ -31,6 +31,7 @@ struct NodeAttributedStringRenderer {
         let mediaURLResolver: ((String) -> String?)?
         let writingMode: ReaderWritingMode
         let baseWritingDirection: NSWritingDirection
+        let isBold: Bool
 
         init(
             from settings: ReaderRenderSettings,
@@ -55,6 +56,7 @@ struct NodeAttributedStringRenderer {
             self.mediaURLResolver = mediaURLResolver
             self.writingMode = settings.writingMode
             self.baseWritingDirection = baseWritingDirection
+            self.isBold = settings.isBold
         }
     }
 
@@ -560,9 +562,9 @@ struct NodeAttributedStringRenderer {
     }
 
     private func makeFontResolved(families: [String], size: CGFloat, weight: Int, italic: Bool) -> UIFont {
-        let bold = weight >= 600
+        let bold = weight >= 600 || config.isBold
         let candidateFamilies = families + (config.fontFamily.map { [$0] } ?? [])
-        if let resolved = config.resolvedFont?(candidateFamilies, weight, italic, size) {
+        if let resolved = config.resolvedFont?(candidateFamilies, bold ? max(weight, 700) : weight, italic, size) {
             return wrapCJKFont(resolved, size: size)
         }
 

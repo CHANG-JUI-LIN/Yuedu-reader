@@ -191,18 +191,29 @@ struct ReaderSettingsView: View {
                     step: 1
                 )
             }
+
+            Toggle(isOn: $settings.readerFontBold) {
+                HStack(spacing: 16) {
+                    SettingSymbolIcon(systemName: "bold")
+                    Text(localized("粗體"))
+                        .font(.body)
+                }
+            }
         }
     }
 
     /// Preview font that reflects the user-selected reader font in real time;
     /// falls back to the system font when none is selected (or it can't be loaded).
     private func previewFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        let isBold = settings.readerFontBold
+        let resolvedWeight: Font.Weight = isBold ? .bold : weight
         if let postScript = settings.selectedReaderFontPostScript,
            !postScript.isEmpty,
            UIFont(name: postScript, size: size) != nil {
-            return .custom(postScript, fixedSize: size)
+            let baseFont = Font.custom(postScript, fixedSize: size)
+            return isBold ? baseFont.bold() : baseFont
         }
-        return .system(size: size, weight: weight)
+        return .system(size: size, weight: resolvedWeight)
     }
 
     private var previewPanel: some View {

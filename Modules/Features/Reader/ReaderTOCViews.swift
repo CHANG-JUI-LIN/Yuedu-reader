@@ -1,99 +1,7 @@
 import SwiftUI
 import UIKit
 
-private struct TOCBookHeader: View {
-    let coverImagePath: String?
-    let bookTitle: String
-    let currentPage: Int
-    let totalPages: Int
-    let tocLayoutMode: TOCLayoutMode
-    let onClose: () -> Void
 
-    private var isVertical: Bool { tocLayoutMode == .verticalRTLColumns }
-
-    private var coverSize: CGSize {
-        CGSize(width: 48, height: 72)
-    }
-
-    private var titleFont: Font {
-        .system(size: 16, weight: .semibold)
-    }
-
-    private var progressFont: Font {
-        .system(size: 14, weight: .regular)
-    }
-
-    private var headerBottomPadding: CGFloat {
-        28
-    }
-
-    private var closeButtonSize: CGFloat {
-        50
-    }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            if let coverPath = coverImagePath,
-               let image = loadCoverImage(filename: coverPath) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: coverSize.width, height: coverSize.height)
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                    .shadow(color: .black.opacity(0.16), radius: 6, x: 0, y: 3)
-            } else {
-                TitleCardPlaceholder(title: bookTitle)
-                    .frame(width: coverSize.width, height: coverSize.height)
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                    .shadow(color: .black.opacity(0.16), radius: 6, x: 0, y: 3)
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(bookTitle)
-                    .font(titleFont)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-
-                if totalPages > 0 {
-                    HStack(spacing: 6) {
-                        Text(localized("頁面"))
-                            .foregroundColor(.secondary)
-
-                        Text(String(format: localized("第 %d 頁（共 %d 頁）"), currentPage + 1, totalPages))
-                            .foregroundColor(.primary)
-                    }
-                    .font(progressFont)
-                }
-            }
-
-            Spacer(minLength: 12)
-
-            Button(role: .cancel, action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(Color(uiColor: .systemGray))
-                    .frame(width: closeButtonSize, height: closeButtonSize)
-                    .background(
-                        Circle()
-                            .fill(Color(uiColor: .secondarySystemBackground))
-                    )
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(localized("關閉"))
-        }
-        .padding(.horizontal, 30)
-        .padding(.bottom, headerBottomPadding)
-        .padding(.top,15)
-
-    }
-
-    private func loadCoverImage(filename: String) -> UIImage? {
-        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(filename)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return UIImage(data: data)
-    }
-}
 
 // MARK: - Combined Bookmarks & TOC Panel
 
@@ -296,32 +204,45 @@ struct ReaderMenuView: View {
     @Binding var isPresented: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            TOCBookHeader(
-                coverImagePath: coverImagePath,
-                bookTitle: bookTitle,
-                currentPage: currentPage,
-                totalPages: totalPages,
-                tocLayoutMode: tocLayoutMode,
-                onClose: { isPresented = false }
-            )
+        NavigationStack {
+            VStack(spacing: 0) {
+                if totalPages > 0 {
+                    Text(String(format: localized("第 %d 頁（共 %d 頁）"), currentPage + 1, totalPages))
+                        .font(.system(size: 14))
+                        .foregroundColor(.primary)
+                        .padding(.vertical, DSSpacing.md)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
 
-            if tocLayoutMode == .verticalRTLColumns {
-                VerticalTOCView(
-                    chapters: chapters,
-                    currentIndex: currentIndex,
-                    currentChapterID: currentChapterID,
-                    pageOffsets: pageOffsets,
-                    onSelectChapter: { chapter in
-                        onSelectChapter(chapter)
-                        isPresented = false
-                    }
-                )
-            } else {
-                tocContent
+                if tocLayoutMode == .verticalRTLColumns {
+                    VerticalTOCView(
+                        chapters: chapters,
+                        currentIndex: currentIndex,
+                        currentChapterID: currentChapterID,
+                        pageOffsets: pageOffsets,
+                        onSelectChapter: { chapter in
+                            onSelectChapter(chapter)
+                            isPresented = false
+                        }
+                    )
+                } else {
+                    tocContent
+                }
             }
+            .navigationTitle(bookTitle)
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isPresented = false
+                    } label: {
+                        Image(systemName: "checkmark")
+                    }
+                    .accessibilityLabel(localized("完成"))
+                }
+            }
+            .background(Color(uiColor: .systemBackground))
         }
-        .background(Color(uiColor: .systemBackground))
     }
 
     private func pageNumber(for chapter: BookChapter) -> Int {

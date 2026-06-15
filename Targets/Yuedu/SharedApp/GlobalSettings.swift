@@ -117,6 +117,7 @@ final class ReaderConfig: ObservableObject {
     @Published var pageMarginV: CGFloat
     @Published var footerBottomPadding: CGFloat
     @Published var footerTextGap: CGFloat
+    @Published var readerFontBold: Bool
     @Published var theme: ReaderTheme
 
     var lineSpacing: CGFloat {
@@ -142,6 +143,7 @@ final class ReaderConfig: ObservableObject {
         pageMarginV = CGFloat(gs.pageMarginV)
         footerBottomPadding = CGFloat(gs.footerBottomPadding)
         footerTextGap = CGFloat(gs.footerTextGap)
+        readerFontBold = gs.readerFontBold
         theme = ReaderTheme.loadPersisted()
         setupBindings()
     }
@@ -157,6 +159,7 @@ final class ReaderConfig: ObservableObject {
         pageMarginV = CGFloat(gs.pageMarginV)
         footerBottomPadding = CGFloat(gs.footerBottomPadding)
         footerTextGap = CGFloat(gs.footerTextGap)
+        readerFontBold = gs.readerFontBold
         theme = ReaderTheme.loadPersisted()
         suppressRefresh = false
     }
@@ -165,13 +168,15 @@ final class ReaderConfig: ObservableObject {
         let layoutPublisher = Publishers.CombineLatest4($fontSize, $lineHeightMultiple, $letterSpacing, $paragraphSpacingMultiplier)
             .combineLatest($pageMarginH, $pageMarginV)
             .combineLatest($footerBottomPadding, $footerTextGap)
+            .combineLatest($readerFontBold)
             .debounce(for: .milliseconds(120), scheduler: RunLoop.main)
 
         layoutPublisher
             .dropFirst()
-            .sink { [weak self] layout, footerBottomPadding, footerTextGap in
+            .sink { [weak self] combinedAll, readerFontBold in
                 guard let self else { return }
-                let (combined, marginH, marginV) = layout
+                let (combinedMargins, footerBottomPadding, footerTextGap) = combinedAll
+                let (combined, marginH, marginV) = combinedMargins
                 let (fontSize, lineHeightMultiple, letterSpacing, paragraphSpacingMultiplier) = combined
                 let gs = GlobalSettings.shared
                 gs.readerFontSize = Double(fontSize)
@@ -182,6 +187,7 @@ final class ReaderConfig: ObservableObject {
                 gs.pageMarginV = Double(marginV)
                 gs.footerBottomPadding = Double(footerBottomPadding)
                 gs.footerTextGap = Double(footerTextGap)
+                gs.readerFontBold = readerFontBold
                 guard !self.suppressRefresh else { return }
                 self.refresh.send(.layout)
             }
@@ -327,6 +333,10 @@ class GlobalSettings: ObservableObject {
 
     // MARK: - Reader Font (persisted across sessions)
 
+    @Published var readerFontBold: Bool {
+        didSet { UserDefaults.standard.set(readerFontBold, forKey: "yd_reader_font_bold") }
+    }
+
     @Published var readerFontSize: Double {
         didSet { UserDefaults.standard.set(readerFontSize, forKey: "yd_reader_font_size") }
     }
@@ -395,6 +405,7 @@ class GlobalSettings: ObservableObject {
         accountAvatarData = UserDefaults.standard.data(forKey: "yd_account_avatar_data")
         let rawConv = UserDefaults.standard.string(forKey: "yd_text_conv") ?? ""
         textConversion = TextConversion(rawValue: rawConv) ?? .original
+        readerFontBold = UserDefaults.standard.bool(forKey: "yd_reader_font_bold")
         let persistedFontSize =
             (UserDefaults.standard.object(forKey: "yd_reader_font_size") as? Double) ?? 18.0
         readerFontSize = persistedFontSize

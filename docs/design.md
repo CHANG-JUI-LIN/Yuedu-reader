@@ -29,7 +29,7 @@
 
 | # | 規則 | 正確 | 錯誤 |
 |---|------|------|------|
-| H1 | 有頂部 toolbar 的頁面，標題一律用 `.toolbarTitleDisplayMode(.inlineLarge)` | 見 §2 | `.large` 捲動塌縮 / 不設定 |
+| H1 | 推送頁面用 `.toolbarTitleDisplayMode(.inlineLarge)`；**Sheet（模態）用 `.inline`** | 見 §2 | `.large` 捲動塌縮 / sheet 用 `.inlineLarge` / 不設定 |
 | H2 | 所有對使用者顯示的文字走 `localized("…")`，且三個 lproj 同步 | `Text(localized("書架"))` | `Text("Bookshelf")` |
 | H3 | 顏色、字級、間距、圓角、動畫一律用 `DS*` token | `DSColor.textSecondary` | `Color.gray` / 寫死 hex |
 | H4 | 圖示優先 SF Symbols，且與文字字重/字級一致 | `Image(systemName: "trash")` | 自製 PNG icon |
@@ -43,7 +43,7 @@
 
 ## 2. 頁面標題與 Toolbar（專案硬規則）
 
-**只要頁面頂部有 toolbar / 在導航堆疊內有標題，標題顯示模式一律使用 `.toolbarTitleDisplayMode(.inlineLarge)`。**
+**依呈現方式選標題顯示模式：推送頁面（導航堆疊內 / 頂部有 toolbar）用 `.toolbarTitleDisplayMode(.inlineLarge)`；Sheet（模態彈出）用 `.toolbarTitleDisplayMode(.inline)`。**
 
 ```swift
 // ✅ 標準寫法
@@ -63,8 +63,9 @@ SomeContent()
 ```
 
 規則細節：
-- `.inlineLarge`：標題以大字呈現但**保持 inline、不隨捲動塌縮**——這是本專案統一的標題外觀。
-- **不要**再用 `.navigationBarTitleDisplayMode(.large)`（會捲動塌縮）或 `.inline`（太小）。既有頁面若用了舊 modifier，動到時順手換成 `.toolbarTitleDisplayMode(.inlineLarge)`。
+- **推送頁面**用 `.inlineLarge`：標題以大字呈現但**保持 inline、不隨捲動塌縮**——這是本專案推送頁的統一外觀。
+- **Sheet（模態）**用 `.inline`：模態彈出的高度通常較矮、頂部需放 checkmark/取消等動作，標準 inline 小標題最貼合 iOS sheet 慣例（不要用 `.inlineLarge`）。
+- **不要**再用 `.navigationBarTitleDisplayMode(.large)`（會捲動塌縮）。既有頁面若用了舊 modifier，動到時順手換成對應模式。
 - 主要操作放 **右上角**（`.topBarTrailing`）；返回/取消放左上角（多數情況交給系統）。
 - Toolbar 圖示用 `DSFont.toolbarIcon` / `DSFont.toolbarIconLarge`，顏色 `DSColor.accent` 或 `DSColor.textSecondary`。
 

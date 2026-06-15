@@ -266,8 +266,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         }
 
         // TXT-style fallback: title + paragraphs
-        let titleFont = UserReaderFontResolver.titleFont(size: settings.fontSize + 8)
-        let bodyFont = UserReaderFontResolver.bodyFont(size: settings.fontSize)
+        let titleFont = UserReaderFontResolver.titleFont(size: settings.fontSize + 8, isBold: settings.isBold)
+        let bodyFont = UserReaderFontResolver.bodyFont(size: settings.fontSize, isBold: settings.isBold)
         let bodyTargetLineHeight = ReaderTypographyCorrection.targetLineHeight(
             font: bodyFont,
             fontSize: settings.fontSize,

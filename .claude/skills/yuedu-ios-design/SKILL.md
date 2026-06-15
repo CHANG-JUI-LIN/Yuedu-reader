@@ -10,11 +10,17 @@ description: iOS native UI/UX design rules for the Yuedu (閱讀) reader app. Us
 
 ## 不可違反的硬規則
 
-1. **頁面標題**：頂部有 toolbar / 在導航堆疊內的頁面，標題一律
-   `.toolbarTitleDisplayMode(.inlineLarge)`（不要 `.large` 捲動塌縮、不要 `.inline`）。
+1. **頁面標題**：依呈現方式選 title display mode：
+   - **導航堆疊內 / 頂部有 toolbar 的推送頁面**：`.inlineLarge`（不要 `.large` 捲動塌縮）。
+   - **Sheet（模態彈出）**：`.inline`（不要 `.inlineLarge`、不要 `.large`）。
    ```swift
+   // 推送頁面 / 帶 toolbar 的頁面
    .navigationTitle(localized("書架"))
    .toolbarTitleDisplayMode(.inlineLarge)
+
+   // Sheet（模態）
+   .navigationTitle(localized("目錄"))
+   .toolbarTitleDisplayMode(.inline)
    ```
 2. **在地化**：所有對使用者文字 `localized("…")`，三個 lproj（zh-Hant/zh-Hans/en）同步。禁止寫死字串。
 3. **設計 token**：顏色/字體/間距/圓角/動畫一律用 `DSColor`/`DSFont`/`DSSpacing`/`DSRadius`/`DSAnimation`（`Modules/SharedUI/DesignSystem/DesignTokens.swift`）。禁止寫死 hex / `.system(size:)` / 硬 duration。缺 token 先補進 `DesignTokens.swift`。
@@ -26,7 +32,7 @@ description: iOS native UI/UX design rules for the Yuedu (閱讀) reader app. Us
 
 ## 禁止
 
-網頁式 UI（dashboard 卡片牆、側欄、Landing、Tailwind 風）、一頁塞滿功能、為好看犧牲可讀性、忽略 iOS 導航/返回/Sheet/Tab 慣例、繞過 `DS*` token 或 `localized()`、有 toolbar 卻不用 `.toolbarTitleDisplayMode(.inlineLarge)`。
+網頁式 UI（dashboard 卡片牆、側欄、Landing、Tailwind 風）、一頁塞滿功能、為好看犧牲可讀性、忽略 iOS 導航/返回/Sheet/Tab 慣例、繞過 `DS*` token 或 `localized()`、有 toolbar 卻不設對應的 title display mode（推送頁 `.inlineLarge` / sheet `.inline`）。
 
 ## 設計產出必含
 

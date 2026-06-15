@@ -3,9 +3,10 @@ import SwiftUI
 /// 閱讀器「書籤／重點」清單（Apple Books 風格）。
 /// 由底部工具列的書籤按鈕開啟，列出書籤與標註（底線/螢光筆）。
 ///
-/// 清單本體改用 UIKit `UITableView`（見 `BookmarkSelectionList`），以支援原生的
-/// 兩指拖曳多選；本檔只負責 sheet 外框：分頁、工具列（checklist→xmark 編輯切換、
-/// 關閉）、底部「已選取 N 個」與浮動垃圾桶。不使用 SwiftUI 的 `EditMode`。
+/// 清單本體使用 SwiftUI `List` 搭配 `selection` 綁定（見 `BookmarkSelectionList`），
+/// 系統會自動支援 iOS 原生的兩指拖曳多選手勢。
+/// 本檔負責 sheet 外框：分頁、工具列（checklist↔checkmark 編輯切換、關閉）、
+/// 以及原生底部 toolbar 的「已選取 N 個」與刪除按鈕。
 struct ReaderBookmarkListView: View {
     enum Segment: Hashable {
         case bookmark
@@ -23,7 +24,7 @@ struct ReaderBookmarkListView: View {
 
     @State private var segment: Segment = .bookmark
     @State private var selection = Set<UUID>()
-    @State private var isEditing = false
+    @State private var editMode: EditMode = .inactive
 
     private var bookmarkItems: [Bookmark] {
         bookmarks.filter { $0.kind == .bookmark }
@@ -35,6 +36,10 @@ struct ReaderBookmarkListView: View {
 
     private var currentItems: [Bookmark] {
         segment == .bookmark ? bookmarkItems : highlightItems
+    }
+
+    private var isEditing: Bool {
+        editMode.isEditing
     }
 
     var body: some View {
@@ -57,8 +62,36 @@ struct ReaderBookmarkListView: View {
                 ToolbarItem(placement: .topBarLeading) { editToggleButton }
                 ToolbarItem(placement: .topBarTrailing) { closeButton }
             }
-            .safeAreaInset(edge: .bottom) { editingBottomBar }
-            .onChange(of: segment) { selection.removeAll() }
+            .toolbar {
+                // 原生底部 toolbar：已選取計數 + 刪除按鈕
+                ToolbarItemGroup(placement: .bottomBar) {
+                    if isEditing {
+                        Text(selectedCountText)
+                            .font(DSFont.subheadline)
+                            .foregroundStyle(DSColor.textSecondary)
+
+                        Spacer()
+
+                        Button {
+                            deleteSelected()
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .disabled(selection.isEmpty)
+                        .accessibilityLabel(localized("刪除"))
+                    }
+                }
+            }
+            .environment(\.editMode, $editMode)
+            .onChange(of: segment) {
+                selection.removeAll()
+            }
+            .onChange(of: editMode) {
+                // 退出編輯模式時清空選取
+                if !editMode.isEditing {
+                    selection.removeAll()
+                }
+            }
         }
     }
 
@@ -67,11 +100,14 @@ struct ReaderBookmarkListView: View {
     private var editToggleButton: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) {
-                isEditing.toggle()
-                if !isEditing { selection.removeAll() }
+                if editMode.isEditing {
+                    editMode = .inactive
+                } else {
+                    editMode = .active
+                }
             }
         } label: {
-            Image(systemName: isEditing ? "checkmark" : "checklist")
+            Image(systemName: isEditing ? "xmark" : "checklist")
         }
         .accessibilityLabel(localized(isEditing ? "完成" : "編輯"))
     }
@@ -116,7 +152,6 @@ struct ReaderBookmarkListView: View {
     private func table(items: [Bookmark]) -> some View {
         BookmarkSelectionList(
             items: items,
-            isEditing: $isEditing,
             selection: $selection,
             primaryText: { bm in
                 segment == .bookmark
@@ -131,40 +166,7 @@ struct ReaderBookmarkListView: View {
         )
     }
 
-    // MARK: - Editing bottom bar (centered count + floating trash)
-
-    @ViewBuilder
-    private var editingBottomBar: some View {
-        if isEditing {
-            ZStack {
-                Text(selectedCountText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-
-                HStack {
-                    Spacer()
-                    Button {
-                        deleteSelected()
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.title3)
-                            .foregroundStyle(selection.isEmpty ? Color(.tertiaryLabel) : Color(.label))
-                            .frame(width: 52, height: 52)
-                            .background(
-                                Circle()
-                                    .fill(Color(.systemBackground))
-                                    .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-                            )
-                    }
-                    .disabled(selection.isEmpty)
-                    .accessibilityLabel(localized("刪除"))
-                }
-                .padding(.trailing, DSSpacing.lg)
-            }
-            .padding(.vertical, DSSpacing.md)
-        }
-    }
+    // MARK: - Editing helpers
 
     private var selectedCountText: String {
         let noun = segment == .bookmark ? localized("書籤") : localized("重點")

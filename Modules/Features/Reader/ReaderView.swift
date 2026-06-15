@@ -1844,7 +1844,8 @@ struct ReaderView: View {
                 right: effectivePageMarginH
             ),
             writingMode: effectiveWritingMode,
-            fontPostScriptName: UserReaderFontResolver.selectedPostScriptName
+            fontPostScriptName: UserReaderFontResolver.selectedPostScriptName,
+            isBold: readerConfig.readerFontBold
         )
     }
 
@@ -3031,7 +3032,8 @@ struct ReaderView: View {
             footerHeight: footerOverlayHeight,
             contentInsets: UIEdgeInsets(top: topInset, left: marginH, bottom: bottomInset, right: marginH),
             writingMode: effectiveWritingMode,
-            fontPostScriptName: UserReaderFontResolver.selectedPostScriptName
+            fontPostScriptName: UserReaderFontResolver.selectedPostScriptName,
+            isBold: readerConfig.readerFontBold
         )
     }
 
