@@ -314,6 +314,12 @@ class GlobalSettings: ObservableObject {
     @Published var readerWritingMode: ReaderWritingMode {
         didSet { UserDefaults.standard.set(readerWritingMode.rawValue, forKey: "yd_reader_writing_mode") }
     }
+    /// When on, tapping EITHER side edge of a paged reader turns to the next page
+    /// (instead of left = previous / right = next). The center zone still toggles the menu.
+    /// Read at tap time by `CoreTextPageEngineView`'s gesture handler — no relayout needed.
+    @Published var readerTapBothSidesNextPage: Bool {
+        didSet { UserDefaults.standard.set(readerTapBothSidesNextPage, forKey: "yd_reader_tap_both_next") }
+    }
     @Published var selectedReaderFontPostScript: String? {
         didSet {
             if let selectedReaderFontPostScript, !selectedReaderFontPostScript.isEmpty {
@@ -457,6 +463,7 @@ class GlobalSettings: ObservableObject {
         }
         let rawWritingMode = UserDefaults.standard.string(forKey: "yd_reader_writing_mode") ?? ""
         readerWritingMode = ReaderWritingMode(rawValue: rawWritingMode) ?? .horizontal
+        readerTapBothSidesNextPage = UserDefaults.standard.bool(forKey: "yd_reader_tap_both_next")
         selectedReaderFontPostScript = UserDefaults.standard.string(forKey: "yd_reader_font_postscript")
         if let fontData = UserDefaults.standard.data(forKey: "yd_user_fonts"),
            let decodedFonts = try? JSONDecoder().decode([UserFontInfo].self, from: fontData) {

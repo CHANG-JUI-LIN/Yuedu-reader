@@ -35,6 +35,9 @@ enum OnlineImageLoader {
             : (cleaned.hasPrefix("http") ? "http" : "other")
         let started = Date()
         AppLogger.render("⟐ imgLoad start", context: ["#": seq, "kind": kind])
+        // ⟐ bubble: route the load-path signal through the bubble diag so a single "bubble"
+        // Console filter shows whether 段評 imgs even reach this loader and as what kind.
+        CommentBubbleSVGRecognizer.diag("load:kind=\(kind)", context: ["srcPrefix": String(cleaned.prefix(64))])
 
         let image = await withTimeoutOrNil(seconds: timeout) {
             await loadResolved(cleaned, renderWidth: renderWidth)
@@ -119,7 +122,11 @@ enum OnlineImageLoader {
         guard let data = decoded, !data.isEmpty else { return nil }
 
         if isSVG {
-            guard let svg = String(data: data, encoding: .utf8), svg.contains("<svg") else { return nil }
+            guard let svg = String(data: data, encoding: .utf8), svg.contains("<svg") else {
+                CommentBubbleSVGRecognizer.diag("load:dataURI-svg decode-fail", context: ["bytes": data.count])
+                return nil
+            }
+            CommentBubbleSVGRecognizer.diag("load:dataURI-svg preRecognize", context: ["len": svg.count])
             // Native comment bubble recognition — avoids WebView for simple count bubbles.
             if let recognized = CommentBubbleSVGRecognizer.recognize(src: uri, svgContent: svg) {
                 let pointSize = max(14, renderWidth * 0.04)
@@ -158,6 +165,10 @@ enum OnlineImageLoader {
         }
         if let image = UIImage(data: data) { return image }
         if let svg = String(data: data, encoding: .utf8), svg.contains("<svg") {
+            // ⟐ bubble: REMOTE SVG bubbles never touch recognize() — they go straight to the
+            // WebView rasterizer. If this fires for 光遇/企点, the native redraw can't help; the
+            // bubble is webview-rendered and the gap/wrap fix must live in the source SVG or here.
+            CommentBubbleSVGRecognizer.diag("load:remote-svg → webview", context: ["len": svg.count])
             return await rasterizeSVG(svg, renderWidth: renderWidth, baseURL: url)
         }
         return nil

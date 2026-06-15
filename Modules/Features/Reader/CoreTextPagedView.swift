@@ -844,10 +844,16 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let w = view.bounds.width
             let rawZone = x < w * 0.3 ? "left" : x > w * 0.7 ? "right" : "center"
             let zone: String
-            // Mirror the data source swap: swipe left-to-right = "before" = next page.
-            // Tap left side → same as swiping left → next page.  Tap right → prev page.
-            if isRTL {
-                zone = rawZone == "left" ? "right" : rawZone == "right" ? "left" : "center"
+            if rawZone == "center" {
+                zone = "center"
+            } else if GlobalSettings.shared.readerTapBothSidesNextPage {
+                // Setting: both side zones advance to the next page (center still = menu).
+                // "right" is what ReaderView maps to goToNextPage(), regardless of RTL.
+                zone = "right"
+            } else if isRTL {
+                // Mirror the data source swap: swipe left-to-right = "before" = next page.
+                // Tap left side → same as swiping left → next page.  Tap right → prev page.
+                zone = rawZone == "left" ? "right" : "left"
             } else {
                 zone = rawZone
             }

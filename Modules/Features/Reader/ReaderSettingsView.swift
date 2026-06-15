@@ -192,7 +192,7 @@ struct ReaderSettingsView: View {
                 )
             }
 
-            Toggle(isOn: $settings.readerFontBold) {
+            Toggle(isOn: $readerConfig.readerFontBold) {
                 HStack(spacing: 16) {
                     SettingSymbolIcon(systemName: "bold")
                     Text(localized("粗體"))
@@ -205,7 +205,7 @@ struct ReaderSettingsView: View {
     /// Preview font that reflects the user-selected reader font in real time;
     /// falls back to the system font when none is selected (or it can't be loaded).
     private func previewFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        let isBold = settings.readerFontBold
+        let isBold = readerConfig.readerFontBold
         let resolvedWeight: Font.Weight = isBold ? .bold : weight
         if let postScript = settings.selectedReaderFontPostScript,
            !postScript.isEmpty,
@@ -316,6 +316,14 @@ struct ReaderSettingsView: View {
 
     private var layoutDetailsSection: some View {
         Section(header: Text(localized("輔助使用與佈局選項"))) {
+            if !settings.scrollMode {
+                ToggleRow(
+                    title: localized("左右點按都翻下一頁"),
+                    subtitle: localized("開啟後，點畫面左右兩側都翻到下一頁；中間仍呼出選單"),
+                    isOn: $settings.readerTapBothSidesNextPage
+                )
+            }
+
             Toggle(localized("自訂"), isOn: customLayoutBinding)
                 .font(.body)
 

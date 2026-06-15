@@ -6,31 +6,77 @@ struct CommentBubbleSVG {
     let height: CGFloat
     
     enum Element {
-        case path(d: String, strokeColor: UIColor?, strokeWidth: CGFloat?, fillColor: UIColor?)
-        case rect(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, rx: CGFloat, ry: CGFloat, strokeColor: UIColor?, strokeWidth: CGFloat?, fillColor: UIColor?)
-        case text(text: String, x: CGFloat, y: CGFloat, fontSize: CGFloat, fontWeight: String?, anchor: String?, color: UIColor?)
+        case path(d: String, strokeColor: UIColor?, strokeWidth: CGFloat?, fillColor: UIColor?, transform: CGAffineTransform)
+        case rect(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, rx: CGFloat, ry: CGFloat, strokeColor: UIColor?, strokeWidth: CGFloat?, fillColor: UIColor?, transform: CGAffineTransform)
+        case text(text: String, x: CGFloat, y: CGFloat, fontSize: CGFloat, fontWeight: String?, anchor: String?, color: UIColor?, transform: CGAffineTransform)
     }
     
     let elements: [Element]
 }
 
+extension CommentBubbleSVG.Element {
+    /// The composed `<g>` transform attached to this element (identity when ungrouped).
+    var transform: CGAffineTransform {
+        switch self {
+        case .path(_, _, _, _, let t): return t
+        case .rect(_, _, _, _, _, _, _, _, _, let t): return t
+        case .text(_, _, _, _, _, _, _, let t): return t
+        }
+    }
+}
+
 struct CommentBubbleSVGRecognizer {
-    
+
+    // MARK: - Diagnostics (⟐ bubble) — deduped so a chapter's hundreds of bubbles
+    // don't flood Console; each distinct signature logs once per process.
+    private static let diagLock = NSLock()
+    nonisolated(unsafe) private static var diagSeen = Set<String>()
+    static func diag(_ signature: String, context: [String: Any] = [:]) {
+        diagLock.lock()
+        let isNew = diagSeen.insert(signature).inserted
+        diagLock.unlock()
+        guard isNew else { return }
+        AppLogger.parse("⟐ bubble \(signature)", context: context)
+    }
+
     /// Checks if the given image source or SVG string represents a recognizable simple comment bubble.
     /// If so, decodes and parses it into a CommentBubbleSVG representation.
     static func recognize(src: String, svgContent: String?) -> CommentBubbleSVG? {
-        guard let svg = getSVGString(src: src, svgContent: svgContent) else { return nil }
-        
-        let cleaned = svg.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard cleaned.count < 1500 else { return nil }
-        
-        // Must contain exactly one text element
-        guard countOccurrences(of: "<text", in: cleaned) == 1,
-              countOccurrences(of: "</text>", in: cleaned) == 1 else {
+        guard let svg = getSVGString(src: src, svgContent: svgContent) else {
+            diag("reject:no-svg", context: ["srcPrefix": String(src.prefix(48))])
             return nil
         }
-        
-        return parseSVG(cleaned)
+
+        let cleaned = svg.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Bound the parse, but generously: iconfont 段評 bubbles (企点/光遇) embed a full
+        // outline <path> (~1.4–1.9k chars). The structural checks below — exactly one
+        // count-formatted <text> plus a shape — are what actually gate non-bubble SVGs, so
+        // a tight length cap only mis-rejected real bubbles (光遇's is ~1916 chars).
+        guard cleaned.count < 8000 else {
+            diag("reject:too-long", context: ["len": cleaned.count])
+            return nil
+        }
+
+        // Must contain exactly one text element
+        let textOpen = countOccurrences(of: "<text", in: cleaned)
+        let textClose = countOccurrences(of: "</text>", in: cleaned)
+        guard textOpen == 1, textClose == 1 else {
+            diag("reject:text-count", context: ["open": textOpen, "close": textClose, "len": cleaned.count])
+            return nil
+        }
+
+        guard let parsed = parseSVG(cleaned) else {
+            diag("reject:parse-fail", context: ["len": cleaned.count])
+            return nil
+        }
+        let hasTransform = parsed.elements.contains { !$0.transform.isIdentity }
+        diag("ok:vb=\(Int(parsed.viewBox.width))x\(Int(parsed.viewBox.height))",
+             context: ["wh": "\(Int(parsed.width))x\(Int(parsed.height))",
+                       "origin": "\(Int(parsed.viewBox.minX)),\(Int(parsed.viewBox.minY))",
+                       "elements": parsed.elements.count,
+                       "hasTransform": hasTransform,
+                       "len": cleaned.count])
+        return parsed
     }
     
     private static func getSVGString(src: String, svgContent: String?) -> String? {
@@ -98,7 +144,13 @@ struct CommentBubbleSVGRecognizer {
         let finalHeight = height > 0 ? height : viewBox.height
         
         var elements: [CommentBubbleSVG.Element] = []
-        
+
+        // Map every element to the composed transform of the <g> groups wrapping it.
+        // 起点/企点/光遇 段評 bubbles draw an iconfont <path> inside
+        // `<g transform="rotate(…) scale(…) translate(…)">`; without honoring it the
+        // shape lands rotated/offset in an oversized viewBox.
+        let groupSpans = parseGroupSpans(svg)
+
         // 2. Parse <path> tags
         let pathPattern = #"<path\b[^>]*>"#
         if let pathRegex = try? NSRegularExpression(pattern: pathPattern, options: .caseInsensitive) {
@@ -110,10 +162,11 @@ struct CommentBubbleSVGRecognizer {
                 let stroke = parseColor(extractAttribute("stroke", in: tag))
                 let strokeWidth = parseDouble(extractAttribute("stroke-width", in: tag))
                 let fill = parseColor(extractAttribute("fill", in: tag))
-                elements.append(.path(d: d, strokeColor: stroke, strokeWidth: strokeWidth > 0 ? strokeWidth : nil, fillColor: fill))
+                let transform = composedTransform(at: match.range.location, groups: groupSpans)
+                elements.append(.path(d: d, strokeColor: stroke, strokeWidth: strokeWidth > 0 ? strokeWidth : nil, fillColor: fill, transform: transform))
             }
         }
-        
+
         // 3. Parse <rect> tags
         let rectPattern = #"<rect\b[^>]*>"#
         if let rectRegex = try? NSRegularExpression(pattern: rectPattern, options: .caseInsensitive) {
@@ -132,7 +185,8 @@ struct CommentBubbleSVGRecognizer {
                 let stroke = parseColor(extractAttribute("stroke", in: tag))
                 let strokeWidth = parseDouble(extractAttribute("stroke-width", in: tag))
                 let fill = parseColor(extractAttribute("fill", in: tag))
-                elements.append(.rect(x: x, y: y, width: w, height: h, rx: rxVal, ry: ryVal, strokeColor: stroke, strokeWidth: strokeWidth > 0 ? strokeWidth : nil, fillColor: fill))
+                let transform = composedTransform(at: match.range.location, groups: groupSpans)
+                elements.append(.rect(x: x, y: y, width: w, height: h, rx: rxVal, ry: ryVal, strokeColor: stroke, strokeWidth: strokeWidth > 0 ? strokeWidth : nil, fillColor: fill, transform: transform))
             }
         }
         
@@ -157,8 +211,9 @@ struct CommentBubbleSVGRecognizer {
                     let fontWeight = extractAttribute("font-weight", in: tag)
                     let anchor = extractAttribute("text-anchor", in: tag)
                     let color = parseColor(extractAttribute("fill", in: tag))
-                    
-                    elements.append(.text(text: text, x: x, y: y, fontSize: fontSize > 0 ? fontSize : 12.0, fontWeight: fontWeight, anchor: anchor, color: color))
+                    let transform = composedTransform(at: tagRange.location, groups: groupSpans)
+
+                    elements.append(.text(text: text, x: x, y: y, fontSize: fontSize > 0 ? fontSize : 12.0, fontWeight: fontWeight, anchor: anchor, color: color, transform: transform))
                 }
             }
         }
@@ -184,6 +239,93 @@ struct CommentBubbleSVGRecognizer {
         guard let val else { return 0 }
         let clean = val.trimmingCharacters(in: .whitespacesAndNewlines)
         return CGFloat(Double(clean) ?? 0)
+    }
+
+    // MARK: - <g transform> support
+
+    /// One `<g …>` block's character span plus its own `transform` (identity when absent).
+    private struct GroupSpan {
+        let start: Int   // location of the opening `<g …>` tag
+        let end: Int     // location of the matching `</g>`
+        let transform: CGAffineTransform
+    }
+
+    /// Walks `<g …>` / `</g>` pairs (with a stack so nesting is handled) and records each
+    /// group's span and own transform. Self-closing groups don't appear in these SVGs.
+    private static func parseGroupSpans(_ svg: String) -> [GroupSpan] {
+        let pattern = #"<g\b([^>]*)>|</g\s*>"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [] }
+        let ns = svg as NSString
+        var spans: [GroupSpan] = []
+        var stack: [(start: Int, transform: CGAffineTransform)] = []
+        for match in regex.matches(in: svg, range: NSRange(location: 0, length: ns.length)) {
+            let tag = ns.substring(with: match.range)
+            if tag.lowercased().hasPrefix("</g") {
+                if let open = stack.popLast() {
+                    spans.append(GroupSpan(start: open.start, end: match.range.location, transform: open.transform))
+                }
+            } else {
+                let attrs = match.range(at: 1).location != NSNotFound ? ns.substring(with: match.range(at: 1)) : ""
+                let transform = extractAttribute("transform", in: "<g \(attrs)>").map { parseTransform($0) } ?? .identity
+                stack.append((start: match.range.location, transform: transform))
+            }
+        }
+        return spans
+    }
+
+    /// Composes the transforms of every `<g>` enclosing `location`, innermost applied first
+    /// (matching SVG nesting: a point flows through the inner group, then each ancestor).
+    private static func composedTransform(at location: Int, groups: [GroupSpan]) -> CGAffineTransform {
+        let containing = groups
+            .filter { $0.start <= location && location < $0.end }
+            .sorted { $0.start > $1.start } // innermost (latest-opening) first
+        var t = CGAffineTransform.identity
+        for group in containing {
+            t = t.concatenating(group.transform)
+        }
+        return t
+    }
+
+    /// Parses an SVG `transform` attribute (translate/scale/rotate/matrix) into a single
+    /// affine transform. SVG applies the listed functions left-to-right with the rightmost
+    /// applied first to the point, so the ops are folded in reverse.
+    private static func parseTransform(_ str: String) -> CGAffineTransform {
+        let pattern = #"(\w+)\s*\(([^)]*)\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return .identity }
+        let ns = str as NSString
+        var ops: [CGAffineTransform] = []
+        for match in regex.matches(in: str, range: NSRange(location: 0, length: ns.length)) {
+            let name = ns.substring(with: match.range(at: 1)).lowercased()
+            let nums = ns.substring(with: match.range(at: 2))
+                .components(separatedBy: CharacterSet(charactersIn: ", \n\t"))
+                .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                .map { CGFloat($0) }
+            switch name {
+            case "translate":
+                ops.append(CGAffineTransform(translationX: nums.count > 0 ? nums[0] : 0,
+                                             y: nums.count > 1 ? nums[1] : 0))
+            case "scale":
+                let sx = nums.count > 0 ? nums[0] : 1
+                ops.append(CGAffineTransform(scaleX: sx, y: nums.count > 1 ? nums[1] : sx))
+            case "rotate":
+                let angle = (nums.count > 0 ? nums[0] : 0) * .pi / 180
+                if nums.count >= 3 {
+                    let cx = nums[1], cy = nums[2]
+                    ops.append(CGAffineTransform(translationX: cx, y: cy)
+                        .rotated(by: angle)
+                        .translatedBy(x: -cx, y: -cy))
+                } else {
+                    ops.append(CGAffineTransform(rotationAngle: angle))
+                }
+            case "matrix":
+                if nums.count >= 6 {
+                    ops.append(CGAffineTransform(a: nums[0], b: nums[1], c: nums[2], d: nums[3], tx: nums[4], ty: nums[5]))
+                }
+            default:
+                break
+            }
+        }
+        return ops.reversed().reduce(.identity) { $0.concatenating($1) }
     }
     
     private static func parseColor(_ val: String?) -> UIColor? {
@@ -234,23 +376,27 @@ extension CommentBubbleSVGRecognizer {
         format.scale = 3
         let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
         
-        return renderer.image { rendererContext in
+        let rendered = renderer.image { rendererContext in
             let context = rendererContext.cgContext
-            
+
             context.saveGState()
             context.translateBy(x: leadingGap, y: 0)
-            
+
             let scaleX = targetWidth / vW
             let scaleY = targetHeight / vH
             context.scaleBy(x: scaleX, y: scaleY)
             context.translateBy(x: -svg.viewBox.origin.x, y: -svg.viewBox.origin.y)
-            
+
             for element in svg.elements {
+                // Apply the element's <g> transform within the viewBox→canvas CTM so the
+                // shape lands where the SVG author intended (rotate/scale/translate).
+                context.saveGState()
                 switch element {
-                case .rect(let x, let y, let w, let h, let rx, let ry, let stroke, let strokeWidth, let fill):
+                case .rect(let x, let y, let w, let h, let rx, let ry, let stroke, let strokeWidth, let fill, let transform):
+                    context.concatenate(transform)
                     let rect = CGRect(x: x, y: y, width: w, height: h)
                     let path = UIBezierPath(roundedRect: rect, byRoundingCorners: .allCorners, cornerRadii: CGSize(width: rx, height: ry))
-                    
+
                     if let fill {
                         fill.setFill()
                         path.fill()
@@ -261,10 +407,11 @@ extension CommentBubbleSVGRecognizer {
                         path.lineJoinStyle = .round
                         path.stroke()
                     }
-                    
-                case .path(let d, let stroke, let strokeWidth, let fill):
+
+                case .path(let d, let stroke, let strokeWidth, let fill, let transform):
+                    context.concatenate(transform)
                     let path = SVGPathParser.parse(d: d)
-                    
+
                     if let fill {
                         fill.setFill()
                         path.fill()
@@ -275,8 +422,9 @@ extension CommentBubbleSVGRecognizer {
                         path.lineJoinStyle = .round
                         path.stroke()
                     }
-                    
-                case .text(let text, let x, let y, let fontSize, let fontWeight, let anchor, let color):
+
+                case .text(let text, let x, let y, let fontSize, let fontWeight, let anchor, let color, let transform):
+                    context.concatenate(transform)
                     let textColor = color ?? themeTextColor
                     let isSVGBold = fontWeight?.lowercased().contains("bold") ?? false || fontWeight == "600"
                     let isBold = isSVGBold || GlobalSettings.shared.readerFontBold
@@ -285,24 +433,37 @@ extension CommentBubbleSVGRecognizer {
                         .font: font,
                         .foregroundColor: textColor
                     ]
-                    
+
                     let textSize = (text as NSString).size(withAttributes: textAttrs)
-                    
+
                     var textX = x
                     if anchor?.lowercased() == "middle" {
                         textX = x - textSize.width / 2
                     } else if anchor?.lowercased() == "end" {
                         textX = x - textSize.width
                     }
-                    
+
                     // 使用 SVG 给定的 y 坐标作为文本基线绘制（向上减去 font.ascender）
                     let textY = y - font.ascender
-                    
+
                     (text as NSString).draw(at: CGPoint(x: textX, y: textY), withAttributes: textAttrs)
                 }
+                context.restoreGState()
             }
             context.restoreGState()
         }
+
+        // Crop the baked-in viewBox / canvas padding (起点 fills it, but 企点·光遇·番茄
+        // leave large transparent margins) so the bubble sits flush against the paragraph
+        // text and starts at the left margin when it wraps to a new line.
+        let trimmed = rendered.trimmingTransparentPixels() ?? rendered
+        diag("draw:vb=\(Int(svg.viewBox.width))x\(Int(svg.viewBox.height))", context: [
+            "canvasPt": "\(Int(canvasSize.width))x\(Int(canvasSize.height))",
+            "trimmedPt": String(format: "%.0fx%.0f", trimmed.size.width, trimmed.size.height),
+            "hasTransform": svg.elements.contains { !$0.transform.isIdentity },
+            "elements": svg.elements.count
+        ])
+        return trimmed
     }
 }
 

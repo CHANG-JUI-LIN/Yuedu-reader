@@ -701,18 +701,30 @@ struct NodeAttributedStringRenderer {
         svgContent: String?,
         ctx: RenderContext
     ) async -> NSAttributedString {
-        if style.isTextSizedImage, let recognized = CommentBubbleSVGRecognizer.recognize(src: src, svgContent: svgContent) {
-            let image = CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: ctx.font.pointSize, themeTextColor: ctx.textColor)
-            let metrics = await resolvedImageMetrics(image: image, style: style, font: ctx.font, displayMode: .inline)
-            return await makeImagePlaceholder(
-                image: image,
-                style: style,
-                ctx: ctx,
-                imageSource: "",
-                imageAlt: alt,
-                displayMode: .inline,
-                precomputedMetrics: metrics
-            )
+        // ⟐ bubble diagnostics: confirm on device whether 段評 SVGs (光遇/企点) even reach this
+        // renderer, and whether they're flagged text-sized. Fingerprint keeps DISTINCT bubble
+        // types from deduping into one line (so we see isTextSized per template, not just the first).
+        let bubbleFP = src.range(of: ";base64,").map { String(src[$0.upperBound...].prefix(10)) } ?? String(src.prefix(10))
+        CommentBubbleSVGRecognizer.diag("render:enter fp=\(bubbleFP) isTextSized=\(style.isTextSizedImage) svg=\(svgContent != nil || src.lowercased().contains("svg"))",
+            context: ["srcPrefix": String(src.prefix(56)), "hasSvgContent": svgContent != nil])
+
+        if style.isTextSizedImage {
+            let recognized = CommentBubbleSVGRecognizer.recognize(src: src, svgContent: svgContent)
+            CommentBubbleSVGRecognizer.diag("textSized:enter recognized=\(recognized != nil)",
+                context: ["srcPrefix": String(src.prefix(48)), "svgContentLen": svgContent?.count ?? -1])
+            if let recognized {
+                let image = CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: ctx.font.pointSize, themeTextColor: ctx.textColor)
+                let metrics = await resolvedImageMetrics(image: image, style: style, font: ctx.font, displayMode: .inline)
+                return await makeImagePlaceholder(
+                    image: image,
+                    style: style,
+                    ctx: ctx,
+                    imageSource: "",
+                    imageAlt: alt,
+                    displayMode: .inline,
+                    precomputedMetrics: metrics
+                )
+            }
         }
 
         if let svgContent, !svgContent.isEmpty {
@@ -780,6 +792,16 @@ struct NodeAttributedStringRenderer {
         }
 
         var image = src.isEmpty ? nil : await config.imageLoader?(src)
+        // ⟐ bubble: this is the WebView-fallback path (recognize missed). Whether the baked-in
+        // SVG margins get cropped depends ENTIRELY on isTextSizedImage here. Log the decision +
+        // the before/after size so we can see if the gap survives trimming or trimming is skipped.
+        if svgContent != nil || src.lowercased().contains("svg") {
+            let fp = src.range(of: ";base64,").map { String(src[$0.upperBound...].prefix(10)) } ?? String(src.prefix(10))
+            let before = image.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "nil"
+            let after = (style.isTextSizedImage ? image?.trimmingTransparentPixels() : image).map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? before
+            CommentBubbleSVGRecognizer.diag("loaderTrim fp=\(fp) isTextSized=\(style.isTextSizedImage)",
+                context: ["before": before, "after": after])
+        }
         if style.isTextSizedImage, let img = image {
             image = img.trimmingTransparentPixels() ?? img
         }
