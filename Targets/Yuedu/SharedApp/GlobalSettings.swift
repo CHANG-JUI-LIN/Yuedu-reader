@@ -400,6 +400,13 @@ class GlobalSettings: ObservableObject {
         didSet { UserDefaults.standard.set(ttsSystemVoiceIdentifier, forKey: "yd_tts_system_voice_id") }
     }
 
+    /// The currently active TTS source, derived from matching `httpTtsUrlTemplate` against imported sources.
+    var activeTTSSource: ImportedTTSSource? {
+        let template = httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !template.isEmpty else { return nil }
+        return importedTTSSources.first { $0.urlTemplate == template }
+    }
+
     private init() {
         UserDefaults.standard.removeObject(forKey: "yd_app_lang")
         isLoggedIn = UserDefaults.standard.bool(forKey: "yd_account_logged_in")

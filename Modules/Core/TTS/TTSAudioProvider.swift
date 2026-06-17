@@ -5,20 +5,37 @@ struct ImportedTTSSource: Identifiable, Codable, Equatable {
     let name: String
     let urlTemplate: String
     let headers: [String: String]
+    let loginUi: String?
+    let loginCheckJs: String?
+    let contentType: String?
+    let concurrentRate: String?
 
     init(
         name: String,
         urlTemplate: String,
         sourceID: String? = nil,
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        loginUi: String? = nil,
+        loginCheckJs: String? = nil,
+        contentType: String? = nil,
+        concurrentRate: String? = nil
     ) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedURL = urlTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
         self.name = trimmedName.isEmpty ? "TTS" : trimmedName
         self.urlTemplate = trimmedURL
         self.headers = headers
+        self.loginUi = loginUi
+        self.loginCheckJs = loginCheckJs
+        self.contentType = contentType
+        self.concurrentRate = concurrentRate
         let stableID = sourceID?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.id = stableID?.isEmpty == false ? stableID! : "\(self.name)|\(trimmedURL)"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, urlTemplate, headers
+        case loginUi, loginCheckJs, contentType, concurrentRate
     }
 }
 
@@ -47,11 +64,19 @@ enum TTSSourceJSONParser {
             let sourceID = firstString(in: dictionary, keys: ["id", "sourceId", "uuid"])
             let headers = parsedHeaders(from: value(for: "header", in: dictionary))
                 .merging(parsedHeaders(from: value(for: "headers", in: dictionary))) { _, new in new }
+            let loginUi = firstString(in: dictionary, keys: ["loginUi"])
+            let loginCheckJs = firstString(in: dictionary, keys: ["loginCheckJs"])
+            let contentType = firstString(in: dictionary, keys: ["contentType"])
+            let concurrentRate = firstString(in: dictionary, keys: ["concurrentRate"])
             let source = ImportedTTSSource(
                 name: name,
                 urlTemplate: url,
                 sourceID: sourceID,
-                headers: headers
+                headers: headers,
+                loginUi: loginUi,
+                loginCheckJs: loginCheckJs,
+                contentType: contentType,
+                concurrentRate: concurrentRate
             )
             let duplicateKey = source.urlTemplate
             guard !seen.contains(duplicateKey) else { return nil }
@@ -283,6 +308,7 @@ enum TTSAudioProviderError: LocalizedError {
     case invalidURL
     case emptyData
     case badStatus(Int)
+    case responsePostProcessingFailed
 
     var errorDescription: String? {
         switch self {
@@ -294,6 +320,8 @@ enum TTSAudioProviderError: LocalizedError {
             return "TTS provider returned empty audio data"
         case .badStatus(let status):
             return "TTS provider returned HTTP \(status)"
+        case .responsePostProcessingFailed:
+            return "TTS provider response did not contain usable audio data"
         }
     }
 }
@@ -314,7 +342,7 @@ final class CustomHTTPProvider: TTSAudioProvider {
                 }
             }
             ttsLog("[TTS][Provider] direct audio request url=\(request.url?.absoluteString ?? "")")
-            return try await fetchAudioData(request: request)
+            return try await fetchAudioData(request: request, source: nil)
         }
 
         let template = GlobalSettings.shared.httpTtsUrlTemplate
@@ -323,10 +351,24 @@ final class CustomHTTPProvider: TTSAudioProvider {
         guard !template.isEmpty else {
             throw TTSAudioProviderError.emptyTemplate
         }
-        guard var request = buildRequest(template: template, text: text, title: title, rate: rate) else {
-            ttsLog("[TTS][Provider] invalid url template=\(template)")
-            throw TTSAudioProviderError.invalidURL
+
+        let activeSource = GlobalSettings.shared.activeTTSSource
+
+        var request: URLRequest
+        if isJSTemplate(template) {
+            guard let r = buildJSRequest(template: template, text: text, title: title, rate: rate, source: activeSource) else {
+                ttsLog("[TTS][Provider] invalid js template=\(template)")
+                throw TTSAudioProviderError.invalidURL
+            }
+            request = r
+        } else {
+            guard let r = buildRequest(template: template, text: text, title: title, rate: rate) else {
+                ttsLog("[TTS][Provider] invalid url template=\(template)")
+                throw TTSAudioProviderError.invalidURL
+            }
+            request = r
         }
+
         for (field, value) in GlobalSettings.shared.httpTtsHeaders {
             if request.value(forHTTPHeaderField: field) == nil {
                 request.setValue(value, forHTTPHeaderField: field)
@@ -334,13 +376,14 @@ final class CustomHTTPProvider: TTSAudioProvider {
         }
         ttsLog("[TTS][Provider] request method=\(request.httpMethod ?? "GET") url=\(request.url?.absoluteString ?? "")")
 
-        return try await fetchAudioData(request: request)
+        return try await fetchAudioData(request: request, source: activeSource)
     }
 
-    private func fetchAudioData(request: URLRequest) async throws -> Data {
+    private func fetchAudioData(request: URLRequest, source: ImportedTTSSource?) async throws -> Data {
         let (data, response) = try await URLSession.shared.data(for: request)
+        let responseContentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? ""
         if let http = response as? HTTPURLResponse {
-            let contentType = http.value(forHTTPHeaderField: "Content-Type") ?? ""
+            let contentType = responseContentType
             ttsLog("[TTS][Provider] response status=\(http.statusCode) contentType=\(contentType) bytes=\(data.count)")
         } else {
             ttsLog("[TTS][Provider] response nonHTTP bytes=\(data.count)")
@@ -351,7 +394,157 @@ final class CustomHTTPProvider: TTSAudioProvider {
         guard !data.isEmpty else {
             throw TTSAudioProviderError.emptyData
         }
+
+        if let source, let loginCheckJs = source.loginCheckJs, !loginCheckJs.isEmpty {
+            let bodyStr = String(data: data, encoding: .utf8) ?? ""
+            if let processed = evaluateLoginCheckJs(loginCheckJs, responseBody: bodyStr, response: response) {
+                ttsLog("[TTS][Provider] loginCheckJs extracted \(processed.count) bytes of audio")
+                return processed
+            }
+            if responseLooksLikeTextPayload(data: data, contentType: responseContentType) {
+                throw TTSAudioProviderError.responsePostProcessingFailed
+            }
+        }
+
         return data
+    }
+
+    private func responseLooksLikeTextPayload(data: Data, contentType: String) -> Bool {
+        let loweredType = contentType.lowercased()
+        if loweredType.contains("json") || loweredType.hasPrefix("text/") {
+            return true
+        }
+        guard let text = String(data: Data(data.prefix(64)), encoding: .utf8) else {
+            return false
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("{") || trimmed.hasPrefix("[") || trimmed.hasPrefix("<")
+    }
+
+    private func isJSTemplate(_ template: String) -> Bool {
+        let t = template.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.hasPrefix("@js:") || t.hasPrefix("<js>")
+    }
+
+    private func buildJSRequest(
+        template: String,
+        text: String,
+        title: String,
+        rate: Float,
+        source: ImportedTTSSource?
+    ) -> URLRequest? {
+        let trimmed = template.trimmingCharacters(in: .whitespacesAndNewlines)
+        let jsCode: String
+        if trimmed.hasPrefix("@js:") {
+            jsCode = String(trimmed.dropFirst(4))
+        } else if trimmed.hasPrefix("<js>") {
+            let start = trimmed.index(trimmed.startIndex, offsetBy: 4)
+            if let end = trimmed.range(of: "</js>", options: .backwards) {
+                jsCode = String(trimmed[start..<end.lowerBound])
+            } else {
+                jsCode = String(trimmed[start...])
+            }
+        } else {
+            return nil
+        }
+
+        let sourceId = source?.id ?? ""
+        let speed = legadoSpeakSpeed(for: rate)
+
+        let engine = JSCoreEngine()
+
+        // Wire up source bridge with login info
+        engine.sourceBridge.getLoginInfoHandler = {
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceId).flatMap {
+                guard let d = try? JSONSerialization.data(withJSONObject: $0),
+                      let s = String(data: d, encoding: .utf8) else { return nil }
+                return s
+            }
+        }
+        engine.sourceBridge.getLoginInfoMapHandler = {
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceId) ?? [:]
+        }
+        engine.sourceBridge.putLoginInfoHandler = { info in
+            if let d = info.data(using: .utf8),
+               let dict = try? JSONSerialization.jsonObject(with: d) as? [String: String] {
+                LoginManager.shared.storeLoginInfo(sourceUrl: sourceId, info: dict)
+            }
+        }
+        var loginHeaders: [String: String] = [:]
+        engine.sourceBridge.putLoginHeaderHandler = { header in
+            if let d = header.data(using: .utf8),
+               let dict = try? JSONSerialization.jsonObject(with: d) as? [String: String] {
+                loginHeaders.merge(dict) { _, new in new }
+                LoginManager.shared.storeLoginHeaders(sourceUrl: sourceId, headers: dict)
+            }
+        }
+        engine.sourceBridge.getHeaderMapHandler = {
+            LoginManager.shared.getLoginHeaders(sourceUrl: sourceId)
+        }
+
+        // Prepare JS with speakText/speakSpeed bindings
+        let bindings: [String: Any] = [
+            "speakText": text,
+            "speakSpeed": speed,
+            "baseUrl": source?.urlTemplate ?? ""
+        ]
+
+        guard let result = engine.evaluate(jsCode, result: nil, bindings: bindings)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !result.isEmpty else {
+            ttsLog("[TTS][Provider] JS evaluation returned empty result")
+            return nil
+        }
+
+        guard let request = AnalyzeUrl(ruleUrl: result, speakText: text, speakSpeed: speed).toURLRequest() else {
+            ttsLog("[TTS][Provider] AnalyzeUrl failed to parse JS result: \(result.prefix(200))")
+            return nil
+        }
+
+        // Apply login headers captured during JS evaluation
+        var mutableRequest = request
+        for (field, value) in loginHeaders {
+            mutableRequest.setValue(value, forHTTPHeaderField: field)
+        }
+        return mutableRequest
+    }
+
+    /// Evaluate `loginCheckJs` against the HTTP response to extract audio data
+    /// (e.g. base64-decoded audio from a JSON API response).
+    /// Returns the extracted audio Data, or nil if no audio was decoded.
+    private func evaluateLoginCheckJs(
+        _ js: String,
+        responseBody: String,
+        response: URLResponse?
+    ) -> Data? {
+        var extractedData: Data?
+
+        let engine = JSCoreEngine()
+        engine.responseBase64Handler = { data, _ in
+            extractedData = data
+        }
+
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 200
+        // Safely encode the response body as a JSON string literal for embedding in JS
+        let bodyJsonData = (try? JSONSerialization.data(withJSONObject: responseBody, options: [.fragmentsAllowed]))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
+
+        let wrappedJs = """
+        (function() {
+            var __responseBody = {
+                string: function() { return \(bodyJsonData); }
+            };
+            var __body = function() { return __responseBody; };
+            __body.string = __responseBody.string;
+            var result = {
+                code: function() { return \(statusCode); },
+                body: __body
+            };
+            \(js)
+        })();
+        """
+
+        _ = engine.evaluate(wrappedJs, result: nil, bindings: [:])
+        return extractedData
     }
 
     private func buildRequest(template: String, text: String, title: String, rate: Float) -> URLRequest? {

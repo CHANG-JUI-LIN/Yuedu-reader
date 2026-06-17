@@ -13,6 +13,9 @@ struct TTSSettingsView: View {
     @State private var showNetworkImport = false
     @State private var searchText = ""
     @State private var selectedSourceIds: Set<String> = []
+    @State private var loginSource: ImportedTTSSource?
+    @State private var loginFieldValues: [String: String] = [:]
+    @State private var showLoginSuccess: Bool = false
 
     private var filteredSources: [ImportedTTSSource] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -101,9 +104,14 @@ struct TTSSettingsView: View {
         ) { result in
             handleSourceFileImport(result)
         }
-        .onDisappear {
-            testCoordinator.stop()
-        }
+            .sheet(item: $loginSource) { source in
+                TTSSourceLoginView(source: source) {
+                    loginSource = nil
+                }
+            }
+            .onDisappear {
+                testCoordinator.stop()
+            }
     }
 
     // MARK: - Private
@@ -294,6 +302,13 @@ struct TTSSettingsView: View {
                         .font(.system(size: 11))
                         .foregroundColor(DSColor.textSecondary.opacity(0.6))
                         .lineLimit(1)
+
+                    if source.loginUi != nil {
+                        Text(localized("需設定帳號"))
+                            .font(.system(size: 10))
+                            .foregroundColor(DSColor.accent)
+                            .lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -310,6 +325,14 @@ struct TTSSettingsView: View {
                     testPlayback(source)
                 } label: {
                     Label(localized("測試播放"), systemImage: "play.circle")
+                }
+
+                if source.loginUi != nil {
+                    Button {
+                        openLoginForm(source)
+                    } label: {
+                        Label(localized("帳號設定"), systemImage: "person.fill")
+                    }
                 }
 
                 Button {
@@ -576,6 +599,7 @@ struct TTSSettingsView: View {
     private func deleteSource(_ source: ImportedTTSSource) {
         gs.importedTTSSources.removeAll { $0.id == source.id }
         selectedSourceIds.remove(source.id)
+        LoginManager.shared.clearLogin(sourceUrl: source.id)
         if isSelected(source) {
             gs.httpTtsUrlTemplate = ""
             gs.httpTtsHeaders = [:]
@@ -589,6 +613,9 @@ struct TTSSettingsView: View {
         let deletingActiveSource = gs.importedTTSSources.contains {
             selected.contains($0.id) && isSelected($0)
         }
+        for id in selected {
+            LoginManager.shared.clearLogin(sourceUrl: id)
+        }
         gs.importedTTSSources.removeAll { selected.contains($0.id) }
         selectedSourceIds.removeAll()
         if deletingActiveSource {
@@ -599,6 +626,9 @@ struct TTSSettingsView: View {
     }
 
     private func clearSources() {
+        for source in gs.importedTTSSources {
+            LoginManager.shared.clearLogin(sourceUrl: source.id)
+        }
         gs.importedTTSSources = []
         selectedSourceIds.removeAll()
         gs.httpTtsUrlTemplate = ""
@@ -667,6 +697,11 @@ struct TTSSettingsView: View {
         }
     }
 
+    private func openLoginForm(_ source: ImportedTTSSource) {
+        loginFieldValues = LoginManager.shared.getLoginInfo(sourceUrl: source.id) ?? [:]
+        loginSource = source
+    }
+
     private func mergeSources(existing: [ImportedTTSSource], imported: [ImportedTTSSource]) -> [ImportedTTSSource] {
         var merged = existing
         var existingURLs = Set(existing.map(\.urlTemplate))
@@ -678,6 +713,141 @@ struct TTSSettingsView: View {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
     }
+}
+
+// MARK: - TTS Source Login View
+
+struct TTSSourceLoginView: View {
+    let source: ImportedTTSSource
+    let onDismiss: () -> Void
+
+    @State private var fieldValues: [String: String] = [:]
+    @State private var saved = false
+
+    private let fields: [LoginField]
+
+    init(source: ImportedTTSSource, onDismiss: @escaping () -> Void) {
+        self.source = source
+        self.onDismiss = onDismiss
+        let loginInfo = LoginManager.shared.getLoginInfo(sourceUrl: source.id) ?? [:]
+        _fieldValues = State(initialValue: loginInfo)
+        if let ui = source.loginUi {
+            fields = LoginManager.shared.parseLoginUi(ui)
+        } else {
+            fields = []
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if fields.isEmpty {
+                    Text(localized("無可設定的欄位"))
+                        .foregroundColor(.secondary)
+                }
+                ForEach(fields) { field in
+                    fieldView(field)
+                }
+            }
+            .navigationTitle(source.name)
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(localized("取消")) { onDismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(localized("儲存")) { saveLoginInfo() }
+                        .disabled(saved)
+                }
+            }
+            .overlay(alignment: .top) {
+                if saved {
+                    Text(localized("已儲存"))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .background(DSColor.accent)
+                        .clipShape(Capsule())
+                        .shadow(radius: 6)
+                        .padding(.top, 12)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                onDismiss()
+                            }
+                        }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func fieldView(_ field: LoginField) -> some View {
+        let value = Binding<String>(
+            get: { fieldValues[field.name] ?? field.defaultValue ?? "" },
+            set: { fieldValues[field.name] = $0 }
+        )
+        switch field.type {
+        case .text:
+            LabeledContent(field.name) {
+                TextField(field.options.first ?? "", text: value)
+                    .multilineTextAlignment(.trailing)
+                    .autocorrectionDisabled()
+            }
+        case .password:
+            LabeledContent(field.name) {
+                SecureField(field.options.first ?? "", text: value)
+                    .multilineTextAlignment(.trailing)
+            }
+        case .select:
+            Picker(field.name, selection: value) {
+                ForEach(field.options, id: \.self) { option in
+                    Text(option).tag(option)
+                }
+            }
+        case .button:
+            Section {
+                Button(field.name) {
+                    handleButtonAction(field)
+                }
+            }
+        }
+    }
+
+    private func saveLoginInfo() {
+        LoginManager.shared.storeLoginInfo(sourceUrl: source.id, info: fieldValues)
+        withAnimation { saved = true }
+    }
+
+    private func handleButtonAction(_ field: LoginField) {
+        guard let action = field.action else { return }
+        LoginManager.shared.storeLoginInfo(sourceUrl: source.id, info: fieldValues)
+        // Execute button action JS if it starts with @js:
+        if action.hasPrefix("@js:") || action.hasPrefix("<js>") {
+            let jsCode = action.hasPrefix("@js:")
+                ? String(action.dropFirst(4))
+                : String(action.dropFirst(4).dropLast(5))
+            let engine = JSCoreEngine()
+            engine.sourceBridge.getLoginInfoMapHandler = {
+                LoginManager.shared.getLoginInfo(sourceUrl: source.id) ?? [:]
+            }
+            engine.sourceBridge.putLoginInfoHandler = { info in
+                if let d = info.data(using: .utf8),
+                   let dict = try? JSONSerialization.jsonObject(with: d) as? [String: String] {
+                    LoginManager.shared.storeLoginInfo(sourceUrl: source.id, info: dict)
+                    fieldValues = dict
+                }
+            }
+            _ = engine.evaluate(jsCode, result: nil, bindings: [
+                "baseUrl": source.urlTemplate
+            ])
+        }
+    }
+}
+
+extension LoginField: Identifiable {
+    var id: String { name }
 }
 
 #Preview {
