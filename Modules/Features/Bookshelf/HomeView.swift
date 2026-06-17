@@ -350,6 +350,9 @@ struct HomeView: View {
         .environment(\.editMode, $editMode)
         .animation(.easeOut(duration: 0.25), value: sortedFilteredBooks.map(\.id))
         .accessibilityIdentifier("home_book_list")
+        .refreshable {
+            await ChapterUpdater.refreshAll(bookStore: store)
+        }
     }
 
     // MARK: - Book Grid
@@ -376,6 +379,9 @@ struct HomeView: View {
             .padding(.vertical, 12)
         }
         .animation(.easeOut(duration: 0.25), value: sortedFilteredBooks.map(\.id))
+        .refreshable {
+            await ChapterUpdater.refreshAll(bookStore: store)
+        }
     }
 }
 

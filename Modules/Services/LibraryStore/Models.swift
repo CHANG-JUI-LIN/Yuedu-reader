@@ -367,6 +367,7 @@ enum BookOfflineDownloadState: String, Codable {
     case downloading
     case available
     case failed
+    case paused
 }
 
 struct BookOfflineDownloadTask: Codable, Equatable {

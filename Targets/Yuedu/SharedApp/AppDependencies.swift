@@ -78,6 +78,7 @@ protocol OnlineBookCoordinating: AnyObject {
         startChapterIndex: Int,
         chapterCount: Int?
     )
+    func pauseDownload(book: ReadingBook, store: BookStore?)
     func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async
 }
 

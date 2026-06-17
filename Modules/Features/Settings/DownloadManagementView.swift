@@ -12,6 +12,7 @@ struct DownloadManagementView: View {
     private var activeDownloads: [ReadingBook] {
         onlineBooks.filter { book in
             book.offlineDownloadState == .downloading
+                || book.offlineDownloadState == .paused
                 || (book.offlineDownloadState == .failed && book.offlineDownloadTask != nil)
         }
     }
@@ -87,16 +88,23 @@ struct DownloadManagementView: View {
                                 .foregroundColor(DSColor.textSecondary)
                         }
                         ProgressView(value: downloadProgress(for: book))
-                            .tint(.blue)
+                            .tint(book.offlineDownloadState == .paused ? DSColor.textSecondary : .blue)
                         HStack {
                             Text(String(format: "%.1f MB", cacheSizeMB(for: book)))
                                 .font(DSFont.caption)
                                 .foregroundColor(DSColor.textSecondary)
                             Spacer()
-                            Button(localized("繼續下載")) {
-                                resumeDownload(for: book)
+                            if book.offlineDownloadState == .downloading {
+                                Button(localized("暫停下載")) {
+                                    pauseDownload(for: book)
+                                }
+                                .font(DSFont.caption)
+                            } else {
+                                Button(localized("繼續下載")) {
+                                    resumeDownload(for: book)
+                                }
+                                .font(DSFont.caption)
                             }
-                            .font(DSFont.caption)
                         }
                     }
                     .padding(.vertical, 4)
@@ -185,15 +193,22 @@ struct DownloadManagementView: View {
 
     private func resumeDownload(for book: ReadingBook) {
         if let task = book.offlineDownloadTask?.clamped(to: chapterTotal(for: book)) {
+            let completed = task.clampedCompletedChapterCount
+            let remaining = task.totalChapterCount - completed
+            guard remaining > 0 else { return }
             OnlineBookCoordinator.shared.downloadBook(
                 book,
                 store: store,
-                startChapterIndex: task.startChapterIndex,
-                chapterCount: task.totalChapterCount
+                startChapterIndex: task.startChapterIndex + completed,
+                chapterCount: remaining
             )
         } else {
             OnlineBookCoordinator.shared.downloadBook(book, store: store)
         }
+    }
+
+    private func pauseDownload(for book: ReadingBook) {
+        OnlineBookCoordinator.shared.pauseDownload(book: book, store: store)
     }
 
     private func cacheSizeMB(for book: ReadingBook) -> Double {

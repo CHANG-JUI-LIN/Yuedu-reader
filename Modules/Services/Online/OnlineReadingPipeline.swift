@@ -710,6 +710,7 @@ actor BookDownloadManager {
 
     private let chapterFetchManager: ChapterFetchManager
     private var activeBookIds: Set<UUID> = []
+    private var pausedBookIds: Set<UUID> = []
 
     init(chapterFetchManager: ChapterFetchManager = .shared) {
         self.chapterFetchManager = chapterFetchManager
@@ -717,6 +718,15 @@ actor BookDownloadManager {
 
     func isDownloadActive(bookId: UUID) -> Bool {
         activeBookIds.contains(bookId)
+    }
+
+    func isDownloadPaused(bookId: UUID) -> Bool {
+        pausedBookIds.contains(bookId)
+    }
+
+    func pauseDownload(bookId: UUID, store: BookStore?) async {
+        pausedBookIds.insert(bookId)
+        await chapterFetchManager.cancelAll(for: bookId)
     }
 
     func downloadBook(
@@ -809,7 +819,38 @@ actor BookDownloadManager {
                         "completed": "\(completedNow)",
                     ]
                 )
+
+                if pausedBookIds.contains(libraryBook.id) {
+                    pausedBookIds.remove(libraryBook.id)
+                    activeBookIds.remove(libraryBook.id)
+                    let pausedTask = task
+                    await MainActor.run {
+                        store?.setOfflineDownloadState(
+                            bookId: libraryBook.id,
+                            state: .paused,
+                            downloadedChapterCount: completedNow,
+                            offlineDownloadTask: pausedTask
+                        )
+                    }
+                    return
+                }
             } catch {
+                if pausedBookIds.contains(libraryBook.id) {
+                    pausedBookIds.remove(libraryBook.id)
+                    activeBookIds.remove(libraryBook.id)
+                    let completedNow = completed
+                    task = task.updatingProgress(completedNow)
+                    let pausedTask = task
+                    await MainActor.run {
+                        store?.setOfflineDownloadState(
+                            bookId: libraryBook.id,
+                            state: .paused,
+                            downloadedChapterCount: completedNow,
+                            offlineDownloadTask: pausedTask
+                        )
+                    }
+                    return
+                }
                 let completedNow = completed
                 task = task.updatingProgress(completedNow)
                 let failedTask = task
@@ -1191,6 +1232,12 @@ final class OnlineBookCoordinator {
                 startChapterIndex: startChapterIndex,
                 chapterCount: chapterCount
             )
+        }
+    }
+
+    func pauseDownload(book: ReadingBook, store: BookStore?) {
+        Task {
+            await BookDownloadManager.shared.pauseDownload(bookId: book.id, store: store)
         }
     }
 

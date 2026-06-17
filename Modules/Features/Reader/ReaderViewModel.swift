@@ -155,14 +155,16 @@ final class ReaderViewModel: ObservableObject {
         chapterCount: Int? = nil
     ) {
         switch book.offlineDownloadState {
-        case .none, .failed:
+        case .none, .failed, .paused:
             bookCoordinator.downloadBook(
                 book,
                 store: store,
                 startChapterIndex: startChapterIndex,
                 chapterCount: chapterCount
             )
-        case .downloading, .available:
+        case .downloading:
+            bookCoordinator.pauseDownload(book: book, store: store)
+        case .available:
             break  // .available is handled by the view layer via store.clearOnlineDownload
         }
     }

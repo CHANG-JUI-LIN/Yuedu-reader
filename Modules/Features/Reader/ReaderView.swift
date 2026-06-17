@@ -2027,7 +2027,7 @@ struct ReaderView: View {
     private func shouldShowDownloadProgress(for book: ReadingBook) -> Bool {
         guard book.isOnline, book.offlineDownloadTask != nil else { return false }
         switch book.offlineDownloadState {
-        case .downloading, .failed:
+        case .downloading, .failed, .paused:
             return true
         case .none, .available:
             return false
@@ -2039,7 +2039,8 @@ struct ReaderView: View {
             ReaderDownloadProgressPanel(
                 book: book,
                 readerTheme: readerTheme,
-                onResume: { resumeOfflineDownload(for: book) }
+                onResume: { resumeOfflineDownload(for: book) },
+                onPause: { pauseOfflineDownload(for: book) }
             )
             .frame(width: downloadProgressPanelWidth(in: proxy.size), height: 64)
             .position(downloadProgressPanelPosition(in: proxy.size))
@@ -2047,14 +2048,15 @@ struct ReaderView: View {
         .allowsHitTesting(true)
         .ignoresSafeArea(.keyboard)
         .transition(.scale(scale: 0.92).combined(with: .opacity))
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: book.offlineDownloadState)
     }
 
     private func downloadProgressPanelWidth(in size: CGSize) -> CGFloat {
-        min(max(size.width - 52, 148), 340)
+        148
     }
 
     private func downloadProgressPanelPosition(in size: CGSize) -> CGPoint {
-        let width = downloadProgressPanelWidth(in: size)
+        let width: CGFloat = 148
         let height: CGFloat = 64
         return CGPoint(
             x: width / 2 + 26,
@@ -2838,10 +2840,10 @@ struct ReaderView: View {
     private var downloadButtonIcon: String {
         guard let b = book else { return "icloud.and.arrow.down" }
         switch b.offlineDownloadState {
-        case .none, .failed:
+        case .none, .failed, .paused:
             return "icloud.and.arrow.down"
         case .downloading:
-            return "arrow.down.circle"
+            return "pause.circle"
         case .available:
             return "checkmark.icloud"
         }
@@ -2854,6 +2856,7 @@ struct ReaderView: View {
             return
         }
         if b.offlineDownloadState == .downloading {
+            pauseOfflineDownload(for: b)
             return
         }
         showDownloadOptions = true
@@ -2874,11 +2877,23 @@ struct ReaderView: View {
             showDownloadOptions = true
             return
         }
+        let completed = task.clampedCompletedChapterCount
+        let remaining = task.totalChapterCount - completed
+        guard remaining > 0 else { return }
         readerViewModel.handleDownloadAction(
             book: book,
             store: store,
-            startChapterIndex: task.startChapterIndex,
-            chapterCount: task.totalChapterCount
+            startChapterIndex: task.startChapterIndex + completed,
+            chapterCount: remaining
+        )
+    }
+
+    private func pauseOfflineDownload(for book: ReadingBook) {
+        readerViewModel.handleDownloadAction(
+            book: book,
+            store: store,
+            startChapterIndex: 0,
+            chapterCount: nil
         )
     }
 
@@ -3485,14 +3500,16 @@ private struct ReaderDownloadOptionsView: View {
                 }
 
                 Section(header: Text(localized("章數"))) {
-                    Slider(
-                        value: Binding(
-                            get: { chapterCount },
-                            set: { updateChapterCount(Int($0.rounded())) }
-                        ),
-                        in: 1...Double(maxSelectableCount),
-                        step: 1
-                    )
+                    if maxSelectableCount > 1 {
+                        Slider(
+                            value: Binding(
+                                get: { chapterCount },
+                                set: { updateChapterCount(Int($0.rounded())) }
+                            ),
+                            in: 1...Double(maxSelectableCount),
+                            step: 1
+                        )
+                    }
 
                     HStack {
                         Text(localized("手動輸入"))
@@ -3597,45 +3614,49 @@ private struct ReaderDownloadProgressPanel: View {
     let book: ReadingBook
     let readerTheme: ReaderTheme
     let onResume: () -> Void
+    let onPause: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: statusIcon)
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(statusTint)
                 .frame(width: 56, height: 56)
-                .background(statusTint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(.thinMaterial, in: Circle())
+                .overlay(Circle().stroke(statusTint.opacity(0.35), lineWidth: 2))
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(statusTitle)
-                        .font(DSFont.subheadline.weight(.semibold))
-                        .foregroundColor(readerTheme.textColor)
-                        .lineLimit(1)
-                    Spacer()
-                    Text(progressText)
-                        .font(DSFont.caption.monospacedDigit())
-                        .foregroundColor(readerTheme.textColor.opacity(0.72))
-                        .lineLimit(1)
-                }
+                Text(statusTitle)
+                    .font(DSFont.subheadline.weight(.semibold))
+                    .foregroundColor(readerTheme.textColor)
+                    .lineLimit(1)
 
                 ProgressView(value: progress)
                     .tint(statusTint)
+            }
+            .frame(maxWidth: 80)
 
-                Text(rangeText)
-                    .font(DSFont.caption)
-                    .foregroundColor(readerTheme.textColor.opacity(0.64))
-                    .lineLimit(1)
+            if book.offlineDownloadState == .downloading {
+                Button {
+                    onPause()
+                } label: {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 34, height: 48)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(localized("暫停下載"))
             }
 
-            if book.offlineDownloadState == .failed {
+            if book.offlineDownloadState == .failed || book.offlineDownloadState == .paused {
                 Button {
                     onResume()
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(statusTint)
-                        .frame(width: 40, height: 48)
+                        .foregroundColor(.secondary)
+                        .frame(width: 34, height: 48)
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(localized("繼續下載"))
@@ -3649,7 +3670,7 @@ private struct ReaderDownloadProgressPanel: View {
         .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
         .contentShape(Capsule())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(statusTitle)，\(progressText)，\(rangeText)")
+        .accessibilityLabel(statusTitle)
     }
 
     private var task: BookOfflineDownloadTask? {
@@ -3676,6 +3697,8 @@ private struct ReaderDownloadProgressPanel: View {
             return localized("下載完成")
         case .failed:
             return localized("下載失敗")
+        case .paused:
+            return localized("已暫停")
         case .none:
             return localized("未下載")
         }
@@ -3689,6 +3712,8 @@ private struct ReaderDownloadProgressPanel: View {
             return "checkmark.circle.fill"
         case .failed:
             return "exclamationmark.triangle.fill"
+        case .paused:
+            return "pause.circle.fill"
         case .none:
             return "icloud.and.arrow.down"
         }
@@ -3702,6 +3727,8 @@ private struct ReaderDownloadProgressPanel: View {
             return DSColor.success
         case .failed:
             return DSColor.warning
+        case .paused:
+            return DSColor.textSecondary
         case .none:
             return DSColor.textSecondary
         }
