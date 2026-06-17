@@ -92,6 +92,7 @@ struct ReaderView: View {
 
     @State private var showTTSPanel = false
     @State private var showDownloadOptions = false
+    @State private var dismissedDownloadPanels: Set<UUID> = []
     @State private var showAutoReadPanel = false
     @State private var ttsChapterIndex: Int? = nil
     @State private var showTTSJumpPrompt = false
@@ -127,6 +128,11 @@ struct ReaderView: View {
     @State private var bookDocument: (any BookDocument)? = nil
     @State private var contentProvider: (any BookContentProvider)? = nil
     @State private var readerCapabilities: ReaderCapabilities = .reflowableText
+
+    /// Snapshot of the book at reader launch, so we can re-add it to the shelf
+    /// if it was deleted during the reading session.
+    @State private var snapshotBook: ReadingBook?
+    @State private var showAddToShelfAlert = false
 
     // Source change state managed by ViewModel, exposed via computed properties to avoid duplicate state in the view.
     private var changeSourceOrigins: [BookOrigin] { readerViewModel.changeSourceOrigins }
@@ -1107,6 +1113,25 @@ struct ReaderView: View {
         .statusBarHidden(!showBars)
         .animation(.easeInOut(duration: 0.25), value: showBars)
         .modifier(HideTabBarModifier())
+        .alert("将「\(snapshotBook?.title ?? "")」加入书架？", isPresented: $showAddToShelfAlert) {
+            Button("加入书架") {
+                if let snap = snapshotBook {
+                    store.addOnlineBook(
+                        name: snap.title,
+                        author: snap.author,
+                        sourceId: snap.bookSourceId ?? UUID(),
+                        bookInfoURL: snap.bookInfoURL ?? "",
+                        tocURL: snap.tocURL,
+                        runtimeVariables: snap.runtimeVariables,
+                        chapters: snap.onlineChapters ?? []
+                    )
+                }
+                presentationMode.wrappedValue.dismiss()
+            }
+            Button("不加入", role: .cancel) {
+                presentationMode.wrappedValue.dismiss()
+            }
+        }
         .onAppear {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             readerViewModel.configure(chapterFetcher: dependencies.chapterFetcher)
@@ -1121,9 +1146,11 @@ struct ReaderView: View {
             )
             readerConfig.syncFromGlobalSettings()
             if !hasPerformedInitialLoad {
+                snapshotBook = book
                 hasPerformedInitialLoad = true
                 performInitialLoad()
             } else {
+                snapshotBook = book
                 restoreReaderDisplayStateAfterResume()
             }
             beginReadingStatsSession()
@@ -1976,7 +2003,11 @@ struct ReaderView: View {
             overlayMaxWidth: overlayContentMaxWidth,
             onBack: {
                 saveProgress()
-                presentationMode.wrappedValue.dismiss()
+                if let snap = snapshotBook, snap.isOnline, book == nil {
+                    showAddToShelfAlert = true
+                } else {
+                    presentationMode.wrappedValue.dismiss()
+                }
             },
             onToggleBookmark: {
                 guard let position = currentTopBarBookmarkPosition else { return }
@@ -2025,7 +2056,8 @@ struct ReaderView: View {
     }
 
     private func shouldShowDownloadProgress(for book: ReadingBook) -> Bool {
-        guard book.isOnline, book.offlineDownloadTask != nil else { return false }
+        guard book.isOnline, book.offlineDownloadTask != nil,
+              !dismissedDownloadPanels.contains(book.id) else { return false }
         switch book.offlineDownloadState {
         case .downloading, .failed, .paused:
             return true
@@ -2040,7 +2072,8 @@ struct ReaderView: View {
                 book: book,
                 readerTheme: readerTheme,
                 onResume: { resumeOfflineDownload(for: book) },
-                onPause: { pauseOfflineDownload(for: book) }
+                onPause: { pauseOfflineDownload(for: book) },
+                onClose: { dismissDownloadPanel(for: book) }
             )
             .frame(width: downloadProgressPanelWidth(in: proxy.size), height: 64)
             .position(downloadProgressPanelPosition(in: proxy.size))
@@ -2840,8 +2873,10 @@ struct ReaderView: View {
     private var downloadButtonIcon: String {
         guard let b = book else { return "icloud.and.arrow.down" }
         switch b.offlineDownloadState {
-        case .none, .failed, .paused:
+        case .none, .failed:
             return "icloud.and.arrow.down"
+        case .paused:
+            return "arrow.clockwise.circle"
         case .downloading:
             return "pause.circle"
         case .available:
@@ -2851,6 +2886,7 @@ struct ReaderView: View {
 
     private func handleDownloadAction() {
         guard let b = book, b.isOnline else { return }
+        if dismissedDownloadPanels.remove(b.id) != nil { return }
         if b.offlineDownloadState == .available {
             store.clearOnlineDownload(bookId: b.id)
             return
@@ -2859,11 +2895,16 @@ struct ReaderView: View {
             pauseOfflineDownload(for: b)
             return
         }
+        if b.offlineDownloadState == .paused {
+            resumeOfflineDownload(for: b)
+            return
+        }
         showDownloadOptions = true
     }
 
     private func startOfflineDownload(startChapterIndex: Int, chapterCount: Int) {
         guard let b = book, b.isOnline else { return }
+        dismissedDownloadPanels.remove(b.id)
         readerViewModel.handleDownloadAction(
             book: b,
             store: store,
@@ -2873,6 +2914,7 @@ struct ReaderView: View {
     }
 
     private func resumeOfflineDownload(for book: ReadingBook) {
+        dismissedDownloadPanels.remove(book.id)
         guard let task = book.offlineDownloadTask?.clamped(to: book.onlineChapters?.count ?? 0) else {
             showDownloadOptions = true
             return
@@ -2889,12 +2931,17 @@ struct ReaderView: View {
     }
 
     private func pauseOfflineDownload(for book: ReadingBook) {
+        dismissedDownloadPanels.remove(book.id)
         readerViewModel.handleDownloadAction(
             book: book,
             store: store,
             startChapterIndex: 0,
             chapterCount: nil
         )
+    }
+
+    private func dismissDownloadPanel(for book: ReadingBook) {
+        dismissedDownloadPanels.insert(book.id)
     }
 
     /// Source change search has been moved to ReaderViewModel.loadOtherOrigins. This method only triggers it and passes required data.
@@ -3615,78 +3662,107 @@ private struct ReaderDownloadProgressPanel: View {
     let readerTheme: ReaderTheme
     let onResume: () -> Void
     let onPause: () -> Void
+    let onClose: () -> Void
+
+    private var coverImage: UIImage? {
+        guard let path = book.coverImagePath else { return nil }
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let fullURL = documentsURL.appendingPathComponent(path)
+        return UIImage(contentsOfFile: fullURL.path)
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: statusIcon)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundColor(statusTint)
-                .frame(width: 56, height: 56)
-                .background(.thinMaterial, in: Circle())
-                .overlay(Circle().stroke(statusTint.opacity(0.35), lineWidth: 2))
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(statusTitle)
-                    .font(DSFont.subheadline.weight(.semibold))
-                    .foregroundColor(readerTheme.textColor)
-                    .lineLimit(1)
-
-                ProgressView(value: progress)
-                    .tint(statusTint)
-            }
-            .frame(maxWidth: 80)
-
-            if book.offlineDownloadState == .downloading {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
                 Button {
-                    onPause()
+                    if book.offlineDownloadState == .downloading {
+                        onPause()
+                    } else {
+                        onResume()
+                    }
                 } label: {
-                    Image(systemName: "pause.fill")
+                    Group {
+                        if let cover = coverImage {
+                            Image(uiImage: cover)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 56, height: 56)
+                                .clipped()
+                        } else {
+                            TitleCardPlaceholder(title: book.title)
+                        }
+                    }
+                    .clipShape(Circle())
+                    .frame(width: 56, height: 56)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    if book.offlineDownloadState == .downloading {
+                        onPause()
+                    } else {
+                        onResume()
+                    }
+                } label: {
+                    Image(systemName: actionIcon)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 48, height: 48)
+                        .background(.thinMaterial, in: Circle())
+                        .overlay(Circle().stroke(Color.secondary.opacity(0.35), lineWidth: 2))
+                }
+
+                Button {
+                    onClose()
+                } label: {
+                    Image(systemName: "xmark")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(.secondary)
                         .frame(width: 34, height: 48)
                 }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(localized("暫停下載"))
+                .accessibilityLabel(localized("關閉"))
             }
 
-            if book.offlineDownloadState == .failed || book.offlineDownloadState == .paused {
-                Button {
-                    onResume()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .frame(width: 34, height: 48)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(localized("繼續下載"))
-            }
+            Text(progressText)
+                .font(DSFont.caption2.monospacedDigit())
+                .foregroundColor(readerTheme.textColor.opacity(0.6))
+                .padding(.bottom, 2)
         }
         .buttonStyle(.borderless)
         .padding(.leading, 4)
         .padding(.trailing, 10)
-        .padding(.vertical, 4)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
         .background(.regularMaterial, in: Capsule())
         .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
         .contentShape(Capsule())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(statusTitle)
-    }
-
-    private var task: BookOfflineDownloadTask? {
-        book.offlineDownloadTask?.clamped(to: book.onlineChapters?.count ?? 0)
+        .accessibilityLabel("\(statusTitle)，\(progressText)")
     }
 
     private var completed: Int {
-        task?.clampedCompletedChapterCount ?? book.downloadedChapterCount
+        book.downloadedChapterCount
     }
 
     private var total: Int {
-        max(task?.totalChapterCount ?? book.onlineChapters?.count ?? 1, 1)
+        max(book.onlineChapters?.count ?? 1, 1)
     }
 
-    private var progress: Double {
-        min(max(Double(completed) / Double(total), 0), 1)
+    private var progressText: String {
+        "\(statusTitle)（\(completed)/\(total)）"
+    }
+
+    private var actionIcon: String {
+        switch book.offlineDownloadState {
+        case .downloading:
+            return "pause.fill"
+        case .paused:
+            return "play.fill"
+        case .failed:
+            return "arrow.clockwise"
+        case .available, .none:
+            return "icloud.and.arrow.down"
+        }
     }
 
     private var statusTitle: String {
@@ -3702,48 +3778,5 @@ private struct ReaderDownloadProgressPanel: View {
         case .none:
             return localized("未下載")
         }
-    }
-
-    private var statusIcon: String {
-        switch book.offlineDownloadState {
-        case .downloading:
-            return "arrow.down.circle.fill"
-        case .available:
-            return "checkmark.circle.fill"
-        case .failed:
-            return "exclamationmark.triangle.fill"
-        case .paused:
-            return "pause.circle.fill"
-        case .none:
-            return "icloud.and.arrow.down"
-        }
-    }
-
-    private var statusTint: Color {
-        switch book.offlineDownloadState {
-        case .downloading:
-            return readerTheme.accentColor
-        case .available:
-            return DSColor.success
-        case .failed:
-            return DSColor.warning
-        case .paused:
-            return DSColor.textSecondary
-        case .none:
-            return DSColor.textSecondary
-        }
-    }
-
-    private var progressText: String {
-        String(format: localized("%d/%d 章"), completed, total)
-    }
-
-    private var rangeText: String {
-        guard let task else { return book.title }
-        return String(
-            format: localized("第 %d 到 %d 章"),
-            task.startChapterIndex + 1,
-            task.endChapterIndex + 1
-        )
     }
 }

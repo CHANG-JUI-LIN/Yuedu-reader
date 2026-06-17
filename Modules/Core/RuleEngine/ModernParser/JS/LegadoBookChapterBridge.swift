@@ -18,6 +18,7 @@ import JavaScriptCore
     var name: String { get set }
     var author: String { get set }
     var coverUrl: String { get set }
+    var bookUrl: String { get set }
     var abstract: String { get set }
     var readConfig: LegadoReadConfigBridge { get }
 
@@ -35,6 +36,7 @@ import JavaScriptCore
     @objc var name: String
     @objc var author: String
     @objc var coverUrl: String
+    @objc var bookUrl: String
     @objc var abstract: String
     @objc let readConfig = LegadoReadConfigBridge()
 
@@ -49,6 +51,7 @@ import JavaScriptCore
         name: String = "",
         author: String = "",
         coverUrl: String = "",
+        bookUrl: String = "",
         abstract: String = "",
         variables: [String: String] = [:]
     ) {
@@ -60,6 +63,7 @@ import JavaScriptCore
         self.name = name
         self.author = author
         self.coverUrl = coverUrl
+        self.bookUrl = bookUrl
         self.abstract = abstract
         self.variables = variables
         super.init()
@@ -101,6 +105,9 @@ import JavaScriptCore
         }
         if !coverUrl.isEmpty {
             state["book.coverUrl"] = coverUrl
+        }
+        if !bookUrl.isEmpty {
+            state["book.bookUrl"] = bookUrl
         }
         if !abstract.isEmpty {
             state["book.abstract"] = abstract

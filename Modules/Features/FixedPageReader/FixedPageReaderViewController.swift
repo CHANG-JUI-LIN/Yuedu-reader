@@ -1,4 +1,5 @@
 import UIKit
+import Nuke
 
 // MARK: - Fixed page reader container
 //
@@ -20,6 +21,10 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     private var reader: (any FixedPageModeReader)?
     private var loadToken = UUID()
     private var saveTask: Task<Void, Never>?
+    private var prefetchTask: Task<Void, Never>?
+    private var imagePrefetcher = ImagePrefetcher()
+    private var currentPages: [FixedPage] = []
+    private var targetWidth: CGFloat = 0
 
     init(book: ReadingBook, store: BookStore, state: FixedPageReaderState) {
         self.book = book
@@ -87,15 +92,15 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         reader?.view.removeFromSuperview()
         reader?.removeFromParent()
 
-        let width = view.bounds.width > 0 ? view.bounds.width : UIScreen.main.bounds.width
+        targetWidth = view.bounds.width > 0 ? view.bounds.width : UIScreen.main.bounds.width
         let newReader: any FixedPageModeReader = fixedPageReaderConfiguration.layout == .paged
             ? FixedPagePagedViewController(
                 fixedPageReaderConfiguration: fixedPageReaderConfiguration,
-                targetWidth: width
+                targetWidth: targetWidth
             )
             : FixedPageWebtoonViewController(
                 fixedPageReaderConfiguration: fixedPageReaderConfiguration,
-                targetWidth: width
+                targetWidth: targetWidth
             )
         newReader.container = self
         addChild(newReader)
@@ -111,6 +116,8 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     private func loadChapter(at index: Int, startPage: Int) {
         guard chapters.indices.contains(index) else { return }
         chapterIndex = index
+        currentPages = []
+        prefetchTask?.cancel()
         state.currentChapterIndex = index
         state.isLoading = true
         state.errorMessage = nil
@@ -136,7 +143,10 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
                     self.state.errorMessage = localized("未找到圖片")
                     return
                 }
+                self.currentPages = pages
                 self.reader?.setPages(pages, startPage: max(0, min(startPage, pages.count - 1)))
+                self.prefetchAroundChapters()
+                self.prefetchCurrentChapterPages(pages: pages, currentPage: max(0, min(startPage, pages.count - 1)))
             } catch {
                 guard self.loadToken == token else { return }
                 self.state.isLoading = false
@@ -240,11 +250,72 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         state.currentPage = page
         state.totalPages = total
         scheduleSave(page: page)
+        guard !currentPages.isEmpty else { return }
+        prefetchCurrentChapterPages(pages: currentPages, currentPage: page)
+        if total > 3, page >= total * 3 / 4 {
+            prefetchNextChapterImages()
+        }
     }
 
     func readerRequestsNextChapter() { loadNextChapter() }
     func readerRequestsPreviousChapter() { loadPreviousChapter() }
     func readerToggleControls() { state.showControls.toggle() }
+
+    // MARK: Prefetching
+
+    private func prefetchAroundChapters() {
+        guard book.isOnline, let refs = book.onlineChapters, !refs.isEmpty else { return }
+        let last = refs.count - 1
+
+        let forwardIndices = [chapterIndex + 1, chapterIndex + 2]
+            .filter { $0 >= 0 && $0 <= last }
+        let backwardIndices = [chapterIndex - 1, chapterIndex - 2]
+            .filter { $0 >= 0 && $0 <= last }
+
+        if !forwardIndices.isEmpty {
+            Task(priority: .utility) {
+                await ChapterFetchManager.shared.prefetchChapters(
+                    book: book, indices: forwardIndices, priority: .prefetch, store: store)
+            }
+        }
+        if !backwardIndices.isEmpty {
+            Task(priority: .background) {
+                await ChapterFetchManager.shared.prefetchChapters(
+                    book: book, indices: backwardIndices, priority: .background, store: store)
+            }
+        }
+    }
+
+    private func prefetchCurrentChapterPages(pages: [FixedPage], currentPage: Int) {
+        let start = currentPage + 1
+        let end = min(start + 5, pages.count)
+        guard start < end else { return }
+        FixedPageImageLoader.prefetch(
+            Array(pages[start..<end]), targetWidth: targetWidth, using: imagePrefetcher)
+    }
+
+    private func prefetchNextChapterImages() {
+        guard book.isOnline else { return }
+        let nextIndex = chapterIndex + 1
+        guard nextIndex < chapters.count else { return }
+
+        prefetchTask?.cancel()
+        prefetchTask = Task { [weak self] in
+            guard let self else { return }
+            guard let package = try? await ChapterFetchManager.shared.fetchChapter(
+                book: book, chapterIndex: nextIndex, priority: .prefetch, store: store) else { return }
+            let localDir = MangaChapterParser.chapterDirectory(bookId: book.id, chapterIndex: nextIndex)
+            let pages = MangaChapterParser.pages(from: package.content, headers: headers, localDir: localDir)
+            let prefetchCount = min(3, pages.count)
+            guard prefetchCount > 0 else { return }
+            await MainActor.run {
+                FixedPageImageLoader.prefetch(
+                    Array(pages.prefix(prefetchCount)),
+                    targetWidth: targetWidth,
+                    using: imagePrefetcher)
+            }
+        }
+    }
 
     private func scheduleSave(page: Int) {
         saveTask?.cancel()

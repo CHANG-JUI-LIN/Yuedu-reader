@@ -694,8 +694,8 @@ private struct BookSyncIndicator: View {
                     .stroke(DSColor.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(DSAnimation.standard, value: progress)
-                Image(systemName: "cloud")
-                    .font(.system(size: 10))
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(DSColor.accent)
             } else {
                 ProgressView()

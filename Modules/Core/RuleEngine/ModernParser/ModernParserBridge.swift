@@ -290,6 +290,9 @@ class ModernParserBridge {
     ) throws -> OnlineBook {
         loadRuntimeVariables(runtimeVariables)
         setBookContext(runtimeVariables: runtimeVariables)
+        if !bookUrl.isEmpty {
+            jsEngine.bookBridge.bookUrl = bookUrl
+        }
         jsEngine.setChapterBridge(LegadoChapterBridge())
         let engine = makeEngine()
         engine.setContent(html, baseUrl: baseURL)
@@ -1164,6 +1167,7 @@ class ModernParserBridge {
             name: runtimeVariables?["book.name"] ?? "",
             author: runtimeVariables?["book.author"] ?? "",
             coverUrl: runtimeVariables?["book.coverUrl"] ?? "",
+            bookUrl: runtimeVariables?["book.bookUrl"] ?? "",
             abstract: runtimeVariables?["book.abstract"] ?? "",
             variables: bookVariables
         )

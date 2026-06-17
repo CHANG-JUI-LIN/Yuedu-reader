@@ -99,7 +99,7 @@ actor ChapterFetchManager {
     /// Multi-chapter merges always include multiple chapter title headers, which
     /// the chapterMarkers rule already detects sufficiently.
     // Over this character count, a merge is nearly certain
-    private static let suspiciousContentLengthThreshold = 50_000
+    private static let suspiciousContentLengthThreshold = 150_000
     // If the content contains this many "Chapter N / Volume N" headings, treat as multi-chapter merge
     private static let suspiciousChapterHeadingThreshold = 3
     private static let chapterHeadingRegex = try! NSRegularExpression(
@@ -107,9 +107,16 @@ actor ChapterFetchManager {
     )
 
     static func isSuspiciousChapterContent(_ content: String) -> Bool {
-        if content.count > suspiciousContentLengthThreshold { return true }
+        if content.count > suspiciousContentLengthThreshold {
+            AppLogger.parse("⟐ suspiciousContent length", context: ["len": content.count, "threshold": suspiciousContentLengthThreshold])
+            return true
+        }
         let range = NSRange(content.startIndex..., in: content)
-        return chapterHeadingRegex.numberOfMatches(in: content, range: range) >= suspiciousChapterHeadingThreshold
+        let headingCount = chapterHeadingRegex.numberOfMatches(in: content, range: range)
+        if headingCount >= suspiciousChapterHeadingThreshold {
+            AppLogger.parse("⟐ suspiciousContent headings", context: ["len": content.count, "headingCount": headingCount, "threshold": suspiciousChapterHeadingThreshold])
+        }
+        return headingCount >= suspiciousChapterHeadingThreshold
     }
 
     static func isCollapsedBrowserImportedChapterContent(_ content: String) -> Bool {

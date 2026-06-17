@@ -34,15 +34,7 @@ struct TTSSettingsView: View {
         NavigationStack {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableWideWidth) {
                 VStack(spacing: 0) {
-                    systemVoiceSection
-
-                    Divider()
-
-                    if gs.importedTTSSources.isEmpty {
-                        emptyView
-                    } else {
-                        sourceList
-                    }
+                    sourceList
 
                     Divider()
 
@@ -116,143 +108,14 @@ struct TTSSettingsView: View {
 
     // MARK: - Private
 
-    // MARK: - System (offline) voice
-
-    private var systemVoiceSection: some View {
-        VStack(spacing: 0) {
-            systemVoiceRow
-            if isSystemVoiceSelected {
-                systemVoicePickerRow
-            }
-        }
-    }
-
-    private var systemVoiceRow: some View {
-        HStack(spacing: 0) {
-            Image(systemName: isSystemVoiceSelected ? "checkmark.square.fill" : "square")
-                .font(.system(size: 20))
-                .foregroundColor(isSystemVoiceSelected ? DSColor.accent : Color(UIColor.systemGray3))
-                .padding(.leading, 16)
-                .padding(.trailing, 12)
-
-            Button {
-                selectSystemVoice()
-            } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(localized("系統離線語音"))
-                            .font(DSFont.toolbarIcon)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-
-                        if isSystemVoiceSelected {
-                            Text(localized("使用中"))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 2)
-                                .background(DSColor.accent)
-                                .clipShape(Capsule())
-                        }
-                    }
-
-                    Text(localized("免網路，使用裝置內建語音朗讀"))
-                        .font(.system(size: 11))
-                        .foregroundColor(DSColor.textSecondary.opacity(0.6))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                testSystemPlayback()
-            } label: {
-                Image(systemName: "play.circle")
-                    .font(.system(size: 22))
-                    .foregroundColor(DSColor.accent)
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, 16)
-        }
-        .padding(.vertical, 14)
-        .contentShape(Rectangle())
-    }
-
-    private var systemVoicePickerRow: some View {
-        HStack {
-            Text(localized("語音"))
-                .font(.system(size: 13))
-                .foregroundColor(DSColor.textSecondary)
-
-            Spacer()
-
-            Menu {
-                Button {
-                    gs.ttsSystemVoiceIdentifier = ""
-                } label: {
-                    voiceMenuLabel(localized("自動"), selected: gs.ttsSystemVoiceIdentifier.isEmpty)
-                }
-                ForEach(availableSystemVoices, id: \.identifier) { voice in
-                    Button {
-                        gs.ttsSystemVoiceIdentifier = voice.identifier
-                    } label: {
-                        voiceMenuLabel(voiceLabel(voice), selected: gs.ttsSystemVoiceIdentifier == voice.identifier)
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Text(selectedSystemVoiceName)
-                        .font(.system(size: 13))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 11))
-                        .foregroundColor(DSColor.textSecondary)
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 14)
-    }
-
-    private var availableSystemVoices: [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices()
-            .filter { voice in
-                let lang = voice.language.lowercased()
-                return lang.hasPrefix("zh") || lang.hasPrefix("en")
-            }
-            .sorted { lhs, rhs in
-                lhs.language == rhs.language
-                    ? lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                    : lhs.language < rhs.language
-            }
-    }
-
-    private var selectedSystemVoiceName: String {
-        guard !gs.ttsSystemVoiceIdentifier.isEmpty,
-              let voice = AVSpeechSynthesisVoice(identifier: gs.ttsSystemVoiceIdentifier) else {
-            return localized("自動")
-        }
-        return voice.name
-    }
-
-    private func voiceLabel(_ voice: AVSpeechSynthesisVoice) -> String {
-        "\(voice.name) (\(voice.language))"
-    }
-
-    @ViewBuilder
-    private func voiceMenuLabel(_ title: String, selected: Bool) -> some View {
-        if selected {
-            Label(title, systemImage: "checkmark")
-        } else {
-            Text(title)
-        }
-    }
+    // MARK: - Source list
 
     private var sourceList: some View {
         List {
+            systemVoiceSourceRow
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                .listRowSeparator(.visible)
+
             ForEach(filteredSources) { source in
                 sourceRow(source)
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
@@ -358,34 +221,6 @@ struct TTSSettingsView: View {
             .padding(.trailing, 12)
         }
         .padding(.vertical, 14)
-    }
-
-    private var emptyView: some View {
-        VStack(spacing: 24) {
-            Spacer()
-            Image(systemName: "waveform.circle")
-                .font(.system(size: 64))
-                .foregroundColor(Color.secondary.opacity(0.35))
-            Text(localized("尚無語音源"))
-                .font(.title2.weight(.semibold))
-            Text(localized("點擊右上角 ↓ 匯入 Legado 語音源 JSON"))
-                .font(.subheadline)
-                .foregroundColor(DSColor.textSecondary)
-                .multilineTextAlignment(.center)
-            Button {
-                showSourceFileImporter = true
-            } label: {
-                Label(localized("匯入語音源 JSON"), systemImage: "square.and.arrow.down")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 13)
-                    .background(DSColor.accent)
-                    .clipShape(Capsule())
-            }
-            Spacer()
-        }
-        .padding()
     }
 
     private var bottomToolbar: some View {
@@ -540,12 +375,61 @@ struct TTSSettingsView: View {
         gs.httpTtsHeaders = source.headers
     }
 
-    private var isSystemVoiceSelected: Bool {
-        gs.ttsUseSystemVoice
-    }
-
     private func selectSystemVoice() {
         gs.ttsUseSystemVoice = true
+        gs.httpTtsUrlTemplate = ""
+        gs.httpTtsHeaders = [:]
+    }
+
+    private var isSystemVoiceSelected: Bool {
+        gs.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var systemVoiceSourceRow: some View {
+        HStack(spacing: 0) {
+            Button {
+                selectSystemVoice()
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(localized("系統離線語音"))
+                            .font(DSFont.toolbarIcon)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+
+                        if isSystemVoiceSelected {
+                            Text(localized("使用中"))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(DSColor.accent)
+                                .clipShape(Capsule())
+                        }
+                    }
+
+                    Text(localized("免網路，使用裝置內建語音朗讀"))
+                        .font(.system(size: 11))
+                        .foregroundColor(DSColor.textSecondary.opacity(0.6))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                testSystemPlayback()
+            } label: {
+                Image(systemName: "play.circle")
+                    .font(.system(size: 22))
+                    .foregroundColor(DSColor.accent)
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 16)
+        }
+        .padding(.vertical, 14)
+        .padding(.leading, 16)
+        .contentShape(Rectangle())
     }
 
     private func testSystemPlayback() {
