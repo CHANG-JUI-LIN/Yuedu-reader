@@ -675,6 +675,7 @@ struct NodeAttributedStringRenderer {
         var style = RenderStyle.none
         style.width = image.size.width
         style.height = image.size.height
+        style.isTextSizedImage = true
         let placeholder = NSMutableAttributedString(
             attributedString: await makeImagePlaceholder(
                 image: image,

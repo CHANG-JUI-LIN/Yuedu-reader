@@ -157,10 +157,6 @@ enum TXTRenderableNodeConverter {
             }
             if let href = para.reviewHref,
                let marker = ReaderHTMLUtilities.decodeReviewHref(href) {
-                // Thin space so the bubble doesn't butt against the final glyph.
-                if !inlines.isEmpty {
-                    inlines.append(.text("\u{2009}"))
-                }
                 inlines.append(
                     .commentBadge(count: marker.count, reviewURL: href, title: marker.title)
                 )
