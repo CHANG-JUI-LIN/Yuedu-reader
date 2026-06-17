@@ -466,7 +466,7 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     private static func stableHash(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        SHA256.hash(data: data).map { String($0, radix: 16, uppercase: false) }.map { $0.count == 1 ? "0" + $0 : $0 }.joined()
     }
 
     func backup() async throws {
@@ -796,7 +796,7 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     private static func shortHash(_ string: String) -> String {
-        SHA256.hash(data: Data(string.utf8)).map { String(format: "%02x", $0) }.joined()
+        SHA256.hash(data: Data(string.utf8)).map { String($0, radix: 16, uppercase: false) }.map { $0.count == 1 ? "0" + $0 : $0 }.joined()
     }
 
     private func saveManifest(_ manifest: ICloudSyncManifest) async throws {

@@ -111,6 +111,12 @@ class JSCoreEngine {
         didSet { bridge.toastHandler = toastHandler }
     }
 
+    /// Called when JS invokes `java.setResponseBase64(data, mimeType)` — captures
+    /// base64-decoded audio data from TTS `loginCheckJs` response processing.
+    var responseBase64Handler: ((Data, String) -> Void)? {
+        didSet { bridge.setResponseBase64Handler = responseBase64Handler }
+    }
+
     /// Book source object injected as `source` in JS — set this before evaluating rule scripts.
     var bookSource: BookSource? {
         didSet {
@@ -636,17 +642,20 @@ class JSCoreEngine {
         if value.isUndefined || value.isNull { return nil }
 
         // Arrays and objects → JSON string.
-        // `value.isObject` is true for functions, Dates, RegExps, Proxies, NaN-bearing
-        // objects, etc. — and `JSONSerialization.data(withJSONObject:)` raises an
-        // *Objective-C* `NSInvalidArgumentException` (NOT a Swift error, so `try?` can't
-        // catch it) for anything that isn't a valid JSON tree. Guard with
-        // `isValidJSONObject` first, then fall through to the string form. (Previously this
-        // crashed search when a rule's JS returned a non-serialisable object.)
+        // Uses JavaScriptCore's own JSON.stringify instead of NSJSONSerialization,
+        // because NSJSONSerialization raises an *uncatchable* ObjC exception
+        // (NSInvalidArgumentException) for values that JS bridges as non-JSON-safe
+        // objects (Map, Set, Proxy, functions with custom toJSON, etc.).
+        // JSON.stringify returns `undefined` for unserialisable values, which we
+        // fall through from gracefully.
         if value.isArray || value.isObject {
-            let object = value.toObject() as Any
-            if JSONSerialization.isValidJSONObject(object),
-               let data = try? JSONSerialization.data(withJSONObject: object, options: []),
-               let json = String(data: data, encoding: .utf8) {
+            guard let ctx = value.context else { return value.toString() }
+            ctx.setObject(value, forKeyedSubscript: "__yuedu_jsonify" as NSString)
+            let jsonVal = ctx.evaluateScript("JSON.stringify(__yuedu_jsonify)")
+            ctx.evaluateScript("delete __yuedu_jsonify")
+            if let jsonVal,
+               !jsonVal.isUndefined, !jsonVal.isNull,
+               let json = jsonVal.toString(), !json.isEmpty {
                 return json
             }
         }

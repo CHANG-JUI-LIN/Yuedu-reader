@@ -49,6 +49,9 @@ import UIKit
     func log(_ msg: String) -> String
     func logType(_ msg: String)
 
+    // Response processing (TTS)
+    func setResponseBase64(_ data: String, _ mimeType: String)
+
     // Time utilities
     func timeFormat(_ timestamp: JSValue) -> String
     func timeFormatUTC(_ time: Double, _ format: String, _ sh: Int) -> String
@@ -169,6 +172,10 @@ import UIKit
     var setContentHandler: ((Any?, String?) -> Void)?
     var getElementsHandler: ((String) -> [Any]?)?
     var getStringWithContentHandler: ((String, Any?) -> String?)?
+
+    /// Called when JS invokes `java.setResponseBase64(data, mimeType)` — stores decoded audio data.
+    /// Used by TTS `loginCheckJs` to extract base64 audio from JSON API responses.
+    var setResponseBase64Handler: ((Data, String) -> Void)?
 
     /// Called when JS issues a network request that hits a Cloudflare challenge.
     /// Calls `done()` after CF cookies are obtained; jsQueue blocks via DispatchSemaphore until then.
@@ -484,6 +491,7 @@ import UIKit
 
     // MARK: Logging
 
+    @discardableResult
     func log(_ msg: String) -> String {
         #if DEBUG
         print("[JSBridge] \(msg)")
@@ -493,8 +501,16 @@ import UIKit
 
     func logType(_ msg: String) {
         #if DEBUG
-        print("[JSBridge type] \(type(of: msg)): \(msg)")
+        print("[JSBridge logType] \(type(of: msg)): \(msg)")
         #endif
+    }
+
+    func setResponseBase64(_ data: String, _ mimeType: String) {
+        guard let decoded = Data(base64Encoded: data, options: .ignoreUnknownCharacters) else {
+            log("setResponseBase64: invalid base64 data (\(data.count) chars)")
+            return
+        }
+        setResponseBase64Handler?(decoded, mimeType)
     }
 
     // MARK: Utilities

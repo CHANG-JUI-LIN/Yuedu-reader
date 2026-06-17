@@ -61,11 +61,17 @@ struct ProgrammaticPageTransitionPerformer {
         if effectiveAnimated && direction == .reverse && pageTurnStyle != .curl {
             controller.dataSource = nil
             controller.setViewControllers(targetStack, direction: .reverse, animated: true) { _ in
-                controller.setViewControllers(targetStack, direction: .reverse, animated: false) { _ in
-                    if self.pageTurnStyle == .slide {
-                        controller.dataSource = restoringDataSource
+                // Defer the non-animated follow-up to avoid NSInternalInconsistencyException
+                // in _UIQueuingScrollView — the just-completed animated scroll has not yet
+                // fully unwound, and a synchronous second setViewControllers triggers
+                // queuingScrollView:willManuallyScroll: to raise.
+                DispatchQueue.main.async { [controller, targetStack, targetViewController, restoringDataSource, finish] in
+                    controller.setViewControllers(targetStack, direction: .reverse, animated: false) { _ in
+                        if self.pageTurnStyle == .slide {
+                            controller.dataSource = restoringDataSource
+                        }
+                        finish(targetViewController)
                     }
-                    finish(targetViewController)
                 }
             }
             return

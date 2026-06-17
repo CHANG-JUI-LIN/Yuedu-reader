@@ -574,7 +574,7 @@ final class FirestoreSyncManager: ObservableObject {
         encoder.outputFormatting = [.sortedKeys]
         encoder.dateEncodingStrategy = .secondsSince1970
         guard let data = try? encoder.encode(value) else { return UUID().uuidString }
-        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        return SHA256.hash(data: data).map { String($0, radix: 16, uppercase: false) }.map { $0.count == 1 ? "0" + $0 : $0 }.joined()
     }
 }
 
