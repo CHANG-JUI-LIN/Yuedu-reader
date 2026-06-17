@@ -251,7 +251,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                         guard let self, let resourceProvider = self.resourceProvider else { return nil }
                         let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
                         return resourceProvider.resourceURL(for: resolved).absoluteString
-                    }
+                    },
                 )
             )
 

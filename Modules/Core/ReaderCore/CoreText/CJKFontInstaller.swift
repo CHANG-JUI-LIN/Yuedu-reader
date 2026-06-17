@@ -41,11 +41,11 @@ final class CJKFontInstaller {
         )
 
         // Run off the main thread; the progress handler may be invoked on an arbitrary queue.
-        DispatchQueue.global(qos: .utility).async {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             CTFontDescriptorMatchFontDescriptorsWithProgressHandler(
                 [descriptor] as CFArray,
                 nil
-            ) { [weak self] state, _ in
+            ) { state, _ in
                 switch state {
                 case .didFinish:
                     self?.finish(family, success: true)

@@ -27,9 +27,16 @@ enum UserReaderFontResolver {
     }
 
     private static func boldVersion(of font: UIFont, size: CGFloat) -> UIFont {
+        if font.fontDescriptor.symbolicTraits.contains(.traitBold) {
+            return font
+        }
         if let descriptor = font.fontDescriptor.withSymbolicTraits(.traitBold) {
             return UIFont(descriptor: descriptor, size: size)
         }
-        return UIFont.systemFont(ofSize: size, weight: .bold)
+        // Synthetic bold for fonts without native bold face
+        let attrs: [UIFontDescriptor.AttributeName: Any] = [
+            .traits: [UIFontDescriptor.TraitKey.weight: UIFont.Weight.bold]
+        ]
+        return UIFont(descriptor: font.fontDescriptor.addingAttributes(attrs), size: size)
     }
 }

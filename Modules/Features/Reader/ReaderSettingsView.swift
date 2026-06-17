@@ -318,7 +318,7 @@ struct ReaderSettingsView: View {
         Section(header: Text(localized("輔助使用與佈局選項"))) {
             if !settings.scrollMode {
                 ToggleRow(
-                    title: localized("左右點按都翻下一頁"),
+                    title: localized("全局翻頁"),
                     subtitle: localized("開啟後，點畫面左右兩側都翻到下一頁；中間仍呼出選單"),
                     isOn: $settings.readerTapBothSidesNextPage
                 )

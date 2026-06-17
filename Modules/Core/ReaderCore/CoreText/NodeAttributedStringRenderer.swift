@@ -602,19 +602,19 @@ struct NodeAttributedStringRenderer {
         if let descriptor = font.fontDescriptor.withSymbolicTraits(traits) {
             return UIFont(descriptor: descriptor, size: size)
         }
-        // Custom font doesn't support requested traits — fall back to system font
-        if bold && italic {
-            let system = UIFont.systemFont(ofSize: size, weight: .bold)
-            if let desc = system.fontDescriptor.withSymbolicTraits([.traitBold, .traitItalic]) {
-                return UIFont(descriptor: desc.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
-            }
-            return UIFont(descriptor: system.fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
-        } else if bold {
-            return UIFont(descriptor: UIFont.systemFont(ofSize: size, weight: .bold).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
-        } else if italic {
-            return UIFont(descriptor: UIFont.italicSystemFont(ofSize: size).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
+        // Font doesn't support requested traits natively — use synthetic bold/italic
+        var desc = font.fontDescriptor
+        if bold {
+            let attrs: [UIFontDescriptor.AttributeName: Any] = [
+                .traits: [UIFontDescriptor.TraitKey.weight: UIFont.Weight.bold]
+            ]
+            desc = desc.addingAttributes(attrs)
         }
-        return UIFont(descriptor: font.fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
+        if italic {
+            let obliqued = HTMLAttributedStringBuilder.synthesizedObliqueFont(from: UIFont(descriptor: desc, size: size))
+            desc = obliqued.fontDescriptor
+        }
+        return UIFont(descriptor: desc.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
     }
 
     private static func cascadeAttributes() -> [UIFontDescriptor.AttributeName: Any] {
@@ -922,19 +922,6 @@ struct NodeAttributedStringRenderer {
         attachmentStyle.opacity = payload.style.opacity
 
         let imageMetrics = await resolvedImageMetrics(image: image, style: attachmentStyle, font: blockCtx.font, displayMode: .block)
-        let natW = image?.size.width ?? 0
-        let natH = image?.size.height ?? 0
-        let natRatio = natH > 0 ? natW / natH : 0
-        let drawRatio = imageMetrics.drawHeight > 0 ? imageMetrics.drawWidth / imageMetrics.drawHeight : 0
-        AppLogger.parse("⟐ imgRender", context: [
-            "src": String(payload.src.prefix(56)),
-            "natural": "\(Int(natW))x\(Int(natH))",
-            "styleWH": "\(attachmentStyle.width.map { Int($0) } ?? -1)x\(attachmentStyle.height.map { Int($0) } ?? -1)",
-            "draw": "\(Int(imageMetrics.drawWidth))x\(Int(imageMetrics.drawHeight))",
-            "naturalRatio": String(format: "%.3f", natRatio),
-            "drawRatio": String(format: "%.3f", drawRatio),
-            "distorted": abs(natRatio - drawRatio) > 0.02
-        ])
         let blockImage = HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage(
             image: image,
             source: payload.src,

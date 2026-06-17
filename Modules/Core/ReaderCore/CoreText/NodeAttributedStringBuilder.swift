@@ -59,7 +59,7 @@ struct NodeAttributedStringBuilder: AttributedStringBuilding {
         let chapter = chapters[index]
 
         // 1. Chapter → [RenderableNode]
-        let nodes = TXTRenderableNodeConverter.convert(chapter: chapter)
+        let nodes = TXTRenderableNodeConverter.convert(chapter: chapter, firstLineIndent: settings.fontSize * 2)
 
         // 2. [RenderableNode] → NSAttributedString
         let rendererConfig = NodeAttributedStringRenderer.Config(
@@ -100,7 +100,7 @@ struct NodeAttributedStringBuilder: AttributedStringBuilding {
 
 enum TXTRenderableNodeConverter {
 
-    static func convert(chapter: UnifiedChapter) -> [RenderableNode] {
+    static func convert(chapter: UnifiedChapter, firstLineIndent: CGFloat) -> [RenderableNode] {
         var nodes: [RenderableNode] = []
 
         // ── Chapter title ──
@@ -110,15 +110,18 @@ enum TXTRenderableNodeConverter {
             textAlign: .center,
             paragraphSpacingAfter: 24
         )
-        nodes.append(.heading([.text(chapter.title)], level: 2, style: titleStyle))
+        nodes.append(.heading([.text(chapter.title.trimmingCharacters(in: .whitespacesAndNewlines))], level: 2, style: titleStyle))
 
         // ── Paragraphs ──
+        // Indent via paragraph firstLineHeadIndent (textIndent), NOT a literal U+3000 prefix:
+        // a user font that lacks the ideographic-space glyph (e.g. WeRead/楷) would make CoreText
+        // resolve the whole paragraph run starting from that space → fall back to PingFang for the
+        // entire line. Real CJK text as the run's first glyph keeps the user font.
+        let bodyStyle = RenderStyle(textIndent: firstLineIndent)
         for para in chapter.paragraphs {
             let trimmed = para.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
-            // Preserving \u{3000}\u{3000} prefix for visual consistency with the old pipeline.
-            // Future work: remove this prefix and use RenderStyle.textIndent instead.
-            nodes.append(.paragraph([.text("\u{3000}\u{3000}" + trimmed)], style: .body))
+            nodes.append(.paragraph([.text(trimmed)], style: bodyStyle))
         }
 
         return nodes
@@ -129,7 +132,8 @@ enum TXTRenderableNodeConverter {
     /// with the tappable count bubble inlined at the end of its paragraph.
     static func convertReview(
         title: String,
-        paragraphs: [ReaderHTMLUtilities.ReviewParagraph]
+        paragraphs: [ReaderHTMLUtilities.ReviewParagraph],
+        firstLineIndent: CGFloat
     ) -> [RenderableNode] {
         var nodes: [RenderableNode] = []
 
@@ -139,13 +143,17 @@ enum TXTRenderableNodeConverter {
             textAlign: .center,
             paragraphSpacingAfter: 24
         )
-        nodes.append(.heading([.text(title)], level: 2, style: titleStyle))
+        nodes.append(.heading([.text(title.trimmingCharacters(in: .whitespacesAndNewlines))], level: 2, style: titleStyle))
 
+        // Indent via paragraph firstLineHeadIndent (textIndent), NOT a literal U+3000 prefix —
+        // see `convert` above: a leading ideographic space the user font lacks poisons the whole
+        // paragraph run's font (→ PingFang fallback for narration). Real CJK first glyph keeps WeRead.
+        let bodyStyle = RenderStyle(textIndent: firstLineIndent)
         for para in paragraphs {
             var inlines: [RenderableNode] = []
             let trimmed = para.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
-                inlines.append(.text("\u{3000}\u{3000}" + trimmed))
+                inlines.append(.text(trimmed))
             }
             if let href = para.reviewHref,
                let marker = ReaderHTMLUtilities.decodeReviewHref(href) {
@@ -158,7 +166,7 @@ enum TXTRenderableNodeConverter {
                 )
             }
             guard !inlines.isEmpty else { continue }
-            nodes.append(.paragraph(inlines, style: .body))
+            nodes.append(.paragraph(inlines, style: bodyStyle))
         }
 
         return nodes
@@ -281,22 +289,10 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
         let displayTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: ref.title)
 
         if let html = cachedNormalizedHTML(for: ref, package: package, sanitizedURL: sanitizedURL) {
-            // Skeleton: strip the huge base64 data-URIs so the tag structure (p/small/img/…) is visible.
-            let skeleton = html
-                .replacingOccurrences(of: #"base64,[A-Za-z0-9+/=]+"#, with: "base64,…", options: .regularExpression)
-                .replacingOccurrences(of: #"\s*\n\s*"#, with: " ", options: .regularExpression)
-            AppLogger.parse("⟐ reviewDiag", context: [
-                "index": index,
-                "title": ref.title,
-                "imgCount": html.components(separatedBy: "<img").count - 1,
-                "ydreviewCount": html.components(separatedBy: "ydreview://").count - 1,
-                "ydReviewImage": html.contains("yd-review-image"),
-                "hasComment": html.range(of: "<comment", options: .caseInsensitive) != nil,
-                "skeleton": String(skeleton.prefix(900))
-            ])
             if html.range(of: "<img", options: .caseInsensitive) != nil,
                let htmlResult = await buildHTMLChapter(
                 html: html,
+                index: index,
                 settings: settings,
                 themeTextColor: themeTextColor,
                 themeBackgroundColor: themeBackgroundColor
@@ -316,18 +312,11 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
                 fromHTML: reviewHTML,
                 excludingLeadingTitle: displayTitle
             )
-            let badgeCount = reviewParagraphs.filter { $0.reviewHref != nil }.count
-            AppLogger.parse("⟐ reviewRender", context: [
-                "index": index,
-                "branch": badgeCount > 0 ? "reviewNodes" : "reviewHTML-noBadges",
-                "paras": reviewParagraphs.count,
-                "badges": badgeCount,
-                "ydreview": reviewHTML.components(separatedBy: "ydreview://").count - 1
-            ])
             if reviewParagraphs.contains(where: { $0.reviewHref != nil }) {
                 nodes = TXTRenderableNodeConverter.convertReview(
                     title: displayTitle,
-                    paragraphs: reviewParagraphs
+                    paragraphs: reviewParagraphs,
+                    firstLineIndent: settings.fontSize * 2
                 )
             }
         }
@@ -343,7 +332,7 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
                 paragraphs: paragraphs,
                 sourceHref: sanitizedURL
             )
-            nodes = TXTRenderableNodeConverter.convert(chapter: chapter)
+            nodes = TXTRenderableNodeConverter.convert(chapter: chapter, firstLineIndent: settings.fontSize * 2)
         }
 
         let rendererConfig = NodeAttributedStringRenderer.Config(
@@ -352,8 +341,10 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
             fontFamily: UserReaderFontResolver.selectedPostScriptName
         )
         let renderer = NodeAttributedStringRenderer(config: rendererConfig)
+        let rendered = await renderer.render(nodes ?? [])
+
         return AttributedChapterBuildResult(
-            attributedString: await renderer.render(nodes ?? []),
+            attributedString: rendered,
             imagePage: nil,
             pageBackgroundImage: nil,
             anchorOffsets: [:]
@@ -443,16 +434,6 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
 
         let rewritten = ReaderHTMLUtilities.rewriteReviewComments(html)
         let markerCount = rewritten.components(separatedBy: "ydreview://").count - 1
-        AppLogger.parse("⟐ reviewCache", context: [
-            "index": package.chapterIndex,
-            "title": ref.title,
-            "htmlLen": html.count,
-            "rewrittenLen": rewritten.count,
-            "commentTags": html.lowercased().components(separatedBy: "<comment").count - 1,
-            "ydreview": markerCount,
-            "reviewImage": rewritten.contains("yd-review-image"),
-            "hasImg": html.range(of: "<img", options: .caseInsensitive) != nil
-        ])
         guard markerCount > 0 else {
             return nil
         }
@@ -461,6 +442,7 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
 
     private func buildHTMLChapter(
         html: String,
+        index: Int,
         settings: ReaderRenderSettings,
         themeTextColor: UIColor,
         themeBackgroundColor: UIColor
@@ -471,23 +453,8 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
         // attribute, so SwiftSoup swallows the rest of the chapter → only the first ~few
         // hundred chars survive (the "第一章 renders blank / data-URI shown as text" bug).
         // sanitize is guarded by a `,{` check, so it's a no-op on already-clean cache.
-        let hadClickConfig = html.range(of: ",{") != nil
         let sanitized = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(html)
-        if hadClickConfig {
-            AppLogger.parse("⟐ staleCacheSanitized", context: [
-                "inLen": html.count,
-                "outLen": sanitized.count,
-                "stillHasClickConfig": sanitized.range(of: ",{") != nil
-            ])
-        }
         let rewritten = ReaderHTMLUtilities.rewriteReviewComments(sanitized)
-        AppLogger.parse("⟐ reviewHTML render", context: [
-            "inYdreview": html.components(separatedBy: "ydreview://").count - 1,
-            "outYdreview": rewritten.components(separatedBy: "ydreview://").count - 1,
-            "inComment": html.lowercased().components(separatedBy: "<comment").count - 1,
-            "hasReviewImage": rewritten.contains("yd-review-image"),
-            "hasImg": html.range(of: "<img", options: .caseInsensitive) != nil
-        ])
         let renderWidth = max(0, renderSize.width)
         let config = HTMLAttributedStringBuilder.Config(
             fontSize: settings.fontSize,
@@ -527,17 +494,10 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
         }
 
         let rawNodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
-        AppLogger.parse("⟐ nodeTree", context: ["tree": String(Self.describeNodes(rawNodes).prefix(800))])
         // Lift standalone content illustrations out of the text flow onto their own centered line
         // at natural size (renderer caps at column), instead of inline-left with text wrapping.
         // Comment-bubble images (review `<a>` wrappers) untouched.
         let nodes = Self.fullWidthCenterContentImages(rawNodes, columnWidth: renderWidth, firstLineIndent: settings.fontSize * 2)
-        AppLogger.parse("⟐ imgLayout", context: [
-            "renderWidth": renderWidth,
-            "rawTopNodes": rawNodes.count,
-            "topNodes": nodes.count,
-            "imagesLifted": Self.countCenteredImageBlocks(nodes)
-        ])
         // PREWARM: hot 起点 chapters embed 100+ distinct 段評 count-bubble SVGs as inline images.
         // The node renderer below awaits each image one-by-one, so without this the chapter text is
         // blocked on a fully serial rasterization of every bubble → "infinite loading". Fire all
@@ -558,13 +518,7 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
                 }
             )
         )
-        let _renderStart = Date()
-        AppLogger.render("⟐ renderNodes start", context: ["topNodes": nodes.count])
         let attributedString = await renderer.render(nodes)
-        AppLogger.render("⟐ renderNodes done", context: [
-            "ms": Int(Date().timeIntervalSince(_renderStart) * 1000),
-            "len": attributedString.length
-        ])
         return AttributedChapterBuildResult(
             attributedString: attributedString,
             imagePage: nil,
@@ -587,8 +541,6 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
         collectImageSources(nodes, into: &srcs, seen: &seen)
         // Single-image chapters (a lone illustration) gain nothing from a concurrent pre-pass.
         guard srcs.count > 4 else { return }
-        let started = Date()
-        AppLogger.render("⟐ imgPrewarm start", context: ["count": srcs.count])
         await withTaskGroup(of: Void.self) { group in
             for src in srcs {
                 group.addTask {
@@ -596,10 +548,6 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
                 }
             }
         }
-        AppLogger.render("⟐ imgPrewarm done", context: [
-            "count": srcs.count,
-            "ms": Int(Date().timeIntervalSince(started) * 1000)
-        ])
     }
 
     private static func collectImageSources(
@@ -816,57 +764,6 @@ final class OnlineNodeAttributedStringBuilder: @preconcurrency AttributedStringB
         blockStyle.textAlign = .center
         blockStyle.isHorizontallyCentered = true
         return .block(tag: "div", children: [imageNode], style: blockStyle)
-    }
-
-    /// Diagnostic: compact node-tree description (node type + tag + short text) for logging.
-    private static func describeNodes(_ nodes: [RenderableNode], depth: Int = 0) -> String {
-        guard depth < 7 else { return "…" }
-        return nodes.map { node -> String in
-            switch node {
-            case .text(let s):
-                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-                return t.isEmpty ? "·" : "txt(\(t.prefix(6)))"
-            case .image(let src, _, let st, let svg):
-                let id = svg != nil ? "svg" : String(src.prefix(16))
-                return "IMG[\(id)|w=\(st.width.map { Int($0) } ?? -1)]"
-            case .paragraph(let c, _): return "P{\(describeNodes(c, depth: depth + 1))}"
-            case .heading(let c, let l, _): return "h\(l){\(describeNodes(c, depth: depth + 1))}"
-            case .block(let t, let c, _): return "blk(\(t)){\(describeNodes(c, depth: depth + 1))}"
-            case .inline(let t, let c, _): return "inl(\(t)){\(describeNodes(c, depth: depth + 1))}"
-            case .anchor(_, let c): return "a{\(describeNodes(c, depth: depth + 1))}"
-            case .anchorTarget(_, let ch): return "aT{\(describeNodes([ch], depth: depth + 1))}"
-            case .blockquote(let c): return "bq{\(describeNodes(c, depth: depth + 1))}"
-            case .lineBreak: return "br"
-            default: return "?"
-            }
-        }.joined(separator: ",")
-    }
-
-    /// Diagnostic: count the centered image blocks this transform produced (recursively).
-    private static func countCenteredImageBlocks(_ nodes: [RenderableNode]) -> Int {
-        var count = 0
-        for node in nodes {
-            switch node {
-            case .block(_, let children, let style):
-                if style.isHorizontallyCentered, children.count == 1, case .image = children[0] {
-                    count += 1
-                }
-                count += countCenteredImageBlocks(children)
-            case .blockquote(let children):
-                count += countCenteredImageBlocks(children)
-            case .paragraph(let children, _):
-                count += countCenteredImageBlocks(children)
-            case .heading(let children, _, _):
-                count += countCenteredImageBlocks(children)
-            case .listItem(let children, _):
-                count += countCenteredImageBlocks(children)
-            case .anchorTarget(_, let child):
-                count += countCenteredImageBlocks([child])
-            default:
-                break
-            }
-        }
-        return count
     }
 
 }
