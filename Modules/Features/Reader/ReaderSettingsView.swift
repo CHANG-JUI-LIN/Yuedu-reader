@@ -209,9 +209,12 @@ struct ReaderSettingsView: View {
         let resolvedWeight: Font.Weight = isBold ? .bold : weight
         if let postScript = settings.selectedReaderFontPostScript,
            !postScript.isEmpty,
-           UIFont(name: postScript, size: size) != nil {
-            let baseFont = Font.custom(postScript, fixedSize: size)
-            return isBold ? baseFont.bold() : baseFont
+           let uiFont = UIFont(name: postScript, size: size) {
+            if isBold,
+               let descriptor = uiFont.fontDescriptor.withSymbolicTraits(.traitBold) {
+                return Font(UIFont(descriptor: descriptor, size: size) as CTFont)
+            }
+            return Font(uiFont as CTFont)
         }
         return .system(size: size, weight: resolvedWeight)
     }

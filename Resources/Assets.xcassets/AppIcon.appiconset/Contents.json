@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "ios_app_icon_novel_reader_1024_no_alpha.png",
+      "filename" : "AppIcon_1024_white_no_alpha.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,7 +13,7 @@
           "value" : "dark"
         }
       ],
-      "filename" : "ios_app_icon_novel_reader_dark_1024_no_alpha.png",
+      "filename" : "AppIcon_1024_black_no_alpha.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -25,7 +25,7 @@
           "value" : "tinted"
         }
       ],
-      "filename" : "ios_app_icon_novel_reader_1024_no_alpha.png",
+      "filename" : "AppIcon_1024_white_no_alpha 1.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
