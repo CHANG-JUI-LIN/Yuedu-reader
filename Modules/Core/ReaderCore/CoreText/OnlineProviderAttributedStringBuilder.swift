@@ -5,8 +5,8 @@ import UIKit
 /// allowing `CoreTextScrollEngine` to directly consume online chapters.
 ///
 /// Content handling:
-///   - If `payload.renderHTML` is non-nil → use `HTMLAttributedStringBuilder` (preserves styling)
-///   - Otherwise → fall back to TXT pattern (title + paragraphs + indent)
+///   - If `payload.body` is `.html` → use `HTMLAttributedStringBuilder` (preserves styling)
+///   - If `payload.body` is `.plainText` → fall back to TXT pattern (title + paragraphs + indent)
 @MainActor
 final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStringBuilding, RenderSizeAwareAttributedStringBuilding {
 
@@ -73,12 +73,22 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
               let payload = try? await provider.contentForChapter(index: index)
         else { return 0 }
         cacheSourceHref(from: payload)
-        let html = payload.renderHTML ?? payload.content
-        return html.lengthOfBytes(using: .utf8)
+        return payload.body.byteCount
     }
 
     func cssResourceHrefs() -> [String] {
         resourceProvider?.cssResourceHrefs() ?? []
+    }
+
+    private func payload(at index: Int) async throws -> ChapterContentPayload {
+        do {
+            return try await provider.contentForChapter(index: index)
+        } catch let error as BookContentProviderError {
+            if case .contentNotCached = error {
+                throw AttributedStringBuildingError.contentNotCached(index)
+            }
+            throw error
+        }
     }
 
     private func cacheSourceHref(from payload: ChapterContentPayload) {
@@ -177,95 +187,119 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         themeTextColor: UIColor,
         themeBackgroundColor: UIColor
     ) async throws -> AttributedChapterBuildResult {
-        let payload = try await provider.contentForChapter(index: index)
+        let payload = try await payload(at: index)
         cacheSourceHref(from: payload)
 
-        // HTML pipeline
-        if let rawHTML = payload.renderHTML, !rawHTML.isEmpty {
-            // Rewrite Legado iOS paragraph-review markers (<comment …>) into anchors the
-            // renderer can carry. Idempotent + covers chapters cached before this feature.
-            let html = ReaderHTMLUtilities.rewriteReviewComments(rawHTML)
-            let cfg = HTMLAttributedStringBuilder.Config(
-                fontSize: settings.fontSize,
-                lineHeightMultiple: settings.lineHeightMultiple,
-                lineSpacing: settings.lineSpacing,
-                paragraphSpacing: settings.paragraphSpacing,
-                firstLineIndent: 0,
-                textColor: themeTextColor,
-                backgroundColor: themeBackgroundColor,
-                fontFamilyName: UserReaderFontResolver.selectedPostScriptName,
-                renderWidth: max(0, renderSize.width),
-                writingMode: settings.writingMode
+        switch payload.body {
+        case .html(let rawHTML):
+            return await buildHTMLChapter(
+                payload: payload,
+                html: ReaderHTMLUtilities.rewriteReviewComments(rawHTML),
+                settings: settings,
+                themeTextColor: themeTextColor,
+                themeBackgroundColor: themeBackgroundColor
             )
-            let builder = HTMLAttributedStringBuilder()
-            let chapterHref = fallbackChapterHref(for: index, payload: payload)
-            configureResourceCallbacks(for: builder, chapterHref: chapterHref)
-
-            guard let ast = await builder.buildStyledAST(html: html, config: cfg) else {
-                return AttributedChapterBuildResult(
-                    attributedString: NSAttributedString(),
-                    imagePage: nil,
-                    pageBackgroundImage: nil,
-                    anchorOffsets: [:]
-                )
-            }
-
-            if let imagePage = await builder.imagePage(from: ast) {
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: settings.fontSize),
-                    .foregroundColor: themeTextColor,
-                    .backgroundColor: themeBackgroundColor,
-                ]
-                return AttributedChapterBuildResult(
-                    attributedString: NSAttributedString(string: "\u{FFFC}", attributes: attrs),
-                    imagePage: imagePage,
-                    pageBackgroundImage: nil,
-                    anchorOffsets: [:]
-                )
-            }
-
-            let nodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
-            // The image loader handles data: URIs + remote URLs even without a resource provider,
-            // so wire it unconditionally — that's what lets online illustrations / comment-bubble
-            // SVGs render instead of degrading to alt text. Media (audio/video) URL resolution
-            // still needs a book-local resource provider, so it stays gated.
-            let hasResources = resourceProvider != nil
-            let renderer = NodeAttributedStringRenderer(
-                config: NodeAttributedStringRenderer.Config(
-                    from: settings,
-                    textColor: themeTextColor,
-                    fontFamily: UserReaderFontResolver.selectedPostScriptName,
-                    renderWidth: cfg.renderWidth,
-                    resolvedFont: styleResolver == nil ? nil : { [weak self] families, weight, italic, size in
-                        self?.styleResolver?.resolveRegisteredFont(
-                            families: families,
-                            weight: weight,
-                            italic: italic,
-                            size: size
-                        )
-                    },
-                    imageLoader: { [weak self] src in
-                        await self?.loadImage(src: src, chapterHref: chapterHref)
-                    },
-                    mediaURLResolver: !hasResources ? nil : { [weak self] src in
-                        guard let self, let resourceProvider = self.resourceProvider else { return nil }
-                        let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
-                        return resourceProvider.resourceURL(for: resolved).absoluteString
-                    },
-                )
+        case .plainText(let text):
+            return await buildPlainTextChapter(
+                payload: payload,
+                text: text,
+                settings: settings,
+                themeTextColor: themeTextColor,
+                themeBackgroundColor: themeBackgroundColor
             )
+        }
+    }
 
-            let attributedString = await renderer.render(nodes)
-            let pageBackgroundImage = await builder.pageBackgroundImage(from: ast)
+    private func buildHTMLChapter(
+        payload: ChapterContentPayload,
+        html: String,
+        settings: ReaderRenderSettings,
+        themeTextColor: UIColor,
+        themeBackgroundColor: UIColor
+    ) async -> AttributedChapterBuildResult {
+        let cfg = HTMLAttributedStringBuilder.Config(
+            fontSize: settings.fontSize,
+            lineHeightMultiple: settings.lineHeightMultiple,
+            lineSpacing: settings.lineSpacing,
+            paragraphSpacing: settings.paragraphSpacing,
+            firstLineIndent: settings.fontSize * 2,
+            textColor: themeTextColor,
+            backgroundColor: themeBackgroundColor,
+            fontFamilyName: UserReaderFontResolver.selectedPostScriptName,
+            renderWidth: max(0, renderSize.width),
+            writingMode: settings.writingMode
+        )
+        let builder = HTMLAttributedStringBuilder()
+        let chapterHref = fallbackChapterHref(for: payload.index, payload: payload)
+        configureResourceCallbacks(for: builder, chapterHref: chapterHref)
+
+        guard let ast = await builder.buildStyledAST(html: html, config: cfg) else {
             return AttributedChapterBuildResult(
-                attributedString: attributedString,
+                attributedString: NSAttributedString(),
                 imagePage: nil,
-                pageBackgroundImage: pageBackgroundImage,
-                anchorOffsets: builder.anchorOffsets(in: attributedString)
+                pageBackgroundImage: nil,
+                anchorOffsets: [:]
             )
         }
 
-        // TXT-style fallback: title + paragraphs
+        if let imagePage = await builder.imagePage(from: ast) {
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: settings.fontSize),
+                .foregroundColor: themeTextColor,
+                .backgroundColor: themeBackgroundColor,
+            ]
+            return AttributedChapterBuildResult(
+                attributedString: NSAttributedString(string: "\u{FFFC}", attributes: attrs),
+                imagePage: imagePage,
+                pageBackgroundImage: nil,
+                anchorOffsets: [:]
+            )
+        }
+
+        let nodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
+        let hasResources = resourceProvider != nil
+        let renderer = NodeAttributedStringRenderer(
+            config: NodeAttributedStringRenderer.Config(
+                from: settings,
+                textColor: themeTextColor,
+                fontFamily: UserReaderFontResolver.selectedPostScriptName,
+                renderWidth: cfg.renderWidth,
+                resolvedFont: styleResolver == nil ? nil : { [weak self] families, weight, italic, size in
+                    self?.styleResolver?.resolveRegisteredFont(
+                        families: families,
+                        weight: weight,
+                        italic: italic,
+                        size: size
+                    )
+                },
+                imageLoader: { [weak self] src in
+                    await self?.loadImage(src: src, chapterHref: chapterHref)
+                },
+                mediaURLResolver: !hasResources ? nil : { [weak self] src in
+                    guard let self, let resourceProvider = self.resourceProvider else { return nil }
+                    let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
+                    return resourceProvider.resourceURL(for: resolved).absoluteString
+                },
+            )
+        )
+
+        let attributedString = await renderer.render(nodes)
+        let pageBackgroundImage = await builder.pageBackgroundImage(from: ast)
+        return AttributedChapterBuildResult(
+            attributedString: attributedString,
+            imagePage: nil,
+            pageBackgroundImage: pageBackgroundImage,
+            anchorOffsets: builder.anchorOffsets(in: attributedString)
+        )
+    }
+
+    private func buildPlainTextChapter(
+        payload: ChapterContentPayload,
+        text: String,
+        settings: ReaderRenderSettings,
+        themeTextColor: UIColor,
+        themeBackgroundColor: UIColor
+    ) async -> AttributedChapterBuildResult {
         let titleFont = UserReaderFontResolver.titleFont(size: settings.fontSize + 8, isBold: settings.isBold)
         let bodyFont = UserReaderFontResolver.bodyFont(size: settings.fontSize, isBold: settings.isBold)
         let bodyTargetLineHeight = ReaderTypographyCorrection.targetLineHeight(
@@ -301,7 +335,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         ))
 
         let paragraphs = ReaderHTMLUtilities.bodyParagraphs(
-            fromPlainText: payload.content,
+            fromPlainText: text,
             excludingLeadingTitle: payload.title
         )
 

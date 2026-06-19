@@ -3177,19 +3177,21 @@ struct ReaderView: View {
     private func loadOnlineCoreText(_ book: ReadingBook, marginH: CGFloat) {
         print("[StateDebug] loadOnlineCoreText enter bookId=\(book.id) chapters=\(book.onlineChapters?.count ?? -1)")
         print("[FetchTrace] loadOnlineCoreText enter bookId=\(book.id) chapters=\(book.onlineChapters?.count ?? -1)")
-        guard let document = BookDocumentFactory.makeOnlineDocument(book: book, store: store) else {
-            print("[FetchTrace] loadOnlineCoreText makeOnlineDocument returned nil")
+        guard let bundle = BookContentProviderFactory.makeOnlineReaderBundle(
+            book: book,
+            store: store
+        ) else {
+            print("[FetchTrace] loadOnlineCoreText makeOnlineReaderBundle returned nil")
             applyDocument(nil)
             isLoadingPipeline = false
             isRestoringPosition = false
             return
         }
 
-        applyDocument(document)
-
+        let settings = currentRenderSettings(marginH: marginH)
         let refs = book.onlineChapters ?? []
         chapters = refs.enumerated().map { idx, ref in
-            let href = RuleEngine.sanitizeExtractedURL(ref.url)
+            let href = ref.sanitizedContentURL
             return BookChapter(index: idx, title: ref.title, content: "", href: href)
         }
         if chapters.isEmpty {
@@ -3197,22 +3199,10 @@ struct ReaderView: View {
         }
         allPages = []
 
-        let settings = currentRenderSettings(marginH: marginH)
-        guard !refs.isEmpty else {
-            applyDocument(nil)
-            isLoadingPipeline = false
-            isRestoringPosition = false
-            return
-        }
-        let builder = OnlineNodeAttributedStringBuilder(
-            refs: refs,
-            bookId: book.id,
-            fetcher: dependencies.bookSourceFetcher,
-            renderSize: currentReaderRenderSize
-        )
-        epubRenderer.loadTXT(
-            attributedBuilder: builder,
-            bookIdentifier: "coretext-node-\(book.id.uuidString)",
+        epubRenderer.loadWithProvider(
+            contentProvider: bundle.provider,
+            chapterSourceHrefs: bundle.chapterSourceHrefs,
+            bookIdentifier: bundle.bookIdentifier,
             renderSize: currentReaderRenderSize,
             settings: settings
         )

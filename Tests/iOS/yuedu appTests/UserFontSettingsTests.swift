@@ -99,8 +99,8 @@ struct UserFontSettingsTests {
                 payload: ChapterContentPayload(
                     index: 0,
                     title: "第一章",
-                    content: "",
-                    renderHTML: "<p>線上內容</p>",
+                    plainText: "",
+                    body: .html("<p>線上內容</p>"),
                     sourceHref: nil
                 )
             ),
@@ -134,8 +134,8 @@ struct UserFontSettingsTests {
                 payload: ChapterContentPayload(
                     index: 0,
                     title: "第一章",
-                    content: "這是一段線上文字",
-                    renderHTML: nil,
+                    plainText: "這是一段線上文字",
+                    body: .plainText("這是一段線上文字"),
                     sourceHref: nil
                 )
             ),

@@ -243,8 +243,8 @@ private struct SingleChapterReviewProvider: BookContentProvider {
         return ChapterContentPayload(
             index: index,
             title: "Chapter",
-            content: "房间陷入了短暂安静。",
-            renderHTML: html,
+            plainText: "房间陷入了短暂安静。",
+            body: .html(html),
             sourceHref: "https://example.com/books/1/chapter.html"
         )
     }
@@ -266,13 +266,17 @@ struct OnlineVolumeSeparatorTests {
             OnlineChapterRef(index: 0, title: "作品相关", url: "", isVolume: true)
         ]
 
-        let adapter = OnlineHTMLContentProviderAdapter(book: book, store: nil)
-        let payload = try await adapter.contentForChapter(index: 0)
+        let service = OnlineChapterContentService(book: book, store: nil)
+        let payload = try await service.payload(at: 0, policy: .cacheOnly)
 
         #expect(payload.title == "作品相关")
-        #expect(payload.content == "作品相关")
+        #expect(payload.plainText == "作品相关")
         #expect(payload.sourceHref == "volume/0")
-        #expect(payload.renderHTML?.contains("yd-volume-separator") == true)
+        if case .html(let html) = payload.body {
+            #expect(html.contains("yd-volume-separator"))
+        } else {
+            Issue.record("Expected .html body for volume separator")
+        }
     }
 }
 
@@ -321,129 +325,6 @@ struct ParagraphReviewRenderingTests {
         #expect(attr.string.contains("段落文字"))
     }
 
-    @Test("online node builder renders paragraph review badges from cached normalized HTML")
-    func onlineNodeBuilderUsesCachedReviewHTML() async throws {
-        let bookId = UUID()
-        let ref = OnlineChapterRef(
-            index: 0,
-            title: "第一章",
-            url: "https://example.com/books/1/chapter.html"
-        )
-        let reviewHTML = #"""
-        <html><body>
-        <div rs-native>一个老旧的钨丝灯被黑色的电线悬在屋子中央，闪烁着昏暗的光芒。
-        <comment count="99" onPress="java.showReadingBrowser('https://v6.gyks.cf/get_para_review?book_id=1&amp;ssionid=abc')">
-        </div>
-        </body></html>
-        """#
-        let package = ChapterPackage(
-            bookId: bookId,
-            chapterIndex: 0,
-            sourceURL: ref.url,
-            tocTitle: ref.title,
-            canonicalTitle: ref.title,
-            content: "一个老旧的钨丝灯被黑色的电线悬在屋子中央，闪烁着昏暗的光芒。",
-            contentChecksum: "checksum",
-            rawHTMLFilename: "0.raw.html",
-            normalizedHTMLFilename: "0.normalized.xhtml",
-            savedAt: Date(),
-            state: .cached,
-            failureReason: nil
-        )
-        let fetcher = CachedReviewHTMLFetcher(package: package, normalizedHTML: reviewHTML)
-        let builder = OnlineNodeAttributedStringBuilder(
-            refs: [ref],
-            bookId: bookId,
-            fetcher: fetcher
-        )
-
-        let result = try await builder.buildChapter(
-            at: 0,
-            settings: Self.renderSettings(),
-            themeTextColor: UIColor.label,
-            themeBackgroundColor: UIColor.systemBackground
-        )
-
-        let attr = result.attributedString
-        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
-        var foundReviewLink = false
-        var linkHasAttachment = false
-        attr.enumerateAttribute(
-            HTMLAttributedStringBuilder.internalLinkAttribute,
-            in: NSRange(location: 0, length: attr.length)
-        ) { value, range, _ in
-            guard let href = value as? String, href.hasPrefix("ydreview://") else { return }
-            foundReviewLink = true
-            if attr.attribute(delegateKey, at: range.location, effectiveRange: nil) != nil {
-                linkHasAttachment = true
-            }
-        }
-
-        #expect(foundReviewLink)
-        #expect(linkHasAttachment)
-        #expect(attr.string.contains("一个老旧的钨丝灯"))
-    }
-
-    @Test("online node builder renders cached HTML images")
-    func onlineNodeBuilderRendersCachedHTMLImages() async throws {
-        let bookId = UUID()
-        let ref = OnlineChapterRef(
-            index: 0,
-            title: "第一章",
-            url: "https://example.com/books/1/chapter.html"
-        )
-        let imageData = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 6)).pngData { ctx in
-            UIColor.systemRed.setFill()
-            ctx.fill(CGRect(x: 0, y: 0, width: 8, height: 6))
-        }
-        let html = #"""
-        <html><body>
-        <p>图前<img src="data:image/png;base64,\#(imageData.base64EncodedString())" alt="inline">图后</p>
-        </body></html>
-        """#
-        let package = ChapterPackage(
-            bookId: bookId,
-            chapterIndex: 0,
-            sourceURL: ref.url,
-            tocTitle: ref.title,
-            canonicalTitle: ref.title,
-            content: "图前图后",
-            contentChecksum: "checksum",
-            rawHTMLFilename: "0.raw.html",
-            normalizedHTMLFilename: "0.normalized.xhtml",
-            savedAt: Date(),
-            state: .cached,
-            failureReason: nil
-        )
-        let fetcher = CachedReviewHTMLFetcher(package: package, normalizedHTML: html)
-        let builder = OnlineNodeAttributedStringBuilder(
-            refs: [ref],
-            bookId: bookId,
-            fetcher: fetcher,
-            renderSize: CGSize(width: 320, height: 480)
-        )
-
-        let result = try await builder.buildChapter(
-            at: 0,
-            settings: Self.renderSettings(),
-            themeTextColor: UIColor.label,
-            themeBackgroundColor: UIColor.systemBackground
-        )
-
-        #expect(result.attributedString.string.contains("\u{FFFC}"))
-        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
-        var foundImageAttachment = false
-        result.attributedString.enumerateAttribute(
-            delegateKey,
-            in: NSRange(location: 0, length: result.attributedString.length)
-        ) { value, _, _ in
-            if value != nil {
-                foundImageAttachment = true
-            }
-        }
-        #expect(foundImageAttachment)
-    }
-
     private static func renderSettings() -> ReaderRenderSettings {
         ReaderRenderSettings(
             theme: "test",
@@ -460,70 +341,5 @@ struct ParagraphReviewRenderingTests {
             contentInsets: .zero,
             writingMode: .horizontal
         )
-    }
-}
-
-private final class CachedReviewHTMLFetcher: BookSourceFetching {
-    let package: ChapterPackage
-    let normalizedHTML: String
-    private(set) var clearedChapterIndexes: [Int] = []
-
-    init(package: ChapterPackage, normalizedHTML: String) {
-        self.package = package
-        self.normalizedHTML = normalizedHTML
-    }
-
-    func fetchBookInfoPackage(
-        url: String,
-        source: BookSource,
-        runtimeVariables: [String: String]?
-    ) async throws -> BookInfoPackage {
-        throw NSError(domain: "CachedReviewHTMLFetcher", code: 1)
-    }
-
-    func fetchTOCPackage(
-        tocUrl: String,
-        source: BookSource,
-        runtimeVariables: [String: String]?,
-        onFirstPageReady: (([OnlineChapterRef]) -> Void)?
-    ) async throws -> TOCPackage {
-        throw NSError(domain: "CachedReviewHTMLFetcher", code: 2)
-    }
-
-    func isChapterCached(
-        bookId: UUID,
-        chapterIndex: Int,
-        expectedSourceURL: String?,
-        expectedTOCTitle: String?
-    ) -> Bool {
-        bookId == package.bookId && chapterIndex == package.chapterIndex
-    }
-
-    func clearChapterCache(bookId: UUID, chapterIndex: Int) {
-        clearedChapterIndexes.append(chapterIndex)
-    }
-
-    func clearAllChapterCache(bookId: UUID) {}
-
-    func search(query: String, in source: BookSource) async throws -> [OnlineBook] { [] }
-
-    func loadChapterPackageSync(
-        bookId: UUID,
-        chapterIndex: Int,
-        expectedSourceURL: String?,
-        expectedTOCTitle: String?
-    ) -> ChapterPackage? {
-        guard bookId == package.bookId, chapterIndex == package.chapterIndex else { return nil }
-        return package
-    }
-
-    func loadNormalizedChapterHTMLSync(
-        bookId: UUID,
-        chapterIndex: Int,
-        expectedSourceURL: String?,
-        expectedTOCTitle: String?
-    ) -> String? {
-        guard bookId == package.bookId, chapterIndex == package.chapterIndex else { return nil }
-        return normalizedHTML
     }
 }

@@ -150,17 +150,18 @@ final class UniversalBookResourceAdapter: BookResourceProvider {
     }
 
     private func chapterHTMLFromPayload(_ payload: ChapterContentPayload, fallbackChapterIndex: Int) -> String {
-        if let renderHTML = payload.renderHTML?.trimmingCharacters(in: .whitespacesAndNewlines), !renderHTML.isEmpty {
-            let baseURL = payload.sourceHref ?? chapterSourceHrefs[safe: fallbackChapterIndex] ?? payload.sourceHref
-            let reviewHTML = ReaderHTMLUtilities.rewriteReviewComments(renderHTML)
+        switch payload.body {
+        case .html(let html):
+            let baseURL: String? = payload.sourceHref ?? chapterSourceHrefs[safe: fallbackChapterIndex] ?? nil
+            let reviewHTML = ReaderHTMLUtilities.rewriteReviewComments(html)
             let rewritten = rewriteResourceReferences(in: reviewHTML, baseURLString: baseURL)
             return rewritten
+        case .plainText(let text):
+            return ReaderHTMLUtilities.normalizedChapterHTML(
+                title: payload.title,
+                paragraphs: ReaderHTMLUtilities.paragraphs(fromPlainText: text)
+            )
         }
-
-        return ReaderHTMLUtilities.normalizedChapterHTML(
-            title: payload.title,
-            paragraphs: ReaderHTMLUtilities.paragraphs(fromPlainText: payload.content)
-        )
     }
 
     private func rewriteResourceReferences(in html: String, baseURLString: String?) -> String {

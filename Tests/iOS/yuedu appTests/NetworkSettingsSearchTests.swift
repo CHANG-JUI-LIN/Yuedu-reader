@@ -296,13 +296,12 @@ private struct NoopChapterFetcher: ChapterFetching {
 
 private final class NoopOnlineBookCoordinator: OnlineBookCoordinating {
     func downloadBook(_ book: ReadingBook, store: BookStore?) {}
-
     func downloadBook(
         _ book: ReadingBook,
         store: BookStore?,
         startChapterIndex: Int,
         chapterCount: Int?
     ) {}
-
+    func pauseDownload(book: ReadingBook, store: BookStore?) {}
     func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {}
 }

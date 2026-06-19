@@ -272,103 +272,35 @@ struct OnlineHTMLBookDocument: BookDocument {
     let tableOfContents: [UniversalChapter]
     let capabilities: ReaderCapabilities = .reflowableText
 
-    private let book: ReadingBook
-    private let refs: [OnlineChapterRef]
-    private weak var store: BookStore?
+    private let service: OnlineChapterContentService
 
     init(book: ReadingBook, store: BookStore?) {
-        self.book = book
-        self.refs = book.onlineChapters ?? []
-        self.store = store
+        let service = OnlineChapterContentService(book: book, store: store)
+        self.service = service
         self.metadata = BookMetadata(
             id: book.id,
             title: book.title,
             author: book.author,
             coverImagePath: book.coverImagePath
         )
-        self.tableOfContents = refs.map {
-            let sanitizedURL = RuleEngine.sanitizeExtractedURL($0.url)
-            return UniversalChapter(id: sanitizedURL, title: $0.title, content: .text(""))
+        self.tableOfContents = (0..<service.chapterCount).map { index in
+            UniversalChapter(
+                id: service.chapterID(at: index) ?? String(index),
+                title: service.title(at: index),
+                content: .text("")
+            )
         }
     }
 
     func loadContent(for chapterId: String) async throws -> ChapterContent {
-        let index: Int?
-        if let direct = refs.firstIndex(where: {
-            RuleEngine.sanitizeExtractedURL($0.url) == chapterId
-        }) {
-            index = direct
-        } else if let parsed = Int(chapterId), refs.indices.contains(parsed) {
-            index = parsed
-        } else {
-            index = nil
-        }
-
-        guard let index, refs.indices.contains(index) else {
+        guard let index = service.index(forChapterID: chapterId) else {
             throw BookDocumentError.chapterNotFound(chapterId)
         }
-
-        let ref = refs[index]
-        let sanitizedURL = RuleEngine.sanitizeExtractedURL(ref.url)
-        if let cached = BookSourceFetcher.shared.loadChapterPackageSync(
-            bookId: book.id,
-            chapterIndex: index,
-            expectedSourceURL: sanitizedURL,
-            expectedTOCTitle: ref.title
-        ), cached.state == .cached, !cached.content.isEmpty {
-            if OnlineChapterCacheWritePolicy.shouldRefetchStrippedRenderArtifacts(
-                package: cached,
-                hasBookSource: book.bookSourceId != nil
-            ) {
-                BookSourceFetcher.shared.clearChapterCache(bookId: book.id, chapterIndex: index)
-            } else {
-                let normalizedHTML = BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
-                    bookId: book.id,
-                    chapterIndex: index,
-                    expectedSourceURL: sanitizedURL,
-                    expectedTOCTitle: ref.title
-                )
-                ?? (sanitizedURL != ref.url
-                    ? BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
-                        bookId: book.id,
-                        chapterIndex: index,
-                        expectedSourceURL: ref.url,
-                        expectedTOCTitle: ref.title
-                    )
-                    : nil)
-                ?? ChapterFetcher.shared.buildNormalizedHTML(
-                    title: ref.title,
-                    content: cached.content
-                )
-                return .html(normalizedHTML)
-            }
+        let payload = try await service.payload(at: index, policy: .fetchIfMissing)
+        switch payload.body {
+        case .html(let html): return .html(html)
+        case .plainText(let text): return .text(text)
         }
-
-        let pkg = try await ChapterFetchManager.shared.fetchChapter(
-            book: book,
-            chapterIndex: index,
-            priority: .immediate,
-            store: store
-        )
-        let normalizedHTML = BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
-            bookId: book.id,
-            chapterIndex: index,
-            expectedSourceURL: sanitizedURL,
-            expectedTOCTitle: ref.title
-        )
-        ?? (sanitizedURL != ref.url
-            ? BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
-                bookId: book.id,
-                chapterIndex: index,
-                expectedSourceURL: ref.url,
-                expectedTOCTitle: ref.title
-            )
-            : nil)
-        ?? ChapterFetcher.shared.buildNormalizedHTML(
-            title: ref.title,
-            content: pkg.content
-        )
-        return .html(normalizedHTML)
     }
 }
 
@@ -432,16 +364,16 @@ struct BookDocumentContentProviderAdapter: BookContentProvider {
             return ChapterContentPayload(
                 index: index,
                 title: chapter.title,
-                content: text,
-                renderHTML: nil,
+                plainText: text,
+                body: .plainText(text),
                 sourceHref: chapter.id
             )
         case .html(let html):
             return ChapterContentPayload(
                 index: index,
                 title: chapter.title,
-                content: UniversalBookHelpers.normalizedText(fromHTML: html),
-                renderHTML: html,
+                plainText: UniversalBookHelpers.normalizedText(fromHTML: html),
+                body: .html(html),
                 sourceHref: chapter.id
             )
         case .image(let url):

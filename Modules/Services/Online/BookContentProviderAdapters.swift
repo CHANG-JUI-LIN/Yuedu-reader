@@ -24,8 +24,8 @@ struct TXTContentProviderAdapter: BookContentProvider {
         return ChapterContentPayload(
             index: chapter.index,
             title: chapter.title,
-            content: chapter.plainText,
-            renderHTML: nil,
+            plainText: chapter.plainText,
+            body: .plainText(chapter.plainText),
             sourceHref: chapter.sourceHref
         )
     }
@@ -57,8 +57,8 @@ struct EPUBContentProviderAdapter: BookContentProvider {
         return ChapterContentPayload(
             index: descriptor.index,
             title: descriptor.title,
-            content: content,
-            renderHTML: html,
+            plainText: content,
+            body: .html(html),
             sourceHref: descriptor.href
         )
     }
@@ -102,153 +102,38 @@ struct EPUBContentProviderAdapter: BookContentProvider {
     }
 }
 
-struct OnlineHTMLContentProviderAdapter: BookContentProvider {
-    private let book: ReadingBook
-    private let refs: [OnlineChapterRef]
-    private weak var store: BookStore?
+// OnlineHTMLContentProviderAdapter removed — unified into OnlineChapterContentService + OnlineBookContentProvider.
+// See OnlineChapterContentService in OnlineChapterContentService.swift.
 
-    init(book: ReadingBook, store: BookStore?) {
-        self.book = book
-        self.refs = book.onlineChapters ?? []
-        self.store = store
+// MARK: - OnlineBookContentProvider
+
+final class OnlineBookContentProvider: BookContentProvider {
+    private let service: OnlineChapterContentService
+
+    init(service: OnlineChapterContentService) {
+        self.service = service
     }
 
-    var totalChapters: Int { refs.count }
+    var totalChapters: Int { service.chapterCount }
 
     func chapterTitle(at index: Int) -> String {
-        guard refs.indices.contains(index) else { return "" }
-        return ReaderHTMLUtilities.displayText(fromHTMLFragment: refs[index].title)
+        service.title(at: index)
     }
 
     func contentForChapter(index: Int) async throws -> ChapterContentPayload {
-        guard refs.indices.contains(index) else {
-            throw BookContentProviderError.chapterIndexOutOfRange(index)
-        }
-
-        let ref = refs[index]
-        if ref.shouldRenderAsVolumeSeparator {
-            return volumeSeparatorPayload(for: ref, index: index)
-        }
-
-        let sanitizedURL = ref.sanitizedContentURL
-
-        if let cached = BookSourceFetcher.shared.loadChapterPackageSync(
-            bookId: book.id,
-            chapterIndex: index,
-            expectedSourceURL: sanitizedURL,
-            expectedTOCTitle: ref.title
-        ), cached.state == .cached, !cached.content.isEmpty {
-            if OnlineChapterCacheWritePolicy.shouldRefetchStrippedRenderArtifacts(
-                package: cached,
-                hasBookSource: book.bookSourceId != nil
-            ) {
-                BookSourceFetcher.shared.clearChapterCache(bookId: book.id, chapterIndex: index)
-            } else {
-                return ChapterContentPayload(
-                    index: index,
-                    title: ReaderHTMLUtilities.displayText(fromHTMLFragment: ref.title),
-                    content: cached.content,
-                    renderHTML: book.bookSourceId == nil ? nil : resolveNormalizedHTML(
-                        for: book.id,
-                        chapterIndex: index,
-                        tocTitle: ref.title,
-                        primarySourceURL: sanitizedURL,
-                        secondarySourceURL: ref.url,
-                        fallbackContent: cached.content
-                    ),
-                    sourceHref: sanitizedURL
-                )
-            }
-        }
-
-        let pkg = try await ChapterFetchManager.shared.fetchChapter(
-            book: book,
-            chapterIndex: index,
-            priority: .immediate,
-            store: store
-        )
-
-        return ChapterContentPayload(
-            index: index,
-            title: ReaderHTMLUtilities.displayText(fromHTMLFragment: ref.title),
-            content: pkg.content,
-            renderHTML: book.bookSourceId == nil ? nil : resolveNormalizedHTML(
-                for: book.id,
-                chapterIndex: index,
-                tocTitle: ref.title,
-                primarySourceURL: sanitizedURL,
-                secondarySourceURL: ref.url,
-                fallbackContent: pkg.content
-            ),
-            sourceHref: sanitizedURL
-        )
-    }
-
-    private func volumeSeparatorPayload(
-        for ref: OnlineChapterRef,
-        index: Int
-    ) -> ChapterContentPayload {
-        let title = ReaderHTMLUtilities.displayText(fromHTMLFragment: ref.title)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let displayTitle = title.isEmpty ? localized("作品相關") : title
-        let escapedTitle = ReaderHTMLUtilities.escapeHTML(displayTitle)
-        let html = """
-        <!DOCTYPE html>
-        <html lang="zh-Hant">
-        <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>\(escapedTitle)</title>
-        </head>
-        <body>
-        <article id="reader-content">
-        <section class="yd-volume-separator">
-        <h1>\(escapedTitle)</h1>
-        </section>
-        </article>
-        </body>
-        </html>
-        """
-        return ChapterContentPayload(
-            index: index,
-            title: displayTitle,
-            content: displayTitle,
-            renderHTML: html,
-            sourceHref: "volume/\(index)"
-        )
-    }
-
-    private func resolveNormalizedHTML(
-        for bookId: UUID,
-        chapterIndex: Int,
-        tocTitle: String,
-        primarySourceURL: String,
-        secondarySourceURL: String,
-        fallbackContent: String
-    ) -> String {
-        if let primary = BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
-            bookId: bookId,
-            chapterIndex: chapterIndex,
-            expectedSourceURL: primarySourceURL,
-            expectedTOCTitle: tocTitle
-        ) {
-            return primary
-        }
-        if primarySourceURL != secondarySourceURL,
-           let secondary = BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
-            bookId: bookId,
-            chapterIndex: chapterIndex,
-            expectedSourceURL: secondarySourceURL,
-            expectedTOCTitle: tocTitle
-           ) {
-            return secondary
-        }
-        return ChapterFetcher.shared.buildNormalizedHTML(
-            title: tocTitle,
-            content: fallbackContent
-        )
+        try await service.payload(at: index, policy: .cacheOnly)
     }
 }
+
+// MARK: - OnlineReaderProviderBundle
+
+struct OnlineReaderProviderBundle {
+    let provider: any BookContentProvider
+    let chapterSourceHrefs: [String?]
+    let bookIdentifier: String
+}
+
+// MARK: - BookContentProviderFactory
 
 enum BookContentProviderFactory {
     @MainActor
@@ -264,9 +149,24 @@ enum BookContentProviderFactory {
 
     @MainActor
     static func makeOnlineProvider(book: ReadingBook, store: BookStore?) -> (any BookContentProvider)? {
-        guard let document = BookDocumentFactory.makeOnlineDocument(book: book, store: store) else {
+        guard book.isOnline, (book.onlineChapters?.isEmpty == false) else { return nil }
+        let service = OnlineChapterContentService(book: book, store: store)
+        return OnlineBookContentProvider(service: service)
+    }
+
+    @MainActor
+    static func makeOnlineReaderBundle(
+        book: ReadingBook,
+        store: BookStore?
+    ) -> OnlineReaderProviderBundle? {
+        guard book.isOnline, let refs = book.onlineChapters, !refs.isEmpty else {
             return nil
         }
-        return BookDocumentContentProviderAdapter(document: document)
+        let service = OnlineChapterContentService(book: book, store: store)
+        return OnlineReaderProviderBundle(
+            provider: OnlineBookContentProvider(service: service),
+            chapterSourceHrefs: refs.map { Optional($0.sanitizedContentURL) },
+            bookIdentifier: "coretext-node-\(book.id.uuidString)"
+        )
     }
 }

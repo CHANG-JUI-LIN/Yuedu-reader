@@ -1110,7 +1110,7 @@ final class OnlineBookCoordinator {
     }
 
     /// Builds a complete BookPackage for offline reading. Only called from the download flow.
-    /// Online reading uses OnlineNodeAttributedStringBuilder + CoreTextPageEngine and
+    /// Online reading uses OnlineProviderAttributedStringBuilder + CoreTextPageEngine and
     /// does not go through this method.
     func buildPackage(for book: ReadingBook, preferredChapter: Int? = nil) throws -> BookPackage {
         guard let refs = book.onlineChapters, !refs.isEmpty else {

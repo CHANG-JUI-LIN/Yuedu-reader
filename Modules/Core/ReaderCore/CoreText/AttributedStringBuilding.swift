@@ -8,7 +8,7 @@ struct AttributedChapterBuildResult {
     let anchorOffsets: [String: Int]
 }
 
-enum AttributedStringBuildingError: LocalizedError {
+enum AttributedStringBuildingError: LocalizedError, Equatable {
     case chapterOutOfRange(Int)
     case contentNotCached(Int)
 
