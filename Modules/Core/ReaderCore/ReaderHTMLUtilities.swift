@@ -2,9 +2,24 @@ import Foundation
 import SwiftSoup
 
 enum ReaderHTMLUtilities {
-    static func displayText(fromHTMLFragment text: String) -> String {
+    /// Strips markup from a source fragment and returns plain display text.
+    ///
+    /// By default all whitespace (including newlines) is collapsed to single
+    /// spaces — correct for titles, where a single line is wanted and the result
+    /// is reused as a matching/dedup key. Pass `preservingLineBreaks: true` for
+    /// multi-line fields such as book intros/summaries, so the "\n" separators the
+    /// source emits (and `<br>`/`</p>` boundaries) survive as paragraph breaks
+    /// instead of flattening into one run-on block.
+    static func displayText(fromHTMLFragment text: String, preservingLineBreaks: Bool = false) -> String {
         var result = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !result.isEmpty else { return "" }
+
+        // Book-source summaries frequently contain named/numeric HTML entities
+        // beyond the small common set below (for example `&lrm;`). Decode them
+        // before stripping markup so encoded tags are normalized as well.
+        if let decoded = try? Entities.unescape(result) {
+            result = decoded
+        }
 
         result = result.replacingOccurrences(
             of: #"(?i)&lt;\s*br\s*/?\s*&gt;"#,
@@ -39,6 +54,31 @@ enum ReaderHTMLUtilities {
         ]
         for (entity, replacement) in entities {
             result = result.replacingOccurrences(of: entity, with: replacement, options: .caseInsensitive)
+        }
+
+        // Directional formatting controls are invisible layout hints, not book
+        // description content. Keep joiners used by emoji/scripts, removing only
+        // the bidi controls commonly emitted as HTML entities by source rules.
+        let bidiControls: Set<UInt32> = [
+            0x061C, 0x200E, 0x200F,
+            0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+            0x2066, 0x2067, 0x2068, 0x2069,
+            0xFEFF,
+        ]
+        result = String(result.unicodeScalars.filter { !bidiControls.contains($0.value) })
+
+        if preservingLineBreaks {
+            // Keep newlines as line breaks; only collapse horizontal whitespace and
+            // trim spaces hugging each break, so intros retain paragraph structure.
+            return result
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
+                .replacingOccurrences(of: "\u{000B}", with: " ")
+                .replacingOccurrences(of: "\u{000C}", with: " ")
+                .replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
+                .replacingOccurrences(of: #"[ \t]*\n[ \t]*"#, with: "\n", options: .regularExpression)
+                .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
         return result
@@ -474,14 +514,75 @@ enum ReaderHTMLUtilities {
 
     /// Extracts the `style` field from a Legado `,{json}` click-config suffix (e.g. "text" / "FULL").
     private static func legadoClickStyle(fromConfigSuffix suffix: String) -> String? {
-        var json = suffix.trimmingCharacters(in: .whitespacesAndNewlines)
-        if json.hasPrefix(",") { json.removeFirst() }
-        guard let data = json.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let object = legadoClickConfigObject(fromConfigSuffix: suffix),
               let value = object["style"] as? String
         else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Parses a Legado `,{json}` click-config suffix into a dictionary, tolerating the
+    /// single-quoted keys/values some sources emit. 起點/企點 段評 bubbles use strict JSON
+    /// (`{"js":"showCmt('u' )","style":"text"}`), but the 本章说 config wraps `endclick`'s
+    /// double-quoted `js` value in single-quoted siblings
+    /// (`{'style':'FULL','type':'qd',"js":"showCmt('u','本章说' )"}`), which is invalid strict
+    /// JSON — so the tap was silently dropped. GSON (Legado on Android) accepts the lenient
+    /// form; we try strict JSON first, then normalize single-quoted tokens and retry.
+    private static func legadoClickConfigObject(fromConfigSuffix suffix: String) -> [String: Any]? {
+        var json = suffix.trimmingCharacters(in: .whitespacesAndNewlines)
+        if json.hasPrefix(",") { json.removeFirst() }
+        json = json.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let data = json.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return object
+        }
+        guard let data = normalizeSingleQuotedJSON(json).data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return object
+    }
+
+    /// Rewrites a JS-object-literal-ish string into strict JSON by converting single quotes that
+    /// *delimit* a token into double quotes. Quotes inside an already double-quoted string are left
+    /// untouched (so `showCmt('u','本章说' )` survives intact), and a stray double quote inside a
+    /// converted single-quoted token is escaped.
+    private static func normalizeSingleQuotedJSON(_ input: String) -> String {
+        var out = ""
+        out.reserveCapacity(input.count + 8)
+        var inDouble = false
+        var inSingle = false
+        var prevBackslash = false
+        for ch in input {
+            if inDouble {
+                out.append(ch)
+                if ch == "\"" && !prevBackslash { inDouble = false }
+                prevBackslash = (ch == "\\" && !prevBackslash)
+            } else if inSingle {
+                if ch == "'" && !prevBackslash {
+                    inSingle = false
+                    out.append("\"")
+                    prevBackslash = false
+                } else if ch == "\"" {
+                    out.append("\\\"")
+                    prevBackslash = false
+                } else {
+                    out.append(ch)
+                    prevBackslash = (ch == "\\" && !prevBackslash)
+                }
+            } else if ch == "\"" {
+                inDouble = true
+                out.append(ch)
+                prevBackslash = false
+            } else if ch == "'" {
+                inSingle = true
+                out.append("\"")
+                prevBackslash = false
+            } else {
+                out.append(ch)
+                prevBackslash = false
+            }
+        }
+        return out
     }
 
     /// Inserts a `data-yd-imgstyle="text"` marker as the first attribute of an `<img>` tag so the
@@ -504,11 +605,7 @@ enum ReaderHTMLUtilities {
     }
 
     private static func legadoClickAction(fromConfigSuffix suffix: String) -> String? {
-        var json = suffix.trimmingCharacters(in: .whitespacesAndNewlines)
-        if json.hasPrefix(",") { json.removeFirst() }
-        guard let data = json.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return nil }
+        guard let object = legadoClickConfigObject(fromConfigSuffix: suffix) else { return nil }
         for key in ["click", "js", "action"] {
             if let value = object[key] as? String {
                 let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
