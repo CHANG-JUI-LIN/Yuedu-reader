@@ -5,11 +5,17 @@
 > 強制套用機制見 `.claude/skills/yuedu-ios-design/SKILL.md`。
 
 合成來源（依優先序）：
-1. **Apple Human Interface Guidelines** — 最高權威，衝突時以 HIG 為準。
-2. **Apple Design Resources / SF Symbols** — 視覺一致性。
-3. **iOS Accessibility（HIG）** — 閱讀器必做。
-4. **Nielsen 十大可用性啟發** — 通用 UX 檢查。
-5. **Mobbin 真實 App 模式** — 參考成熟 iOS App 的頁面模式，不抄網頁。
+1. **Apple Human Interface Guidelines / Apple 平台文件** — 平台行為與元件的最高權威。
+2. **Yuedu 專案規範與既有設計系統** — 在不違反 Apple 規範下維持產品一致性。
+3. **通用可用性建議** — 例如 Nielsen 啟發法，作為設計檢查而非平台行為依據。
+
+### 規則權威層級
+
+- **[Apple]**：Apple HIG、Accessibility、SwiftUI API 與官方設計資源；若規則衝突，以此層為準。
+- **[Yuedu]**：本專案的產品決策、元件慣例與 `DS*` token；僅能在 Apple 允許的範圍內加嚴或具體化。
+- **[建議]**：Nielsen 等通用可用性原則與設計經驗；不能覆蓋 [Apple] 或 [Yuedu]。
+
+優先序為 **[Apple] > [Yuedu] > [建議]**。下文未標示時，硬規則視為 [Yuedu]；涉及系統元件語意與行為時仍以 [Apple] 為準。
 
 ---
 
@@ -29,45 +35,69 @@
 
 | # | 規則 | 正確 | 錯誤 |
 |---|------|------|------|
-| H1 | 推送頁面用 `.toolbarTitleDisplayMode(.inlineLarge)`；**Sheet（模態）用 `.inline`** | 見 §2 | `.large` 捲動塌縮 / sheet 用 `.inlineLarge` / 不設定 |
+| H1 | title mode 必須依導航層級與呈現情境選擇，不得全域套用 `.inlineLarge` | 見 §2 矩陣 | 不分析 hierarchy / overflow 就統一指定模式 |
 | H2 | 所有對使用者顯示的文字走 `localized("…")`，且三個 lproj 同步 | `Text(localized("書架"))` | `Text("Bookshelf")` |
 | H3 | 顏色、字級、間距、圓角、動畫一律用 `DS*` token | `DSColor.textSecondary` | `Color.gray` / 寫死 hex |
 | H4 | 圖示優先 SF Symbols，且與文字字重/字級一致 | `Image(systemName: "trash")` | 自製 PNG icon |
 | H5 | icon-only 按鈕必須有 `accessibilityLabel` | `.accessibilityLabel(localized("刪除"))` | 只有圖示無語意 |
 | H6 | 顏色不得作為唯一狀態提示（需文字/圖示輔助） | 「失敗」紅字+`xmark` | 只靠紅色 |
-| H7 | 點擊區域 ≥ 44×44pt | `.frame(minWidth:44,minHeight:44)` | 24pt 純圖示可點區 |
+| H7 | 互動目標預設 **44×44pt**；只有受限的緊湊情境可降至 **28×28pt** 最低值，且必須保留充分間距；reader chrome 與主要動作維持 44×44pt | `.frame(minWidth: 44, minHeight: 44)` | 一般 toolbar / 主要動作只有 28pt 點擊區 |
 | H8 | 每個資料畫面都要設計 **空 / 載入 / 錯誤** 三態 | 見 §9 | 只做 happy path |
 | H9 | 不得做成網頁式 UI（dashboard 卡片牆、側欄、Landing） | 見 §13 | Tailwind 風格 |
 
 ---
 
-## 2. 頁面標題與 Toolbar（專案硬規則）
+## 2. 頁面標題、Toolbar 與 Sheet
 
-**依呈現方式選標題顯示模式：推送頁面（導航堆疊內 / 頂部有 toolbar）用 `.toolbarTitleDisplayMode(.inlineLarge)`；Sheet（模態彈出）用 `.toolbarTitleDisplayMode(.inline)`。**
+### 2.1 標題模式矩陣
+
+先判斷畫面在資訊架構中的角色，再選 title mode；toolbar 是否存在不是決定條件。
+
+| 情境 | title mode | 原因 / 注意事項 |
+|------|------------|-----------------|
+| Top-level（Tab 根頁、主要目的地） | `.automatic` 或 `.large` | 讓系統依容器與捲動行為呈現層級；明確需要大標題時才指定 `.large`。 |
+| Pushed detail（導航堆疊內的詳情、設定子頁） | `.inline` | 維持清楚的返回層級，為導覽與動作保留空間。 |
+| Sheet / modal task | `.inline` | 標題精簡，leading / trailing 分別容納取消與完成。 |
+| Reader / immersive surface | context-specific | 依沉浸狀態、chrome 是否顯示與可讀性決定；不可直接套用一般清單頁規則。 |
+| Yuedu 特例 | `.inlineLarge` | 僅在產品明確需要較醒目的 inline 標題、且已驗證各尺寸與本地化時使用；`inlineLarge` 會讓 leading / center items 移入 overflow，因此必須先確認動作仍可發現且不影響主要流程。 |
+
+`.inlineLarge` 是 **[Yuedu] 例外**，不是全域預設。採用時需在設計或 PR 說明 hierarchy、可用寬度、toolbar item 的 overflow 行為，以及為何 `.automatic`、`.large` 或 `.inline` 不適合。
+
+### 2.2 Toolbar 動作位置與語意
+
+- 主要頁面動作放在 trailing（通常是 `.topBarTrailing`）；返回由導航容器提供，避免自行複製。
+- Sheet 的 **Cancel / Close** 放 leading：立即關閉且不儲存未確認的變更。
+- Sheet 的 **Done** 放 trailing：完成流程，並在有編輯內容時儲存或提交。
+- **Back** 只用於 sheet 內部多步導航，不代表取消或完成。
+- 同一層級不要同時呈現 Back、Cancel / Close、Done 三者；先釐清當前步驟的退出與提交語意。
+- [Yuedu] 可見的 modal / toolbar chrome 使用 `xmark` 與 `checkmark`，並提供 `localized(...)` 的 `accessibilityLabel`。系統 alert / confirmation dialog 中 `role: .cancel` 的動作保留文字，維持清楚語意。
+- Toolbar 圖示使用 `DSFont.toolbarIcon` / `DSFont.toolbarIconLarge`，顏色使用 `DSColor.accent` 或 `DSColor.textSecondary`。
 
 ```swift
-// ✅ 標準寫法
-SomeContent()
-    .navigationTitle(localized("書架"))
-    .toolbarTitleDisplayMode(.inlineLarge)
+// Pushed detail
+BookDetailView()
+    .navigationTitle(localized("書籍詳情"))
+    .toolbarTitleDisplayMode(.inline)
+
+// Editable sheet
+EditSourceView()
+    .navigationTitle(localized("編輯書源"))
+    .toolbarTitleDisplayMode(.inline)
     .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
-            Button {
-                addBook()
-            } label: {
-                Image(systemName: "plus")
+        ToolbarItem(placement: .cancellationAction) {
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
             }
-            .accessibilityLabel(localized("新增書籍"))
+            .accessibilityLabel(localized("取消"))
+        }
+        ToolbarItem(placement: .confirmationAction) {
+            Button { saveAndDismiss() } label: {
+                Image(systemName: "checkmark")
+            }
+            .accessibilityLabel(localized("完成"))
         }
     }
 ```
-
-規則細節：
-- **推送頁面**用 `.inlineLarge`：標題以大字呈現但**保持 inline、不隨捲動塌縮**——這是本專案推送頁的統一外觀。
-- **Sheet（模態）**用 `.inline`：模態彈出的高度通常較矮、頂部需放 checkmark/取消等動作，標準 inline 小標題最貼合 iOS sheet 慣例（不要用 `.inlineLarge`）。
-- **不要**再用 `.navigationBarTitleDisplayMode(.large)`（會捲動塌縮）。既有頁面若用了舊 modifier，動到時順手換成對應模式。
-- 主要操作放 **右上角**（`.topBarTrailing`）；返回/取消放左上角（多數情況交給系統）。
-- Toolbar 圖示用 `DSFont.toolbarIcon` / `DSFont.toolbarIconLarge`，顏色 `DSColor.accent` 或 `DSColor.textSecondary`。
 
 ---
 
@@ -108,11 +138,15 @@ SomeContent()
 iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共享資料模型與 reader engine 在 `Modules/Core` / `Modules/Services`，feature UI 與設定在 `Modules/Features`，design token 在 `Modules/SharedUI/DesignSystem`；iPad 專屬 shell 放 `Targets/Yuedu/iPad/`、iPad reader UI 放 `Modules/Features/Reader/iPad/` 等明確目錄，避免散落機型判斷。
 
 - 佈局用 size class、scene/window size 與 readable width 驅動；不要散落 `UIDevice.model` 或機型字串判斷。
+- 內容必須尊重 safe areas 與 system margins；除非是刻意的沉浸式背景，不要用負間距或硬編碼 inset 蓋過系統區域。
+- 以實際 window size 自適應，不以裝置名稱推測空間；多工、Stage Manager、Split View 與旋轉都可能改變可用尺寸。
+- 延後切換到 compact 版型，直到目前版型真的無法維持可讀性與操作間距；不要只因單一 size class 或任意 breakpoint 過早縮減資訊。
 - iPhone 維持 compact/portrait 的底部 Tab Bar；iPad regular 使用系統 `TabView.sidebarAdaptable` 或 `NavigationSplitView` 等 HIG 原生容器，不自刻側欄。
 - iPad 橫豎向與視窗 resize 都要能重排；需要 reader 重分頁時，以 SwiftUI 已量到的 viewport size 作為唯一觸發來源。
 - 寬螢幕設定頁、sheet、清單與 reader overlay 使用 `DSLayout.readable*Width` token 限制行長；不要直接寫 640/760/960 等 magic number。
 - 閱讀器橫向雙頁是 reader 專屬模式：iPad regular + landscape 才自動啟用；切回直向或 iPhone 時回單頁，閱讀位置以 `(spineIndex, charOffset)` 保持。
 - iPad 專屬檔案可以包裝共享 view，但不得複製業務邏輯；狀態、同步、書源、閱讀進度仍由共享 model / coordinator 負責。
+- 自適應驗收至少涵蓋：不同 window size、橫直向、本地化長字串，以及最大 Dynamic Type / accessibility size。
 
 ---
 
@@ -138,8 +172,12 @@ iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共
 
 ## 5. 排版與字級
 
-- 用語義字級表達層級：`largeTitle`/`title` 標題 → `headline` 區塊標題 → `body` 正文 → `subheadline`/`caption` 輔助。
-- **支援 Dynamic Type**：不寫死 pt；長字串用 `.lineLimit` + 截斷或換行策略，避免大字級爆版。
+- 用語義 text styles 表達層級：`largeTitle` / `title` 標題 → `headline` 區塊標題 → `body` 正文 → `subheadline` / `caption` 輔助；不要用固定 pt 模擬層級。
+- **支援 Dynamic Type 到最大 accessibility size**：優先讓內容換行與容器增高，不以截斷掩蓋關鍵文字。
+- 大字級時將 metadata（作者、來源、時間、狀態）改為垂直 stacking；grid 逐步減欄，必要時降為單欄，避免壓縮文字與點擊區。
+- 自訂字體必須以語義 metrics 縮放，並在 **Bold Text** 開啟時維持可辨識的粗細差異；沒有原生粗體字面時提供經驗證的 fallback。
+- SF Symbols 跟隨相鄰語義字級與 Dynamic Type scaling，不用固定 frame 鎖死圖示。
+- 三行以上的文字避免 tight leading；正文與說明文字需保留足以掃讀的行距。
 - 對齊與留白勝過分隔線；分隔線只在 `List` 語義需要時出現。
 
 ---
@@ -156,14 +194,15 @@ iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共
 ## 7. 無障礙 Accessibility（閱讀器必做）
 
 每個畫面都要過這份清單：
-- [ ] 正文、設定項、按鈕文字支援 **Dynamic Type**。
+- [ ] 正文、設定項、按鈕文字支援 **Dynamic Type** 到最大 accessibility size，內容仍可讀、可操作。
 - [ ] 所有 **icon-only 按鈕** 有 `accessibilityLabel`（用 `localized`）。
-- [ ] 點擊區 ≥ **44×44pt**。
-- [ ] 顏色**不是**唯一狀態提示（配文字/圖示）。
-- [ ] 深色模式下對比足夠（用 `DSColor`，勿低對比疊透明）。
-- [ ] 重要功能用 **VoiceOver** 能理解操作順序與結果。
+- [ ] 互動目標預設 **44×44pt**；只有緊湊、次要且彼此有充分間距的控制可採 **28×28pt** 最低值，reader chrome 與主要動作仍維持 44×44pt。
+- [ ] 狀態與錯誤不是 color-only：顏色之外另有文字、圖示、形狀或位置提示。
+- [ ] Light / Dark Mode 與 **Increase Contrast** 下皆可辨識；不要以低對比透明疊色承載必要資訊。
+- [ ] **Reduce Motion** 開啟時停用非必要位移、縮放與連續動畫，改用淡入淡出或無動畫結果。
+- [ ] VoiceOver 能依合理 order 朗讀標題、內容與動作，並在儲存、刪除、載入或錯誤後說明 outcome；必要時用 announcement 或 focus 管理。
 - [ ] 閱讀頁避免動畫、透明、背景紋理干擾文字辨識。
-- [ ] 裝飾性元素 `.accessibilityHidden(true)`；相關元素用 `.accessibilityElement(children: .combine)`。
+- [ ] 純裝飾元素使用 `.accessibilityHidden(true)`；同一語意的標題、metadata 與狀態適當 grouping（例如 `.accessibilityElement(children: .combine)`），但不要合併需要獨立操作的控制。
 
 ---
 
@@ -233,7 +272,7 @@ iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共
 5. **空 / 載入 / 錯誤** 三態
 6. **深色模式** 注意事項
 7. **無障礙**（Dynamic Type / VoiceOver / 點擊區 / 對比）
-8. **SwiftUI 實作建議**（含 `.toolbarTitleDisplayMode(.inlineLarge)`、`DS*` token、`localized()`）
+8. **SwiftUI 實作建議**（依 §2 選擇情境正確的 title mode，並使用 `DS*` token、`localized()`）
 
 ---
 
@@ -246,17 +285,22 @@ iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共
 - ❌ 忽略 iOS 導航 / 返回 / Sheet / Tab Bar 慣例。
 - ❌ 寫死顏色/字體/間距（繞過 `DS*` token）。
 - ❌ 寫死字串（繞過 `localized()`）。
-- ❌ 有 toolbar 的頁面不用 `.toolbarTitleDisplayMode(.inlineLarge)`。
+- ❌ 未分析 navigation hierarchy、可用寬度與 toolbar overflow，就把 `.inlineLarge` 全域套用。
 
 ---
 
 ## 參考
 
-- Apple Human Interface Guidelines — https://developer.apple.com/design/human-interface-guidelines
+- Apple Human Interface Guidelines — https://developer.apple.com/design/human-interface-guidelines/
+- HIG Toolbars — https://developer.apple.com/design/human-interface-guidelines/toolbars
+- HIG Sheets — https://developer.apple.com/design/human-interface-guidelines/sheets
+- HIG Accessibility — https://developer.apple.com/design/human-interface-guidelines/accessibility
+- HIG Layout — https://developer.apple.com/design/human-interface-guidelines/layout
+- HIG Typography — https://developer.apple.com/design/human-interface-guidelines/typography
 - Apple Design Resources — https://developer.apple.com/design/resources/
 - SF Symbols — https://developer.apple.com/sf-symbols/
-- HIG Accessibility — https://developer.apple.com/design/human-interface-guidelines/accessibility
+- SwiftUI `toolbarTitleDisplayMode(_:)` — https://developer.apple.com/documentation/swiftui/view/toolbartitledisplaymode(_:)
+- SwiftUI `ToolbarTitleDisplayMode.inlineLarge` — https://developer.apple.com/documentation/swiftui/toolbartitledisplaymode/inlinelarge
 - Nielsen 10 Usability Heuristics — https://www.nngroup.com/articles/ten-usability-heuristics/
-- Mobbin（真實 App 模式參考） — https://mobbin.com/
 - 本專案設計 token：`Modules/SharedUI/DesignSystem/DesignTokens.swift`
 - 在地化規則：見 `yuedu-tour` skill 的 Localization 章節
