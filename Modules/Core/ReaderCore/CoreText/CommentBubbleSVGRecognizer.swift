@@ -516,29 +516,33 @@ extension CommentBubbleSVGRecognizer {
                     }
 
                 case .text(let text, let x, let y, let fontSize, let fontWeight, let anchor, let color, let transform):
-                    context.concatenate(transform)
+                    // Draw text in canvas-space outside the viewBox CTM so the font
+                    // renders at the correct point size regardless of CTM scale.
+                    let vbPos = CGPoint(x: x, y: y).applying(transform)
+                    let vbOrg = svg.viewBox.origin
+                    let canvasX = (vbPos.x - vbOrg.x) * scaleX + leadingGap
+                    let canvasY = (vbPos.y - vbOrg.y) * scaleY
+
+                    let canvasFontSize = max(6, min(fontSize * scaleY, targetHeight * 0.5))
                     let textColor = color ?? themeTextColor
                     let isSVGBold = fontWeight?.lowercased().contains("bold") ?? false || fontWeight == "600"
                     let isBold = isSVGBold || GlobalSettings.shared.readerFontBold
-                    let font = UserReaderFontResolver.bodyFont(size: fontSize, isBold: isBold)
+                    let font = UserReaderFontResolver.bodyFont(size: canvasFontSize, isBold: isBold)
                     let textAttrs: [NSAttributedString.Key: Any] = [
                         .font: font,
                         .foregroundColor: textColor
                     ]
-
                     let textSize = (text as NSString).size(withAttributes: textAttrs)
 
-                    var textX = x
+                    var drawX = canvasX
                     if anchor?.lowercased() == "middle" {
-                        textX = x - textSize.width / 2
+                        drawX = canvasX - textSize.width / 2
                     } else if anchor?.lowercased() == "end" {
-                        textX = x - textSize.width
+                        drawX = canvasX - textSize.width
                     }
+                    let drawY = canvasY - font.ascender
 
-                    // 使用 SVG 给定的 y 坐标作为文本基线绘制（向上减去 font.ascender）
-                    let textY = y - font.ascender
-
-                    (text as NSString).draw(at: CGPoint(x: textX, y: textY), withAttributes: textAttrs)
+                    (text as NSString).draw(at: CGPoint(x: drawX, y: drawY), withAttributes: textAttrs)
                 }
                 context.restoreGState()
             }
@@ -701,8 +705,23 @@ struct SVGPathParser {
                 
             case "A", "a":
                 guard let aArgs = getNextArgs(7) else { return }
-                let target = cmd == "A" ? CGPoint(x: aArgs[5], y: aArgs[6]) : CGPoint(x: currentPoint.x + aArgs[5], y: currentPoint.y + aArgs[6])
-                path.addLine(to: target)
+                let rx = abs(aArgs[0])
+                let ry = abs(aArgs[1])
+                let xAxisRotation = aArgs[2] * .pi / 180.0
+                let largeArcFlag = aArgs[3] != 0
+                let sweepFlag = aArgs[4] != 0
+                let target = cmd == "A"
+                    ? CGPoint(x: aArgs[5], y: aArgs[6])
+                    : CGPoint(x: currentPoint.x + aArgs[5], y: currentPoint.y + aArgs[6])
+
+                if rx <= 0 || ry <= 0 || currentPoint == target {
+                    path.addLine(to: target)
+                } else {
+                    addArc(to: path, from: currentPoint, to: target,
+                           rx: rx, ry: ry,
+                           xAxisRotation: xAxisRotation,
+                           largeArc: largeArcFlag, sweep: sweepFlag)
+                }
                 currentPoint = target
                 controlPoint = target
                 
@@ -719,6 +738,77 @@ struct SVGPathParser {
             if argIdx >= args.count {
                 return
             }
+        }
+    }
+
+    /// SVG arc (elliptical) → cubic bezier approximation.
+    /// Uses the endpoint → center parameterization from SVG spec and splits
+    /// arcs into ≤90° segments, each approximated by a cubic bezier.
+    private static func addArc(
+        to path: UIBezierPath,
+        from p1: CGPoint, to p2: CGPoint,
+        rx: CGFloat, ry: CGFloat,
+        xAxisRotation: CGFloat,
+        largeArc: Bool, sweep: Bool
+    ) {
+        let cosA = cos(xAxisRotation), sinA = sin(xAxisRotation)
+        let dx = (p1.x - p2.x) / 2.0, dy = (p1.y - p2.y) / 2.0
+        var x1p = cosA * dx + sinA * dy
+        var y1p = -sinA * dx + cosA * dy
+
+        var rxSq = rx * rx, rySq = ry * ry
+        let x1pSq = x1p * x1p, y1pSq = y1p * y1p
+
+        var arx = rx, ary = ry
+        var radiiCheck = x1pSq / rxSq + y1pSq / rySq
+        if radiiCheck > 1.0 {
+            let s = sqrt(radiiCheck)
+            arx *= s; ary *= s
+            rxSq = arx * arx; rySq = ary * ary
+        }
+
+        let sign: CGFloat = (largeArc != sweep) ? 1.0 : -1.0
+        let denom = rxSq * y1pSq + rySq * x1pSq
+        let cNumerator = rxSq * rySq - denom
+        let factor = sign * sqrt(max(0, cNumerator / denom))
+        let cxp = factor * arx * y1p / ary
+        let cyp = factor * -ary * x1p / arx
+
+        let cx = cosA * cxp - sinA * cyp + (p1.x + p2.x) / 2.0
+        let cy = sinA * cxp + cosA * cyp + (p1.y + p2.y) / 2.0
+
+        let ux = (x1p - cxp) / arx, uy = (y1p - cyp) / ary
+        let vx = (-x1p - cxp) / arx, vy = (-y1p - cyp) / ary
+
+        let startAngle = atan2(uy, ux)
+        var deltaAngle = atan2(uy * vx - ux * vy, ux * vx + uy * vy)
+
+        if !sweep && deltaAngle >  0 { deltaAngle -= 2 * .pi }
+        if  sweep && deltaAngle <  0 { deltaAngle += 2 * .pi }
+
+        let segments = max(1, Int(ceil(abs(deltaAngle) / (.pi / 2))))
+        let segAngle = deltaAngle / CGFloat(segments)
+
+        var theta1 = startAngle
+        for _ in 0..<segments {
+            let theta2 = theta1 + segAngle
+            let t = tan((theta2 - theta1) / 4.0)
+            let alpha = sin(theta2 - theta1) * (sqrt(4 + 3 * t * t) - 1) / 3.0
+
+            let c1x = arx * (cos(theta1) - alpha * sin(theta1))
+            let c1y = ary * (sin(theta1) + alpha * cos(theta1))
+            let c2x = arx * (cos(theta2) + alpha * sin(theta2))
+            let c2y = ary * (sin(theta2) - alpha * cos(theta2))
+            let ex  = arx * cos(theta2)
+            let ey  = ary * sin(theta2)
+
+            let rot = CGAffineTransform(a: cosA, b: sinA, c: -sinA, d: cosA, tx: cx, ty: cy)
+            let p1t = CGPoint(x: c1x, y: c1y).applying(rot)
+            let p2t = CGPoint(x: c2x, y: c2y).applying(rot)
+            let pe  = CGPoint(x: ex, y: ey).applying(rot)
+
+            path.addCurve(to: pe, controlPoint1: p1t, controlPoint2: p2t)
+            theta1 = theta2
         }
     }
 }
