@@ -1,8 +1,7 @@
 import SwiftUI
 
 struct BookSourceCheckView: View {
-    @StateObject private var checker = BookSourceHealthChecker()
-    let sources: [BookSource]
+    @ObservedObject var checker: BookSourceHealthChecker
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -41,10 +40,6 @@ struct BookSourceCheckView: View {
                         .accessibilityLabel(localized("停止測試"))
                     }
                 }
-            }
-            .onAppear {
-                checker.prepare(sources: sources)
-                Task { await checker.runAll() }
             }
         }
     }
@@ -89,7 +84,7 @@ struct BookSourceCheckView: View {
                     .foregroundColor(DSColor.textSecondary)
             }
             .padding(.top, DSSpacing.sm)
-        } else {
+        } else if !checker.items.isEmpty {
             let passed = checker.items.filter { $0.overallPass }.count
             let total = checker.items.count
             HStack(spacing: DSSpacing.xs) {
@@ -221,7 +216,8 @@ struct BookSourceCheckView: View {
                 .buttonStyle(.plain)
             } else {
                 Button {
-                    checker.prepare(sources: sources)
+                    checker.prepare(
+                        sources: checker.items.map(\.source))
                     Task { await checker.runAll() }
                 } label: {
                     HStack(spacing: DSSpacing.sm) {

@@ -24,6 +24,8 @@ struct BookSourceListView: View {
     @State private var showDeleteConfirm = false
     @State private var showMoreMenu = false
     @State private var showSourceCheck = false
+    @StateObject private var healthChecker = BookSourceHealthChecker()
+    @State private var checkToast: String? = nil
 
     private var checkSources: [BookSource] {
         if !selectedIds.isEmpty {
@@ -117,7 +119,7 @@ struct BookSourceListView: View {
                         }
                         Divider()
                         Button {
-                            showSourceCheck = true
+                            startBackgroundCheck()
                         } label: {
                             Label(localized("書源檢測"), systemImage: "stethoscope")
                         }
@@ -162,7 +164,7 @@ struct BookSourceListView: View {
                 }
             }
             .sheet(isPresented: $showSourceCheck) {
-                BookSourceCheckView(sources: checkSources)
+                BookSourceCheckView(checker: healthChecker)
             }
             .alert(localized("確認刪除"), isPresented: $showDeleteConfirm) {
                 Button(localized("取消"), role: .cancel) {}
@@ -190,6 +192,29 @@ struct BookSourceListView: View {
                                 withAnimation { importError = nil }
                             }
                         }
+                }
+                if let msg = checkToast {
+                    toastBanner(msg, color: DSColor.accent)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                withAnimation { checkToast = nil }
+                            }
+                        }
+                }
+                if healthChecker.isRunning {
+                    HStack(spacing: DSSpacing.sm) {
+                        ProgressView().scaleEffect(0.8)
+                        Text(localized("正在檢測…"))
+                            .font(DSFont.caption)
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, DSSpacing.lg)
+                    .padding(.vertical, DSSpacing.sm)
+                    .background(DSColor.accent.opacity(0.9))
+                    .clipShape(Capsule())
+                    .padding(.top, DSSpacing.sm)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             .onChange(of: store.sources.map(\.id)) { _, sourceIds in
@@ -395,7 +420,7 @@ struct BookSourceListView: View {
                 .disabled(selectedIds.isEmpty)
                 Divider()
                 Button {
-                    showSourceCheck = true
+                    startBackgroundCheck()
                 } label: {
                     Label(localized("書源檢測"), systemImage: "stethoscope")
                 }
@@ -458,6 +483,22 @@ struct BookSourceListView: View {
                 store.sources[idx].enabled
             {
                 store.toggle(id: id)
+            }
+        }
+    }
+
+    private func startBackgroundCheck() {
+        let sources = checkSources
+        guard !sources.isEmpty else { return }
+        healthChecker.prepare(sources: sources)
+        showSourceCheck = true
+        Task {
+            await healthChecker.runAll()
+            if !showSourceCheck {
+                let passed = healthChecker.items.filter { $0.overallPass }.count
+                withAnimation {
+                    checkToast = "\(localized("檢測完成"))：\(passed)/\(healthChecker.items.count) \(localized("通過"))"
+                }
             }
         }
     }
