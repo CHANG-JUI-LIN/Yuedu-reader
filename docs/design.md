@@ -2,7 +2,7 @@
 
 > 本檔是 Yuedu Reader（閱讀）所有 UI 設計與實作必須遵守的單一準則。
 > 目標：做出「**成熟的大型 iOS 原生閱讀器**」，而不是網頁後台、Landing Page、Dashboard 或 Android App。
-> 強制套用機制見 `.claude/skills/yuedu-ios-design/SKILL.md`。
+> 實作入口見 `.claude/skills/yuedu-ios-design/SKILL.md` 與 `.agents/skills/yuedu-ios-design/SKILL.md`；兩份 skill 必須同步維護，規則以本檔為準。
 
 合成來源（依優先序）：
 1. **Apple Human Interface Guidelines / Apple 平台文件** — 平台行為與元件的最高權威。
@@ -41,7 +41,7 @@
 | H4 | 圖示優先 SF Symbols，且與文字字重/字級一致 | `Image(systemName: "trash")` | 自製 PNG icon |
 | H5 | icon-only 按鈕必須有 `accessibilityLabel` | `.accessibilityLabel(localized("刪除"))` | 只有圖示無語意 |
 | H6 | 顏色不得作為唯一狀態提示（需文字/圖示輔助） | 「失敗」紅字+`xmark` | 只靠紅色 |
-| H7 | 互動目標預設 **44×44pt**；只有受限的緊湊情境可降至 **28×28pt** 最低值，且必須保留充分間距；reader chrome 與主要動作維持 44×44pt | `.frame(minWidth: 44, minHeight: 44)` | 一般 toolbar / 主要動作只有 28pt 點擊區 |
+| H7 | 一般互動的 **hit region** 預設至少 **44×44pt**；**28×28pt** 只描述受限 compact 情境的最小 visible control size，必須搭配充分 spacing，不能當作縮小一般 hit target 的理由；reader chrome 與 primary actions 維持至少 44×44pt hit region | 擴大 hit region 且控制間保留間距 | 把 28pt visible control 直接當一般 hit target |
 | H8 | 每個資料畫面都要設計 **空 / 載入 / 錯誤** 三態 | 見 §9 | 只做 happy path |
 | H9 | 不得做成網頁式 UI（dashboard 卡片牆、側欄、Landing） | 見 §13 | Tailwind 風格 |
 
@@ -71,7 +71,7 @@
 - **Back** 只用於 sheet 內部多步導航，不代表取消或完成。
 - 同一層級不要同時呈現 Back、Cancel / Close、Done 三者；先釐清當前步驟的退出與提交語意。
 - [Yuedu] 可見的 modal / toolbar chrome 使用 `xmark` 與 `checkmark`，並提供 `localized(...)` 的 `accessibilityLabel`。系統 alert / confirmation dialog 中 `role: .cancel` 的動作保留文字，維持清楚語意。
-- Toolbar 圖示使用 `DSFont.toolbarIcon` / `DSFont.toolbarIconLarge`，顏色使用 `DSColor.accent` 或 `DSColor.textSecondary`。
+- Toolbar 圖示優先跟隨相鄰 semantic text style 或系統控制 sizing；`DSFont.toolbarIcon` / `DSFont.toolbarIconLarge` 是固定尺寸例外，只能用於不承載文字的 chrome，且必須以最大 Dynamic Type 驗證。顏色使用 `DSColor.accent` 或 `DSColor.textSecondary`。
 
 ```swift
 // Pushed detail
@@ -116,11 +116,13 @@ EditSourceView()
 | 選取高亮 / 淺底 / 陰影 | `highlight` / `accentLight` / `shadow` |
 | 書封漸層 | `coverGradients` |
 
-> 這些都映射到 system colors，**天生支援 light/dark mode**。不要用 `Color.gray`、`Color(hex:)`、品牌硬色。
+> `text*`、`background`、`surface*`、`separator` 等 system-backed tokens 會隨系統 appearance 適應。`accentLight`、`highlight`、`shadow`、`coverGradients` 與任何 brand RGB 並非因此自動 adaptive；必須逐一在 Light、Dark 與 Increase Contrast 驗證，必要時先新增對應的 adaptive token。不要在使用端直接寫 `Color.gray`、`Color(hex:)` 或品牌硬色。
 
 ### 字體 `DSFont`
 `caption2 / caption / subheadline / body / bodyBold / headline / title2 / title / largeTitle`，等寬 `monospaced(size:)`，toolbar `toolbarIcon / toolbarIconLarge`。
-- 全部基於語義字級 → **自動支援 Dynamic Type**。不要 `.font(.system(size: 14))` 寫死。
+- `caption2` 至 `largeTitle` 等 semantic tokens 支援 Dynamic Type；`monospaced(size:)`、`toolbarIcon`、`toolbarIconLarge` 是固定 size 例外，不會自動取得同等縮放行為。
+- User-visible text 不得使用固定 size token。若內容必須採 custom 或 monospaced 字體，先新增相對於 semantic text style 的 token，再驗證最大 accessibility size 與 Bold Text。
+- Toolbar icon 優先跟隨相鄰 semantic text style 或 system sizing；使用固定 icon token 時，必須確認放大字級下不會失衡、遮擋或縮小 hit region。
 
 ### 間距 `DSSpacing`
 `xs=4 / sm=8 / md=12 / lg=16 / xl=24 / xxl=32`。頁面外距用 `xl`，群組間 `lg`，元素內 `sm`。
@@ -129,7 +131,19 @@ EditSourceView()
 `sm=6（標籤/小按鈕） / md=8（按鈕/輸入框） / lg=12（卡片/對話框） / xl=16（圖片容器）`。
 
 ### 動畫 `DSAnimation`
-`fast=0.15（即時回饋） / standard=0.28（轉場） / slow=0.4（展開）`。不要硬寫 duration。
+`fast=0.15（即時回饋） / standard=0.28（轉場） / slow=0.4（展開）`。不要硬寫 duration。`DSAnimation` 只是時序 token，不會自行讀取 Reduce Motion；每個含位移、縮放或連續運動的 view 都必須依環境值切換動畫策略。
+
+```swift
+@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+private func updateExpandedState() {
+    withAnimation(reduceMotion ? nil : DSAnimation.standard) {
+        isExpanded.toggle()
+    }
+}
+```
+
+Reduce Motion 開啟時，移除非必要位移與縮放；需要保留狀態轉換提示時，改用 opacity 或無動畫的即時結果。
 
 ---
 
@@ -176,7 +190,7 @@ iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共
 - **支援 Dynamic Type 到最大 accessibility size**：優先讓內容換行與容器增高，不以截斷掩蓋關鍵文字。
 - 大字級時將 metadata（作者、來源、時間、狀態）改為垂直 stacking；grid 逐步減欄，必要時降為單欄，避免壓縮文字與點擊區。
 - 自訂字體必須以語義 metrics 縮放，並在 **Bold Text** 開啟時維持可辨識的粗細差異；沒有原生粗體字面時提供經驗證的 fallback。
-- SF Symbols 跟隨相鄰語義字級與 Dynamic Type scaling，不用固定 frame 鎖死圖示。
+- SF Symbols 跟隨相鄰語義字級與 Dynamic Type scaling，不用固定 frame 鎖死圖示；固定尺寸的 toolbar icon 是需單獨驗證的例外，不代表自動支援 Dynamic Type。
 - 三行以上的文字避免 tight leading；正文與說明文字需保留足以掃讀的行距。
 - 對齊與留白勝過分隔線；分隔線只在 `List` 語義需要時出現。
 
@@ -196,10 +210,10 @@ iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共
 每個畫面都要過這份清單：
 - [ ] 正文、設定項、按鈕文字支援 **Dynamic Type** 到最大 accessibility size，內容仍可讀、可操作。
 - [ ] 所有 **icon-only 按鈕** 有 `accessibilityLabel`（用 `localized`）。
-- [ ] 互動目標預設 **44×44pt**；只有緊湊、次要且彼此有充分間距的控制可採 **28×28pt** 最低值，reader chrome 與主要動作仍維持 44×44pt。
+- [ ] 一般互動的 **hit region** 至少 **44×44pt**。受限 compact 情境可讓 **visible control** 最小為 **28×28pt**，但需以 padding / frame 擴大版面並用 `contentShape` 定義完整可點區域，同時在相鄰 controls 間保留充分 spacing；28pt 不是一般 hit-target 例外，reader chrome 與 primary actions 仍維持至少 44×44pt。
 - [ ] 狀態與錯誤不是 color-only：顏色之外另有文字、圖示、形狀或位置提示。
 - [ ] Light / Dark Mode 與 **Increase Contrast** 下皆可辨識；不要以低對比透明疊色承載必要資訊。
-- [ ] **Reduce Motion** 開啟時停用非必要位移、縮放與連續動畫，改用淡入淡出或無動畫結果。
+- [ ] **Reduce Motion** 開啟時停用非必要位移、縮放與連續動畫，改用 opacity 或無動畫結果；實作用 `@Environment(\.accessibilityReduceMotion)` 選擇動畫，不能只套 `DSAnimation` token。
 - [ ] VoiceOver 能依合理 order 朗讀標題、內容與動作，並在儲存、刪除、載入或錯誤後說明 outcome；必要時用 announcement 或 focus 管理。
 - [ ] 閱讀頁避免動畫、透明、背景紋理干擾文字辨識。
 - [ ] 純裝飾元素使用 `.accessibilityHidden(true)`；同一語意的標題、metadata 與狀態適當 grouping（例如 `.accessibilityElement(children: .combine)`），但不要合併需要獨立操作的控制。
