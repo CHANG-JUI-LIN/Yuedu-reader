@@ -107,8 +107,12 @@ actor ChapterFetchManager {
     )
 
     static func isSuspiciousChapterContent(_ content: String) -> Bool {
-        if content.count > suspiciousContentLengthThreshold {
-            AppLogger.parse("⟐ suspiciousContent length", context: ["len": content.count, "threshold": suspiciousContentLengthThreshold])
+        // Measure prose only: 段評-heavy chapters embed 100s of KB of legitimate base64 SVG bubbles
+        // (a 起点 大热章节 is 260KB+, ~all bubbles). Counting that bulk tripped the merge heuristic →
+        // the cache was rejected → endless re-fetch (chapter never rendered). Exclude the payloads.
+        let proseLength = ReaderHTMLUtilities.lengthExcludingBase64Payloads(content)
+        if proseLength > suspiciousContentLengthThreshold {
+            AppLogger.parse("⟐ suspiciousContent length", context: ["len": content.count, "prose": proseLength, "threshold": suspiciousContentLengthThreshold])
             return true
         }
         let range = NSRange(content.startIndex..., in: content)

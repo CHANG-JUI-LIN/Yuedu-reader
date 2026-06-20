@@ -2853,7 +2853,9 @@ struct ReaderView: View {
     private func refreshCurrentChapter() {
         guard let b = book, let refs = b.onlineChapters, !refs.isEmpty else { return }
         let idx = currentChapterIndex
+        #if DEBUG
         print("[StateDebug] refreshCurrentChapter ch=\(idx) ← clearing ENTIRE book cache and restarting fetch")
+        #endif
         // Clear all cached chapters for the entire book since the "next chapter misdetected as next page"
         // bug contaminates subsequent chapters into the current chapter's cache. Clearing just the current
         // chapter is insufficient; the whole book must be purged.
@@ -2970,7 +2972,9 @@ struct ReaderView: View {
         priority: ChapterFetchPriority = .immediate
     ) {
         guard let currentBook = book else { return }
+        #if DEBUG
         print("[StateDebug] ensureChapterReady ch=\(chapterIndex) priority=\(priority) currentCh=\(currentChapterIndex)")
+        #endif
         Task { @MainActor in
             await readerViewModel.ensureChapterReady(
                 book: currentBook,
@@ -2986,7 +2990,9 @@ struct ReaderView: View {
         observedChapterStates = states
 
         for (chapterIndex, newState) in states where previousStates[chapterIndex] != newState {
+            #if DEBUG
             print("[StateDebug] chapterStates[\(chapterIndex)] \(String(describing: previousStates[chapterIndex])) → \(newState) currentChapter=\(currentChapterIndex) usesCoreText=\(usesCoreTextEPUB) isCoreTextReady=\(epubRenderer.isCoreTextReady)")
+            #endif
             if newState == .ready {
                 prefetchAdjacentChapters(around: chapterIndex)
             }
@@ -3004,7 +3010,9 @@ struct ReaderView: View {
             if chapterIndex == currentChapterIndex,
                newState == .ready,
                !contentAvailable {
+                #if DEBUG
                 print("[StateDebug] scroll resetAndRefetchChapter ch=\(chapterIndex)")
+                #endif
                 refreshCurrentChapter()
                 return
             }
@@ -3016,17 +3024,23 @@ struct ReaderView: View {
             newState: newState,
             isContentAvailable: contentAvailable
         )
+        #if DEBUG
         print("[StateDebug] applyRefreshAction ch=\(chapterIndex) newState=\(newState) contentAvailable=\(contentAvailable) currentCh=\(currentChapterIndex) → action=\(action)")
+        #endif
 
         switch action {
         case .none:
             break
         case .notifyChapterDataChanged(let visibleChapterIndex):
             guard let engine = epubRenderer.engine else {
+                #if DEBUG
                 print("[StateDebug] notifyChapterDataChanged SKIPPED: engine is nil")
+                #endif
                 return
             }
+            #if DEBUG
             print("[StateDebug] notifyChapterDataChanged ch=\(visibleChapterIndex) launching Task")
+            #endif
             Task {
                 await engine.notifyChapterDataChanged(at: visibleChapterIndex)
                 if self.savedCoreTextRestoreTarget != nil {
@@ -3034,10 +3048,14 @@ struct ReaderView: View {
                 }
             }
         case .rebuildPages:
+            #if DEBUG
             print("[StateDebug] rebuildPages()")
+            #endif
             rebuildPages()
         case .resetAndRefetchChapter:
+            #if DEBUG
             print("[StateDebug] resetAndRefetchChapter ch=\(chapterIndex) ← will clear cache and re-fetch")
+            #endif
             refreshCurrentChapter()
         }
     }
@@ -3175,13 +3193,20 @@ struct ReaderView: View {
     }
 
     private func loadOnlineCoreText(_ book: ReadingBook, marginH: CGFloat) {
-        print("[StateDebug] loadOnlineCoreText enter bookId=\(book.id) chapters=\(book.onlineChapters?.count ?? -1)")
-        print("[FetchTrace] loadOnlineCoreText enter bookId=\(book.id) chapters=\(book.onlineChapters?.count ?? -1)")
+        #if DEBUG
+        AppLogger.render("onlinePipeline route", context: [
+            "builder": "OnlineProviderAttributedStringBuilder",
+            "bookId": book.id.uuidString,
+            "chapters": book.onlineChapters?.count ?? -1
+        ])
+        #endif
         guard let bundle = BookContentProviderFactory.makeOnlineReaderBundle(
             book: book,
             store: store
         ) else {
-            print("[FetchTrace] loadOnlineCoreText makeOnlineReaderBundle returned nil")
+            #if DEBUG
+            AppLogger.render("onlinePipeline route: makeOnlineReaderBundle returned nil")
+            #endif
             applyDocument(nil)
             isLoadingPipeline = false
             isRestoringPosition = false

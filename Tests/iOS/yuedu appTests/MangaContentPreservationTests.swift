@@ -51,4 +51,17 @@ struct MangaContentPreservationTests {
         #expect(!content.contains("<p"))
         #expect(content.contains("第一段文字"))
     }
+
+    @Test("a single paragraph wrapping source newlines keeps every paragraph")
+    func singleParagraphWithInteriorNewlinesSplits() async {
+        let content = await resolve(
+            "<p>第一段。\r\n　　第二段。\r\n　　第三段。\r\n　　第四段。</p>"
+        )
+        let lines = content
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        #expect(lines == ["第一段。", "第二段。", "第三段。", "第四段。"], "actual=>>>\(content)<<<")
+    }
 }

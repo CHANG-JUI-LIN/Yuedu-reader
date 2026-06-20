@@ -41,9 +41,8 @@ enum HTMLStyledASTRenderableNodeConverter {
                 return node.asRenderableNode(parentFontSize: parentFontSize)
             }
             let normalized = normalizeWhitespace(textNode.text)
-            if hasBlockSibling, normalized.allSatisfy({ $0 == " " }) {
-                return nil
-            }
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalized.isEmpty else { return nil }
             return .text(normalized)
         }
     }

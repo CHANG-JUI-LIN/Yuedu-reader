@@ -142,7 +142,14 @@ struct CommentBubbleSVGRecognizer {
         
         let finalWidth = width > 0 ? width : viewBox.width
         let finalHeight = height > 0 ? height : viewBox.height
-        
+
+        // The SVG-level `color` (attribute or `style="color: …"`) is what `currentColor`
+        // resolves to on descendants. 光遇 段評 bubbles paint their shapes with
+        // `stroke="currentColor"` + a root `style="color: #xxx"`, so without this the outline
+        // would be drawn with no colour at all (invisible bubble).
+        let rootColor = resolveColor(styleProperty("color", in: svgTag) ?? extractAttribute("color", in: svgTag),
+                                     inheritedColor: nil)
+
         var elements: [CommentBubbleSVG.Element] = []
 
         // Map every element to the composed transform of the <g> groups wrapping it.
@@ -159,9 +166,10 @@ struct CommentBubbleSVGRecognizer {
             for match in matches {
                 let tag = ns.substring(with: match.range)
                 guard let d = extractAttribute("d", in: tag) else { continue }
-                let stroke = parseColor(extractAttribute("stroke", in: tag))
-                let strokeWidth = parseDouble(extractAttribute("stroke-width", in: tag))
-                let fill = parseColor(extractAttribute("fill", in: tag))
+                let elementColor = resolveColor(styleProperty("color", in: tag), inheritedColor: rootColor)
+                let stroke = resolvePaint("stroke", in: tag, inheritedColor: elementColor)
+                let strokeWidth = parseStrokeWidth(in: tag)
+                let fill = resolvePaint("fill", in: tag, inheritedColor: elementColor)
                 let transform = composedTransform(at: match.range.location, groups: groupSpans)
                 elements.append(.path(d: d, strokeColor: stroke, strokeWidth: strokeWidth > 0 ? strokeWidth : nil, fillColor: fill, transform: transform))
             }
@@ -178,18 +186,43 @@ struct CommentBubbleSVGRecognizer {
                 let ry = parseDouble(extractAttribute("ry", in: tag))
                 let rxVal = rx > 0 ? rx : ry
                 let ryVal = ry > 0 ? ry : rx
-                let x = parseDouble(extractAttribute("x", in: tag))
-                let y = parseDouble(extractAttribute("y", in: tag))
-                let w = parseDouble(extractAttribute("width", in: tag))
-                let h = parseDouble(extractAttribute("height", in: tag))
-                let stroke = parseColor(extractAttribute("stroke", in: tag))
-                let strokeWidth = parseDouble(extractAttribute("stroke-width", in: tag))
-                let fill = parseColor(extractAttribute("fill", in: tag))
+                let x = parseCoordinate(extractAttribute("x", in: tag), viewBoxSize: viewBox.width)
+                let y = parseCoordinate(extractAttribute("y", in: tag), viewBoxSize: viewBox.height)
+                let w = parseCoordinate(extractAttribute("width", in: tag), viewBoxSize: viewBox.width)
+                let h = parseCoordinate(extractAttribute("height", in: tag), viewBoxSize: viewBox.height)
+                let elementColor = resolveColor(styleProperty("color", in: tag), inheritedColor: rootColor)
+                let stroke = resolvePaint("stroke", in: tag, inheritedColor: elementColor)
+                let strokeWidth = parseStrokeWidth(in: tag)
+                let fill = resolvePaint("fill", in: tag, inheritedColor: elementColor)
                 let transform = composedTransform(at: match.range.location, groups: groupSpans)
                 elements.append(.rect(x: x, y: y, width: w, height: h, rx: rxVal, ry: ryVal, strokeColor: stroke, strokeWidth: strokeWidth > 0 ? strokeWidth : nil, fillColor: fill, transform: transform))
             }
         }
         
+        // 3b. Parse <circle> / <ellipse> tags. 光遇 has a round 段評 bubble style; without this the
+        // SVG has no shape element, recognition fails, and it drops to the slow WebView rasterizer.
+        // A circle/ellipse is drawn as a fully-rounded rect (corner radii == radii).
+        let circlePattern = #"<(?:circle|ellipse)\b[^>]*>"#
+        if let circleRegex = try? NSRegularExpression(pattern: circlePattern, options: .caseInsensitive) {
+            let ns = svg as NSString
+            let matches = circleRegex.matches(in: svg, range: NSRange(location: 0, length: ns.length))
+            for match in matches {
+                let tag = ns.substring(with: match.range)
+                let cx = parseCoordinate(extractAttribute("cx", in: tag), viewBoxSize: viewBox.width)
+                let cy = parseCoordinate(extractAttribute("cy", in: tag), viewBoxSize: viewBox.height)
+                let r = parseCoordinate(extractAttribute("r", in: tag), viewBoxSize: viewBox.width)
+                let rx = r > 0 ? r : parseCoordinate(extractAttribute("rx", in: tag), viewBoxSize: viewBox.width)
+                let ry = r > 0 ? r : parseCoordinate(extractAttribute("ry", in: tag), viewBoxSize: viewBox.height)
+                guard rx > 0, ry > 0 else { continue }
+                let elementColor = resolveColor(styleProperty("color", in: tag), inheritedColor: rootColor)
+                let stroke = resolvePaint("stroke", in: tag, inheritedColor: elementColor)
+                let strokeWidth = parseStrokeWidth(in: tag)
+                let fill = resolvePaint("fill", in: tag, inheritedColor: elementColor)
+                let transform = composedTransform(at: match.range.location, groups: groupSpans)
+                elements.append(.rect(x: cx - rx, y: cy - ry, width: rx * 2, height: ry * 2, rx: rx, ry: ry, strokeColor: stroke, strokeWidth: strokeWidth > 0 ? strokeWidth : nil, fillColor: fill, transform: transform))
+            }
+        }
+
         // 4. Parse <text> tag and content
         let textPattern = #"<text\b[^>]*>(.*?)</text>"#
         if let textRegex = try? NSRegularExpression(pattern: textPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
@@ -205,12 +238,13 @@ struct CommentBubbleSVGRecognizer {
                 let countRegex = try? NSRegularExpression(pattern: #"^[0-9]+[+]?$"#)
                 let countNs = text as NSString
                 if let countRegex, countRegex.firstMatch(in: text, range: NSRange(location: 0, length: countNs.length)) != nil {
-                    let x = parseDouble(extractAttribute("x", in: tag))
-                    let y = parseDouble(extractAttribute("y", in: tag))
+                    let x = parseCoordinate(extractAttribute("x", in: tag), viewBoxSize: viewBox.width)
+                    let y = parseCoordinate(extractAttribute("y", in: tag), viewBoxSize: viewBox.height)
                     let fontSize = parseDouble(extractAttribute("font-size", in: tag))
                     let fontWeight = extractAttribute("font-weight", in: tag)
                     let anchor = extractAttribute("text-anchor", in: tag)
-                    let color = parseColor(extractAttribute("fill", in: tag))
+                    let elementColor = resolveColor(styleProperty("color", in: tag), inheritedColor: rootColor)
+                    let color = resolvePaint("fill", in: tag, inheritedColor: elementColor)
                     let transform = composedTransform(at: tagRange.location, groups: groupSpans)
 
                     elements.append(.text(text: text, x: x, y: y, fontSize: fontSize > 0 ? fontSize : 12.0, fontWeight: fontWeight, anchor: anchor, color: color, transform: transform))
@@ -238,6 +272,18 @@ struct CommentBubbleSVGRecognizer {
     private static func parseDouble(_ val: String?) -> CGFloat {
         guard let val else { return 0 }
         let clean = val.trimmingCharacters(in: .whitespacesAndNewlines)
+        return CGFloat(Double(clean) ?? 0)
+    }
+
+    /// Parses an SVG coordinate value that may be a percentage (e.g. "50%") or an
+    /// absolute number.  Percentages are resolved against `viewBoxDimension`.
+    private static func parseCoordinate(_ val: String?, viewBoxSize: CGFloat) -> CGFloat {
+        guard let val else { return 0 }
+        let clean = val.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.hasSuffix("%") {
+            let pct = Double(clean.dropLast().trimmingCharacters(in: .whitespaces)) ?? 0
+            return viewBoxSize * CGFloat(pct) / 100.0
+        }
         return CGFloat(Double(clean) ?? 0)
     }
 
@@ -333,6 +379,52 @@ struct CommentBubbleSVGRecognizer {
         let clean = val.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if clean == "none" || clean == "transparent" { return nil }
         return parseHexColor(clean)
+    }
+
+    /// Reads one CSS declaration (e.g. `stroke`, `fill`, `stroke-width`, `color`) from a tag's
+    /// `style="a: x; b: y"` attribute. The `\s*:` after the name keeps `stroke` from matching
+    /// `stroke-width`/`stroke-opacity`. Returns nil when the attribute or property is absent.
+    private static func styleProperty(_ name: String, in tag: String) -> String? {
+        guard let style = extractAttribute("style", in: tag) else { return nil }
+        let pattern = #"(?:^|;)\s*"# + NSRegularExpression.escapedPattern(for: name) + #"\s*:\s*([^;]+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
+        let ns = style as NSString
+        guard let match = regex.firstMatch(in: style, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        return ns.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Parses a colour token, resolving `currentColor` to `inheritedColor`. Used both for an
+    /// element's own colour and for resolving `currentColor` paints down the tree.
+    private static func resolveColor(_ raw: String?, inheritedColor: UIColor?) -> UIColor? {
+        guard let raw else { return nil }
+        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.lowercased() == "currentcolor" { return inheritedColor }
+        return parseColor(clean)
+    }
+
+    /// Resolves an SVG paint (`fill`/`stroke`) honoring, in priority order, the element's inline
+    /// `style="fill: …"`, then its presentation attribute; resolves `currentColor` against
+    /// `inheritedColor`; and folds the matching `*-opacity` in as alpha. 光遇 段評 bubbles carry
+    /// their colour exclusively via `style=` + `currentColor`, which the bare attribute read missed.
+    private static func resolvePaint(_ property: String, in tag: String, inheritedColor: UIColor?) -> UIColor? {
+        let raw = styleProperty(property, in: tag) ?? extractAttribute(property, in: tag)
+        guard let base = resolveColor(raw, inheritedColor: inheritedColor) else { return nil }
+        if let opacityStr = styleProperty("\(property)-opacity", in: tag) ?? extractAttribute("\(property)-opacity", in: tag),
+           let opacity = Double(opacityStr.trimmingCharacters(in: .whitespacesAndNewlines)),
+           opacity >= 0, opacity < 1 {
+            return base.withAlphaComponent(CGFloat(opacity))
+        }
+        return base
+    }
+
+    /// Reads `stroke-width` from the inline `style=` first (sources write `stroke-width: 2.5px`),
+    /// then the presentation attribute. The trailing `px`/unit is stripped.
+    private static func parseStrokeWidth(in tag: String) -> CGFloat {
+        guard let raw = styleProperty("stroke-width", in: tag) ?? extractAttribute("stroke-width", in: tag) else { return 0 }
+        let cleaned = raw.lowercased()
+            .replacingOccurrences(of: "px", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return CGFloat(Double(cleaned) ?? 0)
     }
     
     private static func parseHexColor(_ hex: String) -> UIColor? {

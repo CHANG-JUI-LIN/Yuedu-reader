@@ -112,14 +112,19 @@ struct ChapterFetcher {
             "outHead": String(rawHTMLContent.trimmingCharacters(in: .whitespacesAndNewlines).prefix(240))
         ])
 
-        // SwiftSoup.parse is CPU-intensive synchronous work.
+        // SwiftSoup.parse is CPU-intensive synchronous work AND degrades to a hang on the ~275KB
+        // of inline base64 SVG a 段評-heavy 起点 chapter carries (96 bubbles). The base64 payloads
+        // are opaque to structural parsing, so lift them out, parse the slimmed (~few-KB) HTML,
+        // then restore — keeps SwiftSoup's cleaning behavior without feeding it the bloat.
         // Run in a detached task to avoid blocking the cooperative thread pool.
-        let bodyHTML = await Task.detached(priority: .userInitiated) {
-            guard let document = try? SwiftSoup.parse(rawHTMLContent),
+        let (slimmedHTML, payloadRestore) = ReaderHTMLUtilities.extractDataURIPayloads(rawHTMLContent)
+        let bodyHTMLSlim = await Task.detached(priority: .userInitiated) {
+            guard let document = try? SwiftSoup.parse(slimmedHTML),
                   let body = document.body() else { return "" }
             _ = try? body.select("script,noscript,iframe,object,embed").remove()
             return ((try? body.html()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         }.value
+        let bodyHTML = ReaderHTMLUtilities.restoreDataURIPayloads(bodyHTMLSlim, restore: payloadRestore)
 
         guard !bodyHTML.isEmpty else {
             return buildNormalizedHTML(title: title, content: plainTextContent)
@@ -446,6 +451,10 @@ struct ChapterFetcher {
             return Self.preserveImageBearingHTML(output)
         }
         if output.contains("<") {
+            // SwiftSoup follows HTML whitespace rules: literal CR/LF inside one block element is
+            // ordinary whitespace. Promote source line breaks before extracting text so Legado
+            // rules that return one `<p>` containing many paragraphs do not become one long line.
+            output = output.replacingOccurrences(of: "\n", with: "<br>")
             output = Self.stripHtmlToText(output)
         } else {
             output = Self.decodeBasicHTMLEntities(output)

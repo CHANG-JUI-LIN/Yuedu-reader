@@ -190,6 +190,14 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         let payload = try await payload(at: index)
         cacheSourceHref(from: payload)
 
+        #if DEBUG
+        AppLogger.render("onlinePipeline", context: [
+            "builder": "OnlineProviderAttributedStringBuilder",
+            "chapter": index,
+            "body": payload.body.debugKind
+        ])
+        #endif
+
         switch payload.body {
         case .html(let rawHTML):
             return await buildHTMLChapter(

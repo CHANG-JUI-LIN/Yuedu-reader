@@ -118,17 +118,80 @@ enum ReaderHTMLUtilities {
     /// with only *inline* markup mixed in (links, 段評 bubble `<img>`s). Handed straight to
     /// SwiftSoup, the newlines collapse to whitespace and the whole chapter renders as a single
     /// run-on block. This restores paragraph breaks generically (not per-source): if the content
-    /// already contains block tags (`<p>`/`<div>`/`<br>`/…) it is returned unchanged.
+    /// already contains block tags (`<p>`/`<div>`/`<br>`/…) it is returned unchanged, except
+    /// for literal source newlines inside a `<p>`, which are promoted to separate paragraphs.
     static func wrapNewlineParagraphsIfNeeded(_ html: String) -> String {
-        guard !containsBlockLevelTag(html) else { return html }
-        let segments = html
+        let paragraphNormalized = splitNewlineSeparatedParagraphContents(in: html)
+        guard !containsBlockLevelTag(paragraphNormalized) else { return paragraphNormalized }
+        let segments = paragraphNormalized
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
             .components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        guard segments.count > 1 else { return html }
+        guard segments.count > 1 else { return paragraphNormalized }
         return segments.map { "<p>\($0)</p>" }.joined(separator: "\n")
+    }
+
+    /// Source rules sometimes wrap an entire chapter in one `<p>` while retaining the original
+    /// paragraphs as CR/LF text. HTML parsers correctly collapse those characters as whitespace,
+    /// so turn them into real paragraph boundaries before parsing. Existing paragraph attributes
+    /// are retained on every resulting paragraph.
+    private static func splitNewlineSeparatedParagraphContents(in html: String) -> String {
+        let hasLineBreak = html.unicodeScalars.contains { scalar in
+            scalar.value == 0x0A || scalar.value == 0x0D
+        }
+        guard hasLineBreak else { return html }
+
+        var result = ""
+        var cursor = html.startIndex
+        var didSplit = false
+
+        while let openingPrefix = html.range(
+            of: "<p",
+            options: [.caseInsensitive],
+            range: cursor..<html.endIndex
+        ) {
+            let afterP = openingPrefix.upperBound
+            guard afterP == html.endIndex || html[afterP] == ">" || html[afterP].isWhitespace else {
+                result += html[cursor..<afterP]
+                cursor = afterP
+                continue
+            }
+            guard let openingEnd = html[afterP...].firstIndex(of: ">"),
+                  let closingRange = html.range(
+                    of: "</p>",
+                    options: [.caseInsensitive],
+                    range: html.index(after: openingEnd)..<html.endIndex
+                  )
+            else {
+                break
+            }
+
+            let innerStart = html.index(after: openingEnd)
+            let inner = String(html[innerStart..<closingRange.lowerBound])
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
+            let segments = inner
+                .components(separatedBy: "\n")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            result += html[cursor..<openingPrefix.lowerBound]
+            if segments.count > 1 {
+                let openingTag = String(html[openingPrefix.lowerBound...openingEnd])
+                result += segments
+                    .map { "\(openingTag)\($0)</p>" }
+                    .joined(separator: "\n")
+                didSplit = true
+            } else {
+                result += html[openingPrefix.lowerBound..<closingRange.upperBound]
+            }
+            cursor = closingRange.upperBound
+        }
+
+        guard didSplit else { return html }
+        result += html[cursor..<html.endIndex]
+        return result
     }
 
     private static func containsBlockLevelTag(_ html: String) -> Bool {
@@ -313,6 +376,87 @@ enum ReaderHTMLUtilities {
         return result
     }
 
+    /// Replaces long base64 `data:` URI payloads with short placeholder tokens so heavy
+    /// whole-document processing runs on a few KB of structure instead of hundreds of KB.
+    ///
+    /// A 段評-heavy 起点 chapter is ~275KB of inline base64 SVG (96 bubbles); `SwiftSoup.parse`
+    /// degrades badly on inputs that size and effectively hangs (`⟐ swiftSoup start` with no
+    /// `done`). The payloads are opaque to structural parsing, so we lift them out, parse the
+    /// slimmed HTML, then restore. Pair with `restoreDataURIPayloads` AFTER parsing.
+    ///
+    /// Tokens use `_` (never a base64 char) plus a counter and trailing `__`, so they can't appear
+    /// inside any remaining base64, can't prefix-collide with each other, are plain ASCII (SwiftSoup
+    /// never escapes them), and won't occur in book prose.
+    static func extractDataURIPayloads(_ html: String) -> (slimmed: String, restore: [(token: String, payload: String)]) {
+        guard html.range(of: ";base64,") != nil,
+              let regex = try? NSRegularExpression(pattern: #";base64,([A-Za-z0-9+/=]{64,})"#)
+        else { return (html, []) }
+
+        let ns = html as NSString
+        let matches = regex.matches(in: html, range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else { return (html, []) }
+
+        var restore: [(token: String, payload: String)] = []
+        var result = ""
+        var cursor = 0
+        for (i, match) in matches.enumerated() {
+            let payloadRange = match.range(at: 1)
+            result += ns.substring(with: NSRange(location: cursor, length: payloadRange.location - cursor))
+            let token = "__YD_B64_\(i)__"
+            restore.append((token: token, payload: ns.substring(with: payloadRange)))
+            result += token
+            cursor = payloadRange.location + payloadRange.length
+        }
+        result += ns.substring(from: cursor)
+        return (result, restore)
+    }
+
+    /// Restores payloads lifted by `extractDataURIPayloads`. Order-independent: tokens never
+    /// substring-collide, so a plain per-token replace is correct.
+    static func restoreDataURIPayloads(_ html: String, restore: [(token: String, payload: String)]) -> String {
+        guard !restore.isEmpty else { return html }
+        var result = html
+        for entry in restore {
+            result = result.replacingOccurrences(of: entry.token, with: entry.payload)
+        }
+        return result
+    }
+
+    /// Character count of `content` with long base64 data-URI payloads excluded — its "prose"
+    /// length. 段評-heavy chapters carry 100s of KB of legitimate inline base64 SVG bubbles (a 起点
+    /// 大热章节 is 260KB+, almost all bubbles); that bulk must NOT count toward heuristics that flag
+    /// over-long content as a multi-chapter merge, or the chapter gets endlessly re-fetched.
+    static func lengthExcludingBase64Payloads(_ content: String) -> Int {
+        let ns = content as NSString
+        guard content.range(of: ";base64,") != nil,
+              let regex = try? NSRegularExpression(pattern: #";base64,([A-Za-z0-9+/=]{64,})"#)
+        else { return ns.length }
+        let matches = regex.matches(in: content, range: NSRange(location: 0, length: ns.length))
+        let payloadChars = matches.reduce(0) { $0 + $1.range(at: 1).length }
+        return ns.length - payloadChars
+    }
+
+    /// Restores `extractDataURIPayloads` tokens directly inside a parsed SwiftSoup `Document` — used
+    /// when the slimmed HTML was parsed (so SwiftSoup didn't choke on the base64) but downstream
+    /// consumers read the DOM, not a re-serialized string. Only `src`/`href` attributes carrying a
+    /// token are touched, and a quick map keys the lookup by token.
+    static func restoreDataURIPayloads(in document: Document, restore: [(token: String, payload: String)]) {
+        guard !restore.isEmpty else { return }
+        let map = Dictionary(restore.map { ($0.token, $0.payload) }, uniquingKeysWith: { a, _ in a })
+        let elements = (try? document.select("[src], [href]").array()) ?? []
+        for element in elements {
+            for attr in ["src", "href", "xlink:href"] {
+                guard let value = try? element.attr(attr),
+                      value.range(of: "__YD_B64_") != nil else { continue }
+                var restored = value
+                for (token, payload) in map where restored.contains(token) {
+                    restored = restored.replacingOccurrences(of: token, with: payload)
+                }
+                _ = try? element.attr(attr, restored)
+            }
+        }
+    }
+
     private static func anchorMarkup(forCommentTag tag: String) -> String? {
         guard let count = firstCapture(in: tag, pattern: #"count\s*=\s*"([^"]*)""#),
               let args = showReadingBrowserArgs(in: tag)
@@ -422,8 +566,9 @@ enum ReaderHTMLUtilities {
     }
 
     private static func showReadingBrowserArgs(in tag: String) -> (url: String, title: String)? {
+        // Try showReadingBrowser('url', 'title') or showCmt('url'[,'title'])
         guard let regex = try? NSRegularExpression(
-            pattern: #"showReadingBrowser\(\s*'([^']*)'(?:\s*,\s*'([^']*)')?\s*\)"#,
+            pattern: #"(?:showReadingBrowser|showCmt)\(\s*'([^']*)'(?:\s*,\s*'([^']*)')?\s*\)"#,
             options: [.caseInsensitive]
         ) else { return nil }
         let ns = tag as NSString
@@ -643,6 +788,22 @@ enum ReaderHTMLUtilities {
                 guard url.hasPrefix("http://") || url.hasPrefix("https://") else { return nil }
                 let sources = cleanLegadoArgument(args[1])
                 return ReviewTarget(url: url, title: sources.isEmpty ? "段評" : "\(sources)段評")
+            }
+            // 企點: paragraph bubbles emit a single-argument `showCmt('<url>')`. The argument is the
+            // comment-page URL, often a relative path the jsLib resolves against `sb`
+            // (`https://sb.shazi.tk`). Resolve it the same way so the bubble becomes tappable.
+            if args.count == 1 {
+                var url = cleanLegadoArgument(args[0])
+                if !(url.hasPrefix("http://") || url.hasPrefix("https://")),
+                   let decoded = url.removingPercentEncoding,
+                   decoded.hasPrefix("http://") || decoded.hasPrefix("https://") {
+                    url = decoded
+                }
+                if !(url.hasPrefix("http://") || url.hasPrefix("https://")), usesShaziQidianEndpoint(context) {
+                    url = "https://sb.shazi.tk" + (url.hasPrefix("/") ? url : "/" + url)
+                }
+                guard url.hasPrefix("http://") || url.hasPrefix("https://") else { return nil }
+                return ReviewTarget(url: url, title: "段評")
             }
         }
 

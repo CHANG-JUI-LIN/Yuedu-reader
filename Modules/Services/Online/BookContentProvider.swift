@@ -10,6 +10,13 @@ enum ChapterRenderBody: Equatable {
             return text.lengthOfBytes(using: .utf8)
         }
     }
+
+    var debugKind: String {
+        switch self {
+        case .plainText: return "plainText"
+        case .html: return "html"
+        }
+    }
 }
 
 struct ChapterContentPayload: Equatable {

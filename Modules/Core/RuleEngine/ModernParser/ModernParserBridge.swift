@@ -61,13 +61,20 @@ class ModernParserBridge {
             // Safe because jsEngine serialises all evaluations on its dedicated queue.
             self.jsEngine.getStringHandler = { ruleStr in engine.getString(ruleStr: ruleStr) }
             self.jsEngine.getStringListHandler = { ruleStr in engine.getStringList(ruleStr: ruleStr) }
+            var bindings: [String: Any] = [
+                "baseUrl": engine.baseUrl,
+                "baseURL": engine.baseUrl
+            ]
+            if let content = engine.content {
+                // Legado exposes the response currently being parsed as the global `src`.
+                // Some sources intentionally read `src` after an earlier rule segment has
+                // transformed `result`, so the two values must remain independent.
+                bindings["src"] = content
+            }
             return self.jsEngine.evaluateIsolated(
                 jsCode,
                 result: prevResult,
-                bindings: [
-                    "baseUrl": engine.baseUrl,
-                    "baseURL": engine.baseUrl
-                ]
+                bindings: bindings
             )
         }
         return e
@@ -522,9 +529,20 @@ class ModernParserBridge {
             "title": chapterRef?.title ?? "",
             "vars": String(paraState.prefix(160))
         ])
+        // 段评样式: content JS 的 paraContent() 在 iOS 上因 deviceType=='苹果' 会走 paraForiOS，
+        // 产出 <comment count onPress> → app 原生 .commentBadge，完全忽略书源「段评样式」SVG 设置
+        // (svgs[…]，起点对话框等)。为忠实还原书源样式，在 content 规则执行前把 paraForiOS 别名成
+        // paraForAndroid，让 iOS 也按书源 段评样式 产出 SVG <img>，再由 CommentBubbleSVGRecognizer
+        // 原生重绘、跟随阅读字体。仅同时定义两者的源会被改写；只定义 paraForiOS 的源维持原状。
+        let aliasedParaForiOS = jsEngine.evaluate(
+            "(typeof paraForAndroid==='function' && typeof paraForiOS==='function')"
+            + " ? (paraForiOS = paraForAndroid, 'true') : 'false'"
+        ) == "true"
+
         let _contentStart = Date()
         let content = engine.getString(ruleStr: source.ruleContent.content)
         let _contentMs = Int(Date().timeIntervalSince(_contentStart) * 1000)
+
         let lowerContent = content.lowercased()
         let lowerInput = html.lowercased()
         let bubbleCount = content.components(separatedBy: "data:image/svg").count - 1
@@ -536,6 +554,7 @@ class ModernParserBridge {
             "ydreview": lowerContent.components(separatedBy: "ydreview://").count - 1,
             "showCmt": lowerContent.components(separatedBy: "showcmt").count - 1,
             "androidShowCmt": lowerContent.components(separatedBy: "androidshowcmt").count - 1,
+            "aliasParaForiOS": aliasedParaForiOS,
             "inputLen": html.count,
             "baseURL": String(baseURL.prefix(120)),
             "inputHex": Self.hexPreview(html, byteLimit: 32),

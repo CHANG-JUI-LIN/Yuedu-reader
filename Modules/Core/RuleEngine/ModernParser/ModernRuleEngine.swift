@@ -46,7 +46,7 @@ final class ModernRuleEngine {
     // MARK: - Instance Properties
 
     /// Content to parse (HTML string, JSON string, element, etc.)
-    private var content: Any?
+    private(set) var content: Any?
 
     /// Base URL for resolving relative URLs
     private(set) var baseUrl: String = ""

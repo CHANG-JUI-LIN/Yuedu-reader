@@ -94,6 +94,45 @@ struct OnlineReaderPipelineUnificationTests {
         #expect(firstRange.upperBound < secondRange.lowerBound)
     }
 
+    @Test("single HTML paragraph wrapping source newlines renders as distinct paragraphs")
+    func singleHTMLParagraphWithInteriorNewlinesRendersDistinctParagraphs() async throws {
+        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: "第一章",
+            plainTextContent: "第一段。\n第二段。\n第三段。\n第四段。",
+            rawHTMLContent: "<p>第一段。\r\n　　第二段。\r\n　　第三段。\r\n　　第四段。</p>"
+        )
+        #expect(
+            normalizedHTML.components(separatedBy: "<p>").count - 1 == 4,
+            "normalizedHTML=>>>\(normalizedHTML)<<<"
+        )
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(
+                index: 0,
+                title: "第一章",
+                plainText: "第一段。\n第二段。\n第三段。\n第四段。",
+                body: .html(normalizedHTML),
+                sourceHref: "https://example.com/1"
+            )
+        ])
+        let builder = OnlineProviderAttributedStringBuilder(
+            provider: provider,
+            renderSize: CGSize(width: 320, height: 480)
+        )
+
+        let result = try await builder.buildChapter(
+            at: 0,
+            settings: Self.settings,
+            themeTextColor: UIColor.label,
+            themeBackgroundColor: UIColor.systemBackground
+        )
+        let lines = result.attributedString.string
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && $0 != "第一章" }
+
+        #expect(lines == ["第一段。", "第二段。", "第三段。", "第四段。"], "actual=>>>\(result.attributedString.string)<<<")
+    }
+
     // MARK: - Provider cache miss becomes engine signal
 
     @Test("provider cache miss becomes engine contentNotCached")

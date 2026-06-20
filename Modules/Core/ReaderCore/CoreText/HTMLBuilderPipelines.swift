@@ -7,10 +7,15 @@ final class HTMLBuilderDOMParser {
         html: String,
         collectStyles: @escaping (Document) async -> [String]
     ) async -> HTMLAttributedStringBuilder.ParsedHTML? {
-        guard let document = try? SwiftSoup.parse(html),
+        // SwiftSoup.parse degrades to a hang on the ~275KB of inline base64 SVG a 段評-heavy 起点
+        // chapter carries. Lift the opaque base64 payloads out, parse the slimmed structure, then
+        // restore them in the DOM so the AST sees full data URIs. No-op when there are none.
+        let (slimmed, payloadRestore) = ReaderHTMLUtilities.extractDataURIPayloads(html)
+        guard let document = try? SwiftSoup.parse(slimmed),
               let body = document.body() else {
             return nil
         }
+        ReaderHTMLUtilities.restoreDataURIPayloads(in: document, restore: payloadRestore)
 
         let stylesheetTexts = await collectStyles(document)
         var regularRules: [CSSRule] = []

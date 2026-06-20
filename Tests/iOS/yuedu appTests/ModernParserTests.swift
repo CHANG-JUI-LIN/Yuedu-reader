@@ -164,6 +164,33 @@ struct RuleAnalyzerTests {
     }
 }
 
+@Suite("ModernParserBridge Chapter Compatibility", .serialized)
+struct ModernParserBridgeChapterCompatibilityTests {
+    @Test("chapter JS receives the original response as src")
+    func chapterJSReceivesOriginalResponseAsSrc() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "xiaomi-src-\(UUID().uuidString)"
+        source.ruleContent.content = """
+        $..contentList[*]
+        <js>
+        if(result.match(/^http.+$/)){
+            src = java.base64Decode(String(java.ajax(result)).match(/\\('([^']+)'\\)/)[1]);
+        }
+        src
+        </js>
+        $..p[*]||$..contentList[*]
+        """
+
+        let payload = try ModernParserBridge(source: source).parseChapterResult(
+            html: #"{"status":0,"data":{"contentList":["paragraph one","paragraph two"]}}"#,
+            baseURL: "https://reader.browser.miui.com/api/v2/chapter/content?chapterId=1",
+            source: source
+        )
+
+        #expect(payload.content == "paragraph one\nparagraph two")
+    }
+}
+
 // MARK: - 2. SourceRule Tests
 
 @Suite("SourceRule", .serialized)
