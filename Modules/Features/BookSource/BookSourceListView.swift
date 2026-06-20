@@ -23,6 +23,15 @@ struct BookSourceListView: View {
     @State private var searchText = ""
     @State private var showDeleteConfirm = false
     @State private var showMoreMenu = false
+    @State private var showSourceCheck = false
+
+    private var checkSources: [BookSource] {
+        if !selectedIds.isEmpty {
+            store.sources.filter { selectedIds.contains($0.id) }
+        } else {
+            store.sources.filter { $0.enabled }
+        }
+    }
 
     private var filteredSources: [BookSource] {
         if searchText.isEmpty { return store.sources }
@@ -106,6 +115,12 @@ struct BookSourceListView: View {
                         } label: {
                             Label(localized("匯出全部"), systemImage: "square.and.arrow.up.fill")
                         }
+                        Divider()
+                        Button {
+                            showSourceCheck = true
+                        } label: {
+                            Label(localized("書源檢測"), systemImage: "stethoscope")
+                        }
                     } label: {
                         Image(systemName: "ellipsis")
                     }
@@ -145,6 +160,9 @@ struct BookSourceListView: View {
                         loginSource = nil
                     }
                 }
+            }
+            .sheet(isPresented: $showSourceCheck) {
+                BookSourceCheckView(sources: checkSources)
             }
             .alert(localized("確認刪除"), isPresented: $showDeleteConfirm) {
                 Button(localized("取消"), role: .cancel) {}
@@ -375,6 +393,12 @@ struct BookSourceListView: View {
                     Label(localized("停用選中"), systemImage: "xmark.circle")
                 }
                 .disabled(selectedIds.isEmpty)
+                Divider()
+                Button {
+                    showSourceCheck = true
+                } label: {
+                    Label(localized("書源檢測"), systemImage: "stethoscope")
+                }
             } label: {
                 Image(systemName: "ellipsis")
                     .font(DSFont.toolbarIcon)

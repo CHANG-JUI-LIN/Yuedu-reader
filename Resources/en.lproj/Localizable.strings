@@ -44,6 +44,15 @@
 "個書源到剪貼簿" = "source(s) to clipboard";
 "個書源嗎？" = "source(s)?";
 "停止服務" = "Stop Service";
+"書源檢測" = "Source Check";
+"重新檢測" = "Re-check";
+"通過" = "Pass";
+"正在檢測…" = "Checking…";
+"沒有選取的書源" = "No sources selected";
+"書源地址為空" = "Source URL is empty";
+"非 HTTP 響應" = "Non-HTTP response";
+"空響應" = "Empty response";
+"搜索 URL 格式錯誤" = "Invalid search URL format";
 "停止測試" = "Stop Test";
 "停用選中" = "Disable Selected";
 "健康檢查" = "Health Check";
