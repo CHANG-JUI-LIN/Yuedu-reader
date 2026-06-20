@@ -53,6 +53,13 @@
 "非 HTTP 響應" = "Non-HTTP response";
 "空響應" = "Empty response";
 "搜索 URL 格式錯誤" = "Invalid search URL format";
+"個結果" = "results";
+"已取消" = "Cancelled";
+"發現頁無內容" = "Discover page is empty";
+"發現頁請求失敗" = "Discover request failed";
+"無可讀取書籍" = "No readable books";
+"詳情為空" = "Empty details";
+"搜索無結果" = "No search results";
 "停止測試" = "Stop Test";
 "停用選中" = "Disable Selected";
 "健康檢查" = "Health Check";
