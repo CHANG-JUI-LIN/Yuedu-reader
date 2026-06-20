@@ -102,6 +102,9 @@ final class LegadoHeadlessWebView: NSObject, WKNavigationDelegate {
         guard let value, !(value is NSNull) else { return "" }
         if let s = value as? String { return s }
         if let n = value as? NSNumber { return n.stringValue }
+        if let arr = value as? [Any] {
+            return arr.map { stringify($0) }.joined(separator: "\n")
+        }
         if JSONSerialization.isValidJSONObject(value),
            let data = try? JSONSerialization.data(withJSONObject: value),
            let json = String(data: data, encoding: .utf8) {

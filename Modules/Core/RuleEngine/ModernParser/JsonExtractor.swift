@@ -574,6 +574,14 @@ final class JSONPathEvaluator {
             return n.stringValue
         }
 
+        // Handle arrays: join string elements instead of JSON-encoding the whole array.
+        // This matches Legado's behavior: when a JSONPath yields an array (e.g.
+        // `$.data.Content[0].Content` returns `["text"]` from QQ Reading), the
+        // elements should be joined, not serialised as a JSON string `["text"]`.
+        if let arr = value as? [Any] {
+            return arr.map { stringify($0) }.joined(separator: "\n")
+        }
+
         if JSONSerialization.isValidJSONObject(value),
            let data = try? JSONSerialization.data(withJSONObject: value, options: []),
            let s = String(data: data, encoding: .utf8) {
