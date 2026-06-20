@@ -117,8 +117,12 @@ struct AudiobookDetailView: View {
     }
 
     private var displayIntro: String {
-        if let d = detailInfo?.intro.trimmingCharacters(in: .whitespacesAndNewlines), !d.isEmpty { return d }
-        return currentBook.intro.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = if let d = detailInfo?.intro.trimmingCharacters(in: .whitespacesAndNewlines), !d.isEmpty {
+            d
+        } else {
+            currentBook.intro.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return ReaderHTMLUtilities.displayText(fromHTMLFragment: raw, preservingLineBreaks: true)
     }
 
     private var displayLatestChapter: String {

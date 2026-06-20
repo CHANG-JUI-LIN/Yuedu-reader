@@ -146,7 +146,8 @@ class SearchBook: Identifiable, ObservableObject {
     /// Intro for list display: filter out tag lines (e.g. "标签 (tags):", "#xxx") and truncate
     /// overly long content to avoid flooding the screen with tags.
     var displayIntro: String {
-        let raw = intro.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = ReaderHTMLUtilities.displayText(fromHTMLFragment: intro, preservingLineBreaks: false)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return "" }
         let lines = raw.components(separatedBy: .newlines)
         var kept: [String] = []

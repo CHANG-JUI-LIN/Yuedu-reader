@@ -123,8 +123,8 @@ struct OnlineBookView: View {
     private var displayIntro: String {
         let d = detailInfo?.intro.trimmingCharacters(in: .whitespacesAndNewlines)
         let b = currentBook.intro.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let d = d, !d.isEmpty { return d }
-        return b
+        let raw = if let d, !d.isEmpty { d } else { b }
+        return ReaderHTMLUtilities.displayText(fromHTMLFragment: raw, preservingLineBreaks: true)
     }
 
     private var displayWordCount: String {

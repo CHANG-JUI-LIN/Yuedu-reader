@@ -361,7 +361,7 @@ struct SourcePickerSheet: View {
                         Text(searchBook.displayName).font(.headline)
                         Text(searchBook.author).font(.subheadline).foregroundColor(.secondary)
                         if !searchBook.intro.isEmpty {
-                            Text(searchBook.intro).font(.caption).foregroundColor(.secondary)
+                            Text(ReaderHTMLUtilities.displayText(fromHTMLFragment: searchBook.intro)).font(.caption).foregroundColor(.secondary)
                                 .lineLimit(2)
                         }
                     }
