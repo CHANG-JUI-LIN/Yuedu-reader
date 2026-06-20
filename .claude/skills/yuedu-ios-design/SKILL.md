@@ -28,7 +28,7 @@ Resolve conflicts in this order: **Apple platform behavior and accessibility > e
    - `.inlineLarge` is a deliberate Yuedu exception only; justify it and accept its toolbar overflow behavior after testing available width and localization.
 2. Route every user-visible string through `localized("...")` and keep zh-Hant, zh-Hans, and en synchronized.
 3. Use `DS*` tokens for colors, semantic fonts, spacing, layout, radius, and animation. Add a missing token before use; avoid magic values. Only system-backed color and semantic font tokens adapt automatically. Validate fixed-size font and animation tokens with the Dynamic Type and Reduce Motion patterns in `docs/design.md`.
-4. Prefer native `NavigationStack`, `TabView`, `NavigationSplitView`, `List`, `Form`, `Sheet`, `Menu`, `Picker`, `ToolbarItem`, `contextMenu`, `swipeActions`, and `searchable` behavior.
+4. Prefer native `NavigationStack`, `TabView`, `NavigationSplitView`, `List`, `Form`, `.sheet`, `Menu`, `Picker`, `ToolbarItem`, `contextMenu`, `swipeActions`, and `searchable` behavior.
 5. Prefer SF Symbols. Every icon-only control needs a localized `accessibilityLabel`.
 6. Use official size terms: 44×44pt is the default control size. A 28×28pt minimum is only for genuinely compact controls with sufficient spacing; it does not relax the general hit region. Reader chrome and primary actions remain at least 44×44pt.
 7. Support Dynamic Type through accessibility sizes, logical VoiceOver order and announced outcomes, Light/Dark and Increase Contrast, Reduce Motion, and state cues that do not rely on color alone.
