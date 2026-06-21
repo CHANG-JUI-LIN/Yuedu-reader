@@ -232,7 +232,10 @@ struct CommentBubbleSVGRecognizer {
                 let tagOnlyRange = svg.range(of: "<text[^>]*>", options: .regularExpression, range: Range(tagRange, in: svg))
                 let tag = tagOnlyRange.map { String(svg[$0]) } ?? ""
                 
-                let text = ns.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                let rawText = ns.substring(with: match.range(at: 1))
+                let text = rawText
+                    .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
                 
                 // Validate count format: numbers optionally followed by + (e.g., 99+)
                 let countRegex = try? NSRegularExpression(pattern: #"^[0-9]+[+]?$"#)
@@ -241,13 +244,17 @@ struct CommentBubbleSVGRecognizer {
                     let x = parseCoordinate(extractAttribute("x", in: tag), viewBoxSize: viewBox.width)
                     let y = parseCoordinate(extractAttribute("y", in: tag), viewBoxSize: viewBox.height)
                     let fontSize = parseDouble(extractAttribute("font-size", in: tag))
+                    let resolvedFontSize = fontSize > 0 ? fontSize : 12.0
+                    // `dy` (e.g. "0.35em") shifts the baseline — count bubbles use it to vertically
+                    // center the digit on its anchor point. Folded into y here (same user units).
+                    let dy = parseDy(extractAttribute("dy", in: tag), fontSize: resolvedFontSize)
                     let fontWeight = extractAttribute("font-weight", in: tag)
                     let anchor = extractAttribute("text-anchor", in: tag)
                     let elementColor = resolveColor(styleProperty("color", in: tag), inheritedColor: rootColor)
                     let color = resolvePaint("fill", in: tag, inheritedColor: elementColor)
                     let transform = composedTransform(at: tagRange.location, groups: groupSpans)
 
-                    elements.append(.text(text: text, x: x, y: y, fontSize: fontSize > 0 ? fontSize : 12.0, fontWeight: fontWeight, anchor: anchor, color: color, transform: transform))
+                    elements.append(.text(text: text, x: x, y: y + dy, fontSize: resolvedFontSize, fontWeight: fontWeight, anchor: anchor, color: color, transform: transform))
                 }
             }
         }
@@ -284,6 +291,15 @@ struct CommentBubbleSVGRecognizer {
             let pct = Double(clean.dropLast().trimmingCharacters(in: .whitespaces)) ?? 0
             return viewBoxSize * CGFloat(pct) / 100.0
         }
+        return CGFloat(Double(clean) ?? 0)
+    }
+
+    /// Resolves a `<text dy>` baseline shift into user units. `em` is relative to the
+    /// element's font-size; `px`/unitless are taken as-is. (e.g. "0.35em" → 0.35·fontSize.)
+    private static func parseDy(_ val: String?, fontSize: CGFloat) -> CGFloat {
+        guard let clean = val?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !clean.isEmpty else { return 0 }
+        if clean.hasSuffix("em") { return CGFloat(Double(clean.dropLast(2)) ?? 0) * fontSize }
+        if clean.hasSuffix("px") { return CGFloat(Double(clean.dropLast(2)) ?? 0) }
         return CGFloat(Double(clean) ?? 0)
     }
 
@@ -515,38 +531,49 @@ extension CommentBubbleSVGRecognizer {
                         path.stroke()
                     }
 
-                case .text(let text, let x, let y, let fontSize, let fontWeight, let anchor, let color, let transform):
-                    // Draw text in canvas-space outside the viewBox CTM so the font
-                    // renders at the correct point size regardless of CTM scale.
-                    let vbPos = CGPoint(x: x, y: y).applying(transform)
-                    let vbOrg = svg.viewBox.origin
-                    let canvasX = (vbPos.x - vbOrg.x) * scaleX + leadingGap
-                    let canvasY = (vbPos.y - vbOrg.y) * scaleY
-
-                    let canvasFontSize = max(6, min(fontSize * scaleY, targetHeight * 0.5))
-                    let textColor = color ?? themeTextColor
-                    let isSVGBold = fontWeight?.lowercased().contains("bold") ?? false || fontWeight == "600"
-                    let isBold = isSVGBold || GlobalSettings.shared.readerFontBold
-                    let font = UserReaderFontResolver.bodyFont(size: canvasFontSize, isBold: isBold)
-                    let textAttrs: [NSAttributedString.Key: Any] = [
-                        .font: font,
-                        .foregroundColor: textColor
-                    ]
-                    let textSize = (text as NSString).size(withAttributes: textAttrs)
-
-                    var drawX = canvasX
-                    if anchor?.lowercased() == "middle" {
-                        drawX = canvasX - textSize.width / 2
-                    } else if anchor?.lowercased() == "end" {
-                        drawX = canvasX - textSize.width
-                    }
-                    let drawY = canvasY - font.ascender
-
-                    (text as NSString).draw(at: CGPoint(x: drawX, y: drawY), withAttributes: textAttrs)
+                case .text:
+                    // Text is drawn in a second pass below, in canvas space — see note there.
+                    break
                 }
                 context.restoreGState()
             }
             context.restoreGState()
+
+            // Text pass — MUST run after the viewBox→canvas CTM above is popped.
+            // The count digit is positioned and sized in canvas points (canvasX/Y,
+            // canvasFontSize). If it were drawn inside the viewBox CTM it would be
+            // scaled a SECOND time by scaleX/scaleY, shrinking it to near-zero for
+            // large-viewBox bubbles (墨圈 216×200, 光遇 style0 1224×1224, style3 88×76)
+            // → the number vanished. Drawing here, in identity/canvas space, fixes that.
+            for element in svg.elements {
+                guard case let .text(text, x, y, fontSize, fontWeight, anchor, color, transform) = element else { continue }
+                // The <g> transform maps the anchor point; glyphs themselves stay upright.
+                let vbPos = CGPoint(x: x, y: y).applying(transform)
+                let vbOrg = svg.viewBox.origin
+                let canvasX = (vbPos.x - vbOrg.x) * scaleX + leadingGap
+                let canvasY = (vbPos.y - vbOrg.y) * scaleY
+
+                let canvasFontSize = max(6, min(fontSize * scaleY, targetHeight * 0.5))
+                let textColor = color ?? themeTextColor
+                let isSVGBold = (fontWeight?.lowercased().contains("bold") ?? false) || fontWeight == "600"
+                let isBold = isSVGBold || GlobalSettings.shared.readerFontBold
+                let font = UserReaderFontResolver.bodyFont(size: canvasFontSize, isBold: isBold)
+                let textAttrs: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: textColor
+                ]
+                let textSize = (text as NSString).size(withAttributes: textAttrs)
+
+                var drawX = canvasX
+                if anchor?.lowercased() == "middle" {
+                    drawX = canvasX - textSize.width / 2
+                } else if anchor?.lowercased() == "end" {
+                    drawX = canvasX - textSize.width
+                }
+                let drawY = canvasY - font.ascender
+
+                (text as NSString).draw(at: CGPoint(x: drawX, y: drawY), withAttributes: textAttrs)
+            }
         }
 
         // Crop the baked-in viewBox / canvas padding (起点 fills it, but 企点·光遇·番茄
@@ -781,7 +808,10 @@ struct SVGPathParser {
         let vx = (-x1p - cxp) / arx, vy = (-y1p - cyp) / ary
 
         let startAngle = atan2(uy, ux)
-        var deltaAngle = atan2(uy * vx - ux * vy, ux * vx + uy * vy)
+        // Sweep direction follows the W3C spec sign: sign(ux·vy − uy·vx). The cross-product
+        // term was previously negated, which flipped every sweep=1 corner into a wrong-way
+        // 270° arc → mangled rounded-rect bubbles (光遇 style1/style2 use A/a corners).
+        var deltaAngle = atan2(ux * vy - uy * vx, ux * vx + uy * vy)
 
         if !sweep && deltaAngle >  0 { deltaAngle -= 2 * .pi }
         if  sweep && deltaAngle <  0 { deltaAngle += 2 * .pi }
@@ -792,8 +822,10 @@ struct SVGPathParser {
         var theta1 = startAngle
         for _ in 0..<segments {
             let theta2 = theta1 + segAngle
-            let t = tan((theta2 - theta1) / 4.0)
-            let alpha = sin(theta2 - theta1) * (sqrt(4 + 3 * t * t) - 1) / 3.0
+            // Cubic-bezier control-handle length for a circular arc segment (≤90° here):
+            // k = 4/3·tan(Δ/4). The previous sqrt-form used tan(Δ/4) where it needed
+            // tan(Δ/2), undershooting the handle (~0.37 vs 0.55 at 90°) → flattened corners.
+            let alpha = (4.0 / 3.0) * tan((theta2 - theta1) / 4.0)
 
             let c1x = arx * (cos(theta1) - alpha * sin(theta1))
             let c1y = ary * (sin(theta1) + alpha * cos(theta1))
