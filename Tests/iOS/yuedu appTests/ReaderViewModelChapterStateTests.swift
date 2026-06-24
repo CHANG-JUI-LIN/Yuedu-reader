@@ -394,7 +394,8 @@ private struct StubBookSourceFetcher: BookSourceFetching {
         tocUrl: String,
         source: BookSource,
         runtimeVariables: [String: String]?,
-        onFirstPageReady: (([OnlineChapterRef]) -> Void)?
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool
     ) async throws -> TOCPackage {
         throw NSError(domain: "StubBookSourceFetcher", code: 2)
     }

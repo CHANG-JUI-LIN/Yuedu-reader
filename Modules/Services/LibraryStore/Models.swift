@@ -140,6 +140,18 @@ extension ReadingBook {
         lastOpenedDate == nil && currentPosition <= 0
     }
 
+    /// Display title of the newest readable chapter (volume separators skipped),
+    /// shown on the bookshelf so a TOC refresh is visible. Nil for local books or
+    /// when no chapters are known yet.
+    var latestChapterDisplayTitle: String? {
+        guard isOnline, let chapters = onlineChapters, !chapters.isEmpty else { return nil }
+        let latest = chapters.last(where: { !$0.shouldRenderAsVolumeSeparator }) ?? chapters.last
+        guard let latest else { return nil }
+        let text = ReaderHTMLUtilities.displayText(fromHTMLFragment: latest.title)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
     /// A copy suitable for storing in a single Firestore document. The online
     /// chapter list can be thousands of entries (web novels) and would risk the
     /// 1 MB document limit, so it is dropped — it stays local and is re-fetchable
@@ -171,6 +183,11 @@ struct ReadingBook: Identifiable, Codable {
     var tocURL: String?
     var runtimeVariables: [String: String]?
     var onlineChapters: [OnlineChapterRef]?
+
+    /// True when a table-of-contents refresh discovered chapters newer than the
+    /// ones the user has already seen. Set by `BookStore.refreshOnlineBookMetadata`
+    /// (launch / foreground / pull-to-refresh) and cleared when the book is opened.
+    var hasNewChapterUpdate: Bool = false
 
     // Bookshelf grouping
     var group: String = ""
@@ -216,6 +233,7 @@ struct ReadingBook: Identifiable, Codable {
         self.tocURL = nil
         self.runtimeVariables = nil
         self.onlineChapters = nil
+        self.hasNewChapterUpdate = false
         self.bookmarks = []
         self.coverImagePath = nil
         self.rendererPreference = .defaultWeb
@@ -249,6 +267,7 @@ struct ReadingBook: Identifiable, Codable {
         tocURL = try? c.decode(String.self, forKey: .tocURL)
         runtimeVariables = try? c.decode([String: String].self, forKey: .runtimeVariables)
         onlineChapters = try? c.decode([OnlineChapterRef].self, forKey: .onlineChapters)
+        hasNewChapterUpdate = (try? c.decode(Bool.self, forKey: .hasNewChapterUpdate)) ?? false
         bookmarks = (try? c.decode([Bookmark].self, forKey: .bookmarks)) ?? []
         coverImagePath = try? c.decode(String.self, forKey: .coverImagePath)
         rendererPreference =
@@ -271,7 +290,7 @@ struct ReadingBook: Identifiable, Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, author, source, contentFilename, contentPipelineKind, currentPosition, addedDate
-        case isOnline, bookSourceId, bookInfoURL, tocURL, runtimeVariables, onlineChapters, bookmarks
+        case isOnline, bookSourceId, bookInfoURL, tocURL, runtimeVariables, onlineChapters, hasNewChapterUpdate, bookmarks
         case coverImagePath, rendererPreference, compatibilityState
         case offlineDownloadState, downloadedChapterCount, offlineDownloadTask, group, lastOpenedDate
         case mangaChapterIndex, mangaPage

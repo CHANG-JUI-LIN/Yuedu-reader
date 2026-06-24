@@ -19,6 +19,12 @@ enum AppConfig {
     /// Too high triggers book-source rate limiting / Cloudflare protection.
     static let startupRefreshMaxConcurrentTasks: Int = 3
 
+    /// Minimum seconds between *automatic* table-of-contents refreshes (cold
+    /// launch and returning to the foreground). Manual pull-to-refresh ignores
+    /// this. Prevents hammering book sources when the app is switched in and out
+    /// rapidly. Reasonable range: 120–600.
+    static let autoRefreshMinInterval: TimeInterval = 300
+
     // MARK: - WebView Pool
 
     /// Fixed size of the WebView pool. Temporary WebViews beyond this count are

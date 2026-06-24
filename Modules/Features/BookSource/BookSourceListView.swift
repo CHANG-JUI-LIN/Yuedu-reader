@@ -24,7 +24,11 @@ struct BookSourceListView: View {
     @State private var showDeleteConfirm = false
     @State private var showMoreMenu = false
     @State private var showSourceCheck = false
-    @StateObject private var healthChecker = BookSourceHealthChecker()
+    @State private var showCheckOptions = false
+    @State private var pendingCheckSources: [BookSource] = []
+    @State private var pendingStartPolicy: BookSourceCheckPolicy? = nil
+    // Shared instance so a check keeps running in the background after this screen is dismissed.
+    @ObservedObject private var healthChecker = BookSourceHealthChecker.shared
     @State private var checkToast: String? = nil
 
     private var checkSources: [BookSource] {
@@ -119,7 +123,7 @@ struct BookSourceListView: View {
                         }
                         Divider()
                         Button {
-                            startBackgroundCheck()
+                            presentCheckOptions()
                         } label: {
                             Label(localized("書源檢測"), systemImage: "stethoscope")
                         }
@@ -160,6 +164,24 @@ struct BookSourceListView: View {
                 } else {
                     BookSourceFormLoginView(source: src) {
                         loginSource = nil
+                    }
+                }
+            }
+            .sheet(isPresented: $showCheckOptions, onDismiss: {
+                // Start (and open the results sheet) only AFTER the options sheet has fully
+                // dismissed — presenting a second sheet on the same frame as the first dismisses
+                // is unreliable in SwiftUI.
+                if let policy = pendingStartPolicy {
+                    pendingStartPolicy = nil
+                    startCheck(with: policy, sources: pendingCheckSources)
+                }
+            }) {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readablePanelWidth) {
+                    BookSourceCheckOptionsView(
+                        sourceCount: pendingCheckSources.count,
+                        initialPolicy: healthChecker.policy
+                    ) { policy in
+                        pendingStartPolicy = policy
                     }
                 }
             }
@@ -420,7 +442,7 @@ struct BookSourceListView: View {
                 .disabled(selectedIds.isEmpty)
                 Divider()
                 Button {
-                    startBackgroundCheck()
+                    presentCheckOptions()
                 } label: {
                     Label(localized("書源檢測"), systemImage: "stethoscope")
                 }
@@ -487,18 +509,27 @@ struct BookSourceListView: View {
         }
     }
 
-    private func startBackgroundCheck() {
+    private func presentCheckOptions() {
         let sources = checkSources
         guard !sources.isEmpty else { return }
+        pendingCheckSources = sources
+        showCheckOptions = true
+    }
+
+    private func startCheck(with policy: BookSourceCheckPolicy, sources: [BookSource]) {
+        guard !sources.isEmpty else { return }
+        healthChecker.policy = policy
         healthChecker.prepare(sources: sources)
         showSourceCheck = true
         Task {
             await healthChecker.runAll()
             if !showSourceCheck {
                 let passed = healthChecker.items.filter { $0.overallPass }.count
-                withAnimation {
-                    checkToast = "\(localized("檢測完成"))：\(passed)/\(healthChecker.items.count) \(localized("通過"))"
+                var msg = "\(localized("檢測完成"))：\(passed)/\(healthChecker.items.count) \(localized("通過"))"
+                if let summary = healthChecker.lastSummary {
+                    msg += "，\(summary)"
                 }
+                withAnimation { checkToast = msg }
             }
         }
     }

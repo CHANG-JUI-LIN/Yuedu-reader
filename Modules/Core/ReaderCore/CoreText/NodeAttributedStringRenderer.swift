@@ -32,6 +32,11 @@ struct NodeAttributedStringRenderer {
         let writingMode: ReaderWritingMode
         let baseWritingDirection: NSWritingDirection
         let isBold: Bool
+        /// Center standalone block images that carry no explicit horizontal alignment. Online
+        /// web-novel sources (起点/Legado) emit chapter illustrations & 版权页 author photos as bare
+        /// `<img>` with no centering CSS but expect them centered, matching the source apps. Left
+        /// off for EPUB, whose stylesheets position images themselves.
+        let centerStandaloneImages: Bool
 
         init(
             from settings: ReaderRenderSettings,
@@ -41,7 +46,8 @@ struct NodeAttributedStringRenderer {
             resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
             imageLoader: ((String) async -> UIImage?)? = nil,
             mediaURLResolver: ((String) -> String?)? = nil,
-            baseWritingDirection: NSWritingDirection = .natural
+            baseWritingDirection: NSWritingDirection = .natural,
+            centerStandaloneImages: Bool = false
         ) {
             self.baseFontSize = settings.fontSize
             self.lineHeightMultiple = settings.lineHeightMultiple
@@ -57,6 +63,7 @@ struct NodeAttributedStringRenderer {
             self.writingMode = settings.writingMode
             self.baseWritingDirection = baseWritingDirection
             self.isBold = settings.isBold
+            self.centerStandaloneImages = centerStandaloneImages
         }
     }
 
@@ -69,6 +76,23 @@ struct NodeAttributedStringRenderer {
         let result = NSMutableAttributedString()
         let ctx = RenderContext.makeBody(config: config)
         for node in nodes {
+            // A bare `<img>` becomes a TOP-LEVEL `.image` node (the converter never wraps it in a
+            // block), so it would otherwise render as an inline attachment, left-aligned. Online
+            // sources expect standalone illustrations / 版权页 author photos centered — route them
+            // through the block-image path so the centering applies. Inline-sized bubbles
+            // (isTextSizedImage) and EPUB (flag off) are untouched.
+            if config.centerStandaloneImages,
+               let payload = unwrapSingleImage(from: node),
+               !payload.style.isTextSizedImage {
+                result.append(await renderImageOnlyBlock(
+                    payload: payload,
+                    blockStyle: payload.style,
+                    ctx: ctx,
+                    isHeading: false,
+                    headingLevel: 0
+                ))
+                continue
+            }
             result.append(await render(node: node, ctx: ctx))
         }
         let processed = NSMutableAttributedString(attributedString: CJKTypographyProcessor.apply(to: result))
@@ -922,13 +946,19 @@ struct NodeAttributedStringRenderer {
         attachmentStyle.paddingRight += payload.style.paddingRight
         attachmentStyle.opacity = payload.style.opacity
 
+        // Online sources (起点/Legado) emit bare `<img>` illustrations & author photos that the
+        // source apps center; honor that when the block carries no explicit alignment of its own.
+        let shouldCenter = blockStyle.isHorizontallyCentered
+            || (config.centerStandaloneImages && attachmentStyle.textAlign == .natural)
+        let imageAlignment: NSTextAlignment = shouldCenter ? .center : nsTextAlignment(from: attachmentStyle.textAlign)
+
         let imageMetrics = await resolvedImageMetrics(image: image, style: attachmentStyle, font: blockCtx.font, displayMode: .block)
         let blockImage = HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage(
             image: image,
             source: payload.src,
             drawSize: CGSize(width: imageMetrics.drawWidth, height: imageMetrics.drawHeight),
             opacity: attachmentStyle.opacity,
-            alignment: nsTextAlignment(from: attachmentStyle.textAlign),
+            alignment: imageAlignment,
             paddingTop: attachmentStyle.paddingTop,
             paddingLeft: attachmentStyle.paddingLeft,
             paddingBottom: attachmentStyle.paddingBottom,
@@ -952,7 +982,7 @@ struct NodeAttributedStringRenderer {
             value: imageBlockParagraphStyle(
                 base: blockCtx.paragraphStyle,
                 metrics: imageMetrics,
-                isHorizontallyCentered: blockStyle.isHorizontallyCentered
+                isHorizontallyCentered: shouldCenter
             ),
             range: range
         )

@@ -24,7 +24,8 @@ protocol BookSourceFetching {
         tocUrl: String,
         source: BookSource,
         runtimeVariables: [String: String]?,
-        onFirstPageReady: (([OnlineChapterRef]) -> Void)?
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool
     ) async throws -> TOCPackage
 
     func isChapterCached(
@@ -63,7 +64,25 @@ extension BookSourceFetching {
             tocUrl: tocUrl,
             source: source,
             runtimeVariables: runtimeVariables,
-            onFirstPageReady: nil
+            onFirstPageReady: nil,
+            forceRefresh: false
+        )
+    }
+
+    /// Convenience overload that defaults `forceRefresh` to `false`, so existing
+    /// reading paths keep using the cached TOC without passing the new flag.
+    func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?
+    ) async throws -> TOCPackage {
+        try await fetchTOCPackage(
+            tocUrl: tocUrl,
+            source: source,
+            runtimeVariables: runtimeVariables,
+            onFirstPageReady: onFirstPageReady,
+            forceRefresh: false
         )
     }
 }
@@ -140,13 +159,15 @@ struct LiveBookSourceFetcher: BookSourceFetching {
         tocUrl: String,
         source: BookSource,
         runtimeVariables: [String: String]?,
-        onFirstPageReady: (([OnlineChapterRef]) -> Void)?
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool
     ) async throws -> TOCPackage {
         try await bookSourceFetcher.fetchTOCPackage(
             tocUrl: tocUrl,
             source: source,
             runtimeVariables: runtimeVariables,
-            onFirstPageReady: onFirstPageReady
+            onFirstPageReady: onFirstPageReady,
+            forceRefresh: forceRefresh
         )
     }
 

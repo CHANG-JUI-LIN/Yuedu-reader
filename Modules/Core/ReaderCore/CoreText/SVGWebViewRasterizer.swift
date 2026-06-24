@@ -32,7 +32,7 @@ final class SVGWebViewRasterizer: NSObject {
     /// Per-item watchdog: if a WKWebView navigation never fires didFinish/didFail (malformed
     /// SVG, stuck load) the continuation would never resume AND that lane would stall. The
     /// watchdog finishes a stuck item with nil and frees the lane so the queue keeps moving.
-    private static let itemTimeout: TimeInterval = 5
+    private static let itemTimeout: TimeInterval = 7
 
     /// Workers currently busy. Drives drain telemetry and the "all lanes idle" check.
     private var activeCount = 0
@@ -62,7 +62,15 @@ final class SVGWebViewRasterizer: NSObject {
 
     private var isDraining: Bool { activeCount > 0 }
 
-    func render(svgString: String, size: CGSize, baseURL: URL? = nil) async -> UIImage? {
+    func render(svgString rawSVG: String, size: CGSize, baseURL: URL? = nil) async -> UIImage? {
+        // WKWebView renders an `<svg>` that declares width/height but NO `viewBox` at 1:1 user
+        // units. When we force a smaller CSS size to fit the column, such an SVG is CLIPPED to its
+        // top-left corner instead of scaled down. 起点 本章说 cards and 版权页 banners are authored
+        // `width=1080 height=H` with no viewBox, so they showed only a cropped sliver (the card
+        // "vanished"; the banner's rows collapsed into a garbled strip). Injecting a matching
+        // viewBox makes the content scale to the rendered size, and is a no-op for any SVG that
+        // already declares one — so it never changes a correctly-authored SVG's appearance.
+        let svgString = ensureViewBox(in: rawSVG)
         let key = cacheKey(svgString: svgString, size: size)
         if let cached = cache.object(forKey: key) {
             if isDraining { drainCacheHits += 1 }
@@ -93,6 +101,39 @@ final class SVGWebViewRasterizer: NSObject {
             attributes: attrs,
             renderWidth: renderWidth
         )
+    }
+
+    /// Inserts a `viewBox="0 0 W H"` (from the declared width/height) when the root `<svg>` has
+    /// none, so a forced CSS size scales the content instead of clipping it. Returns the string
+    /// unchanged when a viewBox is already present or width/height aren't both numeric.
+    /// (Non-private only so unit tests can verify the injection that un-clips 本章说/版权页 SVGs.)
+    func ensureViewBox(in svgString: String) -> String {
+        guard let svgStart = svgString.range(of: "<svg", options: .caseInsensitive)?.lowerBound else {
+            return svgString
+        }
+        let afterSvg = svgString.index(svgStart, offsetBy: 4)
+        guard let tagEnd = svgString.range(of: ">", range: afterSvg..<svgString.endIndex)?.lowerBound else {
+            return svgString
+        }
+        let tag = String(svgString[svgStart..<tagEnd])
+        if tag.range(of: "viewBox", options: .caseInsensitive) != nil { return svgString }
+
+        let attrs = extractSVGAttributes(svgString)
+        func numeric(_ raw: String?) -> Double? {
+            guard let raw else { return nil }
+            var s = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if s.hasSuffix("px") { s = String(s.dropLast(2)) }
+            guard let v = Double(s.trimmingCharacters(in: .whitespaces)), v > 0 else { return nil }
+            return v
+        }
+        guard let w = numeric(attrs["width"]), let h = numeric(attrs["height"]) else { return svgString }
+
+        func fmt(_ v: Double) -> String {
+            v.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(v)) : String(v)
+        }
+        var result = svgString
+        result.insert(contentsOf: " viewBox=\"0 0 \(fmt(w)) \(fmt(h))\"", at: afterSvg)
+        return result
     }
 
     private func extractSVGAttributes(_ svgString: String) -> [String: String] {
@@ -147,16 +188,25 @@ final class SVGWebViewRasterizer: NSObject {
         let w: CGFloat = styleWidth ?? attrW ?? vbSize?.width ?? 240
         let h: CGFloat = styleHeight ?? attrH ?? vbSize?.height ?? 120
 
+        var resolved: CGSize
         if styleHeight == nil && attrH == nil && vbSize != nil {
             let ratio = vbSize!.width > 0 ? vbSize!.height / vbSize!.width : 1
-            return CGSize(width: w, height: w * ratio)
-        }
-        if styleWidth == nil && attrW == nil && vbSize != nil {
+            resolved = CGSize(width: w, height: w * ratio)
+        } else if styleWidth == nil && attrW == nil && vbSize != nil {
             let ratio = vbSize!.height > 0 ? vbSize!.width / vbSize!.height : 1
-            return CGSize(width: h * ratio, height: h)
+            resolved = CGSize(width: h * ratio, height: h)
+        } else {
+            resolved = CGSize(width: w, height: h)
         }
 
-        return CGSize(width: w, height: h)
+        // Cap to the display column width. A full-width comment card (起點/企点 本章说 is ~1080pt
+        // wide) rasterized at its intrinsic width makes WKWebView.takeSnapshot throw on the
+        // oversized bitmap → the whole card silently vanished. It's displayed scaled to the column
+        // anyway, so rasterize it at the column width. (Small bubbles < renderWidth are untouched.)
+        if renderWidth > 0, resolved.width > renderWidth, resolved.width > 0 {
+            resolved = CGSize(width: renderWidth, height: resolved.height * renderWidth / resolved.width)
+        }
+        return resolved
     }
 
     private func parseViewBox(_ value: String?) -> CGSize? {
@@ -218,6 +268,30 @@ final class SVGWebViewRasterizer: NSObject {
         }
     }
 
+    /// Takes a `WKWebView` snapshot, retrying after a short delay when it throws. A large SVG
+    /// card (起點/企点 本章说) can make `takeSnapshot` throw if it isn't fully painted at the moment
+    /// `didFinish` fires; a brief settle + retry lets it render instead of vanishing. (Falling back
+    /// to `layer.render` does NOT work — WKWebView content renders out-of-process and comes back
+    /// blank — so retrying the real snapshot is the reliable path.)
+    @MainActor
+    private func captureSnapshot(_ webView: WKWebView, rect: CGRect, retriesLeft: Int) async -> UIImage? {
+        let config = WKSnapshotConfiguration()
+        config.rect = rect
+        do {
+            return try await webView.takeSnapshot(configuration: config)
+        } catch {
+            guard retriesLeft > 0 else {
+                AppLogger.render("⟐ svgRaster snapshot-fail", context: [
+                    "size": "\(Int(rect.width))x\(Int(rect.height))",
+                    "err": String(describing: error).prefix(80)
+                ])
+                return nil
+            }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            return await captureSnapshot(webView, rect: rect, retriesLeft: retriesLeft - 1)
+        }
+    }
+
     private func cacheKey(svgString: String, size: CGSize) -> NSString {
         let input = "\(svgString)|\(size.width)|\(size.height)"
         let hash = SHA256.hash(data: Data(input.utf8))
@@ -252,14 +326,14 @@ extension SVGWebViewRasterizer: WKNavigationDelegate {
                   !item.finished else {
                 return
             }
-            let config = WKSnapshotConfiguration()
-            config.rect = CGRect(origin: .zero, size: item.size)
-            do {
-                let image = try await webView.takeSnapshot(configuration: config)
-                self.finishItem(item, on: worker, image: image)
-            } catch {
-                self.finishItem(item, on: worker, image: nil)
-            }
+            let image = await self.captureSnapshot(
+                webView,
+                rect: CGRect(origin: .zero, size: item.size),
+                retriesLeft: 2
+            )
+            // A retry may have spanned the watchdog firing for this item — don't double-finish.
+            guard !item.finished else { return }
+            self.finishItem(item, on: worker, image: image)
         }
     }
 

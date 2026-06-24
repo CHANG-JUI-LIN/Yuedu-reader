@@ -596,7 +596,20 @@ struct BookRow: View {
                         .lineLimit(1)
                 }
 
-                progressBadge
+                if let latest = book.latestChapterDisplayTitle {
+                    Text(localized("最新") + " · " + latest)
+                        .font(.system(size: 12))
+                        .foregroundColor(DSColor.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                HStack(spacing: 6) {
+                    if book.hasNewChapterUpdate {
+                        updateBadge
+                    }
+                    progressBadge
+                }
             }
             .padding(.top, 2)
 
@@ -612,6 +625,18 @@ struct BookRow: View {
             ?? book.onlineChapters?.count
         guard let total, total > 0 else { return nil }
         return min(1, Double(book.downloadedChapterCount) / Double(total))
+    }
+
+    /// "更新" pill shown when a refresh found new chapters the user hasn't opened yet.
+    private var updateBadge: some View {
+        Text(localized("更新"))
+            .font(.system(size: 11, weight: .bold))
+            .foregroundColor(DSColor.textOnAccent)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(DSColor.accent)
+            .clipShape(Capsule())
+            .accessibilityLabel(localized("有新章節"))
     }
 
     @ViewBuilder
@@ -735,6 +760,19 @@ struct BookGridCell: View {
                             .background(DSColor.accent.opacity(0.85))
                             .clipShape(Capsule())
                             .padding(6)
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    if book.hasNewChapterUpdate {
+                        Text(localized("更新"))
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(DSColor.textOnAccent)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(DSColor.accent)
+                            .clipShape(Capsule())
+                            .padding(6)
+                            .accessibilityLabel(localized("有新章節"))
                     }
                 }
             }
@@ -898,3 +936,40 @@ struct BulkAddToGroupSheet: View {
         }
     }
 }
+
+// MARK: - Previews
+
+#if DEBUG
+private func previewOnlineBook(hasUpdate: Bool) -> ReadingBook {
+    var book = ReadingBook(
+        title: "示範線上小說",
+        author: "示範作者",
+        source: "https://example.com",
+        contentFilename: ""
+    )
+    book.isOnline = true
+    book.currentPosition = 0.42
+    book.onlineChapters = [
+        OnlineChapterRef(index: 0, title: "第一章 開始", url: "https://example.com/1"),
+        OnlineChapterRef(index: 1, title: "第一百零八章 大結局", url: "https://example.com/108"),
+    ]
+    book.hasNewChapterUpdate = hasUpdate
+    return book
+}
+
+#Preview("BookRow – 有更新 / 無更新") {
+    List {
+        BookRow(book: previewOnlineBook(hasUpdate: true), onTap: {}, onEdit: {}, onDelete: {})
+        BookRow(book: previewOnlineBook(hasUpdate: false), onTap: {}, onEdit: {}, onDelete: {})
+    }
+    .listStyle(.plain)
+}
+
+#Preview("BookGridCell – 有更新 / 無更新") {
+    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100, maximum: 160), spacing: 10)], spacing: 12) {
+        BookGridCell(book: previewOnlineBook(hasUpdate: true), onOpen: {}, onEdit: {}, onDelete: {})
+        BookGridCell(book: previewOnlineBook(hasUpdate: false), onOpen: {}, onEdit: {}, onDelete: {})
+    }
+    .padding()
+}
+#endif

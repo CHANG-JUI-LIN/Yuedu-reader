@@ -57,6 +57,15 @@ class BookSourceStore: ObservableObject {
         }
     }
 
+    /// Sets a source's enabled flag to an explicit value (no-op if already set). Used by the
+    /// health checker to disable bad/slow sources without risk of accidentally re-enabling.
+    func setEnabled(id: UUID, enabled: Bool) {
+        if let idx = sources.firstIndex(where: { $0.id == id }), sources[idx].enabled != enabled {
+            sources[idx].enabled = enabled
+            save()
+        }
+    }
+
     var enabledSources: [BookSource] {
         sources.filter { $0.enabled }
     }

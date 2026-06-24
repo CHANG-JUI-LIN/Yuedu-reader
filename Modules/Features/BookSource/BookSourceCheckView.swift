@@ -87,17 +87,24 @@ struct BookSourceCheckView: View {
         } else if !checker.items.isEmpty {
             let passed = checker.items.filter { $0.overallPass }.count
             let total = checker.items.count
-            HStack(spacing: DSSpacing.xs) {
-                Image(
-                    systemName: passed == total ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
-                )
-                .foregroundColor(passed == total ? DSColor.success : DSColor.warning)
-                .font(DSFont.caption)
-                Text(
-                    "\(localized("共")) \(total) \(localized("個書源，"))\(localized("通過")) \(passed) \(localized("個"))"
-                )
-                .font(DSFont.caption)
-                .foregroundColor(DSColor.textSecondary)
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                HStack(spacing: DSSpacing.xs) {
+                    Image(
+                        systemName: passed == total ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
+                    )
+                    .foregroundColor(passed == total ? DSColor.success : DSColor.warning)
+                    .font(DSFont.caption)
+                    Text(
+                        "\(localized("共")) \(total) \(localized("個書源，"))\(localized("通過")) \(passed) \(localized("個"))"
+                    )
+                    .font(DSFont.caption)
+                    .foregroundColor(DSColor.textSecondary)
+                }
+                if let summary = checker.lastSummary {
+                    Text(summary)
+                        .font(DSFont.caption)
+                        .foregroundColor(DSColor.textSecondary)
+                }
             }
             .padding(.top, DSSpacing.sm)
         }
@@ -153,7 +160,12 @@ struct BookSourceCheckView: View {
             Spacer(minLength: DSSpacing.sm)
 
             if case .pass = item.status {
-                statusBadge(text: localized("通過"), color: DSColor.success)
+                HStack(spacing: 4) {
+                    if checker.isSlow(item) {
+                        statusBadge(text: localized("慢"), color: DSColor.warning)
+                    }
+                    statusBadge(text: localized("通過"), color: DSColor.success)
+                }
             } else if case .fail = item.status {
                 statusBadge(text: localized("失敗"), color: DSColor.destructive)
             }

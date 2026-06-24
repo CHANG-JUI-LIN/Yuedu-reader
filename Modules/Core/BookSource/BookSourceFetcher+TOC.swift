@@ -19,13 +19,20 @@ extension BookSourceFetcher {
         return package.chapters
     }
 
+    /// - Parameter forceRefresh: when `true`, the on-disk TOC cache is ignored and
+    ///   the table of contents is always re-fetched from the network. Used by the
+    ///   "update online books" path (launch / foreground / pull-to-refresh) so that
+    ///   serial novels actually pick up newly-published chapters instead of replaying
+    ///   the stale cached list. Normal reading paths leave it `false` for speed.
     func fetchTOCPackage(
         tocUrl: String,
         source: BookSource,
         runtimeVariables: [String: String]? = nil,
-        onFirstPageReady: ((_ chapters: [OnlineChapterRef]) -> Void)? = nil
+        onFirstPageReady: ((_ chapters: [OnlineChapterRef]) -> Void)? = nil,
+        forceRefresh: Bool = false
     ) async throws -> TOCPackage {
-        if let cached = loadTOCPackageSync(tocUrl: tocUrl, source: source), !cached.chapters.isEmpty {
+        if !forceRefresh,
+            let cached = loadTOCPackageSync(tocUrl: tocUrl, source: source), !cached.chapters.isEmpty {
             let hasBadURL = cached.chapters.contains { ch in
                 ch.url.contains("<") || ch.url.contains("&lt;") || ch.url.contains("%3C")
             }

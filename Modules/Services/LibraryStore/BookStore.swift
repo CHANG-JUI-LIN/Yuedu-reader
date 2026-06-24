@@ -660,6 +660,8 @@ class BookStore: ObservableObject, BookProvider {
     func updateLastOpened(bookId: UUID) {
         guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
         books[idx].lastOpenedDate = Date()
+        // Opening the book counts as acknowledging any new chapters.
+        books[idx].hasNewChapterUpdate = false
         saveMeta()
     }
 
@@ -1214,6 +1216,12 @@ class BookStore: ObservableObject, BookProvider {
                 domain: "BookStore", code: -2, userInfo: [NSLocalizedDescriptionKey: "找不到線上書籍"])
         }
 
+        // Snapshot of what the user has already seen, so the final merge can tell
+        // whether this refresh actually brought in newer chapters (drives the
+        // "更新" badge on the bookshelf).
+        let originalChapterCount = snapshot.onlineChapters?.count ?? 0
+        let originalLatestTitle = normalizeChapterTitle(snapshot.onlineChapters?.last?.title ?? "")
+
         guard let sourceId = snapshot.bookSourceId else {
             return snapshot
         }
@@ -1299,7 +1307,11 @@ class BookStore: ObservableObject, BookProvider {
                     }
                     onFirstChaptersReady?(self.books[idx])
                 }
-            }
+            },
+            // Always hit the network here: this is the "check for new chapters"
+            // path, so the stale cached TOC must be bypassed or serial novels
+            // never pick up newly-published chapters.
+            forceRefresh: true
         )
         if let fetchedRuntime = tocPackage.runtimeVariables, !fetchedRuntime.isEmpty {
             runtimeVariables = fetchedRuntime
@@ -1342,7 +1354,17 @@ class BookStore: ObservableObject, BookProvider {
             let titleChanged = previousTitle != books[idx].title
             let authorChanged = previousAuthor != books[idx].author
 
-            if runtimeChanged || chaptersChanged || tocChanged || titleChanged || authorChanged {
+            // Surface newly-arrived chapters on the bookshelf. Only flag when the
+            // book already had chapters (avoids marking a first-time population)
+            // and the latest chapter moved on — more chapters, or a new tail title.
+            let gainedChapters = originalChapterCount > 0
+                && (mergedChapters.count > originalChapterCount
+                    || normalizeChapterTitle(mergedChapters.last?.title ?? "") != originalLatestTitle)
+            if gainedChapters {
+                books[idx].hasNewChapterUpdate = true
+            }
+
+            if runtimeChanged || chaptersChanged || tocChanged || titleChanged || authorChanged || gainedChapters {
                 saveMeta()
             }
             return (books[idx], chaptersChanged || tocChanged)

@@ -22,6 +22,9 @@
 "下一頁 URL" = "Next Page URL";
 "下載中" = "Downloading";
 "下載管理" = "Download Manager";
+"更新" = "Updated";
+"最新" = "Latest";
+"有新章節" = "New chapters available";
 "不定時" = "Irregular";
 "並發數" = "Concurrency";
 "亮度" = "Brightness";
@@ -918,3 +921,17 @@
 "帳號設定" = "Login Settings";
 "無可設定的欄位" = "No Fields to Configure";
 "已儲存" = "Saved";
+"僅標記" = "Mark Only";
+"停用" = "Disable";
+"慢" = "Slow";
+"已停用" = "Disabled";
+"已刪除" = "Deleted";
+"秒" = "s";
+"開始檢測" = "Start Check";
+"壞書源處理" = "Failed Sources";
+"停用過慢書源" = "Disable Slow Sources";
+"過慢閾值" = "Slow Threshold";
+"書源檢測選項" = "Check Options";
+"刪除無法復原，請謹慎選擇" = "Deletion can't be undone — choose carefully";
+"檢測失敗的書源的處理方式" = "How to handle sources that fail the check";
+"回應時間超過閾值的書源會被停用" = "Sources slower than the threshold are disabled";

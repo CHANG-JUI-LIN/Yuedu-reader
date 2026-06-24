@@ -31,7 +31,7 @@ struct yuedu_appApp: App {
                         await WebFetcher.shared.setCloudflareChallengeHandler { url in
                             try await CloudflareChallengePresenter.present(url: url)
                         }
-                        await ChapterUpdater.refreshAll(bookStore: bookStore)
+                        await ChapterUpdater.refreshAll(bookStore: bookStore, auto: true)
                     }
                     // Finish any book-source imports the Share Extension queued
                     // (it can only stash the payload; the merge must happen here).
@@ -45,6 +45,10 @@ struct yuedu_appApp: App {
                     // Pick up sources shared while the app was backgrounded.
                     if newPhase == .active {
                         Task { await SharedImportQueueDrainer.shared.drain() }
+                        // Returning to the foreground also checks online books for
+                        // new chapters (throttled). Cold launch already kicked one
+                        // off in onAppear; the throttle skips the duplicate.
+                        Task { await ChapterUpdater.refreshAll(bookStore: bookStore, auto: true) }
                     }
                     // Seamless iCloud: push/merge when leaving the app.
                     if newPhase == .background, GlobalSettings.shared.iCloudAutoSync {
@@ -58,9 +62,33 @@ struct yuedu_appApp: App {
 // MARK: - Auto-Update Latest Chapters
 
 enum ChapterUpdater {
+    /// Timestamp of the last automatic refresh, used to throttle launch /
+    /// foreground refreshes. Manual pull-to-refresh bypasses it. Main-actor
+    /// isolated for Swift 6 concurrency safety.
+    @MainActor private static var lastAutoRefresh: Date?
+
+    /// Returns true (and records the time) when an automatic refresh is allowed
+    /// under the throttle window; false when one ran too recently.
+    @MainActor private static func consumeAutoRefreshAllowance() -> Bool {
+        let now = Date()
+        if let last = lastAutoRefresh, now.timeIntervalSince(last) < AppConfig.autoRefreshMinInterval {
+            return false
+        }
+        lastAutoRefresh = now
+        return true
+    }
+
     /// Scans all online books on the bookshelf and refreshes their table of contents (adds new chapters).
-    static func refreshAll(bookStore: BookStore) async {
-        let onlineBooks = bookStore.books.filter { $0.isOnline }
+    /// - Parameter auto: `true` for launch / foreground refreshes (throttled by
+    ///   `AppConfig.autoRefreshMinInterval`); `false` for explicit pull-to-refresh,
+    ///   which always runs.
+    static func refreshAll(bookStore: BookStore, auto: Bool = false) async {
+        if auto {
+            let allowed = await MainActor.run { consumeAutoRefreshAllowance() }
+            guard allowed else { return }
+        }
+
+        let onlineBooks = await MainActor.run { bookStore.books.filter { $0.isOnline } }
         guard !onlineBooks.isEmpty else { return }
 
         let maxConcurrentTasks = AppConfig.startupRefreshMaxConcurrentTasks

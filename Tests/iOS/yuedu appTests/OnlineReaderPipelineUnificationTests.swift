@@ -256,6 +256,104 @@ struct OnlineReaderPipelineUnificationTests {
         #expect(foundImageAttachment)
     }
 
+    @Test("本章说 card img survives the provider HTML pipeline and renders an attachment")
+    func chapterCommentCardSurvivesProviderPipeline() async throws {
+        // The 起点 本章说 card is emitted by getComments() as an <img> whose data-URI src carries a
+        // trailing Legado click-config: data:image/svg+xml;base64,<B64>,{"style":"FULL",...}. The
+        // inner double-quotes of that suffix sit INSIDE the src="" attribute, so an HTML parser
+        // terminates the attribute early unless the suffix is stripped first. ChapterFetcher
+        // sanitizes it, but the provider path (OnlineProviderAttributedStringBuilder) does not —
+        // this test reproduces the user's "本章说 doesn't show" through that exact path.
+        let cardSVG = #"<svg width="1080" height="700" xmlns="http://www.w3.org/2000/svg"><rect width="1080" height="700" fill="rgba(255,255,255,0.25)" rx="35"/><text x="80" y="75" font-size="44" fill="#000">本章说</text><text x="80" y="280" font-size="42" fill="#000">绝傲蜀风</text></svg>"#
+        let b64 = Data(cardSVG.utf8).base64EncodedString()
+        let clickConfig = #"{"style":"FULL","type":"qd","click":"androidshowChapterComments(1,2,3)"}"#
+        let cardImg = "<img src=\"data:image/svg+xml;base64,\(b64),\(clickConfig)\">"
+        let html = "<p>正文段落。</p>\n\(cardImg)"
+
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(
+                index: 0,
+                title: "第一章",
+                plainText: "正文段落。",
+                body: .html(html),
+                sourceHref: "https://example.com/books/1/chapter.html"
+            )
+        ])
+        let builder = OnlineProviderAttributedStringBuilder(
+            provider: provider,
+            renderSize: CGSize(width: 320, height: 480)
+        )
+
+        let result = try await builder.buildChapter(
+            at: 0,
+            settings: Self.renderSettings(),
+            themeTextColor: UIColor.label,
+            themeBackgroundColor: UIColor.systemBackground
+        )
+
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        var foundImageAttachment = false
+        result.attributedString.enumerateAttribute(
+            delegateKey,
+            in: NSRange(location: 0, length: result.attributedString.length)
+        ) { value, _, _ in
+            if value != nil { foundImageAttachment = true }
+        }
+        #expect(foundImageAttachment, "本章说 card produced no image attachment — it was dropped in the provider HTML pipeline. string=>>>\(result.attributedString.string)<<<")
+    }
+
+    @Test("provider images stay inside the reader content column")
+    func providerImagesStayInsideContentColumn() async throws {
+        let imageData = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 458)).pngData { context in
+            UIColor.systemGray.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 600, height: 458))
+        }
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(
+                index: 0,
+                title: "第一章",
+                plainText: "本章說",
+                body: .html("<p>正文</p><img src=\"data:image/png;base64,\(imageData.base64EncodedString())\" alt=\"本章說\">"),
+                sourceHref: "https://example.com/books/1/chapter.html"
+            )
+        ])
+        let pageWidth: CGFloat = 430
+        let horizontalInset: CGFloat = 32
+        let contentWidth = pageWidth - horizontalInset * 2
+        let settings = ReaderRenderSettings(
+            theme: "test",
+            textColor: .label,
+            backgroundColor: .systemBackground,
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 0,
+            paragraphSpacing: 8,
+            letterSpacing: 0,
+            marginH: horizontalInset,
+            marginV: 16,
+            footerHeight: 0,
+            contentInsets: UIEdgeInsets(top: 16, left: horizontalInset, bottom: 16, right: horizontalInset),
+            writingMode: .horizontal
+        )
+        let builder = OnlineProviderAttributedStringBuilder(
+            provider: provider,
+            renderSize: CGSize(width: pageWidth, height: 800)
+        )
+
+        let result = try await builder.buildChapter(
+            at: 0,
+            settings: settings,
+            themeTextColor: UIColor.label,
+            themeBackgroundColor: UIColor.systemBackground
+        )
+        let imageRun = try #require(EPUBTestFixtures.imageRunInfos(in: result.attributedString).first)
+
+        #expect(
+            imageRun.info.drawWidth <= contentWidth + 0.5,
+            "image width \(imageRun.info.drawWidth) must fit content column \(contentWidth)"
+        )
+    }
+
     // MARK: - OnlineChapterContentService cache-only test
 
     @Test("cache-only service reports missing content")

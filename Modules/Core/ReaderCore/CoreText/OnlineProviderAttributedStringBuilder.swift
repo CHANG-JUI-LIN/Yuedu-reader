@@ -115,12 +115,13 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
 
     private func configureResourceCallbacks(
         for builder: HTMLAttributedStringBuilder,
-        chapterHref: String
+        chapterHref: String,
+        renderWidth: CGFloat
     ) {
         // Image loading works without a resource provider: online sources embed illustrations
         // and comment-bubble SVGs as data: URIs and absolute http(s) URLs. Wire it unconditionally.
         builder.imageLoader = { [weak self] src in
-            await self?.loadImage(src: src, chapterHref: chapterHref)
+            await self?.loadImage(src: src, chapterHref: chapterHref, renderWidth: renderWidth)
         }
         guard let resourceProvider else { return }
         builder.resolvedFont = { [weak self] families, weight, italic, size in
@@ -149,10 +150,9 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         }
     }
 
-    private func loadImage(src: String, chapterHref: String) async -> UIImage? {
+    private func loadImage(src: String, chapterHref: String, renderWidth: CGFloat) async -> UIImage? {
         let cleaned = OnlineImageLoader.cleanImageSource(src)
         guard !cleaned.isEmpty else { return nil }
-        let renderWidth = max(0, renderSize.width)
 
         if let onlineImage = await OnlineImageLoader.load(src: cleaned, renderWidth: renderWidth) {
             return onlineImage
@@ -200,6 +200,19 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
 
         switch payload.body {
         case .html(let rawHTML):
+            // ⟐ 本章说 probe: does the chapter content actually carry the chapter-comment card and
+            // per-paragraph bubbles the source's getComments() is supposed to inject? The card's
+            // click action `androidshowChapterComments(...)` and the bubble action `showCmt(...)`
+            // survive as literal text in the img click-config suffix (not base64), so we can detect
+            // them in the raw HTML BEFORE any rendering. hasCard=false ⇒ the source/API never built
+            // the card (server side); hasCard=true but no card on screen ⇒ an app render failure
+            // (follow the matching ⟐ imgLoad / svgRaster lines for that SVG).
+            AppLogger.render("⟐ ccsCard", context: [
+                "chapter": index,
+                "hasCard": rawHTML.contains("androidshowChapterComments"),
+                "bubbles": rawHTML.components(separatedBy: "showCmt(").count - 1,
+                "len": rawHTML.count
+            ])
             return await buildHTMLChapter(
                 payload: payload,
                 html: ReaderHTMLUtilities.rewriteReviewComments(rawHTML),
@@ -225,6 +238,10 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         themeTextColor: UIColor,
         themeBackgroundColor: UIColor
     ) async -> AttributedChapterBuildResult {
+        let contentRenderWidth = max(
+            1,
+            renderSize.width - settings.contentInsets.left - settings.contentInsets.right
+        )
         let cfg = HTMLAttributedStringBuilder.Config(
             fontSize: settings.fontSize,
             lineHeightMultiple: settings.lineHeightMultiple,
@@ -234,12 +251,16 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             textColor: themeTextColor,
             backgroundColor: themeBackgroundColor,
             fontFamilyName: UserReaderFontResolver.selectedPostScriptName,
-            renderWidth: max(0, renderSize.width),
+            renderWidth: contentRenderWidth,
             writingMode: settings.writingMode
         )
         let builder = HTMLAttributedStringBuilder()
         let chapterHref = fallbackChapterHref(for: payload.index, payload: payload)
-        configureResourceCallbacks(for: builder, chapterHref: chapterHref)
+        configureResourceCallbacks(
+            for: builder,
+            chapterHref: chapterHref,
+            renderWidth: contentRenderWidth
+        )
 
         guard let ast = await builder.buildStyledAST(html: html, config: cfg) else {
             return AttributedChapterBuildResult(
@@ -281,13 +302,18 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                     )
                 },
                 imageLoader: { [weak self] src in
-                    await self?.loadImage(src: src, chapterHref: chapterHref)
+                    await self?.loadImage(
+                        src: src,
+                        chapterHref: chapterHref,
+                        renderWidth: contentRenderWidth
+                    )
                 },
                 mediaURLResolver: !hasResources ? nil : { [weak self] src in
                     guard let self, let resourceProvider = self.resourceProvider else { return nil }
                     let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
                     return resourceProvider.resourceURL(for: resolved).absoluteString
                 },
+                centerStandaloneImages: true
             )
         )
 

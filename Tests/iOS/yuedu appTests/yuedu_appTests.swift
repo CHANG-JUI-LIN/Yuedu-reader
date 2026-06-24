@@ -158,7 +158,8 @@ struct yuedu_appTests {
             tocUrl: String,
             source: BookSource,
             runtimeVariables: [String: String]?,
-            onFirstPageReady: (([OnlineChapterRef]) -> Void)?
+            onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
+            forceRefresh: Bool
         ) async throws -> TOCPackage {
             #expect(source.id == self.source.id)
             #expect(tocUrl == finalPackage.tocURL)

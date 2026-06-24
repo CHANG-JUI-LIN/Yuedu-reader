@@ -922,9 +922,39 @@ class ModernParserBridge {
 
         guard !ruleStr.isEmpty else { return [] }
         if Self.isJsonArrayOrObject(ruleStr) {
-            return parseDiscoverJSON(ruleStr)
+            let items = parseDiscoverJSON(ruleStr)
+            // When the exploreUrl JS returns book data JSON directly (not a list
+            // of discover categories), every decoded DiscoverItem has an empty
+            // title.  If that happens AND the source has ruleExplore.bookList
+            // (meaning it can parse book data), wrap the JSON as a data URI so
+            // the normal discover pipeline feeds it through ruleExplore.
+            if items.allSatisfy({ ($0.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+               !source.ruleExplore.bookList.isEmpty {
+                let b64 = Data(ruleStr.utf8).base64EncodedString()
+                let dataUrl = "data:application/json;base64,\(b64)"
+                return [DiscoverItem(title: source.bookSourceName, url: dataUrl)]
+            }
+            return items
         }
+        // A dynamic (<js>/@js:) exploreUrl whose backing endpoint has died returns an error
+        // *document* — e.g. an nginx "404 Not Found" HTML page — not JSON and not a `分类::URL`
+        // list. Shredding that markup line-by-line produced garbage category chips ("<html>",
+        // "<head>…404…", …). Treat an unusable payload as "no explore content" instead.
+        if Self.looksLikeMarkupOrError(ruleStr) { return [] }
         return parseExploreKindText(ruleStr)
+    }
+
+    /// True when an explore payload is an HTML/error document rather than a JSON or
+    /// `分类::URL` list — so a dead endpoint's 404 page isn't rendered as fake categories.
+    static func looksLikeMarkupOrError(_ value: String) -> Bool {
+        let s = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return true }
+        if s.hasPrefix("<") { return true }
+        let lower = s.lowercased()
+        return lower.contains("<html")
+            || lower.contains("<!doctype")
+            || lower.contains("<body")
+            || lower.contains("404 not found")
     }
 
     /// Parse a JSON array string into DiscoverItem list.
@@ -950,6 +980,9 @@ class ModernParserBridge {
             .compactMap { rawEntry in
                 let entry = rawEntry.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !entry.isEmpty else { return nil }
+                // Drop stray markup lines (HTML fragments from a dead endpoint) — a real category
+                // name never contains an `<…>` tag.
+                if entry.range(of: #"<[^>]+>"#, options: .regularExpression) != nil { return nil }
 
                 guard let separator = entry.range(of: "::") else {
                     return DiscoverItem(title: entry, url: nil)
