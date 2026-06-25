@@ -6,9 +6,17 @@ struct SystemTTSEngineTests {
 
     // MARK: - TTSTextChunker
 
-    @Test func chunkerSplitsOnSentenceTerminators() {
+    @Test func chunkerKeepsSentencesTogetherWithinParagraph() {
+        // Sentence terminators no longer split — a single paragraph is read as one
+        // continuous, gap-free chunk.
         let chunks = TTSTextChunker.split("第一句。第二句！第三句？", targetChunkLength: 120)
-        #expect(chunks == ["第一句。", "第二句！", "第三句？"])
+        #expect(chunks == ["第一句。第二句！第三句？"])
+    }
+
+    @Test func chunkerSplitsOnParagraphBoundaries() {
+        // Paragraph boundaries (newlines) are the natural break between chunks.
+        let chunks = TTSTextChunker.split("第一段。\n第二段。", targetChunkLength: 120)
+        #expect(chunks == ["第一段。", "第二段。"])
     }
 
     @Test func chunkerBreaksOnLengthWhenNoTerminator() {

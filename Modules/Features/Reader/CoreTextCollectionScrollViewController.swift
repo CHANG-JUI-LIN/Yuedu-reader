@@ -35,6 +35,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     private var latestEditMenuSourcePoint: CGPoint?
     private let interactor = TextSelectionInteractor()
     private var playbackHighlightText: String?
+    /// True while a TTS-follow auto-scroll animation is in flight, so it isn't
+    /// mistaken for the user manually scrolling away from the narration.
+    private var isAutoScrollingPlayback = false
     private var textAnnotations: [CoreTextTextAnnotation] = []
     private var inlineVideoControllers: [String: AVPlayerViewController] = [:]
     var inlineVideoControllerCountForTesting: Int { inlineVideoControllers.count }
@@ -314,10 +317,65 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     }
 
     func setPlaybackHighlight(text: String?) {
-        playbackHighlightText = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let changed = trimmed != playbackHighlightText
+        playbackHighlightText = trimmed
         for cell in collectionView.visibleCells.compactMap({ $0 as? CoreTextChunkCollectionCell }) {
             cell.applyPlaybackHighlight(text: playbackHighlightText)
         }
+        if changed, !(trimmed?.isEmpty ?? true) {
+            // Defer one runloop so cells finish recomputing their highlight rects.
+            DispatchQueue.main.async { [weak self] in self?.autoScrollToPlaybackHighlightIfNeeded() }
+        }
+    }
+
+    /// Auto page-turn for scroll mode: keep the sentence TTS is speaking on screen.
+    /// Only nudges when the highlight has drifted into the lower part of the viewport,
+    /// and only when it's already on screen — if the user has scrolled away to browse,
+    /// the highlight isn't visible so nothing is yanked.
+    private func autoScrollToPlaybackHighlightIfNeeded() {
+        guard scrollAxis == .vertical,
+              collectionView.window != nil,
+              !isAutoScrollingPlayback
+        else { return }
+
+        var highlightRect: CGRect?
+        for cell in collectionView.visibleCells.compactMap({ $0 as? CoreTextChunkCollectionCell }) {
+            if let rect = cell.playbackHighlightBounds(in: collectionView) {
+                highlightRect = rect
+                break
+            }
+        }
+        guard let rect = highlightRect else { return }
+
+        let topInset = collectionView.adjustedContentInset.top
+        let viewportTop = collectionView.contentOffset.y + topInset
+        let viewportHeight = collectionView.bounds.height - topInset - collectionView.adjustedContentInset.bottom
+        guard viewportHeight > 0 else { return }
+
+        // Nudge only once the spoken line passes ~72% down the screen, then place it
+        // ~30% from the top so there's read-ahead context below it.
+        let triggerY = viewportTop + viewportHeight * 0.72
+        guard rect.maxY > triggerY else { return }
+
+        let desiredOffset = rect.minY - topInset - viewportHeight * 0.3
+        let minOffset = -topInset
+        let maxOffset = max(minOffset, collectionView.contentSize.height - collectionView.bounds.height + collectionView.adjustedContentInset.bottom)
+        let clamped = min(max(desiredOffset, minOffset), maxOffset)
+        guard clamped > collectionView.contentOffset.y + 1 else { return }
+
+        isAutoScrollingPlayback = true
+        UIView.animate(
+            withDuration: 0.35,
+            delay: 0,
+            options: [.curveEaseInOut, .allowUserInteraction],
+            animations: { self.collectionView.contentOffset.y = clamped },
+            completion: { [weak self] _ in
+                guard let self else { return }
+                self.isAutoScrollingPlayback = false
+                self.commitProgress()
+            }
+        )
     }
 
     func requestReslice(at chapter: Int, charOffset: Int = 0) {

@@ -26,9 +26,10 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private var activeUtterance: AVSpeechUtterance?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
-    // System voices handle longer utterances smoothly, so chunk less aggressively than the
-    // HTTP engine — fewer boundaries means fewer audible gaps between segments.
-    private let targetChunkLength = 120
+    // Read by paragraph: system voices speak long utterances smoothly, so set the cap
+    // high enough that a normal paragraph stays a single gap-free chunk. The cap only
+    // kicks in to bound a pathologically long paragraph.
+    private let targetChunkLength = 2000
 
     override init() {
         super.init()

@@ -891,7 +891,14 @@ final class ModernRuleEngine {
     // MARK: - Private: Regex Post-Processing
 
     private func replaceRegex(result: String, sourceRule: SourceRule) -> String {
-        RegexReplacer.replaceRegex(
+        if sourceRule.rule.isEmpty, sourceRule.replaceFirst {
+            return RegexReplacer.firstMatchReplacement(
+                result: result,
+                pattern: sourceRule.replaceRegex,
+                replacement: sourceRule.replacement
+            )
+        }
+        return RegexReplacer.replaceRegex(
             result: result,
             pattern: sourceRule.replaceRegex,
             replacement: sourceRule.replacement,

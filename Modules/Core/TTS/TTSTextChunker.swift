@@ -1,8 +1,11 @@
 import Foundation
 
 /// Splits narration text into speakable chunks shared by the HTTP and system TTS engines.
-/// Breaks on sentence terminators or once a chunk reaches `targetChunkLength`, and folds
-/// punctuation-only fragments back into the previous chunk so every chunk has spoken content.
+/// Reads by original paragraph: breaks on paragraph boundaries (newlines), or once a single
+/// paragraph exceeds `targetChunkLength` (a safety cap so a runaway paragraph can't become one
+/// enormous utterance). Sentence terminators no longer split, so a paragraph is spoken as one
+/// continuous unit without a gap at every sentence. Punctuation-only fragments fold back into
+/// the previous chunk so every chunk has spoken content.
 enum TTSTextChunker {
     static func split(_ text: String, targetChunkLength: Int) -> [String] {
         splitWithRanges(text, targetChunkLength: targetChunkLength).map(\.text)
@@ -10,20 +13,20 @@ enum TTSTextChunker {
 
     static func splitWithRanges(_ text: String, targetChunkLength: Int) -> [TTSChunkRange] {
         var result: [TTSChunkRange] = []
-        var buffer = ""
-        let terminators = CharacterSet(charactersIn: "。！？!?；;…\n")
+        var bufferCount = 0
+        let newlines = CharacterSet.newlines
         var bufferStart = text.startIndex
 
         var index = text.startIndex
         while index < text.endIndex {
             let nextIndex = text.index(after: index)
             let character = text[index]
-            buffer.append(character)
-            let shouldBreak = character.unicodeScalars.contains(where: terminators.contains)
-                || buffer.count >= targetChunkLength
+            bufferCount += 1
+            let isParagraphBreak = character.unicodeScalars.contains(where: newlines.contains)
+            let shouldBreak = isParagraphBreak || bufferCount >= targetChunkLength
             if shouldBreak {
                 appendChunk(in: bufferStart..<nextIndex, source: text, to: &result)
-                buffer.removeAll(keepingCapacity: true)
+                bufferCount = 0
                 bufferStart = nextIndex
             }
             index = nextIndex

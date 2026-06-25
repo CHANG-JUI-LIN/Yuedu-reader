@@ -264,7 +264,7 @@ struct OnlineReaderPipelineUnificationTests {
         // terminates the attribute early unless the suffix is stripped first. ChapterFetcher
         // sanitizes it, but the provider path (OnlineProviderAttributedStringBuilder) does not —
         // this test reproduces the user's "本章说 doesn't show" through that exact path.
-        let cardSVG = #"<svg width="1080" height="700" xmlns="http://www.w3.org/2000/svg"><rect width="1080" height="700" fill="rgba(255,255,255,0.25)" rx="35"/><text x="80" y="75" font-size="44" fill="#000">本章说</text><text x="80" y="280" font-size="42" fill="#000">绝傲蜀风</text></svg>"#
+        let cardSVG = ##"<svg width="1080" height="700" xmlns="http://www.w3.org/2000/svg"><rect width="1080" height="700" fill="rgba(255,255,255,0.25)" rx="35"/><text x="80" y="75" font-size="44" fill="#000">本章说</text><text x="80" y="280" font-size="42" fill="#000">绝傲蜀风</text></svg>"##
         let b64 = Data(cardSVG.utf8).base64EncodedString()
         let clickConfig = #"{"style":"FULL","type":"qd","click":"androidshowChapterComments(1,2,3)"}"#
         let cardImg = "<img src=\"data:image/svg+xml;base64,\(b64),\(clickConfig)\">"

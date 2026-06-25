@@ -87,6 +87,32 @@ final class RegexExtractor: RuleExtractor {
 /// Append `###` to the rule to replace only the first match.
 enum RegexReplacer {
 
+    /// Transform only the first regex match and return that transformed match.
+    ///
+    /// Legado uses this behavior for a rule whose extraction part is empty and
+    /// whose replacement suffix is `###`, for example
+    /// `##href=".../(\d+)/0/"##https://example.com/book/$1/###`.
+    /// The unmatched surrounding HTML is intentionally discarded.
+    static func firstMatchReplacement(
+        result: String,
+        pattern: String,
+        replacement: String,
+        timeout: TimeInterval = 2.0
+    ) -> String {
+        guard !pattern.isEmpty else { return "" }
+        guard let regex = RegexCache.shared.regex(for: pattern) else { return "" }
+
+        let fullRange = NSRange(result.startIndex..., in: result)
+        return RegexSanitizer.withTimeout(seconds: timeout, work: {
+            guard let match = regex.firstMatch(in: result, range: fullRange) else {
+                return ""
+            }
+            return regex.replacementString(
+                for: match, in: result, offset: 0, template: replacement
+            )
+        }, fallback: "")
+    }
+
     /// Replace regex matches in `result`.
     /// - Parameters:
     ///   - result: The input string.

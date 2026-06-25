@@ -208,6 +208,16 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         playbackOverlay.endHandlePoint = nil
     }
 
+    /// Union of the current playback-highlight rects, converted into `target`'s
+    /// coordinate space, or nil when this cell isn't showing the spoken line. The
+    /// scroll controller uses it to keep the highlighted line on screen while listening.
+    func playbackHighlightBounds(in target: UIView) -> CGRect? {
+        let rects = playbackOverlay.selectionRects
+        guard let first = rects.first else { return nil }
+        let union = rects.dropFirst().reduce(first) { $0.union($1) }
+        return playbackOverlay.convert(union, to: target)
+    }
+
     /// Helper: computes rects for a chapter-level range within this chunk using the shared renderer.
     private func renderRects(for chapterRange: NSRange) -> [CGRect] {
         guard let chunk = currentChunk else { return [] }

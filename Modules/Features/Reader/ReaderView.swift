@@ -1293,6 +1293,10 @@ struct ReaderView: View {
             updateReadingStatsPosition()
             handleReaderPositionChangedForTTS()
         }
+        .onChanged(of: ttsCoordinator.currentSegmentIndex) { _ in
+            // Auto page-turn while listening: follow the spoken sentence.
+            followTTSPlaybackHighlight()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .ttsFloatingPlayerOpenPanel)) { _ in
             showTTSPanel = true
         }
@@ -2432,6 +2436,50 @@ struct ReaderView: View {
         DispatchQueue.main.async {
             isAligningReaderToTTSAnchor = false
         }
+    }
+
+    /// Keeps the paged reader on the sentence TTS is currently speaking. Called on
+    /// every spoken-segment change. Moves the playback anchor to the spoken text and
+    /// turns the page only when that text now sits on a different page. Paged CoreText
+    /// mode only — scroll mode and the "jump back to TTS" browse state are left alone.
+    private func followTTSPlaybackHighlight() {
+        guard ttsCoordinator.playbackState == .playing,
+              !showTTSJumpPrompt,            // user navigated away — let them browse
+              !effectiveScrollMode,
+              let engine = epubRenderer.engine, usesCoreTextEPUB
+        else { return }
+
+        let chapterIndex = ttsChapterIndex ?? currentChapterIndex
+        guard chapters.indices.contains(chapterIndex),
+              let layout = engine.layouts[chapterIndex],
+              layout.attributedString.length > 0
+        else { return }
+
+        let text = ttsCoordinator.currentSegmentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        // Locate the spoken sentence inside the chapter string. Search forward from
+        // the current page start so a repeated sentence resolves to the occurrence
+        // actually being read (TTS always moves forward through the chapter).
+        let ns = layout.attributedString.string as NSString
+        let pageStart = engine.charOffset(forPage: currentPage)
+        let searchStart = pageStart.spineIndex == chapterIndex
+            ? min(max(0, pageStart.charOffset), ns.length)
+            : 0
+        var found = ns.range(
+            of: text,
+            options: [.caseInsensitive, .diacriticInsensitive],
+            range: NSRange(location: searchStart, length: ns.length - searchStart)
+        )
+        if found.location == NSNotFound {
+            found = ns.range(of: text, options: [.caseInsensitive, .diacriticInsensitive])
+        }
+        guard found.location != NSNotFound else { return }
+
+        setActiveTTSAnchor(
+            CoreTextReadingPosition(spineIndex: chapterIndex, charOffset: found.location),
+            alignReader: true
+        )
     }
 
     private func handleTTSPlayPause() {

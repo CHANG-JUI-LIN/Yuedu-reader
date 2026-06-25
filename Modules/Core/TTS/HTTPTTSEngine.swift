@@ -29,7 +29,10 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private let preloadWindow = 3
     private let maxConcurrentDownloads = 2
     private let maxDownloadRetries = 2
-    private let targetChunkLength = 80
+    // Read by paragraph. Larger than before so a normal paragraph is one continuous
+    // request instead of being chopped at every sentence; still bounded to keep each
+    // cloud-TTS request (and its first-audio latency) reasonable.
+    private let targetChunkLength = 300
 
     init(audioProvider: TTSAudioProvider = CustomHTTPProvider()) {
         self.audioProvider = audioProvider

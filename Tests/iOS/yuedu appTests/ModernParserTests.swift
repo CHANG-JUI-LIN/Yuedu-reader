@@ -986,6 +986,41 @@ struct BookSourceRuntimeRoutingTests {
 
         #expect(!source.shouldUseLegadoRuntimeFetch(for: "https://example.com/search?q={{key}}&page={{page}}"))
     }
+
+    @Test("search result regex replacement resolves jsLib templates in the replacement")
+    func searchResultRegexReplacementResolvesJSLibTemplates() throws {
+        var source = BookSource()
+        source.bookSourceName = "Qidian replacement template"
+        source.bookSourceUrl = "https://m.qidian.com"
+        source.jsLib = "const ho = 'https://m.qidian.com';"
+        source.ruleSearch.bookList = "@css:div.y-list__content>div.y-list__item"
+        source.ruleSearch.name = "tag.h2@text"
+        source.ruleSearch.author = "@css:p[class^=_searchBookAuthor]@text"
+        source.ruleSearch.bookUrl =
+            "##href=\"//m.qidian.com/chapter/(\\d+)/0/\"##{{ho}}/book/$1/###"
+
+        let html = """
+        <div class="y-list__content">
+          <div class="y-list__item">
+            <a href="//m.qidian.com/chapter/1115277/0/"><h2>斗罗大陆</h2></a>
+            <p class="_searchBookAuthor_1">唐家三少</p>
+          </div>
+        </div>
+        """
+
+        let books = try ModernParserBridge(source: source).parseSearchResults(
+            html: html,
+            baseURL: "https://m.qidian.com/soushu/斗罗大陆.html?pageNum=1",
+            source: source
+        )
+
+        #expect(books.count == 1)
+        let actualURL = books.first?.bookUrl ?? "(nil)"
+        #expect(
+            actualURL == "https://m.qidian.com/book/1115277/",
+            "actual search book URL: \(actualURL)"
+        )
+    }
 }
 
 // MARK: - 7. AnalyzeUrl Tests
