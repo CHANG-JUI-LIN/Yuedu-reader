@@ -1122,6 +1122,7 @@ struct ReaderView: View {
                         sourceId: snap.bookSourceId ?? UUID(),
                         bookInfoURL: snap.bookInfoURL ?? "",
                         tocURL: snap.tocURL,
+                        coverUrl: snap.coverUrl ?? "",
                         runtimeVariables: snap.runtimeVariables,
                         chapters: snap.onlineChapters ?? []
                     )

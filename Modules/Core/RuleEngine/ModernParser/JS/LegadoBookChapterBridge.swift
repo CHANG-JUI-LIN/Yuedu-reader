@@ -121,6 +121,10 @@ import JavaScriptCore
     var title: String { get set }
     var order: Int { get set }
     var url: String { get set }
+
+    /// Legado chapter.isVip() — returns whether this chapter requires payment.
+    /// lyc sources call `chapter.isVip()` and fall back to `result.v` on error.
+    @objc(isVip) func isVip() -> Bool
 }
 
 @objc final class LegadoChapterBridge: NSObject, LegadoChapterBridgeExport {
@@ -128,12 +132,18 @@ import JavaScriptCore
     @objc var title: String
     @objc var order: Int
     @objc var url: String
+    @objc var isVipValue: Bool
 
-    init(index: Int = 0, title: String = "", order: Int = 0, url: String = "") {
+    init(index: Int = 0, title: String = "", order: Int = 0, url: String = "", isVip: Bool = false) {
         self.index = index
         self.title = title
         self.order = order
         self.url = url
+        self.isVipValue = isVip
         super.init()
+    }
+
+    @objc(isVip) func isVip() -> Bool {
+        isVipValue
     }
 }

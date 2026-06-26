@@ -33,6 +33,24 @@ final class BookSourceRuntimeStateStore {
         }
     }
 
+    func sourceValue(for sourceUrl: String, key entryKey: String) -> String? {
+        queue.sync {
+            let values = defaults.dictionary(
+                forKey: key(sourceUrl: sourceUrl, suffix: "sourceKeyValues")
+            ) as? [String: String]
+            return values?[entryKey]
+        }
+    }
+
+    func setSourceValue(_ value: String, for sourceUrl: String, key entryKey: String) {
+        queue.sync {
+            let storageKey = key(sourceUrl: sourceUrl, suffix: "sourceKeyValues")
+            var values = defaults.dictionary(forKey: storageKey) as? [String: String] ?? [:]
+            values[entryKey] = value
+            defaults.set(values, forKey: storageKey)
+        }
+    }
+
     private func key(sourceUrl: String, suffix: String) -> String {
         let data = Data(sourceUrl.utf8)
         let digest = SHA256.hash(data: data)

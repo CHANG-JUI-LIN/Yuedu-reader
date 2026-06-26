@@ -10,6 +10,7 @@ import SwiftUI
 struct DiscoverCardItem: Identifiable {
     let id = UUID()
     let title: String
+    let stableKey: String
     let raw: ModernParserBridge.DiscoverItem
     let isAction: Bool
     let actionURL: String?
@@ -30,6 +31,16 @@ struct DiscoverFilter: Identifiable {
     let paramKey: String
     let options: [String]
     var selected: String
+}
+
+// MARK: - Discover Settings
+
+/// One visible group in 發現頁設定. Group titles come from source-emitted
+/// non-fetchable labels; entries are the actual fetchable/action discover items.
+struct DiscoverSettingsGroup: Identifiable {
+    let id: String
+    let title: String
+    let items: [DiscoverCardItem]
 }
 
 // MARK: - Discover Showcase Section
@@ -78,6 +89,10 @@ final class DiscoverViewModel: ObservableObject {
     @Published var selectedSourceId: UUID?
 
     @Published var items: [DiscoverCardItem] = []
+    /// Raw source-emitted discover items, including `select` controls and pure
+    /// label separators. The main showcase maps only fetchable/action entries;
+    /// the settings sheet needs the raw list to preserve the source's own groups.
+    @Published var rawItems: [ModernParserBridge.DiscoverItem] = []
     @Published var books: [OnlineBook] = []
     @Published var booksSectionTitle: String = ""
 
@@ -88,7 +103,7 @@ final class DiscoverViewModel: ObservableObject {
     @Published var isLoadingBooks = false
 
     /// Max number of source categories rendered as showcase sections.
-    private let maxShowcaseSections = 12
+    let maxShowcaseSections = 12
     /// Serial loading queue for showcase sections (see `loadSection`).
     private var sectionQueue: [UUID] = []
     private var isPumpingSections = false
@@ -96,10 +111,13 @@ final class DiscoverViewModel: ObservableObject {
     /// Filter dropdowns the book source emits from its exploreUrl JS, repopulated
     /// on every reload. Empty for sources that don't emit `select` items.
     @Published var filters: [DiscoverFilter] = []
+    @Published private(set) var usesCustomCategorySelection = false
+    @Published private(set) var selectedCategoryKeys: Set<String> = []
 
     private let sourceStore = BookSourceStore.shared
     private let runtimeStore = BookSourceRuntimeStateStore.shared
     private let selectedSourceKey = "discover.selectedSourceId"
+    private let categorySelectionPrefix = "discover.categorySelection."
     private let defaultDiscoverPlatform = "全部"
     private var loadItemsTask: Task<Void, Never>?
     private var loadBooksTask: Task<Void, Never>?
@@ -127,6 +145,7 @@ final class DiscoverViewModel: ObservableObject {
             selectedSourceId = exploreSources.first?.id
             persistSelectedSource()
         }
+        loadCategorySelectionForSelectedSource()
         if items.isEmpty, hasExploreSource { reload() }
     }
 
@@ -134,6 +153,7 @@ final class DiscoverViewModel: ObservableObject {
         guard id != selectedSourceId else { return }
         selectedSourceId = id
         persistSelectedSource()
+        loadCategorySelectionForSelectedSource()
         filters = []
         reload()
     }
@@ -178,7 +198,69 @@ final class DiscoverViewModel: ObservableObject {
         if let index = filters.firstIndex(where: { $0.id == filter.id }) {
             filters[index].selected = value
         }
+        clearCategorySelection(for: source)
         reload()
+    }
+
+    // MARK: - Discover page category customization
+
+    var discoverSettingsGroups: [DiscoverSettingsGroup] {
+        Self.discoverSettingsGroups(from: rawItems)
+    }
+
+    var selectedCategoryCount: Int {
+        if usesCustomCategorySelection {
+            return selectedCategoryKeys.count
+        }
+        return Self.showcaseItems(
+            from: items,
+            customKeys: nil,
+            defaultLimit: maxShowcaseSections
+        ).count
+    }
+
+    func isCategorySelected(_ item: DiscoverCardItem) -> Bool {
+        if usesCustomCategorySelection {
+            return selectedCategoryKeys.contains(item.stableKey)
+        }
+        return Self.showcaseItems(
+            from: items,
+            customKeys: nil,
+            defaultLimit: maxShowcaseSections
+        ).contains { $0.stableKey == item.stableKey }
+    }
+
+    func toggleCategoryVisibility(_ item: DiscoverCardItem) {
+        guard item.isFetchable else { return }
+        if !usesCustomCategorySelection {
+            selectedCategoryKeys = Set(Self.showcaseItems(
+                from: items,
+                customKeys: nil,
+                defaultLimit: maxShowcaseSections
+            ).map(\.stableKey))
+            usesCustomCategorySelection = true
+        }
+        if selectedCategoryKeys.contains(item.stableKey) {
+            selectedCategoryKeys.remove(item.stableKey)
+        } else {
+            selectedCategoryKeys.insert(item.stableKey)
+        }
+        persistCategorySelection()
+        buildSections(from: items)
+    }
+
+    func selectAllCategories() {
+        let all = items.filter { $0.isFetchable }.map(\.stableKey)
+        usesCustomCategorySelection = true
+        selectedCategoryKeys = Set(all)
+        persistCategorySelection()
+        buildSections(from: items)
+    }
+
+    func resetCategorySelection() {
+        guard let source = selectedSource else { return }
+        clearCategorySelection(for: source)
+        buildSections(from: items)
     }
 
     // MARK: - Loading
@@ -190,17 +272,21 @@ final class DiscoverViewModel: ObservableObject {
             booksSectionTitle = ""
             cancelSectionTasks()
             sections = []
+            rawItems = []
             filters = []
             return
         }
         repairHardcodedDiscoverSourceIfNeeded(for: source)
         loadItemsTask?.cancel()
         cancelSectionTasks()
+        rawItems = []
+        items = []
         sections = []
         isLoadingItems = true
         loadItemsTask = Task { [weak self] in
             let raw = await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
             guard let self, !Task.isCancelled else { return }
+            self.rawItems = raw
             self.filters = Self.extractFilters(from: raw)
             let mapped = raw.compactMap(Self.mapItem)
             self.items = mapped
@@ -220,8 +306,11 @@ final class DiscoverViewModel: ObservableObject {
 
     /// Turn the source's fetchable explore categories into showcase sections.
     private func buildSections(from items: [DiscoverCardItem]) {
-        let fetchable = items.filter { $0.isFetchable }
-        sections = fetchable.prefix(maxShowcaseSections).map { DiscoverShowcaseSection(item: $0) }
+        sections = Self.showcaseItems(
+            from: items,
+            customKeys: usesCustomCategorySelection ? selectedCategoryKeys : nil,
+            defaultLimit: maxShowcaseSections
+        ).map { DiscoverShowcaseSection(item: $0) }
     }
 
     /// Enqueue one section's books to load — driven by the section view's `.task`.
@@ -351,7 +440,7 @@ final class DiscoverViewModel: ObservableObject {
 
     // MARK: - Item mapping
 
-    static func mapItem(_ raw: ModernParserBridge.DiscoverItem) -> DiscoverCardItem? {
+    nonisolated static func mapItem(_ raw: ModernParserBridge.DiscoverItem) -> DiscoverCardItem? {
         let title = (raw.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, title != "--" else { return nil }
 
@@ -365,6 +454,7 @@ final class DiscoverViewModel: ObservableObject {
 
         return DiscoverCardItem(
             title: title,
+            stableKey: stableKey(for: raw, title: title, url: url),
             raw: raw,
             isAction: isAction,
             actionURL: actionURL,
@@ -372,11 +462,78 @@ final class DiscoverViewModel: ObservableObject {
         )
     }
 
-    static func extractHTTPURL(from string: String) -> String? {
+    nonisolated static func extractHTTPURL(from string: String) -> String? {
         guard let range = string.range(of: "https?://[^\"')\\s]+", options: .regularExpression) else {
             return nil
         }
         return String(string[range])
+    }
+
+    nonisolated static func stableKey(
+        for raw: ModernParserBridge.DiscoverItem,
+        title: String,
+        url: String
+    ) -> String {
+        [
+            title,
+            url,
+            raw.type ?? "",
+            raw.viewName ?? ""
+        ].joined(separator: "\u{1F}")
+    }
+
+    nonisolated static func showcaseItems(
+        from items: [DiscoverCardItem],
+        customKeys: Set<String>?,
+        defaultLimit: Int
+    ) -> [DiscoverCardItem] {
+        let fetchable = items.filter { $0.isFetchable }
+        guard let customKeys else {
+            return Array(fetchable.prefix(defaultLimit))
+        }
+        return fetchable.filter { customKeys.contains($0.stableKey) }
+    }
+
+    nonisolated static func discoverSettingsGroups(
+        from raw: [ModernParserBridge.DiscoverItem],
+        defaultTitle: String = "發現"
+    ) -> [DiscoverSettingsGroup] {
+        var groups: [DiscoverSettingsGroup] = []
+        var currentTitle = defaultTitle
+        var currentItems: [DiscoverCardItem] = []
+
+        func flush() {
+            guard !currentItems.isEmpty else { return }
+            groups.append(
+                DiscoverSettingsGroup(
+                    id: "\(groups.count)-\(currentTitle)",
+                    title: currentTitle,
+                    items: currentItems
+                )
+            )
+            currentItems = []
+        }
+
+        for item in raw {
+            if (item.type ?? "") == "select" { continue }
+            let title = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty, title != "--" else { continue }
+            if let card = mapItem(item) {
+                currentItems.append(card)
+            } else {
+                flush()
+                currentTitle = normalizedDiscoverGroupTitle(title)
+            }
+        }
+        flush()
+        return groups
+    }
+
+    nonisolated private static func normalizedDiscoverGroupTitle(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let decorative = CharacterSet(charactersIn: "-—_─═▱༺༻ˇ»«`´ʚɞ🟥🟧🟨🟪🟠🟡🟣 ")
+        let stripped = trimmed.trimmingCharacters(in: decorative)
+        return stripped.isEmpty ? trimmed : stripped
     }
 
     // MARK: - Source-emitted filters
@@ -549,5 +706,39 @@ final class DiscoverViewModel: ObservableObject {
     private func persistSelectedSource() {
         guard let id = selectedSourceId else { return }
         UserDefaults.standard.set(id.uuidString, forKey: selectedSourceKey)
+    }
+
+    private func loadCategorySelectionForSelectedSource() {
+        guard let source = selectedSource else {
+            usesCustomCategorySelection = false
+            selectedCategoryKeys = []
+            return
+        }
+        let key = categorySelectionKey(for: source)
+        if let saved = UserDefaults.standard.array(forKey: key) as? [String] {
+            usesCustomCategorySelection = true
+            selectedCategoryKeys = Set(saved)
+        } else {
+            usesCustomCategorySelection = false
+            selectedCategoryKeys = []
+        }
+    }
+
+    private func persistCategorySelection() {
+        guard let source = selectedSource else { return }
+        UserDefaults.standard.set(
+            Array(selectedCategoryKeys).sorted(),
+            forKey: categorySelectionKey(for: source)
+        )
+    }
+
+    private func clearCategorySelection(for source: BookSource) {
+        UserDefaults.standard.removeObject(forKey: categorySelectionKey(for: source))
+        usesCustomCategorySelection = false
+        selectedCategoryKeys = []
+    }
+
+    private func categorySelectionKey(for source: BookSource) -> String {
+        categorySelectionPrefix + source.id.uuidString
     }
 }

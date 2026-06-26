@@ -266,13 +266,10 @@ extension BookSource {
             let getKeyBlock: @convention(block) () -> String = { source.bookSourceUrl }
             context.objectForKeyedSubscript("source")?.setObject(getKeyBlock, forKeyedSubscript: "getKey" as NSString)
 
-            // Provide cookie bridge (cookie.removeCookie, etc. common Legado operations)
-            let cookieObj: [String: Any] = [:]
-            context.setObject(cookieObj, forKeyedSubscript: "cookie" as NSString)
-            let removeCookieBlock: @convention(block) (String) -> String = { _ in "" }
-            context.objectForKeyedSubscript("cookie")?.setObject(removeCookieBlock, forKeyedSubscript: "removeCookie" as NSString)
-            let getCookieBlock: @convention(block) (String) -> String = { _ in "" }
-            context.objectForKeyedSubscript("cookie")?.setObject(getCookieBlock, forKeyedSubscript: "getCookie" as NSString)
+            // Provide real cookie bridge so jsLib functions like generateCsrfToken()
+            // can read cookies (e.g. `this.cookie.getCookie(ho)`) during template resolution.
+            let cookieBridge = LegadoCookieBridge()
+            context.setObject(cookieBridge, forKeyedSubscript: "cookie" as NSString)
 
             // Provide java bridge (basic chainable calls, returns empty string)
             let javaConnectBlock: @convention(block) (String) -> JSValue? = { _ in

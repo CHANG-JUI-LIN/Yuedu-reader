@@ -183,6 +183,7 @@ struct ReadingBook: Identifiable, Codable {
     var tocURL: String?
     var runtimeVariables: [String: String]?
     var onlineChapters: [OnlineChapterRef]?
+    var coverUrl: String?
 
     /// True when a table-of-contents refresh discovered chapters newer than the
     /// ones the user has already seen. Set by `BookStore.refreshOnlineBookMetadata`
@@ -233,6 +234,7 @@ struct ReadingBook: Identifiable, Codable {
         self.tocURL = nil
         self.runtimeVariables = nil
         self.onlineChapters = nil
+        self.coverUrl = nil
         self.hasNewChapterUpdate = false
         self.bookmarks = []
         self.coverImagePath = nil
@@ -267,6 +269,7 @@ struct ReadingBook: Identifiable, Codable {
         tocURL = try? c.decode(String.self, forKey: .tocURL)
         runtimeVariables = try? c.decode([String: String].self, forKey: .runtimeVariables)
         onlineChapters = try? c.decode([OnlineChapterRef].self, forKey: .onlineChapters)
+        coverUrl = try? c.decode(String.self, forKey: .coverUrl)
         hasNewChapterUpdate = (try? c.decode(Bool.self, forKey: .hasNewChapterUpdate)) ?? false
         bookmarks = (try? c.decode([Bookmark].self, forKey: .bookmarks)) ?? []
         coverImagePath = try? c.decode(String.self, forKey: .coverImagePath)
@@ -290,7 +293,7 @@ struct ReadingBook: Identifiable, Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, author, source, contentFilename, contentPipelineKind, currentPosition, addedDate
-        case isOnline, bookSourceId, bookInfoURL, tocURL, runtimeVariables, onlineChapters, hasNewChapterUpdate, bookmarks
+        case isOnline, bookSourceId, bookInfoURL, tocURL, runtimeVariables, onlineChapters, coverUrl, hasNewChapterUpdate, bookmarks
         case coverImagePath, rendererPreference, compatibilityState
         case offlineDownloadState, downloadedChapterCount, offlineDownloadTask, group, lastOpenedDate
         case mangaChapterIndex, mangaPage

@@ -13,33 +13,28 @@ struct DiscoverShowcaseView: View {
     let onOpenBook: (OnlineBook) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            if !discover.filters.isEmpty {
-                DiscoverFilterBar(discover: discover)
-            }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: DSSpacing.xl) {
-                    if discover.isLoadingItems && discover.sections.isEmpty {
-                        loadingState
-                    } else if discover.sections.isEmpty {
-                        emptyState
-                    } else {
-                        ForEach(discover.sections) { section in
-                            DiscoverSectionView(
-                                section: section,
-                                onOpenBook: onOpenBook,
-                                onAppearLoad: { discover.loadSection(section.id) },
-                                onRetry: { discover.retrySection(section.id) }
-                            )
-                        }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: DSSpacing.xl) {
+                if discover.isLoadingItems && discover.sections.isEmpty {
+                    loadingState
+                } else if discover.sections.isEmpty {
+                    emptyState
+                } else {
+                    ForEach(discover.sections) { section in
+                        DiscoverSectionView(
+                            section: section,
+                            onOpenBook: onOpenBook,
+                            onAppearLoad: { discover.loadSection(section.id) },
+                            onRetry: { discover.retrySection(section.id) }
+                        )
                     }
                 }
-                .padding(.vertical, DSSpacing.lg)
-                .padding(.bottom, 120)
             }
-            .scrollDismissesKeyboard(.immediately)
-            .refreshable { discover.reload() }
+            .padding(.vertical, DSSpacing.lg)
+            .padding(.bottom, 120)
         }
+        .scrollDismissesKeyboard(.immediately)
+        .refreshable { discover.reload() }
     }
 
     private var loadingState: some View {

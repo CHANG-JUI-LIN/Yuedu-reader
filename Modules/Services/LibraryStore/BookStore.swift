@@ -988,6 +988,7 @@ class BookStore: ObservableObject, BookProvider {
         book.bookInfoURL = bookInfoURL
         book.tocURL = tocURL
         book.runtimeVariables = runtimeVariables
+        if !coverUrl.isEmpty { book.coverUrl = coverUrl }
         book.onlineChapters = chapters.map { chapter in
             var sanitized = chapter
             sanitized.title = ReaderHTMLUtilities.displayText(fromHTMLFragment: chapter.title)

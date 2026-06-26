@@ -2195,6 +2195,88 @@ struct RuleAnalyzerSourceRuleIntegrationTests {
 @Suite("ModernParserBridge Explore", .serialized)
 struct ModernParserBridgeExploreTests {
 
+    @Test("LYC explore supports infoMap save used by source filters")
+    func lycExploreSupportsInfoMapSave() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "lyc-explore-\(UUID().uuidString)"
+        source.bookSourceName = "LYC Explore"
+        source.jsLib = """
+        function csh() {
+            var initial = { sort: '玄幻' };
+            try {
+                if (!source.getVariable()) throw new Error('empty');
+                JSON.parse(source.getVariable());
+            } catch (e) {
+                source.setVariable(JSON.stringify(initial));
+            }
+        }
+        function Get(key) {
+            return JSON.parse(source.getVariable())[key];
+        }
+        function createFilter(title, chars, defaultValue, paramKey, size) {
+            return {
+                title: title,
+                type: 'select',
+                chars: chars,
+                default: defaultValue,
+                action: `show(infoMap['${title}'],'${paramKey}')`
+            };
+        }
+        """
+        source.exploreUrl = """
+        @js:
+        csh();
+        var result = [];
+        result.push(createFilter('分类', ['玄幻', '都市'], Get('sort'), 'sort', 0.5));
+        infoMap.save();
+        JSON.stringify(result);
+        """
+
+        let items = await ModernParserBridge(source: source).getExploreItems()
+        let filter = try #require(items.first)
+
+        #expect(filter.title == "分类")
+        #expect(filter.type == "select")
+        #expect(filter.chars == ["玄幻", "都市"])
+    }
+
+    @Test("source key values do not overwrite a raw source variable token")
+    func sourceKeyValuesPreserveRawVariableToken() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "raw-token-source-\(UUID().uuidString)"
+        source.bookSourceName = "Raw Token Source"
+        source.exploreUrl = """
+        @js:
+        let androidId = String(source.get('androidId'));
+        if (!androidId) {
+            androidId = java.androidId();
+            source.put('androidId', androidId);
+        }
+        JSON.stringify([{ title: source.getVariable(), url: androidId }]);
+        """
+
+        let token = String(repeating: "token-", count: 16)
+        BookSourceRuntimeStateStore.shared.setSourceVariableJSON(
+            token,
+            for: source.bookSourceUrl
+        )
+
+        let firstItems = await ModernParserBridge(source: source).getExploreItems()
+        let first = try #require(firstItems.first)
+        let secondItems = await ModernParserBridge(source: source).getExploreItems()
+        let second = try #require(secondItems.first)
+
+        #expect(first.title == token)
+        #expect(!((first.url ?? "").isEmpty))
+        #expect(second.title == token)
+        #expect(second.url == first.url)
+        #expect(
+            BookSourceRuntimeStateStore.shared.sourceVariableJSON(
+                for: source.bookSourceUrl
+            ) == token
+        )
+    }
+
     @Test("plain text exploreUrl is parsed as Legado explore kinds without fetching")
     func plainTextExploreKinds() async {
         var source = BookSource()
@@ -2336,6 +2418,57 @@ struct DiscoverFilterTests {
     }
 
     @MainActor
+    @Test("discover settings groups preserve source labels and skip select controls")
+    func discoverSettingsGroupsPreserveSourceLabels() throws {
+        let raw: [ModernParserBridge.DiscoverItem] = [
+            .init(
+                title: "平台",
+                type: "select",
+                action: "show(infoMap['平台'],'发现页来源')",
+                chars: ["番茄", "七猫"],
+                default: "番茄"
+            ),
+            .init(title: "---发现---"),
+            .init(title: "排行榜", url: "https://example.com/rank"),
+            .init(title: "---热门标签---"),
+            .init(title: "玄幻", url: "https://example.com/tag/xuanhuan"),
+            .init(title: "登录", url: "{{java.startBrowser('https://example.com/login','登录')}}")
+        ]
+
+        let groups = DiscoverViewModel.discoverSettingsGroups(from: raw)
+
+        #expect(groups.map(\.title) == ["发现", "热门标签"])
+        #expect(groups.map { $0.items.map(\.title) } == [["排行榜"], ["玄幻", "登录"]])
+        #expect(groups.flatMap(\.items).last?.isAction == true)
+    }
+
+    @MainActor
+    @Test("custom discover category selection limits showcase sections")
+    func customDiscoverCategorySelectionLimitsShowcaseSections() throws {
+        let raw: [ModernParserBridge.DiscoverItem] = [
+            .init(title: "排行榜", url: "https://example.com/rank"),
+            .init(title: "热门标签", url: "https://example.com/hot"),
+            .init(title: "主题", url: "https://example.com/theme")
+        ]
+        let cards = raw.compactMap(DiscoverViewModel.mapItem)
+        let theme = try #require(cards.first { $0.title == "主题" })
+
+        let automatic = DiscoverViewModel.showcaseItems(
+            from: cards,
+            customKeys: nil,
+            defaultLimit: 2
+        )
+        let custom = DiscoverViewModel.showcaseItems(
+            from: cards,
+            customKeys: Set([theme.stableKey]),
+            defaultLimit: 2
+        )
+
+        #expect(automatic.map(\.title) == ["排行榜", "热门标签"])
+        #expect(custom.map(\.title) == ["主题"])
+    }
+
+    @MainActor
     @Test("selecting platform stores search source under the current mode")
     func selectingPlatformStoresSearchSourceForCurrentMode() throws {
         var source = BookSource()
@@ -2367,10 +2500,14 @@ struct DiscoverFilterTests {
         let stored = try #require(runtimeStore.sourceVariableJSON(for: source.bookSourceUrl))
         let dict = try #require(Self.jsonObject(stored))
         let more = try #require(dict["更多设置"] as? [String: Any])
+        let memory = try #require(
+            dict[DiscoverViewModel.discoverPlatformMemoryKey] as? [String: Any]
+        )
 
         #expect(dict["发现页来源"] as? String == "全面漫画")
         #expect(more["搜索模式"] as? String == "漫画")
-        #expect(more["漫画"] as? String == "全面漫画")
+        #expect(!more.keys.contains("漫画"))
+        #expect(memory["漫画"] as? String == "全面漫画")
     }
 
     @MainActor
@@ -2405,11 +2542,15 @@ struct DiscoverFilterTests {
         let stored = try #require(runtimeStore.sourceVariableJSON(for: source.bookSourceUrl))
         let dict = try #require(Self.jsonObject(stored))
         let more = try #require(dict["更多设置"] as? [String: Any])
+        let memory = try #require(
+            dict[DiscoverViewModel.discoverPlatformMemoryKey] as? [String: Any]
+        )
 
         #expect(dict["发现页类型"] as? String == "漫画")
         #expect(dict["发现页来源"] as? String == "全面漫画")
         #expect(more["搜索模式"] as? String == "漫画")
-        #expect(more["漫画"] as? String == "全面漫画")
+        #expect(!more.keys.contains("漫画"))
+        #expect(memory["漫画"] as? String == "全面漫画")
     }
 
     @MainActor
@@ -2444,11 +2585,15 @@ struct DiscoverFilterTests {
         let stored = try #require(runtimeStore.sourceVariableJSON(for: source.bookSourceUrl))
         let dict = try #require(Self.jsonObject(stored))
         let more = try #require(dict["更多设置"] as? [String: Any])
+        let memory = try #require(
+            dict[DiscoverViewModel.discoverPlatformMemoryKey] as? [String: Any]
+        )
 
         #expect(dict["发现页类型"] as? String == "听书")
         #expect(dict["发现页来源"] as? String == "全部")
         #expect(more["搜索模式"] as? String == "听书")
-        #expect(more["听书"] as? String == "全部")
+        #expect(!more.keys.contains("听书"))
+        #expect(memory["听书"] as? String == "全部")
     }
 
     @MainActor

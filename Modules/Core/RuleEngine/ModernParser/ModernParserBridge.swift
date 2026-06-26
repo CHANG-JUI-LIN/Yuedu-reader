@@ -113,6 +113,12 @@ class ModernParserBridge {
         jsEngine.sourceBridge.setVariableHandler = { [weak self] jsonString in
             self?.runtimeStateStore.setSourceVariableJSON(jsonString, for: sourceUrl)
         }
+        jsEngine.sourceBridge.getKeyValueHandler = { [weak self] key in
+            self?.runtimeStateStore.sourceValue(for: sourceUrl, key: key)
+        }
+        jsEngine.sourceBridge.putKeyValueHandler = { [weak self] key, value in
+            self?.runtimeStateStore.setSourceValue(value, for: sourceUrl, key: key)
+        }
 
         jsEngine.sourceBridge.getLoginInfoHandler = {
             LoginManager.shared.getLoginInfo(sourceUrl: sourceUrl).flatMap { info in

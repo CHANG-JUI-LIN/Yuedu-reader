@@ -27,6 +27,7 @@ struct ExploreHomeView: View {
     @State private var query = ""
     @State private var bookSearchRoute: BookSearchRoute?
     @State private var showSourceManager = false
+    @State private var showDiscoverSettings = false
     @State private var showDiscoverSourcePicker = false
     @State private var showHistory = false
     @State private var showSourceSites = false
@@ -74,6 +75,19 @@ struct ExploreHomeView: View {
                 // it in another NavigationStack stacks two nav bars (duplicate title on
                 // iOS 18). Present it directly, matching SettingsView.
                 BookSourceListView()
+            }
+            .sheet(isPresented: $showDiscoverSettings) {
+                NavigationStack {
+                    DiscoverSettingsView(
+                        discover: discover,
+                        onNavigate: { url in
+                            showDiscoverSettings = false
+                            onNavigate(url)
+                        },
+                        onDismiss: { showDiscoverSettings = false }
+                    )
+                }
+                .presentationDetents([.large])
             }
             .sheet(isPresented: $showDiscoverSourcePicker) {
                 NavigationStack {
@@ -132,9 +146,13 @@ struct ExploreHomeView: View {
         }
     }
 
-    /// Trailing toolbar menu: switch explore source, refresh, open source settings.
+    /// Trailing toolbar menu: configure discover, switch explore source, refresh.
     private var sourceMenu: some View {
         Menu {
+            Button { showDiscoverSettings = true } label: {
+                Label(localized("發現頁設定"), systemImage: "slider.horizontal.3")
+            }
+            Divider()
             Button { showDiscoverSourcePicker = true } label: {
                 Label(localized("切換發現頁"), systemImage: "books.vertical")
             }
@@ -142,14 +160,10 @@ struct ExploreHomeView: View {
             Button { discover.reload() } label: {
                 Label(localized("換一批"), systemImage: "arrow.triangle.2.circlepath")
             }
-            Divider()
-            Button { showSourceManager = true } label: {
-                Label(localized("書源設定"), systemImage: "gearshape")
-            }
         } label: {
             Image(systemName: "ellipsis")
         }
-        .accessibilityLabel(localized("書源設定"))
+        .accessibilityLabel(localized("發現頁設定"))
     }
 
     private var emptySourceState: some View {
@@ -380,6 +394,362 @@ struct ExploreHomeView: View {
         .buttonStyle(.plain)
     }
 
+}
+
+// MARK: - Discover Settings
+
+private struct DiscoverSettingsView: View {
+    @ObservedObject var discover: DiscoverViewModel
+    let onNavigate: (String) -> Void
+    let onDismiss: () -> Void
+
+    @State private var searchText = ""
+
+    private var settingsGroups: [DiscoverSettingsGroup] {
+        DiscoverViewModel.discoverSettingsGroups(
+            from: discover.rawItems,
+            defaultTitle: localized("發現")
+        )
+    }
+
+    private var filteredGroups: [DiscoverSettingsGroup] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return settingsGroups }
+        return settingsGroups.compactMap { group in
+            if group.title.localizedCaseInsensitiveContains(trimmed) {
+                return group
+            }
+            let items = group.items.filter {
+                $0.title.localizedCaseInsensitiveContains(trimmed)
+            }
+            guard !items.isEmpty else { return nil }
+            return DiscoverSettingsGroup(id: group.id, title: group.title, items: items)
+        }
+    }
+
+    var body: some View {
+        AdaptiveSheetContainer(maxWidth: DSLayout.readablePanelWidth) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                    sourceCard
+                    if !discover.filters.isEmpty {
+                        filtersCard
+                    }
+                    categoriesCard
+                }
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.vertical, DSSpacing.lg)
+            }
+            .background(DSColor.groupedBackground)
+        }
+        .navigationTitle(localized("發現頁設定"))
+        .toolbarTitleDisplayMode(.inline)
+        .searchable(
+            text: $searchText,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: localized("搜尋發現項目")
+        )
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    onDismiss()
+                } label: {
+                    Label(localized("完成"), systemImage: "checkmark")
+                        .labelStyle(.iconOnly)
+                }
+                .accessibilityLabel(localized("完成"))
+            }
+        }
+    }
+
+    private var sourceCard: some View {
+        settingsCard {
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
+                sectionTitle(localized("目前發現頁"))
+                Menu {
+                    ForEach(discover.exploreSources) { source in
+                        Button {
+                            discover.selectSource(source.id)
+                        } label: {
+                            if source.id == discover.selectedSourceId {
+                                Label(source.bookSourceName, systemImage: "checkmark")
+                            } else {
+                                Text(source.bookSourceName)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: DSSpacing.md) {
+                        Image(systemName: "books.vertical")
+                            .foregroundColor(DSColor.accent)
+                            .frame(width: 28)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(discover.selectedSource?.bookSourceName ?? localized("尚未啟用支援發現的書源"))
+                                .font(DSFont.subheadline.weight(.semibold))
+                                .foregroundColor(DSColor.textPrimary)
+                                .lineLimit(1)
+                            if let url = discover.selectedSource?.bookSourceUrl {
+                                Text(url)
+                                    .font(DSFont.caption)
+                                    .foregroundColor(DSColor.textSecondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: DSSpacing.sm)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(DSFont.caption)
+                            .foregroundColor(DSColor.textSecondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .disabled(discover.exploreSources.count <= 1)
+            }
+        }
+    }
+
+    private var filtersCard: some View {
+        settingsCard {
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
+                sectionTitle(localized("篩選條件"))
+                VStack(spacing: 0) {
+                    ForEach(Array(discover.filters.enumerated()), id: \.offset) { index, filter in
+                        filterRow(filter)
+                        if index < discover.filters.count - 1 {
+                            Divider().padding(.leading, 36)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var categoriesCard: some View {
+        settingsCard {
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        sectionTitle(localized("顯示分區"))
+                        Text(categorySummary)
+                            .font(DSFont.caption)
+                            .foregroundColor(DSColor.textSecondary)
+                    }
+                    Spacer(minLength: DSSpacing.md)
+                    Menu {
+                        Button {
+                            discover.resetCategorySelection()
+                        } label: {
+                            Label(localized("恢復自動"), systemImage: "arrow.counterclockwise")
+                        }
+                        .disabled(!discover.usesCustomCategorySelection)
+                        Button {
+                            discover.selectAllCategories()
+                        } label: {
+                            Label(localized("全部顯示"), systemImage: "checklist.checked")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 20, weight: .medium))
+                    }
+                    .accessibilityLabel(localized("顯示分區"))
+                }
+
+                if discover.isLoadingItems && discover.rawItems.isEmpty {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
+                    }
+                    .padding(.vertical, DSSpacing.xl)
+                } else if filteredGroups.isEmpty {
+                    Text(localized("沒有符合的發現項目"))
+                        .font(DSFont.caption)
+                        .foregroundColor(DSColor.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, DSSpacing.xl)
+                } else {
+                    VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                        ForEach(filteredGroups) { group in
+                            categoryGroup(group)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var categorySummary: String {
+        if discover.usesCustomCategorySelection {
+            return String(format: localized("已自訂 %d 個分區"), discover.selectedCategoryCount)
+        }
+        return String(format: localized("自動顯示前 %d 個分區"), discover.maxShowcaseSections)
+    }
+
+    private func filterRow(_ filter: DiscoverFilter) -> some View {
+        Menu {
+            ForEach(filter.options, id: \.self) { option in
+                Button {
+                    discover.selectFilter(filter, value: option)
+                } label: {
+                    if option == filter.selected {
+                        Label(displayName(option), systemImage: "checkmark")
+                    } else {
+                        Text(displayName(option))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: DSSpacing.md) {
+                Text(filterTitle(filter.title))
+                    .font(DSFont.subheadline)
+                    .foregroundColor(DSColor.textPrimary)
+                Spacer(minLength: DSSpacing.sm)
+                Text(displayName(filter.selected))
+                    .font(DSFont.subheadline)
+                    .foregroundColor(DSColor.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(DSFont.caption2)
+                    .foregroundColor(DSColor.textSecondary)
+            }
+            .padding(.vertical, DSSpacing.sm + 2)
+            .contentShape(Rectangle())
+        }
+    }
+
+    private func categoryGroup(_ group: DiscoverSettingsGroup) -> some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            Text(group.title)
+                .font(DSFont.caption.weight(.semibold))
+                .foregroundColor(DSColor.textSecondary)
+                .textCase(.uppercase)
+            DiscoverSettingsFlowLayout(spacing: DSSpacing.sm) {
+                ForEach(Array(group.items.enumerated()), id: \.offset) { _, item in
+                    categoryChip(item)
+                }
+            }
+        }
+    }
+
+    private func categoryChip(_ item: DiscoverCardItem) -> some View {
+        let selected = item.isFetchable && discover.isCategorySelected(item)
+        let isAction = item.isAction
+        return Button {
+            if isAction, let url = item.actionURL {
+                onNavigate(url)
+            } else {
+                discover.toggleCategoryVisibility(item)
+            }
+        } label: {
+            HStack(spacing: DSSpacing.xs) {
+                Text(item.title)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 220)
+                if isAction {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 10, weight: .semibold))
+                } else if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                }
+            }
+            .font(DSFont.caption.weight(selected ? .semibold : .regular))
+            .foregroundColor(selected ? DSColor.textOnAccent : DSColor.textPrimary)
+            .padding(.horizontal, DSSpacing.md)
+            .padding(.vertical, DSSpacing.sm)
+            .background(selected ? DSColor.accent : DSColor.surface)
+            .clipShape(Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(
+                        selected ? DSColor.accent.opacity(0.25) : DSColor.separator,
+                        lineWidth: 0.5
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(isAction && item.actionURL == nil)
+    }
+
+    private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: DSSpacing.md, content: content)
+            .padding(DSSpacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(DSColor.surface)
+            .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(DSFont.headline)
+            .foregroundColor(DSColor.textPrimary)
+    }
+
+    private func filterTitle(_ title: String) -> String {
+        switch title {
+        case "线路", "線路":
+            return localized("線路")
+        case "类型", "類型":
+            return localized("類型")
+        case "频道", "頻道":
+            return localized("頻道")
+        case "平台":
+            return localized("平台")
+        default:
+            return title
+        }
+    }
+
+    private func displayName(_ value: String) -> String {
+        guard value.hasPrefix("http") else { return value }
+        return value
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+    }
+}
+
+/// Left-to-right wrapping layout for source-emitted discover chips.
+private struct DiscoverSettingsFlowLayout: Layout {
+    var spacing: CGFloat = DSSpacing.sm
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var origin = CGPoint.zero
+        var rowHeight: CGFloat = 0
+        var totalWidth: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if origin.x + size.width > maxWidth, origin.x > 0 {
+                origin.x = 0
+                origin.y += rowHeight + spacing
+                rowHeight = 0
+            }
+            origin.x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+            totalWidth = max(totalWidth, origin.x - spacing)
+        }
+        let width = maxWidth.isFinite ? maxWidth : totalWidth
+        return CGSize(width: width, height: origin.y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var origin = CGPoint(x: bounds.minX, y: bounds.minY)
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if origin.x + size.width > bounds.maxX, origin.x > bounds.minX {
+                origin.x = bounds.minX
+                origin.y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: origin, anchor: .topLeading, proposal: ProposedViewSize(size))
+            origin.x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
 }
 
 // MARK: - Discover Source Picker

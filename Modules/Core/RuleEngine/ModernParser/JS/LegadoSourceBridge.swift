@@ -56,6 +56,12 @@ import JavaScriptCore
     /// Stores the full variable JSON string.
     var setVariableHandler: ((String?) -> Void)?
 
+    /// Reads one entry from Legado's source-scoped key-value store.
+    var getKeyValueHandler: ((String) -> String?)?
+
+    /// Stores one entry in Legado's source-scoped key-value store.
+    var putKeyValueHandler: ((String, String) -> Void)?
+
     /// Returns login info as a JSON string (or nil).
     var getLoginInfoHandler: (() -> String?)?
 
@@ -168,38 +174,36 @@ import JavaScriptCore
     // MARK: Key-Value Store
 
     func put(_ key: String, _ value: String) {
-        // Start from the existing variable JSON, but tolerate an empty/missing/invalid value —
-        // the getVariable handler returns "" (not nil) when nothing is stored yet, which would
-        // otherwise make the JSON parse fail and silently DROP the write (breaking first-time
-        // `source.put`, e.g. 起点's menuTag / token / para).
         let currentJson = getVariableHandler?() ?? ""
-        var mutableDict: [String: Any] = [:]
-        if let data = currentJson.data(using: .utf8),
-           let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
-            mutableDict = dict
-        }
-        // JSCore stringifies JS `undefined`/`null` arguments to the literal strings
-        // "undefined"/"null" for a `String`-typed JSExport param (Rhino would store null /
-        // remove the key). Storing them poisons truthy checks: e.g. 起点 does
-        // `source.put("token", undefined)`, then `source.get("token")` returns the truthy
-        // "undefined", so `if (!token)` never re-fetches a real token and every content
-        // request comes back empty. Normalize to "" (Legado's effective behaviour).
         let normalized = Self.normalizeStored(value)
-        mutableDict[key] = normalized
-        variableStore[key] = normalized
-        if let newData = try? JSONSerialization.data(withJSONObject: mutableDict),
-           let newJson = String(data: newData, encoding: .utf8) {
-            setVariableHandler?(newJson)
+
+        // Older Yuedu sources used getVariable() as a JSON object and expected
+        // source.put/get to address that object. Preserve that compatibility only when
+        // the variable really is a JSON object. Legado also allows getVariable() to be
+        // an opaque token; in that case source.put must use a separate key-value store.
+        if let data = currentJson.data(using: .utf8),
+           var mutableDict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            mutableDict[key] = normalized
+            if let newData = try? JSONSerialization.data(withJSONObject: mutableDict),
+               let newJson = String(data: newData, encoding: .utf8) {
+                setVariableHandler?(newJson)
+            }
+        } else {
+            putKeyValueHandler?(key, normalized)
         }
+
+        variableStore[key] = normalized
     }
 
     func get(_ key: String) -> String {
-        let currentJson = getVariableHandler?() ?? "{}"
+        let currentJson = getVariableHandler?() ?? ""
         if let data = currentJson.data(using: .utf8),
            let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
            let value = dict[key] {
-            // Self-heal any already-poisoned "undefined"/"null" stored before the put fix.
             return Self.normalizeStored(Self.stringify(value))
+        }
+        if let value = getKeyValueHandler?(key) {
+            return Self.normalizeStored(value)
         }
         return Self.normalizeStored(variableStore[key] ?? "")
     }

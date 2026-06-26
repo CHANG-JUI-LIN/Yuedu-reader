@@ -482,6 +482,12 @@ struct BookSourceFormLoginView: View {
         engine.sourceBridge.setVariableHandler = { jsonString in
             runtimeStore.setSourceVariableJSON(jsonString, for: sourceUrl)
         }
+        engine.sourceBridge.getKeyValueHandler = { key in
+            runtimeStore.sourceValue(for: sourceUrl, key: key)
+        }
+        engine.sourceBridge.putKeyValueHandler = { key, value in
+            runtimeStore.setSourceValue(value, for: sourceUrl, key: key)
+        }
         engine.sourceBridge.getLoginInfoHandler = {
             LoginManager.shared.getLoginInfo(sourceUrl: sourceUrl).flatMap { info in
                 guard let data = try? JSONSerialization.data(withJSONObject: info) else { return nil }

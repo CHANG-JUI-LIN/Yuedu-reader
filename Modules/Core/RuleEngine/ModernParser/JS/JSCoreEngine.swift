@@ -435,7 +435,47 @@ class JSCoreEngine {
                 def('isEmpty', function () { return Object.keys(o).length === 0; });
                 def('keySet', function () { return Object.keys(o); });
                 def('values', function () { return Object.keys(o).map(function (k) { return o[k]; }); });
+                // LYC sources persist filter metadata through infoMap.save().
+                // Their map is process-local here, so saving is intentionally a no-op.
+                def('save', function () { return o; });
                 return o;
+            }
+        """)
+
+        // Luo-Ya-Cheng (洛雅橙/lyc) mod compatibility shim.
+        // This must be installed after `__yueduJavaMap`: LYC explore scripts call
+        // `infoMap.save()` while assembling their filter rows.
+        ctx.evaluateScript("""
+            function csh() {
+                if (typeof source === 'undefined') return;
+                var d = {
+                    sort: '全部',
+                    size: '30',
+                    isfinish: 'all',
+                    orderBy: 'newest',
+                    fmale: '男频',
+                    fxy: '0',
+                    img: '1',
+                    dp: '1',
+                    jj: '0',
+                    api: '1',
+                    lock: '0',
+                    zdy: '',
+                };
+                for (var k in d) {
+                    if (!source.get(k)) source.put(k, d[k]);
+                }
+            }
+            function Get(key) {
+                if (typeof source !== 'undefined') return source.get(key) || '';
+                return '';
+            }
+            function Set(key, value) {
+                if (typeof source !== 'undefined') source.put(key, value);
+            }
+            var infoMap = __yueduJavaMap({});
+            function createFilter(sort, size, isfinish, orderBy, fmale) {
+                // The source's jsLib may replace this fallback with its filter builder.
             }
         """)
 
@@ -591,6 +631,7 @@ class JSCoreEngine {
         ctx.setObject(bridge.index, forKeyedSubscript: "chapterIndex" as NSString)
         ctx.setObject(bridge.order, forKeyedSubscript: "order" as NSString)
         ctx.setObject(bridge.order, forKeyedSubscript: "chapterOrder" as NSString)
+        ctx.setObject(bridge.isVip(), forKeyedSubscript: "isVip" as NSString)
     }
 
     /// Inject `source` as a Legado-compatible bridge object with methods and properties.
