@@ -21,12 +21,25 @@ struct DiscoverShowcaseView: View {
                     emptyState
                 } else {
                     ForEach(discover.sections) { section in
-                        DiscoverSectionView(
-                            section: section,
-                            onOpenBook: onOpenBook,
-                            onAppearLoad: { discover.loadSection(section.id) },
-                            onRetry: { discover.retrySection(section.id) }
-                        )
+                        if section.style == .ranked {
+                            if section.id == firstRankedSectionId {
+                                DiscoverRankedSectionsCarousel(
+                                    sections: rankedSections,
+                                    source: discover.selectedSource,
+                                    onOpenBook: onOpenBook,
+                                    onAppearLoad: { discover.loadSection($0) },
+                                    onRetry: { discover.retrySection($0) }
+                                )
+                            }
+                        } else {
+                            DiscoverSectionView(
+                                section: section,
+                                source: discover.selectedSource,
+                                onOpenBook: onOpenBook,
+                                onAppearLoad: { discover.loadSection(section.id) },
+                                onRetry: { discover.retrySection(section.id) }
+                            )
+                        }
                     }
                 }
             }
@@ -53,6 +66,14 @@ struct DiscoverShowcaseView: View {
             description: Text(localized("此書源未回傳發現內容，可下拉重新整理或切換書源"))
         )
         .frame(maxWidth: .infinity, minHeight: 320)
+    }
+
+    private var rankedSections: [DiscoverShowcaseSection] {
+        discover.sections.filter { $0.style == .ranked }
+    }
+
+    private var firstRankedSectionId: UUID? {
+        rankedSections.first?.id
     }
 }
 
@@ -154,6 +175,7 @@ private struct DiscoverFilterBar: View {
 /// One showcase section. Loads its books lazily the first time it scrolls on.
 private struct DiscoverSectionView: View {
     let section: DiscoverShowcaseSection
+    let source: BookSource?
     let onOpenBook: (OnlineBook) -> Void
     let onAppearLoad: () -> Void
     let onRetry: () -> Void
@@ -173,19 +195,25 @@ private struct DiscoverSectionView: View {
                 .foregroundColor(DSColor.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: DSSpacing.sm)
-            NavigationLink {
-                DiscoverCategoryView(section: section, onOpenBook: onOpenBook)
-            } label: {
-                HStack(spacing: DSSpacing.xs) {
-                    Text(localized("查看全部"))
-                    Image(systemName: "chevron.right")
-                        .font(DSFont.caption2.weight(.semibold))
+            if let source {
+                NavigationLink {
+                    DiscoverCategoryView(
+                        section: section,
+                        source: source,
+                        onOpenBook: onOpenBook
+                    )
+                } label: {
+                    HStack(spacing: DSSpacing.xs) {
+                        Text(localized("查看全部"))
+                        Image(systemName: "chevron.right")
+                            .font(DSFont.caption2.weight(.semibold))
+                    }
+                    .font(DSFont.subheadline)
+                    .foregroundColor(DSColor.textSecondary)
                 }
-                .font(DSFont.subheadline)
-                .foregroundColor(DSColor.textSecondary)
+                .disabled(section.books.isEmpty)
+                .opacity(section.books.isEmpty ? 0 : 1)
             }
-            .disabled(section.books.isEmpty)
-            .opacity(section.books.isEmpty ? 0 : 1)
         }
         .padding(.horizontal, DSSpacing.lg)
     }
@@ -273,6 +301,154 @@ private struct DiscoverSectionView: View {
                         .multilineTextAlignment(.center)
                         .lineLimit(3)
                         .padding(.horizontal, DSSpacing.lg)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, DSSpacing.lg)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Ranked sections carousel
+
+private struct DiscoverRankedSectionsCarousel: View {
+    let sections: [DiscoverShowcaseSection]
+    let source: BookSource?
+    let onOpenBook: (OnlineBook) -> Void
+    let onAppearLoad: (UUID) -> Void
+    let onRetry: (UUID) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+                ForEach(sections) { section in
+                    DiscoverRankedSummaryCard(
+                        section: section,
+                        source: source,
+                        onOpenBook: onOpenBook,
+                        onAppearLoad: { onAppearLoad(section.id) },
+                        onRetry: { onRetry(section.id) }
+                    )
+                }
+            }
+            .padding(.horizontal, DSSpacing.lg)
+        }
+        .scrollClipDisabled()
+    }
+}
+
+private struct DiscoverRankedSummaryCard: View {
+    let section: DiscoverShowcaseSection
+    let source: BookSource?
+    let onOpenBook: (OnlineBook) -> Void
+    let onAppearLoad: () -> Void
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
+            header
+            content
+        }
+        .padding(DSSpacing.md)
+        .frame(width: 320, alignment: .topLeading)
+        .background(DSColor.surface)
+        .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
+                .strokeBorder(DSColor.separator, lineWidth: 0.5)
+        }
+        .task { onAppearLoad() }
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(section.title)
+                .font(DSFont.headline)
+                .foregroundColor(DSColor.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: DSSpacing.sm)
+            if let source {
+                NavigationLink {
+                    DiscoverCategoryView(
+                        section: section,
+                        source: source,
+                        onOpenBook: onOpenBook
+                    )
+                } label: {
+                    HStack(spacing: DSSpacing.xs) {
+                        Text(localized("查看全部"))
+                        Image(systemName: "chevron.right")
+                            .font(DSFont.caption2.weight(.semibold))
+                    }
+                    .font(DSFont.caption)
+                    .foregroundColor(DSColor.textSecondary)
+                }
+                .disabled(section.books.isEmpty)
+                .opacity(section.books.isEmpty ? 0 : 1)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if !section.books.isEmpty {
+            let ranked = Array(section.books.prefix(6).enumerated())
+            VStack(spacing: 0) {
+                ForEach(ranked, id: \.element.id) { index, book in
+                    Button { onOpenBook(book) } label: {
+                        DiscoverRankedRow(rank: index + 1, book: book)
+                    }
+                    .buttonStyle(.plain)
+                    if index < ranked.count - 1 {
+                        Divider().padding(.leading, 88)
+                    }
+                }
+            }
+        } else {
+            switch section.phase {
+            case .failed:
+                failed
+            case .loaded:
+                empty
+            case .idle, .loading:
+                loading
+            }
+        }
+    }
+
+    private var loading: some View {
+        HStack {
+            Spacer()
+            ProgressView()
+            Spacer()
+        }
+        .frame(height: 120)
+    }
+
+    private var empty: some View {
+        Text(localized("暫無發現內容"))
+            .font(DSFont.caption)
+            .foregroundColor(DSColor.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, DSSpacing.lg)
+    }
+
+    private var failed: some View {
+        Button(action: onRetry) {
+            VStack(spacing: DSSpacing.xs) {
+                HStack(spacing: DSSpacing.sm) {
+                    Image(systemName: "arrow.clockwise")
+                    Text(localized("載入失敗，點按重試"))
+                }
+                .font(DSFont.subheadline)
+                .foregroundColor(DSColor.accent)
+                if let reason = section.errorReason, !reason.isEmpty {
+                    Text(reason)
+                        .font(DSFont.caption2)
+                        .foregroundColor(DSColor.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .center)
@@ -390,20 +566,134 @@ private struct DiscoverRankedRow: View {
 /// Full list of one explore category, reached from a section's 查看全部 link.
 private struct DiscoverCategoryView: View {
     let section: DiscoverShowcaseSection
+    let source: BookSource
     let onOpenBook: (OnlineBook) -> Void
 
+    @State private var books: [OnlineBook]
+    @State private var nextPage: Int
+    @State private var hasMorePages = true
+    @State private var isLoadingMore = false
+    @State private var loadMoreErrorReason: String?
+
+    init(
+        section: DiscoverShowcaseSection,
+        source: BookSource,
+        onOpenBook: @escaping (OnlineBook) -> Void
+    ) {
+        self.section = section
+        self.source = source
+        self.onOpenBook = onOpenBook
+        _books = State(initialValue: section.books)
+        _nextPage = State(initialValue: section.books.isEmpty ? 1 : 2)
+    }
+
     var body: some View {
-        List {
-            ForEach(Array(section.books.enumerated()), id: \.element.id) { index, book in
-                Button { onOpenBook(book) } label: {
-                    DiscoverRankedRow(rank: index + 1, book: book)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(Array(books.enumerated()), id: \.element.id) { index, book in
+                    Button { onOpenBook(book) } label: {
+                        DiscoverRankedRow(rank: index + 1, book: book)
+                    }
+                    .buttonStyle(.plain)
+                    .onAppear {
+                        if index >= books.count - 5 {
+                            loadMoreIfNeeded()
+                        }
+                    }
+
+                    if index < books.count - 1 {
+                        Divider()
+                            .padding(.leading, 88)
+                    }
                 }
-                .buttonStyle(.plain)
+
+                loadMoreFooter
             }
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.sm)
         }
-        .listStyle(.plain)
+        .scrollDismissesKeyboard(.immediately)
         .navigationTitle(section.title)
         .toolbarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder
+    private var loadMoreFooter: some View {
+        if isLoadingMore {
+            HStack {
+                Spacer()
+                ProgressView()
+                Spacer()
+            }
+            .padding(.vertical, DSSpacing.md)
+        } else if loadMoreErrorReason != nil {
+            Button {
+                loadMoreIfNeeded()
+            } label: {
+                VStack(spacing: DSSpacing.xs) {
+                    HStack(spacing: DSSpacing.xs) {
+                        Image(systemName: "arrow.clockwise")
+                        Text(localized("載入失敗，點按重試"))
+                    }
+                    .font(DSFont.subheadline)
+                    .foregroundColor(DSColor.accent)
+
+                    if let reason = loadMoreErrorReason, !reason.isEmpty {
+                        Text(reason)
+                            .font(DSFont.caption2)
+                            .foregroundColor(DSColor.textSecondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, DSSpacing.md)
+            }
+            .buttonStyle(.plain)
+        } else if hasMorePages {
+            Color.clear
+                .frame(height: 1)
+                .onAppear(perform: loadMoreIfNeeded)
+        }
+    }
+
+    private func loadMoreIfNeeded() {
+        guard hasMorePages, !isLoadingMore else { return }
+        isLoadingMore = true
+        loadMoreErrorReason = nil
+        let page = nextPage
+
+        Task {
+            do {
+                let loaded = try await BookSourceFetcher.shared.discoverBooks(
+                    from: section.item.raw,
+                    page: page,
+                    in: source
+                )
+                await applyLoadedPage(loaded, page: page)
+            } catch {
+                await applyLoadMoreError((error as NSError).localizedDescription)
+            }
+        }
+    }
+
+    @MainActor
+    private func applyLoadedPage(_ loaded: [OnlineBook], page: Int) {
+        let additional = DiscoverViewModel.uniqueAdditionalBooks(loaded, existing: books)
+        if additional.isEmpty {
+            hasMorePages = false
+        } else {
+            books.append(contentsOf: additional)
+            nextPage = page + 1
+            hasMorePages = true
+        }
+        isLoadingMore = false
+    }
+
+    @MainActor
+    private func applyLoadMoreError(_ reason: String) {
+        loadMoreErrorReason = reason
+        isLoadingMore = false
     }
 }
 

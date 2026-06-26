@@ -2468,6 +2468,41 @@ struct DiscoverFilterTests {
         #expect(custom.map(\.title) == ["主题"])
     }
 
+    @Test("discover pagination drops duplicate page results")
+    func discoverPaginationDropsDuplicatePageResults() {
+        let sourceId = UUID()
+        func book(_ name: String, _ url: String, author: String = "Author") -> OnlineBook {
+            OnlineBook(
+                name: name,
+                author: author,
+                intro: "",
+                coverUrl: "https://img.example.com/\(name).jpg",
+                bookUrl: url,
+                tocUrl: "",
+                wordCount: "",
+                lastChapter: "",
+                kind: "",
+                sourceId: sourceId,
+                sourceName: "Discover Test"
+            )
+        }
+
+        let existing = [
+            book("A", "https://example.com/book/a"),
+            book("No URL", "", author: "Same Author")
+        ]
+        let incoming = [
+            book("A Again", "https://example.com/book/a"),
+            book("B", "https://example.com/book/b"),
+            book("No URL", "", author: "Same Author")
+        ]
+
+        let unique = DiscoverViewModel.uniqueAdditionalBooks(incoming, existing: existing)
+
+        #expect(unique.map(\.name) == ["B"])
+        #expect(unique.map(\.bookUrl) == ["https://example.com/book/b"])
+    }
+
     @MainActor
     @Test("selecting platform stores search source under the current mode")
     func selectingPlatformStoresSearchSourceForCurrentMode() throws {

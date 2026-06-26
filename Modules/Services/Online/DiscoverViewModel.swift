@@ -494,6 +494,31 @@ final class DiscoverViewModel: ObservableObject {
         return fetchable.filter { customKeys.contains($0.stableKey) }
     }
 
+    nonisolated static func uniqueAdditionalBooks(
+        _ incoming: [OnlineBook],
+        existing: [OnlineBook]
+    ) -> [OnlineBook] {
+        var seen = Set(existing.map(bookIdentity))
+        var unique: [OnlineBook] = []
+        for book in incoming {
+            let identity = bookIdentity(book)
+            if seen.insert(identity).inserted {
+                unique.append(book)
+            }
+        }
+        return unique
+    }
+
+    nonisolated private static func bookIdentity(_ book: OnlineBook) -> String {
+        let primary = book.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !primary.isEmpty { return primary }
+        return [
+            book.name.trimmingCharacters(in: .whitespacesAndNewlines),
+            book.author.trimmingCharacters(in: .whitespacesAndNewlines),
+            book.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        ].joined(separator: "\u{1F}")
+    }
+
     nonisolated static func discoverSettingsGroups(
         from raw: [ModernParserBridge.DiscoverItem],
         defaultTitle: String = "發現"
