@@ -456,7 +456,81 @@ struct RegexExtractorTests {
     }
 }
 
-// MARK: - 4. JSONPath / JsonExtractor Tests
+// MARK: - 4. Replace Rule Import Tests
+
+@Suite("ReplaceRuleImportParser", .serialized)
+struct ReplaceRuleImportParserTests {
+
+    @Test("parses Legado replace-rule export fields")
+    func parsesLegadoReplaceRuleExportFields() throws {
+        let json = """
+        [
+          {
+            "name": "廣告清理",
+            "group": "正文",
+            "pattern": "(?m)^廣告.*$",
+            "replacement": "",
+            "scope": "https://example.com/source",
+            "scopeContent": true,
+            "scopeTitle": false,
+            "isEnabled": true,
+            "isRegex": true,
+            "order": 7
+          },
+          {
+            "name": "標題規則",
+            "pattern": "^第(.*)章$",
+            "replacement": "$1",
+            "scopeContent": false,
+            "scopeTitle": true
+          }
+        ]
+        """
+
+        let rules = try ReplaceRuleImportParser.parse(data: Data(json.utf8))
+
+        #expect(rules.count == 1)
+        #expect(rules[0].name == "廣告清理 (正文)")
+        #expect(rules[0].pattern == #"(?m)^廣告.*$"#)
+        #expect(rules[0].replacement == "")
+        #expect(rules[0].scope == "https://example.com/source")
+        #expect(rules[0].enabled)
+        #expect(rules[0].isRegex)
+        #expect(rules[0].sortOrder == 7)
+    }
+
+    @Test("parses wrapped replacement rules with legacy regex keys")
+    func parsesWrappedReplacementRulesWithLegacyRegexKeys() throws {
+        let json = """
+        {
+          "replaceRules": [
+            {
+              "name": "純文字替換",
+              "regex": "foo",
+              "replacement": "bar",
+              "scope": "",
+              "enabled": "false",
+              "isRegex": 0,
+              "sortOrder": "3"
+            }
+          ]
+        }
+        """
+
+        let rules = try ReplaceRuleImportParser.parse(data: Data(json.utf8))
+
+        #expect(rules.count == 1)
+        #expect(rules[0].name == "純文字替換")
+        #expect(rules[0].pattern == "foo")
+        #expect(rules[0].replacement == "bar")
+        #expect(rules[0].scope == "global")
+        #expect(!rules[0].enabled)
+        #expect(!rules[0].isRegex)
+        #expect(rules[0].sortOrder == 3)
+    }
+}
+
+// MARK: - 5. JSONPath / JsonExtractor Tests
 
 @Suite("JSONPathEvaluator", .serialized)
 struct JSONPathEvaluatorTests {

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - List View
 
@@ -9,7 +10,9 @@ struct ReplaceRuleListView: View {
     @ObservedObject private var store = ReplaceRuleStore.shared
     @ObservedObject private var gs = GlobalSettings.shared
     @State private var showingAdd = false
+    @State private var showingImportFile = false
     @State private var editingRule: ReplaceRule?
+    @State private var importAlert: ReplaceRuleImportAlert?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -45,11 +48,22 @@ struct ReplaceRuleListView: View {
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showingAdd = true
+                    Menu {
+                        Button {
+                            showingAdd = true
+                        } label: {
+                            Label(localized("新增規則"), systemImage: "plus")
+                        }
+
+                        Button {
+                            showingImportFile = true
+                        } label: {
+                            Label(localized("匯入替換規則 JSON"), systemImage: "square.and.arrow.down")
+                        }
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel(localized("新增或匯入"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -65,8 +79,54 @@ struct ReplaceRuleListView: View {
             .sheet(item: $editingRule) { rule in
                 ReplaceRuleEditView(rule: rule) { store.update($0) }
             }
+            .fileImporter(
+                isPresented: $showingImportFile,
+                allowedContentTypes: [UTType.json, UTType.plainText]
+            ) { result in
+                handleImport(result)
+            }
+            .alert(item: $importAlert) { alert in
+                Alert(
+                    title: Text(localized(alert.title)),
+                    message: Text(alert.message),
+                    dismissButton: .default(Text(localized("完成")))
+                )
+            }
         }
     }
+
+    private func handleImport(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            let ok = url.startAccessingSecurityScopedResource()
+            defer { if ok { url.stopAccessingSecurityScopedResource() } }
+
+            do {
+                let data = try Data(contentsOf: url)
+                let count = try store.importFromLegadoData(data)
+                importAlert = ReplaceRuleImportAlert(
+                    title: "成功匯入",
+                    message: String(format: localized("已匯入 %d 條替換規則"), count)
+                )
+            } catch {
+                importAlert = ReplaceRuleImportAlert(
+                    title: "匯入失敗",
+                    message: String(format: localized("替換規則匯入失敗：%@"), error.localizedDescription)
+                )
+            }
+        case .failure(let error):
+            importAlert = ReplaceRuleImportAlert(
+                title: "匯入失敗",
+                message: error.localizedDescription
+            )
+        }
+    }
+}
+
+private struct ReplaceRuleImportAlert: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
 }
 
 // MARK: - Row
