@@ -50,6 +50,8 @@ struct BookSearchView: View {
                             ProgressView(localized("搜索中…"))
                             Spacer()
                         }
+                    } else if aggregator.isPaused {
+                        pausedPlaceholder
                     } else if shouldShowEmptyResult {
                         emptyResultView
                     } else {
@@ -57,6 +59,11 @@ struct BookSearchView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .bottomTrailing) {
+                    searchControlButton
+                }
+                .animation(.spring(response: 0.32, dampingFraction: 0.78), value: aggregator.isSearching)
+                .animation(.spring(response: 0.32, dampingFraction: 0.78), value: aggregator.isPaused)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(DSColor.background)
@@ -133,6 +140,51 @@ struct BookSearchView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 2)
             }
+        }
+    }
+
+    // MARK: Floating Pause / Resume Control
+    //
+    // Manual companion to the network-settings auto-pause: tap to pause the
+    // in-flight search (save battery/traffic) and tap again to resume the
+    // sources that have not run yet. Auto-pause lands in the same paused state,
+    // so this same button resumes an automatically paused search too.
+    @ViewBuilder
+    private var searchControlButton: some View {
+        if aggregator.isSearching || aggregator.isPaused {
+            let paused = aggregator.isPaused
+            Button {
+                if paused {
+                    aggregator.resume()
+                } else {
+                    aggregator.pause()
+                }
+            } label: {
+                Image(systemName: paused ? "play.fill" : "pause.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(DSColor.textOnAccent)
+                    .frame(width: 52, height: 52)
+                    .background(Circle().fill(paused ? DSColor.success : DSColor.accent))
+                    .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 3)
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, DSSpacing.lg)
+            .padding(.bottom, DSSpacing.xl)
+            .accessibilityLabel(paused ? localized("繼續搜索") : localized("暫停搜索"))
+            .transition(.scale.combined(with: .opacity))
+        }
+    }
+
+    // Shown when a search was paused before any result came back.
+    private var pausedPlaceholder: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "pause.circle")
+                .font(.system(size: 48))
+                .foregroundColor(Color.secondary.opacity(0.4))
+            Text(localized("已暫停")).font(.headline)
+            Text(localized("點擊繼續搜索剩餘書源")).font(.subheadline).foregroundColor(.secondary)
+            Spacer()
         }
     }
 

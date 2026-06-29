@@ -7,6 +7,7 @@ struct ReaderTopBar: View {
     let overlayMaxWidth: CGFloat
     let onBack: () -> Void
     let onToggleBookmark: () -> Void
+    let onOpenBookDetail: (() -> Void)?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -19,6 +20,11 @@ struct ReaderTopBar: View {
                             .accessibilityIdentifier("reader_back_button")
                             .font(.system(size: 17, weight: .medium))
                             .foregroundColor(theme.textColor)
+                            .frame(width: 36, height: 36)
+                    }
+
+                    if onOpenBookDetail != nil {
+                        Color.clear
                             .frame(width: 36, height: 36)
                     }
                     
@@ -40,6 +46,19 @@ struct ReaderTopBar: View {
                     // Wait, we need uiFeedbackDuration here, but since it's hardcoded externally often 0.15,
                     // we'll pass the animation from the parent block, so we just use normal animation here.
                     .animation(.easeInOut(duration: 0.15), value: isBookmarked)
+
+                    if let onOpenBookDetail {
+                        Button {
+                            onOpenBookDetail()
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .rotationEffect(.degrees(90))
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundColor(theme.textColor)
+                                .frame(width: 36, height: 36)
+                        }
+                        .accessibilityLabel(localized("書籍詳情"))
+                    }
                 }
                 .frame(maxWidth: overlayMaxWidth)
             }

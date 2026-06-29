@@ -92,6 +92,7 @@ struct ReaderView: View {
 
     @State private var showTTSPanel = false
     @State private var showDownloadOptions = false
+    @State private var showOnlineBookDetail = false
     @State private var dismissedDownloadPanels: Set<UUID> = []
     @State private var showAutoReadPanel = false
     @State private var ttsChapterIndex: Int? = nil
@@ -242,6 +243,25 @@ struct ReaderView: View {
 
     // ── Derived Properties ──
     var book: ReadingBook? { store.books.first(where: { $0.id == bookId }) }
+
+    private var onlineBookDetail: OnlineBook? {
+        guard let book, book.isOnline, let sourceId = book.bookSourceId else { return nil }
+        let source = BookSourceStore.shared.sources.first(where: { $0.id == sourceId })
+        return OnlineBook(
+            name: book.title,
+            author: book.author,
+            intro: "",
+            coverUrl: book.coverUrl ?? "",
+            bookUrl: book.bookInfoURL ?? book.source,
+            tocUrl: book.tocURL ?? "",
+            wordCount: "",
+            lastChapter: book.latestChapterDisplayTitle ?? "",
+            kind: "",
+            sourceId: sourceId,
+            sourceName: source?.bookSourceName ?? "",
+            runtimeVariables: book.runtimeVariables
+        )
+    }
 
     var isEPUB: Bool {
         book?.resolvedPipelineKind == .epub
@@ -1346,6 +1366,26 @@ struct ReaderView: View {
                 }
             }
         }
+        .sheet(isPresented: $showOnlineBookDetail) {
+            if let detail = onlineBookDetail {
+                NavigationStack {
+                    OnlineBookView(book: detail)
+                        .environmentObject(store)
+                        .navigationTitle(localized("書籍詳情"))
+                        .toolbarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button {
+                                    showOnlineBookDetail = false
+                                } label: {
+                                    Image(systemName: "xmark")
+                                }
+                                .accessibilityLabel(localized("關閉"))
+                            }
+                        }
+                }
+            }
+        }
         .sheet(isPresented: $showTOC) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 ReaderMenuView(
@@ -1356,6 +1396,7 @@ struct ReaderView: View {
                     totalPages: renderedPageCount,
                     tocLayoutMode: .from(writingMode: effectiveWritingMode),
                     pageOffsets: tocPageOffsets,
+                    showsPageNumbers: book?.isOnline != true,
                     currentIndex: currentChapterIndex,
                     currentChapterID: currentTOCChapterID,
                     onSelectChapter: { jumpToTOCEntry($0) },
@@ -2025,6 +2066,9 @@ struct ReaderView: View {
                         excerpt: currentPageExcerpt
                     )
                 }
+            },
+            onOpenBookDetail: onlineBookDetail == nil ? nil : {
+                showOnlineBookDetail = true
             }
         )
     }

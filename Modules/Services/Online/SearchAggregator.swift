@@ -226,6 +226,10 @@ class SearchBook: Identifiable, ObservableObject {
 class SearchAggregator: ObservableObject {
     @Published var results: [SearchBook] = []
     @Published var isSearching = false
+    /// Paused — either automatically (auto-pause threshold reached) or manually
+    /// (floating pause control). Results stay on screen and `resume()` continues
+    /// over the sources that had not finished.
+    @Published var isPaused = false
     @Published var progress: SearchProgress = SearchProgress()
 
     /// Search progress
@@ -276,6 +280,16 @@ class SearchAggregator: ObservableObject {
     /// bucket, candidates merge only when their authors are compatible.
     private var deduplicationMap: [String: [Int]] = [:]
 
+    // Resume bookkeeping. `allSources` is the full source list for the current
+    // query; `completedSourceIds` are the ones already finished. A manual or
+    // automatic pause re-runs only the remainder. `autoPausePolicy` is captured
+    // per search; auto-pause is applied to the initial run only — once the user
+    // resumes, the search runs to completion (no repeated auto-pausing).
+    private var allSources: [BookSource] = []
+    private var completedSourceIds: Set<UUID> = []
+    private var currentQuery = ""
+    private var autoPausePolicy = SearchAutoPausePolicy(count: 0)
+
     // MARK: - Start Search
 
     func search(query: String, sources: [BookSource]) {
@@ -296,19 +310,53 @@ class SearchAggregator: ObservableObject {
             skippedCount = 0
         }
 
-        // Reset state (sources are validated, all included in search)
+        // Reset state for a brand-new query.
         results = []
         deduplicationMap = [:]
+        completedSourceIds = []
         progress = SearchProgress(total: activeSources.count, skipped: skippedCount)
-        isSearching = true
+        isPaused = false
 
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        currentQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        allSources = activeSources
+
         let autoPauseCount = NetworkSearchSettings.effectiveAutoPauseCount(
             configured: GlobalSettings.shared.searchAutoPauseCount,
             sourceCount: activeSources.count
         )
-        let autoPausePolicy = SearchAutoPausePolicy(count: autoPauseCount)
-        let concurrency = min(maxConcurrency, activeSources.count)
+        autoPausePolicy = SearchAutoPausePolicy(count: autoPauseCount)
+
+        runSearch(sources: activeSources, applyAutoPause: true)
+    }
+
+    /// Fan out over `sources`, merging each as it returns. Shared by the initial
+    /// `search(query:sources:)` and by `resume()` (which passes only the sources
+    /// that had not finished). Never resets `results`/`progress`, so resuming
+    /// keeps filling the existing list.
+    ///
+    /// `applyAutoPause` is true only for the initial run: the network-settings
+    /// auto-pause stops the search once enough hits are found. When the user then
+    /// resumes, auto-pause is off so the remaining sources run to completion (or
+    /// until the user pauses again manually).
+    private func runSearch(sources: [BookSource], applyAutoPause: Bool) {
+        // Cancel any prior run first. An auto-paused task is not cancelled by
+        // itself, so without this a resume started while its cancelled children
+        // are still draining could let the old task's trailing cleanup clobber
+        // `isSearching`.
+        searchTask?.cancel()
+
+        guard !sources.isEmpty else {
+            isSearching = false
+            isPaused = false
+            return
+        }
+
+        isSearching = true
+        isPaused = false
+
+        let q = currentQuery
+        let policy = applyAutoPause ? autoPausePolicy : SearchAutoPausePolicy(count: 0)
+        let concurrency = min(maxConcurrency, sources.count)
         let timeout = perSourceTimeout
         let aggregateTimeout = perAggregateSourceTimeout
 
@@ -317,8 +365,8 @@ class SearchAggregator: ObservableObject {
                 var nextSourceIndex = 0
 
                 func enqueueNextSource() {
-                    guard nextSourceIndex < activeSources.count else { return }
-                    let source = activeSources[nextSourceIndex]
+                    guard nextSourceIndex < sources.count else { return }
+                    let source = sources[nextSourceIndex]
                     nextSourceIndex += 1
                     let sourceTimeout = Self.searchTimeout(
                         for: source, normal: timeout, aggregate: aggregateTimeout
@@ -344,38 +392,72 @@ class SearchAggregator: ObservableObject {
                 // Large imported packs can contain 1000+ sources, so animated
                 // mutations here overwhelm SwiftUI's list diffing on iOS 18.
                 while let batchResult = await group.next() {
+                    // A pause/supersede cancels this task. Bail before recording
+                    // the result so the in-flight source stays "unfinished" and
+                    // resume() re-runs it.
                     guard !Task.isCancelled, let self = self else { break }
 
                     switch batchResult {
                     case .success(let sourceId, let books):
                         await self.mergeBatch(books, query: q)
                         self.progress.completed += 1
+                        self.completedSourceIds.insert(sourceId)
                         SourceHealthStore.shared.recordSuccess(sourceId)
                     case .timeout(let sourceId):
                         self.progress.timedOut += 1
+                        self.completedSourceIds.insert(sourceId)
                         SourceHealthStore.shared.recordFailure(sourceId)
                     case .failed(let sourceId):
                         self.progress.failed += 1
+                        self.completedSourceIds.insert(sourceId)
                         SourceHealthStore.shared.recordFailure(sourceId)
                     }
-                    if self.shouldAutoPause(query: q, policy: autoPausePolicy) {
+
+                    // Auto-pause enters the same resumable paused state as the
+                    // manual control, so the user can tap to continue the rest.
+                    if self.shouldAutoPause(query: q, policy: policy) {
+                        self.isPaused = true
+                        self.isSearching = false
                         group.cancelAll()
-                        break
+                        return
                     }
 
                     enqueueNextSource()
                 }
             }
 
-            self?.isSearching = false
+            // Only a run that finished on its own clears the flag; a paused or
+            // superseded run is cancelled and leaves state for resume().
+            guard let self, !Task.isCancelled else { return }
+            self.isSearching = false
         }
     }
 
-    // MARK: - Cancel Search
+    // MARK: - Pause / Resume / Cancel
+
+    /// Manually pause an in-flight search. Results already returned stay on
+    /// screen; sources that had not finished are remembered so `resume()` can
+    /// pick up exactly where it stopped.
+    func pause() {
+        guard isSearching else { return }
+        searchTask?.cancel()
+        isSearching = false
+        isPaused = true
+    }
+
+    /// Continue a paused search over only the sources that had not finished yet.
+    /// Auto-pause does not re-trigger here — resuming is an explicit request to
+    /// keep going.
+    func resume() {
+        guard isPaused else { return }
+        let pending = allSources.filter { !completedSourceIds.contains($0.id) }
+        runSearch(sources: pending, applyAutoPause: false)
+    }
 
     func cancel() {
         searchTask?.cancel()
         isSearching = false
+        isPaused = false
     }
 
     // MARK: - Single-source search with timeout (static method, no actor isolation issues)
@@ -430,13 +512,21 @@ class SearchAggregator: ObservableObject {
 
     private func shouldAutoPause(query: String, policy: SearchAutoPausePolicy) -> Bool {
         guard policy.isEnabled else { return false }
+        // Normalize the query the same way `sortResults` does, otherwise an exact
+        // title (in a different case/width) is scored as fuzzy and undercounts.
+        let normalizedQuery = Self.normalizedSearchText(query)
         var exactCount = 0
         var fuzzyCount = 0
+        // Count source hits (origins), not deduplicated titles. A single-title
+        // search collapses every source into one `SearchBook`, so counting books
+        // would stay at ~1 and the threshold would never be reached — that was
+        // why auto-pause appeared to do nothing ("自動暫停不生效").
         for result in results {
-            if matchScore(name: result.name, query: query) == 3 {
-                exactCount += 1
+            let hits = result.origins.count
+            if matchScore(name: result.name, query: normalizedQuery) == 3 {
+                exactCount += hits
             } else {
-                fuzzyCount += 1
+                fuzzyCount += hits
             }
         }
         return policy.shouldPause(exactCount: exactCount, fuzzyCount: fuzzyCount)

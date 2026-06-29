@@ -43,6 +43,8 @@
 "個" = "";
 "個書源" = "sources";
 "個書源匯入失敗" = "source(s) failed to import";
+"個項目" = "item(s)";
+"個項目匯入失敗" = "item(s) failed to import";
 "個失敗" = "failed";
 "個書源到剪貼簿" = "source(s) to clipboard";
 "個書源嗎？" = "source(s)?";
@@ -167,6 +169,9 @@
 "搜索 URL" = "Search URL";
 "搜索/缓存/下载等网络请求并发数，建议8个" = "Concurrent requests for search/cache/download. Recommended: 8";
 "搜索中…" = "Searching…";
+"暫停搜索" = "Pause search";
+"繼續搜索" = "Resume search";
+"點擊繼續搜索剩餘書源" = "Tap to resume the remaining sources";
 "搜索失敗" = "Search Failed";
 "搜索時啟用快取，避免重複搜索，預設快取 5 日" = "Cache search results to avoid duplicates. Default: 5 days";
 "搜索書源" = "Search Sources";

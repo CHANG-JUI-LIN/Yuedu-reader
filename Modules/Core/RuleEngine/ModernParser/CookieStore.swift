@@ -40,10 +40,27 @@ final class CookieStore {
     /// then falls back to the persistent store if the session storage is empty.
     func get(url: String) -> String {
         // HTTPCookieStorage (session / system managed)
-        if let cookieURL = URL(string: url),
-           let cookies = HTTPCookieStorage.shared.cookies(for: cookieURL),
-           !cookies.isEmpty {
-            return cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+        if let cookieURL = URL(string: url), let host = cookieURL.host {
+            var collected: [String: String] = [:]
+            // 1) Standard match for this exact URL (host-only + parent-domain cookies).
+            for c in HTTPCookieStorage.shared.cookies(for: cookieURL) ?? [] {
+                collected[c.name] = c.value
+            }
+            // 2) Also include cookies set on a SIBLING subdomain of the same site. Legado sources
+            //    routinely read a token via one host while the site set it on another subdomain —
+            //    e.g. 起点 reads `cookie.getKey("https://qidian.com","_csrfToken")` but the cookie is
+            //    a host-only `m.qidian.com` one. Standard `cookies(for:)` won't return that across
+            //    siblings, so `getKey("qidian.com")` came back empty → discover URL param unresolved
+            //    → 起点 rejected the request. Match on a label boundary so `a.com` ≠ `evil-a.com`.
+            for c in HTTPCookieStorage.shared.cookies ?? [] where collected[c.name] == nil {
+                let d = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
+                if d == host || d.hasSuffix("." + host) || host.hasSuffix("." + d) {
+                    collected[c.name] = c.value
+                }
+            }
+            if !collected.isEmpty {
+                return collected.map { "\($0.key)=\($0.value)" }.joined(separator: "; ")
+            }
         }
         // Persistent fallback
         let domain = canonicalDomain(for: url)

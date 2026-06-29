@@ -185,7 +185,11 @@ struct OnlineBookView: View {
         }
         .scrollIndicators(.hidden)
         .background(DSColor.background)
-        .toolbarTitleDisplayMode(.large)
+        // Detail views (pushed or sheet-presented) use an inline title per docs/design.md.
+        // This view doesn't set its own navigationTitle — the presenter does (e.g. ReaderView's
+        // 書籍詳情 sheet) — but a `.large` here, being deeper in the hierarchy, overrode the
+        // presenter's `.toolbarTitleDisplayMode(.inline)`, making the title render large.
+        .toolbarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .environment(\.locale, Locale(identifier: gs.localeIdentifier))
         .safeAreaInset(edge: .bottom) { bottomBar }

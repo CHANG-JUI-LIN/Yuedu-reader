@@ -121,6 +121,9 @@ final class DiscoverViewModel: ObservableObject {
     private let defaultDiscoverPlatform = "全部"
     private var loadItemsTask: Task<Void, Never>?
     private var loadBooksTask: Task<Void, Never>?
+    /// Guards the one-shot "reset poisoned discover variable + reload" recovery so a source
+    /// that genuinely returns no filters can't loop. Cleared whenever the selected source changes.
+    private var didAutoResetDiscoverVariable = false
 
     var selectedSource: BookSource? {
         exploreSources.first { $0.id == selectedSourceId }
@@ -144,6 +147,7 @@ final class DiscoverViewModel: ObservableObject {
         if selectedSourceId == nil || !exploreSources.contains(where: { $0.id == selectedSourceId }) {
             selectedSourceId = exploreSources.first?.id
             persistSelectedSource()
+            didAutoResetDiscoverVariable = false
         }
         loadCategorySelectionForSelectedSource()
         if items.isEmpty, hasExploreSource { reload() }
@@ -155,6 +159,7 @@ final class DiscoverViewModel: ObservableObject {
         persistSelectedSource()
         loadCategorySelectionForSelectedSource()
         filters = []
+        didAutoResetDiscoverVariable = false
         reload()
     }
 
@@ -284,8 +289,30 @@ final class DiscoverViewModel: ObservableObject {
         sections = []
         isLoadingItems = true
         loadItemsTask = Task { [weak self] in
-            let raw = await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
+            // Some sources' 榜單/分類 read a site cookie inline (起点 _csrfToken) that's only set by
+            // browsing the site — without it every section loads 0 books and 发现页 looks empty.
+            // Prime it before the sections start fetching books. No-op when not needed / already set.
+            await BookSourceFetcher.shared.primeDiscoverCookies(in: source)
             guard let self, !Task.isCancelled else { return }
+            var raw = await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
+            guard !Task.isCancelled else { return }
+
+            // Recover from a poisoned discover variable. A JS exploreUrl that builds
+            // `type:"select"` filters (createFilter) but returns NONE means the source's
+            // own JS fell into its catch fallback — typically because a persisted runtime
+            // `sort`/筛选 value no longer matches the source's category table, so its
+            // `csh()` keeps the stale value and throws. The runtime variable is keyed by
+            // bookSourceUrl, so this survives re-import and silently degrades 发现页 to the
+            // bare 榜单 fallback. Reset it once and re-fetch INLINE (re-entrant reload() could
+            // cancel its own task and leave sections empty) so `csh()` re-initialises.
+            if !self.didAutoResetDiscoverVariable,
+               Self.exploreLikelyDegraded(source: source, items: raw) {
+                self.didAutoResetDiscoverVariable = true
+                self.runtimeStore.setSourceVariableJSON(nil, for: source.bookSourceUrl)
+                raw = await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
+                guard !Task.isCancelled else { return }
+            }
+
             self.rawItems = raw
             self.filters = Self.extractFilters(from: raw)
             let mapped = raw.compactMap(Self.mapItem)
@@ -491,7 +518,12 @@ final class DiscoverViewModel: ObservableObject {
         guard let customKeys else {
             return Array(fetchable.prefix(defaultLimit))
         }
-        return fetchable.filter { customKeys.contains($0.stableKey) }
+        let selected = fetchable.filter { customKeys.contains($0.stableKey) }
+        // A per-source customization saved earlier can go stale: if the source's categories
+        // changed (e.g. 起点's 分类 chips depend on the selected genre, so their stableKeys
+        // shift), none of the saved keys match the current items and this filter returns empty
+        // — blanking the entire 發現頁. Fall back to the default set rather than show nothing.
+        return selected.isEmpty ? Array(fetchable.prefix(defaultLimit)) : selected
     }
 
     nonisolated static func uniqueAdditionalBooks(
@@ -559,6 +591,22 @@ final class DiscoverViewModel: ObservableObject {
         let decorative = CharacterSet(charactersIn: "-—_─═▱༺༻ˇ»«`´ʚɞ🟥🟧🟨🟪🟠🟡🟣 ")
         let stripped = trimmed.trimmingCharacters(in: decorative)
         return stripped.isEmpty ? trimmed : stripped
+    }
+
+    /// True when the source *should* emit `type:"select"` filters (its exploreUrl JS calls
+    /// `createFilter` / builds `select` controls) but the returned items contain none — the
+    /// hallmark of the source's JS having fallen into its own catch/fallback branch (usually a
+    /// poisoned runtime `sort`/筛选 value). Used to trigger a one-shot variable reset + reload.
+    nonisolated static func exploreLikelyDegraded(
+        source: BookSource,
+        items: [ModernParserBridge.DiscoverItem]
+    ) -> Bool {
+        let explore = source.exploreUrl
+        let buildsFilters = explore.contains("createFilter")
+            || explore.contains("\"select\"")
+            || explore.contains("'select'")
+        guard buildsFilters else { return false }
+        return !items.contains { ($0.type ?? "") == "select" }
     }
 
     // MARK: - Source-emitted filters

@@ -89,6 +89,9 @@ import UIKit
     func androidId() -> String
     func openVideoPlayer(_ url: String, _ title: String)
     func upLoginData(_ data: JSValue)
+    // `java.qread()` is a no-op stub ON PURPOSE: it makes 起点-family content JS set
+    // `dev='android-轻阅读'`, so createSvg emits the 轻阅读 段评 SVG variant — the one the user wants
+    // on iOS. (Removing it → `dev='ios'` → the ios variant, which the user rejected.) Don't remove it.
     func qread()
 }
 
@@ -789,7 +792,8 @@ import UIKit
         upLoginDataHandler?(data)
     }
 
-    /// Legado `java.qread()` — switch into "quick read" mode. No-op stub.
+    /// Legado `java.qread()` — no-op stub (kept on purpose; see note in LegadoJSBridgeExports).
+    /// Lets 起点 content JS set `dev='android-轻阅读'` → createSvg uses the 轻阅读 段评 bubble variant.
     func qread() {
         #if DEBUG
         print("[JSBridge] qread() called")

@@ -7,6 +7,7 @@ import Testing
 private final class CallRecorder {
     var jsonPayloads: [Data] = []
     var fetchedURLs: [URL] = []
+    var importedBookFileExtensions: [String] = []
 }
 
 @MainActor
@@ -16,6 +17,23 @@ struct SharedImportQueueDrainerTests {
     private func makeDefaults() -> (UserDefaults, String) {
         let suiteName = "test.shared-import.\(UUID().uuidString)"
         return (UserDefaults(suiteName: suiteName)!, suiteName)
+    }
+
+    private func makePayloadDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("shared-import-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func queuePayload(
+        _ payload: SharedImportQueueDrainer.QueuedPayload,
+        in defaults: UserDefaults
+    ) throws {
+        defaults.set(
+            [try JSONEncoder().encode(payload)],
+            forKey: SharedImportQueueDrainer.payloadQueueKey
+        )
     }
 
     @Test("drains queued JSON payloads, sums imported counts, and clears the queue")
@@ -40,11 +58,11 @@ struct SharedImportQueueDrainerTests {
 
         let outcome = await drainer.drain()
 
-        #expect(outcome == .init(importedCount: 8, failureCount: 0))
+        #expect(outcome == .init(importedCount: 8, failureCount: 0, importedBookSourceCount: 8))
         #expect(recorder.jsonPayloads.count == 2)
         // Queue must be cleared so it isn't re-imported on the next launch.
         #expect(defaults.array(forKey: SharedImportQueueDrainer.bookSourcesQueueKey) == nil)
-        #expect(drainer.lastOutcome == .init(importedCount: 8, failureCount: 0))
+        #expect(drainer.lastOutcome == .init(importedCount: 8, failureCount: 0, importedBookSourceCount: 8))
     }
 
     @Test("drains queued source URLs by fetching then importing each")
@@ -69,10 +87,128 @@ struct SharedImportQueueDrainerTests {
 
         let outcome = await drainer.drain()
 
-        #expect(outcome == .init(importedCount: 2, failureCount: 0))
+        #expect(outcome == .init(importedCount: 2, failureCount: 0, importedBookSourceCount: 2))
         #expect(recorder.fetchedURLs.map(\.absoluteString)
                 == ["https://example.com/a.json", "https://example.com/b.json"])
         #expect(defaults.array(forKey: SharedImportQueueDrainer.sourceURLsQueueKey) == nil)
+    }
+
+    @Test("generic JSON replace rules route to replace-rule importer")
+    func genericReplaceRuleJSONRoutesByContent() async throws {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let payloadDirectory = try makePayloadDirectory()
+        defer { try? FileManager.default.removeItem(at: payloadDirectory) }
+
+        let filename = "rules.json"
+        let fileURL = payloadDirectory.appendingPathComponent(filename)
+        try Data(#"[{"name":"ads","pattern":"廣告","replacement":""}]"#.utf8).write(to: fileURL)
+        try queuePayload(
+            .init(storageKind: .file, relativePath: filename, suggestedFilename: filename),
+            in: defaults
+        )
+
+        struct WrongRoute: Error {}
+        let drainer = SharedImportQueueDrainer(
+            defaults: defaults,
+            payloadDirectoryURL: payloadDirectory,
+            importData: { _ in throw WrongRoute() },
+            fetchURL: { _ in Data() },
+            importBookFile: { _ in throw WrongRoute() },
+            importOPMLData: { _ in throw WrongRoute() },
+            importLegadoRSSData: { _ in throw WrongRoute() },
+            importReplaceRuleData: { data in
+                #expect(String(data: data, encoding: .utf8)?.contains("廣告") == true)
+                return 1
+            }
+        )
+
+        let outcome = await drainer.drain()
+
+        #expect(outcome.importedCount == 1)
+        #expect(outcome.importedReplaceRuleCount == 1)
+        #expect(outcome.importedBookSourceCount == 0)
+        #expect(outcome.failureCount == 0)
+        #expect(!FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
+    @Test("generic book JSON routes to local book importer instead of book source")
+    func genericBookJSONRoutesToBookImporter() async throws {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let payloadDirectory = try makePayloadDirectory()
+        defer { try? FileManager.default.removeItem(at: payloadDirectory) }
+
+        let filename = "novel.json"
+        let fileURL = payloadDirectory.appendingPathComponent(filename)
+        try Data(#"{"title":"測試小說","chapters":["第一章"]}"#.utf8).write(to: fileURL)
+        try queuePayload(
+            .init(storageKind: .file, relativePath: filename, suggestedFilename: filename),
+            in: defaults
+        )
+
+        struct WrongRoute: Error {}
+        let recorder = CallRecorder()
+        let drainer = SharedImportQueueDrainer(
+            defaults: defaults,
+            payloadDirectoryURL: payloadDirectory,
+            importData: { _ in throw WrongRoute() },
+            fetchURL: { _ in Data() },
+            importBookFile: { url in
+                recorder.importedBookFileExtensions.append(url.pathExtension)
+                return 1
+            },
+            importOPMLData: { _ in throw WrongRoute() },
+            importLegadoRSSData: { _ in throw WrongRoute() },
+            importReplaceRuleData: { _ in throw WrongRoute() }
+        )
+
+        let outcome = await drainer.drain()
+
+        #expect(outcome.importedCount == 1)
+        #expect(outcome.importedBookCount == 1)
+        #expect(outcome.importedBookSourceCount == 0)
+        #expect(outcome.failureCount == 0)
+        #expect(recorder.importedBookFileExtensions == ["json"])
+    }
+
+    @Test("generic remote URL fetches then routes Legado RSS JSON")
+    func genericRemoteURLRoutesFetchedRSSJSON() async throws {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        try queuePayload(
+            .init(storageKind: .remoteURL, remoteURLString: "https://example.com/rss-sources.json"),
+            in: defaults
+        )
+
+        struct WrongRoute: Error {}
+        let recorder = CallRecorder()
+        let drainer = SharedImportQueueDrainer(
+            defaults: defaults,
+            importData: { _ in throw WrongRoute() },
+            fetchURL: { url in
+                recorder.fetchedURLs.append(url)
+                return Data(#"[{"sourceName":"Feed","sourceUrl":"https://example.com/feed.xml"}]"#.utf8)
+            },
+            importBookFile: { _ in throw WrongRoute() },
+            importOPMLData: { _ in throw WrongRoute() },
+            importLegadoRSSData: { data in
+                #expect(String(data: data, encoding: .utf8)?.contains("sourceName") == true)
+                return 1
+            },
+            importReplaceRuleData: { _ in throw WrongRoute() }
+        )
+
+        let outcome = await drainer.drain()
+
+        #expect(recorder.fetchedURLs.map(\.absoluteString) == ["https://example.com/rss-sources.json"])
+        #expect(outcome.importedCount == 1)
+        #expect(outcome.importedRSSCount == 1)
+        #expect(outcome.importedBookSourceCount == 0)
+        #expect(outcome.failureCount == 0)
     }
 
     @Test("a failing import is counted and the queue is not retried")
@@ -115,7 +251,7 @@ struct SharedImportQueueDrainerTests {
         let outcome = await drainer.drain()
 
         // JSON blob (+1) and the valid URL (+1) import; the empty URL fails (+1).
-        #expect(outcome == .init(importedCount: 2, failureCount: 1))
+        #expect(outcome == .init(importedCount: 2, failureCount: 1, importedBookSourceCount: 2))
     }
 
     @Test("empty queues produce no outcome so no toast is shown")

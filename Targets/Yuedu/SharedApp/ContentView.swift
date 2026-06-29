@@ -70,8 +70,8 @@ struct ContentView: View {
     }
 }
 
-/// Toast surfacing the real result of a Share Extension book-source import,
-/// replacing the misleading "added to queue" message the extension shows.
+/// Toast surfacing the real result of a Share Extension import,
+/// replacing the extension's generic "added to queue" message.
 private struct SharedImportToast: View {
     let outcome: SharedImportQueueDrainer.Outcome
 
@@ -79,12 +79,12 @@ private struct SharedImportToast: View {
         let imported = outcome.importedCount
         let failed = outcome.failureCount
         if imported > 0 && failed == 0 {
-            return localized("成功匯入") + " \(imported) " + localized("個書源")
+            return localized("成功匯入") + " \(imported) " + localized("個項目")
         } else if imported > 0 {
-            return localized("成功匯入") + " \(imported) " + localized("個書源")
+            return localized("成功匯入") + " \(imported) " + localized("個項目")
                 + "，\(failed) " + localized("個失敗")
         } else {
-            return "\(failed) " + localized("個書源匯入失敗")
+            return "\(failed) " + localized("個項目匯入失敗")
         }
     }
 

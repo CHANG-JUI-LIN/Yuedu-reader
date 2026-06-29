@@ -518,7 +518,14 @@ class ModernParserBridge {
                     index: chapterRef.index,
                     title: chapterRef.title,
                     order: chapterRef.index,
-                    url: chapterRef.url
+                    url: chapterRef.url,
+                    // Carry the chapter's VIP flag (from ruleToc.isVip) into `chapter.isVip()`.
+                    // 起点's content JS does `try { isVip = chapter.isVip() } catch { isVip = result.v }`
+                    // to choose `/chapter/vip` vs `/chapter/free`. Building the bridge WITHOUT this
+                    // (the build23 regression) left `chapter.isVip()` always false → VIP chapters
+                    // were fetched from `/chapter/free` → proxy returned「网络开小差了」. result.v is
+                    // never reached because isVip() returns a value (doesn't throw).
+                    isVip: chapterRef.isVip
                 )
             )
         } else {
@@ -535,15 +542,28 @@ class ModernParserBridge {
             "title": chapterRef?.title ?? "",
             "vars": String(paraState.prefix(160))
         ])
-        // 段评样式: content JS 的 paraContent() 在 iOS 上因 deviceType=='苹果' 会走 paraForiOS，
-        // 产出 <comment count onPress> → app 原生 .commentBadge，完全忽略书源「段评样式」SVG 设置
-        // (svgs[…]，起点对话框等)。为忠实还原书源样式，在 content 规则执行前把 paraForiOS 别名成
-        // paraForAndroid，让 iOS 也按书源 段评样式 产出 SVG <img>，再由 CommentBubbleSVGRecognizer
-        // 原生重绘、跟随阅读字体。仅同时定义两者的源会被改写；只定义 paraForiOS 的源维持原状。
+        // 段评样式: content JS 的段评注入函数在 iOS 上（deviceType=='苹果'）会走「iOS 变体」，
+        // 产出 <comment count onPress> → app 原生 .commentBadge，完全忽略书源「段评样式」SVG
+        // 设置（起点对话框等）。为忠实还原书源样式，在 content 规则执行前把「iOS 变体」别名成
+        // 「Android 变体」，让 iOS 也按书源段评样式产出 SVG <img>，再由 CommentBubbleSVGRecognizer
+        // 原生重绘、跟随阅读字体。仅同时定义两者的源会被改写；只定义 iOS 变体的源维持原状。
+        // 覆盖两套常见命名: paraForiOS/paraForAndroid 与 getCommentsios/getComments。
+        // 注意: createSvg 用 java.get('dev') 选气泡变体，dev='ios'(见 qread 移除)→ios 变体(方形/紧凑)，
+        // dev='android-轻阅读'→轻阅读变体(偏宽)。
         let aliasedParaForiOS = jsEngine.evaluate(
-            "(typeof paraForAndroid==='function' && typeof paraForiOS==='function')"
-            + " ? (paraForiOS = paraForAndroid, 'true') : 'false'"
-        ) == "true"
+            """
+            (function () {
+                var done = [];
+                if (typeof paraForAndroid === 'function' && typeof paraForiOS === 'function') {
+                    paraForiOS = paraForAndroid; done.push('para');
+                }
+                if (typeof getComments === 'function' && typeof getCommentsios === 'function') {
+                    getCommentsios = getComments; done.push('getComments');
+                }
+                return done.length ? done.join('+') : 'false';
+            })()
+            """
+        ) ?? "false"
 
         let _contentStart = Date()
         let content = engine.getString(ruleStr: source.ruleContent.content)
@@ -916,7 +936,8 @@ class ModernParserBridge {
         guard !rawExploreUrl.isEmpty else { return [] }
 
         var ruleStr = rawExploreUrl
-        if Self.isJSExploreRule(rawExploreUrl) {
+        let isJS = Self.isJSExploreRule(rawExploreUrl)
+        if isJS {
             let jsCode = Self.jsCode(fromExploreRule: rawExploreUrl)
             let bindings: [String: Any] = [
                 "page": page,
@@ -926,8 +947,10 @@ class ModernParserBridge {
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         }
 
-        guard !ruleStr.isEmpty else { return [] }
-        if Self.isJsonArrayOrObject(ruleStr) {
+        let result: [DiscoverItem]
+        if ruleStr.isEmpty {
+            result = []
+        } else if Self.isJsonArrayOrObject(ruleStr) {
             let items = parseDiscoverJSON(ruleStr)
             // When the exploreUrl JS returns book data JSON directly (not a list
             // of discover categories), every decoded DiscoverItem has an empty
@@ -938,16 +961,21 @@ class ModernParserBridge {
                !source.ruleExplore.bookList.isEmpty {
                 let b64 = Data(ruleStr.utf8).base64EncodedString()
                 let dataUrl = "data:application/json;base64,\(b64)"
-                return [DiscoverItem(title: source.bookSourceName, url: dataUrl)]
+                result = [DiscoverItem(title: source.bookSourceName, url: dataUrl)]
+            } else {
+                result = items
             }
-            return items
+        } else if Self.looksLikeMarkupOrError(ruleStr) {
+            // A dynamic (<js>/@js:) exploreUrl whose backing endpoint has died returns an error
+            // *document* — e.g. an nginx "404 Not Found" HTML page — not JSON and not a `分类::URL`
+            // list. Shredding that markup line-by-line produced garbage category chips ("<html>",
+            // "<head>…404…", …). Treat an unusable payload as "no explore content" instead.
+            result = []
+        } else {
+            result = parseExploreKindText(ruleStr)
         }
-        // A dynamic (<js>/@js:) exploreUrl whose backing endpoint has died returns an error
-        // *document* — e.g. an nginx "404 Not Found" HTML page — not JSON and not a `分类::URL`
-        // list. Shredding that markup line-by-line produced garbage category chips ("<html>",
-        // "<head>…404…", …). Treat an unusable payload as "no explore content" instead.
-        if Self.looksLikeMarkupOrError(ruleStr) { return [] }
-        return parseExploreKindText(ruleStr)
+
+        return result
     }
 
     /// True when an explore payload is an HTML/error document rather than a JSON or
@@ -1085,6 +1113,23 @@ class ModernParserBridge {
         return lower == "true" || lower == "1" || lower == "yes"
     }
 
+    /// Prime a site cookie that a source's discover endpoints read inline but never set themselves.
+    /// 起点's 榜單/分類 build URLs with `…&_csrfToken={{cookie.getKey("https://qidian.com","_csrfToken")}}`
+    /// AND 起点 requires the SAME token be SENT as a cookie (double-submit) — verified: param-only →
+    /// `{"code":1,"msg":"失败"}` 0 books; param+cookie → 20 books. That token is only issued by browsing
+    /// a 起点 book/search page (NOT the homepage, NOT the qt 密鑰). So on iOS the discover is empty
+    /// unless we obtain it. We **always re-fetch a fresh token** (not just when absent): a STALE
+    /// `_csrfToken` left over from old browsing is session-rejected by 起点, and a skip-if-present
+    /// guard would keep using it → still 0 books. Fetching the source's own search page reissues a
+    /// current token (stored in HTTPCookieStorage, auto-sent by URLSession on the ranking request).
+    func primeDiscoverCookiesIfNeeded() async {
+        let source = sourceRuleData.source
+        guard source.exploreUrl.contains("_csrfToken") else { return }
+        let searchUrl = source.searchUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !searchUrl.isEmpty else { return }
+        _ = try? await fetch(ruleUrl: searchUrl, key: "1", page: 1)
+    }
+
     func fetch(
         ruleUrl: String, key: String? = nil, page: Int? = nil
     ) async throws -> (String, String) {
@@ -1126,6 +1171,20 @@ class ModernParserBridge {
         loginManager.applyLoginHeaders(
             to: &request, sourceUrl: sourceRuleData.source.bookSourceUrl
         )
+
+        // Explicitly attach the cookie jar for this URL when no Cookie header is set.
+        // Some endpoints require a cookie to be SENT alongside a matching URL param
+        // (double-submit CSRF) — 起点 榜單/分類 reject the request unless the `_csrfToken`
+        // cookie == the `_csrfToken` query param (verified: param-only → 0 books;
+        // param+cookie → 20). URLSession.shared *should* auto-send it from HTTPCookieStorage,
+        // but being explicit (mirroring WebFetcher) guarantees it isn't dropped.
+        if request.value(forHTTPHeaderField: "Cookie") == nil,
+           let reqUrl = request.url?.absoluteString {
+            let jar = CookieStore.shared.get(url: reqUrl)
+            if !jar.isEmpty {
+                request.setValue(jar, forHTTPHeaderField: "Cookie")
+            }
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
 

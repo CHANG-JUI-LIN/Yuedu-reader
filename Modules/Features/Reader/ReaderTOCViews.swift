@@ -89,6 +89,7 @@ private struct VerticalTOCColumn: View {
     let title: String
     let page: Int
     let isSelected: Bool
+    let showsPageNumber: Bool
     let action: () -> Void
 
     var body: some View {
@@ -105,9 +106,11 @@ private struct VerticalTOCColumn: View {
 
                 Spacer(minLength: 8)
 
-                Text("\(page)")
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                if showsPageNumber {
+                    Text("\(page)")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                }
             }
             .frame(width: VerticalTOCLayout.columnWidth, alignment: .top)
             .frame(maxHeight: .infinity, alignment: .top)
@@ -145,6 +148,7 @@ private struct VerticalTOCView: View {
     let currentIndex: Int
     let currentChapterID: UUID?
     let pageOffsets: [UUID: Int]
+    let showsPageNumbers: Bool
     let onSelectChapter: (BookChapter) -> Void
 
     @State private var didInitialTOCScroll = false
@@ -167,7 +171,8 @@ private struct VerticalTOCView: View {
                         VerticalTOCColumn(
                             title: chapter.title,
                             page: pageNumber,
-                            isSelected: chapter.id == currentChapterID
+                            isSelected: chapter.id == currentChapterID,
+                            showsPageNumber: showsPageNumbers
                         ) {
                             onSelectChapter(chapter)
                         }
@@ -197,6 +202,7 @@ struct ReaderMenuView: View {
     let totalPages: Int
     let tocLayoutMode: TOCLayoutMode
     let pageOffsets: [UUID: Int]
+    let showsPageNumbers: Bool
     let currentIndex: Int
     let currentChapterID: UUID?
     let onSelectChapter: (BookChapter) -> Void
@@ -220,6 +226,7 @@ struct ReaderMenuView: View {
                         currentIndex: currentIndex,
                         currentChapterID: currentChapterID,
                         pageOffsets: pageOffsets,
+                        showsPageNumbers: showsPageNumbers,
                         onSelectChapter: { chapter in
                             onSelectChapter(chapter)
                             isPresented = false
@@ -276,9 +283,11 @@ struct ReaderMenuView: View {
 
                         Spacer()
 
-                        Text("\(pageNumber(for: chapter))")
-                            .font(.system(size: 18, weight: .regular, design: .monospaced))
-                            .foregroundColor(.secondary)
+                        if showsPageNumbers {
+                            Text("\(pageNumber(for: chapter))")
+                                .font(.system(size: 18, weight: .regular, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
                     }
                     .frame(height: 48)
                     .padding(.horizontal, 30)

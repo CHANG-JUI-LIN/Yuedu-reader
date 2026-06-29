@@ -15,6 +15,13 @@ extension BookSourceFetcher {
         return await ModernParserBridge(source: source).getExploreItems(page: page)
     }
 
+    /// Prime any site cookie the source's discover endpoints need but don't set themselves
+    /// (e.g. 起点 rankings read `_csrfToken`, only issued by browsing the site). No-op for
+    /// sources that don't reference such a cookie, or once it's already present.
+    func primeDiscoverCookies(in source: BookSource) async {
+        await ModernParserBridge(source: source).primeDiscoverCookiesIfNeeded()
+    }
+
     func discoverBooks(
         from item: ModernParserBridge.DiscoverItem,
         page: Int = 1,

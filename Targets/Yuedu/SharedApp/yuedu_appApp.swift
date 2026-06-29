@@ -26,6 +26,7 @@ struct yuedu_appApp: App {
                     // first post-launch sync (triggered by the listener) sees it.
                     FirestoreSyncManager.shared.bind(bookStore: bookStore)
                     ICloudSyncManager.shared.bind(bookStore: bookStore)
+                    SharedImportQueueDrainer.shared.bind(bookStore: bookStore)
                     _ = FirebaseAuthManager.shared
                     Task {
                         await WebFetcher.shared.setCloudflareChallengeHandler { url in
