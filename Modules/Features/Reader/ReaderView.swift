@@ -1366,7 +1366,7 @@ struct ReaderView: View {
                 }
             }
         }
-        .sheet(isPresented: $showOnlineBookDetail) {
+        .fullScreenCover(isPresented: $showOnlineBookDetail) {
             if let detail = onlineBookDetail {
                 NavigationStack {
                     OnlineBookView(book: detail)
