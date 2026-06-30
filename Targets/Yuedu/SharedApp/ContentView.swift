@@ -12,30 +12,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        TabView {
-
-            Tab(localized("書架"), systemImage: "books.vertical") {
-                HomeView()
-            }
-
-            Tab(localized("探索"), systemImage: "safari") {
-                BrowserView()
-            }
-
-            Tab(localized("RSS 訂閱"), systemImage: "newspaper") {
-                RSSListView()
-            }
-            .badge(rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
-
-            Tab(localized("設定"), systemImage: "gearshape") {
-                SettingsView()
-            }
-            Tab(role: .search) {
-                NavigationStack {
-                    SearchView()
-                }
-            }
-        }
+        tabView
         .overlay(alignment: .top) {
             if let outcome = importDrainer.lastOutcome {
                 SharedImportToast(outcome: outcome)
@@ -65,6 +42,58 @@ struct ContentView: View {
                     AudiobookReaderView(bookId: bookId)
                         .environmentObject(store)
                 }
+            }
+        }
+    }
+
+    /// The root tab bar. iOS 18 gets the modern `Tab` builder (with a dedicated
+    /// `.search` role tab); iOS 17 falls back to the classic `.tabItem` form,
+    /// where search is just a regular tab.
+    @ViewBuilder
+    private var tabView: some View {
+        if #available(iOS 18.0, *) {
+            TabView {
+                Tab(localized("書架"), systemImage: "books.vertical") {
+                    HomeView()
+                }
+
+                Tab(localized("探索"), systemImage: "safari") {
+                    BrowserView()
+                }
+
+                Tab(localized("RSS 訂閱"), systemImage: "newspaper") {
+                    RSSListView()
+                }
+                .badge(rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
+
+                Tab(localized("設定"), systemImage: "gearshape") {
+                    SettingsView()
+                }
+                Tab(role: .search) {
+                    NavigationStack {
+                        SearchView()
+                    }
+                }
+            }
+        } else {
+            TabView {
+                HomeView()
+                    .tabItem { Label(localized("書架"), systemImage: "books.vertical") }
+
+                BrowserView()
+                    .tabItem { Label(localized("探索"), systemImage: "safari") }
+
+                RSSListView()
+                    .tabItem { Label(localized("RSS 訂閱"), systemImage: "newspaper") }
+                    .badge(rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
+
+                SettingsView()
+                    .tabItem { Label(localized("設定"), systemImage: "gearshape") }
+
+                NavigationStack {
+                    SearchView()
+                }
+                .tabItem { Label(localized("搜索書籍"), systemImage: "magnifyingglass") }
             }
         }
     }

@@ -576,7 +576,7 @@ struct BookRow: View {
     private var rowContent: some View {
         HStack(alignment: .top, spacing: 12) {
             Group {
-                if let ns = transitionNamespace {
+                if #available(iOS 18.0, *), let ns = transitionNamespace {
                     bookCover.matchedTransitionSource(id: book.id, in: ns)
                 } else {
                     bookCover
@@ -745,7 +745,7 @@ struct BookGridCell: View {
             Button(action: onOpen) {
                 ZStack(alignment: .topTrailing) {
                     Group {
-                        if let ns = transitionNamespace {
+                        if #available(iOS 18.0, *), let ns = transitionNamespace {
                             coverView.matchedTransitionSource(id: book.id, in: ns)
                         } else {
                             coverView

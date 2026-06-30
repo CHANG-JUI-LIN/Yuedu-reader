@@ -1,7 +1,7 @@
 // Shared settings for all targets
 
 SWIFT_VERSION = 6.0
-IPHONEOS_DEPLOYMENT_TARGET = 18.0
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
 TARGETED_DEVICE_FAMILY = 1,2
 
 // Warnings as errors (staged — enable fully after cleanup)

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @EnvironmentObject var store: BookStore
@@ -13,7 +14,13 @@ struct SettingsView: View {
     @State private var showLegadoMigration = false
     @State private var showTTSSettings = false
     @State private var showNetworkSettings = false
+    @State private var showCopiedQQGroup = false
     private let feedbackEmail = "r3212239269@gmail.com"
+    private let officialQQGroupID = "1107613783"
+    private let telegramGroupURL = URL(string: "https://t.me/+ZWmmgMwwJ3JiN2Rl")
+    private let privacyPolicyURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/privacy.html")
+    private let userAgreementURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/terms.html")
+    private let paidTermsURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/paid-terms.html")
 
     private var feedbackMailURL: URL? {
         var components = URLComponents()
@@ -131,22 +138,72 @@ struct SettingsView: View {
                             Spacer()
                             Text(appVersion).foregroundColor(DSColor.textSecondary)
                         }
-                        Button {
+                    }
+
+                    Section(header: Text(localized("聯絡我們"))) {
+                        contactRow(
+                            icon: "envelope.fill",
+                            title: localized("電子郵件"),
+                            detail: feedbackEmail,
+                            trailingIcon: "arrow.up.right"
+                        ) {
                             if let url = feedbackMailURL {
                                 openURL(url)
                             }
+                        }
+
+                        contactRow(
+                            icon: "number.circle.fill",
+                            title: localized("官方 QQ 群"),
+                            detail: officialQQGroupID,
+                            trailingIcon: "doc.on.doc"
+                        ) {
+                            UIPasteboard.general.string = officialQQGroupID
+                            showCopiedQQGroup = true
+                        }
+
+                        contactRow(
+                            icon: "paperplane.fill",
+                            title: localized("Telegram 群"),
+                            detail: "t.me",
+                            trailingIcon: "arrow.up.right"
+                        ) {
+                            if let url = telegramGroupURL {
+                                openURL(url)
+                            }
+                        }
+                    }
+
+                    Section(
+                        header: Text(localized("法律與政策")),
+                        footer: Text(localized("使用書源、第三方服務與未來付費功能前，請先閱讀相關條款。"))
+                    ) {
+                        DSSettingsRow(
+                            icon: "hand.raised.fill",
+                            title: localized("隱私權政策"),
+                            action: {
+                                if let url = privacyPolicyURL {
+                                    openURL(url)
+                                }
+                            }
+                        )
+
+                        NavigationLink {
+                            LegalAgreementsView(
+                                userAgreementURL: userAgreementURL,
+                                paidTermsURL: paidTermsURL
+                            )
                         } label: {
                             HStack {
-                                Text(localized("反饋"))
-                                Spacer()
-                                    .foregroundColor(DSColor.accent)
-                                Image(systemName: "envelope.fill")
-                                    .font(.caption)
-                                    .foregroundColor(DSColor.accent)
+                                Label(localized("使用者協議"), systemImage: "doc.text.fill")
+                                    .foregroundColor(DSColor.textPrimary)
+                                    .labelStyle(IconConsistentLabelStyle())
+                                Spacer(minLength: 12)
+                                Text(localized("使用者協議與付費服務條款"))
+                                    .font(DSFont.caption)
+                                    .foregroundColor(DSColor.textSecondary)
                             }
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             .navigationTitle(localized("設定"))
@@ -180,6 +237,11 @@ struct SettingsView: View {
             .sheet(isPresented: $showTTSSettings) {
                 TTSSettingsView()
             }
+            .alert(localized("已複製"), isPresented: $showCopiedQQGroup) {
+                Button(localized("好"), role: .cancel) {}
+            } message: {
+                Text(String(format: localized("已複製 QQ 群號：%@"), officialQQGroupID))
+            }
         }
     }
 
@@ -204,6 +266,123 @@ struct SettingsView: View {
         }
     }
 
+    private func contactRow(
+        icon: String,
+        title: String,
+        detail: String,
+        trailingIcon: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack {
+                Label(title, systemImage: icon)
+                    .foregroundColor(DSColor.textPrimary)
+                    .labelStyle(IconConsistentLabelStyle())
+
+                Spacer(minLength: 12)
+
+                Text(detail)
+                    .font(DSFont.caption)
+                    .foregroundColor(DSColor.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Image(systemName: trailingIcon)
+                    .font(DSFont.caption)
+                    .foregroundColor(DSColor.textSecondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+}
+
+private struct LegalAgreementsView: View {
+    @Environment(\.openURL) private var openURL
+    let userAgreementURL: URL?
+    let paidTermsURL: URL?
+
+    var body: some View {
+        List {
+            Section {
+                VStack(spacing: 12) {
+                    Image("YueduLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 82, height: 82)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 4)
+
+                    Text("閱讀")
+                        .font(.title3.weight(.semibold))
+
+                    Text(localized("使用 Yuedu Reader 前，請閱讀並理解以下協議與條款。"))
+                        .font(.footnote)
+                        .foregroundColor(DSColor.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+            }
+
+            Section(header: Text(localized("協議文件"))) {
+                legalDocumentRow(
+                    icon: "doc.text.fill",
+                    title: localized("使用者協議"),
+                    detail: localized("使用規則、第三方內容與責任邊界"),
+                    url: userAgreementURL
+                )
+
+                legalDocumentRow(
+                    icon: "creditcard.fill",
+                    title: localized("付費服務條款"),
+                    detail: localized("未來付費功能、訂閱、退款與 Apple 付款規則"),
+                    url: paidTermsURL
+                )
+            }
+        }
+        .navigationTitle(localized("使用者協議"))
+        .toolbarTitleDisplayMode(.inline)
+    }
+
+    private func legalDocumentRow(
+        icon: String,
+        title: String,
+        detail: String,
+        url: URL?
+    ) -> some View {
+        Button {
+            if let url {
+                openURL(url)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .medium))
+                    .frame(width: 28, height: 28)
+                    .foregroundColor(DSColor.textPrimary)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .foregroundColor(DSColor.textPrimary)
+                    Text(detail)
+                        .font(DSFont.caption)
+                        .foregroundColor(DSColor.textSecondary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 12)
+
+                Image(systemName: "arrow.up.right")
+                    .font(DSFont.caption)
+                    .foregroundColor(DSColor.textSecondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 #Preview {
