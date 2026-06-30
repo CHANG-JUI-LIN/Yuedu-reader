@@ -124,6 +124,7 @@ struct BookSourceFormLoginView: View {
                 } else {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
+                            persistCurrentFormValues()
                             onDismiss()
                         } label: {
                             Image(systemName: "checkmark")

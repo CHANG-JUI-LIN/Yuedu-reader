@@ -159,6 +159,28 @@ struct JsoupDefaultExtractor: RuleExtractor {
             current = next
         }
 
+        // No element-selection steps and the last rule is a bare attribute (e.g. a
+        // bookUrl rule of `href` where the list element already IS the `<a>`).
+        // `extractValue` re-parsed that element's outerHtml into a synthetic
+        // `<html><body>…</body></html>` document, so reading `href` off the
+        // document root yields "". Descend to the fragment's single root element
+        // so the attribute resolves against the original element — matching
+        // Legado, which keeps the element instead of re-serialising it.
+        // Content keywords (text/html/…) read from the subtree and already work
+        // on the document wrapper, so they are intentionally left untouched.
+        if lastIndex == 0, let document = element as? Document, let body = document.body() {
+            let lastStep = steps[lastIndex].trimmingCharacters(in: .whitespaces).lowercased()
+            let contentKeywords: Set<String> = [
+                "text", "textnodes", "owntext", "html", "innerhtml", "outerhtml", "all",
+            ]
+            if !contentKeywords.contains(lastStep) {
+                let roots = body.children().array()
+                if roots.count == 1 {
+                    current = roots
+                }
+            }
+        }
+
         guard !current.isEmpty else { return [] }
 
         let elements = Elements()
@@ -194,7 +216,21 @@ struct JsoupDefaultExtractor: RuleExtractor {
             case "children":
                 elements = element.children().array()
             case "class":
-                elements = try element.getElementsByClass(name).array()
+                if name.contains(" ") {
+                    // Legado multi-class: `class.a b c` matches an element carrying
+                    // ALL of classes a, b, c (e.g. yodu's `class.g_row lis-mn j_bookList`).
+                    // SwiftSoup's getElementsByClass takes a single class name, so a
+                    // space-joined name matches nothing — translate to a CSS compound
+                    // selector `.a.b.c` instead.
+                    let selector = "." + name
+                        .split(separator: " ")
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                        .filter { !$0.isEmpty }
+                        .joined(separator: ".")
+                    elements = (try? element.select(selector).array()) ?? []
+                } else {
+                    elements = try element.getElementsByClass(name).array()
+                }
             case "tag":
                 elements = try element.getElementsByTag(name).array()
             case "id":

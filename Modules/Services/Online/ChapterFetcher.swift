@@ -312,11 +312,12 @@ struct ChapterFetcher {
         }
         let canonicalTitle = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveTitle = canonicalTitle.isEmpty ? tocTitle : canonicalTitle
+        let effectiveReviewContext = reviewContext?.withRuntimeVariables(parsed.runtimeVariables)
         let normalizedHTML = await buildRenderableNormalizedHTML(
             title: effectiveTitle,
             plainTextContent: content,
             rawHTMLContent: parsed.content,
-            reviewContext: reviewContext
+            reviewContext: effectiveReviewContext
         )
         let rawHTML = paginated.rawHTMLPages.joined(separator: "\n<!-- staged-page-break -->\n")
         let checksum = SHA256.hash(data: Data(content.utf8)).compactMap {

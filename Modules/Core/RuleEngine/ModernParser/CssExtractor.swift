@@ -212,6 +212,19 @@ struct CssExtractor: RuleExtractor {
         if rule.contains(":last-") { return true }          // :last-child / :last-of-type
         if looksLikeTagQualifiedSelector(rule) { return true } // div.item / a.title
 
+        // Bare class selector `.foo-bar` (leading dot + identifier, no Legado
+        // `@accessor`). Legado's JSOUP-default form is `class.foo`; this CSS
+        // leading-dot form is rejected by JsoupDefault (it parses an empty type) and
+        // would otherwise fall through to the text fallback — returning each matched
+        // element's TEXT instead of its outerHtml, so a follow-on field rule such as
+        // `p.0@text` finds no tags (the mangabz `.manga-i-list-item` discover bug).
+        // Require an identifier char after the dot so `.0` index notation and
+        // `.foo@text` accessor forms stay with their own handlers.
+        if rule.hasPrefix("."), !rule.contains("@"),
+           let c = rule.dropFirst().first, c.isLetter || c == "_" {
+            return true
+        }
+
         return false
     }
 
@@ -224,6 +237,16 @@ struct CssExtractor: RuleExtractor {
         let prefix = String(trimmed[..<firstDot]).lowercased()
         guard !["class", "id", "tag", "text", "children"].contains(prefix) else {
             return false
+        }
+        // A digit (or leading `-`) right after the dot is Legado index notation, NOT a
+        // CSS class — `p.0` means "the first <p>", `a.-1` "the last <a>". CSS class
+        // names never start with a digit, so claiming these for CssExtractor turned
+        // `p.0@text` into `select("p.0")` (a <p class="0"> that never exists) → empty.
+        // Leave them for JsoupDefault, which applies the index.
+        let afterDot = trimmed.index(after: firstDot)
+        if afterDot < trimmed.endIndex {
+            let c = trimmed[afterDot]
+            if c.isNumber || c == "-" { return false }
         }
         return !prefix.isEmpty && prefix.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
     }

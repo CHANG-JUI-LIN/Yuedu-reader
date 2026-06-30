@@ -130,9 +130,9 @@ class AnalyzeUrl {
         self.chapter = chapter
         self.jsEvaluator = jsEvaluator
 
-        // Strip any JSON options appended to the base URL itself
+        // Strip any JSON options / `#…` tags appended to the base URL itself
         if let base = baseUrl {
-            self.baseUrl = Self.stripOptions(from: base)
+            self.baseUrl = Self.cleanBaseURL(base)
         }
 
         // Run the full init pipeline
@@ -392,8 +392,7 @@ class AnalyzeUrl {
 
     /// Parse JSON option block and populate request fields.
     private func parseOptions(_ json: String) {
-        guard let data = json.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let dict = Self.parseOptionDictionary(json) else {
             return
         }
 
@@ -488,6 +487,69 @@ class AnalyzeUrl {
             return String(urlString[urlString.startIndex..<swiftRange.lowerBound])
         }
         return urlString
+    }
+
+    /// Normalize a book source's base URL for relative-path resolution.
+    ///
+    /// Sources routinely append Legado tags/comments to `bookSourceUrl` — both
+    /// `,{json}` options and `#…` markers like `#♤Haxc`, `#Haxc1107`, `##@okou`.
+    /// Left in place, `URL(string:)` returns nil (especially with the non-ASCII
+    /// `♤` marker), so relative URLs can't resolve against the base at all.
+    /// Strip the options suffix and any `#` fragment before using as a base.
+    static func cleanBaseURL(_ urlString: String) -> String {
+        var s = stripOptions(from: urlString)
+        if let hashIdx = s.firstIndex(of: "#") {
+            s = String(s[..<hashIdx])
+        }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Parse a Legado URL option block (the `{…}` after the `,`).
+    ///
+    /// Book sources frequently write the option block as GSON-lenient JSON —
+    /// single-quoted strings, “smart” quotes, and unquoted object keys, e.g.
+    /// `{Cookie:"xmanhua_lang=2"}` or `{'method':'POST','body':'…'}` — which
+    /// `JSONSerialization` rejects outright. Try strict parsing first, then fall
+    /// back to normalizing to strict JSON and retrying.
+    static func parseOptionDictionary(_ json: String) -> [String: Any]? {
+        if let data = json.data(using: .utf8),
+           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return dict
+        }
+        let normalized = normalizeLegadoOptionJSON(json)
+        guard let data = normalized.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return dict
+    }
+
+    /// Convert GSON-lenient option JSON to strict JSON: strip a leading comma,
+    /// fold smart quotes to straight quotes, convert single-quoted strings to
+    /// double-quoted, and quote bare object keys. Mirrors the normalizer used by
+    /// `BookSource.renderSearchRequest` so every URL-option path behaves the same.
+    static func normalizeLegadoOptionJSON(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix(",") { s.removeFirst() }
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        s = s
+            .replacingOccurrences(of: "\u{201c}", with: "\"")
+            .replacingOccurrences(of: "\u{201d}", with: "\"")
+            .replacingOccurrences(of: "\u{2018}", with: "\"")
+            .replacingOccurrences(of: "\u{2019}", with: "\"")
+        if s.contains("'") {
+            s = s.replacingOccurrences(
+                of: #"(?<!\\)'([^']*)'"#,
+                with: #""$1""#,
+                options: .regularExpression
+            )
+        }
+        s = s.replacingOccurrences(
+            of: #"([{\[,]\s*)([A-Za-z_][A-Za-z0-9_\-]*)(\s*:)"#,
+            with: #"$1"$2"$3"#,
+            options: .regularExpression
+        )
+        return s
     }
 
     // MARK: - Query & Parameter Encoding

@@ -306,7 +306,9 @@ extension BookSourceFetcher {
             title: effectiveTitle,
             plainTextContent: content,
             rawHTMLContent: parsed.content,
-            reviewContext: source.legadoReviewContext
+            reviewContext: source.legadoReviewContext.withRuntimeVariables(
+                parsed.runtimeVariables ?? ref.runtimeVariables
+            )
         )
         let checksum = SHA256.hash(data: Data(content.utf8)).map {
             String(format: "%02x", $0)

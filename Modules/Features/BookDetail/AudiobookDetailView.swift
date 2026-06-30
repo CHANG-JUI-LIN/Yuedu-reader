@@ -507,7 +507,11 @@ struct AudiobookDetailView: View {
     private func switchToOrigin(_ origin: BookOrigin) {
         guard let searchBook else { return }
         let newBook = Self.makeOnlineBook(from: searchBook, origin: origin)
-        guard newBook.bookUrl != currentBook.bookUrl else { return }
+        // Switch when the SOURCE differs even if the bookUrl matches — sibling
+        // sources sharing one site produce identical bookUrls, so a bookUrl-only
+        // guard would make picking a different source a no-op.
+        guard newBook.sourceId != currentBook.sourceId
+            || newBook.bookUrl != currentBook.bookUrl else { return }
 
         currentBook = newBook
         detailInfo = nil

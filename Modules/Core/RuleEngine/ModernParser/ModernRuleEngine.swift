@@ -271,9 +271,22 @@ final class ModernRuleEngine {
     func getElements(ruleStr: String) -> [Any] {
         guard !ruleStr.isEmpty else { return [] }
 
+        // Legado list-reverse marker: a leading `-` reverses the matched list
+        // (chapter lists are commonly stored newest-first, e.g. `-class.detail-list@a`).
+        // Strip it before extraction — otherwise `-class.detail-list` is handed to
+        // the extractor as an invalid CSS selector and matches nothing — then
+        // reverse the final result. Mirrors `preprocessListRule` used by `extractList`.
+        var effectiveRule = ruleStr
+        var shouldReverse = false
+        let trimmedRule = ruleStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedRule.hasPrefix("-"), !trimmedRule.hasPrefix("--") {
+            shouldReverse = true
+            effectiveRule = String(trimmedRule.dropFirst())
+        }
+
         var result: Any? = nil
         let content = self.content
-        let ruleList = splitSourceRule(ruleStr, allInOne: true)
+        let ruleList = splitSourceRule(effectiveRule, allInOne: true)
         guard content != nil, !ruleList.isEmpty else { return [] }
 
         result = content
@@ -311,7 +324,7 @@ final class ModernRuleEngine {
             }
         }
 
-        if let list = result as? [Any] { return list }
+        if let list = result as? [Any] { return shouldReverse ? list.reversed() : list }
         if let result = result { return [result] }
         return []
     }
@@ -629,10 +642,50 @@ final class ModernRuleEngine {
                 segmentIndex: idx, mode: "\(sourceRule.mode)",
                 qualifiedRule: qualified, inputPreview: inputPreview
             ))
-            let extracted = extractStringViaExtractor(content: result!, rule: qualified)
+            let extracted = extractStringWithOperators(
+                content: result!, mode: sourceRule.mode, rule: rule)
             debugObserver?(.afterExtractValue(segmentIndex: idx, result: Self.toString(extracted)))
             return extracted
         }
+    }
+
+    /// String-value extraction that honors Legado list operators (`||`/`&&`/`%%`).
+    ///
+    /// `CssExtractor` and `JsonExtractor` already split these internally, but the
+    /// JsoupDefault value path does NOT — so a bare field rule such as
+    /// `tag.a.0@title||class.bcover@title` was handed to the extractor whole, the
+    /// `@`-split mangled the `||` segment, and the field resolved empty (every
+    /// discover/search item skipped for an "empty name"). Split here, but only when
+    /// the rule routes to JsoupDefault, so the other extractors keep owning it.
+    private func extractStringWithOperators(content: Any, mode: RuleMode, rule: String) -> Any? {
+        let qualified = modeQualifiedRule(mode: mode, rule: rule)
+        let extractor = extractors.first { $0.canHandle(rule: qualified) }
+        if extractor is JsoupDefaultExtractor {
+            let (opType, opParts) = RuleSyntaxParser.splitRuleByOperators(rule)
+            let parts = opParts
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if parts.count > 1 {
+                switch opType {
+                case "||":
+                    for part in parts {
+                        let value = extractStringViaExtractor(content: content, rule: part)
+                        if let value, !Self.toString(value).isEmpty { return value }
+                    }
+                    return ""
+                case "&&", "%%":
+                    let pieces = parts.compactMap { part -> String? in
+                        let s = extractStringViaExtractor(content: content, rule: part)
+                            .map(Self.toString) ?? ""
+                        return s.isEmpty ? nil : s
+                    }
+                    return pieces.joined(separator: "\n")
+                default:
+                    break
+                }
+            }
+        }
+        return extractStringViaExtractor(content: content, rule: qualified)
     }
 
     /// Regex replace post-processing step for a single-string pipeline.

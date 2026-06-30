@@ -44,7 +44,7 @@ enum ReviewBadgeRenderer {
             width: leadingGap + bubbleWidth,
             height: height + tailHeight
         )
-        let lineWidth = max(1, pointSize * 0.06)
+        let lineWidth = 1.0 / max(UIScreen.main.scale, 1)
 
         let format = UIGraphicsImageRendererFormat()
         format.opaque = false

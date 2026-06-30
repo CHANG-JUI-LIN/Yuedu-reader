@@ -254,11 +254,27 @@ enum ReaderHTMLUtilities {
         let sourceName: String
         let sourceURL: String
         let sourceVariableJSON: String?
+        let runtimeVariables: [String: String]?
 
-        init(sourceName: String, sourceURL: String, sourceVariableJSON: String? = nil) {
+        init(
+            sourceName: String,
+            sourceURL: String,
+            sourceVariableJSON: String? = nil,
+            runtimeVariables: [String: String]? = nil
+        ) {
             self.sourceName = sourceName
             self.sourceURL = sourceURL
             self.sourceVariableJSON = sourceVariableJSON
+            self.runtimeVariables = runtimeVariables
+        }
+
+        func withRuntimeVariables(_ runtimeVariables: [String: String]?) -> LegadoReviewContext {
+            LegadoReviewContext(
+                sourceName: sourceName,
+                sourceURL: sourceURL,
+                sourceVariableJSON: sourceVariableJSON,
+                runtimeVariables: runtimeVariables ?? self.runtimeVariables
+            )
         }
     }
 
@@ -767,8 +783,17 @@ enum ReaderHTMLUtilities {
         let trimmed = action.trimmingCharacters(in: .whitespacesAndNewlines)
         if let args = legadoFunctionArgs(named: "showCmt", in: trimmed)
             ?? legadoFunctionArgs(named: "androidshowCmt", in: trimmed) {
+            // Aggregated sources can emit `showCmt(url, source, ...)`: arg[0] is already the
+            // comment-page URL. Handle URL-shaped args before the numeric Qidian signature.
+            if let url = absoluteReviewURL(from: args.first) {
+                let sources = args.count >= 2 ? cleanLegadoArgument(args[1]) : ""
+                return ReviewTarget(url: url, title: sources.isEmpty ? "段評" : "\(sources)段評")
+            }
             // 起點: showCmt(bookId, chapterId, paragraphId, …) → build the qidian review URL.
-            if args.count >= 3 {
+            if args.count >= 3,
+               isNumericLegadoArgument(args[0]),
+               isNumericLegadoArgument(args[1]),
+               isNumericLegadoArgument(args[2]) {
                 return qidianReviewTarget(
                     kind: .paragraph,
                     bookId: args[0],
@@ -776,18 +801,6 @@ enum ReaderHTMLUtilities {
                     paragraphId: args[2],
                     context: context
                 )
-            }
-            // 光遇 aggregation: showCmt(url, sources) → arg[0] is already the comment-page URL.
-            if args.count == 2 {
-                var url = cleanLegadoArgument(args[0])
-                if !(url.hasPrefix("http://") || url.hasPrefix("https://")),
-                   let decoded = url.removingPercentEncoding,
-                   decoded.hasPrefix("http://") || decoded.hasPrefix("https://") {
-                    url = decoded
-                }
-                guard url.hasPrefix("http://") || url.hasPrefix("https://") else { return nil }
-                let sources = cleanLegadoArgument(args[1])
-                return ReviewTarget(url: url, title: sources.isEmpty ? "段評" : "\(sources)段評")
             }
             // 企點: paragraph bubbles emit a single-argument `showCmt('<url>')`. The argument is the
             // comment-page URL, often a relative path the jsLib resolves against `sb`
@@ -808,15 +821,22 @@ enum ReaderHTMLUtilities {
         }
 
         if let args = legadoFunctionArgs(named: "showChapterComments", in: trimmed)
-            ?? legadoFunctionArgs(named: "androidshowChapterComments", in: trimmed),
-           args.count >= 2 {
-            return qidianReviewTarget(
-                kind: .chapter,
-                bookId: args[0],
-                chapterId: args[1],
-                paragraphId: nil,
-                context: context
-            )
+            ?? legadoFunctionArgs(named: "androidshowChapterComments", in: trimmed) {
+            if let url = absoluteReviewURL(from: args.first) {
+                let sources = args.count >= 2 ? cleanLegadoArgument(args[1]) : ""
+                return ReviewTarget(url: url, title: sources.isEmpty ? "本章討論" : "\(sources)本章討論")
+            }
+            if args.count >= 2,
+               isNumericLegadoArgument(args[0]),
+               isNumericLegadoArgument(args[1]) {
+                return qidianReviewTarget(
+                    kind: .chapter,
+                    bookId: args[0],
+                    chapterId: args[1],
+                    paragraphId: nil,
+                    context: context
+                )
+            }
         }
 
         return nil
@@ -841,17 +861,25 @@ enum ReaderHTMLUtilities {
 
         if usesShaziQidianEndpoint(context) {
             let path = kind == .paragraph ? "/comments" : "/chapterComments"
+            let url = buildURL(
+                base: "https://sb.shazi.tk",
+                path: path,
+                queryItems: [
+                    URLQueryItem(name: "bookId", value: cleanBookId),
+                    URLQueryItem(name: "chapterId", value: cleanChapterId)
+                ] + (kind == .paragraph ? [
+                    URLQueryItem(name: "paragraphId", value: cleanParagraphId ?? "")
+                ] : [])
+            )
+            logQidianReviewTarget(
+                endpoint: "shazi",
+                kind: kind,
+                context: context,
+                url: url,
+                appendedToken: false
+            )
             return ReviewTarget(
-                url: buildURL(
-                    base: "https://sb.shazi.tk",
-                    path: path,
-                    queryItems: [
-                        URLQueryItem(name: "bookId", value: cleanBookId),
-                        URLQueryItem(name: "chapterId", value: cleanChapterId)
-                    ] + (kind == .paragraph ? [
-                        URLQueryItem(name: "paragraphId", value: cleanParagraphId ?? "")
-                    ] : [])
-                ),
+                url: url,
                 title: kind == .paragraph ? "起點段評" : "本章討論"
             )
         }
@@ -863,12 +891,77 @@ enum ReaderHTMLUtilities {
         if kind == .paragraph {
             items.append(URLQueryItem(name: "paragraphId", value: cleanParagraphId ?? ""))
         }
-        if let token = sourceVariableValue("token", context: context), !token.isEmpty {
+        let token = sourceVariableValue("token", context: context)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let token, !token.isEmpty {
             items.append(URLQueryItem(name: "token", value: token))
         }
+        let url = buildURL(base: "https://api-x.shrtxs.cn/qidth", path: "/", queryItems: items)
+        logQidianReviewTarget(
+            endpoint: "api-x",
+            kind: kind,
+            context: context,
+            url: url,
+            appendedToken: token?.isEmpty == false
+        )
         return ReviewTarget(
-            url: buildURL(base: "https://api-x.shrtxs.cn/qidth", path: "/", queryItems: items),
+            url: url,
             title: kind == .paragraph ? "起點段評" : "本章討論"
+        )
+    }
+
+    private static func logQidianReviewTarget(
+        endpoint: String,
+        kind: QidianReviewKind,
+        context: LegadoReviewContext?,
+        url: String,
+        appendedToken: Bool
+    ) {
+        let summary = sourceVariableLogSummary(context: context)
+        AppLogger.parse("⟐ qidianReviewTarget", context: [
+            "endpoint": endpoint,
+            "kind": kind == .paragraph ? "paragraph" : "chapter",
+            "source": context?.sourceName ?? "",
+            "sourceURL": String((context?.sourceURL ?? "").prefix(120)),
+            "appendedToken": appendedToken,
+            "hasTokenInURL": url.range(of: "token=", options: .caseInsensitive) != nil,
+            "url": redactedReviewLogSnippet(url),
+            "sourceVariableJSONLen": summary.sourceVariableJSONLen,
+            "sourceVariableKeys": summary.sourceVariableKeys.joined(separator: ","),
+            "sourceVariableTokenLen": summary.sourceVariableTokenLen,
+            "runtimeKeys": summary.runtimeKeys.joined(separator: ","),
+            "runtimeTokenLen": summary.runtimeTokenLen,
+            "sourceVariableHead": summary.sourceVariableHead
+        ])
+    }
+
+    private static func sourceVariableLogSummary(
+        context: LegadoReviewContext?
+    ) -> (
+        sourceVariableJSONLen: Int,
+        sourceVariableKeys: [String],
+        sourceVariableTokenLen: Int,
+        runtimeKeys: [String],
+        runtimeTokenLen: Int,
+        sourceVariableHead: String
+    ) {
+        let sourceVariableJSON = context?.sourceVariableJSON ?? ""
+        let runtimeVariables = context?.runtimeVariables ?? [:]
+        var keys: [String] = []
+        var tokenLen = 0
+        if let data = sourceVariableJSON.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            keys = object.keys.sorted()
+            if let token = object["token"] {
+                tokenLen = "\(token)".count
+            }
+        }
+        return (
+            sourceVariableJSONLen: sourceVariableJSON.count,
+            sourceVariableKeys: keys,
+            sourceVariableTokenLen: tokenLen,
+            runtimeKeys: runtimeVariables.keys.sorted(),
+            runtimeTokenLen: runtimeVariables["token"]?.count ?? 0,
+            sourceVariableHead: String(redactedReviewLogSnippet(sourceVariableJSON).prefix(180))
         )
     }
 
@@ -942,6 +1035,22 @@ enum ReaderHTMLUtilities {
             trimmed.removeLast()
         }
         return trimmed
+    }
+
+    private static func absoluteReviewURL(from value: String?) -> String? {
+        guard let value else { return nil }
+        var url = cleanLegadoArgument(value)
+        if !(url.hasPrefix("http://") || url.hasPrefix("https://")),
+           let decoded = url.removingPercentEncoding,
+           decoded.hasPrefix("http://") || decoded.hasPrefix("https://") {
+            url = decoded
+        }
+        return (url.hasPrefix("http://") || url.hasPrefix("https://")) ? url : nil
+    }
+
+    private static func isNumericLegadoArgument(_ value: String) -> Bool {
+        let cleaned = cleanLegadoArgument(value)
+        return !cleaned.isEmpty && cleaned.allSatisfy(\.isNumber)
     }
 
     private static func sourceVariableValue(

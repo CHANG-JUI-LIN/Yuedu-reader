@@ -93,7 +93,6 @@ struct ReaderView: View {
     @State private var showTTSPanel = false
     @State private var showDownloadOptions = false
     @State private var showOnlineBookDetail = false
-    @State private var dismissedDownloadPanels: Set<UUID> = []
     @State private var showAutoReadPanel = false
     @State private var ttsChapterIndex: Int? = nil
     @State private var showTTSJumpPrompt = false
@@ -1086,10 +1085,6 @@ struct ReaderView: View {
                 .transition(.opacity.animation(.easeOut(duration: 0.2)))
             }
             if showBars { topBar }
-            if showBars, let b = book, shouldShowDownloadProgress(for: b) {
-                downloadProgressOverlay(for: b)
-                    .zIndex(60)
-            }
             if showBars { bottomBar }
             if showTTSJumpPrompt {
                 VStack {
@@ -1349,20 +1344,25 @@ struct ReaderView: View {
             if let b = book {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                     ReaderDownloadOptionsView(
+                        bookId: b.id,
                         bookTitle: b.title,
                         currentChapterIndex: currentChapterIndex,
                         totalChapters: b.onlineChapters?.count ?? chapters.count,
                         onStart: { startChapterIndex, chapterCount in
-                            showDownloadOptions = false
                             startOfflineDownload(
                                 startChapterIndex: startChapterIndex,
                                 chapterCount: chapterCount
                             )
                         },
-                        onCancel: {
+                        onPause: { pauseOfflineDownload() },
+                        onResume: { resumeOfflineDownload() },
+                        onRemove: {
+                            store.clearOnlineDownload(bookId: b.id)
                             showDownloadOptions = false
-                        }
+                        },
+                        onClose: { showDownloadOptions = false }
                     )
+                    .environmentObject(store)
                 }
             }
         }
@@ -2101,48 +2101,6 @@ struct ReaderView: View {
             onOpenTOC: { showTOC = true },
             onOpenBookmarks: { showBookmarks = true },
             onOpenSettings: { showSettings = true }
-        )
-    }
-
-    private func shouldShowDownloadProgress(for book: ReadingBook) -> Bool {
-        guard book.isOnline, book.offlineDownloadTask != nil,
-              !dismissedDownloadPanels.contains(book.id) else { return false }
-        switch book.offlineDownloadState {
-        case .downloading, .failed, .paused:
-            return true
-        case .none, .available:
-            return false
-        }
-    }
-
-    private func downloadProgressOverlay(for book: ReadingBook) -> some View {
-        GeometryReader { proxy in
-            ReaderDownloadProgressPanel(
-                book: book,
-                readerTheme: readerTheme,
-                onResume: { resumeOfflineDownload(for: book) },
-                onPause: { pauseOfflineDownload(for: book) },
-                onClose: { dismissDownloadPanel(for: book) }
-            )
-            .frame(width: downloadProgressPanelWidth(in: proxy.size), height: 64)
-            .position(downloadProgressPanelPosition(in: proxy.size))
-        }
-        .allowsHitTesting(true)
-        .ignoresSafeArea(.keyboard)
-        .transition(.scale(scale: 0.92).combined(with: .opacity))
-        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: book.offlineDownloadState)
-    }
-
-    private func downloadProgressPanelWidth(in size: CGSize) -> CGFloat {
-        148
-    }
-
-    private func downloadProgressPanelPosition(in size: CGSize) -> CGPoint {
-        let width: CGFloat = 148
-        let height: CGFloat = 64
-        return CGPoint(
-            x: width / 2 + 26,
-            y: size.height - 136 - height / 2
         )
     }
 
@@ -2980,26 +2938,14 @@ struct ReaderView: View {
     }
 
     private func handleDownloadAction() {
-        guard let b = book, b.isOnline else { return }
-        if dismissedDownloadPanels.remove(b.id) != nil { return }
-        if b.offlineDownloadState == .available {
-            store.clearOnlineDownload(bookId: b.id)
-            return
-        }
-        if b.offlineDownloadState == .downloading {
-            pauseOfflineDownload(for: b)
-            return
-        }
-        if b.offlineDownloadState == .paused {
-            resumeOfflineDownload(for: b)
-            return
-        }
+        guard book?.isOnline == true else { return }
+        // All download interaction (range selection, progress, pause/resume, remove)
+        // now lives inside the download sheet — open it for every state.
         showDownloadOptions = true
     }
 
     private func startOfflineDownload(startChapterIndex: Int, chapterCount: Int) {
         guard let b = book, b.isOnline else { return }
-        dismissedDownloadPanels.remove(b.id)
         readerViewModel.handleDownloadAction(
             book: b,
             store: store,
@@ -3008,35 +2954,30 @@ struct ReaderView: View {
         )
     }
 
-    private func resumeOfflineDownload(for book: ReadingBook) {
-        dismissedDownloadPanels.remove(book.id)
-        guard let task = book.offlineDownloadTask?.clamped(to: book.onlineChapters?.count ?? 0) else {
-            showDownloadOptions = true
+    private func resumeOfflineDownload() {
+        guard let b = book else { return }
+        guard let task = b.offlineDownloadTask?.clamped(to: b.onlineChapters?.count ?? 0) else {
             return
         }
         let completed = task.clampedCompletedChapterCount
         let remaining = task.totalChapterCount - completed
         guard remaining > 0 else { return }
         readerViewModel.handleDownloadAction(
-            book: book,
+            book: b,
             store: store,
             startChapterIndex: task.startChapterIndex + completed,
             chapterCount: remaining
         )
     }
 
-    private func pauseOfflineDownload(for book: ReadingBook) {
-        dismissedDownloadPanels.remove(book.id)
+    private func pauseOfflineDownload() {
+        guard let b = book else { return }
         readerViewModel.handleDownloadAction(
-            book: book,
+            book: b,
             store: store,
             startChapterIndex: 0,
             chapterCount: nil
         )
-    }
-
-    private func dismissDownloadPanel(for book: ReadingBook) {
-        dismissedDownloadPanels.insert(book.id)
     }
 
     /// Source change search has been moved to ReaderViewModel.loadOtherOrigins. This method only triggers it and passes required data.
@@ -3590,28 +3531,42 @@ private enum ReaderDownloadStartOption: String, CaseIterable, Identifiable {
 }
 
 private struct ReaderDownloadOptionsView: View {
+    let bookId: UUID
     let bookTitle: String
     let currentChapterIndex: Int
     let totalChapters: Int
     let onStart: (Int, Int) -> Void
-    let onCancel: () -> Void
+    let onPause: () -> Void
+    let onResume: () -> Void
+    let onRemove: () -> Void
+    let onClose: () -> Void
+
+    @EnvironmentObject private var store: BookStore
 
     @State private var startOption: ReaderDownloadStartOption = .currentChapter
     @State private var chapterCount: Double
     @State private var chapterCountText: String
 
     init(
+        bookId: UUID,
         bookTitle: String,
         currentChapterIndex: Int,
         totalChapters: Int,
         onStart: @escaping (Int, Int) -> Void,
-        onCancel: @escaping () -> Void
+        onPause: @escaping () -> Void,
+        onResume: @escaping () -> Void,
+        onRemove: @escaping () -> Void,
+        onClose: @escaping () -> Void
     ) {
+        self.bookId = bookId
         self.bookTitle = bookTitle
         self.currentChapterIndex = max(0, currentChapterIndex)
         self.totalChapters = max(0, totalChapters)
         self.onStart = onStart
-        self.onCancel = onCancel
+        self.onPause = onPause
+        self.onResume = onResume
+        self.onRemove = onRemove
+        self.onClose = onClose
 
         let safeTotal = max(1, totalChapters)
         let safeCurrent = min(max(0, currentChapterIndex), safeTotal - 1)
@@ -3620,74 +3575,34 @@ private struct ReaderDownloadOptionsView: View {
         _chapterCountText = State(initialValue: "\(defaultCount)")
     }
 
+    // Live download state from the store, so the sheet reflects progress in real time.
+    private var book: ReadingBook? { store.books.first(where: { $0.id == bookId }) }
+    private var downloadState: BookOfflineDownloadState { book?.offlineDownloadState ?? .none }
+
+    private enum Mode { case range, progress, completed }
+    private var mode: Mode {
+        switch downloadState {
+        case .downloading, .paused:
+            return .progress
+        case .failed:
+            return book?.offlineDownloadTask != nil ? .progress : .range
+        case .available:
+            return .completed
+        case .none:
+            return .range
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                        Text(bookTitle)
-                            .font(DSFont.headline)
-                            .lineLimit(2)
-                        Text(summaryText)
-                            .font(DSFont.caption)
-                            .foregroundColor(DSColor.textSecondary)
-                    }
-                    .padding(.vertical, DSSpacing.xs)
-                }
-
-                Section(header: Text(localized("下載範圍"))) {
-                    Picker(localized("開始位置"), selection: $startOption) {
-                        ForEach(ReaderDownloadStartOption.allCases) { option in
-                            Text(option.title).tag(option)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: startOption) { _, _ in
-                        clampChapterCountToCurrentMaximum()
-                    }
-
-                    HStack {
-                        Text(localized("開始章節"))
-                        Spacer()
-                        Text(String(format: localized("第 %d 章"), selectedStartIndex + 1))
-                            .foregroundColor(DSColor.textSecondary)
-                    }
-                }
-
-                Section(header: Text(localized("章數"))) {
-                    if maxSelectableCount > 1 {
-                        Slider(
-                            value: Binding(
-                                get: { chapterCount },
-                                set: { updateChapterCount(Int($0.rounded())) }
-                            ),
-                            in: 1...Double(maxSelectableCount),
-                            step: 1
-                        )
-                    }
-
-                    HStack {
-                        Text(localized("手動輸入"))
-                        Spacer()
-                        TextField(localized("章數"), text: $chapterCountText)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 96)
-                            .onChange(of: chapterCountText) { _, newValue in
-                                updateChapterCountText(newValue)
-                            }
-                    }
-
-                    Text(String(format: localized("最多可下載 %d 章"), maxSelectableCount))
-                        .font(DSFont.caption)
-                        .foregroundColor(DSColor.textSecondary)
-                }
-
-                if totalChapters <= 0 {
-                    Section {
-                        Label(localized("沒有可下載章節"), systemImage: "exclamationmark.triangle")
-                            .foregroundColor(DSColor.textSecondary)
-                    }
+                switch mode {
+                case .range:
+                    rangeSections
+                case .progress:
+                    progressSections
+                case .completed:
+                    completedSections
                 }
             }
             .navigationTitle(localized("下載章節"))
@@ -3695,20 +3610,206 @@ private struct ReaderDownloadOptionsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        onCancel()
+                        onClose()
                     } label: {
                         Image(systemName: "xmark")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        onStart(selectedStartIndex, Int(chapterCount.rounded()))
-                    } label: {
-                        Image(systemName: "checkmark")
+                if mode == .range {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            onStart(selectedStartIndex, Int(chapterCount.rounded()))
+                        } label: {
+                            Image(systemName: "checkmark")
+                        }
+                        .disabled(totalChapters <= 0)
                     }
-                    .disabled(totalChapters <= 0)
                 }
             }
+        }
+    }
+
+    // MARK: - Range selection
+
+    @ViewBuilder private var rangeSections: some View {
+        Section {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                Text(bookTitle)
+                    .font(DSFont.headline)
+                    .lineLimit(2)
+                Text(summaryText)
+                    .font(DSFont.caption)
+                    .foregroundColor(DSColor.textSecondary)
+            }
+            .padding(.vertical, DSSpacing.xs)
+        }
+
+        Section(header: Text(localized("下載範圍"))) {
+            Picker(localized("開始位置"), selection: $startOption) {
+                ForEach(ReaderDownloadStartOption.allCases) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: startOption) { _, _ in
+                clampChapterCountToCurrentMaximum()
+            }
+
+            HStack {
+                Text(localized("開始章節"))
+                Spacer()
+                Text(String(format: localized("第 %d 章"), selectedStartIndex + 1))
+                    .foregroundColor(DSColor.textSecondary)
+            }
+        }
+
+        Section(header: Text(localized("章數"))) {
+            if maxSelectableCount > 1 {
+                Slider(
+                    value: Binding(
+                        get: { chapterCount },
+                        set: { updateChapterCount(Int($0.rounded())) }
+                    ),
+                    in: 1...Double(maxSelectableCount),
+                    step: 1
+                )
+            }
+
+            HStack {
+                Text(localized("手動輸入"))
+                Spacer()
+                TextField(localized("章數"), text: $chapterCountText)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 96)
+                    .onChange(of: chapterCountText) { _, newValue in
+                        updateChapterCountText(newValue)
+                    }
+            }
+
+            Text(String(format: localized("最多可下載 %d 章"), maxSelectableCount))
+                .font(DSFont.caption)
+                .foregroundColor(DSColor.textSecondary)
+        }
+
+        if totalChapters <= 0 {
+            Section {
+                Label(localized("沒有可下載章節"), systemImage: "exclamationmark.triangle")
+                    .foregroundColor(DSColor.textSecondary)
+            }
+        }
+    }
+
+    // MARK: - Download progress
+
+    @ViewBuilder private var progressSections: some View {
+        Section {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                Text(bookTitle)
+                    .font(DSFont.headline)
+                    .lineLimit(2)
+                HStack {
+                    Text(statusTitle)
+                        .font(DSFont.subheadline)
+                        .foregroundColor(DSColor.textSecondary)
+                    Spacer()
+                    Text("\(completedCount)/\(totalCount)")
+                        .font(DSFont.caption.monospacedDigit())
+                        .foregroundColor(DSColor.textSecondary)
+                }
+                ProgressView(value: progressValue)
+                    .tint(downloadState == .downloading ? .blue : DSColor.textSecondary)
+            }
+            .padding(.vertical, DSSpacing.xs)
+        }
+
+        Section {
+            Button {
+                if downloadState == .downloading {
+                    onPause()
+                } else {
+                    onResume()
+                }
+            } label: {
+                Label(
+                    downloadState == .downloading ? localized("暫停下載") : localized("繼續下載"),
+                    systemImage: downloadState == .downloading ? "pause.fill" : "play.fill"
+                )
+            }
+            // Removing mid-download would race the running download task (it re-sets
+            // .downloading on its next chapter), so only offer removal once the task
+            // has stopped (paused / failed).
+            if downloadState != .downloading {
+                Button(role: .destructive) {
+                    onRemove()
+                } label: {
+                    Label(localized("移除"), systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    // MARK: - Completed
+
+    @ViewBuilder private var completedSections: some View {
+        Section {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                Text(bookTitle)
+                    .font(DSFont.headline)
+                    .lineLimit(2)
+                HStack {
+                    Label(localized("下載完成"), systemImage: "checkmark.circle.fill")
+                        .font(DSFont.subheadline)
+                        .foregroundColor(.green)
+                    Spacer()
+                    Text("\(completedCount)/\(totalCount)")
+                        .font(DSFont.caption.monospacedDigit())
+                        .foregroundColor(DSColor.textSecondary)
+                }
+            }
+            .padding(.vertical, DSSpacing.xs)
+        }
+
+        Section {
+            Button(role: .destructive) {
+                onRemove()
+            } label: {
+                Label(localized("移除"), systemImage: "trash")
+            }
+        }
+    }
+
+    // MARK: - Progress helpers
+
+    private var clampedTask: BookOfflineDownloadTask? {
+        book?.offlineDownloadTask?.clamped(to: max(totalChapters, 0))
+    }
+
+    private var completedCount: Int {
+        clampedTask?.clampedCompletedChapterCount ?? book?.downloadedChapterCount ?? 0
+    }
+
+    private var totalCount: Int {
+        clampedTask?.totalChapterCount ?? max(totalChapters, 1)
+    }
+
+    private var progressValue: Double {
+        let total = max(totalCount, 1)
+        return min(max(Double(completedCount) / Double(total), 0), 1)
+    }
+
+    private var statusTitle: String {
+        switch downloadState {
+        case .downloading:
+            return localized("下載中")
+        case .paused:
+            return localized("已暫停")
+        case .failed:
+            return localized("下載失敗")
+        case .available:
+            return localized("下載完成")
+        case .none:
+            return localized("未下載")
         }
     }
 
@@ -3762,129 +3863,5 @@ private struct ReaderDownloadOptionsView: View {
 
     private func clampChapterCountToCurrentMaximum() {
         updateChapterCount(Int(chapterCount.rounded()))
-    }
-}
-
-private struct ReaderDownloadProgressPanel: View {
-    let book: ReadingBook
-    let readerTheme: ReaderTheme
-    let onResume: () -> Void
-    let onPause: () -> Void
-    let onClose: () -> Void
-
-    private var coverImage: UIImage? {
-        guard let path = book.coverImagePath else { return nil }
-        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let fullURL = documentsURL.appendingPathComponent(path)
-        return UIImage(contentsOfFile: fullURL.path)
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Button {
-                    if book.offlineDownloadState == .downloading {
-                        onPause()
-                    } else {
-                        onResume()
-                    }
-                } label: {
-                    Group {
-                        if let cover = coverImage {
-                            Image(uiImage: cover)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 56, height: 56)
-                                .clipped()
-                        } else {
-                            TitleCardPlaceholder(title: book.title)
-                        }
-                    }
-                    .clipShape(Circle())
-                    .frame(width: 56, height: 56)
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    if book.offlineDownloadState == .downloading {
-                        onPause()
-                    } else {
-                        onResume()
-                    }
-                } label: {
-                    Image(systemName: actionIcon)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.secondary)
-                        .frame(width: 48, height: 48)
-                        .background(.thinMaterial, in: Circle())
-                        .overlay(Circle().stroke(Color.secondary.opacity(0.35), lineWidth: 2))
-                }
-
-                Button {
-                    onClose()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .frame(width: 34, height: 48)
-                }
-                .accessibilityLabel(localized("關閉"))
-            }
-
-            Text(progressText)
-                .font(DSFont.caption2.monospacedDigit())
-                .foregroundColor(readerTheme.textColor.opacity(0.6))
-                .padding(.bottom, 2)
-        }
-        .buttonStyle(.borderless)
-        .padding(.leading, 4)
-        .padding(.trailing, 10)
-        .padding(.top, 4)
-        .padding(.bottom, 2)
-        .background(.regularMaterial, in: Capsule())
-        .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
-        .contentShape(Capsule())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(statusTitle)，\(progressText)")
-    }
-
-    private var completed: Int {
-        book.downloadedChapterCount
-    }
-
-    private var total: Int {
-        max(book.onlineChapters?.count ?? 1, 1)
-    }
-
-    private var progressText: String {
-        "\(statusTitle)（\(completed)/\(total)）"
-    }
-
-    private var actionIcon: String {
-        switch book.offlineDownloadState {
-        case .downloading:
-            return "pause.fill"
-        case .paused:
-            return "play.fill"
-        case .failed:
-            return "arrow.clockwise"
-        case .available, .none:
-            return "icloud.and.arrow.down"
-        }
-    }
-
-    private var statusTitle: String {
-        switch book.offlineDownloadState {
-        case .downloading:
-            return localized("下載中")
-        case .available:
-            return localized("下載完成")
-        case .failed:
-            return localized("下載失敗")
-        case .paused:
-            return localized("已暫停")
-        case .none:
-            return localized("未下載")
-        }
     }
 }

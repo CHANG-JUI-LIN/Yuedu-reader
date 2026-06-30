@@ -537,7 +537,12 @@ struct OnlineBookView: View {
     private func switchToOrigin(_ origin: BookOrigin) {
         guard let searchBook else { return }
         let newBook = Self.makeOnlineBook(from: searchBook, origin: origin)
-        guard newBook.bookUrl != currentBook.bookUrl else { return }
+        // Switch when the SOURCE differs, even if the bookUrl is identical — sibling
+        // sources that share one site (e.g. 星际/铅笔/酝酿 all on xmanhua.com) produce
+        // the same bookUrl, and a bookUrl-only guard would treat picking a different
+        // source as a no-op ("tapped another source, still shows this one").
+        guard newBook.sourceId != currentBook.sourceId
+            || newBook.bookUrl != currentBook.bookUrl else { return }
 
         currentBook = newBook
         detailInfo = nil

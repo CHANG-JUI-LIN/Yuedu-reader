@@ -1055,44 +1055,139 @@ class ModernParserBridge {
         let engine = makeEngine()
         engine.setContent(html, baseUrl: baseURL)
 
-        let listRule = source.ruleExplore.bookList
+        // Legado convention: a source that ships no explore-specific rules (empty
+        // ruleExplore.bookList) reuses its SEARCH rules for discover — the explore
+        // endpoints return the same shape as search results. Most comic sources
+        // rely on this (their `ruleExplore` is `{}`, only `ruleSearch` is defined),
+        // so fall back to ruleSearch instead of giving up on the discover list.
+        let explore = source.ruleExplore
+        let search = source.ruleSearch
+        let useSearch = explore.bookList.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let listRule = useSearch ? search.bookList : explore.bookList
+
         guard !listRule.isEmpty else {
-            // If no ruleExplore, try to parse the HTML as JSON discover items
-            let items = parseDiscoverJSON(html)
-            return items.compactMap { item in
-                guard let title = item.title, !title.isEmpty else { return nil }
-                return OnlineBook(
-                    name: title, author: "", intro: "",
-                    coverUrl: "", bookUrl: item.url ?? "",
-                    tocUrl: item.url ?? "", wordCount: "",
-                    lastChapter: "", kind: "",
+            // Neither explore nor search defines a book list — last-ditch: treat the
+            // payload as a JSON list of {title,url} discover items.
+            return discoverItemsAsBooks(html: html, source: source)
+        }
+
+        let nameRule = useSearch ? search.name : explore.name
+        let authorRule = useSearch ? search.author : explore.author
+        let bookUrlRule = useSearch ? search.bookUrl : explore.bookUrl
+        let coverRule = useSearch ? search.coverUrl : explore.coverUrl
+        let introRule = useSearch ? search.intro : explore.intro
+        let wordCountRule = useSearch ? search.wordCount : explore.wordCount
+        let lastChapterRule = useSearch ? search.lastChapter : explore.lastChapter
+        let kindRule = useSearch ? search.kind : explore.kind
+
+        // Parse books for one bookList variant. Resets engine content to the full
+        // page first, because the per-element loop reassigns it.
+        func parseBooks(listVariant: String) -> (books: [OnlineBook], elements: Int, emptyNames: Int) {
+            engine.setContent(html, baseUrl: baseURL)
+            let elements = engine.getElements(ruleStr: listVariant)
+            var result: [OnlineBook] = []
+            var emptyNames = 0
+            for (idx, element) in elements.enumerated() {
+                engine.setContent(element, baseUrl: baseURL)
+                let name = engine.getString(ruleStr: nameRule)
+                if idx == 0 {
+                    let elHTML = String(describing: element).prefix(180)
+                        .replacingOccurrences(of: "\n", with: " ")
+                    NSLog("❖DISC❖ %@", "\(source.bookSourceName) EL0 list='\(listVariant.prefix(24))' nameRule='\(nameRule.prefix(24))' name='\(name.prefix(30))' el=\(elHTML)")
+                }
+                guard !name.isEmpty else { emptyNames += 1; continue }
+                let bookUrl = engine.getString(ruleStr: bookUrlRule, isUrl: true)
+                // `isUrl:true` falls back to baseURL when the rule matches nothing —
+                // a cover that is merely the page URL is junk (e.g. a bookList narrowed
+                // past the <img>, like zymk's `class.item@h3`), so treat it as missing.
+                // This also lets the cover-broaden retry below detect the gap.
+                var coverUrl = engine.getString(ruleStr: coverRule, isUrl: true)
+                if coverUrl == baseURL { coverUrl = "" }
+                result.append(OnlineBook(
+                    name: name,
+                    author: engine.getString(ruleStr: authorRule),
+                    intro: engine.getString(ruleStr: introRule),
+                    coverUrl: coverUrl,
+                    bookUrl: bookUrl,
+                    tocUrl: bookUrl,
+                    wordCount: engine.getString(ruleStr: wordCountRule),
+                    lastChapter: engine.getString(ruleStr: lastChapterRule),
+                    kind: engine.getString(ruleStr: kindRule),
                     sourceId: source.id, sourceName: source.bookSourceName
-                )
+                ))
+            }
+            return (result, elements.count, emptyNames)
+        }
+
+        let primary = parseBooks(listVariant: listRule)
+        var books = primary.books
+        NSLog("❖DISC❖ %@", "\(source.bookSourceName) parseExplore useSearch=\(useSearch) listRule='\(listRule.prefix(40))' elements=\(primary.elements) books=\(books.count) emptyNames=\(primary.emptyNames)")
+
+        // Compatibility beyond Legado: a `||` bookList returns the FIRST non-empty
+        // element set, but that set can be the wrong one — e.g. a discover page that
+        // reuses the search grid's class (`.manga-list`) for its category nav, so the
+        // first branch matches nav links and every "book" has an empty name. When the
+        // chosen branch yields zero valid books, retry the remaining `||` branches.
+        if books.isEmpty {
+            let (op, parts) = RuleSyntaxParser.splitRuleByOperators(listRule)
+            if op == "||", parts.count > 1 {
+                for branch in parts.dropFirst() {
+                    let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { continue }
+                    let alt = parseBooks(listVariant: trimmed)
+                    NSLog("❖DISC❖ %@", "\(source.bookSourceName) parseExplore || retry '\(trimmed.prefix(30))' elements=\(alt.elements) books=\(alt.books.count)")
+                    if !alt.books.isEmpty { books = alt.books; break }
+                }
             }
         }
 
-        let elements = engine.getElements(ruleStr: listRule)
-        var books: [OnlineBook] = []
-        for element in elements {
-            engine.setContent(element, baseUrl: baseURL)
-            let name = engine.getString(ruleStr: source.ruleExplore.name)
-            guard !name.isEmpty else { continue }
-            let author = engine.getString(ruleStr: source.ruleExplore.author)
-            let bookUrl = engine.getString(ruleStr: source.ruleExplore.bookUrl, isUrl: true)
-            let coverUrl = engine.getString(ruleStr: source.ruleExplore.coverUrl, isUrl: true)
-            let intro = engine.getString(ruleStr: source.ruleExplore.intro)
-            let wordCount = engine.getString(ruleStr: source.ruleExplore.wordCount)
-            let lastChapter = engine.getString(ruleStr: source.ruleExplore.lastChapter)
-            let kind = engine.getString(ruleStr: source.ruleExplore.kind)
-            books.append(OnlineBook(
-                name: name, author: author, intro: intro,
-                coverUrl: coverUrl, bookUrl: bookUrl,
-                tocUrl: bookUrl, wordCount: wordCount,
-                lastChapter: lastChapter, kind: kind,
-                sourceId: source.id, sourceName: source.bookSourceName
-            ))
+        // Cover compatibility: some sources narrow the bookList past the cover —
+        // e.g. `class.item@h3` selects the title node while the <img> lives in a
+        // sibling `.thumbnail`, so `img@data-src` resolves empty for every book.
+        // When all books came back cover-less, retry with the bookList's parent
+        // scope (drop the trailing `@leaf`), but only ADOPT it when it returns the
+        // same number of books AND actually recovers covers — so a correctly-scoped
+        // bookList, or a source that genuinely has no covers, is left untouched.
+        if !books.isEmpty,
+           books.allSatisfy({ $0.coverUrl.isEmpty }),
+           let lastAt = listRule.range(of: "@", options: .backwards) {
+            let broaderList = String(listRule[..<lastAt.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !broaderList.isEmpty {
+                let broader = parseBooks(listVariant: broaderList)
+                if broader.books.count == books.count,
+                   broader.books.contains(where: { !$0.coverUrl.isEmpty }) {
+                    NSLog("❖DISC❖ %@", "\(source.bookSourceName) parseExplore cover-broaden '\(broaderList.prefix(30))' recovered covers (\(broader.books.count) books)")
+                    books = broader.books
+                }
+            }
+        }
+
+        // The ruleSearch fallback can legitimately match nothing when the discover
+        // payload is instead a plain {title,url} JSON list. Preserve that legacy
+        // path so no source that worked before this fallback regresses.
+        if books.isEmpty, useSearch {
+            let fallback = discoverItemsAsBooks(html: html, source: source)
+            NSLog("❖DISC❖ %@", "\(source.bookSourceName) parseExplore search-fallback empty → discoverJSON books=\(fallback.count)")
+            return fallback
         }
         return books
+    }
+
+    /// Last-resort discover parse: decode the payload as a JSON list of `{title,url}`
+    /// items (Legado's "exploreUrl returns book data directly" shape). Returns an
+    /// empty list for any other payload, so it is safe as a fallback.
+    private func discoverItemsAsBooks(html: String, source: BookSource) -> [OnlineBook] {
+        parseDiscoverJSON(html).compactMap { item in
+            guard let title = item.title, !title.isEmpty else { return nil }
+            return OnlineBook(
+                name: title, author: "", intro: "",
+                coverUrl: "", bookUrl: item.url ?? "",
+                tocUrl: item.url ?? "", wordCount: "",
+                lastChapter: "", kind: "",
+                sourceId: source.id, sourceName: source.bookSourceName
+            )
+        }
     }
 
     // MARK: - Network fetch using AnalyzeUrl
