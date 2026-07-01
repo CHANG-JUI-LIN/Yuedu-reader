@@ -96,6 +96,7 @@ struct NodeAttributedStringRenderer {
             result.append(await render(node: node, ctx: ctx))
         }
         let processed = NSMutableAttributedString(attributedString: CJKTypographyProcessor.apply(to: result))
+        relaxParagraphsContainingRubyAnnotations(processed)
         relaxParagraphsContainingTallRuns(processed)
         return processed
     }
@@ -295,6 +296,17 @@ struct NodeAttributedStringRenderer {
             )
         }
 
+        // A CSS-floated *text* block (chat-bubble idiom: `div.se { float:right; ... }` /
+        // `div.ot { float:left }`) is not a magazine-style float-around-image (those carry a
+        // `FloatPlaceholder`); it is an instant-message bubble. Render it as a width-constrained,
+        // side-aligned, colored, rounded box instead of a full-width block. Horizontal only.
+        if let side = style.floatSide,
+           !isHeading,
+           !isVertical(style),
+           config.renderWidth != nil {
+            return await renderFloatBubble(children: children, style: style, side: side, ctx: ctx)
+        }
+
         let hasBlockChildren = children.contains { child in
             if case .paragraph = child { return true }
             if case .block = child { return true }
@@ -305,7 +317,19 @@ struct NodeAttributedStringRenderer {
             return false
         }
 
-        let childCtx = applyBlockStyle(style, to: ctx, isHeading: isHeading, headingLevel: headingLevel)
+        // A chat thread wrapper (`div.tk`) holds a stack of floated message bubbles. Its authored
+        // 1em margins compound with each bubble's spacing and the surrounding narration — and,
+        // unlike a browser, this renderer does not collapse adjacent margins — so threads render far
+        // looser than Apple Books / Readest. Detect the wrapper and tighten its own vertical margin.
+        let wrapsFloatBubble = children.contains { child in
+            switch child {
+            case .paragraph(_, let s), .block(_, _, let s): return s.floatSide != nil
+            default: return false
+            }
+        }
+
+        var childCtx = applyBlockStyle(style, to: ctx, isHeading: isHeading, headingLevel: headingLevel)
+        if wrapsFloatBubble { childCtx.compactBlockSpacing = true }
         let result = NSMutableAttributedString()
         if isVertical(style),
            !hasBlockChildren,
@@ -319,7 +343,12 @@ struct NodeAttributedStringRenderer {
         if contentLength > 0 {
             if hasBlockChildren {
                 applyContainerDecorationAttributes(style: style, to: result, range: NSRange(location: 0, length: contentLength))
-                reserveContainerInsets(result, style: style)
+                var reserveStyle = style
+                if wrapsFloatBubble {
+                    reserveStyle.paragraphSpacingBefore = 0
+                    reserveStyle.paragraphSpacingAfter = 0
+                }
+                reserveContainerInsets(result, style: reserveStyle)
             } else {
                 applyBlockDecorationAttributes(style: style, to: result, range: NSRange(location: 0, length: contentLength))
             }
@@ -473,9 +502,15 @@ struct NodeAttributedStringRenderer {
         let lineBoxHeight = targetLineHeight(ctx: newCtx)
         para.minimumLineHeight = lineBoxHeight
         para.maximumLineHeight = lineBoxHeight
-        let resolvedParagraphSpacing = style.paragraphSpacingAfter > 0
-            ? style.paragraphSpacingAfter
-            : (isHeading ? config.paragraphSpacing * 0.6 : config.paragraphSpacing)
+        let defaultParagraphSpacing = isHeading ? config.paragraphSpacing * 0.6 : config.paragraphSpacing
+        let resolvedParagraphSpacing: CGFloat
+        if ctx.compactBlockSpacing {
+            resolvedParagraphSpacing = min(max(0, style.paragraphSpacingAfter), ctx.baseSize * 0.15)
+        } else if style.paragraphSpacingAfter > 0 {
+            resolvedParagraphSpacing = style.paragraphSpacingAfter
+        } else {
+            resolvedParagraphSpacing = defaultParagraphSpacing
+        }
         para.paragraphSpacing = isVertical(style)
             ? min(resolvedParagraphSpacing, newCtx.font.pointSize)
             : resolvedParagraphSpacing + style.paddingBottom
@@ -531,9 +566,13 @@ struct NodeAttributedStringRenderer {
 
         if style.underline { newCtx.underline = true }
         if style.strikethrough { newCtx.strikethrough = true }
-        // Accumulate for nested child blocks
-        newCtx.inheritedBlockMarginLeft = cumulativeMarginLeft
-        newCtx.inheritedBlockMarginRight = cumulativeMarginRight
+        // Accumulate the parent content box for nested child blocks. CoreText has one frame, so
+        // child paragraph indents must inherit not only authored margins, but also the centering
+        // inset created by width:auto margins plus border/padding. Otherwise a `width:80%`
+        // decorated container can draw correctly while its nested `<p>` still lays out against the
+        // full page column and spills through the border.
+        newCtx.inheritedBlockMarginLeft = leftInset
+        newCtx.inheritedBlockMarginRight = rightInset
 
         return newCtx
     }
@@ -739,7 +778,13 @@ struct NodeAttributedStringRenderer {
                 context: ["srcPrefix": String(src.prefix(48)), "svgContentLen": svgContent?.count ?? -1])
             if let recognized {
                 let image = CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: ctx.font.pointSize, themeTextColor: ctx.textColor)
-                let metrics = await resolvedImageMetrics(image: image, style: style, font: ctx.font, displayMode: .inline)
+                let metrics = await resolvedImageMetrics(
+                    image: image,
+                    style: style,
+                    font: ctx.font,
+                    displayMode: .inline,
+                    availableWidthOverride: availableImageWidth(in: ctx)
+                )
                 return await makeImagePlaceholder(
                     image: image,
                     style: style,
@@ -785,7 +830,13 @@ struct NodeAttributedStringRenderer {
                     ctx: ctx
                 )
             }
-            let metrics = await resolvedImageMetrics(image: image, style: style, font: ctx.font, displayMode: .inline)
+            let metrics = await resolvedImageMetrics(
+                image: image,
+                style: style,
+                font: ctx.font,
+                displayMode: .inline,
+                availableWidthOverride: availableImageWidth(in: ctx)
+            )
             return await makeImagePlaceholder(
                 image: image,
                 style: style,
@@ -952,7 +1003,13 @@ struct NodeAttributedStringRenderer {
             || (config.centerStandaloneImages && attachmentStyle.textAlign == .natural)
         let imageAlignment: NSTextAlignment = shouldCenter ? .center : nsTextAlignment(from: attachmentStyle.textAlign)
 
-        let imageMetrics = await resolvedImageMetrics(image: image, style: attachmentStyle, font: blockCtx.font, displayMode: .block)
+        let imageMetrics = await resolvedImageMetrics(
+            image: image,
+            style: attachmentStyle,
+            font: blockCtx.font,
+            displayMode: .block,
+            availableWidthOverride: availableImageWidth(in: blockCtx)
+        )
         let blockImage = HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage(
             image: image,
             source: payload.src,
@@ -1031,7 +1088,13 @@ struct NodeAttributedStringRenderer {
         var tableStyle = style
         tableStyle.width = image.size.width
         tableStyle.height = image.size.height
-        let metrics = await resolvedImageMetrics(image: image, style: tableStyle, font: blockCtx.font, displayMode: .block)
+        let metrics = await resolvedImageMetrics(
+            image: image,
+            style: tableStyle,
+            font: blockCtx.font,
+            displayMode: .block,
+            availableWidthOverride: availableImageWidth(in: blockCtx)
+        )
         let placeholder = NSMutableAttributedString(
             attributedString: await makeImagePlaceholder(
                 image: image,
@@ -1097,7 +1160,13 @@ struct NodeAttributedStringRenderer {
         var mediaStyle = style
         mediaStyle.width = image.size.width
         mediaStyle.height = image.size.height
-        let metrics = await resolvedImageMetrics(image: image, style: mediaStyle, font: blockCtx.font, displayMode: .block)
+        let metrics = await resolvedImageMetrics(
+            image: image,
+            style: mediaStyle,
+            font: blockCtx.font,
+            displayMode: .block,
+            availableWidthOverride: availableImageWidth(in: blockCtx)
+        )
         // Center/lay out using the clamped draw size the placeholder actually reserves.
         mediaStyle.width = metrics.drawWidth
         mediaStyle.height = metrics.drawHeight
@@ -1210,7 +1279,13 @@ struct NodeAttributedStringRenderer {
         if let precomputedMetrics {
             metrics = precomputedMetrics
         } else {
-            metrics = await resolvedImageMetrics(image: image, style: style, font: ctx.font, displayMode: displayMode)
+            metrics = await resolvedImageMetrics(
+                image: image,
+                style: style,
+                font: ctx.font,
+                displayMode: displayMode,
+                availableWidthOverride: availableImageWidth(in: ctx)
+            )
         }
         let placeholder = NSMutableAttributedString(
             attributedString: RunDelegateProvider.makeImagePlaceholder(
@@ -1273,6 +1348,50 @@ struct NodeAttributedStringRenderer {
                 else { return }
                 let relaxed = style.mutableCopy() as! NSMutableParagraphStyle
                 relaxed.maximumLineHeight = paragraph.requiredHeight
+                updates.append((range, relaxed))
+            }
+            for update in updates {
+                attributedString.addAttribute(.paragraphStyle, value: update.style, range: update.range)
+            }
+        }
+    }
+
+    private func relaxParagraphsContainingRubyAnnotations(_ attributedString: NSMutableAttributedString) {
+        guard attributedString.length > 0 else { return }
+        let fullRange = NSRange(location: 0, length: attributedString.length)
+        let nsString = attributedString.string as NSString
+        var paragraphRanges: [NSRange] = []
+
+        attributedString.enumerateAttribute(
+            HTMLAttributedStringBuilder.rubyAnnotationAttribute,
+            in: fullRange,
+            options: []
+        ) { value, range, _ in
+            guard value != nil else { return }
+            let paragraphRange = nsString.paragraphRange(for: range)
+            if !paragraphRanges.contains(where: { NSEqualRanges($0, paragraphRange) }) {
+                paragraphRanges.append(paragraphRange)
+            }
+        }
+        guard !paragraphRanges.isEmpty else { return }
+
+        for paragraphRange in paragraphRanges {
+            var updates: [(range: NSRange, style: NSParagraphStyle)] = []
+            attributedString.enumerateAttribute(.paragraphStyle, in: paragraphRange, options: []) { value, range, _ in
+                guard let style = value as? NSParagraphStyle else { return }
+                let sampleIndex = max(0, min(range.location, attributedString.length - 1))
+                let font = attributedString.attribute(.font, at: sampleIndex, effectiveRange: nil) as? UIFont
+                let pointSize = font?.pointSize ?? config.baseFontSize
+                let baseLineHeight = max(
+                    style.minimumLineHeight,
+                    font?.lineHeight ?? pointSize * config.lineHeightMultiple
+                )
+                let requiredLineHeight = ceil(baseLineHeight + pointSize * 0.75)
+                guard style.minimumLineHeight < requiredLineHeight || style.maximumLineHeight > 0 else { return }
+
+                let relaxed = style.mutableCopy() as! NSMutableParagraphStyle
+                relaxed.minimumLineHeight = max(relaxed.minimumLineHeight, requiredLineHeight)
+                relaxed.maximumLineHeight = 0
                 updates.append((range, relaxed))
             }
             for update in updates {
@@ -1393,12 +1512,27 @@ struct NodeAttributedStringRenderer {
         return String(normalized.prefix(limit))
     }
 
-    private func resolvedImageMetrics(image: UIImage?, style: RenderStyle, font: UIFont, displayMode: ImageRunInfo.DisplayMode = .inline) async -> ImageMetrics {
+    private func availableImageWidth(in ctx: RenderContext) -> CGFloat? {
+        guard let renderWidth = config.renderWidth else { return nil }
+        let paragraph = ctx.paragraphStyle
+        let leftInset = max(0, min(paragraph.headIndent, paragraph.firstLineHeadIndent))
+        let rightInset = paragraph.tailIndent < 0 ? -paragraph.tailIndent : 0
+        return max(1, renderWidth - leftInset - rightInset)
+    }
+
+    private func resolvedImageMetrics(
+        image: UIImage?,
+        style: RenderStyle,
+        font: UIFont,
+        displayMode: ImageRunInfo.DisplayMode = .inline,
+        availableWidthOverride: CGFloat? = nil
+    ) async -> ImageMetrics {
         let screenWidth = await MainActor.run { UIScreen.main.bounds.width }
-        let baseWidth = config.renderWidth ?? screenWidth
+        let baseWidth = availableWidthOverride ?? config.renderWidth ?? screenWidth
         let availableWidth = max(1, baseWidth - style.paddingLeft - style.paddingRight)
         let maxDrawHeight = max(1, baseWidth * 1.5)
         let isVertical = self.isVertical(style)
+        let explicitWidth = style.rawWidthPercent.map { max(0, baseWidth * $0 / 100.0) } ?? style.width
 
         var drawWidth: CGFloat
         var drawHeight: CGFloat
@@ -1410,10 +1544,10 @@ struct NodeAttributedStringRenderer {
             if isVertical, displayMode == .block, style.width != nil {
                 drawWidth = min(image.size.width, availableWidth)
                 drawHeight = image.size.height * (drawWidth / max(image.size.width, 1))
-            } else if let explicitWidth = style.width, let explicitHeight = style.height {
+            } else if let explicitWidth, let explicitHeight = style.height {
                 drawWidth = explicitWidth
                 drawHeight = explicitHeight
-            } else if let explicitWidth = style.width {
+            } else if let explicitWidth {
                 let ratio = explicitWidth / max(image.size.width, 1)
                 drawWidth = explicitWidth
                 drawHeight = image.size.height * ratio
@@ -1438,7 +1572,7 @@ struct NodeAttributedStringRenderer {
             // placeholder rather than a full-width 0.6-ratio box, so a thumbnail-sized image
             // doesn't flash stretched-wide before it finishes loading.
             let placeholderSide = min(availableWidth, 180)
-            drawWidth = style.width ?? placeholderSide
+            drawWidth = explicitWidth ?? placeholderSide
             drawHeight = style.height ?? placeholderSide
         }
 
@@ -1551,6 +1685,22 @@ struct NodeAttributedStringRenderer {
         }
     }
 
+    /// True if any position in `range` already carries a container render-style attribute.
+    /// Plain child block decorations (hr/images) must not suppress a parent frame.
+    private func hasExistingBlockDecoration(in attributedString: NSAttributedString, range: NSRange) -> Bool {
+        guard range.length > 0 else { return false }
+        var found = false
+        attributedString.enumerateAttribute(
+            HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
+            in: range
+        ) { value, _, stop in
+            guard value != nil else { return }
+            found = true
+            stop.pointee = true
+        }
+        return found
+    }
+
     private func applyBlockDecorationAttributes(
         style: RenderStyle,
         to attributedString: NSMutableAttributedString,
@@ -1582,9 +1732,17 @@ struct NodeAttributedStringRenderer {
     private func applyContainerDecorationAttributes(
         style: RenderStyle,
         to attributedString: NSMutableAttributedString,
-        range: NSRange
+        range: NSRange,
+        hugsContent: Bool = false
     ) {
         guard range.length > 0 else { return }
+        // A descendant (e.g. a chat-bubble `<div>` floated inside a plain wrapper `<div>`) may
+        // already carry its own container/block decoration attribute over part of this range.
+        // `addAttribute` is "last write wins" per character for a given key, so blindly applying
+        // the OUTER block's decoration here would silently overwrite — not layer with — the
+        // descendant's, erasing its background/border/radius. Defer to the more specific,
+        // already-decorated descendant instead.
+        guard !hasExistingBlockDecoration(in: attributedString, range: range) else { return }
         if let backgroundColor = style.backgroundColor?.uiColor {
             attributedString.addAttribute(
                 HTMLAttributedStringBuilder.blockBackgroundColorAttribute,
@@ -1592,7 +1750,7 @@ struct NodeAttributedStringRenderer {
                 range: range
             )
         }
-        guard let blockRenderStyle = makeBlockRenderStyle(from: style) else { return }
+        guard let blockRenderStyle = makeBlockRenderStyle(from: style, hugsContent: hugsContent) else { return }
         let blockID = "container-" + UUID().uuidString
         attributedString.addAttribute(
             HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
@@ -1620,14 +1778,142 @@ struct NodeAttributedStringRenderer {
         else { return }
         HTMLAttributedStringBuilder.reserveContainerBlockInsets(
             in: result,
-            topInset: style.paragraphSpacingBefore + style.paddingTop + style.borderTopWidth,
-            bottomInset: style.paragraphSpacingAfter + style.paddingBottom + style.borderBottomWidth
+            collapsibleTop: style.paragraphSpacingBefore,
+            collapsibleBottom: style.paragraphSpacingAfter,
+            paddingTop: style.paddingTop,
+            paddingBottom: style.paddingBottom,
+            borderTopWidth: style.borderTopWidth,
+            borderBottomWidth: style.borderBottomWidth
         )
+    }
+
+    /// Renders a CSS-floated text block (`div.ot` / `div.se` instant-message bubble) as a
+    /// shrink-to-fit, side-hugging, colored, rounded box — the way 多看-style EPUBs draw chat
+    /// dialogue. The authored `float` + `display:inline-block` geometry has no CoreText analogue,
+    /// so we synthesize it: measure the text's natural width, cap it at a fraction of the column,
+    /// push the child text onto the float side via inherited block margins, and decorate the
+    /// resulting narrow column with the bubble's background / border / corner radius.
+    private func renderFloatBubble(
+        children: [RenderableNode],
+        style: RenderStyle,
+        side: RenderFloatSide,
+        ctx: RenderContext
+    ) async -> NSAttributedString {
+        let renderWidth = max(1, config.renderWidth ?? 320)
+        let availableWidth = max(1, renderWidth - ctx.inheritedBlockMarginLeft - ctx.inheritedBlockMarginRight)
+        let padLeft = style.paddingLeft
+        let padRight = style.paddingRight
+        let borderLeft = style.borderLeftWidth
+        let borderRight = style.borderRightWidth
+        let horizontalChrome = padLeft + padRight + borderLeft + borderRight
+
+        // Bubbles never exceed ~74% of the column; leave room for the opposite-side gutter so the
+        // left/right distinction (sender vs. receiver) reads clearly.
+        let maxTextWidth = max(1, availableWidth * 0.74 - horizontalChrome)
+        let minTextWidth = min(maxTextWidth, ctx.baseSize * 2)
+
+        // Pass 1 — render at full width purely to measure the text's natural (unwrapped) extent.
+        let measureCtx = applyBlockStyle(style, to: ctx, isHeading: false)
+        let measured = await renderFloatBubbleChildren(children, ctx: measureCtx)
+        let naturalWidth = naturalParagraphWidth(of: measured)
+        let textWidth = max(minTextWidth, min(maxTextWidth, naturalWidth))
+
+        // Pass 2 — re-render with the text pinned to the float side at the measured width. The
+        // child paragraphs inherit these block margins, which become their head/tail indents.
+        var bubbleCtx = applyBlockStyle(style, to: ctx, isHeading: false)
+        let addedLeft: CGFloat
+        let addedRight: CGFloat
+        switch side {
+        case .right:
+            addedLeft = max(0, availableWidth - textWidth - padRight - borderRight)
+            addedRight = padRight + borderRight
+        case .left:
+            addedLeft = padLeft + borderLeft
+            addedRight = max(0, availableWidth - textWidth - padLeft - borderLeft)
+        }
+        bubbleCtx.inheritedBlockMarginLeft = ctx.inheritedBlockMarginLeft + addedLeft
+        bubbleCtx.inheritedBlockMarginRight = ctx.inheritedBlockMarginRight + addedRight
+
+        let result = NSMutableAttributedString(
+            attributedString: await renderFloatBubbleChildren(children, ctx: bubbleCtx)
+        )
+        guard result.length > 0 else { return result }
+
+        // Chat bubbles read left-aligned, never justified. The book's `p { text-align: justify }`
+        // cascades into `.tk p`, and a justified line is stretched to the column width — which would
+        // defeat the `hugsContent` box (it measures the un-justified glyph run). Force natural
+        // alignment while preserving the side-pinning indents set above.
+        let fullRange = NSRange(location: 0, length: result.length)
+        var alignmentFixups: [(NSRange, NSMutableParagraphStyle)] = []
+        result.enumerateAttribute(.paragraphStyle, in: fullRange, options: []) { value, range, _ in
+            guard let para = value as? NSParagraphStyle, para.alignment == .justified else { return }
+            let mutable = para.mutableCopy() as! NSMutableParagraphStyle
+            mutable.alignment = .natural
+            alignmentFixups.append((range, mutable))
+        }
+        for (range, para) in alignmentFixups {
+            result.addAttribute(.paragraphStyle, value: para, range: range)
+        }
+
+        // Decorate the column with `hugsContent`, so the paginator sizes the box to the actual
+        // laid-out glyphs (immune to column-width rounding) rather than `width`/`textAlign`. The
+        // child text indents (above) still place the text on the float side; the box then hugs it.
+        var boxStyle = style
+        boxStyle.floatSide = nil
+        boxStyle.width = textWidth
+        boxStyle.marginLeft = 0
+        boxStyle.marginRight = 0
+        boxStyle.isHorizontallyCentered = false
+        boxStyle.textAlign = (side == .right) ? .right : .left
+        boxStyle.paragraphSpacingBefore = max(0, style.paragraphSpacingBefore)
+        boxStyle.paragraphSpacingAfter = max(0, style.paragraphSpacingAfter)
+
+        applyContainerDecorationAttributes(
+            style: boxStyle,
+            to: result,
+            range: NSRange(location: 0, length: result.length),
+            hugsContent: true
+        )
+        reserveContainerInsets(result, style: boxStyle)
+        return result
+    }
+
+    /// Renders the children of a float bubble with an already-resolved block context (mirrors the
+    /// child loop in `renderBlock` minus the decoration pass, which the caller applies itself).
+    private func renderFloatBubbleChildren(
+        _ children: [RenderableNode],
+        ctx: RenderContext
+    ) async -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        for child in children {
+            result.append(await render(node: child, ctx: ctx))
+        }
+        return result
+    }
+
+    /// Natural (single-line, unwrapped) width of the widest paragraph in an attributed string.
+    /// Used to shrink-to-fit a chat bubble before the column width is constrained.
+    private func naturalParagraphWidth(of attributed: NSAttributedString) -> CGFloat {
+        guard attributed.length > 0 else { return 0 }
+        let nsString = attributed.string as NSString
+        var maxWidth: CGFloat = 0
+        nsString.enumerateSubstrings(
+            in: NSRange(location: 0, length: nsString.length),
+            options: .byParagraphs
+        ) { _, range, _, _ in
+            guard range.length > 0 else { return }
+            let paragraph = attributed.attributedSubstring(from: range)
+            let line = CTLineCreateWithAttributedString(paragraph as CFAttributedString)
+            let width = CTLineGetTypographicBounds(line, nil, nil, nil)
+            maxWidth = max(maxWidth, CGFloat(width))
+        }
+        return maxWidth
     }
 
     private func makeBlockRenderStyle(
         from style: RenderStyle,
-        blockImage: HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage? = nil
+        blockImage: HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage? = nil,
+        hugsContent: Bool = false
     ) -> HTMLAttributedStringBuilder.BlockRenderStyle? {
         let renderStyle = HTMLAttributedStringBuilder.BlockRenderStyle(
             backgroundFillColor: style.backgroundColor?.uiColor,
@@ -1650,7 +1936,9 @@ struct NodeAttributedStringRenderer {
             paddingBottom: style.paddingBottom,
             paddingRight: style.paddingRight,
             blockImage: blockImage,
-            borderRadius: style.borderRadius
+            borderRadius: style.borderRadius,
+            avoidsPageBreakInside: style.avoidsPageBreakInside,
+            hugsContent: hugsContent
         )
         return renderStyle.hasVisualDecoration ? renderStyle : nil
     }
@@ -1718,6 +2006,10 @@ struct NodeAttributedStringRenderer {
         var strikethrough: Bool
         var inheritedBlockMarginLeft: CGFloat
         var inheritedBlockMarginRight: CGFloat
+        /// Inside a chat thread (`div.tk` of message bubbles): suppress the reader's body
+        /// paragraph-spacing between the tightly-packed name labels and bubbles, so a large
+        /// paragraph-gap setting doesn't blow the thread apart (Apple Books / Readest stay tight).
+        var compactBlockSpacing: Bool = false
 
         /// Records the body's base font size for heading proportional scaling.
         var baseSize: CGFloat

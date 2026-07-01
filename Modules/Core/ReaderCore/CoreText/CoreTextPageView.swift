@@ -66,6 +66,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
     var onInternalLinkTap: ((String) -> Void)?
     var onImageAttachmentTap: ((CoreTextPaginator.RenderedAttachment) -> Void)?
+    /// Tapped a duokan footnote marker: `(note text, marker rect in this view's coords)`. The host
+    /// controller anchors an arrow popover to the rect.
+    var onFootnoteTap: ((String, CGRect) -> Void)?
 
     private lazy var editMenuInteraction: UIEditMenuInteraction = {
         let interaction = UIEditMenuInteraction(delegate: self)
@@ -582,6 +585,8 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
                 width: item.rect.width + s.borderLeftWidth + s.borderRightWidth + s.paddingLeft + s.paddingRight,
                 height: item.rect.height + s.borderTopWidth + s.borderBottomWidth + s.paddingTop + s.paddingBottom
             )
+
+
             let radius = min(s.borderRadius, min(borderRect.width, borderRect.height) / 2)
             let hasBorder = s.borderTopWidth > 0 || s.borderBottomWidth > 0 || s.borderLeftWidth > 0 || s.borderRightWidth > 0
             if radius > 0 {
@@ -727,11 +732,11 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         image.draw(in: drawRect)
     }
 
-    private nonisolated static func backgroundImageRect(for imageSize: CGSize, in bounds: CGRect) -> CGRect {
+    nonisolated static func backgroundImageRect(for imageSize: CGSize, in bounds: CGRect) -> CGRect {
         guard imageSize.width > 0, imageSize.height > 0, bounds.width > 0, bounds.height > 0 else {
             return bounds
         }
-        let ratio = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let ratio = max(bounds.width / imageSize.width, bounds.height / imageSize.height)
         let size = CGSize(width: imageSize.width * ratio, height: imageSize.height * ratio)
         return CGRect(
             x: bounds.minX + (bounds.width - size.width) / 2,
@@ -828,6 +833,20 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         }
 
         if let attachment = imageAttachment(at: point) {
+            // A *linked* inline image (e.g. a duokan footnote marker `<a href="#note"><img/></a>`)
+            // must follow its link, not open the image viewer. The attachment already carries the
+            // resolved `linkHref`, so trust it directly — a 1em footnote glyph is too small to
+            // reliably reverse-map a tap point back to its placeholder character.
+            if let href = attachment.linkHref, !href.isEmpty {
+                // Duokan footnote → anchored popover at the marker (not a page jump / bottom sheet).
+                if let note = FootnoteStore.text(spineIndex: layout.spineIndex, href: href) {
+                    onFootnoteTap?(note, viewRect(forRenderRect: attachment.rect))
+                    return
+                }
+                onInternalLinkTap?(href)
+                return
+            }
+            // Block illustrations carry no link and fall through to the preview as before.
             onImageAttachmentTap?(attachment)
             return
         }
@@ -1017,6 +1036,20 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             return false
         }
         return true
+    }
+
+    /// Converts an attachment rect (in the layout's render coordinate space) to this view's
+    /// coordinate space, so a popover can be anchored to an on-screen marker.
+    func viewRect(forRenderRect rect: CGRect) -> CGRect {
+        guard let layout, layout.renderSize.width > 0, layout.renderSize.height > 0 else { return rect }
+        let scaleX = bounds.width / layout.renderSize.width
+        let scaleY = bounds.height / layout.renderSize.height
+        return CGRect(
+            x: bounds.minX + rect.minX * scaleX,
+            y: bounds.minY + rect.minY * scaleY,
+            width: rect.width * scaleX,
+            height: rect.height * scaleY
+        )
     }
 
     private func imageAttachment(at point: CGPoint) -> CoreTextPaginator.RenderedAttachment? {
@@ -1599,6 +1632,9 @@ final class CoreTextPageViewController: UIViewController {
     }
 
     private func installImageTapHandler() {
+        pageView.onFootnoteTap = { [weak self] text, sourceRect in
+            self?.presentFootnotePopover(text: text, sourceRect: sourceRect)
+        }
         pageView.onImageAttachmentTap = { [weak self] attachment in
             guard let self else { return }
             if let media = attachment.mediaAttachment {
@@ -1712,6 +1748,23 @@ final class CoreTextPageViewController: UIViewController {
         present(controller, animated: true)
     }
 
+    /// Presents a duokan footnote as an arrow popover anchored to its marker (multi-看 style),
+    /// keeping the reader in place instead of jumping to the chapter tail.
+    private func presentFootnotePopover(text: String, sourceRect: CGRect) {
+        if presentedViewController != nil { return }
+        let maxWidth = min(300, max(200, pageView.bounds.width - 64))
+        let host = UIHostingController(rootView: FootnotePopoverContent(text: text))
+        host.modalPresentationStyle = .popover
+        host.preferredContentSize = FootnotePopoverContent.preferredSize(text: text, maxWidth: maxWidth)
+        if let popover = host.popoverPresentationController {
+            popover.sourceView = pageView
+            popover.sourceRect = sourceRect
+            popover.permittedArrowDirections = [.up, .down]
+            popover.delegate = self
+        }
+        present(host, animated: true)
+    }
+
     /// Presents the book source's paragraph-review (段評) web page in a bottom sheet.
     private func presentReviewSheet(target: ReaderHTMLUtilities.ReviewTarget) {
         let sheetTitle = target.title.isEmpty ? localized("段評") : target.title
@@ -1730,6 +1783,49 @@ final class CoreTextPageViewController: UIViewController {
 }
 
 extension CoreTextPageViewController: PageIndexProviding {}
+
+extension CoreTextPageViewController: UIPopoverPresentationControllerDelegate {
+    // Keep the footnote presentation an anchored popover (with arrow) even in a compact width class,
+    // instead of adapting to a full-screen sheet.
+    func adaptivePresentationStyle(
+        for controller: UIPresentationController,
+        traitCollection: UITraitCollection
+    ) -> UIModalPresentationStyle {
+        .none
+    }
+}
+
+/// Footnote popover body — scrollable note text, sized to fit its content.
+private struct FootnotePopoverContent: View {
+    let text: String
+
+    var body: some View {
+        ScrollView {
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+                .padding(FootnotePopoverContent.contentInset)
+        }
+    }
+
+    static let contentInset: CGFloat = 14
+
+    /// Measures the note so the popover can size itself (UIKit popovers need a preferredContentSize).
+    static func preferredSize(text: String, maxWidth: CGFloat) -> CGSize {
+        let font = UIFont.preferredFont(forTextStyle: .callout)
+        let textWidth = maxWidth - contentInset * 2
+        let bounds = (text as NSString).boundingRect(
+            with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font],
+            context: nil
+        )
+        let height = ceil(bounds.height) + contentInset * 2
+        return CGSize(width: maxWidth, height: min(height, 360))
+    }
+}
 
 private final class CoreTextImagePreviewController: UIViewController, UIScrollViewDelegate {
     private let attachment: CoreTextPaginator.RenderedAttachment

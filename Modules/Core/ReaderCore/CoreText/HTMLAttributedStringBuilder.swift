@@ -212,6 +212,7 @@ final class HTMLAttributedStringBuilder {
         var isVerticalWritingMode: Bool = false
         var pageBreakBefore: Bool = false
         var pageBreakAfter: Bool = false
+        var avoidsPageBreakInside: Bool = false
         /// CSS `float` side (`left`/`right`). Non-nil makes the element a float: the builder emits a
         /// zero-width marker and the paginator wraps surrounding text around it. Not inherited.
         var floatSide: FloatSide? = nil
@@ -285,6 +286,12 @@ final class HTMLAttributedStringBuilder {
         let paddingRight: CGFloat
         let blockImage: BlockImage?
         let borderRadius: CGFloat
+        let avoidsPageBreakInside: Bool
+        /// When true the paginator sizes/positions the decoration box to the *actual* laid-out
+        /// glyph bounds of each line instead of `width` + `textAlign`. Chat bubbles use this so a
+        /// shrink-to-fit box hugs its text exactly, immune to sub-pixel column-width rounding
+        /// (otherwise a right-floated box drifts a few points and clips its last glyph).
+        var hugsContent: Bool = false
 
         var hasVisualDecoration: Bool {
             backgroundFillColor != nil
@@ -315,7 +322,9 @@ final class HTMLAttributedStringBuilder {
                 paddingBottom: paddingBottom,
                 paddingRight: paddingRight,
                 blockImage: blockImage,
-                borderRadius: borderRadius
+                borderRadius: borderRadius,
+                avoidsPageBreakInside: avoidsPageBreakInside,
+                hugsContent: hugsContent
             )
         }
     }
@@ -659,25 +668,42 @@ final class HTMLAttributedStringBuilder {
     /// block above/below, and adjacent callouts collide. Fold that inset into the first
     /// child's `paragraphSpacingBefore` and the last child's `paragraphSpacing`. Shared by
     /// both render pipelines (legacy `renderNode` and the RenderableNode IR renderer).
+    ///
+    /// CSS vertical margins collapse (only the larger margin survives between adjacent
+    /// block-level elements). In CoreText, margin/padding/border all compound via
+    /// `paragraphSpacingBefore` / `paragraphSpacing`. By separating the collapsible margin
+    /// from non-collapsible padding+border, we match the CSS box model: child margin and
+    /// container margin collapse to `max()`, then container padding+border are added.
     static func reserveContainerBlockInsets(
         in output: NSMutableAttributedString,
-        topInset: CGFloat,
-        bottomInset: CGFloat
+        collapsibleTop: CGFloat,
+        collapsibleBottom: CGFloat,
+        paddingTop: CGFloat,
+        paddingBottom: CGFloat,
+        borderTopWidth: CGFloat,
+        borderBottomWidth: CGFloat
     ) {
         guard output.length > 0 else { return }
-        if topInset > 0 {
+        let nonCollapsibleTop = paddingTop + borderTopWidth
+        let nonCollapsibleBottom = paddingBottom + borderBottomWidth
+
+        if collapsibleTop > 0 || nonCollapsibleTop > 0 {
             var range = NSRange(location: 0, length: 0)
             if let para = output.attribute(.paragraphStyle, at: 0, effectiveRange: &range) as? NSParagraphStyle,
                let mutable = para.mutableCopy() as? NSMutableParagraphStyle {
-                mutable.paragraphSpacingBefore += topInset
+                let current = mutable.paragraphSpacingBefore
+                let collapsed = max(current, collapsibleTop)
+                mutable.paragraphSpacingBefore = collapsed + nonCollapsibleTop
                 output.addAttribute(.paragraphStyle, value: mutable, range: range)
             }
         }
-        if bottomInset > 0 {
+        if collapsibleBottom > 0 || nonCollapsibleBottom > 0 {
             var range = NSRange(location: 0, length: 0)
             if let para = output.attribute(.paragraphStyle, at: output.length - 1, effectiveRange: &range) as? NSParagraphStyle,
                let mutable = para.mutableCopy() as? NSMutableParagraphStyle {
-                mutable.paragraphSpacing += bottomInset
+                let current = mutable.paragraphSpacing
+                let collapsed = max(current, collapsibleBottom)
+                mutable.paragraphSpacing = collapsed + nonCollapsibleBottom
                 output.addAttribute(.paragraphStyle, value: mutable, range: range)
             }
         }
@@ -741,11 +767,11 @@ final class HTMLAttributedStringBuilder {
 
     static func makeRubyAnnotation(text: String) -> CTRubyAnnotation {
         let attributes: [CFString: Any] = [
-            kCTRubyAnnotationSizeFactorAttributeName: 0.5,
+            kCTRubyAnnotationSizeFactorAttributeName: 0.7,
             kCTRubyAnnotationScaleToFitAttributeName: true,
         ]
         return CTRubyAnnotationCreateWithAttributes(
-            .auto,
+            .center,
             .auto,
             .before,
             text as CFString,
@@ -777,6 +803,12 @@ final class HTMLAttributedStringBuilder {
             || value == "right"
             || value == "recto"
             || value == "verso"
+    }
+
+    private func isAvoidPageBreakInsideValue(_ rawValue: String?) -> Bool {
+        guard let rawValue else { return false }
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return value == "avoid" || value == "avoid-page"
     }
 
     private func extractImagePage(from body: ElementNode) async -> ImagePage? {
@@ -1162,7 +1194,8 @@ final class HTMLAttributedStringBuilder {
             borderRadius: parent.borderRadius,
             isVerticalWritingMode: parent.isVerticalWritingMode,
             pageBreakBefore: false,
-            pageBreakAfter: false
+            pageBreakAfter: false,
+            avoidsPageBreakInside: false
         )
     }
 
@@ -1223,7 +1256,8 @@ final class HTMLAttributedStringBuilder {
             borderRadius: 0,
             isVerticalWritingMode: false,
             pageBreakBefore: false,
-            pageBreakAfter: false
+            pageBreakAfter: false,
+            avoidsPageBreakInside: false
         )
     }
 
@@ -1447,6 +1481,9 @@ final class HTMLAttributedStringBuilder {
         if isForcedPageBreakValue(declarations["page-break-after"] ?? declarations["break-after"]) {
             style.pageBreakAfter = true
         }
+        if isAvoidPageBreakInsideValue(declarations["page-break-inside"] ?? declarations["break-inside"]) {
+            style.avoidsPageBreakInside = true
+        }
         if let paragraphSpacing = declarations["margin-bottom"] ?? declarations["paragraph-spacing"],
            let value = resolveLength(
                 paragraphSpacing,
@@ -1629,7 +1666,15 @@ final class HTMLAttributedStringBuilder {
         applyBorderStyleNone(declarations["border-left-style"], edges: [.left], to: &style)
         applyBorderStyleNone(declarations["border-right-style"], edges: [.right], to: &style)
         if let borderRadius = declarations["border-radius"] {
-            style.borderRadius = max(0, resolveLength(borderRadius, currentFontSize: style.fontSize, rootFontSize: rootFontSize, relativeBase: style.fontSize) ?? 0)
+            // `RenderStyle.borderRadius` models one uniform radius (no per-corner support yet). The
+            // 2/3/4-value shorthand (`10px 0px 10px 10px` = TL/TR/BR/BL) can't map to a single
+            // length, so approximate with the LARGEST corner. Chat-bubble idioms deliberately zero
+            // one corner (`0px 10px 10px` for the speech-tail notch); taking the first token there
+            // would collapse the whole box to square — the max keeps it visibly rounded.
+            let radii = borderRadius
+                .split(whereSeparator: \.isWhitespace)
+                .compactMap { resolveLength(String($0), currentFontSize: style.fontSize, rootFontSize: rootFontSize, relativeBase: style.fontSize) }
+            style.borderRadius = max(0, radii.max() ?? 0)
         }
     }
 
@@ -1996,6 +2041,12 @@ final class HTMLAttributedStringBuilder {
             return .gray
         case "blue":
             return .blue
+        case "transparent":
+            // Must resolve to a real (alpha-0) color, not nil — nil reads as "unspecified" and
+            // falls back to a visible default (e.g. border color defaults to currentColor/.label).
+            // EPUB authors use `border: 1px solid transparent` as a spacing hack expecting no
+            // visible border at all; failing to parse it previously drew a solid black/white line.
+            return .clear
         default:
             return nil
         }

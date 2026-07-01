@@ -397,9 +397,10 @@ final class CoreTextPaginator {
 
         if let imagePage {
             let framesetter = CoreTextFramesetterFactory.make(for: attrStr)
+            let pageRect = CGRect(origin: .zero, size: renderSize)
             let imageRect = aspectFitRect(
-                for: imagePage.image?.size ?? contentRect.size,
-                in: contentRect
+                for: imagePage.image?.size ?? pageRect.size,
+                in: pageRect
             )
             return ChapterLayout(
                 spineIndex: spineIndex,
@@ -427,6 +428,7 @@ final class CoreTextPaginator {
         var pageRanges: [CFRange] = []
         var currentLocation = 0
         let forcedPageBreakRanges = forcedPageBreakRanges(in: attrStr)
+        let keepTogetherRanges = writingMode.isVertical ? [] : avoidPageBreakInsideRanges(in: attrStr)
         // CSS floats (horizontal layout only): each carves a notch out of the page it lands on so text
         // wraps beside it. Stored per page for reuse at draw time and attachment extraction.
         let floatMarkers = writingMode.isVertical ? [] : Self.floatMarkers(in: attrStr)
@@ -452,8 +454,10 @@ final class CoreTextPaginator {
             // ── CSS float on this page ─────────────────────────────────────
             var notch: CGRect?
             var floatAttachment: RenderedAttachment?
+            var floatMarkerOffset: Int?
             if let marker = floatMarkers.first(where: { $0.offset >= currentLocation && $0.offset < nextForcedBreak }),
                let image = marker.placeholder.image {
+                floatMarkerOffset = marker.offset
                 let p = marker.placeholder
                 let notchWidth = p.drawWidth + p.marginLeft + p.marginRight
                 let notchHeight = min(contentPathRect.height, p.drawHeight + p.marginTop + p.marginBottom)
@@ -504,10 +508,25 @@ final class CoreTextPaginator {
                 in: attrStr.string,
                 lowerBound: currentLocation
             )
-            let advance = min(remainingLength, max(1, protectedEnd - currentLocation))
+            var advance = min(remainingLength, max(1, protectedEnd - currentLocation))
+            let naturalBoundary = currentLocation + advance
+            if let protectedRange = keepTogetherRanges.first(where: { range in
+                range.location < naturalBoundary && naturalBoundary < range.location + range.length
+            }), protectedRange.location > currentLocation {
+                advance = max(1, protectedRange.location - currentLocation)
+            }
             pageRanges.append(CFRangeMake(currentLocation, advance))
-            if let notch { pageFloatNotches[pageIndex] = notch }
-            if let floatAttachment { pageFloatAttachments[pageIndex, default: []].append(floatAttachment) }
+            let pageEnd = currentLocation + advance
+            if let notch,
+               let floatMarkerOffset,
+               floatMarkerOffset < pageEnd {
+                pageFloatNotches[pageIndex] = notch
+            }
+            if let floatAttachment,
+               let floatMarkerOffset,
+               floatMarkerOffset < pageEnd {
+                pageFloatAttachments[pageIndex, default: []].append(floatAttachment)
+            }
             currentLocation += advance
         }
         if writingMode.isVertical {
@@ -588,6 +607,62 @@ final class CoreTextPaginator {
             }
         }
         return ranges
+    }
+
+    private static func avoidPageBreakInsideRanges(in attrStr: NSAttributedString) -> [NSRange] {
+        guard attrStr.length > 0 else { return [] }
+
+        struct Accumulator {
+            var range: NSRange
+        }
+
+        func collect(
+            styleKey: NSAttributedString.Key,
+            idKey: NSAttributedString.Key,
+            into groups: inout [String: Accumulator]
+        ) {
+            attrStr.enumerateAttribute(
+                styleKey,
+                in: NSRange(location: 0, length: attrStr.length),
+                options: []
+            ) { value, effectiveRange, _ in
+                guard let style = value as? HTMLAttributedStringBuilder.BlockRenderStyle,
+                      style.avoidsPageBreakInside,
+                      let blockID = attrStr.attribute(
+                          idKey,
+                          at: effectiveRange.location,
+                          effectiveRange: nil
+                      ) as? String
+                else { return }
+
+                if var existing = groups[blockID] {
+                    existing.range = NSUnionRange(existing.range, effectiveRange)
+                    groups[blockID] = existing
+                } else {
+                    groups[blockID] = Accumulator(range: effectiveRange)
+                }
+            }
+        }
+
+        var groups: [String: Accumulator] = [:]
+        collect(
+            styleKey: HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
+            idKey: HTMLAttributedStringBuilder.containerBlockRenderIDAttribute,
+            into: &groups
+        )
+        collect(
+            styleKey: HTMLAttributedStringBuilder.blockRenderStyleAttribute,
+            idKey: HTMLAttributedStringBuilder.blockRenderIDAttribute,
+            into: &groups
+        )
+
+        return groups.values
+            .map(\.range)
+            .filter { $0.length > 1 }
+            .sorted {
+                if $0.location != $1.location { return $0.location < $1.location }
+                return $0.length < $1.length
+            }
     }
 
     /// Returns CoreText frame attributes for the given writing mode.
@@ -1629,6 +1704,8 @@ final class CoreTextPaginator {
             guard !groups.isEmpty else { return }
 
             for groupIndex in groups.indices {
+                // Container decorations wrap already-flowed children; their Y must come from line origins.
+                guard !groups[groupIndex].isContainer else { continue }
                 if let explicitRect = computeExplicitBlockRenderableRect(
                     style: groups[groupIndex].style,
                     ranges: groups[groupIndex].ranges,
@@ -1667,6 +1744,16 @@ final class CoreTextPaginator {
                         NSIntersectionRange(span, lineNSRange).length > 0
                     }
                     guard intersects else { continue }
+
+                    let standaloneImageRect = standaloneImageRenderableRect(
+                        line: line,
+                        lineOrigin: lineOrigin,
+                        contentPathRect: contentPathRect,
+                        renderSize: renderSize,
+                        attrStr: attrStr,
+                        ranges: groups[groupIndex].ranges,
+                        writingMode: writingMode
+                    )
 
                     let attributeLocation = max(
                         lineStart,
@@ -1729,6 +1816,12 @@ final class CoreTextPaginator {
                             ?? blockExtent)
                         rectX = adjustedOrigin.x - rectW / 2   // center on column baseline
                         uiY = renderSize.height - adjustedOrigin.y
+                    } else if let standaloneImageRect {
+                        lineHeight = standaloneImageRect.height
+                        blockHeight = standaloneImageRect.height
+                        rectX = standaloneImageRect.minX
+                        rectW = min(standaloneImageRect.width, preferredWidth)
+                        uiY = standaloneImageRect.minY
                     } else {
                         lineHeight = max(paragraphStyle.minimumLineHeight, lineAscent + lineDescent)
                         blockHeight = max(
@@ -1737,8 +1830,16 @@ final class CoreTextPaginator {
                                 ?? groups[groupIndex].style.height
                                 ?? lineHeight
                         )
-                        rectX = blockX
-                        rectW = preferredWidth
+                        if groups[groupIndex].style.hugsContent {
+                            // Shrink-to-fit bubble: size the box to the line's actual glyph run so
+                            // it hugs the text exactly, immune to column-width rounding (a right
+                            // float otherwise drifts a few points and clips its last glyph).
+                            rectX = adjustedOrigin.x
+                            rectW = max(1, lineWidth)
+                        } else {
+                            rectX = blockX
+                            rectW = preferredWidth
+                        }
                         uiY = renderSize.height - (adjustedOrigin.y + lineAscent)
                     }
                     let rect = CGRect(
@@ -1757,20 +1858,26 @@ final class CoreTextPaginator {
             let renderables = groups
                 .filter { !$0.rect.isNull }
                 .map { group -> RenderedBlockRenderable in
+                    let renderRect = blockDecorationRect(
+                        from: group.rect,
+                        style: group.style,
+                        isContainer: group.isContainer,
+                        writingMode: writingMode
+                    )
                     // Container groups only render decoration (border/background), don't take over text rendering
                     let text: NSAttributedString? = (group.isContainer || !group.usesExplicitGeometry) ? nil : explicitRenderableText(
                         style: group.style,
                         ranges: group.ranges,
                         attrStr: attrStr,
-                        explicitRect: group.rect
+                        explicitRect: renderRect
                     )
                     return RenderedBlockRenderable(
-                        rect: group.rect,
+                        rect: renderRect,
                         style: group.style,
                         attributedText: text,
                         sourceRanges: text != nil ? group.ranges : [],
                         imageAttachment: makeBlockImageAttachment(
-                            rect: group.rect,
+                            rect: renderRect,
                             style: group.style,
                             ranges: group.ranges,
                             attrStr: attrStr,
@@ -1784,6 +1891,124 @@ final class CoreTextPaginator {
         } } // end autoreleasepool + for pageIdx
 
         return pageRenderables
+    }
+
+    private static func blockDecorationRect(
+        from rect: CGRect,
+        style: HTMLAttributedStringBuilder.BlockRenderStyle,
+        isContainer: Bool,
+        writingMode: ReaderWritingMode
+    ) -> CGRect {
+        guard isContainer,
+              !style.hugsContent,
+              !writingMode.isVertical,
+              !rect.isNull
+        else { return rect }
+
+        // reserveContainerBlockInsets already folded paragraphSpacingBefore + paddingTop +
+        // borderTopWidth into the first child's paragraphSpacingBefore, which pushes the
+        // child down and makes the container's union rect encompass the reserved space.
+        // Trimming paragraphSpacingBefore here would double-count and pull the decoration
+        // rect downward, misaligning the border with the content inside.
+        guard style.borderTopWidth == 0, style.borderBottomWidth == 0,
+              style.paddingTop == 0, style.paddingBottom == 0
+        else { return rect }
+
+        let topMargin = max(0, style.paragraphSpacingBefore)
+        guard topMargin > 0 else { return rect }
+
+        let consumedTop = min(topMargin, max(0, rect.height - 1))
+        return CGRect(
+            x: rect.minX,
+            y: rect.minY + consumedTop,
+            width: rect.width,
+            height: max(1, rect.height - consumedTop)
+        )
+    }
+
+    private static func standaloneImageRenderableRect(
+        line: CTLine,
+        lineOrigin: CGPoint,
+        contentPathRect: CGRect,
+        renderSize: CGSize,
+        attrStr: NSAttributedString,
+        ranges: [NSRange],
+        writingMode: ReaderWritingMode
+    ) -> CGRect? {
+        guard !writingMode.isVertical else { return nil }
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        let runs = CTLineGetGlyphRuns(line) as! [CTRun]
+        var union = CGRect.null
+
+        for run in runs {
+            let runRange = CTRunGetStringRange(run)
+            let runNSRange = NSRange(location: runRange.location, length: runRange.length)
+            let belongsToGroup = ranges.contains { NSIntersectionRange($0, runNSRange).length > 0 }
+            guard belongsToGroup else { continue }
+
+            let attrs = CTRunGetAttributes(run) as! [NSAttributedString.Key: Any]
+            guard attrs[HTMLAttributedStringBuilder.spacerRunAttribute] == nil,
+                  let delegate = attrs[delegateKey]
+            else { continue }
+
+            let ctDelegate = delegate as! CTRunDelegate
+            let ptr = CTRunDelegateGetRefCon(ctDelegate)
+            let info = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
+            guard info.image != nil,
+                  !info.isTextSized,
+                  isStandaloneImageRun(runRange, line: line, attrStr: attrStr)
+            else { continue }
+
+            let paragraphStyle = attrStr.attribute(
+                .paragraphStyle,
+                at: max(0, runRange.location),
+                effectiveRange: nil
+            ) as? NSParagraphStyle
+            var lineAscent: CGFloat = 0
+            var lineDescent: CGFloat = 0
+            _ = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
+            let baselineY = contentPathRect.origin.y + lineOrigin.y
+            let lineHeight = lineAscent + lineDescent
+            let lineBottom = baselineY - lineDescent
+            let centeredBottom = lineBottom + max(0, (lineHeight - info.drawHeight) / 2)
+            let uiY = renderSize.height - centeredBottom - info.drawHeight
+
+            let leftInset = min(paragraphStyle?.headIndent ?? 0, paragraphStyle?.firstLineHeadIndent ?? 0)
+            let rightInset = (paragraphStyle?.tailIndent ?? 0) < 0 ? -(paragraphStyle?.tailIndent ?? 0) : 0
+            let boxWidth = max(1, contentPathRect.width - leftInset - rightInset)
+            let occupiedWidth = min(boxWidth, info.width)
+            let alignedX: CGFloat
+            switch info.displayMode {
+            case .inline:
+                switch paragraphStyle?.alignment ?? .natural {
+                case .left:
+                    alignedX = contentPathRect.origin.x + leftInset
+                case .right:
+                    alignedX = contentPathRect.origin.x + leftInset + max(0, boxWidth - occupiedWidth)
+                default:
+                    alignedX = contentPathRect.origin.x + leftInset + max(0, (boxWidth - occupiedWidth) / 2)
+                }
+            case .block:
+                switch paragraphStyle?.alignment ?? .left {
+                case .center:
+                    alignedX = contentPathRect.origin.x + leftInset + max(0, (boxWidth - occupiedWidth) / 2)
+                case .right:
+                    alignedX = contentPathRect.origin.x + leftInset + max(0, boxWidth - occupiedWidth)
+                default:
+                    alignedX = contentPathRect.origin.x + leftInset
+                }
+            }
+
+            let rect = CGRect(
+                x: alignedX + info.paddingLeft,
+                y: uiY,
+                width: info.drawWidth,
+                height: info.drawHeight
+            )
+            union = union.isNull ? rect : union.union(rect)
+        }
+
+        return union.isNull ? nil : union
     }
 
     private static func computeExplicitBlockRenderableRect(
