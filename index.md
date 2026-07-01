@@ -9,6 +9,13 @@ Developer notes about building a native iOS reader with SwiftUI, CoreText, EPUB,
 
 [Atom feed]({{ site.baseurl }}/feed.xml)
 
+## Support And Legal
+
+- [Support, Contact & Legal]({{ site.baseurl }}/support.html)
+- [Privacy Policy]({{ site.baseurl }}/privacy.html)
+- [User Agreement]({{ site.baseurl }}/terms.html)
+- [Paid Service Terms]({{ site.baseurl }}/paid-terms.html)
+
 ## Posts
 
 - [Adapting EPUB 3 Features to CoreText in Yuedu Reader]({{ site.baseurl }}/2026/06/08/coretext-epub3-adaptation/)
