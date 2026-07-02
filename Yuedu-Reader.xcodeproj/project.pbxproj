@@ -466,7 +466,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				46935AA62F52E48600662F9D /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
-				46935AA72F52E49B00662F9D /* XCLocalSwiftPackageReference "LocalPackages/SwiftSoup" */,
+				46935AA72F52E49B00662F9D /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 				AAAA1111AAAA1111AAAA0003 /* XCRemoteSwiftPackageReference "Nuke" */,
 				8A11B0E12F9A1C7300A1B001 /* XCRemoteSwiftPackageReference "Fuzi" */,
 				460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */,
@@ -1115,9 +1115,13 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		46935AA72F52E49B00662F9D /* XCLocalSwiftPackageReference "LocalPackages/SwiftSoup" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = LocalPackages/SwiftSoup;
+		46935AA72F52E49B00662F9D /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scinfu/SwiftSoup.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.3.2;
+			};
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -1308,7 +1312,7 @@
 		};
 		489E6E08B47AA3AC9F140CAD /* SwiftSoup */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 46935AA72F52E49B00662F9D /* XCLocalSwiftPackageReference "LocalPackages/SwiftSoup" */;
+			package = 46935AA72F52E49B00662F9D /* XCRemoteSwiftPackageReference "SwiftSoup" */;
 			productName = SwiftSoup;
 		};
 		54FF42D2FA99075B5C91D59B /* ReadiumShared */ = {
