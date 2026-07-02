@@ -249,7 +249,8 @@ struct CSSPropertyApplierTests {
             borderRadius: 0,
             isVerticalWritingMode: false,
             pageBreakBefore: false,
-            pageBreakAfter: false
+            pageBreakAfter: false,
+            avoidsPageBreakInside: false
         )
     }
 

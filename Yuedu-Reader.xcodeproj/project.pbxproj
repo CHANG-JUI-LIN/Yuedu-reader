@@ -1139,13 +1139,9 @@
 				minimumVersion = 3.0.1;
 			};
 		};
-		46935AA72F52E49B00662F9D /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/scinfu/SwiftSoup";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.11.3;
-			};
+		46935AA72F52E49B00662F9D /* XCLocalSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LocalPackages/SwiftSoup;
 		};
 		46A6AB5D2FCD4ED60071B397 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;

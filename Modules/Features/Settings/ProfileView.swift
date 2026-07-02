@@ -14,7 +14,6 @@ struct SettingsView: View {
     @State private var showLegadoMigration = false
     @State private var showTTSSettings = false
     @State private var showNetworkSettings = false
-    @State private var showCopiedQQGroup = false
     private let feedbackEmail = "r3212239269@gmail.com"
     private let officialQQGroupID = "1107613783"
     private let telegramGroupURL = URL(string: "https://t.me/+ZWmmgMwwJ3JiN2Rl")
@@ -133,73 +132,24 @@ struct SettingsView: View {
 
                     // ── About ──
                     Section(header: Text(localized("關於"))) {
-                        HStack {
-                            Text(localized("版本"))
-                            Spacer()
-                            Text(appVersion).foregroundColor(DSColor.textSecondary)
-                        }
-                    }
-
-                    Section(header: Text(localized("聯絡我們"))) {
-                        contactRow(
-                            icon: "envelope.fill",
-                            title: localized("電子郵件"),
-                            detail: feedbackEmail,
-                            trailingIcon: "arrow.up.right"
-                        ) {
-                            if let url = feedbackMailURL {
-                                openURL(url)
-                            }
-                        }
-
-                        contactRow(
-                            icon: "number.circle.fill",
-                            title: localized("官方 QQ 群"),
-                            detail: officialQQGroupID,
-                            trailingIcon: "doc.on.doc"
-                        ) {
-                            UIPasteboard.general.string = officialQQGroupID
-                            showCopiedQQGroup = true
-                        }
-
-                        contactRow(
-                            icon: "paperplane.fill",
-                            title: localized("Telegram 群"),
-                            detail: "t.me",
-                            trailingIcon: "arrow.up.right"
-                        ) {
-                            if let url = telegramGroupURL {
-                                openURL(url)
-                            }
-                        }
-                    }
-
-                    Section(
-                        header: Text(localized("法律與政策")),
-                        footer: Text(localized("使用書源、第三方服務與未來付費功能前，請先閱讀相關條款。"))
-                    ) {
-                        DSSettingsRow(
-                            icon: "hand.raised.fill",
-                            title: localized("隱私權政策"),
-                            action: {
-                                if let url = privacyPolicyURL {
-                                    openURL(url)
-                                }
-                            }
-                        )
-
                         NavigationLink {
-                            LegalAgreementsView(
+                            AboutSupportView(
+                                appVersion: appVersion,
+                                feedbackEmail: feedbackEmail,
+                                officialQQGroupID: officialQQGroupID,
+                                feedbackMailURL: feedbackMailURL,
+                                telegramGroupURL: telegramGroupURL,
+                                privacyPolicyURL: privacyPolicyURL,
                                 userAgreementURL: userAgreementURL,
                                 paidTermsURL: paidTermsURL
                             )
                         } label: {
                             HStack {
-                                Label(localized("使用者協議"), systemImage: "doc.text.fill")
+                                Label(localized("關於 Yuedu Reader"), systemImage: "info.circle.fill")
                                     .foregroundColor(DSColor.textPrimary)
                                     .labelStyle(IconConsistentLabelStyle())
                                 Spacer(minLength: 12)
-                                Text(localized("使用者協議與付費服務條款"))
+                                Text(appVersion)
                                     .font(DSFont.caption)
                                     .foregroundColor(DSColor.textSecondary)
                             }
@@ -237,11 +187,6 @@ struct SettingsView: View {
             .sheet(isPresented: $showTTSSettings) {
                 TTSSettingsView()
             }
-            .alert(localized("已複製"), isPresented: $showCopiedQQGroup) {
-                Button(localized("好"), role: .cancel) {}
-            } message: {
-                Text(String(format: localized("已複製 QQ 群號：%@"), officialQQGroupID))
-            }
         }
     }
 
@@ -266,40 +211,17 @@ struct SettingsView: View {
         }
     }
 
-    private func contactRow(
-        icon: String,
-        title: String,
-        detail: String,
-        trailingIcon: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack {
-                Label(title, systemImage: icon)
-                    .foregroundColor(DSColor.textPrimary)
-                    .labelStyle(IconConsistentLabelStyle())
-
-                Spacer(minLength: 12)
-
-                Text(detail)
-                    .font(DSFont.caption)
-                    .foregroundColor(DSColor.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                Image(systemName: trailingIcon)
-                    .font(DSFont.caption)
-                    .foregroundColor(DSColor.textSecondary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
 }
 
-private struct LegalAgreementsView: View {
+private struct AboutSupportView: View {
     @Environment(\.openURL) private var openURL
+    @State private var showCopiedQQGroup = false
+    let appVersion: String
+    let feedbackEmail: String
+    let officialQQGroupID: String
+    let feedbackMailURL: URL?
+    let telegramGroupURL: URL?
+    let privacyPolicyURL: URL?
     let userAgreementURL: URL?
     let paidTermsURL: URL?
 
@@ -314,10 +236,10 @@ private struct LegalAgreementsView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                         .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 4)
 
-                    Text("閱讀")
+                    Text(localized("閱讀"))
                         .font(.title3.weight(.semibold))
 
-                    Text(localized("使用 Yuedu Reader 前，請閱讀並理解以下協議與條款。"))
+                    Text(localized("聯絡方式、版本資訊與政策協議"))
                         .font(.footnote)
                         .foregroundColor(DSColor.textSecondary)
                         .multilineTextAlignment(.center)
@@ -327,37 +249,107 @@ private struct LegalAgreementsView: View {
                 .padding(.vertical, 16)
             }
 
-            Section(header: Text(localized("協議文件"))) {
-                legalDocumentRow(
+            Section(header: Text(localized("版本資訊"))) {
+                HStack {
+                    Label(localized("版本"), systemImage: "number")
+                        .foregroundColor(DSColor.textPrimary)
+                        .labelStyle(IconConsistentLabelStyle())
+                    Spacer(minLength: 12)
+                    Text(appVersion)
+                        .font(DSFont.caption)
+                        .foregroundColor(DSColor.textSecondary)
+                }
+            }
+
+            Section(header: Text(localized("聯絡方式"))) {
+                actionRow(
+                    icon: "envelope.fill",
+                    title: localized("電子郵件"),
+                    detail: feedbackEmail,
+                    trailingIcon: "arrow.up.right"
+                ) {
+                    if let url = feedbackMailURL {
+                        openURL(url)
+                    }
+                }
+
+                actionRow(
+                    icon: "number.circle.fill",
+                    title: localized("官方 QQ 群"),
+                    detail: officialQQGroupID,
+                    trailingIcon: "doc.on.doc"
+                ) {
+                    UIPasteboard.general.string = officialQQGroupID
+                    showCopiedQQGroup = true
+                }
+
+                actionRow(
+                    icon: "paperplane.fill",
+                    title: localized("Telegram 群"),
+                    detail: "t.me",
+                    trailingIcon: "arrow.up.right"
+                ) {
+                    if let url = telegramGroupURL {
+                        openURL(url)
+                    }
+                }
+            }
+
+            Section(
+                header: Text(localized("政策與協議")),
+                footer: Text(localized("使用書源、第三方服務與未來付費功能前，請先閱讀相關條款。"))
+            ) {
+                actionRow(
+                    icon: "hand.raised.fill",
+                    title: localized("隱私權政策"),
+                    detail: localized("本機資料、同步與第三方來源說明"),
+                    trailingIcon: "arrow.up.right"
+                ) {
+                    if let url = privacyPolicyURL {
+                        openURL(url)
+                    }
+                }
+
+                actionRow(
                     icon: "doc.text.fill",
                     title: localized("使用者協議"),
                     detail: localized("使用規則、第三方內容與責任邊界"),
-                    url: userAgreementURL
-                )
+                    trailingIcon: "arrow.up.right"
+                ) {
+                    if let url = userAgreementURL {
+                        openURL(url)
+                    }
+                }
 
-                legalDocumentRow(
+                actionRow(
                     icon: "creditcard.fill",
                     title: localized("付費服務條款"),
                     detail: localized("未來付費功能、訂閱、退款與 Apple 付款規則"),
-                    url: paidTermsURL
-                )
+                    trailingIcon: "arrow.up.right"
+                ) {
+                    if let url = paidTermsURL {
+                        openURL(url)
+                    }
+                }
             }
         }
-        .navigationTitle(localized("使用者協議"))
+        .navigationTitle(localized("關於 Yuedu Reader"))
         .toolbarTitleDisplayMode(.inline)
+        .alert(localized("已複製"), isPresented: $showCopiedQQGroup) {
+            Button(localized("好"), role: .cancel) {}
+        } message: {
+            Text(String(format: localized("已複製 QQ 群號：%@"), officialQQGroupID))
+        }
     }
 
-    private func legalDocumentRow(
+    private func actionRow(
         icon: String,
         title: String,
         detail: String,
-        url: URL?
+        trailingIcon: String,
+        action: @escaping () -> Void
     ) -> some View {
-        Button {
-            if let url {
-                openURL(url)
-            }
-        } label: {
+        Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.system(size: 18, weight: .medium))
@@ -375,7 +367,7 @@ private struct LegalAgreementsView: View {
 
                 Spacer(minLength: 12)
 
-                Image(systemName: "arrow.up.right")
+                Image(systemName: trailingIcon)
                     .font(DSFont.caption)
                     .foregroundColor(DSColor.textSecondary)
             }

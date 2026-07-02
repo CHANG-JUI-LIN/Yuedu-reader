@@ -596,6 +596,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
                     ctx.addPath(path.cgPath)
                     ctx.fillPath()
                 }
+                if let backgroundImage = s.backgroundImage {
+                    drawBoxBackgroundImage(backgroundImage, in: ctx, rect: borderRect, radius: radius)
+                }
                 if hasBorder {
                     if let borderColor = s.borderTopColor ?? s.borderLeftColor ?? s.borderRightColor ?? s.borderBottomColor {
                         ctx.setStrokeColor(borderColor.cgColor)
@@ -610,6 +613,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
                 if let fillColor = s.backgroundFillColor {
                     ctx.setFillColor(fillColor.cgColor)
                     ctx.fill(borderRect)
+                }
+                if let backgroundImage = s.backgroundImage {
+                    drawBoxBackgroundImage(backgroundImage, in: ctx, rect: borderRect, radius: 0)
                 }
                 if s.borderTopWidth > 0 {
                     let lineW = s.borderTopWidth
@@ -653,6 +659,56 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             // Block images are drawn uniformly in Phase 3 (after flip-back) using UIImage.draw()
             ctx.restoreGState()
         }
+    }
+
+    /// Draws a block's CSS `background-image` inside its decoration box: fixed-size centered
+    /// (`background-size: 3em 3em; background-position: center`, duokan section-number frames),
+    /// stretched (`100% 100%` / `cover` frame borders), or tiled (`background-repeat: repeat`
+    /// textures). Runs in Phase 1, after the fill and before the border stroke — behind the text.
+    private nonisolated static func drawBoxBackgroundImage(
+        _ backgroundImage: HTMLAttributedStringBuilder.BlockRenderStyle.BackgroundImage,
+        in ctx: CGContext,
+        rect: CGRect,
+        radius: CGFloat
+    ) {
+        guard let image = backgroundImage.image, rect.width > 0.5, rect.height > 0.5 else { return }
+        ctx.saveGState()
+        if radius > 0 {
+            ctx.addPath(UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath)
+            ctx.clip()
+        } else {
+            ctx.clip(to: rect)
+        }
+        UIGraphicsPushContext(ctx)
+        if backgroundImage.repeats {
+            let tile = backgroundImage.size ?? image.size
+            if tile.width > 0.5, tile.height > 0.5 {
+                var y = rect.minY
+                while y < rect.maxY {
+                    var x = rect.minX
+                    while x < rect.maxX {
+                        image.draw(in: CGRect(x: x, y: y, width: tile.width, height: tile.height))
+                        x += tile.width
+                    }
+                    y += tile.height
+                }
+            }
+        } else if backgroundImage.stretches || backgroundImage.size == nil {
+            image.draw(in: rect)
+        } else if let size = backgroundImage.size {
+            let drawSize = CGSize(
+                width: min(size.width, rect.width),
+                height: min(size.height, rect.height)
+            )
+            image.draw(in: CGRect(
+                x: rect.minX + (rect.width - drawSize.width) / 2,
+                y: rect.minY + (rect.height - drawSize.height) / 2,
+                width: drawSize.width,
+                height: drawSize.height
+            ))
+        }
+        UIGraphicsPopContext()
+        ctx.restoreGState()
     }
 
     // Calculates the starting x and width for border rendering based on style.width and textAlign

@@ -392,7 +392,7 @@ extension HTMLAttributedStringBuilder {
         }
         return IRShimBuildResult(
             attributedString: attributed,
-            imagePage: await imagePage(from: ast),
+            imagePage: background == nil ? await imagePage(from: ast) : nil,
             pageBackgroundImage: background,
             pageBackgroundImageSource: backgroundImageSource(from: ast),
             anchorOffsets: anchorOffsets(in: attributed)

@@ -30,6 +30,9 @@ final class HTMLAttributedStringBuilder {
     static let pageBreakAttribute = NSAttributedString.Key("ReaderForcedPageBreak")
     /// Marker attribute preserving HTML5 semantic element identity through CoreText rendering.
     static let semanticTagAttribute = NSAttributedString.Key("ReaderHTMLSemanticTag")
+    /// Marker attribute for paragraph ranges inside compact author-layout blocks (for example
+    /// 多看-style chat threads). The paginator must not inflate zero spacing on these ranges.
+    static let compactBlockSpacingAttribute = NSAttributedString.Key("ReaderCompactBlockSpacing")
     /// IPA pronunciation hint parsed from SSML/PLS metadata for system TTS.
     static let ipaPronunciationAttribute = NSAttributedString.Key("ReaderIPAPronunciation")
     /// Marker attribute for unsupported interactive EPUB objects rendered as graceful placeholders.
@@ -167,6 +170,12 @@ final class HTMLAttributedStringBuilder {
         var verticalAlign: VerticalAlign
         var isBlock: Bool
         var backgroundImage: String?
+        /// Resolved CSS `background-size` in points (e.g. `3em 3em`). nil = intrinsic size.
+        var backgroundImageSize: CGSize? = nil
+        /// `background-size: 100% 100%` / `cover` — stretch to fill the decoration box.
+        var backgroundImageStretches: Bool = false
+        /// `background-repeat: repeat` — tile the image across the decoration box.
+        var backgroundImageRepeats: Bool = false
         var backgroundFillColor: UIColor?
         var width: CGFloat?
         var height: CGFloat?
@@ -265,6 +274,18 @@ final class HTMLAttributedStringBuilder {
             let paddingRight: CGFloat
         }
 
+        /// CSS `background-image` on a decorated block — drawn inside the decoration box
+        /// (between the fill and the border), behind the block's text.
+        struct BackgroundImage {
+            let image: UIImage?
+            /// Resolved `background-size` in points. nil = intrinsic size.
+            let size: CGSize?
+            /// `100% 100%` / `cover` — stretch to fill the box.
+            let stretches: Bool
+            /// `background-repeat: repeat` — tile across the box.
+            let repeats: Bool
+        }
+
         let backgroundFillColor: UIColor?
         let borderTopWidth: CGFloat
         let borderBottomWidth: CGFloat
@@ -292,12 +313,14 @@ final class HTMLAttributedStringBuilder {
         /// shrink-to-fit box hugs its text exactly, immune to sub-pixel column-width rounding
         /// (otherwise a right-floated box drifts a few points and clips its last glyph).
         var hugsContent: Bool = false
+        var backgroundImage: BackgroundImage? = nil
 
         var hasVisualDecoration: Bool {
             backgroundFillColor != nil
                 || borderTopWidth > 0 || borderBottomWidth > 0
                 || borderLeftWidth > 0 || borderRightWidth > 0
                 || blockImage != nil
+                || backgroundImage?.image != nil
         }
 
         func withBackgroundFillColor(_ color: UIColor?) -> BlockRenderStyle {
@@ -324,7 +347,8 @@ final class HTMLAttributedStringBuilder {
                 blockImage: blockImage,
                 borderRadius: borderRadius,
                 avoidsPageBreakInside: avoidsPageBreakInside,
-                hugsContent: hugsContent
+                hugsContent: hugsContent,
+                backgroundImage: backgroundImage
             )
         }
     }
@@ -687,6 +711,11 @@ final class HTMLAttributedStringBuilder {
         let nonCollapsibleTop = paddingTop + borderTopWidth
         let nonCollapsibleBottom = paddingBottom + borderBottomWidth
 
+        var firstRange = NSRange()
+        let firstParagraph = output.attribute(.paragraphStyle, at: 0, effectiveRange: &firstRange) as? NSParagraphStyle
+        CoreTextPaginator.debugVerticalLog(
+            "reserveContainer beforeTop firstBefore=\(firstParagraph?.paragraphSpacingBefore ?? -1) firstAfter=\(firstParagraph?.paragraphSpacing ?? -1) range=(\(firstRange.location),\(firstRange.length)) collapsibleTop=\(collapsibleTop) collapsibleBottom=\(collapsibleBottom) nonCollapsibleTop=\(nonCollapsibleTop) nonCollapsibleBottom=\(nonCollapsibleBottom)"
+        )
         if collapsibleTop > 0 || nonCollapsibleTop > 0 {
             var range = NSRange(location: 0, length: 0)
             if let para = output.attribute(.paragraphStyle, at: 0, effectiveRange: &range) as? NSParagraphStyle,
@@ -694,6 +723,9 @@ final class HTMLAttributedStringBuilder {
                 let current = mutable.paragraphSpacingBefore
                 let collapsed = max(current, collapsibleTop)
                 mutable.paragraphSpacingBefore = collapsed + nonCollapsibleTop
+                CoreTextPaginator.debugVerticalLog(
+                    "reserveContainer top range=(\(range.location),\(range.length)) collapsible=\(collapsibleTop) nonCollapsible=\(nonCollapsibleTop) was=\(current) collapsed=\(collapsed) now=\(mutable.paragraphSpacingBefore)"
+                )
                 output.addAttribute(.paragraphStyle, value: mutable, range: range)
             }
         }
@@ -704,6 +736,9 @@ final class HTMLAttributedStringBuilder {
                 let current = mutable.paragraphSpacing
                 let collapsed = max(current, collapsibleBottom)
                 mutable.paragraphSpacing = collapsed + nonCollapsibleBottom
+                CoreTextPaginator.debugVerticalLog(
+                    "reserveContainer bottom range=(\(range.location),\(range.length)) collapsible=\(collapsibleBottom) nonCollapsible=\(nonCollapsibleBottom) was=\(current) collapsed=\(collapsed) now=\(mutable.paragraphSpacing)"
+                )
                 output.addAttribute(.paragraphStyle, value: mutable, range: range)
             }
         }
@@ -767,8 +802,8 @@ final class HTMLAttributedStringBuilder {
 
     static func makeRubyAnnotation(text: String) -> CTRubyAnnotation {
         let attributes: [CFString: Any] = [
-            kCTRubyAnnotationSizeFactorAttributeName: 0.7,
-            kCTRubyAnnotationScaleToFitAttributeName: true,
+            kCTRubyAnnotationSizeFactorAttributeName: 0.85,
+            kCTRubyAnnotationScaleToFitAttributeName: false,
         ]
         return CTRubyAnnotationCreateWithAttributes(
             .center,
@@ -1425,6 +1460,27 @@ final class HTMLAttributedStringBuilder {
             if style.backgroundFillColor == nil {
                 style.backgroundFillColor = parseEmbeddedColor(in: background)
             }
+        }
+        if let backgroundSize = declarations["background-size"] {
+            let value = backgroundSize.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let parts = value.split(whereSeparator: \.isWhitespace).map(String.init)
+            if value == "cover" || value == "contain" || parts.allSatisfy({ $0.hasSuffix("%") }) {
+                // Percentage sizes track the box, not a fixed length — approximate by stretching
+                // (the dominant duokan usage is `100% 100%` frame images).
+                style.backgroundImageStretches = true
+                style.backgroundImageSize = nil
+            } else if let first = parts.first,
+                      let w = resolveLength(first, currentFontSize: style.fontSize, rootFontSize: rootFontSize, relativeBase: style.fontSize, percentageBase: percentageBase) {
+                let h = parts.dropFirst().first.flatMap {
+                    resolveLength($0, currentFontSize: style.fontSize, rootFontSize: rootFontSize, relativeBase: style.fontSize, percentageBase: percentageBase)
+                } ?? w
+                style.backgroundImageStretches = false
+                style.backgroundImageSize = CGSize(width: max(1, w), height: max(1, h))
+            }
+        }
+        if let backgroundRepeat = declarations["background-repeat"] {
+            let value = backgroundRepeat.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            style.backgroundImageRepeats = value == "repeat" || value == "repeat-x" || value == "repeat-y"
         }
         if !handledProperties.contains("background-color"), let backgroundColor = declarations["background-color"],
            let resolved = parseColor(backgroundColor) {

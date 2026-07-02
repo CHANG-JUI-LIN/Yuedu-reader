@@ -14,6 +14,7 @@ pglite-debug.log
 
 # Local agent/skill tooling and backups
 .agents/
+.understand-anything/
 skills-lock.json
 *.bak
 
@@ -48,5 +49,8 @@ Pods/
 
 # Agent instructions (local dev only)
 AGENTS.md
+
+# Local SPM package forks (local dev only)
+LocalPackages/
 CLAUDE.md
 .codex/

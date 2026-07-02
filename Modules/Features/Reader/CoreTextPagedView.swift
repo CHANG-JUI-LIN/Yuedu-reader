@@ -16,6 +16,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     @Binding var currentPage: Int
     let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
     let onTapZone: (String) -> Void
+    var onFootnoteTap: (String) -> Void = { _ in }
 
     func makeUIViewController(context: Context) -> UIPageViewController {
         let adapterDescriptor = PageViewControllerPagingAdapterDescriptor(pageTurnStyle: pageTurnStyle)
@@ -234,7 +235,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             clearExternalTargetPosition: clearExternalTargetPosition,
             currentPage: $currentPage,
             onPageChanged: onPageChanged,
-            onTapZone: onTapZone
+            onTapZone: onTapZone,
+            onFootnoteTap: onFootnoteTap
         )
     }
 
@@ -250,6 +252,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         @Binding var currentPage: Int
         let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
         let onTapZone: (String) -> Void
+        let onFootnoteTap: (String) -> Void
         let isRTL: Bool
         var isDoublePageSpread: Bool
         let spreadGutter: CGFloat
@@ -438,7 +441,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
              clearExternalTargetPosition: @escaping () -> Void,
              currentPage: Binding<Int>,
              onPageChanged: @escaping (Int, CoreTextReadingPosition?) -> Void,
-             onTapZone: @escaping (String) -> Void) {
+             onTapZone: @escaping (String) -> Void,
+             onFootnoteTap: @escaping (String) -> Void) {
             self.currentEngine = engine
             self.pageTurnStyle = pageTurnStyle
             self.currentTheme = theme
@@ -452,6 +456,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             self._currentPage = currentPage
             self.onPageChanged = onPageChanged
             self.onTapZone = onTapZone
+            self.onFootnoteTap = onFootnoteTap
             if let externalTargetPosition {
                 self.currentCoreTextPosition = externalTargetPosition
                 self.pendingNavigation = PendingNavigation(target: .position(externalTargetPosition))
@@ -492,6 +497,15 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 }
             }
 
+            if let coreTextEngine = engine as? CoreTextPageEngine {
+                coreTextEngine.onFootnoteTap = { [weak self] note in
+                    DispatchQueue.main.async {
+                        guard let self, self.callbackEngineIdentifier == identifier else { return }
+                        self.onFootnoteTap(note)
+                    }
+                }
+            }
+
             if engine.currentPage > 0, currentPage == 0 {
                 handleNavigate(to: engine.currentPage)
             }
@@ -501,6 +515,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if let engine = callbackEngineObject as? any PageRenderingProvider {
                 engine.onChapterReady = nil
                 engine.onNavigateToPage = nil
+            }
+            if let coreTextEngine = callbackEngineObject as? CoreTextPageEngine {
+                coreTextEngine.onFootnoteTap = nil
             }
             callbackEngineObject = nil
             callbackEngineIdentifier = nil
@@ -947,11 +964,18 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
 
             if isPlaceholderDisplay(viewController) {
-                pendingNavigation = PendingNavigation(target: target)
-                print("[FlipTrace] navigation \(mode) placeholder target=\(pageDescription)")
-                return mode.allowsPlaceholder || allowsInteractiveChapterEndPlaceholder(target, mode: mode)
-                    ? viewController
-                    : nil
+                if mode.allowsPlaceholder || allowsInteractiveChapterEndPlaceholder(target, mode: mode) {
+                    pendingNavigation = PendingNavigation(target: target)
+                    print("[FlipTrace] navigation \(mode) placeholder target=\(pageDescription)")
+                    return viewController
+                }
+                // UIPageViewController data source MUST NOT return nil during an interactive
+                // gesture — that raises NSInvalidArgumentException.  Return the placeholder
+                // anyway; it will be replaced when the chapter layout completes.
+                if mode == .interactiveTurn {
+                    return viewController
+                }
+                return nil
             }
 
             pendingNavigation = nil

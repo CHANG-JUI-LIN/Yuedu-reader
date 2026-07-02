@@ -398,6 +398,7 @@
 "重新下載" = "Re-download";
 "重試" = "Retry";
 "閱讀亮度" = "Brightness";
+"閱讀" = "Yuedu Reader";
 "閱讀字數" = "Characters Read";
 "閱讀工具" = "Reading Tools";
 "閱讀時長" = "Reading Duration";
@@ -407,13 +408,19 @@
 "閱讀設定" = "Reading Settings";
 "閱讀進度" = "Progress";
 "關於" = "About";
+"關於 Yuedu Reader" = "About Yuedu Reader";
 "聯絡我們" = "Contact Us";
+"聯絡方式" = "Contact";
+"聯絡方式、版本資訊與政策協議" = "Contact, version, policies, and agreements";
+"版本資訊" = "Version Information";
 "電子郵件" = "Email";
 "官方 QQ 群" = "Official QQ Group";
 "Telegram 群" = "Telegram Group";
 "法律與政策" = "Legal and Policies";
+"政策與協議" = "Policies and Agreements";
 "使用書源、第三方服務與未來付費功能前，請先閱讀相關條款。" = "Read these terms before using book sources, third-party services, or future paid features.";
 "隱私權政策" = "Privacy Policy";
+"本機資料、同步與第三方來源說明" = "Local data, sync, and third-party source notes";
 "使用者協議" = "User Agreement";
 "付費服務條款" = "Paid Service Terms";
 "使用者協議與付費服務條款" = "User Agreement and Paid Terms";
@@ -971,3 +978,4 @@
 "刪除無法復原，請謹慎選擇" = "Deletion can't be undone — choose carefully";
 "檢測失敗的書源的處理方式" = "How to handle sources that fail the check";
 "回應時間超過閾值的書源會被停用" = "Sources slower than the threshold are disabled";
+"註釋" = "Note";

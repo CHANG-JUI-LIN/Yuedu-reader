@@ -124,6 +124,7 @@ struct ReaderView: View {
     // Source change
     @State private var showChangeSourceSheet = false
     @State private var reviewTarget: ReaderHTMLUtilities.ReviewTarget?
+    @State private var footnoteItem: ReaderFootnoteItem?
     @State private var coreTextExternalTargetVersion: UInt = 0
     @State private var bookDocument: (any BookDocument)? = nil
     @State private var contentProvider: (any BookContentProvider)? = nil
@@ -1051,6 +1052,9 @@ struct ReaderView: View {
                         default:
                             withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
                         }
+                    },
+                    onFootnoteTap: { text in
+                        footnoteItem = ReaderFootnoteItem(text: text)
                     }
                 )
                 .id(readerPageViewIdentity)
@@ -1474,6 +1478,11 @@ struct ReaderView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .sheet(item: $footnoteItem) { item in
+            ReaderFootnotePopupView(text: item.text) { footnoteItem = nil }
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
         .onChanged(of: showChangeSourceSheet) { show in
             if show { loadOtherOrigins() }
         }
@@ -1838,6 +1847,11 @@ struct ReaderView: View {
                 onInternalLinkTap: { href in
                     if let target = ReaderHTMLUtilities.reviewTarget(fromHref: href) {
                         reviewTarget = target
+                        return
+                    }
+                    // duokan popup footnote: show the note in place rather than jumping to the tail.
+                    if let note = FootnoteStore.text(spineIndex: currentChapterIndex, href: href) {
+                        footnoteItem = ReaderFootnoteItem(text: note)
                         return
                     }
                     Task {
@@ -3864,4 +3878,45 @@ private struct ReaderDownloadOptionsView: View {
     private func clampChapterCountToCurrentMaximum() {
         updateChapterCount(Int(chapterCount.rounded()))
     }
+}
+
+// MARK: - Footnote Popup
+
+/// Identifiable wrapper so a tapped duokan footnote can drive a `.sheet(item:)`.
+private struct ReaderFootnoteItem: Identifiable {
+    let id = UUID()
+    let text: String
+}
+
+/// In-place popup for a duokan footnote, shown when its reference marker is tapped.
+private struct ReaderFootnotePopupView: View {
+    let text: String
+    let onClose: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                Text(text)
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                    .lineSpacing(4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .padding(DSSpacing.lg)
+            }
+            .navigationTitle(localized("註釋"))
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(localized("完成"), action: onClose)
+                }
+            }
+        }
+    }
+}
+
+#Preview {
+    ReaderFootnotePopupView(
+        text: "◎近年來，韓國將長詞句縮短、化作簡稱的各式流行語風行一時，原先起自網絡族群，現在大眾的日常用語、會話中也日漸普及。"
+    ) {}
 }

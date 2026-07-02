@@ -5,7 +5,6 @@ final class CoreTextPaginator {
     static func debugVerticalLog(_ message: @autoclosure () -> String, verbose: Bool = false) {
     }
 
-
     struct RenderedAttachment {
         let rect: CGRect
         let image: UIImage
@@ -872,9 +871,22 @@ final class CoreTextPaginator {
 
         // Step 4: Ensure every range has a paragraph style with CJK-vertical defaults.
         mutable.enumerateAttribute(.paragraphStyle, in: fullRange, options: []) { value, range, _ in
+            let compactSpacing = mutable.attribute(
+                HTMLAttributedStringBuilder.compactBlockSpacingAttribute,
+                at: range.location,
+                effectiveRange: nil
+            ) != nil
             if let existing = value as? NSParagraphStyle {
                 let updated = existing.mutableCopy() as! NSMutableParagraphStyle
-                if updated.paragraphSpacing <= 0 {
+                if compactSpacing {
+                    let compactAfterMinimum: CGFloat = 0.01
+                    let compactMaximum = max(compactAfterMinimum, fontSize * 0.15)
+                    updated.paragraphSpacingBefore = min(max(0, updated.paragraphSpacingBefore), compactMaximum)
+                    updated.paragraphSpacing = max(
+                        compactAfterMinimum,
+                        min(max(updated.paragraphSpacing, 0), compactMaximum)
+                    )
+                } else if updated.paragraphSpacing <= 0 {
                     updated.paragraphSpacing = fontSize * 0.8
                 }
                 if updated.lineSpacing <= 0 {
@@ -885,7 +897,7 @@ final class CoreTextPaginator {
             } else {
                 let style = NSMutableParagraphStyle()
                 style.firstLineHeadIndent = fontSize * 2
-                style.paragraphSpacing = fontSize * 0.8
+                style.paragraphSpacing = compactSpacing ? 0.01 : fontSize * 0.8
                 style.lineSpacing = fontSize * 0.3
                 debugVerticalLog("EPUBFLOW prepare.paragraphStyle.fallback range=(\(range.location),\(range.length)) firstIndent=\(style.firstLineHeadIndent) headIndent=\(style.headIndent) lineSpacing=\(style.lineSpacing) paraSpacing=\(style.paragraphSpacing)", verbose: range.location > 256)
                 mutable.addAttribute(.paragraphStyle, value: style, range: range)

@@ -147,7 +147,12 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             )
         }
 
-        if let imagePage = await localBuilder.imagePage(from: ast) {
+        // Record duokan popup footnotes (`<li class="…footnote…" id="note_1">`) so a tap on the
+        // reference marker shows the note in place instead of jumping to the chapter tail.
+        FootnoteStore.index(body: ast, spineIndex: index)
+
+        let pageBackgroundImage = await localBuilder.pageBackgroundImage(from: ast)
+        if pageBackgroundImage == nil, let imagePage = await localBuilder.imagePage(from: ast) {
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: settings.fontSize),
                 .foregroundColor: themeTextColor,
@@ -194,7 +199,6 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
 
         let attributedString = await renderer.render(nodes)
         CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.rendered index=\(index) href=\(chapterHref) attrLen=\(attributedString.length) cssDetectedVerticalGlobal=\(cssDetectedVerticalWritingMode) prefix=\"\(debugTextPreview(attributedString.string))\"")
-        let pageBackgroundImage = await localBuilder.pageBackgroundImage(from: ast)
         let anchorOffsets = localBuilder.anchorOffsets(in: attributedString)
 
         return AttributedChapterBuildResult(

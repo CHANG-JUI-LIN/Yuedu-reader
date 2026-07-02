@@ -64,12 +64,13 @@ struct LegadoRequestParser {
         guard let value else { return nil }
         if value is NSNull { return nil }
         if let string = value as? String { return string }
-        if let data = try? JSONSerialization.data(withJSONObject: value),
-            let string = String(data: data, encoding: .utf8)
-        {
-            return string
+        guard JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value),
+              let string = String(data: data, encoding: .utf8)
+        else {
+            return String(describing: value)
         }
-        return String(describing: value)
+        return string
     }
 
     private static func stringDictionary(from value: Any?) -> [String: String] {

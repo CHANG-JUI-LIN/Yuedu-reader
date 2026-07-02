@@ -98,6 +98,7 @@ struct NodeAttributedStringRenderer {
         let processed = NSMutableAttributedString(attributedString: CJKTypographyProcessor.apply(to: result))
         relaxParagraphsContainingRubyAnnotations(processed)
         relaxParagraphsContainingTallRuns(processed)
+        normalizeCompactBlockSpacing(processed)
         return processed
     }
 
@@ -198,6 +199,35 @@ struct NodeAttributedStringRenderer {
             return await renderBlock(children: children, style: style, ctx: ctx, isHeading: false)
 
         case .listItem(let children, let bullet):
+            let hasBlockChildren = children.contains { child in
+                if case .paragraph = child { return true }
+                if case .block = child { return true }
+                if case .heading = child { return true }
+                if case .blockquote = child { return true }
+                return false
+            }
+            if hasBlockChildren {
+                // A structural item (`<li><p>…</p></li>`, e.g. duokan footnotes) renders its
+                // children as blocks so the paragraph keeps its own font/line-height/indent.
+                // The marker is spliced into the first paragraph: a marker run carrying the
+                // outer list context's attributes would force the list's (larger) line box
+                // onto the item's first line, and a separate trailing "\n" would add a full
+                // blank paragraph after every item.
+                let result = NSMutableAttributedString()
+                for child in children {
+                    result.append(await render(node: child, ctx: ctx))
+                }
+                guard result.length > 0 else { return result }
+                let first = result.attributes(at: 0, effectiveRange: nil)
+                var bulletAttrs: [NSAttributedString.Key: Any] = [:]
+                bulletAttrs[.font] = first[.font] ?? ctx.font
+                bulletAttrs[.foregroundColor] = first[.foregroundColor] ?? ctx.textColor
+                if let para = first[.paragraphStyle] {
+                    bulletAttrs[.paragraphStyle] = para
+                }
+                result.insert(NSAttributedString(string: bullet + "\u{2009}", attributes: bulletAttrs), at: 0)
+                return result
+            }
             let bulletStr = NSAttributedString(string: bullet + "\u{2009}", attributes: ctx.baseAttributes)
             let body = await renderInlineChildren(children, ctx: ctx)
             let result = NSMutableAttributedString()
@@ -321,7 +351,7 @@ struct NodeAttributedStringRenderer {
         // 1em margins compound with each bubble's spacing and the surrounding narration — and,
         // unlike a browser, this renderer does not collapse adjacent margins — so threads render far
         // looser than Apple Books / Readest. Detect the wrapper and tighten its own vertical margin.
-        let wrapsFloatBubble = children.contains { child in
+        let wrapsFloatBubble = style.compactChildBlockSpacing || children.contains { child in
             switch child {
             case .paragraph(_, let s), .block(_, _, let s): return s.floatSide != nil
             default: return false
@@ -339,18 +369,51 @@ struct NodeAttributedStringRenderer {
         for child in children {
             result.append(await render(node: child, ctx: childCtx))
         }
+        collapseAdjacentParagraphSpacing(
+            result,
+            honorStructuralInsets: !isVertical(style)
+        )
         let contentLength = result.length
+        // An empty block (`<div style="clear:both"></div>`, layout-only wrappers) is zero-height
+        // in CSS; emitting its trailing newline anyway would fabricate a visible blank paragraph.
+        // Keep the anchor line only when the block draws something by itself (a spacer with an
+        // explicit height, background, or border).
+        if contentLength == 0 {
+            let drawsSomething = style.height != nil
+                || style.backgroundColor != nil
+                || style.backgroundImageSource != nil
+                || style.borderTopWidth > 0 || style.borderBottomWidth > 0
+                || style.borderLeftWidth > 0 || style.borderRightWidth > 0
+            guard drawsSomething else { return result }
+        }
         if contentLength > 0 {
+            if wrapsFloatBubble {
+                markCompactBlockSpacing(
+                    result,
+                    range: NSRange(location: 0, length: contentLength),
+                    reason: "floatThread"
+                )
+            }
+            let backgroundImage = await loadBlockBackgroundImage(for: style)
             if hasBlockChildren {
-                applyContainerDecorationAttributes(style: style, to: result, range: NSRange(location: 0, length: contentLength))
-                var reserveStyle = style
-                if wrapsFloatBubble {
-                    reserveStyle.paragraphSpacingBefore = 0
-                    reserveStyle.paragraphSpacingAfter = 0
-                }
-                reserveContainerInsets(result, style: reserveStyle)
+                applyContainerDecorationAttributes(
+                    style: style,
+                    to: result,
+                    range: NSRange(location: 0, length: contentLength),
+                    backgroundImage: backgroundImage
+                )
+                // The thread wrapper keeps its authored outer margins (`div.tk { margin: 1em }`):
+                // the old spacing bloat came from fabricated blank paragraphs (see above), not from
+                // the margins themselves. Compact normalization preserves a compact range's first
+                // `paragraphSpacingBefore` / last `paragraphSpacing` so this reserve survives.
+                reserveContainerInsets(result, style: style)
             } else {
-                applyBlockDecorationAttributes(style: style, to: result, range: NSRange(location: 0, length: contentLength))
+                applyBlockDecorationAttributes(
+                    style: style,
+                    to: result,
+                    range: NSRange(location: 0, length: contentLength),
+                    backgroundImage: backgroundImage
+                )
             }
         }
         // Apply :first-letter styles to the first typographic letter unit
@@ -395,7 +458,13 @@ struct NodeAttributedStringRenderer {
         if !hasBlockChildren {
             applyBlockBreakContinuationIndent(result)
         }
-        result.append(NSAttributedString(string: "\n", attributes: childCtx.baseAttributes))
+        // Terminate the block's last paragraph — but only when the content doesn't already end
+        // with one. Block children each close their own paragraph, so unconditionally appending
+        // here gave every closed container an extra empty full-height paragraph, compounding
+        // per nesting level (the mysterious gaps after chat threads / callout boxes).
+        if !result.string.hasSuffix("\n") {
+            result.append(NSAttributedString(string: "\n", attributes: childCtx.baseAttributes))
+        }
         return result
     }
 
@@ -505,7 +574,7 @@ struct NodeAttributedStringRenderer {
         let defaultParagraphSpacing = isHeading ? config.paragraphSpacing * 0.6 : config.paragraphSpacing
         let resolvedParagraphSpacing: CGFloat
         if ctx.compactBlockSpacing {
-            resolvedParagraphSpacing = min(max(0, style.paragraphSpacingAfter), ctx.baseSize * 0.15)
+            resolvedParagraphSpacing = 0
         } else if style.paragraphSpacingAfter > 0 {
             resolvedParagraphSpacing = style.paragraphSpacingAfter
         } else {
@@ -521,7 +590,10 @@ struct NodeAttributedStringRenderer {
         if isVertical(style) {
             para.paragraphSpacingBefore = 0
         } else {
-            para.paragraphSpacingBefore = style.paragraphSpacingBefore + style.paddingTop
+            let resolvedParagraphSpacingBefore = ctx.compactBlockSpacing
+                ? min(max(0, style.paragraphSpacingBefore), ctx.baseSize * 0.15)
+                : style.paragraphSpacingBefore
+            para.paragraphSpacingBefore = resolvedParagraphSpacingBefore + style.paddingTop
         }
         let cumulativeMarginLeft = ctx.inheritedBlockMarginLeft + style.marginLeft
         let cumulativeMarginRight = ctx.inheritedBlockMarginRight + style.marginRight
@@ -1400,6 +1472,109 @@ struct NodeAttributedStringRenderer {
         }
     }
 
+    private func markCompactBlockSpacing(
+        _ attributedString: NSMutableAttributedString,
+        range: NSRange,
+        reason: String
+    ) {
+        guard attributedString.length > 0, range.length > 0 else { return }
+        let boundedRange = NSIntersectionRange(
+            range,
+            NSRange(location: 0, length: attributedString.length)
+        )
+        guard boundedRange.length > 0 else { return }
+        attributedString.addAttribute(
+            HTMLAttributedStringBuilder.compactBlockSpacingAttribute,
+            value: reason,
+            range: boundedRange
+        )
+    }
+
+    private func normalizeCompactBlockSpacing(_ attributedString: NSMutableAttributedString) {
+        guard attributedString.length > 0 else { return }
+        let fullRange = NSRange(location: 0, length: attributedString.length)
+        let nsString = attributedString.string as NSString
+        let compactAfterMinimum: CGFloat = 0.01
+        let compactSpacingMaximum = max(compactAfterMinimum, config.baseFontSize * 0.15)
+        var processedParagraphs = Set<String>()
+
+        attributedString.enumerateAttribute(
+            HTMLAttributedStringBuilder.compactBlockSpacingAttribute,
+            in: fullRange,
+            options: []
+        ) { value, effectiveRange, _ in
+            guard value != nil else { return }
+            var location = effectiveRange.location
+            let effectiveEnd = min(attributedString.length, NSMaxRange(effectiveRange))
+            while location < effectiveEnd {
+                let rawParagraphRange = nsString.paragraphRange(
+                    for: NSRange(location: location, length: 0)
+                )
+                let paragraphRange = NSIntersectionRange(rawParagraphRange, fullRange)
+                guard paragraphRange.length > 0 else {
+                    location += 1
+                    continue
+                }
+                let key = "\(paragraphRange.location):\(paragraphRange.length)"
+                if processedParagraphs.insert(key).inserted {
+                    // The compact range's first `paragraphSpacingBefore` and last
+                    // `paragraphSpacing` are the thread's spacing against the *outside*
+                    // (its authored container margin + padding reserve) — only spacing
+                    // between paragraphs inside the thread is compacted.
+                    normalizeCompactParagraphSpacing(
+                        attributedString,
+                        paragraphRange: paragraphRange,
+                        maxSpacing: compactSpacingMaximum,
+                        afterMinimum: compactAfterMinimum,
+                        preserveBefore: rawParagraphRange.location <= effectiveRange.location,
+                        preserveAfter: NSMaxRange(rawParagraphRange) >= effectiveEnd,
+                        reason: String(describing: value!)
+                    )
+                }
+                let next = max(location + 1, NSMaxRange(rawParagraphRange))
+                location = next
+            }
+        }
+    }
+
+    private func normalizeCompactParagraphSpacing(
+        _ attributedString: NSMutableAttributedString,
+        paragraphRange: NSRange,
+        maxSpacing: CGFloat,
+        afterMinimum: CGFloat,
+        preserveBefore: Bool = false,
+        preserveAfter: Bool = false,
+        reason: String
+    ) {
+        // A paragraph that begins/ends a decorated container run carries that container's
+        // padding+border in its reserved spacing; the drawn box extends outward by exactly
+        // that amount, so the cap must leave it intact or the border overlaps neighbours.
+        let structural = Self.containerNonCollapsibleInsets(in: attributedString, paragraphRange: paragraphRange)
+        let beforeCap = maxSpacing + structural.top
+        let afterCap = maxSpacing + structural.bottom
+        var updates: [(range: NSRange, style: NSMutableParagraphStyle, oldBefore: CGFloat, oldAfter: CGFloat)] = []
+        attributedString.enumerateAttribute(.paragraphStyle, in: paragraphRange, options: []) { value, range, _ in
+            guard let style = value as? NSParagraphStyle else { return }
+            let mutable = style.mutableCopy() as! NSMutableParagraphStyle
+            let oldBefore = mutable.paragraphSpacingBefore
+            let oldAfter = mutable.paragraphSpacing
+            let newBefore = preserveBefore ? oldBefore : min(max(0, oldBefore), beforeCap)
+            let newAfter = preserveAfter
+                ? max(afterMinimum, oldAfter)
+                : max(afterMinimum, min(max(oldAfter, 0), afterCap))
+            guard abs(newBefore - oldBefore) > 0.001 || abs(newAfter - oldAfter) > 0.001 else {
+                return
+            }
+            mutable.paragraphSpacingBefore = newBefore
+            mutable.paragraphSpacing = newAfter
+            updates.append((range, mutable, oldBefore, oldAfter))
+        }
+
+        for update in updates {
+            attributedString.addAttribute(.paragraphStyle, value: update.style, range: update.range)
+        }
+    }
+
     private func makeFloatPlaceholder(
         side: RenderFloatSide,
         image: UIImage?,
@@ -1705,7 +1880,8 @@ struct NodeAttributedStringRenderer {
         style: RenderStyle,
         to attributedString: NSMutableAttributedString,
         range: NSRange,
-        blockImage: HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage? = nil
+        blockImage: HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage? = nil,
+        backgroundImage: HTMLAttributedStringBuilder.BlockRenderStyle.BackgroundImage? = nil
     ) {
         guard range.length > 0 else { return }
         if let backgroundColor = style.backgroundColor?.uiColor {
@@ -1715,7 +1891,11 @@ struct NodeAttributedStringRenderer {
                 range: range
             )
         }
-        guard let blockRenderStyle = makeBlockRenderStyle(from: style, blockImage: blockImage) else { return }
+        guard let blockRenderStyle = makeBlockRenderStyle(
+            from: style,
+            blockImage: blockImage,
+            backgroundImage: backgroundImage
+        ) else { return }
         let blockID = UUID().uuidString
         attributedString.addAttribute(
             HTMLAttributedStringBuilder.blockRenderStyleAttribute,
@@ -1733,7 +1913,8 @@ struct NodeAttributedStringRenderer {
         style: RenderStyle,
         to attributedString: NSMutableAttributedString,
         range: NSRange,
-        hugsContent: Bool = false
+        hugsContent: Bool = false,
+        backgroundImage: HTMLAttributedStringBuilder.BlockRenderStyle.BackgroundImage? = nil
     ) {
         guard range.length > 0 else { return }
         // A descendant (e.g. a chat-bubble `<div>` floated inside a plain wrapper `<div>`) may
@@ -1750,7 +1931,11 @@ struct NodeAttributedStringRenderer {
                 range: range
             )
         }
-        guard let blockRenderStyle = makeBlockRenderStyle(from: style, hugsContent: hugsContent) else { return }
+        guard let blockRenderStyle = makeBlockRenderStyle(
+            from: style,
+            hugsContent: hugsContent,
+            backgroundImage: backgroundImage
+        ) else { return }
         let blockID = "container-" + UUID().uuidString
         attributedString.addAttribute(
             HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
@@ -1771,6 +1956,60 @@ struct NodeAttributedStringRenderer {
     /// never reserved as vertical space — the drawn box then overlapped the neighbouring
     /// block above and below (and adjacent callouts collided). Fold that inset back into
     /// the first child's `paragraphSpacingBefore` and the last child's `paragraphSpacing`.
+    /// CSS margin collapse: CoreText adds `paragraphSpacing + nextParagraphSpacingBefore`
+    /// between adjacent paragraphs, but the CSS box model collapses these into
+    /// `max(margin-bottom, margin-top)`. Collapse every adjacent pair in the result
+    /// so rendered spacing matches the authored CSS.
+    private func collapseAdjacentParagraphSpacing(
+        _ result: NSMutableAttributedString,
+        honorStructuralInsets: Bool = true
+    ) {
+        guard result.length > 0 else { return }
+        let ns = result.string as NSString
+        let firstParaRange = ns.paragraphRange(for: NSRange(location: 0, length: 0))
+        let firstEnd = firstParaRange.location + firstParaRange.length
+        guard firstEnd < ns.length else { return }
+
+        var prevRange = firstParaRange
+        var currLoc = firstEnd
+        while currLoc < ns.length {
+            let currRange = ns.paragraphRange(for: NSRange(location: currLoc, length: 0))
+            guard currRange.location > prevRange.location else { break }
+
+            let prevAttrRange = NSRange(location: prevRange.location, length: prevRange.length)
+            let currAttrRange = NSRange(location: currRange.location, length: currRange.length)
+
+            if let prevPara = result.attribute(.paragraphStyle, at: prevRange.location, effectiveRange: nil) as? NSParagraphStyle,
+               let currPara = result.attribute(.paragraphStyle, at: currRange.location, effectiveRange: nil) as? NSParagraphStyle {
+                let spacing = prevPara.paragraphSpacing
+                let spacingBefore = currPara.paragraphSpacingBefore
+                if spacing > 0 || spacingBefore > 0 {
+                    // CSS collapses *margins* only. A decorated container's padding+border share
+                    // of the reserved spacing (folded in by `reserveContainerBlockInsets`) is
+                    // structural: the drawn box extends outward by exactly that amount, so moving
+                    // it to the neighbour would make the border overlap the neighbour's line
+                    // (chat-bubble borders slicing through the sender name above them).
+                    let prevStructural = honorStructuralInsets
+                        ? min(spacing, Self.containerNonCollapsibleInsets(in: result, paragraphRange: prevRange).bottom)
+                        : 0
+                    let currStructural = honorStructuralInsets
+                        ? min(spacingBefore, Self.containerNonCollapsibleInsets(in: result, paragraphRange: currRange).top)
+                        : 0
+                    let collapsed = max(spacing - prevStructural, spacingBefore - currStructural)
+                    if let prevMutable = prevPara.mutableCopy() as? NSMutableParagraphStyle,
+                       let currMutable = currPara.mutableCopy() as? NSMutableParagraphStyle {
+                        prevMutable.paragraphSpacing = prevStructural + collapsed
+                        currMutable.paragraphSpacingBefore = currStructural
+                        result.addAttribute(.paragraphStyle, value: prevMutable, range: prevAttrRange)
+                        result.addAttribute(.paragraphStyle, value: currMutable, range: currAttrRange)
+                    }
+                }
+            }
+            prevRange = currRange
+            currLoc = currRange.location + currRange.length
+        }
+    }
+
     private func reserveContainerInsets(_ result: NSMutableAttributedString, style: RenderStyle) {
         guard !isVertical(style),
               style.borderTopWidth > 0 || style.borderBottomWidth > 0
@@ -1785,6 +2024,44 @@ struct NodeAttributedStringRenderer {
             borderTopWidth: style.borderTopWidth,
             borderBottomWidth: style.borderBottomWidth
         )
+    }
+
+    /// The padding+border share of a paragraph's reserved vertical spacing, present when the
+    /// paragraph begins (`top`) or ends (`bottom`) a decorated container's attribute run.
+    /// `reserveContainerBlockInsets` folds these into `paragraphSpacingBefore`/`paragraphSpacing`,
+    /// and `drawBlockRenderables` extends the drawn box outward by exactly this amount — so
+    /// margin-collapse and compact-spacing normalization must treat the share as structural.
+    private static func containerNonCollapsibleInsets(
+        in attributedString: NSAttributedString,
+        paragraphRange: NSRange
+    ) -> (top: CGFloat, bottom: CGFloat) {
+        guard paragraphRange.length > 0,
+              NSMaxRange(paragraphRange) <= attributedString.length
+        else { return (0, 0) }
+        let full = NSRange(location: 0, length: attributedString.length)
+        var top: CGFloat = 0
+        var bottom: CGFloat = 0
+        var startRun = NSRange()
+        if let style = attributedString.attribute(
+            HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
+            at: paragraphRange.location,
+            longestEffectiveRange: &startRun,
+            in: full
+        ) as? HTMLAttributedStringBuilder.BlockRenderStyle,
+           startRun.location == paragraphRange.location {
+            top = style.paddingTop + style.borderTopWidth
+        }
+        var endRun = NSRange()
+        if let style = attributedString.attribute(
+            HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
+            at: NSMaxRange(paragraphRange) - 1,
+            longestEffectiveRange: &endRun,
+            in: full
+        ) as? HTMLAttributedStringBuilder.BlockRenderStyle,
+           NSMaxRange(endRun) == NSMaxRange(paragraphRange) {
+            bottom = style.paddingBottom + style.borderBottomWidth
+        }
+        return (top, bottom)
     }
 
     /// Renders a CSS-floated text block (`div.ot` / `div.se` instant-message bubble) as a
@@ -1814,13 +2091,16 @@ struct NodeAttributedStringRenderer {
 
         // Pass 1 — render at full width purely to measure the text's natural (unwrapped) extent.
         let measureCtx = applyBlockStyle(style, to: ctx, isHeading: false)
-        let measured = await renderFloatBubbleChildren(children, ctx: measureCtx)
+        var compactMeasureCtx = measureCtx
+        compactMeasureCtx.compactBlockSpacing = true
+        let measured = await renderFloatBubbleChildren(children, ctx: compactMeasureCtx)
         let naturalWidth = naturalParagraphWidth(of: measured)
         let textWidth = max(minTextWidth, min(maxTextWidth, naturalWidth))
 
         // Pass 2 — re-render with the text pinned to the float side at the measured width. The
         // child paragraphs inherit these block margins, which become their head/tail indents.
         var bubbleCtx = applyBlockStyle(style, to: ctx, isHeading: false)
+        bubbleCtx.compactBlockSpacing = true
         let addedLeft: CGFloat
         let addedRight: CGFloat
         switch side {
@@ -1838,6 +2118,11 @@ struct NodeAttributedStringRenderer {
             attributedString: await renderFloatBubbleChildren(children, ctx: bubbleCtx)
         )
         guard result.length > 0 else { return result }
+        markCompactBlockSpacing(
+            result,
+            range: NSRange(location: 0, length: result.length),
+            reason: "floatBubble"
+        )
 
         // Chat bubbles read left-aligned, never justified. The book's `p { text-align: justify }`
         // cascades into `.tk p`, and a justified line is stretched to the column width — which would
@@ -1910,10 +2195,26 @@ struct NodeAttributedStringRenderer {
         return maxWidth
     }
 
+    /// Loads the block's CSS background-image (decorative frame / texture) for the decoration box.
+    private func loadBlockBackgroundImage(
+        for style: RenderStyle
+    ) async -> HTMLAttributedStringBuilder.BlockRenderStyle.BackgroundImage? {
+        guard let src = style.backgroundImageSource, !src.isEmpty,
+              let image = await config.imageLoader?(src)
+        else { return nil }
+        return HTMLAttributedStringBuilder.BlockRenderStyle.BackgroundImage(
+            image: image,
+            size: style.backgroundImageSize,
+            stretches: style.backgroundImageStretches,
+            repeats: style.backgroundImageRepeats
+        )
+    }
+
     private func makeBlockRenderStyle(
         from style: RenderStyle,
         blockImage: HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage? = nil,
-        hugsContent: Bool = false
+        hugsContent: Bool = false,
+        backgroundImage: HTMLAttributedStringBuilder.BlockRenderStyle.BackgroundImage? = nil
     ) -> HTMLAttributedStringBuilder.BlockRenderStyle? {
         let renderStyle = HTMLAttributedStringBuilder.BlockRenderStyle(
             backgroundFillColor: style.backgroundColor?.uiColor,
@@ -1938,7 +2239,8 @@ struct NodeAttributedStringRenderer {
             blockImage: blockImage,
             borderRadius: style.borderRadius,
             avoidsPageBreakInside: style.avoidsPageBreakInside,
-            hugsContent: hugsContent
+            hugsContent: hugsContent,
+            backgroundImage: backgroundImage
         )
         return renderStyle.hasVisualDecoration ? renderStyle : nil
     }

@@ -157,7 +157,20 @@ public struct RenderStyle: Sendable {
     public var isInlineAnnotation: Bool
     public var isVerticalWritingMode: Bool
     public var floatSide: RenderFloatSide?
+    /// A block whose child paragraphs should not inherit reader default paragraph spacing.
+    /// Used for EPUB chat-thread wrappers containing floated message bubbles.
+    public var compactChildBlockSpacing: Bool
+    public var avoidsPageBreakInside: Bool
     public var ssmlIPA: String?
+    /// CSS `background-image` URL on a block (decorative frames / textures). The renderer loads
+    /// it and the block-decoration system draws it behind the block's text (Phase 1, before glyphs).
+    public var backgroundImageSource: String?
+    /// Resolved CSS `background-size` in points (e.g. `3em 3em`). nil = intrinsic size.
+    public var backgroundImageSize: CGSize?
+    /// `background-size: 100% 100%` / `cover` — stretch to fill the decoration box.
+    public var backgroundImageStretches: Bool
+    /// `background-repeat: repeat` — tile the image across the decoration box.
+    public var backgroundImageRepeats: Bool
 
     public init(
         fontSizeMultiplier: CGFloat = 1.0,
@@ -203,7 +216,13 @@ public struct RenderStyle: Sendable {
         isVerticalWritingMode: Bool = false,
         borderRadius: CGFloat = 0,
         floatSide: RenderFloatSide? = nil,
-        ssmlIPA: String? = nil
+        compactChildBlockSpacing: Bool = false,
+        avoidsPageBreakInside: Bool = false,
+        ssmlIPA: String? = nil,
+        backgroundImageSource: String? = nil,
+        backgroundImageSize: CGSize? = nil,
+        backgroundImageStretches: Bool = false,
+        backgroundImageRepeats: Bool = false
     ) {
         self.fontSizeMultiplier = fontSizeMultiplier
         self.fontFamilies = fontFamilies
@@ -248,7 +267,13 @@ public struct RenderStyle: Sendable {
         self.isInlineAnnotation = isInlineAnnotation
         self.isVerticalWritingMode = isVerticalWritingMode
         self.floatSide = floatSide
+        self.compactChildBlockSpacing = compactChildBlockSpacing
+        self.avoidsPageBreakInside = avoidsPageBreakInside
         self.ssmlIPA = ssmlIPA
+        self.backgroundImageSource = backgroundImageSource
+        self.backgroundImageSize = backgroundImageSize
+        self.backgroundImageStretches = backgroundImageStretches
+        self.backgroundImageRepeats = backgroundImageRepeats
     }
 
     /// No style override (default for inline cases).

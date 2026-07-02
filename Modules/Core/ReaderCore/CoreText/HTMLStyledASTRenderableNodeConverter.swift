@@ -71,6 +71,9 @@ private extension HTMLAttributedStringBuilder.ElementNode {
         let myFontSize = resolvedStyle.fontSize
         let mappedChildren = HTMLStyledASTRenderableNodeConverter.mapChildren(children, parentFontSize: myFontSize)
         var style = RenderStyle.from(resolvedStyle: resolvedStyle, parentFontSize: parentFontSize)
+        if containsFloatDescendant || classes.contains("tk") {
+            style.compactChildBlockSpacing = true
+        }
         let ssmlAlphabet = attributes["ssml:alphabet"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if let ssmlIPA = attributes["ssml:ph"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !ssmlIPA.isEmpty,
@@ -123,6 +126,11 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             }
 
         case "p", "div", "body":
+            if tag == "body" {
+                // The body's background-image is rendered per-page by the pageBackgroundImage
+                // pipeline (cover-sized); drawing it again as a block decoration would double it.
+                style.backgroundImageSource = nil
+            }
             node = .paragraph(mappedChildren, style: style)
 
         case "section", "article", "main", "header", "footer", "nav", "aside", "figure", "figcaption", "address":
@@ -248,6 +256,13 @@ private extension HTMLAttributedStringBuilder.ElementNode {
         }.joined()
     }
 
+    private var containsFloatDescendant: Bool {
+        children.contains { child in
+            guard case .element(let element) = child else { return false }
+            return element.resolvedStyle.floatSide != nil || element.containsFloatDescendant
+        }
+    }
+
     private var isRubyAnnotationElement: Bool {
         tag == "rt" || tag == "rp"
     }
@@ -356,7 +371,12 @@ private extension RenderStyle {
                 case .left: return .left
                 case .right: return .right
                 }
-            }
+            },
+            avoidsPageBreakInside: s.avoidsPageBreakInside,
+            backgroundImageSource: s.backgroundImage,
+            backgroundImageSize: s.backgroundImageSize,
+            backgroundImageStretches: s.backgroundImageStretches,
+            backgroundImageRepeats: s.backgroundImageRepeats
         )
     }
 }

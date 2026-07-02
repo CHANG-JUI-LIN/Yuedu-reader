@@ -60,6 +60,8 @@ enum CloudflareChallengePresenter {
 
     private static func _present(url: URL) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
+            var resumed = false
+
             guard
                 let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                 let rootVC = windowScene.windows.first?.rootViewController
@@ -73,12 +75,16 @@ enum CloudflareChallengePresenter {
             let challengeView = CloudflareChallengeView(
                 targetURL: url,
                 onChallengePassed: { html in
+                    guard !resumed else { return }
+                    resumed = true
                     hostVCRef?.dismiss(animated: true) {
                         hostVCRef = nil
                         continuation.resume(returning: html)
                     }
                 },
                 onCancel: {
+                    guard !resumed else { return }
+                    resumed = true
                     hostVCRef?.dismiss(animated: true) {
                         hostVCRef = nil
                         continuation.resume(throwing: FetchError.httpError(503))

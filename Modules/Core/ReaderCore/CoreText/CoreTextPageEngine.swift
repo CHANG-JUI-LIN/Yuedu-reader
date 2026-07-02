@@ -144,6 +144,9 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private var textAnnotations: [CoreTextTextAnnotation] = []
     var onChapterReady: ((Int?) -> Void)?
     var onNavigateToPage: ((Int) -> Void)?
+    /// Fired instead of `onNavigateToPage` when a tapped internal link resolves to a duokan
+    /// popup footnote (`FootnoteStore`) — the note text, ready to show in place.
+    var onFootnoteTap: ((String) -> Void)?
 
     deinit {
         chapterByteScanTask?.cancel()
@@ -976,6 +979,11 @@ _layouts[spineIndex] = _layouts[spineIndex]?.withUpdatedColors(textColor: textCo
         let vc = CoreTextPageViewController()
         vc.onInternalLinkTap = { [weak self] href in
             guard let self else { return }
+            // duokan popup footnote: show the note in place instead of paging to the chapter tail.
+            if let note = FootnoteStore.text(spineIndex: spineIndex, href: href) {
+                self.onFootnoteTap?(note)
+                return
+            }
             Task { @MainActor in
                 if let url = Self.externalURL(from: href) {
                     await UIApplication.shared.open(url)

@@ -42,6 +42,326 @@ struct EPUBRenderingTests {
         #expect(src == "logo.png")
     }
 
+    @Test func bodyBackgroundTakesPriorityOverSingleImagePage() async {
+        let background = UIGraphicsImageRenderer(size: CGSize(width: 12, height: 12)).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 12, height: 12))
+        }
+        let cover = UIGraphicsImageRenderer(size: CGSize(width: 12, height: 18)).image { context in
+            UIColor.systemRed.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 12, height: 18))
+        }
+
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { source in
+            switch source {
+            case "bg.webp": background
+            case "cover.webp": cover
+            default: nil
+            }
+        }
+
+        let result = await builder.build(html: """
+        <html>
+          <head>
+            <style>
+              body.intro {
+                background-image: url("bg.webp");
+                background-size: cover;
+              }
+            </style>
+          </head>
+          <body class="intro"><img src="cover.webp"/></body>
+        </html>
+        """, config: testHTMLConfig())
+
+        #expect(result.pageBackgroundImage != nil)
+        #expect(result.pageBackgroundImageSource == "bg.webp")
+        #expect(result.imagePage == nil)
+    }
+
+    @Test func pageBackgroundImageUsesCoverSizing() {
+        let rect = CoreTextPageView.backgroundImageRect(
+            for: CGSize(width: 100, height: 50),
+            in: CGRect(x: 0, y: 0, width: 50, height: 100)
+        )
+
+        #expect(abs(rect.minX + 75) < 0.001)
+        #expect(abs(rect.minY) < 0.001)
+        #expect(abs(rect.width - 200) < 0.001)
+        #expect(abs(rect.height - 100) < 0.001)
+    }
+
+    @Test func imageOnlyPageUsesFullRenderBounds() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 1080, height: 2400)).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1080, height: 2400))
+        }
+        let config = testHTMLConfig()
+        let attr = NSAttributedString(
+            string: "\u{FFFC}",
+            attributes: [.font: UIFont.systemFont(ofSize: config.fontSize)]
+        )
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: attr,
+            imagePage: HTMLAttributedStringBuilder.ImagePage(source: "cover.webp", image: image),
+            pageBackgroundImage: nil,
+            anchorOffsets: [:],
+            renderSize: CGSize(width: 944, height: 2048),
+            fontSize: config.fontSize,
+            contentInsets: .init(top: 140, left: 70, bottom: 120, right: 70)
+        )
+
+        let attachment = try #require(layout.blockAttachments[0]?.first)
+        #expect(attachment.rect.minY < 1)
+        #expect(attachment.rect.height > 2040)
+        #expect(attachment.rect.width > 900)
+        #expect(attachment.rect.minX < 24)
+    }
+
+    @Test func decoratedContainerKeepsOuterFrameWhenChildHasBlockDecoration() async throws {
+        let background = UIGraphicsImageRenderer(size: CGSize(width: 12, height: 24)).image { context in
+            UIColor.lightGray.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 12, height: 24))
+        }
+
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { source in source == "bg.webp" ? background : nil }
+
+        var config = testHTMLConfig()
+        config.renderWidth = 360
+        let result = await builder.build(html: """
+        <html>
+          <head>
+            <style>
+              body.intro {
+                background-image: url("bg.webp");
+                background-size: cover;
+              }
+              div.zzxx {
+                border: 1px #fff solid;
+                background-color: rgba(202, 202, 202, .28);
+                padding: 1em 2em;
+                margin: 2em 10%;
+              }
+              hr {
+                border: 0;
+                border-top: 1px dashed #000;
+                margin: 1em 0;
+              }
+            </style>
+          </head>
+          <body class="intro">
+            <div class="zzxx">
+              <p><ruby>制作信息<rt>Information</rt></ruby></p>
+              <hr/>
+              <p>版本：v1.0(2024.11.12)</p>
+            </div>
+          </body>
+        </html>
+        """, config: config)
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: result.attributedString,
+            imagePage: result.imagePage,
+            pageBackgroundImage: result.pageBackgroundImage,
+            anchorOffsets: result.anchorOffsets,
+            renderSize: CGSize(width: 428, height: 956),
+            fontSize: config.fontSize,
+            contentInsets: .init(top: 52, left: 24, bottom: 72, right: 24)
+        )
+
+        var frames: [CoreTextPaginator.RenderedBlockRenderable] = []
+        for renderables in layout.blockRenderables.values {
+            for renderable in renderables {
+                let hasFrame = renderable.imageAttachment == nil
+                    && renderable.style.borderTopWidth > 0
+                    && renderable.style.borderLeftWidth > 0
+                    && renderable.style.backgroundFillColor != nil
+                    && renderable.rect.width > 220
+                if hasFrame {
+                    frames.append(renderable)
+                }
+            }
+        }
+
+        #expect(!frames.isEmpty, "expected parent .zzxx frame, got \(layout.blockRenderables)")
+    }
+
+    // The thread wrapper keeps its authored outer margins (`div.tk { margin: 1em }`); the old
+    // spacing bloat came from fabricated blank paragraphs after every closed container, which
+    // renderBlock no longer emits. Inside the thread, spacing stays compact, and the bubble's
+    // padding+border share is structural (the drawn box extends outward by it), so it must
+    // survive margin collapse — otherwise the bubble border overlaps the sender name above.
+    @Test func chatBubbleWrapperKeepsAuthoredMarginsWithoutBlankParagraphs() async throws {
+        var config = testHTMLConfig()
+        config.renderWidth = 340
+        let result = await HTMLAttributedStringBuilder().build(html: """
+        <html>
+          <head>
+            <style>
+              p { text-indent: 2em; line-height: 130%; }
+              div.tk {
+                page-break-inside: avoid;
+                border: 1px solid transparent;
+                padding: 3px 7px;
+                margin: 1em 1em;
+                line-height: 1;
+              }
+              .tk p {
+                margin: 0;
+                font-size: .9em;
+                text-indent: 0;
+              }
+              div.ot {
+                border: 1px solid #000;
+                padding: 3px 7px;
+                margin: 3px auto 3px -7px;
+                display: inline-block;
+                border-radius: 0px 10px 10px;
+                background-color: #FFFF99;
+                float: left;
+              }
+            </style>
+          </head>
+          <body>
+            <p>就在这时，手机跳出了一条通知。</p>
+            <div class="tk">
+              <p>tls123</p>
+              <div class="ot"><p>谢谢你。</p></div>
+            </div>
+            <p>突如其来的讯息映入眼帘。</p>
+          </body>
+        </html>
+        """, config: config)
+
+        let nsString = result.attributedString.string as NSString
+        let nameRange = nsString.range(of: "tls123")
+        let bubbleRange = nsString.range(of: "谢谢你")
+        #expect(nameRange.location != NSNotFound)
+        #expect(bubbleRange.location != NSNotFound)
+        // No fabricated blank paragraphs anywhere (`</div>` no longer emits an extra "\n",
+        // and the empty `clear:both` div renders to nothing).
+        #expect(!result.attributedString.string.contains("\n\n"))
+        if nameRange.location != NSNotFound,
+           let nameStyle = result.attributedString.attribute(
+                .paragraphStyle,
+                at: nameRange.location,
+                effectiveRange: nil
+           ) as? NSParagraphStyle {
+            // The thread's outer margin is collapsed into the preceding paragraph's spacing.
+            #expect(nameStyle.paragraphSpacingBefore <= 5)
+            #expect(nameStyle.paragraphSpacing <= config.fontSize * 0.15 + 0.5)
+        }
+        if bubbleRange.location != NSNotFound,
+           let bubbleStyle = result.attributedString.attribute(
+                .paragraphStyle,
+                at: bubbleRange.location,
+                effectiveRange: nil
+           ) as? NSParagraphStyle {
+            // Before: only the bubble's structural padding+border (3+1) survives compacting.
+            #expect(bubbleStyle.paragraphSpacingBefore <= 8)
+            // After: authored `.tk` margin-bottom (1em) + its padding+border (3+1) are preserved
+            // on the thread's last paragraph — the thread↔body gap lives here now.
+            #expect(bubbleStyle.paragraphSpacing >= config.fontSize - 0.5)
+            #expect(bubbleStyle.paragraphSpacing <= config.fontSize + 4 + 0.5)
+        }
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: result.attributedString,
+            imagePage: result.imagePage,
+            pageBackgroundImage: result.pageBackgroundImage,
+            anchorOffsets: result.anchorOffsets,
+            renderSize: CGSize(width: 390, height: 844),
+            fontSize: config.fontSize,
+            contentInsets: .init(top: 52, left: 24, bottom: 72, right: 24)
+        )
+
+        let nameLine = try #require(firstLineRect(containing: "tls123", in: layout))
+        let bubbleLine = try #require(firstLineRect(containing: "谢谢你", in: layout))
+        let afterLine = try #require(firstLineRect(containing: "突如其来", in: layout))
+        #expect(nameLine.pageIndex == bubbleLine.pageIndex)
+        #expect(bubbleLine.pageIndex == afterLine.pageIndex)
+        #expect(bubbleLine.rect.minY - nameLine.rect.maxY < config.fontSize * 2)
+        #expect(afterLine.rect.minY - bubbleLine.rect.maxY < config.fontSize * 6)
+    }
+
+    // duokan section-number headings draw a decorative frame via CSS background-image
+    // (`h3 { background-image: url(边框.webp); background-size: 3em 3em; ... }`). The IR
+    // pipeline must carry it into the block decoration box, positioned at the heading's
+    // flow position (behind its text) — not dropped, and not pinned to the content top.
+    @Test func headingBackgroundFrameImageFollowsFlowPosition() async throws {
+        let frame = UIGraphicsImageRenderer(size: CGSize(width: 120, height: 120)).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 120, height: 120))
+        }
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { source in source == "frame.webp" ? frame : nil }
+        var config = testHTMLConfig()
+        config.renderWidth = 392
+        let result = await builder.build(html: """
+        <html>
+          <head>
+            <style>
+              h3 {
+                color: #fff;
+                font-size: 1em;
+                text-align: center;
+                margin: 0 auto;
+                background-image: url("frame.webp");
+                background-size: 3em 3em;
+                background-position: center center;
+                background-repeat: no-repeat;
+                padding: 15%;
+              }
+            </style>
+          </head>
+          <body>
+            <p>正文第一段，位于小节编号之前。</p>
+            <h3>壹</h3>
+            <p>正文第二段，位于小节编号之后。</p>
+          </body>
+        </html>
+        """, config: config)
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: result.attributedString,
+            imagePage: result.imagePage,
+            pageBackgroundImage: result.pageBackgroundImage,
+            anchorOffsets: result.anchorOffsets,
+            renderSize: CGSize(width: 428, height: 956),
+            fontSize: config.fontSize,
+            contentInsets: .init(top: 52, left: 24, bottom: 72, right: 12)
+        )
+
+        let frameBoxes = layout.blockRenderables
+            .flatMap { pageIndex, renderables in
+                renderables.compactMap { renderable -> (pageIndex: Int, rect: CGRect)? in
+                    guard renderable.style.backgroundImage?.image != nil else { return nil }
+                    return (pageIndex, renderable.rect)
+                }
+            }
+        #expect(frameBoxes.count == 1, "expected the h3 frame box, got \(frameBoxes)")
+        let frameBox = try #require(frameBoxes.first)
+        let headingLine = try #require(firstLineRect(containing: "壹", in: layout))
+        #expect(frameBox.pageIndex == headingLine.pageIndex)
+        #expect(
+            abs(frameBox.rect.midY - headingLine.rect.midY) < 60,
+            "frame box should wrap the heading's flow position; box=\(frameBox.rect) line=\(headingLine.rect)"
+        )
+        let firstBodyLine = try #require(firstLineRect(containing: "正文第一段", in: layout))
+        #expect(
+            frameBox.pageIndex > firstBodyLine.pageIndex
+                || frameBox.rect.minY > firstBodyLine.rect.minY,
+            "frame box must not be pinned above the preceding paragraph"
+        )
+    }
+
     // MARK: - Percentage length resolution
 
     @Test func resolvePercentRelativeToBase() {
@@ -156,6 +476,230 @@ struct EPUBRenderingTests {
         #expect(foundMathAttachment)
     }
 
+    @Test func decoratedPhoneContainersFollowFlowPositions() async throws {
+        let topBar = UIGraphicsImageRenderer(size: CGSize(width: 1000, height: 78)).image { context in
+            UIColor.darkGray.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1000, height: 78))
+        }
+        let bottomBar = UIGraphicsImageRenderer(size: CGSize(width: 1000, height: 78)).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1000, height: 78))
+        }
+
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { source in
+            switch source {
+            case "top.webp": topBar
+            case "bottom.webp": bottomBar
+            default: nil
+            }
+        }
+
+        var config = testHTMLConfig()
+        config.renderWidth = 392
+        let result = await builder.build(html: """
+        <html>
+          <head>
+            <style>
+              p { text-indent: 2em; line-height: 130%; }
+              p.tt {
+                text-indent: 0;
+                text-align: center;
+                margin: 2em 0;
+              }
+              div.ph {
+                width: 80%;
+                page-break-inside: avoid;
+                border: 1px solid #000;
+                margin: 1em auto;
+                background-color: rgba(255, 255, 255, 0.28);
+              }
+              .ph p {
+                text-indent: 2em;
+                margin-left: 1em;
+                margin-right: 1em;
+              }
+              .center { text-align: center; text-indent: 0; }
+              img.width100 { width: 100%; }
+            </style>
+          </head>
+          <body>
+            <p class="tt">在灭亡的世界中存活的三种方法</p>
+            <div class="ph">
+              <img class="width100" src="top.webp"/>
+              <p>想要在灭亡的世界中存活下来，有三种方法。事到如今我也忘了是哪几种，但有件事是肯定的。</p>
+              <p class="center">《在灭亡的世界中存活的三种方法》<br/>完结</p>
+              <img class="width100" src="bottom.webp"/>
+            </div>
+            <p>显示着网络小说页面的老旧智慧型手机，画面好像卷动得特别吃力。</p>
+            <p>也就是说，小说已经结束了。</p>
+            <div class="ph">
+              <img class="width100" src="top.webp"/>
+              <p class="center">《在灭亡的世界中存活的三种方法》</p>
+              <p class="center">作者：tls123</p>
+              <p class="center">共3,149话</p>
+              <img class="width100" src="bottom.webp"/>
+            </div>
+            <p>长达三千一百四十九话的长篇奇幻小说。</p>
+          </body>
+        </html>
+        """, config: config)
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: result.attributedString,
+            imagePage: result.imagePage,
+            pageBackgroundImage: result.pageBackgroundImage,
+            anchorOffsets: result.anchorOffsets,
+            renderSize: CGSize(width: 428, height: 956),
+            fontSize: config.fontSize,
+            contentInsets: .init(top: 52, left: 24, bottom: 72, right: 12)
+        )
+
+        let phoneBoxes = layout.blockRenderables
+            .sorted { $0.key < $1.key }
+            .flatMap { pageIndex, renderables in
+                renderables.compactMap { renderable -> (pageIndex: Int, rect: CGRect)? in
+                    guard renderable.imageAttachment == nil,
+                          renderable.style.borderTopWidth > 0,
+                          renderable.style.borderBottomWidth > 0,
+                          renderable.rect.width > 280
+                    else { return nil }
+                    return (pageIndex, renderable.rect)
+                }
+            }
+            .sorted {
+                if $0.pageIndex != $1.pageIndex { return $0.pageIndex < $1.pageIndex }
+                return $0.rect.minY < $1.rect.minY
+            }
+
+        #expect(phoneBoxes.count >= 2, "expected at least two phone containers, got \(phoneBoxes)")
+        let firstBox = try #require(phoneBoxes.first)
+        let secondBox = try #require(phoneBoxes.dropFirst().first)
+        #expect(
+            secondBox.pageIndex > firstBox.pageIndex || secondBox.rect.minY > firstBox.rect.maxY + 8,
+            "phone containers should follow flow order, got \(phoneBoxes)"
+        )
+        #expect(
+            Set(phoneBoxes.map { Int($0.rect.minY.rounded()) }).count > 1,
+            "phone containers are pinned to the same page-top Y: \(phoneBoxes)"
+        )
+
+        let contentWidth = layout.renderSize.width - layout.contentInsets.left - layout.contentInsets.right
+        let expectedPhoneWidth = contentWidth * 0.8
+        for phoneBox in phoneBoxes.prefix(2) {
+            #expect(
+                abs(phoneBox.rect.width - expectedPhoneWidth) < 3,
+                "phone container should keep CSS width:80%; expected \(expectedPhoneWidth), got \(phoneBox)"
+            )
+        }
+
+        let phoneTextLine = try #require(firstLineRect(containing: "想要在灭亡", in: layout))
+        #expect(phoneTextLine.pageIndex == firstBox.pageIndex)
+        #expect(
+            phoneTextLine.rect.minX >= firstBox.rect.minX - 2,
+            "phone text should lay out inside the .ph frame; line=\(phoneTextLine.rect) frame=\(firstBox.rect)"
+        )
+        #expect(
+            phoneTextLine.rect.maxX <= firstBox.rect.maxX + 2,
+            "phone text should not spill past the .ph frame; line=\(phoneTextLine.rect) frame=\(firstBox.rect)"
+        )
+
+        let phoneImages = (layout.inlineAttachments.values.flatMap { $0 }
+            + layout.blockAttachments.values.flatMap { $0 })
+            .filter { attachment in
+                Int(attachment.originalSize.width.rounded()) == 1000
+                    && Int(attachment.originalSize.height.rounded()) == 78
+            }
+        #expect(phoneImages.count >= 4, "expected phone top/bottom images, got \(phoneImages)")
+        for attachment in phoneImages.prefix(4) {
+            #expect(
+                attachment.rect.width <= expectedPhoneWidth + 3,
+                "phone image should resolve width:100% against the .ph container, got \(attachment.rect)"
+            )
+        }
+    }
+
+    @Test func pageBreakInsideAvoidKeepsPhoneContainerTogether() async throws {
+        let topBar = UIGraphicsImageRenderer(size: CGSize(width: 1000, height: 78)).image { context in
+            UIColor.darkGray.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1000, height: 78))
+        }
+        let bottomBar = UIGraphicsImageRenderer(size: CGSize(width: 1000, height: 78)).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1000, height: 78))
+        }
+
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { source in
+            switch source {
+            case "top.webp": topBar
+            case "bottom.webp": bottomBar
+            default: nil
+            }
+        }
+
+        var config = testHTMLConfig()
+        config.renderWidth = 312
+        let result = await builder.build(html: """
+        <html>
+          <head>
+            <style>
+              p { text-indent: 2em; line-height: 130%; }
+              div.ph {
+                width: 80%;
+                page-break-inside: avoid;
+                border: 1px solid #000;
+                margin: 1em auto;
+              }
+              .ph p {
+                text-indent: 2em;
+                margin-left: 1em;
+                margin-right: 1em;
+              }
+              .center { text-align: center; text-indent: 0; }
+              img.width100 { width: 100%; }
+            </style>
+          </head>
+          <body>
+            <p>前文占位占位占位占位占位占位占位占位占位占位占位占位。</p>
+            <p>前文占位占位占位占位占位占位占位占位占位占位占位占位。</p>
+            <p>前文占位占位占位占位占位占位占位占位占位占位占位占位。</p>
+            <div class="ph">
+              <img class="width100" src="top.webp"/>
+              <p>想要在灭亡的世界中存活下来，有三种方法。事到如今我也忘了是哪几种，但有件事是肯定的。</p>
+              <p class="center">《在灭亡的世界中存活的三种方法》<br/>完结</p>
+              <img class="width100" src="bottom.webp"/>
+            </div>
+            <p>后文继续。</p>
+          </body>
+        </html>
+        """, config: config)
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: result.attributedString,
+            imagePage: result.imagePage,
+            pageBackgroundImage: result.pageBackgroundImage,
+            anchorOffsets: result.anchorOffsets,
+            renderSize: CGSize(width: 348, height: 360),
+            fontSize: config.fontSize,
+            contentInsets: .init(top: 28, left: 18, bottom: 32, right: 18)
+        )
+
+        let avoidRanges = avoidPageBreakInsideRanges(in: layout.attributedString)
+        #expect(!avoidRanges.isEmpty, "expected page-break-inside: avoid ranges")
+        let boundaries = layout.pageRanges.dropLast().map { $0.location + $0.length }
+        for boundary in boundaries {
+            for avoidRange in avoidRanges {
+                #expect(
+                    !(avoidRange.location < boundary && boundary < avoidRange.location + avoidRange.length),
+                    "page boundary \(boundary) should not split avoid range \(avoidRange); pageRanges=\(layout.pageRanges)"
+                )
+            }
+        }
+    }
+
     @Test func htmlBuilderRendersAlignStarMathMLTableAsAttachment() async {
         let attributed = await EPUBTestFixtures.renderIR(html: """
         <html><body>
@@ -227,6 +771,37 @@ struct EPUBRenderingTests {
             }
         }
         #expect(foundMathAttachment)
+    }
+
+    @Test func rubyParagraphReservesAnnotationLineHeight() async throws {
+        var config = testHTMLConfig()
+        config.fontSize = 20
+        config.lineHeightMultiple = 1.0
+        config.paragraphSpacing = 0
+
+        let attributed = await EPUBTestFixtures.renderIR(html: """
+        <html>
+          <head>
+            <style>
+              p { line-height: 1; margin: 0; }
+              rt { font-size: 0.8em; }
+            </style>
+          </head>
+          <body>
+            <p><ruby>制作信息<rt>Information</rt></ruby></p>
+          </body>
+        </html>
+        """, config: config)
+
+        let text = attributed.string as NSString
+        let baseRange = text.range(of: "制作信息")
+        #expect(baseRange.location != NSNotFound)
+        let paragraphStyle = try #require(
+            attributed.attribute(.paragraphStyle, at: baseRange.location, effectiveRange: nil) as? NSParagraphStyle
+        )
+
+        #expect(paragraphStyle.minimumLineHeight >= 30)
+        #expect(paragraphStyle.maximumLineHeight == 0)
     }
 
     @Test func htmlBuilderEmitsEPUBMediaAttachmentForAudioVideo() async {
@@ -836,6 +1411,107 @@ private func firstMathImageRunInfo(in attributedString: NSAttributedString) -> I
         stop.pointee = true
     }
     return result
+}
+
+private func firstLineRect(
+    containing needle: String,
+    in layout: CoreTextPaginator.ChapterLayout,
+    pageIndex: Int
+) -> CGRect? {
+    guard pageIndex < layout.pageRanges.count else { return nil }
+    let range = layout.pageRanges[pageIndex]
+    let contentPathRect = CoreTextPaginator.coreTextContentPathRect(
+        renderSize: layout.renderSize,
+        contentInsets: layout.contentInsets,
+        fontSize: layout.fontSize,
+        writingMode: layout.writingMode
+    )
+    let frame = CTFramesetterCreateFrame(
+        layout.framesetter,
+        range,
+        CGPath(rect: contentPathRect, transform: nil),
+        nil
+    )
+    let lines = CTFrameGetLines(frame) as! [CTLine]
+    var origins = [CGPoint](repeating: .zero, count: lines.count)
+    CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+    let nsString = layout.attributedString.string as NSString
+    for (index, line) in lines.enumerated() {
+        let lineRange = CTLineGetStringRange(line)
+        guard lineRange.location >= 0,
+              lineRange.location + lineRange.length <= layout.attributedString.length
+        else { continue }
+        let text = nsString.substring(
+            with: NSRange(location: lineRange.location, length: lineRange.length)
+        )
+        guard text.contains(needle) else { continue }
+
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
+        let origin = origins[index]
+        return CGRect(
+            x: contentPathRect.minX + origin.x,
+            y: layout.renderSize.height - (contentPathRect.minY + origin.y + ascent),
+            width: width,
+            height: ascent + descent
+        )
+    }
+    return nil
+}
+
+private func firstLineRect(
+    containing needle: String,
+    in layout: CoreTextPaginator.ChapterLayout
+) -> (pageIndex: Int, rect: CGRect)? {
+    for pageIndex in layout.pageRanges.indices {
+        if let rect = firstLineRect(containing: needle, in: layout, pageIndex: pageIndex) {
+            return (pageIndex, rect)
+        }
+    }
+    return nil
+}
+
+private func avoidPageBreakInsideRanges(in attributedString: NSAttributedString) -> [NSRange] {
+    guard attributedString.length > 0 else { return [] }
+    var rangesByID: [String: NSRange] = [:]
+
+    func collect(styleKey: NSAttributedString.Key, idKey: NSAttributedString.Key) {
+        attributedString.enumerateAttribute(
+            styleKey,
+            in: NSRange(location: 0, length: attributedString.length),
+            options: []
+        ) { value, range, _ in
+            guard let style = value as? HTMLAttributedStringBuilder.BlockRenderStyle,
+                  style.avoidsPageBreakInside,
+                  let blockID = attributedString.attribute(
+                      idKey,
+                      at: range.location,
+                      effectiveRange: nil
+                  ) as? String
+            else { return }
+
+            if let existing = rangesByID[blockID] {
+                rangesByID[blockID] = NSUnionRange(existing, range)
+            } else {
+                rangesByID[blockID] = range
+            }
+        }
+    }
+
+    collect(
+        styleKey: HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
+        idKey: HTMLAttributedStringBuilder.containerBlockRenderIDAttribute
+    )
+    collect(
+        styleKey: HTMLAttributedStringBuilder.blockRenderStyleAttribute,
+        idKey: HTMLAttributedStringBuilder.blockRenderIDAttribute
+    )
+
+    return rangesByID.values.sorted {
+        if $0.location != $1.location { return $0.location < $1.location }
+        return $0.length < $1.length
+    }
 }
 
 private func testHTMLConfig() -> HTMLAttributedStringBuilder.Config {
