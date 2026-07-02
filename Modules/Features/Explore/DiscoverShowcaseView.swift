@@ -704,6 +704,6 @@ private struct DiscoverCategoryView: View {
     return NavigationStack {
         DiscoverShowcaseView(discover: vm, onOpenBook: { _ in })
             .navigationTitle("探索")
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayModeInlineLarge()
     }
 }

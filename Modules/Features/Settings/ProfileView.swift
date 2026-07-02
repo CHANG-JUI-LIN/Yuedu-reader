@@ -157,7 +157,7 @@ struct SettingsView: View {
                     }
                 }
             .navigationTitle(localized("設定"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayModeInlineLarge()
             .sheet(isPresented: $showSourceList) {
                 BookSourceListView()
                     .environmentObject(store)

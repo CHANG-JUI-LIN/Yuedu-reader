@@ -163,3 +163,18 @@ enum DSAnimation {
     /// Slow expansion
     static let slow = Animation.easeInOut(duration: 0.4)
 }
+
+// MARK: - View Extensions
+
+extension View {
+    /// Applies `.inlineLarge` toolbar title display mode on iOS 18+,
+    /// falling back to `.large` on earlier versions where `.inlineLarge` is unavailable.
+    @ViewBuilder
+    func toolbarTitleDisplayModeInlineLarge() -> some View {
+        if #available(iOS 18, *) {
+            self.toolbarTitleDisplayMode(.inlineLarge)
+        } else {
+            self.toolbarTitleDisplayMode(.large)
+        }
+    }
+}

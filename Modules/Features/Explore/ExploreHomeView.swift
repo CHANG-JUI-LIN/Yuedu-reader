@@ -52,7 +52,7 @@ struct ExploreHomeView: View {
             }
             .background(DSColor.groupedBackground.ignoresSafeArea())
             .navigationTitle(localized("探索"))
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarTitleDisplayModeInlineLarge()
             .toolbar {
                 if tab == .discover, discover.hasExploreSource {
                     ToolbarItem(placement: .topBarTrailing) { sourceMenu }
