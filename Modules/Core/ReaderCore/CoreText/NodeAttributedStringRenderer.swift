@@ -118,13 +118,21 @@ struct NodeAttributedStringRenderer {
 
         case .horizontalRule(let style):
             var attrs = ctx.baseAttributes
+            let resolvedLineWidth = style.borderTopWidth > 0 ? style.borderTopWidth
+                : style.borderBottomWidth > 0 ? style.borderBottomWidth
+                : style.height.flatMap { $0 > 0 ? $0 : nil }
+            if style.borderExplicitlyNone, resolvedLineWidth == nil {
+                return horizontalRuleSpacer(attributes: attrs, style: style, ctx: ctx)
+            }
+            let lineStyle = style.borderTopWidth > 0 ? style.borderTopStyle
+                : style.borderBottomWidth > 0 ? style.borderBottomStyle
+                : style.borderTopStyle ?? style.borderBottomStyle
             let hrStyle = HTMLAttributedStringBuilder.HRDividerStyle(
                 color: style.borderTopColor?.uiColor
                     ?? style.borderBottomColor?.uiColor
                     ?? style.color?.uiColor
                     ?? style.backgroundColor?.uiColor,
-                lineWidth: style.borderTopWidth > 0 ? style.borderTopWidth
-                    : style.height.flatMap { $0 > 0 ? $0 : nil },
+                lineWidth: resolvedLineWidth,
                 ruleWidth: style.width,
                 ruleWidthPercent: style.rawWidthPercent,
                 marginLeft: style.marginLeft,
@@ -140,18 +148,11 @@ struct NodeAttributedStringRenderer {
                     case .natural: return .natural
                     }
                 }(),
-                isHorizontallyCentered: style.isHorizontallyCentered
+                isHorizontallyCentered: style.isHorizontallyCentered,
+                lineDash: Self.hrLineDash(for: lineStyle, lineWidth: resolvedLineWidth ?? 0.5)
             )
             attrs[HTMLAttributedStringBuilder.hrDividerAttribute] = hrStyle
-            let fontSize = ctx.font.pointSize
-            let hrPara = NSMutableParagraphStyle()
-            hrPara.minimumLineHeight = fontSize
-            hrPara.maximumLineHeight = fontSize
-            hrPara.paragraphSpacingBefore = fontSize * 0.5
-            hrPara.paragraphSpacing = fontSize * 0.5
-            hrPara.baseWritingDirection = style.baseWritingDirection
-            attrs[.paragraphStyle] = hrPara
-            return NSAttributedString(string: "\n", attributes: attrs)
+            return horizontalRuleSpacer(attributes: attrs, style: style, ctx: ctx)
 
         case .pageBreak:
             return HTMLAttributedStringBuilder.makePageBreakMarker(attributes: ctx.baseAttributes)
@@ -304,6 +305,40 @@ struct NodeAttributedStringRenderer {
                 range: NSRange(location: 0, length: min(1, rendered.length))
             )
             return rendered
+        }
+    }
+
+    private func horizontalRuleSpacer(
+        attributes: [NSAttributedString.Key: Any],
+        style: RenderStyle,
+        ctx: RenderContext
+    ) -> NSAttributedString {
+        var attrs = attributes
+        let fontSize = ctx.font.pointSize
+        let hrPara = NSMutableParagraphStyle()
+        hrPara.minimumLineHeight = fontSize
+        hrPara.maximumLineHeight = fontSize
+        hrPara.paragraphSpacingBefore = fontSize * 0.5
+        hrPara.paragraphSpacing = fontSize * 0.5
+        hrPara.baseWritingDirection = style.baseWritingDirection
+        let leftInset = max(0, ctx.inheritedBlockMarginLeft + style.marginLeft)
+        let rightInset = max(0, ctx.inheritedBlockMarginRight + style.marginRight)
+        hrPara.headIndent = leftInset
+        hrPara.firstLineHeadIndent = leftInset
+        hrPara.tailIndent = rightInset > 0 ? -rightInset : 0
+        attrs[.paragraphStyle] = hrPara
+        return NSAttributedString(string: "\n", attributes: attrs)
+    }
+
+    private static func hrLineDash(for lineStyle: String?, lineWidth: CGFloat) -> [CGFloat] {
+        let width = max(0.5, lineWidth)
+        switch lineStyle?.lowercased() {
+        case "dashed":
+            return [max(3, width * 4), max(2, width * 3)]
+        case "dotted":
+            return [width, max(width, width * 2)]
+        default:
+            return []
         }
     }
 

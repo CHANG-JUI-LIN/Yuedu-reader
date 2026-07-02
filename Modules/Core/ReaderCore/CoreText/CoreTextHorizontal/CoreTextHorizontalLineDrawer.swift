@@ -260,6 +260,9 @@ enum CoreTextHorizontalLineDrawer {
         ctx.saveGState()
         ctx.setStrokeColor((hr.color ?? .separator).cgColor)
         ctx.setLineWidth(hr.lineWidth ?? 0.5)
+        if !hr.lineDash.isEmpty {
+            ctx.setLineDash(phase: 0, lengths: hr.lineDash)
+        }
         ctx.move(to: CGPoint(x: startX, y: origin.y))
         ctx.addLine(to: CGPoint(x: startX + ruleWidth, y: origin.y))
         ctx.strokePath()

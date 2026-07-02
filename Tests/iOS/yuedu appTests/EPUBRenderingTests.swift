@@ -22,7 +22,8 @@ struct EPUBRenderingTests {
             inheritedBlockMarginLeft: 0,
             inheritedBlockMarginRight: 0,
             alignment: .natural,
-            isHorizontallyCentered: false
+            isHorizontallyCentered: false,
+            lineDash: []
         )
         #expect(key.rawValue == "ReaderHRDivider")
         #expect(style.lineWidth == 1.0)
@@ -188,7 +189,23 @@ struct EPUBRenderingTests {
             }
         }
 
-        #expect(!frames.isEmpty, "expected parent .zzxx frame, got \(layout.blockRenderables)")
+        let frame = try #require(frames.first, "expected parent .zzxx frame, got \(layout.blockRenderables)")
+        #expect(frame.rect.width < 300, "expected .zzxx content box to keep CSS side margins, got \(frame.rect)")
+        #expect(colorMatches(frame.style.borderTopColor, red: 1, green: 1, blue: 1, alpha: 1))
+        #expect(colorMatches(frame.style.backgroundFillColor, red: 202.0 / 255.0, green: 202.0 / 255.0, blue: 202.0 / 255.0, alpha: 0.28))
+
+        var hrStyles: [HTMLAttributedStringBuilder.HRDividerStyle] = []
+        result.attributedString.enumerateAttribute(
+            HTMLAttributedStringBuilder.hrDividerAttribute,
+            in: NSRange(location: 0, length: result.attributedString.length),
+            options: []
+        ) { value, _, _ in
+            if let style = value as? HTMLAttributedStringBuilder.HRDividerStyle {
+                hrStyles.append(style)
+            }
+        }
+        let hrStyle = try #require(hrStyles.first)
+        #expect(!hrStyle.lineDash.isEmpty, "expected border-top: 1px dashed #000 to keep a dash pattern")
     }
 
     // The thread wrapper keeps its authored outer margins (`div.tk { margin: 1em }`); the old
@@ -1516,6 +1533,28 @@ private func avoidPageBreakInsideRanges(in attributedString: NSAttributedString)
         if $0.location != $1.location { return $0.location < $1.location }
         return $0.length < $1.length
     }
+}
+
+private func colorMatches(
+    _ color: UIColor?,
+    red: CGFloat,
+    green: CGFloat,
+    blue: CGFloat,
+    alpha: CGFloat,
+    tolerance: CGFloat = 0.03
+) -> Bool {
+    guard let color else { return false }
+    var actualRed: CGFloat = 0
+    var actualGreen: CGFloat = 0
+    var actualBlue: CGFloat = 0
+    var actualAlpha: CGFloat = 0
+    guard color.getRed(&actualRed, green: &actualGreen, blue: &actualBlue, alpha: &actualAlpha) else {
+        return false
+    }
+    return abs(actualRed - red) <= tolerance
+        && abs(actualGreen - green) <= tolerance
+        && abs(actualBlue - blue) <= tolerance
+        && abs(actualAlpha - alpha) <= tolerance
 }
 
 private func testHTMLConfig() -> HTMLAttributedStringBuilder.Config {

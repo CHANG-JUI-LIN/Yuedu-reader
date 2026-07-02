@@ -198,6 +198,10 @@ final class HTMLAttributedStringBuilder {
         var borderBottomColor: UIColor?
         var borderLeftColor: UIColor?
         var borderRightColor: UIColor?
+        var borderTopStyle: String?
+        var borderBottomStyle: String?
+        var borderLeftStyle: String?
+        var borderRightStyle: String?
         var opacity: CGFloat
         /// CSS letter-spacing (px value). nil means use default tracking.
         var letterSpacing: CGFloat?
@@ -262,6 +266,7 @@ final class HTMLAttributedStringBuilder {
         let inheritedBlockMarginRight: CGFloat
         let alignment: NSTextAlignment
         let isHorizontallyCentered: Bool
+        let lineDash: [CGFloat]
     }
 
     struct BlockRenderStyle {
@@ -1217,6 +1222,10 @@ final class HTMLAttributedStringBuilder {
             borderBottomColor: nil,
             borderLeftColor: nil,
             borderRightColor: nil,
+            borderTopStyle: nil,
+            borderBottomStyle: nil,
+            borderLeftStyle: nil,
+            borderRightStyle: nil,
             opacity: 1,
             letterSpacing: parent.letterSpacing,
             hasCSSColor: parent.hasCSSColor,
@@ -1279,6 +1288,10 @@ final class HTMLAttributedStringBuilder {
             borderBottomColor: nil,
             borderLeftColor: nil,
             borderRightColor: nil,
+            borderTopStyle: nil,
+            borderBottomStyle: nil,
+            borderLeftStyle: nil,
+            borderRightStyle: nil,
             opacity: 1,
             letterSpacing: nil,
             hasCSSColor: false,
@@ -1649,6 +1662,12 @@ final class HTMLAttributedStringBuilder {
             default:      style.verticalAlign = .baseline
             }
         }
+        if let border = declarations["border"] {
+            applyBorderShorthand(border, edge: .top, to: &style)
+            applyBorderShorthand(border, edge: .bottom, to: &style)
+            applyBorderShorthand(border, edge: .left, to: &style)
+            applyBorderShorthand(border, edge: .right, to: &style)
+        }
         if let borderTop = declarations["border-top"] {
             applyBorderShorthand(borderTop, edge: .top, to: &style)
         }
@@ -1660,12 +1679,6 @@ final class HTMLAttributedStringBuilder {
         }
         if let borderRight = declarations["border-right"] {
             applyBorderShorthand(borderRight, edge: .right, to: &style)
-        }
-        if let border = declarations["border"] {
-            applyBorderShorthand(border, edge: .top, to: &style)
-            applyBorderShorthand(border, edge: .bottom, to: &style)
-            applyBorderShorthand(border, edge: .left, to: &style)
-            applyBorderShorthand(border, edge: .right, to: &style)
         }
         if let borderTopWidth = declarations["border-top-width"],
            let value = resolveLength(
@@ -1718,12 +1731,11 @@ final class HTMLAttributedStringBuilder {
         if let borderWidth = declarations["border-width"] {
             applyBorderWidthShorthand(borderWidth, to: &style, rootFontSize: rootFontSize)
         }
-        // `border-style: none/hidden` removes the border regardless of any width set elsewhere.
-        applyBorderStyleNone(declarations["border-style"], edges: [.top, .bottom, .left, .right], to: &style)
-        applyBorderStyleNone(declarations["border-top-style"], edges: [.top], to: &style)
-        applyBorderStyleNone(declarations["border-bottom-style"], edges: [.bottom], to: &style)
-        applyBorderStyleNone(declarations["border-left-style"], edges: [.left], to: &style)
-        applyBorderStyleNone(declarations["border-right-style"], edges: [.right], to: &style)
+        applyBorderStyleShorthand(declarations["border-style"], to: &style)
+        applyBorderLineStyle(declarations["border-top-style"], edge: .top, to: &style)
+        applyBorderLineStyle(declarations["border-bottom-style"], edge: .bottom, to: &style)
+        applyBorderLineStyle(declarations["border-left-style"], edge: .left, to: &style)
+        applyBorderLineStyle(declarations["border-right-style"], edge: .right, to: &style)
         if let borderRadius = declarations["border-radius"] {
             // `RenderStyle.borderRadius` models one uniform radius (no per-corner support yet). The
             // 2/3/4-value shorthand (`10px 0px 10px 10px` = TL/TR/BR/BL) can't map to a single
@@ -1767,13 +1779,18 @@ final class HTMLAttributedStringBuilder {
         let lowered = tokens.map { $0.lowercased() }
         if lowered.contains("none") || lowered.contains("hidden") {
             style.borderExplicitlyNone = true
-            setBorder(width: 0, color: nil, edge: edge, to: &style)
+            setBorder(width: 0, color: nil, lineStyle: lowered.contains("hidden") ? "hidden" : "none", edge: edge, to: &style)
             return
         }
 
         var width: CGFloat?
         var color: UIColor?
+        var lineStyle: String?
         for token in tokens {
+            if lineStyle == nil, let normalizedStyle = normalizedBorderLineStyle(token) {
+                lineStyle = normalizedStyle
+                continue
+            }
             if width == nil,
                let resolvedWidth = resolveLength(
                     token,
@@ -1789,7 +1806,7 @@ final class HTMLAttributedStringBuilder {
             }
         }
 
-        setBorder(width: width ?? 0, color: color, edge: edge, to: &style)
+        setBorder(width: width ?? 0, color: color, lineStyle: lineStyle, edge: edge, to: &style)
     }
 
     private func parseBorderColor(_ raw: String, currentTextColor: UIColor) -> UIColor? {
@@ -1800,32 +1817,79 @@ final class HTMLAttributedStringBuilder {
         return parseColor(raw)
     }
 
-    /// Honors `border-style: none/hidden` (any edge): zeroes the matching border widths and
-    /// records that the author explicitly suppressed the border, so an `<hr>` won't draw a rule.
-    private func applyBorderStyleNone(_ raw: String?, edges: [BorderEdge], to style: inout ResolvedStyle) {
+    private func applyBorderStyleShorthand(_ raw: String?, to style: inout ResolvedStyle) {
         guard let raw else { return }
-        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard value == "none" || value == "hidden" else { return }
-        style.borderExplicitlyNone = true
-        for edge in edges {
-            setBorder(width: 0, color: nil, edge: edge, to: &style)
+        let values = raw
+            .split(whereSeparator: \.isWhitespace)
+            .compactMap { normalizedBorderLineStyle(String($0)) }
+        guard !values.isEmpty else { return }
+        let top = values[0]
+        let right = values.count >= 2 ? values[1] : top
+        let bottom = values.count >= 3 ? values[2] : top
+        let left = values.count >= 4 ? values[3] : right
+        applyBorderLineStyle(top, edge: .top, to: &style)
+        applyBorderLineStyle(right, edge: .right, to: &style)
+        applyBorderLineStyle(bottom, edge: .bottom, to: &style)
+        applyBorderLineStyle(left, edge: .left, to: &style)
+    }
+
+    private func applyBorderLineStyle(_ raw: String?, edge: BorderEdge, to style: inout ResolvedStyle) {
+        guard let raw,
+              let lineStyle = normalizedBorderLineStyle(raw)
+        else { return }
+        applyBorderLineStyle(lineStyle, edge: edge, to: &style)
+    }
+
+    private func applyBorderLineStyle(_ lineStyle: String, edge: BorderEdge, to style: inout ResolvedStyle) {
+        if lineStyle == "none" || lineStyle == "hidden" {
+            style.borderExplicitlyNone = true
+            setBorder(width: 0, color: nil, lineStyle: lineStyle, edge: edge, to: &style)
+        } else {
+            setBorderLineStyle(lineStyle, edge: edge, to: &style)
         }
     }
 
-    private func setBorder(width: CGFloat, color: UIColor?, edge: BorderEdge, to style: inout ResolvedStyle) {
+    private func normalizedBorderLineStyle(_ raw: String) -> String? {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch value {
+        case "none", "hidden", "solid", "dashed", "dotted", "double", "groove", "ridge", "inset", "outset":
+            return value
+        default:
+            return nil
+        }
+    }
+
+    private func setBorder(width: CGFloat, color: UIColor?, lineStyle: String?, edge: BorderEdge, to style: inout ResolvedStyle) {
         switch edge {
         case .top:
             style.borderTopWidth = width
             style.borderTopColor = color
+            if let lineStyle { style.borderTopStyle = lineStyle }
         case .bottom:
             style.borderBottomWidth = width
             style.borderBottomColor = color
+            if let lineStyle { style.borderBottomStyle = lineStyle }
         case .left:
             style.borderLeftWidth = width
             style.borderLeftColor = color
+            if let lineStyle { style.borderLeftStyle = lineStyle }
         case .right:
             style.borderRightWidth = width
             style.borderRightColor = color
+            if let lineStyle { style.borderRightStyle = lineStyle }
+        }
+    }
+
+    private func setBorderLineStyle(_ lineStyle: String, edge: BorderEdge, to style: inout ResolvedStyle) {
+        switch edge {
+        case .top:
+            style.borderTopStyle = lineStyle
+        case .bottom:
+            style.borderBottomStyle = lineStyle
+        case .left:
+            style.borderLeftStyle = lineStyle
+        case .right:
+            style.borderRightStyle = lineStyle
         }
     }
 

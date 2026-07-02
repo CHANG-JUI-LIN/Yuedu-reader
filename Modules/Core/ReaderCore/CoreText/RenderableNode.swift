@@ -144,6 +144,11 @@ public struct RenderStyle: Sendable {
     public var borderBottomColor: RenderColor?
     public var borderLeftColor: RenderColor?
     public var borderRightColor: RenderColor?
+    public var borderTopStyle: String?
+    public var borderBottomStyle: String?
+    public var borderLeftStyle: String?
+    public var borderRightStyle: String?
+    public var borderExplicitlyNone: Bool
     public var isHorizontallyCentered: Bool
     /// Pre-resolved :first-letter font-size multiplier. nil when no :first-letter matches.
     public var firstLetterFontSizeMultiplier: CGFloat?
@@ -206,6 +211,11 @@ public struct RenderStyle: Sendable {
         borderBottomColor: RenderColor? = nil,
         borderLeftColor: RenderColor? = nil,
         borderRightColor: RenderColor? = nil,
+        borderTopStyle: String? = nil,
+        borderBottomStyle: String? = nil,
+        borderLeftStyle: String? = nil,
+        borderRightStyle: String? = nil,
+        borderExplicitlyNone: Bool = false,
         isHorizontallyCentered: Bool = false,
         firstLetterFontSizeMultiplier: CGFloat? = nil,
         firstLetterFontWeight: Int? = nil,
@@ -257,6 +267,11 @@ public struct RenderStyle: Sendable {
         self.borderBottomColor = borderBottomColor
         self.borderLeftColor = borderLeftColor
         self.borderRightColor = borderRightColor
+        self.borderTopStyle = borderTopStyle
+        self.borderBottomStyle = borderBottomStyle
+        self.borderLeftStyle = borderLeftStyle
+        self.borderRightStyle = borderRightStyle
+        self.borderExplicitlyNone = borderExplicitlyNone
         self.isHorizontallyCentered = isHorizontallyCentered
         self.firstLetterFontSizeMultiplier = firstLetterFontSizeMultiplier
         self.firstLetterFontWeight = firstLetterFontWeight

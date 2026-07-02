@@ -466,7 +466,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				46935AA62F52E48600662F9D /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
-				46935AA72F52E49B00662F9D /* XCRemoteSwiftPackageReference "SwiftSoup" */,
+				46935AA72F52E49B00662F9D /* XCLocalSwiftPackageReference "LocalPackages/SwiftSoup" */,
 				AAAA1111AAAA1111AAAA0003 /* XCRemoteSwiftPackageReference "Nuke" */,
 				8A11B0E12F9A1C7300A1B001 /* XCRemoteSwiftPackageReference "Fuzi" */,
 				460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */,
@@ -1114,6 +1114,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		46935AA72F52E49B00662F9D /* XCLocalSwiftPackageReference "LocalPackages/SwiftSoup" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LocalPackages/SwiftSoup;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -1138,10 +1145,6 @@
 				kind = upToNextMajorVersion;
 				minimumVersion = 3.0.1;
 			};
-		};
-		46935AA72F52E49B00662F9D /* XCLocalSwiftPackageReference "SwiftSoup" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = LocalPackages/SwiftSoup;
 		};
 		46A6AB5D2FCD4ED60071B397 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -1305,7 +1308,7 @@
 		};
 		489E6E08B47AA3AC9F140CAD /* SwiftSoup */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 46935AA72F52E49B00662F9D /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			package = 46935AA72F52E49B00662F9D /* XCLocalSwiftPackageReference "LocalPackages/SwiftSoup" */;
 			productName = SwiftSoup;
 		};
 		54FF42D2FA99075B5C91D59B /* ReadiumShared */ = {
