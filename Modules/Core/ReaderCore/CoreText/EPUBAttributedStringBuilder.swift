@@ -212,6 +212,15 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
     // MARK: - Private Helpers
 
     private func loadImage(src: String, chapterHref: String) async -> UIImage? {
+        // CSS url() values arrive pre-resolved by EPUBStyleResolver.rewriteResourceURLs into the
+        // resource provider's absolute form (reader-book://…). Fetch those directly — running
+        // them through the chapter-relative resolution below would mangle the URL.
+        if let absolute = URL(string: src),
+           let scheme = absolute.scheme,
+           scheme != "http", scheme != "https", scheme != "data" {
+            guard let response = try? await resourceProvider.response(for: absolute) else { return nil }
+            return UIImage(data: response.data)
+        }
         let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
         let url = resourceProvider.resourceURL(for: resolved)
         guard let response = try? await resourceProvider.response(for: url) else { return nil }

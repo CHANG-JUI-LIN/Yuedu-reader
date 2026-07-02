@@ -90,7 +90,9 @@ final class CoreTextPaginator {
 
         /// Updates only text colors without repaginating (color does not affect line wrapping).
         /// Ranges with explicitly CSS-specified foreground colors (marked with cssSpecifiedForegroundColorAttribute) retain their original color.
-        /// Ranges with blockBackgroundColorAttribute do not have .backgroundColor overwritten, to avoid masking block backgrounds.
+        /// No theme-wide `.backgroundColor` is applied to runs — CTLineDraw would paint it as a
+        /// filled rect over page background images and box decorations; the page fill alone
+        /// carries the theme color.
         func withUpdatedColors(textColor: UIColor, backgroundColor: UIColor) -> ChapterLayout {
             guard attributedString.length > 0 else { return self }
             let updated = NSMutableAttributedString(attributedString: attributedString)
@@ -109,8 +111,19 @@ final class CoreTextPaginator {
                 }
             }
 
-            // ── Background color: apply theme color globally, then remove from ranges with CSS block backgrounds ──
-            updated.addAttribute(.backgroundColor, value: backgroundColor, range: fullRange)
+            // ── Background color ──
+            // CTLineDraw paints `.backgroundColor` as a filled run rect. A theme-wide run
+            // background (the old approach here) is invisible on plain pages (run fill == page
+            // fill) but occludes page background images, box textures, and decoration frames —
+            // the page fill already paints the theme color, so no per-run theme background is
+            // applied at all. Only stale paints from earlier recolor passes are stripped;
+            // authored (CSS) inline backgrounds keep their distinct colors.
+            updated.enumerateAttribute(.backgroundColor, in: fullRange, options: []) { value, effectiveRange, _ in
+                if let color = value as? UIColor,
+                   CoreTextPaginator.colorsApproximatelyEqual(color, oldBackgroundColor) {
+                    updated.removeAttribute(.backgroundColor, range: effectiveRange)
+                }
+            }
             updated.enumerateAttribute(
                 HTMLAttributedStringBuilder.blockBackgroundColorAttribute,
                 in: fullRange,
@@ -644,6 +657,11 @@ final class CoreTextPaginator {
         }
 
         var groups: [String: Accumulator] = [:]
+        collect(
+            styleKey: HTMLAttributedStringBuilder.outerContainerBlockRenderStyleAttribute,
+            idKey: HTMLAttributedStringBuilder.outerContainerBlockRenderIDAttribute,
+            into: &groups
+        )
         collect(
             styleKey: HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
             idKey: HTMLAttributedStringBuilder.containerBlockRenderIDAttribute,
@@ -1640,68 +1658,64 @@ final class CoreTextPaginator {
                 let ranges: [NSRange]
                 var rect: CGRect
                 var usesExplicitGeometry: Bool
-                let isContainer: Bool
+                let layer: Int
+
+                var isContainer: Bool {
+                    layer > 0
+                }
             }
 
             struct SpanGroup {
                 let blockID: String
                 let style: HTMLAttributedStringBuilder.BlockRenderStyle
                 var ranges: [NSRange]
-                let isContainer: Bool
+                let layer: Int
             }
 
             var spanGroupsByID: [String: SpanGroup] = [:]
             let pageNSRange = NSRange(location: range.location, length: range.length)
-            attrStr.enumerateAttribute(
-                HTMLAttributedStringBuilder.blockRenderStyleAttribute,
-                in: pageNSRange,
-                options: []
-            ) { value, effectiveRange, _ in
-                guard let renderStyle = value as? HTMLAttributedStringBuilder.BlockRenderStyle,
-                      let blockID = attrStr.attribute(
-                          HTMLAttributedStringBuilder.blockRenderIDAttribute,
-                          at: effectiveRange.location,
-                          effectiveRange: nil
-                      ) as? String
-                else { return }
-                if var existing = spanGroupsByID[blockID] {
-                    existing.ranges.append(effectiveRange)
-                    spanGroupsByID[blockID] = existing
-                } else {
-                    spanGroupsByID[blockID] = SpanGroup(
-                        blockID: blockID,
-                        style: renderStyle,
-                        ranges: [effectiveRange],
-                        isContainer: false
-                    )
+            func collectSpanGroups(
+                styleKey: NSAttributedString.Key,
+                idKey: NSAttributedString.Key,
+                layer: Int
+            ) {
+                attrStr.enumerateAttribute(styleKey, in: pageNSRange, options: []) { value, effectiveRange, _ in
+                    guard let renderStyle = value as? HTMLAttributedStringBuilder.BlockRenderStyle,
+                          let blockID = attrStr.attribute(
+                              idKey,
+                              at: effectiveRange.location,
+                              effectiveRange: nil
+                          ) as? String
+                    else { return }
+                    if var existing = spanGroupsByID[blockID] {
+                        existing.ranges.append(effectiveRange)
+                        spanGroupsByID[blockID] = existing
+                    } else {
+                        spanGroupsByID[blockID] = SpanGroup(
+                            blockID: blockID,
+                            style: renderStyle,
+                            ranges: [effectiveRange],
+                            layer: layer
+                        )
+                    }
                 }
             }
 
-            // Container-level decoration (parent div border/background, spanning across block children)
-            attrStr.enumerateAttribute(
-                HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
-                in: pageNSRange,
-                options: []
-            ) { value, effectiveRange, _ in
-                guard let renderStyle = value as? HTMLAttributedStringBuilder.BlockRenderStyle,
-                      let blockID = attrStr.attribute(
-                          HTMLAttributedStringBuilder.containerBlockRenderIDAttribute,
-                          at: effectiveRange.location,
-                          effectiveRange: nil
-                      ) as? String
-                else { return }
-                if var existing = spanGroupsByID[blockID] {
-                    existing.ranges.append(effectiveRange)
-                    spanGroupsByID[blockID] = existing
-                } else {
-                    spanGroupsByID[blockID] = SpanGroup(
-                        blockID: blockID,
-                        style: renderStyle,
-                        ranges: [effectiveRange],
-                        isContainer: true
-                    )
-                }
-            }
+            collectSpanGroups(
+                styleKey: HTMLAttributedStringBuilder.outerContainerBlockRenderStyleAttribute,
+                idKey: HTMLAttributedStringBuilder.outerContainerBlockRenderIDAttribute,
+                layer: 2
+            )
+            collectSpanGroups(
+                styleKey: HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
+                idKey: HTMLAttributedStringBuilder.containerBlockRenderIDAttribute,
+                layer: 1
+            )
+            collectSpanGroups(
+                styleKey: HTMLAttributedStringBuilder.blockRenderStyleAttribute,
+                idKey: HTMLAttributedStringBuilder.blockRenderIDAttribute,
+                layer: 0
+            )
 
             var groups: [DecorationGroup] = spanGroupsByID.values.map {
                 DecorationGroup(
@@ -1710,7 +1724,7 @@ final class CoreTextPaginator {
                     ranges: $0.ranges,
                     rect: .null,
                     usesExplicitGeometry: false,
-                    isContainer: $0.isContainer
+                    layer: $0.layer
                 )
             }
             guard !groups.isEmpty else { return }
@@ -1869,6 +1883,11 @@ final class CoreTextPaginator {
 
             let renderables = groups
                 .filter { !$0.rect.isNull }
+                .sorted { lhs, rhs in
+                    if lhs.layer != rhs.layer { return lhs.layer > rhs.layer }
+                    if lhs.rect.minY != rhs.rect.minY { return lhs.rect.minY < rhs.rect.minY }
+                    return lhs.rect.minX < rhs.rect.minX
+                }
                 .map { group -> RenderedBlockRenderable in
                     let renderRect = blockDecorationRect(
                         from: group.rect,

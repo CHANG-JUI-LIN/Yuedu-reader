@@ -616,6 +616,16 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         if let (_, chunk, localPoint) = hitTestChunk(at: point),
            let idx = chunk.stringIndex(atLocalPoint: localPoint),
            let href = HTMLAttributedStringBuilder.linkHref(at: idx, in: chunk.attributedString) {
+            if let note = FootnoteStore.text(spineIndex: chunk.chapterIndex, href: href),
+               let anchor = footnoteAnchor(at: point) {
+                FootnotePopoverHost.present(
+                    text: note,
+                    from: self,
+                    sourceView: anchor.sourceView,
+                    sourceRect: anchor.sourceRect
+                )
+                return
+            }
             onInternalLinkTap?(href)
             return
         }
@@ -630,6 +640,19 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             attachment.mediaAttachment != nil
                 && attachment.rect.insetBy(dx: -8, dy: -8).contains(localPoint)
         }?.mediaAttachment
+    }
+
+    private func footnoteAnchor(at pointInCollection: CGPoint) -> (sourceView: UIView, sourceRect: CGRect)? {
+        guard let (cell, _, localPoint) = hitTestChunk(at: pointInCollection) else { return nil }
+        let anchorSize: CGFloat = 12
+        let origin = CGPoint(
+            x: localPoint.x - anchorSize / 2,
+            y: localPoint.y - anchorSize / 2
+        )
+        return (
+            sourceView: cell.drawView,
+            sourceRect: CGRect(origin: origin, size: CGSize(width: anchorSize, height: anchorSize))
+        )
     }
 
     private func presentEPUBMedia(_ media: EPUBMediaAttachment) {

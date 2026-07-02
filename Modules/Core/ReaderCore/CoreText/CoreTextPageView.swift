@@ -1807,18 +1807,12 @@ final class CoreTextPageViewController: UIViewController {
     /// Presents a duokan footnote as an arrow popover anchored to its marker (multi-看 style),
     /// keeping the reader in place instead of jumping to the chapter tail.
     private func presentFootnotePopover(text: String, sourceRect: CGRect) {
-        if presentedViewController != nil { return }
-        let maxWidth = min(300, max(200, pageView.bounds.width - 64))
-        let host = UIHostingController(rootView: FootnotePopoverContent(text: text))
-        host.modalPresentationStyle = .popover
-        host.preferredContentSize = FootnotePopoverContent.preferredSize(text: text, maxWidth: maxWidth)
-        if let popover = host.popoverPresentationController {
-            popover.sourceView = pageView
-            popover.sourceRect = sourceRect
-            popover.permittedArrowDirections = [.up, .down]
-            popover.delegate = self
-        }
-        present(host, animated: true)
+        FootnotePopoverHost.present(
+            text: text,
+            from: self,
+            sourceView: pageView,
+            sourceRect: sourceRect
+        )
     }
 
     /// Presents the book source's paragraph-review (段評) web page in a bottom sheet.
@@ -1839,49 +1833,6 @@ final class CoreTextPageViewController: UIViewController {
 }
 
 extension CoreTextPageViewController: PageIndexProviding {}
-
-extension CoreTextPageViewController: UIPopoverPresentationControllerDelegate {
-    // Keep the footnote presentation an anchored popover (with arrow) even in a compact width class,
-    // instead of adapting to a full-screen sheet.
-    func adaptivePresentationStyle(
-        for controller: UIPresentationController,
-        traitCollection: UITraitCollection
-    ) -> UIModalPresentationStyle {
-        .none
-    }
-}
-
-/// Footnote popover body — scrollable note text, sized to fit its content.
-private struct FootnotePopoverContent: View {
-    let text: String
-
-    var body: some View {
-        ScrollView {
-            Text(text)
-                .font(.callout)
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
-                .padding(FootnotePopoverContent.contentInset)
-        }
-    }
-
-    static let contentInset: CGFloat = 14
-
-    /// Measures the note so the popover can size itself (UIKit popovers need a preferredContentSize).
-    static func preferredSize(text: String, maxWidth: CGFloat) -> CGSize {
-        let font = UIFont.preferredFont(forTextStyle: .callout)
-        let textWidth = maxWidth - contentInset * 2
-        let bounds = (text as NSString).boundingRect(
-            with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font],
-            context: nil
-        )
-        let height = ceil(bounds.height) + contentInset * 2
-        return CGSize(width: maxWidth, height: min(height, 360))
-    }
-}
 
 private final class CoreTextImagePreviewController: UIViewController, UIScrollViewDelegate {
     private let attachment: CoreTextPaginator.RenderedAttachment

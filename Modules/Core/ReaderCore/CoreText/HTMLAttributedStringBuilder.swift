@@ -20,6 +20,9 @@ final class HTMLAttributedStringBuilder {
     /// Container-level decoration (coexists with blockRenderStyle). Used for parent div border/background that spans across block children.
     static let containerBlockRenderStyleAttribute = NSAttributedString.Key("ReaderContainerBlockRenderStyle")
     static let containerBlockRenderIDAttribute = NSAttributedString.Key("ReaderContainerBlockRenderID")
+    /// Second container-level decoration for a decorated parent wrapping an already-decorated child.
+    static let outerContainerBlockRenderStyleAttribute = NSAttributedString.Key("ReaderOuterContainerBlockRenderStyle")
+    static let outerContainerBlockRenderIDAttribute = NSAttributedString.Key("ReaderOuterContainerBlockRenderID")
     /// Marker attribute for CSS-explicit foreground color. Ranges with this attribute are not overwritten by withUpdatedColors().
     static let cssSpecifiedForegroundColorAttribute = NSAttributedString.Key("ReaderCSSSpecifiedForegroundColor")
     /// Marker attribute for vertical spacer runs (CTRunDelegate that are NOT image placeholders).

@@ -309,6 +309,17 @@ struct NodeAttributedStringRenderer {
 
     // MARK: - Block Rendering
 
+    /// Block-level renderable-node kinds: they terminate the current visual paragraph and
+    /// start their own line (drives both container detection and anonymous-block breaks).
+    private static func isBlockLevelChild(_ child: RenderableNode) -> Bool {
+        switch child {
+        case .paragraph, .block, .heading, .blockquote, .listItem, .horizontalRule:
+            return true
+        default:
+            return false
+        }
+    }
+
     private func renderBlock(
         children: [RenderableNode],
         style: RenderStyle,
@@ -337,15 +348,7 @@ struct NodeAttributedStringRenderer {
             return await renderFloatBubble(children: children, style: style, side: side, ctx: ctx)
         }
 
-        let hasBlockChildren = children.contains { child in
-            if case .paragraph = child { return true }
-            if case .block = child { return true }
-            if case .heading = child { return true }
-            if case .blockquote = child { return true }
-            if case .listItem = child { return true }
-            if case .horizontalRule = child { return true }
-            return false
-        }
+        let hasBlockChildren = children.contains(where: Self.isBlockLevelChild)
 
         // A chat thread wrapper (`div.tk`) holds a stack of floated message bubbles. Its authored
         // 1em margins compound with each bubble's spacing and the surrounding narration — and,
@@ -367,6 +370,16 @@ struct NodeAttributedStringRenderer {
             result.append(verticalInlineSpacer(advance: style.visualOffsetBefore, ctx: childCtx))
         }
         for child in children {
+            // A block child after unterminated inline content (a loose `<img>` before a `<p>`,
+            // duokan phone-frame idiom) must start its own CoreText paragraph — CoreText applies
+            // the paragraph style of the FIRST character to the whole paragraph, so without this
+            // break the `<p>` inherits the container's style and loses its own margins/indent.
+            // The break is the CSS anonymous-block boundary that would exist in a browser.
+            if Self.isBlockLevelChild(child),
+               result.length > 0,
+               !result.string.hasSuffix("\n") {
+                result.append(NSAttributedString(string: "\n", attributes: childCtx.baseAttributes))
+            }
             result.append(await render(node: child, ctx: childCtx))
         }
         collapseAdjacentParagraphSpacing(
@@ -1862,6 +1875,65 @@ struct NodeAttributedStringRenderer {
 
     /// True if any position in `range` already carries a container render-style attribute.
     /// Plain child block decorations (hr/images) must not suppress a parent frame.
+    /// Second decoration layer for a decorated container that wraps an already-decorated
+    /// container (duokan double-frame: `div.aaa` beige mat around `div.bbb` bordered box).
+    /// The inner box's padding+border chrome is baked into the outer style's padding so the
+    /// outer frame draws OUTSIDE the inner border instead of on top of it — the paginator
+    /// expands each decoration rect by its own chrome only.
+    private func applyOuterContainerDecorationAttributes(
+        style: RenderStyle,
+        to attributedString: NSMutableAttributedString,
+        range: NSRange,
+        backgroundImage: HTMLAttributedStringBuilder.BlockRenderStyle.BackgroundImage? = nil
+    ) {
+        var hasOuter = false
+        attributedString.enumerateAttribute(
+            HTMLAttributedStringBuilder.outerContainerBlockRenderStyleAttribute,
+            in: range
+        ) { value, _, stop in
+            if value != nil { hasOuter = true; stop.pointee = true }
+        }
+        // Three or more decorated levels: keep the innermost two, drop the rest.
+        guard !hasOuter else { return }
+
+        var chromeTop: CGFloat = 0
+        var chromeLeft: CGFloat = 0
+        var chromeBottom: CGFloat = 0
+        var chromeRight: CGFloat = 0
+        for key in [
+            HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
+            HTMLAttributedStringBuilder.blockRenderStyleAttribute,
+        ] {
+            attributedString.enumerateAttribute(key, in: range) { value, _, _ in
+                guard let inner = value as? HTMLAttributedStringBuilder.BlockRenderStyle else { return }
+                chromeTop = max(chromeTop, inner.paddingTop + inner.borderTopWidth)
+                chromeLeft = max(chromeLeft, inner.paddingLeft + inner.borderLeftWidth)
+                chromeBottom = max(chromeBottom, inner.paddingBottom + inner.borderBottomWidth)
+                chromeRight = max(chromeRight, inner.paddingRight + inner.borderRightWidth)
+            }
+        }
+        var outerStyle = style
+        outerStyle.paddingTop += chromeTop
+        outerStyle.paddingLeft += chromeLeft
+        outerStyle.paddingBottom += chromeBottom
+        outerStyle.paddingRight += chromeRight
+        guard let blockRenderStyle = makeBlockRenderStyle(
+            from: outerStyle,
+            backgroundImage: backgroundImage
+        ) else { return }
+        let blockID = "outer-container-" + UUID().uuidString
+        attributedString.addAttribute(
+            HTMLAttributedStringBuilder.outerContainerBlockRenderStyleAttribute,
+            value: blockRenderStyle,
+            range: range
+        )
+        attributedString.addAttribute(
+            HTMLAttributedStringBuilder.outerContainerBlockRenderIDAttribute,
+            value: blockID,
+            range: range
+        )
+    }
+
     private func hasExistingBlockDecoration(in attributedString: NSAttributedString, range: NSRange) -> Bool {
         guard range.length > 0 else { return false }
         var found = false
@@ -1918,12 +1990,20 @@ struct NodeAttributedStringRenderer {
     ) {
         guard range.length > 0 else { return }
         // A descendant (e.g. a chat-bubble `<div>` floated inside a plain wrapper `<div>`) may
-        // already carry its own container/block decoration attribute over part of this range.
+        // already carry its own container decoration attribute over part of this range.
         // `addAttribute` is "last write wins" per character for a given key, so blindly applying
         // the OUTER block's decoration here would silently overwrite — not layer with — the
-        // descendant's, erasing its background/border/radius. Defer to the more specific,
-        // already-decorated descendant instead.
-        guard !hasExistingBlockDecoration(in: attributedString, range: range) else { return }
+        // descendant's, erasing its background/border/radius. Route the outer decoration to the
+        // dedicated second layer instead (duokan double-frame: `div.aaa` mat around `div.bbb`).
+        if hasExistingBlockDecoration(in: attributedString, range: range) {
+            applyOuterContainerDecorationAttributes(
+                style: style,
+                to: attributedString,
+                range: range,
+                backgroundImage: backgroundImage
+            )
+            return
+        }
         if let backgroundColor = style.backgroundColor?.uiColor {
             attributedString.addAttribute(
                 HTMLAttributedStringBuilder.blockBackgroundColorAttribute,

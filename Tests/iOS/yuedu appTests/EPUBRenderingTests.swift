@@ -1504,6 +1504,10 @@ private func avoidPageBreakInsideRanges(in attributedString: NSAttributedString)
         idKey: HTMLAttributedStringBuilder.containerBlockRenderIDAttribute
     )
     collect(
+        styleKey: HTMLAttributedStringBuilder.outerContainerBlockRenderStyleAttribute,
+        idKey: HTMLAttributedStringBuilder.outerContainerBlockRenderIDAttribute
+    )
+    collect(
         styleKey: HTMLAttributedStringBuilder.blockRenderStyleAttribute,
         idKey: HTMLAttributedStringBuilder.blockRenderIDAttribute
     )
