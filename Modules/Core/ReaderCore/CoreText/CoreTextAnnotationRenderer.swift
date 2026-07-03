@@ -172,7 +172,7 @@ struct CoreTextAnnotationRenderer {
             )
             #if DEBUG
             // [Bug3 直排標註幾何診斷] 對段落頂端選一小段直排文字後查看這些數值。
-            print("[VRECT] line=\(idx) range=\(inter.location)..<\(inter.location + inter.length) origin=(\(origin.x),\(origin.y)) ascent=\(ascent) descent=\(descent) layoutH=\(layoutHeight) lineTopY=\(lineTopY) startOff=\(startOffset) endOff=\(endOffset) rect=\(vrect)")
+            AppLogger.render("[VRECT] line=\(idx) range=\(inter.location)..<\(inter.location + inter.length) origin=(\(origin.x),\(origin.y)) ascent=\(ascent) descent=\(descent) layoutH=\(layoutHeight) lineTopY=\(lineTopY) startOff=\(startOffset) endOff=\(endOffset) rect=\(vrect)")
             #endif
             rects.append(vrect)
         }

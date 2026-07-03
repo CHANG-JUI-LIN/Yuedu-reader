@@ -31,7 +31,7 @@ final class JSONFileReadingPositionStore: ReadingPositionStore {
         Task { @MainActor in
             FirestoreSyncManager.shared.scheduleReadingPositionPush(position, for: bookId)
         }
-        print("[ProgressTrace][PositionStore] save bookId=\(bookId) spine=\(position.spineIndex) charOffset=\(position.charOffset)")
+        AppLogger.cache("[ProgressTrace][PositionStore] save bookId=\(bookId) spine=\(position.spineIndex) charOffset=\(position.charOffset)")
     }
 
     func load(for bookId: String) async -> CoreTextReadingPosition? {
@@ -42,11 +42,11 @@ final class JSONFileReadingPositionStore: ReadingPositionStore {
         let url = fileURL(for: bookId)
         guard FileManager.default.fileExists(atPath: url.path),
               let data = try? Data(contentsOf: url) else {
-            print("[ProgressTrace][PositionStore] load bookId=\(bookId) result=miss")
+            AppLogger.cache("[ProgressTrace][PositionStore] load bookId=\(bookId) result=miss")
             return nil
         }
         let position = try? decoder.decode(CoreTextReadingPosition.self, from: data)
-        print("[ProgressTrace][PositionStore] load bookId=\(bookId) spine=\(position?.spineIndex.description ?? "nil") charOffset=\(position?.charOffset.description ?? "nil")")
+        AppLogger.cache("[ProgressTrace][PositionStore] load bookId=\(bookId) spine=\(position?.spineIndex.description ?? "nil") charOffset=\(position?.charOffset.description ?? "nil")")
         return position
     }
 

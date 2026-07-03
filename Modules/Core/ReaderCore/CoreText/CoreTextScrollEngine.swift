@@ -257,10 +257,10 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         } catch AttributedStringBuildingError.contentNotCached(let missingChapter) {
             let requestedChapter = missingChapter == chapterIndex ? missingChapter : chapterIndex
             pendingMissingChapters[requestedChapter] = prepend
-            print("[ScrollEngine] chapter content missing chapter=\(requestedChapter) prepend=\(prepend)")
+            AppLogger.render("[ScrollEngine] chapter content missing chapter=\(requestedChapter) prepend=\(prepend)")
             onChapterContentRequired?(requestedChapter)
         } catch {
-            print("[ScrollEngine] buildChapter error chapter=\(chapterIndex) error=\(error)")
+            AppLogger.render("[ScrollEngine] buildChapter error chapter=\(chapterIndex) error=\(error)")
         }
     }
 

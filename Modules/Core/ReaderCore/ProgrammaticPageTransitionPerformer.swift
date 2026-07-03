@@ -49,7 +49,7 @@ struct ProgrammaticPageTransitionPerformer {
         // appears, just without the curl on this single turn.
         let effectiveAnimated: Bool = {
             guard pageTurnStyle == .curl, animated, targetStack.count < 2 else { return animated }
-            print("[CurlTrace] degrade animated curl → non-animated (stack count \(targetStack.count))")
+            AppLogger.render("[CurlTrace] degrade animated curl → non-animated (stack count \(targetStack.count))")
             return false
         }()
 

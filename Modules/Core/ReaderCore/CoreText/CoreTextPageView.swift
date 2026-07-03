@@ -1390,7 +1390,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
         let rects = selectionRects(for: range, in: context)
         #if DEBUG
-        print("[ANNOT-DIAG] SELECTION range=\(range) rects=\(rects)")
+        AppLogger.render("[ANNOT-DIAG] SELECTION range=\(range) rects=\(rects)")
         #endif
         interactionOverlay.selectionRects = rects
         interactionOverlay.startHandlePoint = rects.first.map { CGPoint(x: $0.minX, y: $0.minY) }
@@ -1424,7 +1424,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
         #if DEBUG
         let annRanges = textAnnotations.filter { $0.spineIndex == layout.spineIndex }.map { $0.range }
-        print("[ANNOT-DIAG] ANNOTATION pageRange=\(pageRange) annRanges=\(annRanges) layerRects=\(layers.map { $0.rects })")
+        AppLogger.render("[ANNOT-DIAG] ANNOTATION pageRange=\(pageRange) annRanges=\(annRanges) layerRects=\(layers.map { $0.rects })")
         #endif
 
         // Scale rects to view coordinates

@@ -48,7 +48,7 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
             var registrationError: Unmanaged<CFError>?
             let registered = CTFontManagerRegisterFontsForURL(tempURL as CFURL, .process, &registrationError)
             if !registered, let error = registrationError?.takeRetainedValue() {
-                print("[CoreTextEngine] registerFont URL register warning: \(error)")
+                AppLogger.render("[CoreTextEngine] registerFont URL register warning: \(error)")
             }
 
             if let descriptors = CTFontManagerCreateFontDescriptorsFromURL(tempURL as CFURL) as? [[CFString: Any]],
@@ -65,20 +65,20 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
             }
         } catch {
             writableTempURL = nil
-            print("[CoreTextEngine] registerFont temp write failed: \(error)")
+            AppLogger.render("[CoreTextEngine] registerFont temp write failed: \(error)")
         }
 
         guard
             let provider = CGDataProvider(data: data as CFData),
             let cgFont = CGFont(provider)
         else {
-            print("[CoreTextEngine] registerFont CGFont provider failed header=\(data.prefix(8).map { String(format: "%02x", $0) }.joined())")
+            AppLogger.render("[CoreTextEngine] registerFont CGFont provider failed header=\(data.prefix(8).map { String(format: "%02x", $0) }.joined())")
             return nil
         }
 
         let descriptors = CTFontManagerCreateFontDescriptorsFromData(data as CFData)
         if CFArrayGetCount(descriptors) == 0 {
-            print("[CoreTextEngine] registerFont warning: failed to register font from data")
+            AppLogger.render("[CoreTextEngine] registerFont warning: failed to register font from data")
         }
 
         let postScriptName = cgFont.postScriptName as String? ?? ""
@@ -187,7 +187,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     private func startupTrace(_ message: String) {
         let line = "[StartupTrace][CoreTextPageEngine][+\(startupElapsedMs())ms] \(message)"
-        print(line)
+        AppLogger.render(line)
         NSLog("%@", line)
     }
 
@@ -252,7 +252,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         didLogProgressFallback = false
         didLogProgressByteMode = false
         let totalChapters = chapterCount
-        print("[CoreTextEngine] start renderSize=\(renderSize) chapters=\(totalChapters)")
+        AppLogger.render("[CoreTextEngine] start renderSize=\(renderSize) chapters=\(totalChapters)")
         startupTrace("start bookId=\(bookId) renderSize=\(renderSize) chapters=\(totalChapters)")
         guard totalChapters > 0 else {
             totalPages = 0
@@ -281,7 +281,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             }
         }
         startupTrace("preload priority done totalPages=\(totalPages)")
-        print("[CoreTextEngine] start done totalPages=\(totalPages)")
+        AppLogger.render("[CoreTextEngine] start done totalPages=\(totalPages)")
     }
 
     private func scanChapterByteSizes(for bookId: String) async {
@@ -438,25 +438,25 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     private func schedulePreloadChapter(at spineIndex: Int) {
         guard (0..<chapterCount).contains(spineIndex) else {
-            print("[FlipTrace] schedulePreload skip outOfRange spine=\(spineIndex) chapterCount=\(chapterCount)")
+            AppLogger.render("[FlipTrace] schedulePreload skip outOfRange spine=\(spineIndex) chapterCount=\(chapterCount)")
             return
         }
         guard _layouts[spineIndex] == nil else {
-            print("[FlipTrace] schedulePreload skip loaded spine=\(spineIndex) layouts=\(_layouts.keys.sorted())")
+            AppLogger.render("[FlipTrace] schedulePreload skip loaded spine=\(spineIndex) layouts=\(_layouts.keys.sorted())")
             return
         }
         guard preloadTasks[spineIndex] == nil else {
-            print("[FlipTrace] schedulePreload skip pending spine=\(spineIndex) pending=\(preloadTasks.keys.sorted())")
+            AppLogger.render("[FlipTrace] schedulePreload skip pending spine=\(spineIndex) pending=\(preloadTasks.keys.sorted())")
             return
         }
 
         let generation = layoutGeneration
-        print("[FlipTrace] schedulePreload spine=\(spineIndex) generation=\(generation) layouts=\(_layouts.keys.sorted())")
+        AppLogger.render("[FlipTrace] schedulePreload spine=\(spineIndex) generation=\(generation) layouts=\(_layouts.keys.sorted())")
         preloadTasks[spineIndex] = makePreloadTask(spineIndex: spineIndex, generation: generation)
     }
 
     func cancelPendingWork() {
-        print("[FlipTrace] cancelPendingWork generation=\(layoutGeneration) pending=\(preloadTasks.keys.sorted()) layouts=\(_layouts.keys.sorted())")
+        AppLogger.render("[FlipTrace] cancelPendingWork generation=\(layoutGeneration) pending=\(preloadTasks.keys.sorted()) layouts=\(_layouts.keys.sorted())")
         layoutGeneration += 1
         cancelPreloadTasks()
     }
@@ -464,7 +464,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     func pageViewController(at index: Int) -> UIViewController {
         let (spineIndex, localPage) = localPosition(for: index)
         if let layout = _layouts[spineIndex] {
-            print("[FlipTrace] pageVC REAL page=\(index) spine=\(spineIndex) local=\(localPage) pages=\(layout.pageRanges.count)")
+            AppLogger.render("[FlipTrace] pageVC REAL page=\(index) spine=\(spineIndex) local=\(localPage) pages=\(layout.pageRanges.count)")
             return configuredPageViewController(
                 layout: layout,
                 spineIndex: spineIndex,
@@ -478,7 +478,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             localPage: localPage,
             globalPage: index
         )
-        print("[FlipTrace] pageVC PLACEHOLDER page=\(index) spine=\(spineIndex) local=\(localPage) layouts=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
+        AppLogger.render("[FlipTrace] pageVC PLACEHOLDER page=\(index) spine=\(spineIndex) local=\(localPage) layouts=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
         let placeholder = PlaceholderPageViewController(
             chapterTitle: title,
             globalPage: index,
@@ -549,13 +549,13 @@ final class CoreTextPageEngine: PageRenderingProvider {
         }
 
         if let globalPage = pageIndex(for: position) {
-            print("[FlipTrace] positionVC exact position=\(position) page=\(globalPage)")
+            AppLogger.render("[FlipTrace] positionVC exact position=\(position) page=\(globalPage)")
             return pageViewController(at: globalPage)
         }
 
         let title = chapterTitle(at: position.spineIndex)
         let estimated = estimatedGlobalPage(for: position) ?? 0
-        print("[FlipTrace] positionVC PLACEHOLDER position=\(position) estimated=\(estimated) layouts=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
+        AppLogger.render("[FlipTrace] positionVC PLACEHOLDER position=\(position) estimated=\(estimated) layouts=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
         let placeholder = PlaceholderPageViewController(
             chapterTitle: title,
             globalPage: estimated,
@@ -575,11 +575,11 @@ final class CoreTextPageEngine: PageRenderingProvider {
     func preloadChapter(at spineIndex: Int) async {
         guard (0..<chapterCount).contains(spineIndex) else { return }
         if _layouts[spineIndex] != nil {
-            print("[FlipTrace] preload skip loaded spine=\(spineIndex) layouts=\(_layouts.keys.sorted())")
+            AppLogger.render("[FlipTrace] preload skip loaded spine=\(spineIndex) layouts=\(_layouts.keys.sorted())")
             return
         }
         if let existing = preloadTasks[spineIndex] {
-            print("[FlipTrace] preload await existing spine=\(spineIndex) generation=\(layoutGeneration)")
+            AppLogger.render("[FlipTrace] preload await existing spine=\(spineIndex) generation=\(layoutGeneration)")
             await existing.value
             return
         }
@@ -592,7 +592,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     func notifyChapterDataChanged(at spineIndex: Int) async {
         guard (0..<chapterCount).contains(spineIndex) else { return }
-        print("[FetchTrace] engine.notifyChapterDataChanged enter ch=\(spineIndex)")
+        AppLogger.render("[FetchTrace] engine.notifyChapterDataChanged enter ch=\(spineIndex)")
 
         // 1. Clear the old layout and any in-progress preload task
 _layouts[spineIndex] = nil
@@ -616,7 +616,7 @@ _layouts[spineIndex] = nil
         //    - layoutOK=false → swap to PlaceholderVC (loading UI), so refresh can immediately
         //      clear old content and show loading, then notifyChapterDataChanged again once refetch completes.
         let layoutOK = layouts[spineIndex] != nil
-        print("[FetchTrace] engine.notifyChapterDataChanged done ch=\(spineIndex) layoutOK=\(layoutOK) hasCallback=\(onChapterReady != nil)")
+        AppLogger.render("[FetchTrace] engine.notifyChapterDataChanged done ch=\(spineIndex) layoutOK=\(layoutOK) hasCallback=\(onChapterReady != nil)")
         onChapterReady?(spineIndex)
     }
 
@@ -624,7 +624,7 @@ _layouts[spineIndex] = nil
         guard (0..<chapterCount).contains(spineIndex),
 _layouts[spineIndex] == nil else { return }
         guard !shouldAbortPreload(generation: generation) else { return }
-        print("[FlipTrace] preload begin spine=\(spineIndex) generation=\(generation) layouts=\(_layouts.keys.sorted())")
+        AppLogger.render("[FlipTrace] preload begin spine=\(spineIndex) generation=\(generation) layouts=\(_layouts.keys.sorted())")
 
         guard let buildResult = try? await attributedBuilder.buildChapter(
             at: spineIndex,
@@ -632,7 +632,7 @@ _layouts[spineIndex] == nil else { return }
             themeTextColor: themeTextColor,
             themeBackgroundColor: themeBackgroundColor
         ) else {
-            print("[CoreTextEngine] preloadChapter[\(spineIndex)] FAILED to build attributed string")
+            AppLogger.render("[CoreTextEngine] preloadChapter[\(spineIndex)] FAILED to build attributed string")
             return
         }
         guard !shouldAbortPreload(generation: generation) else { return }
@@ -655,13 +655,13 @@ _layouts[spineIndex] == nil else { return }
         guard !shouldAbortPreload(generation: generation) else { return }
 
         _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
-        print("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
+        AppLogger.render("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
         generateSnapshot(for: spineIndex)
         rebuildPageOffsets()
     }
 
     func invalidateLayout(newSize: CGSize) async {
-        print("[FlipTrace] invalidateLayout newSize=\(newSize) oldSize=\(renderSize) loaded=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
+        AppLogger.render("[FlipTrace] invalidateLayout newSize=\(newSize) oldSize=\(renderSize) loaded=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
         let restorePosition = readingPosition(forPage: currentPage)
         cancelPendingWork()
         isRelaying = true
@@ -729,14 +729,14 @@ _layouts.removeAll()
         evictDistantChapters(currentSpine: spineIndex)
 
         guard let layout = _layouts[spineIndex] else {
-            print("[FlipTrace] warmUp skip missingCurrent page=\(currentGlobalPage) spine=\(spineIndex) local=\(localPage) layouts=\(_layouts.keys.sorted())")
+            AppLogger.render("[FlipTrace] warmUp skip missingCurrent page=\(currentGlobalPage) spine=\(spineIndex) local=\(localPage) layouts=\(_layouts.keys.sorted())")
             return
         }
         let total = layout.pageRanges.count
         // Trigger at 20% remaining (minimum 3 pages) so snapshot is ready before chapter boundary
         let threshold = max(3, Int(Double(total) * 0.20))
         let remaining = total - localPage
-        print("[FlipTrace] warmUp page=\(currentGlobalPage) spine=\(spineIndex) local=\(localPage) total=\(total) remaining=\(remaining) threshold=\(threshold) layouts=\(_layouts.keys.sorted())")
+        AppLogger.render("[FlipTrace] warmUp page=\(currentGlobalPage) spine=\(spineIndex) local=\(localPage) total=\(total) remaining=\(remaining) threshold=\(threshold) layouts=\(_layouts.keys.sorted())")
         if remaining <= threshold {
             let nextSpine = spineIndex + 1
             if nextSpine < chapterCount {
@@ -753,15 +753,15 @@ _layouts.removeAll()
         let (spineIndex, localPage) = localPosition(for: index)
         // Snapshots are only used for chapter boundary handoff. Page 0 key is (spineIndex << 1)
         guard localPage == 0 else {
-            print("[FlipTrace] snapshotVC MISS nonFirstPage page=\(index) spine=\(spineIndex) local=\(localPage)")
+            AppLogger.render("[FlipTrace] snapshotVC MISS nonFirstPage page=\(index) spine=\(spineIndex) local=\(localPage)")
             return nil
         }
         let key = NSNumber(value: (spineIndex << 1))
         guard let snapshot = chapterSnapshots.object(forKey: key) else {
-            print("[FlipTrace] snapshotVC MISS noSnapshot page=\(index) spine=\(spineIndex) key=\(key) layouts=\(_layouts.keys.sorted())")
+            AppLogger.render("[FlipTrace] snapshotVC MISS noSnapshot page=\(index) spine=\(spineIndex) key=\(key) layouts=\(_layouts.keys.sorted())")
             return nil
         }
-        print("[FlipTrace] snapshotVC HIT page=\(index) spine=\(spineIndex) key=\(key)")
+        AppLogger.render("[FlipTrace] snapshotVC HIT page=\(index) spine=\(spineIndex) key=\(key)")
         let bgColor: UIColor
         if let layout = _layouts[spineIndex],
            layout.attributedString.length > 0,
@@ -799,15 +799,15 @@ _layouts[spineIndex] = _layouts[spineIndex]?.withUpdatedColors(textColor: textCo
     func renderSnapshot(forPage globalPage: Int) -> UIImage? {
         let (spineIndex, localPage) = localPosition(for: globalPage)
         guard let layout = _layouts[spineIndex] else {
-            print("[FlipTrace] renderSnapshot MISS noLayout page=\(globalPage) spine=\(spineIndex) local=\(localPage) layouts=\(_layouts.keys.sorted())")
+            AppLogger.render("[FlipTrace] renderSnapshot MISS noLayout page=\(globalPage) spine=\(spineIndex) local=\(localPage) layouts=\(_layouts.keys.sorted())")
             return nil
         }
         guard localPage < layout.pageRanges.count else {
-            print("[FlipTrace] renderSnapshot MISS pageOutOfRange page=\(globalPage) spine=\(spineIndex) local=\(localPage) pages=\(layout.pageRanges.count)")
+            AppLogger.render("[FlipTrace] renderSnapshot MISS pageOutOfRange page=\(globalPage) spine=\(spineIndex) local=\(localPage) pages=\(layout.pageRanges.count)")
             return nil
         }
         guard renderSize.width > 0, renderSize.height > 0 else {
-            print("[FlipTrace] renderSnapshot MISS invalidSize page=\(globalPage) spine=\(spineIndex) size=\(renderSize)")
+            AppLogger.render("[FlipTrace] renderSnapshot MISS invalidSize page=\(globalPage) spine=\(spineIndex) size=\(renderSize)")
             return nil
         }
         
@@ -816,11 +816,11 @@ _layouts[spineIndex] = _layouts[spineIndex]?.withUpdatedColors(textColor: textCo
         if localPage == 0 || isLastPage {
             let key = NSNumber(value: (spineIndex << 1) | (isLastPage ? 1 : 0))
             if let cached = chapterSnapshots.object(forKey: key) {
-                print("[FlipTrace] renderSnapshot HIT cached page=\(globalPage) spine=\(spineIndex) local=\(localPage) key=\(key)")
+                AppLogger.render("[FlipTrace] renderSnapshot HIT cached page=\(globalPage) spine=\(spineIndex) local=\(localPage) key=\(key)")
                 return cached
             }
         }
-        print("[FlipTrace] renderSnapshot render page=\(globalPage) spine=\(spineIndex) local=\(localPage)")
+        AppLogger.render("[FlipTrace] renderSnapshot render page=\(globalPage) spine=\(spineIndex) local=\(localPage)")
         
         let bgColor: UIColor
         if layout.attributedString.length > 0,

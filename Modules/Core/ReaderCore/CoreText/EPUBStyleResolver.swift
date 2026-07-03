@@ -51,7 +51,7 @@ final class EPUBStyleResolver {
         )
         let fontFaces = extractFontFaces(from: withImports, cssHref: cssHref, chapterHref: chapterHref)
         if !fontFaces.isEmpty {
-            print("[EPUBStyleResolver] discovered font faces: \(fontFaces.map { $0.alias })")
+            AppLogger.parse("[EPUBStyleResolver] discovered font faces: \(fontFaces.map { $0.alias })")
         }
 
         for fontFace in fontFaces {
@@ -70,7 +70,7 @@ final class EPUBStyleResolver {
                     existingTempURL: registeredFontFileURLs[variantKey]
                 )
             else {
-                print("[EPUBStyleResolver] font registration FAILED alias=\(variantKey)")
+                AppLogger.parse("[EPUBStyleResolver] font registration FAILED alias=\(variantKey)")
                 continue
             }
             if let tempFileURL = registeredFont.tempFileURL {
@@ -87,7 +87,7 @@ final class EPUBStyleResolver {
             if registeredFontFaces[fontFace.alias] == nil {
                 registeredFontFaces[fontFace.alias] = face
             }
-            print("[EPUBStyleResolver] registered font alias=\(fontFace.alias) weight=\(fontFace.weight) italic=\(fontFace.italic) -> family=\(registeredFont.familyName) ps=\(registeredFont.postScriptName)")
+            AppLogger.parse("[EPUBStyleResolver] registered font alias=\(fontFace.alias) weight=\(fontFace.weight) italic=\(fontFace.italic) -> family=\(registeredFont.familyName) ps=\(registeredFont.postScriptName)")
         }
 
         let stripped = stripFontFaceBlocks(from: withImports)
@@ -112,7 +112,7 @@ final class EPUBStyleResolver {
                 UIFont(name: matchedFace.postScriptName, size: size)
                 ?? UIFont(name: matchedFace.familyName, size: size)
             guard let baseFont else {
-                print("[EPUBStyleResolver] resolveRegisteredFont matched variant but UIFont init FAILED family=\(family) ps=\(matchedFace.postScriptName) fam=\(matchedFace.familyName)")
+                AppLogger.parse("[EPUBStyleResolver] resolveRegisteredFont matched variant but UIFont init FAILED family=\(family) ps=\(matchedFace.postScriptName) fam=\(matchedFace.familyName)")
                 continue
             }
 
@@ -131,11 +131,11 @@ final class EPUBStyleResolver {
             // Did the bold/italic request actually land on a face? `withSymbolicTraits` returns nil when
             // the embedded family has no matching face (e.g. only an upright file registered). Compare
             // requested vs. delivered so we can see whether the embedded font silently dropped the trait.
-            print("[EPUBStyleResolver] resolveRegisteredFont req families=\(families) weight=\(weight) italic=\(italic) -> picked alias=\(family) pickedFaceWeight=\(matchedFace.weight) pickedFaceItalic=\(matchedFace.isItalic) ps=\(matchedFace.postScriptName) | withTraitsOK=\(traitApplied != nil) finalFont=\(result.fontName) finalBold=\(finalTraits.contains(.traitBold)) finalItalic=\(finalTraits.contains(.traitItalic)) (wantedBold=\(wantBold) wantedItalic=\(italic))")
+            AppLogger.parse("[EPUBStyleResolver] resolveRegisteredFont req families=\(families) weight=\(weight) italic=\(italic) -> picked alias=\(family) pickedFaceWeight=\(matchedFace.weight) pickedFaceItalic=\(matchedFace.isItalic) ps=\(matchedFace.postScriptName) | withTraitsOK=\(traitApplied != nil) finalFont=\(result.fontName) finalBold=\(finalTraits.contains(.traitBold)) finalItalic=\(finalTraits.contains(.traitItalic)) (wantedBold=\(wantBold) wantedItalic=\(italic))")
             return wrapCJKFont(result, size: size)
         }
 
-        print("[EPUBStyleResolver] resolveRegisteredFont NO VARIANT families=\(families) weight=\(weight) italic=\(italic) registeredAliases=\(registeredFontVariants.keys.sorted()) variantsPerAlias=\(registeredFontVariants.mapValues { $0.map { "w\($0.weight)\($0.isItalic ? "i" : "n")/\($0.familyName)" } })")
+        AppLogger.parse("[EPUBStyleResolver] resolveRegisteredFont NO VARIANT families=\(families) weight=\(weight) italic=\(italic) registeredAliases=\(registeredFontVariants.keys.sorted()) variantsPerAlias=\(registeredFontVariants.mapValues { $0.map { "w\($0.weight)\($0.isItalic ? "i" : "n")/\($0.familyName)" } })")
         return nil
     }
 
@@ -244,7 +244,7 @@ final class EPUBStyleResolver {
         for match in matches.reversed() {
             let rawHref = nsCSS.substring(with: match.range(at: 1))
             if rawHref.hasPrefix("http://") || rawHref.hasPrefix("https://") {
-                print("[EPUBStyleResolver] ignoring remote @import \(rawHref)")
+                AppLogger.parse("[EPUBStyleResolver] ignoring remote @import \(rawHref)")
                 result = (result as NSString).replacingCharacters(in: match.range, with: "")
                 continue
             }
@@ -259,7 +259,7 @@ final class EPUBStyleResolver {
                 let response = try? await resourceProvider.response(for: resourceProvider.resourceURL(for: resolved)),
                 let imported = String(data: response.data, encoding: .utf8)
             else {
-                print("[EPUBStyleResolver] local @import FAILED \(resolved)")
+                AppLogger.parse("[EPUBStyleResolver] local @import FAILED \(resolved)")
                 result = (result as NSString).replacingCharacters(in: match.range, with: "")
                 continue
             }
@@ -331,7 +331,7 @@ final class EPUBStyleResolver {
                     in: block, range: NSRange(location: 0, length: nsBlock.length)
                 )
             else {
-                print("[EPUBStyleResolver] unable to parse @font-face block: \(block)")
+                AppLogger.parse("[EPUBStyleResolver] unable to parse @font-face block: \(block)")
                 return nil
             }
             let alias = Self.normalizeFontName(nsBlock.substring(with: familyMatch.range(at: 1)))
