@@ -780,14 +780,14 @@ struct SVGPathParser {
     ) {
         let cosA = cos(xAxisRotation), sinA = sin(xAxisRotation)
         let dx = (p1.x - p2.x) / 2.0, dy = (p1.y - p2.y) / 2.0
-        var x1p = cosA * dx + sinA * dy
-        var y1p = -sinA * dx + cosA * dy
+        let x1p = cosA * dx + sinA * dy
+        let y1p = -sinA * dx + cosA * dy
 
         var rxSq = rx * rx, rySq = ry * ry
         let x1pSq = x1p * x1p, y1pSq = y1p * y1p
 
         var arx = rx, ary = ry
-        var radiiCheck = x1pSq / rxSq + y1pSq / rySq
+        let radiiCheck = x1pSq / rxSq + y1pSq / rySq
         if radiiCheck > 1.0 {
             let s = sqrt(radiiCheck)
             arx *= s; ary *= s

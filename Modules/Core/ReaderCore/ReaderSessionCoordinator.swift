@@ -35,7 +35,6 @@ enum ReaderEffect: Equatable {
     case persistPosition(CoreTextReadingPosition)
     case requestPageTransition(targetPage: Int)
     case warmUpNext(currentGlobalPage: Int)
-    case invalidateLayout(ReaderInvalidationReason)
     case clearExternalTarget
     case publishPageChanged(pageIndex: Int, position: CoreTextReadingPosition?)
 }
