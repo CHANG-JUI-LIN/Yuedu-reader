@@ -312,7 +312,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
 
         private func handleYueduURL(_ url: URL, webView: WKWebView) {
             guard let sourceURL = Self.onlineImportSourceURL(from: url) else {
-                presentImportResult("無效的書源導入連結", in: webView)
+                presentImportResult(localized("無效的書源導入連結"), in: webView)
                 return
             }
 
@@ -323,13 +323,13 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
                         return
                     }
                     guard let data else {
-                        self.presentImportResult("無法讀取書源資料", in: webView)
+                        self.presentImportResult(localized("無法讀取書源資料"), in: webView)
                         return
                     }
                     do {
                         let ext = sourceURL.pathExtension.isEmpty ? "json" : sourceURL.pathExtension
                         let count = try BookSourceStore.shared.importFromData(data, fileExtension: ext)
-                        self.presentImportResult("成功匯入 \(count) 個書源", in: webView)
+                        self.presentImportResult(String(format: localized("成功匯入 %d 個書源"), count), in: webView)
                     } catch {
                         self.presentImportResult(error.localizedDescription, in: webView)
                     }
@@ -343,8 +343,8 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             while let presented = top.presentedViewController {
                 top = presented
             }
-            let alert = UIAlertController(title: "書源導入", message: message, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "完成", style: .default))
+            let alert = UIAlertController(title: localized("書源導入"), message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: localized("完成"), style: .default))
             top.present(alert, animated: true)
         }
 

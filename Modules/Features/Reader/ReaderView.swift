@@ -1132,8 +1132,8 @@ struct ReaderView: View {
         .statusBarHidden(!showBars)
         .animation(.easeInOut(duration: 0.25), value: showBars)
         .modifier(HideTabBarModifier())
-        .alert("将「\(snapshotBook?.title ?? "")」加入书架？", isPresented: $showAddToShelfAlert) {
-            Button("加入书架") {
+        .alert(String(format: localized("將「%@」加入書架？"), snapshotBook?.title ?? ""), isPresented: $showAddToShelfAlert) {
+            Button(localized("加入書架")) {
                 if let snap = snapshotBook {
                     store.addOnlineBook(
                         name: snap.title,
@@ -1148,7 +1148,7 @@ struct ReaderView: View {
                 }
                 presentationMode.wrappedValue.dismiss()
             }
-            Button("不加入", role: .cancel) {
+            Button(localized("不加入"), role: .cancel) {
                 presentationMode.wrappedValue.dismiss()
             }
         }

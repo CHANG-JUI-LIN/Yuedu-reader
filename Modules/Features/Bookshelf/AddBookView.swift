@@ -418,7 +418,7 @@ struct FileImportTab: View {
                         "importEPUB stage=copyFailed session=\(sessionID) error=\(error.localizedDescription)"
                     )
                     isLoading = false
-                    errorMsg = "無法複製 EPUB 檔案：\(error.localizedDescription)"
+                    errorMsg = localized("無法複製 EPUB 檔案：") + error.localizedDescription
                 }
                 return
             }

@@ -105,6 +105,6 @@ struct ReaderInlineFooter: View {
         }
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("第\(pageInfo)頁，進度\(progress)，\(clock.displayTime)")
+        .accessibilityLabel(String(format: localized("第 %@ 頁，進度 %@，%@"), "\(pageInfo)", "\(progress)", clock.displayTime))
     }
 }

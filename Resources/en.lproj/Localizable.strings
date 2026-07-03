@@ -93,7 +93,7 @@
 "加入書架" = "Bookmarked";
 "動畫樣式" = "Animation Style";
 "匯入" = "Import";
-"匯入 TXT 文件，或是輸入網址\\n抓取網頁小說加入書架" = "Import a TXT file, or enter a URL\\nto fetch a web novel into your library";
+"匯入 TXT 文件，或是輸入網址\n抓取網頁小說加入書架" = "Import a TXT file, or enter a URL\nto fetch a web novel into your library";
 "匯入中，請稍候…" = "Importing, please wait…";
 "匯入失敗：" = "Import failed: ";
 "匯入文件" = "Import File";
@@ -979,3 +979,14 @@
 "檢測失敗的書源的處理方式" = "How to handle sources that fail the check";
 "回應時間超過閾值的書源會被停用" = "Sources slower than the threshold are disabled";
 "註釋" = "Note";
+"將「%@」加入書架？" = "Add \"%@\" to your library?";
+"不加入" = "Don't Add";
+"無法識別章節連結，請直接進入章節頁面再轉碼" = "Couldn't detect chapter links. Open a chapter page and try again.";
+"抓取到的內容太少，請嘗試進入具體章節頁面" = "Too little content fetched. Try opening a specific chapter page.";
+"儲存失敗：" = "Save failed: ";
+"無效的書源導入連結" = "Invalid book-source import link";
+"無法讀取書源資料" = "Couldn't read book-source data";
+"成功匯入 %d 個書源" = "Imported %d book source(s)";
+"書源導入" = "Import Book Source";
+"無法複製 EPUB 檔案：" = "Couldn't copy EPUB file: ";
+"第 %@ 頁，進度 %@，%@" = "Page %@, progress %@, %@";

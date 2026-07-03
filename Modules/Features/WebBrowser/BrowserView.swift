@@ -824,7 +824,7 @@ struct BrowserView: View {
                 browser.extractChapterLinks { items in
                     isExtracting = false
                     if items.isEmpty {
-                        errorMsg = "無法識別章節連結，請直接進入章節頁面再轉碼"
+                        errorMsg = localized("無法識別章節連結，請直接進入章節頁面再轉碼")
                     } else {
                         tocBookTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: browser.pageTitle)
                         extractedChapters = items
@@ -835,7 +835,7 @@ struct BrowserView: View {
                 browser.extractContentPayload { title, content, html in
                     guard content.count >= 200 else {
                         isExtracting = false
-                        errorMsg = "抓取到的內容太少，請嘗試進入具體章節頁面"
+                        errorMsg = localized("抓取到的內容太少，請嘗試進入具體章節頁面")
                         return
                     }
                     let displayTitle = title.isEmpty
@@ -853,7 +853,7 @@ struct BrowserView: View {
                         readerPresentation = ReaderPresentation(id: book.id)
                     } catch {
                         isExtracting = false
-                        errorMsg = "儲存失敗：\(error.localizedDescription)"
+                        errorMsg = localized("儲存失敗：") + error.localizedDescription
                     }
                 }
             }
@@ -876,7 +876,7 @@ struct BrowserView: View {
                     VStack(spacing: 2) {
                         Image(systemName: browser.hasTOC ? "list.bullet" : "book.fill")
                             .font(.system(size: 20, weight: .medium))
-                        Text(browser.hasTOC ? "目錄" : "閱讀")
+                        Text(localized(browser.hasTOC ? "目錄" : "閱讀"))
                             .font(.system(size: 10, weight: .semibold))
                     }
                     .foregroundColor(.white)
