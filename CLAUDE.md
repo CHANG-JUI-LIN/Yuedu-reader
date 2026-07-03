@@ -46,7 +46,7 @@ Swift sources live under `Modules/` and `Targets/` (Xcode 16 file-system-synchro
 | `Modules/SharedUI/` | `DesignSystem` (`DesignTokens.swift`), `Adaptive`, `Components`, `Extensions` |
 | `Targets/Yuedu/SharedApp/` | App entry (`yuedu_appApp.swift`, `ContentView.swift`), DI, `GlobalSettings`, app config |
 | `Targets/Yuedu/iPad/` | iPad-specific shell (e.g. `IPadAdaptiveRootTabStyle.swift`) |
-| `iOS/` | Resources only: `Assets.xcassets`, `*.lproj`, bridging header, entitlements |
+| `Resources/` | Resources only: `Assets.xcassets`, `*.lproj`, entitlements |
 
 ## Key Architecture
 
@@ -56,7 +56,7 @@ Two rendering modes, both backed by CoreText:
 
 **Paged mode:** `EPUBPageRenderer` → `CoreTextPageEngine` → `UIPageViewController` → `CoreTextPageView` (each page drawn via `CTFrameDraw`)
 
-**Scroll mode:** `EPUBPageRenderer` → `CoreTextScrollEngine` → `UITableView` → `CoreTextChunkCell` (~2000pt chunks via `CoreTextChunkSlicer`)
+**Scroll mode:** `EPUBPageRenderer` → `CoreTextScrollEngine` → `UICollectionView` (`CoreTextCollectionScrollViewController`) → `CoreTextChunkCollectionCell` (~2000pt chunks via `CoreTextChunkSlicer`)
 
 EPUB HTML → `HTMLAttributedStringBuilder` → `NSAttributedString` → paginator → pages. A parallel path via `RenderableNode` IR exists for CSS-rich content. Both paths share CSS resolution through `ResolvedStyle` / `RenderStyle`.
 
@@ -73,9 +73,9 @@ Import/Export: OPML 2.0 and Legado JSON formats
 ## Critical Conventions
 
 - **Reading position**: `(spineIndex, charOffset)`, never global page index. Pages shift when chapters load.
-- **Localization**: Every user-facing string via `localized("Key")`. Keys must exist in all three `.lproj` files: `zh-Hant`, `zh-Hans`, `en`.
+- **Localization**: Every user-facing string via `localized("Key")`. Keys must exist in all three `.lproj` files under `Resources/`: `zh-Hant`, `zh-Hans`, `en`.
 - **Design tokens**: Use `DSColor`, `DSFont`, `DSSpacing` for all UI styling. Never hardcode colors or fonts.
-- **UI design**: All views must follow `docs/design.md` (HIG-native, not web UI). Hard rule: any page with a top toolbar / nav title uses `.toolbarTitleDisplayMode(.inlineLarge)`. The `yuedu-ios-design` skill enforces this when touching UI.
+- **UI design**: All views must follow `docs/design.md` (HIG-native, not web UI). Title rule: pushed pages with a nav title use `.toolbarTitleDisplayMode(.inlineLarge)`; modal sheets use `.inline` (never `.inlineLarge`/`.large`). The `yuedu-ios-design` skill enforces this when touching UI.
 - **Dependency injection**: `AppDependencies` + `@Environment` for services. Singletons only for caches and shared managers.
 - **CSS properties**: Adding to `ResolvedStyle` requires mirroring in `RenderStyle`, updating `RenderStyle.from`, and handling both rendering paths.
 - **Vertical CJK**: Vertical writing uses right-to-left page flow. `String+VerticalNormalization` and `VerticalLayoutConfig` handle coordinate transforms. Run `CoreTextWritingModeTests` before touching vertical layout code.

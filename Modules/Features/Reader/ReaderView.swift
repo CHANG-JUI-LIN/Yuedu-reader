@@ -2,18 +2,18 @@ import Combine
 import SwiftUI
 import UIKit
 
-private let uiFeedbackDuration: Double = 0.25
+let uiFeedbackDuration: Double = 0.25
 
 // MARK: - Main Reader View
 struct ReaderView: View {
     let bookId: UUID
     @EnvironmentObject var store: BookStore
-    @Environment(\.appDependencies) private var dependencies
+    @Environment(\.appDependencies) var dependencies
     @Environment(\.presentationMode) var presentationMode
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @ObservedObject private var settings = GlobalSettings.shared
-    @StateObject private var readerConfig = ReaderConfig.shared
+    @ObservedObject var settings = GlobalSettings.shared
+    @StateObject var readerConfig = ReaderConfig.shared
 
     // MARK: - Speculative Pre-Layout for Cross-Chapter Scrolling
     @State private var scrollVelocity: CGFloat = 0.0
@@ -43,31 +43,31 @@ struct ReaderView: View {
     }
 
 
-    @State private var chapters: [BookChapter] = []
-    @State private var allPages: [PageContent] = []
-    @State private var currentPage = 0
-    @State private var showBars = false
-    @State private var showSettings = false
-    @State private var showTOC = false
-    @State private var showBookmarks = false
+    @State var chapters: [BookChapter] = []
+    @State var allPages: [PageContent] = []
+    @State var currentPage = 0
+    @State var showBars = false
+    @State var showSettings = false
+    @State var showTOC = false
+    @State var showBookmarks = false
 
     // Online chapter lazy loading
-    @StateObject private var readerViewModel = ReaderViewModel()
-    @State private var observedChapterStates: [Int: ChapterLoadState] = [:]
+    @StateObject var readerViewModel = ReaderViewModel()
+    @State var observedChapterStates: [Int: ChapterLoadState] = [:]
 
     /// Top safe area (points), passed to EPUB engine as minimum margin-top.
-    @State private var readerSafeAreaTop: CGFloat = 59
-    @State private var readerViewportSize: CGSize = UIScreen.main.bounds.size
+    @State var readerSafeAreaTop: CGFloat = 59
+    @State var readerViewportSize: CGSize = UIScreen.main.bounds.size
     @StateObject private var volumeHandler = VolumeKeyHandler()
 
     @StateObject private var autoReader = AutoReadController()
-    @StateObject private var ttsCoordinator = TTSCoordinator()
-    @StateObject private var mediaOverlayCoordinator = EPUBMediaOverlayPlaybackCoordinator()
+    @StateObject var ttsCoordinator = TTSCoordinator()
+    @StateObject var mediaOverlayCoordinator = EPUBMediaOverlayPlaybackCoordinator()
     /// Plays an EPUB chapter's authored background soundtrack (controls-less autoplay/loop `<audio>`).
-    @State private var backgroundAudioCoordinator = EPUBBackgroundAudioCoordinator()
+    @State var backgroundAudioCoordinator = EPUBBackgroundAudioCoordinator()
     /// The active EPUB publication session, retained so the background-audio coordinator can read chapter
     /// HTML and resolve resource URLs on chapter change.
-    @State private var activePublicationSession: PublicationSession?
+    @State var activePublicationSession: PublicationSession?
 
     private func syncReaderBrightnessFromSystem() {
         let current = Double(UIScreen.main.brightness)
@@ -88,89 +88,89 @@ struct ReaderView: View {
         )
     }
 
-    @StateObject private var epubRenderer = EPUBPageRenderer()
+    @StateObject var epubRenderer = EPUBPageRenderer()
 
-    @State private var showTTSPanel = false
-    @State private var showDownloadOptions = false
-    @State private var showOnlineBookDetail = false
+    @State var showTTSPanel = false
+    @State var showDownloadOptions = false
+    @State var showOnlineBookDetail = false
     @State private var showAutoReadPanel = false
-    @State private var ttsChapterIndex: Int? = nil
-    @State private var showTTSJumpPrompt = false
-    @State private var ttsJumpPromptChapterIndex: Int? = nil
-    @State private var ttsPlaybackAnchor: CoreTextReadingPosition?
-    @State private var isAligningReaderToTTSAnchor = false
-    @State private var showMediaOverlayPanel = false
-    @State private var activeMediaOverlayChapterIndex: Int? = nil
+    @State var ttsChapterIndex: Int? = nil
+    @State var showTTSJumpPrompt = false
+    @State var ttsJumpPromptChapterIndex: Int? = nil
+    @State var ttsPlaybackAnchor: CoreTextReadingPosition?
+    @State var isAligningReaderToTTSAnchor = false
+    @State var showMediaOverlayPanel = false
+    @State var activeMediaOverlayChapterIndex: Int? = nil
 
-    @State private var currentChapterIndex = 0
+    @State var currentChapterIndex = 0
 
     // Scroll mode progress tracking
-    @State private var scrollVisibleChapter = 0
-    @State private var scrollResliceToken: UInt = 0
-    @State private var pendingScrollJumpTarget: CoreTextReadingPosition?
+    @State var scrollVisibleChapter = 0
+    @State var scrollResliceToken: UInt = 0
+    @State var pendingScrollJumpTarget: CoreTextReadingPosition?
 
-    @State private var readerSessionCoordinator: ReaderSessionCoordinator?
-    @State private var readingStatsTracker: ReadingStatsSessionTracker?
+    @State var readerSessionCoordinator: ReaderSessionCoordinator?
+    @State var readingStatsTracker: ReadingStatsSessionTracker?
 
-    @State private var isRestoringPosition = true
-    @State private var savedCoreTextRestoreTarget: (chapterIndex: Int, charOffset: Int)?
+    @State var isRestoringPosition = true
+    @State var savedCoreTextRestoreTarget: (chapterIndex: Int, charOffset: Int)?
     @State private var isApplyingCoreTextRestore = false
-    @State private var isLoadingPipeline = false
+    @State var isLoadingPipeline = false
     @State private var curlStartupStartedAt: CFAbsoluteTime?
     @State private var hasLoggedCurlInteractiveReady = false
     @State private var hasPerformedInitialLoad = false
-    @State private var activeFixedLayoutOrientationRequest: FixedLayoutOrientation?
+    @State var activeFixedLayoutOrientationRequest: FixedLayoutOrientation?
 
     // Source change
-    @State private var showChangeSourceSheet = false
-    @State private var reviewTarget: ReaderHTMLUtilities.ReviewTarget?
-    @State private var footnoteItem: ReaderFootnoteItem?
+    @State var showChangeSourceSheet = false
+    @State var reviewTarget: ReaderHTMLUtilities.ReviewTarget?
+    @State var footnoteItem: ReaderFootnoteItem?
     @State private var coreTextExternalTargetVersion: UInt = 0
-    @State private var bookDocument: (any BookDocument)? = nil
-    @State private var contentProvider: (any BookContentProvider)? = nil
-    @State private var readerCapabilities: ReaderCapabilities = .reflowableText
+    @State var bookDocument: (any BookDocument)? = nil
+    @State var contentProvider: (any BookContentProvider)? = nil
+    @State var readerCapabilities: ReaderCapabilities = .reflowableText
 
     /// Snapshot of the book at reader launch, so we can re-add it to the shelf
     /// if it was deleted during the reading session.
-    @State private var snapshotBook: ReadingBook?
-    @State private var showAddToShelfAlert = false
+    @State var snapshotBook: ReadingBook?
+    @State var showAddToShelfAlert = false
 
     // Source change state managed by ViewModel, exposed via computed properties to avoid duplicate state in the view.
-    private var changeSourceOrigins: [BookOrigin] { readerViewModel.changeSourceOrigins }
-    private var changeSourceLoading: Bool { readerViewModel.changeSourceLoading }
-    private var changeSourceError: String? { readerViewModel.changeSourceError }
-    private var changeSourceFailedKeys: Set<String> { readerViewModel.changeSourceFailedKeys }
+    var changeSourceOrigins: [BookOrigin] { readerViewModel.changeSourceOrigins }
+    var changeSourceLoading: Bool { readerViewModel.changeSourceLoading }
+    var changeSourceError: String? { readerViewModel.changeSourceError }
+    var changeSourceFailedKeys: Set<String> { readerViewModel.changeSourceFailedKeys }
 
     @State private var systemBrightness: Double = 0.5
 
-    private var fontSize: CGFloat {
+    var fontSize: CGFloat {
         get { readerConfig.fontSize }
         nonmutating set { readerConfig.fontSize = newValue }
     }
 
-    private var readerTheme: ReaderTheme {
+    var readerTheme: ReaderTheme {
         get { readerConfig.theme }
         nonmutating set { readerConfig.theme = newValue }
     }
 
 
-    private var usesReadableReaderWidth: Bool {
+    var usesReadableReaderWidth: Bool {
         horizontalSizeClass == .regular || UIDevice.current.userInterfaceIdiom == .pad
     }
 
-    private var overlayContentMaxWidth: CGFloat {
+    var overlayContentMaxWidth: CGFloat {
         usesReadableReaderWidth ? DSLayout.readableOverlayWidth : .infinity
     }
 
-    private var extraReaderHorizontalInset: CGFloat {
+    var extraReaderHorizontalInset: CGFloat {
         usesReadableReaderWidth ? DSLayout.readerRegularExtraHorizontalInset : 0
     }
 
-    private var effectivePageMarginH: CGFloat {
+    var effectivePageMarginH: CGFloat {
         readerConfig.pageMarginH + extraReaderHorizontalInset
     }
 
-    private var effectiveReaderSpreadMode: ReaderSpreadMode {
+    var effectiveReaderSpreadMode: ReaderSpreadMode {
         ReaderSpreadPolicy.effectiveMode(
             preferredMode: settings.readerSpreadMode,
             viewportSize: readerViewportSize,
@@ -182,15 +182,15 @@ struct ReaderView: View {
         )
     }
 
-    private var isDoublePageSpreadActive: Bool {
+    var isDoublePageSpreadActive: Bool {
         effectiveReaderSpreadMode == .doublePage
     }
 
-    private var readerPageStep: Int {
+    var readerPageStep: Int {
         isDoublePageSpreadActive ? 2 : 1
     }
 
-    private func nextReaderPage(after page: Int, maxPage: Int) -> Int {
+    func nextReaderPage(after page: Int, maxPage: Int) -> Int {
         if isDoublePageSpreadActive,
            let pairingProvider = epubRenderer.engine as? FixedLayoutSpreadPairingProviding,
            let next = pairingProvider.nextFixedLayoutSpreadPage(after: page) {
@@ -199,7 +199,7 @@ struct ReaderView: View {
         return min(maxPage, page + readerPageStep)
     }
 
-    private func previousReaderPage(before page: Int) -> Int {
+    func previousReaderPage(before page: Int) -> Int {
         if isDoublePageSpreadActive,
            let pairingProvider = epubRenderer.engine as? FixedLayoutSpreadPairingProviding,
            let previous = pairingProvider.previousFixedLayoutSpreadPage(before: page) {
@@ -211,7 +211,7 @@ struct ReaderView: View {
     /// Composed two-page spreads can't render a native page-curl (the spine sits in
     /// the centre, which UIPageViewController only supports when it owns both pages),
     /// so fall back to slide in double-page mode to keep tap/swipe turns animated.
-    private var effectivePageTurnStyle: PageTurnStyle {
+    var effectivePageTurnStyle: PageTurnStyle {
         isDoublePageSpreadActive && settings.pageTurnStyle == .curl ? .slide : settings.pageTurnStyle
     }
 
@@ -225,7 +225,7 @@ struct ReaderView: View {
         return "\(effectivePageTurnStyle.rawValue)-\(effectiveReaderSpreadMode.rawValue)-\(Int(size.width))x\(Int(size.height))"
     }
 
-    private var currentReaderRenderSize: CGSize {
+    var currentReaderRenderSize: CGSize {
         readerRenderSize(forViewport: readerViewportSize)
     }
 
@@ -237,14 +237,14 @@ struct ReaderView: View {
         )
     }
 
-    private var systemVerticalPadding: CGFloat {
+    var systemVerticalPadding: CGFloat {
         ReaderLayoutMetrics.minimumVerticalPadding
     }
 
     // ── Derived Properties ──
     var book: ReadingBook? { store.books.first(where: { $0.id == bookId }) }
 
-    private var onlineBookDetail: OnlineBook? {
+    var onlineBookDetail: OnlineBook? {
         guard let book, book.isOnline, let sourceId = book.bookSourceId else { return nil }
         let source = BookSourceStore.shared.sources.first(where: { $0.id == sourceId })
         return OnlineBook(
@@ -271,17 +271,17 @@ struct ReaderView: View {
         book?.resolvedPipelineKind == .txt
     }
 
-    @State private var isVerticalEPUB = false
+    @State var isVerticalEPUB = false
 
-    private var usesCoreTextEPUB: Bool {
+    var usesCoreTextEPUB: Bool {
         epubRenderer.engine != nil
     }
 
-    private var isFixedLayoutEPUB: Bool {
+    var isFixedLayoutEPUB: Bool {
         isEPUB && epubRenderer.layoutMode == .prePaginated
     }
 
-    private var usesFixedLayoutRenderer: Bool {
+    var usesFixedLayoutRenderer: Bool {
         isEPUB && isFixedLayoutEPUB
     }
 
@@ -311,7 +311,7 @@ struct ReaderView: View {
             ?? (chapters.indices.contains(currentChapterIndex) ? chapters[currentChapterIndex] : nil)
     }
 
-    private func tocChapter(forSpineIndex spineIndex: Int, charOffset: Int) -> BookChapter? {
+    func tocChapter(forSpineIndex spineIndex: Int, charOffset: Int) -> BookChapter? {
         ReaderTOCSelection.currentChapter(
             in: chapters,
             currentSpineIndex: spineIndex,
@@ -346,7 +346,7 @@ struct ReaderView: View {
         return engine.charOffset(forSpine: chapter.index, fragment: fragment)
     }
 
-    private func tocPosition(
+    func tocPosition(
         for chapter: BookChapter,
         engine: (any PageRenderingProvider)?
     ) -> CoreTextReadingPosition {
@@ -398,12 +398,12 @@ struct ReaderView: View {
         return "coretext-\(currentBook.id.uuidString)"
     }
 
-    private func onlineChapterRef(for chapterIndex: Int) -> OnlineChapterRef? {
+    func onlineChapterRef(for chapterIndex: Int) -> OnlineChapterRef? {
         guard let refs = book?.onlineChapters, refs.indices.contains(chapterIndex) else { return nil }
         return refs[chapterIndex]
     }
 
-    private func cachedChapterPackage(for chapterIndex: Int) -> ChapterPackage? {
+    func cachedChapterPackage(for chapterIndex: Int) -> ChapterPackage? {
         guard let currentBook = book,
               let ref = onlineChapterRef(for: chapterIndex)
         else {
@@ -428,7 +428,7 @@ struct ReaderView: View {
         )
     }
 
-    private func isChapterContentAvailable(at chapterIndex: Int) -> Bool {
+    func isChapterContentAvailable(at chapterIndex: Int) -> Bool {
         // Volume headers (作品相关 / 第N卷 …) render a divider page with no fetched content. Treat
         // them as available, otherwise the "ready but no content" path refetches them forever.
         if let refs = book?.onlineChapters,
@@ -447,7 +447,7 @@ struct ReaderView: View {
         return ok
     }
 
-    private var currentChapterOverlayState: ReaderChapterOverlayState {
+    var currentChapterOverlayState: ReaderChapterOverlayState {
         guard book?.onlineChapters?.isEmpty == false else { return .hidden }
         return ReaderChapterPresentation.overlayState(
             isContentAvailable: isChapterContentAvailable(at: currentChapterIndex),
@@ -455,15 +455,15 @@ struct ReaderView: View {
         )
     }
 
-    private var telemetryPipelineKind: String {
+    var telemetryPipelineKind: String {
         book?.resolvedPipelineKind.rawValue ?? "epub"
     }
 
-    private func progressTrace(_ message: String) {
-        print("[ProgressTrace][ReaderView][\(bookId.uuidString)] \(message)")
+    func progressTrace(_ message: String) {
+        AppLogger.render("[ProgressTrace][ReaderView][\(bookId.uuidString)] \(message)")
     }
 
-    private var currentReaderPresentationState: ReaderPresentationState {
+    var currentReaderPresentationState: ReaderPresentationState {
         ReaderPresentationState(
             location: readerSessionCoordinator?.state.location
                 ?? ReaderLocation(spineIndex: currentChapterIndex, charOffset: 0),
@@ -481,7 +481,7 @@ struct ReaderView: View {
     /// dimensions are stable; only their order changes with orientation, and `interfaceOrientation`
     /// is already correct when this notification fires — so we order them by it (the raw
     /// `window.bounds` may still report the pre-rotation order at this instant).
-    private func applyRotatedViewportIfNeeded() {
+    func applyRotatedViewportIfNeeded() {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first,
               let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first
@@ -499,7 +499,7 @@ struct ReaderView: View {
         handleReaderViewportSizeChange(size)
     }
 
-    private func handleReaderViewportSizeChange(_ newSize: CGSize) {
+    func handleReaderViewportSizeChange(_ newSize: CGSize) {
         guard newSize.width > 1, newSize.height > 1 else { return }
 
         let previousSize = readerViewportSize
@@ -528,7 +528,7 @@ struct ReaderView: View {
         }
     }
 
-    private func ensureReaderNavigator(initialPosition: CoreTextReadingPosition) {
+    func ensureReaderNavigator(initialPosition: CoreTextReadingPosition) {
         if readerSessionCoordinator == nil {
             var state = currentReaderPresentationState
             state.location = ReaderLocation(initialPosition, source: .restored)
@@ -547,7 +547,7 @@ struct ReaderView: View {
         readerSessionCoordinator?.send(.updateSpreadMode(effectiveReaderSpreadMode))
     }
 
-    private func moveReaderSession(
+    func moveReaderSession(
         to position: CoreTextReadingPosition,
         source: ReaderLocation.Source,
         pageIndex: Int? = nil,
@@ -598,17 +598,17 @@ struct ReaderView: View {
         }
     }
 
-    private func setCoreTextExternalTarget(_ position: CoreTextReadingPosition) {
+    func setCoreTextExternalTarget(_ position: CoreTextReadingPosition) {
         readerSessionCoordinator?.setExternalTarget(position)
         coreTextExternalTargetVersion &+= 1
     }
 
-    private func clearCoreTextExternalTarget() {
+    func clearCoreTextExternalTarget() {
         readerSessionCoordinator?.send(.clearExternalTarget)
         coreTextExternalTargetVersion &+= 1
     }
 
-    private func applyReaderEffects(
+    func applyReaderEffects(
         _ effects: [ReaderEffect],
         engine: any PageRenderingProvider
     ) {
@@ -622,7 +622,7 @@ struct ReaderView: View {
         }
     }
 
-    private func coreTextPositionIfLayoutReady(
+    func coreTextPositionIfLayoutReady(
         engine: any PageRenderingProvider,
         page: Int
     ) -> (spineIndex: Int, charOffset: Int)? {
@@ -631,7 +631,7 @@ struct ReaderView: View {
         return (spineIndex, charOffset)
     }
 
-    private func scheduleCoreTextPageChanged(
+    func scheduleCoreTextPageChanged(
         _ newPage: Int,
         engine: any PageRenderingProvider,
         visiblePosition: CoreTextReadingPosition? = nil
@@ -641,7 +641,7 @@ struct ReaderView: View {
         }
     }
 
-    private func handleCoreTextPageChanged(
+    func handleCoreTextPageChanged(
         _ newPage: Int,
         engine: any PageRenderingProvider,
         visiblePosition: CoreTextReadingPosition? = nil
@@ -751,9 +751,9 @@ struct ReaderView: View {
     var canGoNextChapter: Bool { currentChapterIndex < chapters.count - 1 }
 
     /// Footer intrinsic height (points), excluding safe area bottom.
-    private let footerOverlayHeight: CGFloat = ReaderLayoutMetrics.footerHeight
+    let footerOverlayHeight: CGFloat = ReaderLayoutMetrics.footerHeight
 
-    private var currentTopBarBookmarkPosition: CoreTextReadingPosition? {
+    var currentTopBarBookmarkPosition: CoreTextReadingPosition? {
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let position = engine.readingPosition(forPage: currentPage)
                 ?? CoreTextReadingPosition(spineIndex: engine.charOffset(forPage: currentPage).spineIndex, charOffset: 0)
@@ -773,7 +773,7 @@ struct ReaderView: View {
         return store.isChapterStartBookmarked(bookId: bookId, chapterIndex: position.spineIndex)
     }
 
-    private func bookmarkChapterTitle(for chapterIndex: Int) -> String {
+    func bookmarkChapterTitle(for chapterIndex: Int) -> String {
         if usesCoreTextEPUB,
            let chapter = tocChapter(forSpineIndex: chapterIndex, charOffset: 0) {
             return chapter.title
@@ -797,17 +797,17 @@ struct ReaderView: View {
         return String(content.prefix(30))
     }
 
-    private var coreTextTextAnnotations: [CoreTextTextAnnotation] {
+    var coreTextTextAnnotations: [CoreTextTextAnnotation] {
         (book?.bookmarks ?? []).compactMap(\.coreTextTextAnnotation)
     }
 
-    private func syncCoreTextTextAnnotations() {
+    func syncCoreTextTextAnnotations() {
         let annotations = coreTextTextAnnotations
         epubRenderer.engine?.setTextAnnotations(annotations)
         epubRenderer.scrollEngine?.textAnnotations = annotations
     }
 
-    private func addUnderlineBookmark(_ request: CoreTextUnderlineSelectionRequest) {
+    func addUnderlineBookmark(_ request: CoreTextUnderlineSelectionRequest) {
         let position = request.position
         guard chapters.indices.contains(position.spineIndex) else { return }
         if request.removesExistingUnderline {
@@ -874,29 +874,29 @@ struct ReaderView: View {
         return allPages[min(currentPage, allPages.count - 1)].content
     }
 
-    private var activePlaybackHighlightText: String? {
+    var activePlaybackHighlightText: String? {
         if mediaOverlayCoordinator.playbackState != .stopped {
             return currentMediaOverlayHighlightText()
         }
         return ttsCoordinator.playbackState == .stopped ? nil : ttsCoordinator.currentSegmentText
     }
 
-    private var activeTTSChapterTitle: String {
+    var activeTTSChapterTitle: String {
         let index = ttsChapterIndex ?? currentChapterIndex
         guard chapters.indices.contains(index) else { return currentChapterTitle }
         return chapters[index].title
     }
 
-    private var ttsNowPlayingBookTitle: String {
+    var ttsNowPlayingBookTitle: String {
         let title = book?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return title.isEmpty ? activeTTSChapterTitle : title
     }
 
-    private var ttsNowPlayingAuthor: String {
+    var ttsNowPlayingAuthor: String {
         book?.author.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    private func ttsNowPlayingArtwork() -> UIImage? {
+    func ttsNowPlayingArtwork() -> UIImage? {
         if let coverPath = book?.coverImagePath,
            let image = loadTOCStyleCoverImage(filename: coverPath) {
             return image
@@ -904,14 +904,14 @@ struct ReaderView: View {
         return makeTOCStyleTitleCardArtwork(title: ttsNowPlayingBookTitle)
     }
 
-    private func loadTOCStyleCoverImage(filename: String) -> UIImage? {
+    func loadTOCStyleCoverImage(filename: String) -> UIImage? {
         let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(filename)
         guard let data = try? Data(contentsOf: url) else { return nil }
         return UIImage(data: data)
     }
 
-    private func makeTOCStyleTitleCardArtwork(title: String) -> UIImage? {
+    func makeTOCStyleTitleCardArtwork(title: String) -> UIImage? {
         let size = CGSize(width: 512, height: 768)
         let format = UIGraphicsImageRendererFormat()
         format.scale = UIScreen.main.scale
@@ -1560,7 +1560,7 @@ struct ReaderView: View {
         }
     }
 
-    private func refreshInitialRestoreState() {
+    func refreshInitialRestoreState() {
         let fallback = CoreTextReadingPosition(spineIndex: currentChapterIndex, charOffset: 0)
         ensureReaderNavigator(initialPosition: fallback)
         guard let restored = readerSessionCoordinator?.restoreSync(),
@@ -1583,7 +1583,7 @@ struct ReaderView: View {
         )
     }
 
-    private func applyInitialProgressIfNeeded() {
+    func applyInitialProgressIfNeeded() {
         if let engine = epubRenderer.engine {
             progressTrace(
                 "applyInitialProgress start enginePage=\(engine.currentPage) totalPages=\(engine.totalPages) target=\(savedCoreTextRestoreTarget.map { "(\($0.chapterIndex),\($0.charOffset))" } ?? "nil")"
@@ -1629,7 +1629,7 @@ struct ReaderView: View {
         }
     }
 
-    private func beginCurlStartupTrace(reason: String) {
+    func beginCurlStartupTrace(reason: String) {
         guard settings.pageTurnStyle == .curl else { return }
         curlStartupStartedAt = CFAbsoluteTimeGetCurrent()
         hasLoggedCurlInteractiveReady = false
@@ -1643,7 +1643,7 @@ struct ReaderView: View {
         )
     }
 
-    private func logCurlInteractiveReadyIfNeeded(source: String) {
+    func logCurlInteractiveReadyIfNeeded(source: String) {
         guard !hasLoggedCurlInteractiveReady else { return }
         hasLoggedCurlInteractiveReady = true
         let durationMs: String
@@ -1664,7 +1664,7 @@ struct ReaderView: View {
         )
     }
 
-    private func handleScrollModeChanged(_ enabled: Bool) {
+    func handleScrollModeChanged(_ enabled: Bool) {
         if enabled {
             guard let position = currentPagedReadingPositionForModeSwitch() else { return }
             moveReaderSession(to: position, source: .modeSwitch)
@@ -1698,7 +1698,7 @@ struct ReaderView: View {
         }
     }
 
-    private func currentPagedReadingPositionForModeSwitch() -> CoreTextReadingPosition? {
+    func currentPagedReadingPositionForModeSwitch() -> CoreTextReadingPosition? {
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             return engine.readingPosition(forPage: currentPage)
                 ?? CoreTextReadingPosition(
@@ -1713,2210 +1713,33 @@ struct ReaderView: View {
     }
 
     // MARK: - Bottom Footer (overlay for slide/cover/tab modes)
-    private var bottomFooter: some View {
-        ReaderOverlayFooter(
-            pageInfo: chapterPageInfo,
-            progress: totalProgressPercent,
-            textColor: readerTheme.textColor,
-            footerPadding: readerConfig.footerBottomPadding
-        )
-    }
-
-    private var windowSafeTop: CGFloat {
-        (UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }?
-            .safeAreaInsets.top) ?? readerSafeAreaTop
-    }
-
-    private var keyWindowScene: UIWindowScene? {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { scene in
-                scene.activationState == .foregroundActive &&
-                    scene.windows.contains(where: \.isKeyWindow)
-            }
-            ?? UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .first { $0.windows.contains(where: \.isKeyWindow) }
-    }
-
-    private func updateFixedLayoutOrientationPreference() {
-        guard usesFixedLayoutRenderer else {
-            restoreFixedLayoutOrientationPreference()
-            return
-        }
-
-        let orientation = epubRenderer.fixedLayoutOrientation
-        guard orientation != .auto else {
-            restoreFixedLayoutOrientationPreference()
-            return
-        }
-
-        guard activeFixedLayoutOrientationRequest != orientation else { return }
-        activeFixedLayoutOrientationRequest = orientation
-        ReaderOrientationController.shared.request(orientation, in: keyWindowScene)
-    }
-
-    private func restoreFixedLayoutOrientationPreference() {
-        guard activeFixedLayoutOrientationRequest != nil else { return }
-        activeFixedLayoutOrientationRequest = nil
-        ReaderOrientationController.shared.restoreDefault(in: keyWindowScene)
-    }
-
-    /// Returns the key window's bottom safe area inset (used for manual compensation in full-screen reading).
-    private var windowSafeBottom: CGFloat {
-        (UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }?
-            .safeAreaInsets.bottom) ?? 0
-    }
-
-    private var effectiveReaderSafeTop: CGFloat {
-        max(readerSafeAreaTop, windowSafeTop)
-    }
+    // Extracted to ReaderView+Footer.swift
 
     // MARK: - Inline Footer (curl mode: baked into page texture, moves with the page)
-    private func inlineFooter(forPage idx: Int) -> some View {
-        let info = pageFooterInfo(forPage: idx)
-        return ReaderInlineFooter(
-            pageInfo: info.pageInfo,
-            progress: info.progress,
-            textColor: readerTheme.textColor,
-            footerPadding: readerConfig.footerBottomPadding
-        )
-    }
-
-    /// Computes footer info (chapter page + progress percentage) for the given page.
-    private func pageFooterInfo(forPage idx: Int) -> (pageInfo: String, progress: String) {
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            let (spineIndex, charOffset) = engine.charOffset(forPage: idx)
-            guard let layout = engine.layouts[spineIndex], !layout.pageRanges.isEmpty else {
-                return ("", "0.00%")
-            }
-            let localPage = layout.pageIndex(for: charOffset) + 1
-            let pct = engine.totalProgress(forSpine: spineIndex, charOffset: charOffset) * 100
-            return ("\(localPage)/\(layout.pageRanges.count)", String(format: "%.2f%%", pct))
-        } else {
-            guard !allPages.isEmpty, idx >= 0, idx < allPages.count else { return ("", "0.00%") }
-            let page = allPages[idx]
-            let total = allPages.filter { $0.chapterIndex == page.chapterIndex }.count
-            let pct = Double(idx) / Double(max(allPages.count - 1, 1)) * 100
-            return ("\(page.pageInChapter + 1)/\(total)", String(format: "%.2f%%", pct))
-        }
-    }
+    // Extracted to ReaderView+Footer.swift
 
     // MARK: - TXT Vertical Scroll Mode
-    @ViewBuilder
-    private var scrollBody: some View {
-        if let scrollEngine = epubRenderer.scrollEngine {
-            let initialPos = computeScrollInitialPosition()
-            CoreTextScrollHostView(
-                engine: scrollEngine,
-                axis: scrollAxis,
-                horizontalInset: effectivePageMarginH,
-                verticalInset: scrollAxis.isHorizontalRTL
-                    ? ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
-                    : readerConfig.pageMarginV,
-                bottomMargin: scrollAxis.isHorizontalRTL
-                    ? ReaderLayoutMetrics.bottomInset(
-                        safeBottom: 0,
-                        footerBottomPadding: readerConfig.footerBottomPadding,
-                        footerTextGap: readerConfig.footerTextGap
-                      )
-                    : 0,
-                backgroundColor: readerTheme.uiBackgroundColor,
-                initialChapter: initialPos.chapter,
-                initialCharOffset: initialPos.charOffset,
-                resliceToken: scrollResliceToken,
-                playbackHighlightText: activePlaybackHighlightText,
-                textAnnotations: coreTextTextAnnotations,
-                onTap: {
-                    withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
-                },
-                onProgressCommit: { position in
-                    pendingScrollJumpTarget = nil
-                    scrollVisibleChapter = position.spineIndex
-                    currentChapterIndex = position.spineIndex
-                    moveReaderSession(to: position, source: .scrollCommit)
-                    let pct = epubRenderer.engine?.totalProgress(forSpine: position.spineIndex, charOffset: position.charOffset) ?? 0
-                    store.updatePosition(bookId: bookId, position: pct)
-                },
-                onInternalLinkTap: { href in
-                    if let target = ReaderHTMLUtilities.reviewTarget(fromHref: href) {
-                        reviewTarget = target
-                        return
-                    }
-                    // duokan popup footnote: show the note in place rather than jumping to the tail.
-                    if let note = FootnoteStore.text(spineIndex: currentChapterIndex, href: href) {
-                        footnoteItem = ReaderFootnoteItem(text: note)
-                        return
-                    }
-                    Task {
-                        guard let targetPage = await epubRenderer.resolveInternalLink(href, fromSpineIndex: currentChapterIndex),
-                              let pagedEngine = epubRenderer.engine else { return }
-                        let (spine, charOffset) = pagedEngine.charOffset(forPage: targetPage)
-                        await MainActor.run {
-                            let position = CoreTextReadingPosition(spineIndex: spine, charOffset: charOffset)
-                            moveReaderSession(
-                                to: position,
-                                source: .internalLink,
-                                pageIndex: targetPage,
-                                totalPages: pagedEngine.totalPages
-                            )
-                            currentChapterIndex = spine
-                            scrollVisibleChapter = spine
-                            pendingScrollJumpTarget = position
-                            scrollResliceToken &+= 1
-                        }
-                    }
-                },
-                onChapterContentRequired: { chapterIndex in
-                    ensureChapterReady(chapterIndex: chapterIndex)
-                }
-            )
-            .background(readerTheme.backgroundColor)
-            .ignoresSafeArea()
-            .modifier(ScrollConfigObserver(readerConfig: readerConfig, readerTheme: readerTheme) { scheduleScrollReslice() })
-        } else {
-            legacyScrollBody
-        }
-    }
-
-    private func scheduleScrollReslice() {
-        guard let engine = epubRenderer.scrollEngine else { return }
-        engine.updateRenderSettings(buildRenderSettings())
-        scrollResliceToken &+= 1
-    }
-
-    /// Scroll mode starting position priority:
-    /// 1) Paged engine ready → use current page's (spine, charOffset) (same-session switch)
-    /// 2) Persisted snapshot (mode == .scroll) → restore from last exit position (cold start)
-    /// 3) Fallback to currentChapterIndex / 0
-    private func computeScrollInitialPosition() -> (chapter: Int, charOffset: Int) {
-        if let position = readerSessionCoordinator?.state.location.coreTextPosition {
-            return (position.spineIndex, position.charOffset)
-        }
-        if let target = pendingScrollJumpTarget {
-            return (target.spineIndex, target.charOffset)
-        }
-        return (max(0, currentChapterIndex), 0)
-    }
-
-    private func buildRenderSettings() -> ReaderRenderSettings {
-        let topInset = ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
-        let bottomInset = ReaderLayoutMetrics.bottomInset(
-            safeBottom: 0,
-            footerBottomPadding: readerConfig.footerBottomPadding,
-            footerTextGap: readerConfig.footerTextGap
-        )
-        return ReaderRenderSettings(
-            theme: readerTheme.rawValue,
-            textColor: readerTheme.uiTextColor,
-            backgroundColor: readerTheme.uiBackgroundColor,
-            fontSize: readerConfig.fontSize,
-            lineHeightMultiple: readerConfig.lineHeightMultiple,
-            lineSpacing: readerConfig.lineSpacing,
-            paragraphSpacing: readerConfig.paragraphSpacing,
-            letterSpacing: readerConfig.letterSpacing,
-            marginH: effectivePageMarginH,
-            marginV: readerConfig.pageMarginV,
-            footerHeight: ReaderLayoutMetrics.footerHeight,
-            contentInsets: UIEdgeInsets(
-                top: topInset,
-                left: effectivePageMarginH,
-                bottom: bottomInset,
-                right: effectivePageMarginH
-            ),
-            writingMode: effectiveWritingMode,
-            fontPostScriptName: UserReaderFontResolver.selectedPostScriptName,
-            isBold: readerConfig.readerFontBold
-        )
-    }
-
-    private var effectiveWritingMode: ReaderWritingMode {
-        guard isVerticalEPUB || book?.allowsVerticalWritingMode == true else {
-            return .horizontal
-        }
-        return isVerticalEPUB ? .verticalRTL : settings.readerWritingMode
-    }
-
-    private var effectiveScrollMode: Bool {
-        settings.scrollMode
-    }
-
-    private var scrollAxis: CoreTextScrollAxis {
-        effectiveWritingMode.isVertical ? .horizontalRTL : .vertical
-    }
-
-    private var legacyScrollBody: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(chapters.enumerated()), id: \.offset) { ci, chapter in
-                        Text(chapter.title.converted(to: settings.textConversion))
-                            .font(.system(size: fontSize + 8, weight: .bold, design: .serif))
-                            .foregroundColor(readerTheme.textColor)
-                            .padding(.top, 80)
-                            .padding(.horizontal, 24)
-                            .padding(.bottom, 20)
-                            .id("chapter_\(ci)")
-                            .onAppear { scrollVisibleChapter = ci }
-
-                        if chapter.content.isEmpty && book?.isOnline == true {
-                            VStack(spacing: 16) {
-                                ProgressView()
-                                Text(localized("載入章節中…"))
-                                    .font(.system(size: fontSize - 2, design: .serif))
-                                    .foregroundColor(readerTheme.textColor.opacity(0.6))
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 40)
-                            .onAppear { ensureChapterReady(chapterIndex: ci) }
-                        } else {
-                            let cleaned = chapter.content
-                            let paragraphs = cleaned.converted(to: settings.textConversion)
-                                .components(separatedBy: "\n").filter { !$0.isEmpty }
-                            ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, para in
-                                Text(para)
-                                    .font(.system(size: fontSize, design: .serif))
-                                    .foregroundColor(readerTheme.textColor)
-                                    .kerning(readerConfig.letterSpacing)
-                                    .lineSpacing(readerConfig.lineSpacing)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 24)
-                                    .padding(.bottom, readerConfig.paragraphSpacing)
-                            }
-                            Color.clear.frame(height: max(0, 48 - readerConfig.paragraphSpacing)).clipped()
-                        }
-
-                        Divider()
-                            .padding(.horizontal, 24)
-                            .opacity(0.25)
-                    }
-                    Color.clear.frame(height: 80)
-                }
-            }
-            .onAppear {
-                if scrollVisibleChapter > 0 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        proxy.scrollTo("chapter_\(scrollVisibleChapter)", anchor: .top)
-                    }
-                }
-            }
-        }
-        .background(readerTheme.backgroundColor)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
-        }
-    }
-
-    private func goToPrevPage() {
-        guard currentPage > 0 else { return }
-        let targetPage = previousReaderPage(before: currentPage)
-        switch effectivePageTurnStyle {
-        case .none:
-            var t = Transaction()
-            t.disablesAnimations = true
-            withTransaction(t) { currentPage = targetPage }
-        case .slide:
-            withAnimation(.easeInOut(duration: PageTurnAnimation.slideDuration)) {
-                currentPage = targetPage
-            }
-        case .cover, .curl:
-            currentPage = targetPage
-        }
-    }
-
-    private func goToNextPage() {
-        let maxPage: Int
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            maxPage = engine.totalPages - 1
-        } else {
-            maxPage = allPages.count - 1
-        }
-        guard currentPage < maxPage else { return }
-        let targetPage = nextReaderPage(after: currentPage, maxPage: maxPage)
-        switch effectivePageTurnStyle {
-        case .none:
-            var t = Transaction()
-            t.disablesAnimations = true
-            withTransaction(t) { currentPage = targetPage }
-        case .slide:
-            withAnimation(.easeInOut(duration: PageTurnAnimation.slideDuration)) {
-                currentPage = targetPage
-            }
-        case .cover, .curl:
-            currentPage = targetPage
-        }
-    }
+    // Extracted to ReaderView+TXTVerticalScroll.swift
 
     // MARK: - Top Bar
-    private var topBar: some View {
-        ReaderTopBar(
-            theme: readerTheme,
-            chapterTitle: currentChapterTitle.converted(to: settings.textConversion),
-            isBookmarked: isCurrentPageBookmarked,
-            overlayMaxWidth: overlayContentMaxWidth,
-            onBack: {
-                saveProgress()
-                if let snap = snapshotBook, snap.isOnline, book == nil {
-                    showAddToShelfAlert = true
-                } else {
-                    presentationMode.wrappedValue.dismiss()
-                }
-            },
-            onToggleBookmark: {
-                guard let position = currentTopBarBookmarkPosition else { return }
-                withAnimation(.easeInOut(duration: uiFeedbackDuration)) {
-                    store.toggleBookmark(
-                        bookId: bookId,
-                        chapterIndex: position.spineIndex,
-                        chapterTitle: bookmarkChapterTitle(for: position.spineIndex),
-                        position: position,
-                        excerpt: currentPageExcerpt
-                    )
-                }
-            },
-            onOpenBookDetail: onlineBookDetail == nil ? nil : {
-                showOnlineBookDetail = true
-            }
-        )
-    }
+    // Extracted to ReaderView+Toolbars.swift
 
     // MARK: - Bottom Bar
-    private var bottomBar: some View {
-        ReaderBottomControlBar(
-            readerTheme: Binding(
-                get: { readerTheme },
-                set: { readerTheme = $0 }
-            ),
-            overlayContentMaxWidth: overlayContentMaxWidth,
-            showRefreshButton: !(book?.onlineChapters?.isEmpty ?? true),
-            showChangeSourceButton: book?.isOnline == true && book?.bookSourceId != nil,
-            showDownloadButton: book?.isOnline == true,
-            downloadButtonIcon: downloadButtonIcon,
-            canGoPrevChapter: canGoPrevChapter,
-            canGoNextChapter: canGoNextChapter,
-            chapterPageInfo: chapterPageInfo,
-            totalProgressPercent: totalProgressPercent,
-            chapterSliderProgressValue: { chapterSliderProgressValue() },
-            applyChapterSliderProgress: { applyChapterSliderProgress($0) },
-            chapterTitleForProgress: { chapterTitle(forProgress: $0) },
-            onPrevChapter: { jumpToChapter(currentChapterIndex - 1) },
-            onNextChapter: { jumpToChapter(currentChapterIndex + 1) },
-            onRefresh: { refreshCurrentChapter() },
-            onOpenChangeSource: { showChangeSourceSheet = true },
-            onDownloadAction: { handleDownloadAction() },
-            onOpenTTS: { openPlaybackPanel() },
-            onOpenTOC: { showTOC = true },
-            onOpenBookmarks: { showBookmarks = true },
-            onOpenSettings: { showSettings = true }
-        )
-    }
-
-    private func ttsJumpPromptView(alignment: Alignment) -> some View {
-        HStack(spacing: 8) {
-            Button {
-                jumpBackToTTSChapter()
-            } label: {
-                Label(localized("原進度"), systemImage: "arrow.uturn.backward")
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-            }
-            .buttonStyle(.borderless)
-
-            Divider()
-                .frame(height: 18)
-                .overlay(Color.white.opacity(0.18))
-
-            Button {
-                startTTSFromPromptChapter()
-            } label: {
-                Label(localized("從本章開始聽"), systemImage: "headphones")
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-            }
-            .buttonStyle(.borderless)
-        }
-        .foregroundColor(.white)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .background(Color.black.opacity(0.48), in: Capsule())
-        .frame(maxWidth: 520, alignment: alignment)
-        .accessibilityLabel(ttsJumpPromptMessage)
-    }
-
-    private var ttsJumpPromptCollapsedBottomPadding: CGFloat {
-        let footerBandBottomFromBottom = max(
-            0,
-            readerConfig.footerBottomPadding
-        )
-        let footerBandCenterFromBottom = footerBandBottomFromBottom
-            + ReaderLayoutMetrics.footerHeight / 2
-        let estimatedPromptHeight: CGFloat = 36
-        return max(8, footerBandCenterFromBottom - estimatedPromptHeight / 2)
-    }
-
-    private var ttsJumpPromptMessage: String {
-        guard let ttsChapterIndex, chapters.indices.contains(ttsChapterIndex) else {
-            return localized("你已移到其他章節，可以選擇回到正在朗讀的位置，或從目前章節重新開始。")
-        }
-        return String(
-            format: localized("聽書仍在「%@」，可以選擇回去，或改從目前章節開始。"),
-            chapters[ttsChapterIndex].title
-        )
-    }
+    // Extracted to ReaderView+Toolbars.swift
 
     // MARK: - Source Change Sheet
-    private var changeSourceSheetContent: AnyView {
-        AnyView(NavigationStack {
-            List {
-                // 目前使用中的書源 — always visible with a checkmark so the user knows
-                // which source is active (search results below exclude this one).
-                Section(localized("目前書源")) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(currentSourceName)
-                                .foregroundColor(.primary)
-                            if let last = book?.onlineChapters?.last?.title, !last.isEmpty {
-                                Text(last)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            }
-                        }
-                        Spacer()
-                        Image(systemName: "checkmark")
-                            .font(.body.weight(.semibold))
-                            .foregroundColor(.accentColor)
-                    }
-                }
-
-                // 其他可切換的書源。Results stream in one source at a time, so show them
-                // as soon as the first match arrives instead of blocking on the full
-                // fan-out (459 sources can take minutes).
-                Section {
-                    if !changeSourceOrigins.isEmpty {
-                        ForEach(changeSourceOrigins) { origin in
-                            Button { switchToOrigin(origin) } label: { changeSourceRow(origin) }
-                        }
-                        if changeSourceLoading {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                Text(localized("正在搜尋更多書源…"))
-                                    .font(.footnote)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    } else if changeSourceLoading {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text(localized("正在搜尋其他書源…"))
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        Text(localized("暫無其他書源"))
-                            .foregroundColor(.secondary)
-                    }
-                } header: {
-                    Text(localized("其他書源"))
-                } footer: {
-                    if let err = changeSourceError {
-                        Label(err, systemImage: "exclamationmark.triangle")
-                            .foregroundColor(.red)
-                    }
-                }
-            }
-            .navigationTitle(localized("換源"))
-            .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        loadOtherOrigins(forceRefresh: true)
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(changeSourceLoading)
-                    .accessibilityLabel(localized("重新搜尋"))
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("關閉")) { showChangeSourceSheet = false }
-                }
-            }
-        })
-    }
-
-    /// A single switchable-origin row; flags origins that previously failed to switch.
-    @ViewBuilder
-    private func changeSourceRow(_ origin: BookOrigin) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(origin.sourceName)
-                    .foregroundColor(.primary)
-                // Aggregation sources share one sourceName across channels;
-                // lastChapter distinguishes them.
-                if !origin.lastChapter.isEmpty {
-                    Text(origin.lastChapter)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            Spacer()
-            if changeSourceFailedKeys.contains(ChangeSourceCache.urlKey(origin.bookUrl)) {
-                Text(localized("載入失敗"))
-                    .font(.caption2)
-                    .foregroundColor(.red)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.red.opacity(0.12)))
-            } else {
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-
-    /// Switches the book to the chosen origin. On success dismisses the sheet and
-    /// reloads; on failure flags the origin (persisted) and keeps the sheet open so
-    /// the user can try another. (Reading position handling unchanged.)
-    private func switchToOrigin(_ origin: BookOrigin) {
-        Task {
-            do {
-                try await store.updateOnlineBookSource(bookId: bookId, origin: origin)
-                await MainActor.run {
-                    showChangeSourceSheet = false
-                    loadContent()
-                }
-            } catch {
-                await MainActor.run {
-                    readerViewModel.markOriginFailed(bookId: bookId, bookUrl: origin.bookUrl)
-                    readerViewModel.reportChangeSourceError(error.localizedDescription)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func circleBtn(icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 18, weight: .light))
-                .foregroundColor(readerTheme.textColor.opacity(0.8))
-                .frame(width: 40, height: 40)
-                .background(Color.clear)
-                .clipShape(Circle())
-                .overlay(Circle().stroke(readerTheme.textColor.opacity(0.3), lineWidth: 1))
-        }
-    }
-
-    /// Looks up the chapter title for a given progress value (0–1), used for the drag HUD.
-    private func chapterTitle(forProgress value: Double) -> String {
-        let totalChapters = book?.onlineChapters?.count ?? chapters.count
-        if book?.isOnline == true && totalChapters > 0 {
-            let targetIndex = max(0, min(Int(round(value * Double(totalChapters - 1))), totalChapters - 1))
-            if let refs = book?.onlineChapters, refs.indices.contains(targetIndex) {
-                return refs[targetIndex].title
-            }
-            return chapters.indices.contains(targetIndex) ? chapters[targetIndex].title : ""
-        }
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            let pos = engine.position(forProgress: value)
-            if let chapter = tocChapter(forSpineIndex: pos.spineIndex, charOffset: pos.charOffset) {
-                return chapter.title
-            }
-        }
-        guard allPages.count > 1 else { return chapters.first?.title ?? "" }
-        let pageIdx = max(0, min(Int(value * Double(allPages.count - 1)), allPages.count - 1))
-        let chIdx = allPages[pageIdx].chapterIndex
-        if chapters.indices.contains(chIdx) { return chapters[chIdx].title }
-        return ""
-    }
-
-    private func chapterSliderProgressValue() -> Double {
-        // Scroll mode: approximate using chapter index (chunks may not be fully loaded, no reliable character count).
-        if effectiveScrollMode {
-            let total = max(chapters.count - 1, 1)
-            return Double(min(scrollVisibleChapter, total)) / Double(total)
-        }
-        let totalChapters = book?.onlineChapters?.count ?? chapters.count
-        guard totalChapters > 1 else { return 0 }
-        if book?.isOnline == true {
-            return Double(currentChapterIndex) / Double(totalChapters - 1)
-        }
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            let pos = engine.charOffset(forPage: currentPage)
-            return engine.totalProgress(forSpine: pos.spineIndex, charOffset: pos.charOffset)
-        }
-        guard allPages.count > 1 else { return 0 }
-        return Double(currentPage) / Double(allPages.count - 1)
-    }
-
-    private func applyChapterSliderProgress(_ value: Double) {
-        // Scroll mode: round to nearest chapter, then reslice the engine.
-        if effectiveScrollMode, let scrollEngine = epubRenderer.scrollEngine {
-            let total = max(chapters.count - 1, 1)
-            let target = max(0, min(Int(round(value * Double(total))), total))
-            scrollVisibleChapter = target
-            currentChapterIndex = target
-            let width = scrollEngine.contentWidth
-            Task { await scrollEngine.reslice(restoreAt: target, contentWidth: width) }
-            return
-        }
-        let totalChapters = book?.onlineChapters?.count ?? chapters.count
-        if book?.isOnline == true && totalChapters > 1 {
-            let targetIndex = max(0, min(Int(round(value * Double(totalChapters - 1))), totalChapters - 1))
-            jumpToChapter(targetIndex)
-            return
-        }
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            let pos = engine.position(forProgress: value)
-            jumpToChapter(pos.spineIndex, charOffset: pos.charOffset)
-            return
-        }
-        currentPage = max(
-            0,
-            min(
-                Int(value * Double(max(allPages.count - 1, 1))),
-                max(allPages.count - 1, 0)
-            )
-        )
-    }
-
-    private func currentTTSReaderPosition() -> CoreTextReadingPosition? {
-        if effectiveScrollMode {
-            if let location = readerSessionCoordinator?.state.location.coreTextPosition {
-                return location
-            }
-            return CoreTextReadingPosition(spineIndex: scrollVisibleChapter, charOffset: 0)
-        }
-
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            guard engine.totalPages > 0 else { return nil }
-            let page = max(0, min(currentPage, engine.totalPages - 1))
-            return engine.readingPosition(forPage: page)
-                ?? CoreTextReadingPosition(
-                    spineIndex: engine.charOffset(forPage: page).spineIndex,
-                    charOffset: engine.charOffset(forPage: page).charOffset
-                )
-        }
-
-        guard !allPages.isEmpty else {
-            return chapters.indices.contains(currentChapterIndex)
-                ? CoreTextReadingPosition(spineIndex: currentChapterIndex, charOffset: 0)
-                : nil
-        }
-        let page = allPages[max(0, min(currentPage, allPages.count - 1))]
-        return CoreTextReadingPosition(spineIndex: page.chapterIndex, charOffset: page.pageInChapter)
-    }
-
-    private func isReaderAtTTSAnchor(_ anchor: CoreTextReadingPosition) -> Bool {
-        if effectiveScrollMode {
-            return currentChapterIndex == anchor.spineIndex
-        }
-
-        if let engine = epubRenderer.engine, usesCoreTextEPUB,
-           let anchorPage = engine.pageIndex(for: anchor) {
-            return currentPage == anchorPage
-        }
-
-        guard let current = currentTTSReaderPosition() else { return false }
-        return current == anchor
-    }
-
-    private func setActiveTTSAnchor(_ anchor: CoreTextReadingPosition, alignReader: Bool) {
-        ttsPlaybackAnchor = anchor
-        showTTSJumpPrompt = false
-        ttsJumpPromptChapterIndex = nil
-        if alignReader {
-            alignReaderToTTSAnchorIfNeeded()
-        }
-    }
-
-    private func alignReaderToTTSAnchorIfNeeded() {
-        guard let anchor = ttsPlaybackAnchor,
-              chapters.indices.contains(anchor.spineIndex),
-              !isReaderAtTTSAnchor(anchor)
-        else { return }
-
-        isAligningReaderToTTSAnchor = true
-        withAnimation(.easeInOut(duration: 0.2)) {
-            showTTSJumpPrompt = false
-            ttsJumpPromptChapterIndex = nil
-        }
-        jumpToChapter(anchor.spineIndex, charOffset: anchor.charOffset)
-        DispatchQueue.main.async {
-            isAligningReaderToTTSAnchor = false
-        }
-    }
-
-    /// Keeps the paged reader on the sentence TTS is currently speaking. Called on
-    /// every spoken-segment change. Moves the playback anchor to the spoken text and
-    /// turns the page only when that text now sits on a different page. Paged CoreText
-    /// mode only — scroll mode and the "jump back to TTS" browse state are left alone.
-    private func followTTSPlaybackHighlight() {
-        guard ttsCoordinator.playbackState == .playing,
-              !showTTSJumpPrompt,            // user navigated away — let them browse
-              !effectiveScrollMode,
-              let engine = epubRenderer.engine, usesCoreTextEPUB
-        else { return }
-
-        let chapterIndex = ttsChapterIndex ?? currentChapterIndex
-        guard chapters.indices.contains(chapterIndex),
-              let layout = engine.layouts[chapterIndex],
-              layout.attributedString.length > 0
-        else { return }
-
-        let text = ttsCoordinator.currentSegmentText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-
-        // Locate the spoken sentence inside the chapter string. Search forward from
-        // the current page start so a repeated sentence resolves to the occurrence
-        // actually being read (TTS always moves forward through the chapter).
-        let ns = layout.attributedString.string as NSString
-        let pageStart = engine.charOffset(forPage: currentPage)
-        let searchStart = pageStart.spineIndex == chapterIndex
-            ? min(max(0, pageStart.charOffset), ns.length)
-            : 0
-        var found = ns.range(
-            of: text,
-            options: [.caseInsensitive, .diacriticInsensitive],
-            range: NSRange(location: searchStart, length: ns.length - searchStart)
-        )
-        if found.location == NSNotFound {
-            found = ns.range(of: text, options: [.caseInsensitive, .diacriticInsensitive])
-        }
-        guard found.location != NSNotFound else { return }
-
-        setActiveTTSAnchor(
-            CoreTextReadingPosition(spineIndex: chapterIndex, charOffset: found.location),
-            alignReader: true
-        )
-    }
-
-    private func handleTTSPlayPause() {
-        switch ttsCoordinator.playbackState {
-        case .playing:
-            ttsCoordinator.pause()
-        case .paused:
-            ttsCoordinator.resume()
-        case .stopped:
-            startTTSChapter(currentChapterIndex, syncReader: false)
-        }
-    }
-
-    private func openPlaybackPanel() {
-        let chapterIndex = currentChapterIndex
-        if isEPUB, epubRenderer.mediaOverlaysByChapter[chapterIndex] != nil {
-            activeMediaOverlayChapterIndex = chapterIndex
-            showMediaOverlayPanel = true
-        } else {
-            showTTSPanel = true
-        }
-    }
-
-    private func currentMediaOverlayHighlightText() -> String? {
-        guard let chapterIndex = mediaOverlayCoordinator.currentChapterIndex,
-              let fragment = mediaOverlayCoordinator.currentFragment,
-              let overlay = epubRenderer.mediaOverlaysByChapter[chapterIndex],
-              let layout = epubRenderer.engine?.layouts[chapterIndex],
-              layout.attributedString.length > 0
-        else {
-            return mediaOverlayCoordinator.currentFragment?.textFragmentID
-                ?? mediaOverlayCoordinator.currentFragment?.id
-        }
-
-        let anchorID = fragment.textFragmentID ?? fragment.id
-        guard let start = layout.anchorOffsets[anchorID],
-              start >= 0,
-              start < layout.attributedString.length
-        else {
-            return anchorID
-        }
-
-        let nextStart = overlay.fragments
-            .compactMap { next -> Int? in
-                guard next.id != fragment.id else { return nil }
-                let nextID = next.textFragmentID ?? next.id
-                guard let offset = layout.anchorOffsets[nextID], offset > start else { return nil }
-                return offset
-            }
-            .min()
-        let end = min(nextStart ?? min(layout.attributedString.length, start + 180), layout.attributedString.length)
-        guard end > start else { return anchorID }
-
-        let text = (layout.attributedString.string as NSString)
-            .substring(with: NSRange(location: start, length: end - start))
-            .replacingOccurrences(of: "\u{FFFC}", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? anchorID : text
-    }
-
-    private func setTTSFloatingOverlayVisible(_ visible: Bool) {
-        Task { @MainActor in
-            NowPlayingHub.shared.setReaderOverlayVisible(visible)
-        }
-    }
-
-    @discardableResult
-    private func startTTSChapter(_ chapterIndex: Int, syncReader: Bool) -> Bool {
-        guard chapters.indices.contains(chapterIndex) else { return false }
-        mediaOverlayCoordinator.stop()
-        let narration = narrationForTTSChapter(chapterIndex)
-        let text = narration.text
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            ttsLog("[TTS][Reader] startTTSChapter ignored empty chapter=\(chapterIndex)")
-            if syncReader {
-                jumpToChapter(chapterIndex)
-            }
-            ensureChapterReady(chapterIndex: chapterIndex, priority: .jump)
-            return false
-        }
-
-        ttsChapterIndex = chapterIndex
-        setActiveTTSAnchor(.chapterStart(chapterIndex), alignReader: true)
-        ensureChapterReady(chapterIndex: chapterIndex, priority: .jump)
-        ttsCoordinator.speak(
-            text: text,
-            title: chapters[chapterIndex].title,
-            bookTitle: ttsNowPlayingBookTitle,
-            author: ttsNowPlayingAuthor,
-            artwork: ttsNowPlayingArtwork(),
-            pronunciationHints: narration.pronunciationHints
-        )
-        ttsCoordinator.refreshNowPlayingForSystemSurfaces()
-        return true
-    }
-
-    @discardableResult
-    private func startAdjacentTTSChapter(delta: Int) -> Bool {
-        let baseChapter = ttsChapterIndex ?? currentChapterIndex
-        let target = baseChapter + delta
-        guard chapters.indices.contains(target) else { return false }
-        return startTTSChapter(target, syncReader: true)
-    }
-
-    private func advanceTTSChapterFromEngine() -> TTSNarrationUnit? {
-        let baseChapter = ttsChapterIndex ?? currentChapterIndex
-        let target = baseChapter + 1
-        guard chapters.indices.contains(target) else {
-            ttsChapterIndex = nil
-            return nil
-        }
-        let narration = narrationForTTSChapter(target)
-        let text = narration.text
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            ensureChapterReady(chapterIndex: target, priority: .jump)
-            return nil
-        }
-        ttsChapterIndex = target
-        setActiveTTSAnchor(.chapterStart(target), alignReader: true)
-        ttsCoordinator.updateNowPlayingChapter(title: chapters[target].title, text: text)
-        return narration
-    }
-
-    private func handleReaderPositionChangedForTTS() {
-        guard !isAligningReaderToTTSAnchor else { return }
-        guard ttsCoordinator.playbackState != .stopped,
-              let anchor = ttsPlaybackAnchor
-        else {
-            showTTSJumpPrompt = false
-            ttsJumpPromptChapterIndex = nil
-            return
-        }
-
-        guard !isReaderAtTTSAnchor(anchor) else {
-            showTTSJumpPrompt = false
-            ttsJumpPromptChapterIndex = nil
-            return
-        }
-
-        ttsJumpPromptChapterIndex = currentTTSReaderPosition()?.spineIndex ?? currentChapterIndex
-        withAnimation(.easeInOut(duration: 0.2)) {
-            showTTSJumpPrompt = true
-        }
-    }
-
-    private func jumpBackToTTSChapter() {
-        guard let anchor = ttsPlaybackAnchor,
-              chapters.indices.contains(anchor.spineIndex) else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
-            showTTSJumpPrompt = false
-            ttsJumpPromptChapterIndex = nil
-        }
-        alignReaderToTTSAnchorIfNeeded()
-    }
-
-    private func startTTSFromPromptChapter() {
-        let target = ttsJumpPromptChapterIndex ?? currentChapterIndex
-        _ = startTTSChapter(target, syncReader: false)
-    }
-
-    private func narrationForTTSChapter(_ chapterIndex: Int) -> TTSNarrationUnit {
-        guard chapters.indices.contains(chapterIndex) else {
-            return TTSNarrationUnit(text: "")
-        }
-        if let engine = epubRenderer.engine,
-           usesCoreTextEPUB,
-           let layout = engine.layouts[chapterIndex],
-           layout.attributedString.length > 0 {
-            let hints = TTSPronunciationAnnotator.hints(
-                in: layout.attributedString,
-                lexicons: activePublicationSession?.pronunciationLexicons ?? [],
-                bookLanguage: activePublicationSession?.language
-            )
-            return TTSNarrationUnit(text: layout.attributedString.string, pronunciationHints: hints)
-        }
-        let pageText = allPages
-            .filter { $0.chapterIndex == chapterIndex }
-            .map(\.content)
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !pageText.isEmpty { return TTSNarrationUnit(text: pageText) }
-        return TTSNarrationUnit(text: chapters[chapterIndex].content)
-    }
-
-    private func textForTTSChapter(_ chapterIndex: Int) -> String {
-        narrationForTTSChapter(chapterIndex).text
-    }
+    // Extracted to ReaderView+SourceChange.swift
 
     // MARK: - Logic
-    private func findChapterFirstPage(_ chapterIdx: Int) -> Int? {
-        return allPages.firstIndex(where: { $0.chapterIndex == chapterIdx })
-    }
-
-    private func jumpToBookmark(_ bookmark: Bookmark) {
-        let position = bookmark.position
-        guard chapters.indices.contains(position.spineIndex) else { return }
-        if effectiveScrollMode, epubRenderer.scrollEngine != nil {
-            currentChapterIndex = position.spineIndex
-            scrollVisibleChapter = position.spineIndex
-            pendingScrollJumpTarget = position
-            moveReaderSession(to: position, source: .jump)
-            scrollResliceToken &+= 1
-            return
-        }
-        jumpToChapter(position.spineIndex, charOffset: position.charOffset)
-    }
-
-    /// 標註所在章節內的頁碼（1-based）；CoreText 引擎不可用時回傳 nil。
-    private func inChapterPageNumber(for bookmark: Bookmark) -> Int? {
-        guard usesCoreTextEPUB, let engine = epubRenderer.engine else { return nil }
-        let position = bookmark.position
-        if let layout = engine.layouts[position.spineIndex] {
-            return layout.pageIndex(for: position.charOffset) + 1
-        }
-        // 章節尚未排版：用引擎相同的保守估算（~400 字/頁）。
-        return max(0, position.charOffset / 400) + 1
-    }
-
-    /// 從清單刪除一筆書籤或標註；標註需同步重繪 overlay。
-    private func deleteBookmarkEntry(_ bookmark: Bookmark) {
-        store.removeBookmark(bookId: bookId, bookmarkId: bookmark.id)
-        if bookmark.kind == .underline || bookmark.kind == .highlight {
-            syncCoreTextTextAnnotations()
-        }
-    }
-
-    /// Navigate to a TOC entry, honoring its in-spine anchor so sub-sections of one spine file
-    /// land on their own page instead of the file's start.
-    private func jumpToTOCEntry(_ chapter: BookChapter) {
-        let position = tocPosition(for: chapter, engine: epubRenderer.engine)
-        jumpToChapter(position.spineIndex, charOffset: position.charOffset)
-    }
-
-    private func jumpToChapter(_ idx: Int, charOffset: Int = 0) {
-        guard chapters.indices.contains(idx) else { return }
-        if effectiveScrollMode, epubRenderer.scrollEngine != nil {
-            let position = CoreTextReadingPosition(spineIndex: idx, charOffset: charOffset)
-            currentChapterIndex = idx
-            scrollVisibleChapter = idx
-            pendingScrollJumpTarget = position
-            moveReaderSession(to: position, source: .jump)
-            scrollResliceToken &+= 1
-            ensureChapterReady(chapterIndex: idx, priority: .jump)
-            return
-        }
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            let position = CoreTextReadingPosition(spineIndex: idx, charOffset: charOffset)
-            print("[FlipTrace] ReaderView.jumpToChapter request spine=\(idx) charOffset=\(charOffset) layoutReady=\(engine.layouts[idx] != nil)")
-            ensureReaderNavigator(initialPosition: position)
-            setCoreTextExternalTarget(position)
-            _ = engine.pageViewController(for: position)
-            currentChapterIndex = idx
-            if let exactPage = engine.pageIndex(for: position) {
-                currentPage = exactPage
-                moveReaderSession(to: position, source: .jump, pageIndex: exactPage, totalPages: engine.totalPages)
-                print("[FlipTrace] ReaderView.jumpToChapter exact spine=\(idx) page=\(exactPage)")
-            } else if let estimatedPage = engine.estimatedGlobalPage(for: position) {
-                currentPage = estimatedPage
-                moveReaderSession(
-                    to: position,
-                    source: .jump,
-                    pageIndex: estimatedPage,
-                    totalPages: engine.totalPages,
-                    isEstimated: true
-                )
-                print("[FlipTrace] ReaderView.jumpToChapter placeholder spine=\(idx) page=\(estimatedPage)")
-            } else {
-                moveReaderSession(to: position, source: .jump)
-            }
-            epubRenderer.currentEpubPage = currentPage
-            let alreadyReady = readerViewModel.chapterState(for: idx) == .ready
-            ensureChapterReady(chapterIndex: idx, priority: .jump)
-            if alreadyReady, isChapterContentAvailable(at: idx) {
-                Task { await engine.notifyChapterDataChanged(at: idx) }
-            }
-            if idx > 0 { Task { await engine.preloadChapter(at: idx - 1) } }
-            if idx < chapters.count - 1 { Task { await engine.preloadChapter(at: idx + 1) } }
-        } else {
-            currentChapterIndex = idx
-            if let p = findChapterFirstPage(idx) { currentPage = p }
-            moveReaderSession(to: CoreTextReadingPosition(spineIndex: idx, charOffset: charOffset), source: .jump)
-            ensureChapterReady(chapterIndex: idx, priority: .jump)
-        }
-    }
-
-    private func beginReadingStatsSession() {
-        guard readingStatsTracker == nil, let currentBook = book else { return }
-        readingStatsTracker = ReadingStatsSessionTracker(
-            bookId: currentBook.id.uuidString,
-            bookTitle: currentBook.title,
-            startCharacterOffset: currentReadingStatsCharacterOffset()
-        )
-    }
-
-    private func updateReadingStatsPosition() {
-        guard var tracker = readingStatsTracker else { return }
-        tracker.updateVisibleCharacterOffset(currentReadingStatsCharacterOffset())
-        readingStatsTracker = tracker
-    }
-
-    private func finishReadingStatsSession() {
-        guard var tracker = readingStatsTracker else { return }
-        tracker.updateVisibleCharacterOffset(currentReadingStatsCharacterOffset())
-        if let session = tracker.finish() {
-            ReadingStatsStore.shared.recordSession(session)
-        }
-        readingStatsTracker = nil
-    }
-
-    private func currentReadingStatsCharacterOffset() -> Int? {
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            if effectiveScrollMode, let location = readerSessionCoordinator?.state.location {
-                return readingStatsCharacterOffset(
-                    spineIndex: location.spineIndex,
-                    charOffset: location.charOffset,
-                    layouts: engine.layouts
-                )
-            }
-
-            guard engine.totalPages > 0 else { return nil }
-            let page = max(0, min(currentPage, engine.totalPages - 1))
-            let position = engine.charOffset(forPage: page)
-            return readingStatsCharacterOffset(
-                spineIndex: position.spineIndex,
-                charOffset: position.charOffset,
-                layouts: engine.layouts
-            )
-        }
-
-        guard !allPages.isEmpty else { return nil }
-        let page = max(0, min(currentPage, allPages.count - 1))
-        return allPages.prefix(page).reduce(0) { total, page in
-            total + page.content.count
-        }
-    }
-
-    private func readingStatsCharacterOffset(
-        spineIndex: Int,
-        charOffset: Int,
-        layouts: [Int: CoreTextPaginator.ChapterLayout]
-    ) -> Int {
-        let previousLength = layouts.reduce(into: 0) { total, entry in
-            if entry.key < spineIndex {
-                total += entry.value.attributedString.length
-            }
-        }
-        let currentLength = layouts[spineIndex]?.attributedString.length ?? max(0, charOffset)
-        return previousLength + min(max(0, charOffset), currentLength)
-    }
-
-    private func autoSaveProgress(force: Bool = false) {
-        guard !isRestoringPosition else { return }
-
-        if effectiveScrollMode {
-            progressTrace("autoSave scroll visibleChapter=\(scrollVisibleChapter)")
-            store.updatePosition(
-                bookId: bookId,
-                position: Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1)),
-                forceSave: force
-            )
-            return
-        }
-
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            let total = engine.totalPages
-            guard total > 0 else { return }
-            let candidatePage: Int = {
-                if currentPage == 0, engine.currentPage > 0 {
-                    return engine.currentPage
-                }
-                return currentPage
-            }()
-            guard let resolved = coreTextPositionIfLayoutReady(engine: engine, page: candidatePage) else {
-                progressTrace("autoSave coreText skipped page=\(candidatePage) reason=layoutNotReady")
-                return
-            }
-            let spineIndex = resolved.spineIndex
-            let charOffset = resolved.charOffset
-            currentChapterIndex = spineIndex
-            let pct = engine.totalProgress(forSpine: spineIndex, charOffset: charOffset)
-            let normalized = min(1.0, max(0.0, pct))
-            progressTrace(
-                "autoSave coreText page=\(candidatePage) spine=\(spineIndex) charOffset=\(charOffset) pct=\(String(format: "%.6f", normalized))"
-            )
-            store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
-        } else if !effectiveScrollMode && !allPages.isEmpty {
-            let page = allPages[min(currentPage, allPages.count - 1)]
-            currentChapterIndex = page.chapterIndex
-            maybeEarlyPrefetchIfNearChapterEnd()
-            let progress = Double(currentPage) / Double(max(allPages.count - 1, 1))
-            let normalized = min(1.0, max(0.0, progress))
-            progressTrace(
-                "autoSave paged currentPage=\(currentPage) chapter=\(page.chapterIndex) pageInChapter=\(page.pageInChapter) pct=\(String(format: "%.6f", normalized))"
-            )
-            store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
-        } else {
-            let progress = Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
-            let normalized = min(1.0, max(0.0, progress))
-            progressTrace(
-                "autoSave scroll visibleChapter=\(scrollVisibleChapter) pct=\(String(format: "%.6f", normalized))"
-            )
-            store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
-        }
-    }
-
-    private func saveProgress() {
-        let wasRestoring = isRestoringPosition
-        progressTrace("saveProgress begin wasRestoring=\(wasRestoring)")
-        isRestoringPosition = false
-        autoSaveProgress(force: true)
-        isRestoringPosition = wasRestoring
-        if let navigator = readerSessionCoordinator?.navigator {
-            Task {
-                await navigator.flush()
-            }
-        }
-    }
-
-    private func refreshCurrentChapter() {
-        guard let b = book, let refs = b.onlineChapters, !refs.isEmpty else { return }
-        let idx = currentChapterIndex
-        #if DEBUG
-        print("[StateDebug] refreshCurrentChapter ch=\(idx) ← clearing ENTIRE book cache and restarting fetch")
-        #endif
-        // Clear all cached chapters for the entire book since the "next chapter misdetected as next page"
-        // bug contaminates subsequent chapters into the current chapter's cache. Clearing just the current
-        // chapter is insufficient; the whole book must be purged.
-        dependencies.bookSourceFetcher.clearAllChapterCache(bookId: b.id)
-        store.clearAllCachedChapterFilenames(bookId: b.id)
-        for ref in refs {
-            readerViewModel.resetChapterState(for: ref.index)
-        }
-        // Immediately invalidate the current chapter's layout and show loading UI
-        // so the user doesn't continue seeing the old (concatenated) content while the refetch completes.
-        if let engine = epubRenderer.engine {
-            Task { await engine.notifyChapterDataChanged(at: idx) }
-        }
-        ensureChapterReady(chapterIndex: idx, priority: .jump)
-    }
-
-    private var downloadButtonIcon: String {
-        guard let b = book else { return "icloud.and.arrow.down" }
-        switch b.offlineDownloadState {
-        case .none, .failed:
-            return "icloud.and.arrow.down"
-        case .paused:
-            return "arrow.clockwise.circle"
-        case .downloading:
-            return "pause.circle"
-        case .available:
-            return "checkmark.icloud"
-        }
-    }
-
-    private func handleDownloadAction() {
-        guard book?.isOnline == true else { return }
-        // All download interaction (range selection, progress, pause/resume, remove)
-        // now lives inside the download sheet — open it for every state.
-        showDownloadOptions = true
-    }
-
-    private func startOfflineDownload(startChapterIndex: Int, chapterCount: Int) {
-        guard let b = book, b.isOnline else { return }
-        readerViewModel.handleDownloadAction(
-            book: b,
-            store: store,
-            startChapterIndex: startChapterIndex,
-            chapterCount: chapterCount
-        )
-    }
-
-    private func resumeOfflineDownload() {
-        guard let b = book else { return }
-        guard let task = b.offlineDownloadTask?.clamped(to: b.onlineChapters?.count ?? 0) else {
-            return
-        }
-        let completed = task.clampedCompletedChapterCount
-        let remaining = task.totalChapterCount - completed
-        guard remaining > 0 else { return }
-        readerViewModel.handleDownloadAction(
-            book: b,
-            store: store,
-            startChapterIndex: task.startChapterIndex + completed,
-            chapterCount: remaining
-        )
-    }
-
-    private func pauseOfflineDownload() {
-        guard let b = book else { return }
-        readerViewModel.handleDownloadAction(
-            book: b,
-            store: store,
-            startChapterIndex: 0,
-            chapterCount: nil
-        )
-    }
-
-    /// Source change search has been moved to ReaderViewModel.loadOtherOrigins. This method only triggers it and passes required data.
-    private func loadOtherOrigins(forceRefresh: Bool = false) {
-        guard let b = book, let currentSourceId = b.bookSourceId else { return }
-        readerViewModel.loadOtherOrigins(
-            book: b,
-            currentSourceId: currentSourceId,
-            enabledSources: BookSourceStore.shared.enabledSources,
-            store: store,
-            forceRefresh: forceRefresh
-        )
-    }
-
-    /// Display name of the source the book is currently being read from.
-    private var currentSourceName: String {
-        guard let id = book?.bookSourceId,
-              let source = BookSourceStore.shared.sources.first(where: { $0.id == id }),
-              !source.bookSourceName.isEmpty else { return localized("未知書源") }
-        return source.bookSourceName
-    }
+    // Extracted to ReaderView+Logic.swift
 
     // MARK: - Online Chapter Lazy Loading
-    private func ensureChapterReady(
-        chapterIndex: Int,
-        priority: ChapterFetchPriority = .immediate
-    ) {
-        guard let currentBook = book else { return }
-        #if DEBUG
-        print("[StateDebug] ensureChapterReady ch=\(chapterIndex) priority=\(priority) currentCh=\(currentChapterIndex)")
-        #endif
-        Task { @MainActor in
-            await readerViewModel.ensureChapterReady(
-                book: currentBook,
-                chapterIndex: chapterIndex,
-                priority: priority,
-                store: store
-            )
-        }
-    }
-
-    private func handleChapterStateChanges(_ states: [Int: ChapterLoadState]) {
-        let previousStates = observedChapterStates
-        observedChapterStates = states
-
-        for (chapterIndex, newState) in states where previousStates[chapterIndex] != newState {
-            #if DEBUG
-            print("[StateDebug] chapterStates[\(chapterIndex)] \(String(describing: previousStates[chapterIndex])) → \(newState) currentChapter=\(currentChapterIndex) usesCoreText=\(usesCoreTextEPUB) isCoreTextReady=\(epubRenderer.isCoreTextReady)")
-            #endif
-            if newState == .ready {
-                prefetchAdjacentChapters(around: chapterIndex)
-            }
-            applyChapterRefreshAction(for: chapterIndex, newState: newState)
-        }
-    }
-
-    private func applyChapterRefreshAction(for chapterIndex: Int, newState: ChapterLoadState) {
-        let contentAvailable = isChapterContentAvailable(at: chapterIndex)
-        if effectiveScrollMode, let scrollEngine = epubRenderer.scrollEngine {
-            if newState == .ready, contentAvailable {
-                Task { await scrollEngine.retryChapterIfNeeded(chapterIndex) }
-                return
-            }
-            if chapterIndex == currentChapterIndex,
-               newState == .ready,
-               !contentAvailable {
-                #if DEBUG
-                print("[StateDebug] scroll resetAndRefetchChapter ch=\(chapterIndex)")
-                #endif
-                refreshCurrentChapter()
-                return
-            }
-        }
-        let action = ReaderChapterPresentation.refreshAction(
-            changedChapterIndex: chapterIndex,
-            currentChapterIndex: currentChapterIndex,
-            usesCoreText: usesCoreTextEPUB,
-            newState: newState,
-            isContentAvailable: contentAvailable
-        )
-        #if DEBUG
-        print("[StateDebug] applyRefreshAction ch=\(chapterIndex) newState=\(newState) contentAvailable=\(contentAvailable) currentCh=\(currentChapterIndex) → action=\(action)")
-        #endif
-
-        switch action {
-        case .none:
-            break
-        case .notifyChapterDataChanged(let visibleChapterIndex):
-            guard let engine = epubRenderer.engine else {
-                #if DEBUG
-                print("[StateDebug] notifyChapterDataChanged SKIPPED: engine is nil")
-                #endif
-                return
-            }
-            #if DEBUG
-            print("[StateDebug] notifyChapterDataChanged ch=\(visibleChapterIndex) launching Task")
-            #endif
-            Task {
-                await engine.notifyChapterDataChanged(at: visibleChapterIndex)
-                if self.savedCoreTextRestoreTarget != nil {
-                    self.applyInitialProgressIfNeeded()
-                }
-            }
-        case .rebuildPages:
-            #if DEBUG
-            print("[StateDebug] rebuildPages()")
-            #endif
-            rebuildPages()
-        case .resetAndRefetchChapter:
-            #if DEBUG
-            print("[StateDebug] resetAndRefetchChapter ch=\(chapterIndex) ← will clear cache and re-fetch")
-            #endif
-            refreshCurrentChapter()
-        }
-    }
-
-    private func prefetchAdjacentChapters(around chapterIndex: Int) {
-        guard let b = book, b.isOnline else { return }
-        readerViewModel.prefetchAround(book: b, center: chapterIndex, store: store)
-    }
-
-    /// When the user scrolls past the last 25% of the current chapter, trigger next chapter prefetch early.
-    /// This provides more buffer time compared to waiting until the last page.
-    private func maybeEarlyPrefetchIfNearChapterEnd() {
-        guard let b = book, b.isOnline,
-              let refs = b.onlineChapters else { return }
-        let chIdx = currentChapterIndex
-        let nextIdx = chIdx + 1
-        guard refs.indices.contains(nextIdx) else { return }
-
-        // Skip if the next chapter is already cached.
-        guard !dependencies.bookSourceFetcher.isChapterCached(
-            bookId: b.id, chapterIndex: nextIdx,
-            expectedSourceURL: nil, expectedTOCTitle: nil) else { return }
-
-        // Check if we're past 75% of the current chapter's pages.
-        let pagesInChapter = allPages.filter { $0.chapterIndex == chIdx }
-        guard !pagesInChapter.isEmpty else { return }
-        let currentPageInChapter = allPages.indices.contains(currentPage)
-            ? allPages[currentPage].pageInChapter : 0
-        guard currentPageInChapter >= (pagesInChapter.count * 3) / 4 else { return }
-
-        readerViewModel.prefetchAround(book: b, center: chIdx, store: store)
-    }
+    // Extracted to ReaderView+OnlineChapterLoading.swift
 
     // MARK: - Loading & Page Building
-    private func currentRenderSettings(marginH: CGFloat) -> ReaderRenderSettings {
-        let topInset = ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
-        let bottomInset = ReaderLayoutMetrics.bottomInset(
-            safeBottom: 0,
-            footerBottomPadding: readerConfig.footerBottomPadding,
-            footerTextGap: readerConfig.footerTextGap
-        )
-        let lineHeightMultiple = max(1.0, readerConfig.lineHeightMultiple)
-        return ReaderRenderSettings(
-            theme: readerTheme.epubJSName,
-            textColor: readerTheme.uiTextColor,
-            backgroundColor: readerTheme.uiBackgroundColor,
-            fontSize: fontSize,
-            lineHeightMultiple: lineHeightMultiple,
-            lineSpacing: readerConfig.lineSpacing,
-            paragraphSpacing: readerConfig.paragraphSpacing,
-            letterSpacing: readerConfig.letterSpacing,
-            marginH: marginH,
-            marginV: systemVerticalPadding,
-            footerHeight: footerOverlayHeight,
-            contentInsets: UIEdgeInsets(top: topInset, left: marginH, bottom: bottomInset, right: marginH),
-            writingMode: effectiveWritingMode,
-            fontPostScriptName: UserReaderFontResolver.selectedPostScriptName,
-            isBold: readerConfig.readerFontBold
-        )
-    }
-
-    private func applyPublicationSession(
-        _ session: PublicationSession,
-        book: ReadingBook,
-        settings: ReaderRenderSettings
-    ) {
-        let document = BookDocumentFactory.makeEPUBDocument(book: book, session: session)
-        applyDocument(document)
-
-        // Start any authored background soundtrack for the chapter we're opening on.
-        activePublicationSession = session
-        Task { await backgroundAudioCoordinator.update(session: session, chapterIndex: currentChapterIndex) }
-
-        // Prefer EPUB toc.ncx / nav.xhtml entries. Only fall back to spine when TOC is missing.
-        if !session.tocEntries.isEmpty {
-            chapters = ReaderTOCChapterMapper.chapters(from: session.tocEntries, session: session)
-        } else {
-            // Fallback: spine-only
-            chapters = session.chapters.map { chapter in
-                BookChapter(
-                    index: chapter.index,
-                    title: chapter.title,
-                    content: "",
-                    href: chapter.href,
-                    level: 0
-                )
-            }
-        }
-        if chapters.isEmpty {
-            chapters = [BookChapter(index: 0, title: session.bookTitle, content: "")]
-        }
-        allPages = [
-            PageContent(
-                chapterIndex: 0,
-                chapterTitle: session.bookTitle,
-                content: "",
-                pageInChapter: 0
-            )
-        ]
-
-        epubRenderer.load(
-            publicationSession: session,
-            bookIdentifier: session.sourceURL.standardizedFileURL.path,
-            renderSize: session.layoutMode == .prePaginated ? readerViewportSize : currentReaderRenderSize,
-            settings: settings
-        )
-        updateFixedLayoutOrientationPreference()
-
-        currentPage = 0
-        isLoadingPipeline = false
-        isRestoringPosition = false
-    }
-
-    private func loadLocalEPUB(_ book: ReadingBook, marginH: CGFloat) {
-        Task {
-            do {
-                let session = try await EPUBBookService.shared.openSession(for: book, using: store)
-                await MainActor.run {
-                    guard self.book?.id == book.id else { return }
-                    if session.epubWritingMode == .verticalRL {
-                        self.isVerticalEPUB = true
-                    }
-                    let settings = self.currentRenderSettings(marginH: marginH)
-                    self.applyPublicationSession(session, book: book, settings: settings)
-                }
-            } catch {
-                await MainActor.run {
-                    print("Readium parsing failed: \(error)")
-                    self.applyDocument(nil)
-                    self.isLoadingPipeline = false
-                    self.isRestoringPosition = false
-                }
-            }
-        }
-    }
-
-    private func loadOnlineCoreText(_ book: ReadingBook, marginH: CGFloat) {
-        #if DEBUG
-        AppLogger.render("onlinePipeline route", context: [
-            "builder": "OnlineProviderAttributedStringBuilder",
-            "bookId": book.id.uuidString,
-            "chapters": book.onlineChapters?.count ?? -1
-        ])
-        #endif
-        guard let bundle = BookContentProviderFactory.makeOnlineReaderBundle(
-            book: book,
-            store: store
-        ) else {
-            #if DEBUG
-            AppLogger.render("onlinePipeline route: makeOnlineReaderBundle returned nil")
-            #endif
-            applyDocument(nil)
-            isLoadingPipeline = false
-            isRestoringPosition = false
-            return
-        }
-
-        let settings = currentRenderSettings(marginH: marginH)
-        let refs = book.onlineChapters ?? []
-        chapters = refs.enumerated().map { idx, ref in
-            let href = ref.sanitizedContentURL
-            return BookChapter(index: idx, title: ref.title, content: "", href: href)
-        }
-        if chapters.isEmpty {
-            chapters = [BookChapter(index: 0, title: book.title, content: "")]
-        }
-        allPages = []
-
-        epubRenderer.loadWithProvider(
-            contentProvider: bundle.provider,
-            chapterSourceHrefs: bundle.chapterSourceHrefs,
-            bookIdentifier: bundle.bookIdentifier,
-            renderSize: currentReaderRenderSize,
-            settings: settings
-        )
-
-        currentPage = 0
-        isLoadingPipeline = false
-        isRestoringPosition = false
-
-        // Lazy loading: auto-fetch the initial chapter (saved position or chapter 0).
-        let initialChapter = OnlineInitialChapterResolver.preferredInitialChapter(
-            chapterCount: refs.count,
-            savedPositionSnapshot: 0,
-            restoreTargetChapter: savedCoreTextRestoreTarget?.chapterIndex
-        )
-        currentChapterIndex = initialChapter
-        ensureChapterReady(chapterIndex: initialChapter)
-        if initialChapter != 0 {
-            ensureChapterReady(chapterIndex: 0)
-        }
-    }
-
-    private func loadContent() {
-        guard !isLoadingPipeline else { return }
-        isLoadingPipeline = true
-        isRestoringPosition = true
-        refreshInitialRestoreState()
-
-        let marginH = effectivePageMarginH
-        guard let b = book else {
-            applyDocument(nil)
-            isRestoringPosition = false
-            isLoadingPipeline = false
-            return
-        }
-
-        if b.isOnline {
-            loadOnlineCoreText(b, marginH: marginH)
-            return
-        }
-        
-        if b.resolvedPipelineKind == .txt {
-            let bookTitle = b.title
-            let settings = currentRenderSettings(marginH: marginH)
-            let targetBook = b
-
-            DispatchQueue.global(qos: .userInitiated).async {
-                let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                let txtURL = docsURL.appendingPathComponent(targetBook.contentFilename)
-                let lowercasedFilename = targetBook.contentFilename.lowercased()
-                let isMarkdownFile = lowercasedFilename.hasSuffix(".md")
-                    || lowercasedFilename.hasSuffix(".markdown")
-
-                if isMarkdownFile {
-                    let markdownText: String
-                    do {
-                        markdownText = try TXTFileReader.readTextFile(url: txtURL)
-                    } catch {
-                        Task { @MainActor in
-                            guard self.book?.id == targetBook.id else { return }
-                            self.applyDocument(nil)
-                            self.isLoadingPipeline = false
-                            self.isRestoringPosition = false
-                        }
-                        return
-                    }
-
-                    let markdownBuilder = MarkdownAttributedStringBuilder(
-                        markdown: markdownText,
-                        fallbackTitle: bookTitle
-                    )
-                    let markdownChapters = markdownBuilder.unifiedChapters
-
-                    Task { @MainActor in
-                        guard self.book?.id == targetBook.id else {
-                            self.isLoadingPipeline = false
-                            self.isRestoringPosition = false
-                            return
-                        }
-
-                        let document = BookDocumentFactory.makeTXTDocument(
-                            book: targetBook,
-                            chapters: markdownChapters
-                        )
-                        self.applyDocument(document)
-
-                        self.epubRenderer.loadTXT(
-                            attributedBuilder: markdownBuilder,
-                            bookIdentifier: targetBook.id.uuidString,
-                            renderSize: self.currentReaderRenderSize,
-                            settings: settings
-                        )
-
-                        if document.tableOfContents.count > 0 {
-                            self.chapters = document.tableOfContents.enumerated().map { i, chapter in
-                                BookChapter(index: i, title: chapter.title, content: "")
-                            }
-                        } else {
-                            self.chapters = [BookChapter(index: 0, title: bookTitle, content: "")]
-                        }
-
-                        self.allPages = []
-                        if self.savedCoreTextRestoreTarget == nil {
-                            self.currentPage = 0
-                        }
-                        self.isLoadingPipeline = false
-                        self.isRestoringPosition = false
-                    }
-                    return
-                }
-
-                let mappedTextFile: TXTMappedTextFile
-                do {
-                    mappedTextFile = try TXTFileReader.readMappedTextFile(url: txtURL)
-                } catch {
-                    Task { @MainActor in
-                        guard self.book?.id == targetBook.id else { return }
-                        self.applyDocument(nil)
-                        self.isLoadingPipeline = false
-                        self.isRestoringPosition = false
-                    }
-                    return
-                }
-
-                let bookId = targetBook.id
-                let fingerprint = TXTFileReader.fileFingerprint(data: mappedTextFile.data)
-                let fileSize = mappedTextFile.byteCount
-                let encoding = mappedTextFile.encoding
-
-                let mappedChapterIndexes: [TXTMappedChapterIndex]
-                if let cached = TXTChapterParser.loadCachedIndexes(bookId: bookId, fileSize: fileSize, fingerprint: fingerprint, encoding: encoding) {
-                    mappedChapterIndexes = cached
-                } else {
-                    let fresh = TXTChapterParser.parseMappedChapterIndexes(mappedTextFile, bookTitle: bookTitle)
-                    TXTChapterParser.saveCachedIndexes(fresh, bookId: bookId, fileSize: fileSize, fingerprint: fingerprint, encoding: encoding)
-                    mappedChapterIndexes = fresh
-                }
-                let lazyBuilder = TXTLazyAttributedStringBuilder(
-                    mappedTextFile: mappedTextFile,
-                    chapterIndexes: mappedChapterIndexes
-                )
-
-                Task { @MainActor in
-                    guard self.book?.id == targetBook.id else {
-                        self.isLoadingPipeline = false
-                        self.isRestoringPosition = false
-                        return
-                    }
-
-                    let document = BookDocumentFactory.makeTXTDocument(
-                        book: targetBook,
-                        mappedChapterIndexes: mappedChapterIndexes,
-                        mappedTextFile: mappedTextFile
-                    )
-                    self.applyDocument(document)
-
-                    self.epubRenderer.loadTXT(
-                        attributedBuilder: lazyBuilder,
-                        bookIdentifier: targetBook.id.uuidString,
-                        renderSize: self.currentReaderRenderSize,
-                        settings: settings
-                    )
-
-                    if document.tableOfContents.count > 0 {
-                        self.chapters = document.tableOfContents.enumerated().map { i, chapter in
-                            BookChapter(index: i, title: chapter.title, content: "")
-                        }
-                    } else {
-                        self.chapters = [BookChapter(index: 0, title: bookTitle, content: "")]
-                    }
-
-                    self.allPages = []
-                    if self.savedCoreTextRestoreTarget == nil {
-                        self.currentPage = 0
-                    }
-                    self.isLoadingPipeline = false
-                    self.isRestoringPosition = false
-                }
-            }
-            return
-        }
-
-        guard b.resolvedPipelineKind == .epub else {
-            applyDocument(nil)
-            isLoadingPipeline = false
-            isRestoringPosition = false
-            return
-        }
-        let bookTitle = b.title
-        self.chapters = [BookChapter(index: 0, title: bookTitle, content: "")]
-        self.allPages = [PageContent(chapterIndex: 0, chapterTitle: bookTitle, content: "", pageInChapter: 0)]
-        self.currentPage = 0
-        loadLocalEPUB(b, marginH: marginH)
-    }
-
-    private func rebuildPages() {
-        isLoadingPipeline = false
-        loadContent()
-    }
-
-    private func applyDocument(_ document: (any BookDocument)?) {
-        bookDocument = document
-        if let document {
-            contentProvider = BookDocumentContentProviderAdapter(document: document)
-            readerCapabilities = document.capabilities
-        } else {
-            contentProvider = nil
-            readerCapabilities = .reflowableText
-        }
-    }
-
-    private func handleReaderConfigRefresh(_ kind: ReaderConfigRefreshKind) {
-        switch kind {
-        case .layout:
-            performUnifiedRelayout()
-        case .appearance:
-            applyUnifiedAppearanceUpdate()
-        }
-    }
-
-    private func performUnifiedRelayout(targetSize: CGSize? = nil) {
-        guard let engine = epubRenderer.engine else {
-            rebuildPages()
-            return
-        }
-        let size = targetSize ?? engine.renderSize
-        let newSettings = currentRenderSettings(marginH: effectivePageMarginH)
-        if targetSize != nil,
-           abs(size.width - engine.renderSize.width) < 0.5,
-           abs(size.height - engine.renderSize.height) < 0.5 {
-            print("[FlipTrace] performUnifiedRelayout skip sameSize size=\(size)")
-            return
-        }
-        if let coreEngine = engine as? CoreTextPageEngine,
-           targetSize == nil,
-           newSettings == coreEngine.renderSettings {
-            print("[FlipTrace] performUnifiedRelayout skip sameSettings size=\(size)")
-            return
-        }
-        epubRenderer.updateRenderSettings(newSettings)
-        Task { await engine.invalidateLayout(newSize: size) }
-    }
-
-    private func applyUnifiedAppearanceUpdate() {
-        guard let engine = epubRenderer.engine else { return }
-        epubRenderer.updateRenderSettings(currentRenderSettings(marginH: effectivePageMarginH))
-        engine.applyThemeChange(
-            textColor: readerTheme.uiTextColor,
-            backgroundColor: readerTheme.uiBackgroundColor
-        )
-    }
+    // Extracted to ReaderView+PageBuilding.swift
 }
 
-private enum ReaderDownloadStartOption: String, CaseIterable, Identifiable {
-    case currentChapter
-    case firstChapter
 
-    var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .currentChapter:
-            return localized("從當前章開始")
-        case .firstChapter:
-            return localized("從第一章開始")
-        }
-    }
-}
 
-private struct ReaderDownloadOptionsView: View {
-    let bookId: UUID
-    let bookTitle: String
-    let currentChapterIndex: Int
-    let totalChapters: Int
-    let onStart: (Int, Int) -> Void
-    let onPause: () -> Void
-    let onResume: () -> Void
-    let onRemove: () -> Void
-    let onClose: () -> Void
-
-    @EnvironmentObject private var store: BookStore
-
-    @State private var startOption: ReaderDownloadStartOption = .currentChapter
-    @State private var chapterCount: Double
-    @State private var chapterCountText: String
-
-    init(
-        bookId: UUID,
-        bookTitle: String,
-        currentChapterIndex: Int,
-        totalChapters: Int,
-        onStart: @escaping (Int, Int) -> Void,
-        onPause: @escaping () -> Void,
-        onResume: @escaping () -> Void,
-        onRemove: @escaping () -> Void,
-        onClose: @escaping () -> Void
-    ) {
-        self.bookId = bookId
-        self.bookTitle = bookTitle
-        self.currentChapterIndex = max(0, currentChapterIndex)
-        self.totalChapters = max(0, totalChapters)
-        self.onStart = onStart
-        self.onPause = onPause
-        self.onResume = onResume
-        self.onRemove = onRemove
-        self.onClose = onClose
-
-        let safeTotal = max(1, totalChapters)
-        let safeCurrent = min(max(0, currentChapterIndex), safeTotal - 1)
-        let defaultCount = min(50, max(1, safeTotal - safeCurrent))
-        _chapterCount = State(initialValue: Double(defaultCount))
-        _chapterCountText = State(initialValue: "\(defaultCount)")
-    }
-
-    // Live download state from the store, so the sheet reflects progress in real time.
-    private var book: ReadingBook? { store.books.first(where: { $0.id == bookId }) }
-    private var downloadState: BookOfflineDownloadState { book?.offlineDownloadState ?? .none }
-
-    private enum Mode { case range, progress, completed }
-    private var mode: Mode {
-        switch downloadState {
-        case .downloading, .paused:
-            return .progress
-        case .failed:
-            return book?.offlineDownloadTask != nil ? .progress : .range
-        case .available:
-            return .completed
-        case .none:
-            return .range
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                switch mode {
-                case .range:
-                    rangeSections
-                case .progress:
-                    progressSections
-                case .completed:
-                    completedSections
-                }
-            }
-            .navigationTitle(localized("下載章節"))
-            .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        onClose()
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                }
-                if mode == .range {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            onStart(selectedStartIndex, Int(chapterCount.rounded()))
-                        } label: {
-                            Image(systemName: "checkmark")
-                        }
-                        .disabled(totalChapters <= 0)
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Range selection
-
-    @ViewBuilder private var rangeSections: some View {
-        Section {
-            VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                Text(bookTitle)
-                    .font(DSFont.headline)
-                    .lineLimit(2)
-                Text(summaryText)
-                    .font(DSFont.caption)
-                    .foregroundColor(DSColor.textSecondary)
-            }
-            .padding(.vertical, DSSpacing.xs)
-        }
-
-        Section(header: Text(localized("下載範圍"))) {
-            Picker(localized("開始位置"), selection: $startOption) {
-                ForEach(ReaderDownloadStartOption.allCases) { option in
-                    Text(option.title).tag(option)
-                }
-            }
-            .pickerStyle(.segmented)
-            .onChange(of: startOption) { _, _ in
-                clampChapterCountToCurrentMaximum()
-            }
-
-            HStack {
-                Text(localized("開始章節"))
-                Spacer()
-                Text(String(format: localized("第 %d 章"), selectedStartIndex + 1))
-                    .foregroundColor(DSColor.textSecondary)
-            }
-        }
-
-        Section(header: Text(localized("章數"))) {
-            if maxSelectableCount > 1 {
-                Slider(
-                    value: Binding(
-                        get: { chapterCount },
-                        set: { updateChapterCount(Int($0.rounded())) }
-                    ),
-                    in: 1...Double(maxSelectableCount),
-                    step: 1
-                )
-            }
-
-            HStack {
-                Text(localized("手動輸入"))
-                Spacer()
-                TextField(localized("章數"), text: $chapterCountText)
-                    .keyboardType(.numberPad)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 96)
-                    .onChange(of: chapterCountText) { _, newValue in
-                        updateChapterCountText(newValue)
-                    }
-            }
-
-            Text(String(format: localized("最多可下載 %d 章"), maxSelectableCount))
-                .font(DSFont.caption)
-                .foregroundColor(DSColor.textSecondary)
-        }
-
-        if totalChapters <= 0 {
-            Section {
-                Label(localized("沒有可下載章節"), systemImage: "exclamationmark.triangle")
-                    .foregroundColor(DSColor.textSecondary)
-            }
-        }
-    }
-
-    // MARK: - Download progress
-
-    @ViewBuilder private var progressSections: some View {
-        Section {
-            VStack(alignment: .leading, spacing: DSSpacing.sm) {
-                Text(bookTitle)
-                    .font(DSFont.headline)
-                    .lineLimit(2)
-                HStack {
-                    Text(statusTitle)
-                        .font(DSFont.subheadline)
-                        .foregroundColor(DSColor.textSecondary)
-                    Spacer()
-                    Text("\(completedCount)/\(totalCount)")
-                        .font(DSFont.caption.monospacedDigit())
-                        .foregroundColor(DSColor.textSecondary)
-                }
-                ProgressView(value: progressValue)
-                    .tint(downloadState == .downloading ? .blue : DSColor.textSecondary)
-            }
-            .padding(.vertical, DSSpacing.xs)
-        }
-
-        Section {
-            Button {
-                if downloadState == .downloading {
-                    onPause()
-                } else {
-                    onResume()
-                }
-            } label: {
-                Label(
-                    downloadState == .downloading ? localized("暫停下載") : localized("繼續下載"),
-                    systemImage: downloadState == .downloading ? "pause.fill" : "play.fill"
-                )
-            }
-            // Removing mid-download would race the running download task (it re-sets
-            // .downloading on its next chapter), so only offer removal once the task
-            // has stopped (paused / failed).
-            if downloadState != .downloading {
-                Button(role: .destructive) {
-                    onRemove()
-                } label: {
-                    Label(localized("移除"), systemImage: "trash")
-                }
-            }
-        }
-    }
-
-    // MARK: - Completed
-
-    @ViewBuilder private var completedSections: some View {
-        Section {
-            VStack(alignment: .leading, spacing: DSSpacing.sm) {
-                Text(bookTitle)
-                    .font(DSFont.headline)
-                    .lineLimit(2)
-                HStack {
-                    Label(localized("下載完成"), systemImage: "checkmark.circle.fill")
-                        .font(DSFont.subheadline)
-                        .foregroundColor(.green)
-                    Spacer()
-                    Text("\(completedCount)/\(totalCount)")
-                        .font(DSFont.caption.monospacedDigit())
-                        .foregroundColor(DSColor.textSecondary)
-                }
-            }
-            .padding(.vertical, DSSpacing.xs)
-        }
-
-        Section {
-            Button(role: .destructive) {
-                onRemove()
-            } label: {
-                Label(localized("移除"), systemImage: "trash")
-            }
-        }
-    }
-
-    // MARK: - Progress helpers
-
-    private var clampedTask: BookOfflineDownloadTask? {
-        book?.offlineDownloadTask?.clamped(to: max(totalChapters, 0))
-    }
-
-    private var completedCount: Int {
-        clampedTask?.clampedCompletedChapterCount ?? book?.downloadedChapterCount ?? 0
-    }
-
-    private var totalCount: Int {
-        clampedTask?.totalChapterCount ?? max(totalChapters, 1)
-    }
-
-    private var progressValue: Double {
-        let total = max(totalCount, 1)
-        return min(max(Double(completedCount) / Double(total), 0), 1)
-    }
-
-    private var statusTitle: String {
-        switch downloadState {
-        case .downloading:
-            return localized("下載中")
-        case .paused:
-            return localized("已暫停")
-        case .failed:
-            return localized("下載失敗")
-        case .available:
-            return localized("下載完成")
-        case .none:
-            return localized("未下載")
-        }
-    }
-
-    private var selectedStartIndex: Int {
-        guard totalChapters > 0 else { return 0 }
-        switch startOption {
-        case .currentChapter:
-            return min(max(currentChapterIndex, 0), totalChapters - 1)
-        case .firstChapter:
-            return 0
-        }
-    }
-
-    private var maxSelectableCount: Int {
-        max(1, totalChapters - selectedStartIndex)
-    }
-
-    private var selectedEndIndex: Int {
-        min(totalChapters - 1, selectedStartIndex + Int(chapterCount.rounded()) - 1)
-    }
-
-    private var summaryText: String {
-        guard totalChapters > 0 else { return localized("沒有可下載章節") }
-        return String(
-            format: localized("第 %d 到 %d 章，共 %d 章"),
-            selectedStartIndex + 1,
-            selectedEndIndex + 1,
-            Int(chapterCount.rounded())
-        )
-    }
-
-    private func updateChapterCount(_ value: Int) {
-        let clamped = min(max(value, 1), maxSelectableCount)
-        chapterCount = Double(clamped)
-        chapterCountText = "\(clamped)"
-    }
-
-    private func updateChapterCountText(_ text: String) {
-        let filtered = text.filter(\.isNumber)
-        if filtered != text {
-            chapterCountText = filtered
-            return
-        }
-        guard let value = Int(filtered) else { return }
-        let clamped = min(max(value, 1), maxSelectableCount)
-        chapterCount = Double(clamped)
-        if value != clamped {
-            chapterCountText = "\(clamped)"
-        }
-    }
-
-    private func clampChapterCountToCurrentMaximum() {
-        updateChapterCount(Int(chapterCount.rounded()))
-    }
-}
-
-// MARK: - Footnote Popup
-
-/// Identifiable wrapper so a tapped duokan footnote can drive a `.sheet(item:)`.
-private struct ReaderFootnoteItem: Identifiable {
-    let id = UUID()
-    let text: String
-}
-
-/// In-place popup for a duokan footnote, shown when its reference marker is tapped.
-private struct ReaderFootnotePopupView: View {
-    let text: String
-    let onClose: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                Text(text)
-                    .font(DSFont.body)
-                    .foregroundStyle(DSColor.textPrimary)
-                    .lineSpacing(4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(DSSpacing.lg)
-            }
-            .navigationTitle(localized("註釋"))
-            .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(localized("完成"), action: onClose)
-                }
-            }
-        }
-    }
-}
-
-#Preview {
-    ReaderFootnotePopupView(
-        text: "◎近年來，韓國將長詞句縮短、化作簡稱的各式流行語風行一時，原先起自網絡族群，現在大眾的日常用語、會話中也日漸普及。"
-    ) {}
-}
