@@ -291,6 +291,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         private var activeCurlTransitionCount = 0
         private var hasDeferredChapterReady = false
+        private var lastCurlBeginTime: CFAbsoluteTime = 0
+        private static let curlWatchdogTimeout: CFAbsoluteTime = 2.5
 
         // Cover animation overlay components
         private let coverOverlayView = UIView()
@@ -355,7 +357,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         private func beginCurlTransitionIfNeeded() {
             guard pageTurnStyle == .curl else { return }
+            resetCurlCountIfStale()
             activeCurlTransitionCount += 1
+            lastCurlBeginTime = CFAbsoluteTimeGetCurrent()
         }
 
         private func deferChapterReadyIfCurlIsAnimating() -> Bool {
@@ -364,6 +368,19 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             hasDeferredChapterReady = true
             AppLogger.render("[CurlTrace] defer handleChapterReady during curl transition count=\(activeCurlTransitionCount)")
             return true
+        }
+
+        /// A dropped UIPageViewController completion leaks the counter, which would
+        /// defer chapter-ready refreshes forever (snapshot pages never swap to real
+        /// content). Real curl animations finish well under 2.5s, so a positive count
+        /// older than that is a leak — reset it at the next page-turn begin. The turn's
+        /// own finish then reaches zero and replays the owed `hasDeferredChapterReady`
+        /// via the existing didFinish/completion path (safe: never mid-gesture).
+        private func resetCurlCountIfStale() {
+            guard activeCurlTransitionCount > 0,
+                  CFAbsoluteTimeGetCurrent() - lastCurlBeginTime >= Self.curlWatchdogTimeout else { return }
+            AppLogger.render("⟐ curl watchdog: resetting leaked count=\(activeCurlTransitionCount)")
+            activeCurlTransitionCount = 0
         }
 
         private func finishCurlTransitionIfNeeded(on pageViewController: UIPageViewController) {
