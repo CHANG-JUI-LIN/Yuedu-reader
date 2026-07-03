@@ -45,7 +45,9 @@ final class ReaderSessionCoordinator: ObservableObject {
     let navigator: ReaderNavigator
 
     private var transitionQueue = ReaderPageTransitionQueue()
-    private(set) var externalTargetPosition: CoreTextReadingPosition?
+    var externalTargetPosition: CoreTextReadingPosition? {
+        navigator.externalTargetPosition
+    }
 
     init(navigator: ReaderNavigator) {
         self.navigator = navigator
@@ -70,12 +72,16 @@ final class ReaderSessionCoordinator: ObservableObject {
     }
 
     func setExternalTarget(_ position: CoreTextReadingPosition?) {
-        externalTargetPosition = position
+        if let position {
+            navigator.go(to: position)
+        } else {
+            navigator.clearExternalTarget()
+        }
     }
 
     @discardableResult
     func clearExternalTarget() -> [ReaderEffect] {
-        externalTargetPosition = nil
+        navigator.clearExternalTarget()
         return [.clearExternalTarget]
     }
 
