@@ -36,14 +36,13 @@ struct ReaderPageTransitionQueue {
     }
 
     mutating func beginInteractiveTransition() {
-        guard !isTransitioning else {
-            // Check watchdog during interactive gesture begin too.
+        if isTransitioning {
+            // Watchdog: a stuck transition (dropped completion) must not block
+            // new interactive gestures forever. Under the timeout, ignore the
+            // begin and keep the original clock; past it, log and re-arm below.
             let elapsed = CFAbsoluteTimeGetCurrent() - transitionStartTime
-            if elapsed >= Self.watchdogTimeout {
-                AppLogger.render("⟐ pageTurn watchdog fired during interactive begin after \(String(format: "%.1f", elapsed))s")
-            } else {
-                return
-            }
+            guard elapsed >= Self.watchdogTimeout else { return }
+            AppLogger.render("⟐ pageTurn watchdog fired during interactive begin after \(String(format: "%.1f", elapsed))s")
         }
         isTransitioning = true
         transitionStartTime = CFAbsoluteTimeGetCurrent()
