@@ -805,7 +805,15 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     if isRTL {
                         direction = direction == .forward ? .reverse : .forward
                     }
-                    let shouldAnimate = (pageTurnStyle != .none) && isAdjacentDisplayPage(targetPage, to: visiblePage)
+                    // Chained continuation of a tap burst (this path is only fed by
+                    // queued page turns; TOC-style jumps never come through here).
+                    // Animate it even when the accumulated target is non-adjacent —
+                    // snapping here is why rapid tapping made animations vanish.
+                    // The queue keeps only the latest target, so at most one
+                    // animation of lag ever accumulates (Legado's abort-and-restart
+                    // feel, within UIPageViewController's no-abort constraint).
+                    // Cover keeps its own overlay animator path; .none stays instant.
+                    let shouldAnimate = pageTurnStyle == .slide || pageTurnStyle == .curl
                     performProgrammaticTransition(
                         on: pageViewController,
                         to: targetPage,
