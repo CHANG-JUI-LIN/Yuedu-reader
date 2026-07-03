@@ -1,6 +1,6 @@
 import Foundation
 import JavaScriptCore
-import SwiftUI  // withAnimation (SearchAggregator callers)
+
 
 // MARK: - Rule Engine (aligned with Legado https://github.com/gedoor/legado book source parsing)
 // References app/model/analyzeRule/: AnalyzeRule, AnalyzeByJSoup, AnalyzeByXPath, AnalyzeByJSonPath, AnalyzeByRegex

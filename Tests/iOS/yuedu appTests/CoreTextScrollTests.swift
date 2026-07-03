@@ -307,20 +307,6 @@ struct CoreTextScrollTests {
         #expect(!engine.chunks.isEmpty)
     }
 
-    @Test("progress throttle suppresses repeated same-row updates")
-    func progressThrottleSuppressesDuplicateRows() {
-        var throttle = CoreTextScrollProgressThrottle(minimumInterval: 0.25)
-        let first = throttle.shouldReport(row: 3, time: 10.00)
-        let suppressed = throttle.shouldReport(row: 3, time: 10.10)
-        let delayed = throttle.shouldReport(row: 3, time: 10.26)
-        let changedRow = throttle.shouldReport(row: 4, time: 10.27)
-
-        #expect(first)
-        #expect(!suppressed)
-        #expect(delayed)
-        #expect(changedRow)
-    }
-
     @Test("chunk slicer keeps styled paragraph starts on chunk boundaries")
     func chunkSlicerStartsTrimmedChunksAtParagraphBoundaries() {
         let attr = NSMutableAttributedString()

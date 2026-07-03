@@ -1,11 +1,5 @@
 import UIKit
 
-enum ReaderTapZone {
-    case leading
-    case center
-    case trailing
-}
-
 enum ReaderCoverTurnDirection: Equatable {
     case forward
     case backward
@@ -69,36 +63,6 @@ struct ReaderCoverPageMotion: Equatable {
     private func offscreenX(width: CGFloat) -> CGFloat {
         (isRTL ? 1 : -1) * max(width, 1)
     }
-}
-
-@MainActor
-protocol ReaderPagingAdapter: AnyObject {
-    var style: ReaderPagingStyle { get }
-    var viewController: UIViewController { get }
-
-    func bind(
-        provider: ReaderPageProvider,
-        session: ReaderSessionStore,
-        delegate: ReaderPagingAdapterDelegate
-    )
-    func apply(state: ReaderPresentationState, animated: Bool)
-    func jump(to location: ReaderLocation, animated: Bool)
-    func cancelInFlightTransition()
-    func teardown()
-}
-
-@MainActor
-protocol ReaderPagingAdapterDelegate: AnyObject {
-    func pagingAdapter(
-        _ adapter: ReaderPagingAdapter,
-        didSettleAt location: ReaderLocation,
-        pageIndex: Int
-    )
-
-    func pagingAdapter(
-        _ adapter: ReaderPagingAdapter,
-        didRequestTapZone zone: ReaderTapZone
-    )
 }
 
 struct PageViewControllerPagingAdapterDescriptor: Equatable {

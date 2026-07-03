@@ -26,25 +26,7 @@ struct ScrollConfigObserver: ViewModifier {
 
 struct HideTabBarModifier: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 16.0, *) {
-            content.toolbar(.hidden, for: .tabBar)
-        } else {
-            content
-                .onAppear {
-                    guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                        let window = scene.windows.first,
-                        let tabBar = window.rootViewController as? UITabBarController
-                    else { return }
-                    tabBar.tabBar.isHidden = true
-                }
-                .onDisappear {
-                    guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                        let window = scene.windows.first,
-                        let tabBar = window.rootViewController as? UITabBarController
-                    else { return }
-                    tabBar.tabBar.isHidden = false
-                }
-        }
+        content.toolbar(.hidden, for: .tabBar)
     }
 }
 

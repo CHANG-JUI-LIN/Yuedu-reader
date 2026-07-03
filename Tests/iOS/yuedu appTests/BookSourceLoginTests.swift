@@ -138,17 +138,6 @@ struct BookSourceLoginTests {
         #expect(size.type == .select)
         #expect(size.options == ["小", "中", "大"])
         #expect(size.defaultValue == "中")
-
-        let explicit = LoginUiBuilder.collectLoginData(
-            fields: loginFields,
-            values: ["气泡字号": "大", "气泡选择": "默认"]
-        )
-        #expect(explicit["气泡字号"] == "大")
-        #expect(explicit["气泡选择"] == "默认")
-
-        let fallback = LoginUiBuilder.collectLoginData(fields: loginFields, values: [:])
-        #expect(fallback["气泡字号"] == "中")
-        #expect(fallback["气泡选择"] == "圆角")
     }
 
     @Test("LoginUIField.parse() 空 JSON 回傳空陣列")

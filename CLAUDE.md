@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Yuedu Reader — native iOS EPUB/TXT/RSS/web-novel reader. SwiftUI + CoreText, targeting iOS 18.0+, Swift 6.0, Xcode 16+. The reader renders via CoreText (not WebView) for precise pagination, CJK vertical writing, TTS sync, and text selection.
+Yuedu Reader — native iOS EPUB/TXT/RSS/web-novel reader. SwiftUI + CoreText, targeting iOS 17.0+, Swift 6.0, Xcode 16+. The reader renders via CoreText (not WebView) for precise pagination, CJK vertical writing, TTS sync, and text selection.
 
 ## Build & Test
 

@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-import SwiftUI
 
 // MARK: - Safe Decoding Extensions (null / missing key / type mismatch tolerance)
 
