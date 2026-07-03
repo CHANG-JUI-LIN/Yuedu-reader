@@ -49,11 +49,19 @@ struct ReaderPageTransitionQueue {
     }
 
     mutating func transitionFinished(showing visiblePage: Int) -> Int? {
-        isTransitioning = false
-        transitionStartTime = 0
-        guard let queuedPage else { return nil }
+        guard let queuedPage, queuedPage != visiblePage else {
+            isTransitioning = false
+            transitionStartTime = 0
+            self.queuedPage = nil
+            return nil
+        }
+        // Atomic handoff: the queued transition starts right away, so stay armed
+        // with a fresh clock. Fully disarming here would open a gap where a new
+        // request could start a concurrent animated transition (the
+        // _UIQueuingScrollView crash this queue exists to prevent), and would let
+        // the intermediate settle's publish overwrite newer accumulated taps.
         self.queuedPage = nil
-        guard queuedPage != visiblePage else { return nil }
+        transitionStartTime = CFAbsoluteTimeGetCurrent()
         return queuedPage
     }
 

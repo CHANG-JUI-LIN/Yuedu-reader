@@ -726,6 +726,16 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
 
+                // Latest intent wins (Readium-style): while a page-turn burst is
+                // still chaining (a queued transition was handed off and has not
+                // settled yet), this settle is intermediate. Writing it back would
+                // drag the binding behind the user's newest taps — eating them and
+                // triggering reverse "correction" transitions. The final transition
+                // in the chain publishes the real page.
+                if self.isPageTransitioning, self.currentPage != page {
+                    return
+                }
+
                 let didChange = self.currentPage != page
 
                 if didChange {
