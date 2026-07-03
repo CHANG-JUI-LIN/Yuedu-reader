@@ -60,6 +60,23 @@ enum DiscoverSectionPhase: Equatable {
     case failed
 }
 
+/// One book prepared for showcase rendering. Everything a row's `body` needs is
+/// precomputed here, off the main thread, when its section finishes loading.
+/// SwiftUI re-evaluates every visible row while the remaining sections stream
+/// in, so per-render work the rows used to do inline — the SwiftSoup + regex
+/// intro strip, and the audiobook inference's base64/JSON decoding plus a
+/// UserDefaults read behind SHA256 + `queue.sync` — multiplied into dropped
+/// frames once an aggregate source filled the page with sections.
+struct DiscoverBookDisplay: Identifiable {
+    let book: OnlineBook
+    /// Plain-text intro (`ReaderHTMLUtilities.displayText` of `book.intro`).
+    let intro: String
+    /// Whether the audiobook cover badge shows (`inferredContentKind == .audio`).
+    let isAudiobook: Bool
+
+    var id: UUID { book.id }
+}
+
 /// One ranked/featured block on the redesigned 發現 showcase. Each section maps
 /// directly to one of the *book source's own* explore categories — the source
 /// owns the feed; we only present it faithfully.
@@ -67,17 +84,23 @@ struct DiscoverShowcaseSection: Identifiable {
     let id: UUID
     let item: DiscoverCardItem
     let style: DiscoverSectionStyle
-    var books: [OnlineBook] = []
+    /// Cover request context, resolved once per reload. Rows used to re-derive
+    /// it per render (a linear source scan + header-JSON parse each time).
+    let coverBaseURL: String?
+    let coverHeaders: [String: String]
+    var books: [DiscoverBookDisplay] = []
     var phase: DiscoverSectionPhase = .idle
     /// Short reason shown under the failed state, for on-device diagnosis.
     var errorReason: String?
 
     var title: String { item.title }
 
-    init(item: DiscoverCardItem) {
+    init(item: DiscoverCardItem, coverBaseURL: String?, coverHeaders: [String: String]) {
         self.id = item.id
         self.item = item
         self.style = DiscoverViewModel.sectionStyle(for: item.title)
+        self.coverBaseURL = coverBaseURL
+        self.coverHeaders = coverHeaders
     }
 }
 
@@ -93,14 +116,11 @@ final class DiscoverViewModel: ObservableObject {
     /// label separators. The main showcase maps only fetchable/action entries;
     /// the settings sheet needs the raw list to preserve the source's own groups.
     @Published var rawItems: [ModernParserBridge.DiscoverItem] = []
-    @Published var books: [OnlineBook] = []
-    @Published var booksSectionTitle: String = ""
 
     /// Showcase sections for the redesigned 發現 page (one per source category).
     @Published var sections: [DiscoverShowcaseSection] = []
 
     @Published var isLoadingItems = false
-    @Published var isLoadingBooks = false
 
     /// Max number of source categories rendered as showcase sections.
     let maxShowcaseSections = 12
@@ -120,7 +140,6 @@ final class DiscoverViewModel: ObservableObject {
     private let categorySelectionPrefix = "discover.categorySelection."
     private let defaultDiscoverPlatform = "全部"
     private var loadItemsTask: Task<Void, Never>?
-    private var loadBooksTask: Task<Void, Never>?
     /// Guards the one-shot "reset poisoned discover variable + reload" recovery so a source
     /// that genuinely returns no filters can't loop. Cleared whenever the selected source changes.
     private var didAutoResetDiscoverVariable = false
@@ -273,8 +292,6 @@ final class DiscoverViewModel: ObservableObject {
     func reload() {
         guard let source = selectedSource else {
             items = []
-            books = []
-            booksSectionTitle = ""
             cancelSectionTasks()
             sections = []
             rawItems = []
@@ -319,13 +336,6 @@ final class DiscoverViewModel: ObservableObject {
             self.items = mapped
             self.isLoadingItems = false
             self.buildSections(from: mapped)
-            if let first = mapped.first(where: { $0.isFetchable }) {
-                self.loadBooks(for: first)
-            } else {
-                self.loadBooksTask?.cancel()
-                self.books = []
-                self.booksSectionTitle = ""
-            }
         }
     }
 
@@ -333,11 +343,17 @@ final class DiscoverViewModel: ObservableObject {
 
     /// Turn the source's fetchable explore categories into showcase sections.
     private func buildSections(from items: [DiscoverCardItem]) {
+        // All sections share the selected source's cover context; parse the
+        // header JSON once here instead of per row per render.
+        let coverBaseURL = selectedSource?.bookSourceUrl
+        let coverHeaders = selectedSource?.parsedHeaders ?? [:]
         sections = Self.showcaseItems(
             from: items,
             customKeys: usesCustomCategorySelection ? selectedCategoryKeys : nil,
             defaultLimit: maxShowcaseSections
-        ).map { DiscoverShowcaseSection(item: $0) }
+        ).map {
+            DiscoverShowcaseSection(item: $0, coverBaseURL: coverBaseURL, coverHeaders: coverHeaders)
+        }
     }
 
     /// Enqueue one section's books to load — driven by the section view's `.task`.
@@ -375,10 +391,12 @@ final class DiscoverViewModel: ObservableObject {
         let raw = sections[index].item.raw
         Task { [weak self] in
             var loaded: [OnlineBook] = []
+            var displays: [DiscoverBookDisplay] = []
             var reason: String?
             var ok = false
             do {
                 loaded = try await BookSourceFetcher.shared.discoverBooks(from: raw, page: 1, in: source)
+                displays = await Self.makeDisplays(loaded, source: source)
                 ok = true
             } catch {
                 reason = (error as NSError).localizedDescription
@@ -389,17 +407,49 @@ final class DiscoverViewModel: ObservableObject {
             guard self.sectionQueue.first == id else { return }
             self.sectionQueue.removeFirst()
             if let idx = self.sections.firstIndex(where: { $0.id == id }) {
+                // Mutate a copy and write back once: each subscript write
+                // publishes the whole array and re-renders every visible section.
+                var updated = self.sections[idx]
                 if ok {
-                    self.sections[idx].books = loaded
-                    self.sections[idx].phase = .loaded
-                    self.prefetchCovers(loaded, source: source)
+                    updated.books = displays
+                    updated.phase = .loaded
                 } else {
-                    self.sections[idx].phase = .failed
-                    self.sections[idx].errorReason = reason
+                    updated.phase = .failed
+                    updated.errorReason = reason
+                }
+                self.sections[idx] = updated
+                if ok {
+                    self.prefetchCovers(loaded, source: source)
                 }
             }
             self.isPumpingSections = false
             self.pumpSectionQueue()
+        }
+    }
+
+    /// Precompute the row-rendering derivations for a batch of books, off the
+    /// main actor (`nonisolated` + `async` runs on the global executor).
+    nonisolated static func makeDisplays(
+        _ books: [OnlineBook],
+        source: BookSource?
+    ) async -> [DiscoverBookDisplay] {
+        guard !books.isEmpty else { return [] }
+        // One runtime-variable read per batch — it costs SHA256 + queue.sync +
+        // a UserDefaults read + JSON parse — instead of one per book.
+        let modeMarkers = OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
+        let sourceType = source?.bookSourceType
+        return books.map { book in
+            DiscoverBookDisplay(
+                book: book,
+                intro: ReaderHTMLUtilities.displayText(fromHTMLFragment: book.intro),
+                isAudiobook: OnlineBookContentInference.infer(
+                    sourceType: sourceType,
+                    runtimeVariables: book.runtimeVariables,
+                    urls: [book.bookUrl, book.tocUrl],
+                    metadataText: [book.kind, book.intro, book.lastChapter, book.sourceName]
+                        + modeMarkers
+                ) == .audio
+            )
         }
     }
 
@@ -421,8 +471,22 @@ final class DiscoverViewModel: ObservableObject {
             .filter { !$0.isEmpty && BookCoverLoader.cachedImage(for: $0) == nil }
         guard !urls.isEmpty else { return }
         Task.detached(priority: .utility) {
+            // A section can carry dozens of covers; bound the fan-out so warming
+            // one section doesn't burst that many simultaneous fetches + decodes
+            // while the page is scrolling.
             await withTaskGroup(of: Void.self) { group in
-                for url in urls {
+                var next = 0
+                while next < min(4, urls.count) {
+                    let url = urls[next]
+                    next += 1
+                    group.addTask {
+                        _ = await BookCoverLoader.loadImage(urlString: url, headers: headers)
+                    }
+                }
+                while await group.next() != nil {
+                    guard next < urls.count else { continue }
+                    let url = urls[next]
+                    next += 1
                     group.addTask {
                         _ = await BookCoverLoader.loadImage(urlString: url, headers: headers)
                     }
@@ -441,28 +505,6 @@ final class DiscoverViewModel: ObservableObject {
                       "完本", "完结", "完結", "top", "TOP", "Top"]
         if ranked.contains(where: title.contains) { return .ranked }
         return .featured
-    }
-
-    func handleTap(_ item: DiscoverCardItem, onNavigate: (String) -> Void) {
-        if item.isAction, let url = item.actionURL {
-            onNavigate(url)
-        } else if item.isFetchable {
-            loadBooks(for: item)
-        }
-    }
-
-    func loadBooks(for item: DiscoverCardItem) {
-        guard let source = selectedSource, item.isFetchable else { return }
-        loadBooksTask?.cancel()
-        isLoadingBooks = true
-        booksSectionTitle = item.title
-        loadBooksTask = Task { [weak self] in
-            let result =
-                (try? await BookSourceFetcher.shared.discoverBooks(from: item.raw, page: 1, in: source)) ?? []
-            guard let self, !Task.isCancelled else { return }
-            self.books = result
-            self.isLoadingBooks = false
-        }
     }
 
     // MARK: - Item mapping

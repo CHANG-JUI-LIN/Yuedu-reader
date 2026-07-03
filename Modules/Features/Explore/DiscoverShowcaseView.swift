@@ -239,10 +239,16 @@ private struct DiscoverSectionView: View {
         switch section.style {
         case .featured:
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: DSSpacing.md) {
-                    ForEach(section.books) { book in
-                        Button { onOpenBook(book) } label: {
-                            DiscoverFeaturedCard(book: book)
+                // Lazy is load-bearing: a featured category returns 20–50 books,
+                // and building every card the moment the section scrolls on-screen
+                // is a one-frame spike at each section boundary — the page kept
+                // dropping frames on vertical scroll even after all sections had
+                // loaded. Cards are fixed-height (see DiscoverFeaturedCard), so
+                // lazily materializing them can't change the carousel's height.
+                LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+                    ForEach(section.books) { display in
+                        Button { onOpenBook(display.book) } label: {
+                            DiscoverFeaturedCard(display: display, section: section)
                         }
                         .buttonStyle(.plain)
                     }
@@ -253,9 +259,9 @@ private struct DiscoverSectionView: View {
         case .ranked:
             VStack(spacing: 0) {
                 let ranked = Array(section.books.prefix(6).enumerated())
-                ForEach(ranked, id: \.element.id) { index, book in
-                    Button { onOpenBook(book) } label: {
-                        DiscoverRankedRow(rank: index + 1, book: book)
+                ForEach(ranked, id: \.element.id) { index, display in
+                    Button { onOpenBook(display.book) } label: {
+                        DiscoverRankedRow(rank: index + 1, display: display, section: section)
                     }
                     .buttonStyle(.plain)
                     if index < ranked.count - 1 {
@@ -395,9 +401,9 @@ private struct DiscoverRankedSummaryCard: View {
         if !section.books.isEmpty {
             let ranked = Array(section.books.prefix(6).enumerated())
             VStack(spacing: 0) {
-                ForEach(ranked, id: \.element.id) { index, book in
-                    Button { onOpenBook(book) } label: {
-                        DiscoverRankedRow(rank: index + 1, book: book)
+                ForEach(ranked, id: \.element.id) { index, display in
+                    Button { onOpenBook(display.book) } label: {
+                        DiscoverRankedRow(rank: index + 1, display: display, section: section)
                     }
                     .buttonStyle(.plain)
                     if index < ranked.count - 1 {
@@ -460,36 +466,42 @@ private struct DiscoverRankedSummaryCard: View {
 
 // MARK: - Featured card (horizontal carousel item)
 
+/// Rows read only precomputed `DiscoverBookDisplay` fields — no HTML stripping,
+/// audiobook inference, or source lookups in `body` (each visible row re-renders
+/// every time any section finishes loading; see `DiscoverBookDisplay`).
 private struct DiscoverFeaturedCard: View {
-    let book: OnlineBook
+    let display: DiscoverBookDisplay
+    let section: DiscoverShowcaseSection
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            BookCoverImage(onlineBook: book)
-                .frame(width: 104, height: 138)
-                .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
-                .overlay(alignment: .bottomTrailing) {
-                    if BookSourceStore.shared.isAudiobookForBadge(book) {
-                        AudiobookCoverBadge(glyphSize: 11)
-                    }
+            BookCoverImage(
+                coverURL: display.book.coverUrl,
+                title: display.book.name,
+                sourceBaseURL: section.coverBaseURL,
+                sourceHeaders: section.coverHeaders
+            )
+            .frame(width: 104, height: 138)
+            .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
+            .overlay(alignment: .bottomTrailing) {
+                if display.isAudiobook {
+                    AudiobookCoverBadge(glyphSize: 11)
                 }
-            Text(book.name)
+            }
+            Text(display.book.name)
                 .font(DSFont.caption.weight(.medium))
                 .foregroundColor(DSColor.textPrimary)
                 .lineLimit(1)
-            if !introText.isEmpty {
-                Text(introText)
-                    .font(DSFont.caption2)
-                    .foregroundColor(DSColor.textSecondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-            }
+            // Always present with two lines reserved so every card is the same
+            // height — the carousel is a LazyHStack whose height tracks only the
+            // cards built so far, and it must not grow as more scroll in.
+            Text(display.intro)
+                .font(DSFont.caption2)
+                .foregroundColor(DSColor.textSecondary)
+                .lineLimit(2, reservesSpace: true)
+                .multilineTextAlignment(.leading)
         }
         .frame(width: 104, alignment: .leading)
-    }
-
-    private var introText: String {
-        ReaderHTMLUtilities.displayText(fromHTMLFragment: book.intro)
     }
 }
 
@@ -497,33 +509,39 @@ private struct DiscoverFeaturedCard: View {
 
 private struct DiscoverRankedRow: View {
     let rank: Int
-    let book: OnlineBook
+    let display: DiscoverBookDisplay
+    let section: DiscoverShowcaseSection
 
     var body: some View {
         HStack(alignment: .top, spacing: DSSpacing.md) {
             rankBadge
-            BookCoverImage(onlineBook: book)
-                .frame(width: 52, height: 70)
-                .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm))
-                .overlay(alignment: .bottomTrailing) {
-                    if BookSourceStore.shared.isAudiobookForBadge(book) {
-                        AudiobookCoverBadge(glyphSize: 7)
-                    }
+            BookCoverImage(
+                coverURL: display.book.coverUrl,
+                title: display.book.name,
+                sourceBaseURL: section.coverBaseURL,
+                sourceHeaders: section.coverHeaders
+            )
+            .frame(width: 52, height: 70)
+            .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm))
+            .overlay(alignment: .bottomTrailing) {
+                if display.isAudiobook {
+                    AudiobookCoverBadge(glyphSize: 7)
                 }
+            }
 
             VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                Text(book.name)
+                Text(display.book.name)
                     .font(DSFont.subheadline.weight(.semibold))
                     .foregroundColor(DSColor.textPrimary)
                     .lineLimit(1)
-                if !book.author.isEmpty {
-                    Text(book.author)
+                if !display.book.author.isEmpty {
+                    Text(display.book.author)
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                         .lineLimit(1)
                 }
-                if !introText.isEmpty {
-                    Text(introText)
+                if !display.intro.isEmpty {
+                    Text(display.intro)
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary.opacity(0.85))
                         .lineLimit(2)
@@ -533,10 +551,6 @@ private struct DiscoverRankedRow: View {
         }
         .padding(.vertical, DSSpacing.md)
         .contentShape(Rectangle())
-    }
-
-    private var introText: String {
-        ReaderHTMLUtilities.displayText(fromHTMLFragment: book.intro)
     }
 
     private var rankBadge: some View {
@@ -569,7 +583,7 @@ private struct DiscoverCategoryView: View {
     let source: BookSource
     let onOpenBook: (OnlineBook) -> Void
 
-    @State private var books: [OnlineBook]
+    @State private var books: [DiscoverBookDisplay]
     @State private var nextPage: Int
     @State private var hasMorePages = true
     @State private var isLoadingMore = false
@@ -590,9 +604,9 @@ private struct DiscoverCategoryView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(Array(books.enumerated()), id: \.element.id) { index, book in
-                    Button { onOpenBook(book) } label: {
-                        DiscoverRankedRow(rank: index + 1, book: book)
+                ForEach(Array(books.enumerated()), id: \.element.id) { index, display in
+                    Button { onOpenBook(display.book) } label: {
+                        DiscoverRankedRow(rank: index + 1, display: display, section: section)
                     }
                     .buttonStyle(.plain)
                     .onAppear {
@@ -662,6 +676,7 @@ private struct DiscoverCategoryView: View {
         isLoadingMore = true
         loadMoreErrorReason = nil
         let page = nextPage
+        let existing = books.map(\.book)
 
         Task {
             do {
@@ -670,7 +685,9 @@ private struct DiscoverCategoryView: View {
                     page: page,
                     in: source
                 )
-                await applyLoadedPage(loaded, page: page)
+                let additional = DiscoverViewModel.uniqueAdditionalBooks(loaded, existing: existing)
+                let displays = await DiscoverViewModel.makeDisplays(additional, source: source)
+                await applyLoadedPage(displays, page: page)
             } catch {
                 await applyLoadMoreError((error as NSError).localizedDescription)
             }
@@ -678,8 +695,7 @@ private struct DiscoverCategoryView: View {
     }
 
     @MainActor
-    private func applyLoadedPage(_ loaded: [OnlineBook], page: Int) {
-        let additional = DiscoverViewModel.uniqueAdditionalBooks(loaded, existing: books)
+    private func applyLoadedPage(_ additional: [DiscoverBookDisplay], page: Int) {
         if additional.isEmpty {
             hasMorePages = false
         } else {

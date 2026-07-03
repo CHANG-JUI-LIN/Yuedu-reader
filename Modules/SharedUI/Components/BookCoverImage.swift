@@ -28,6 +28,9 @@ struct BookCoverImage: View {
         self.title = title
         self.sourceBaseURL = sourceBaseURL
         self.sourceHeaders = sourceHeaders
+        // Cache hits paint on the first layout pass — no placeholder flash and
+        // no extra state publish per cell while a list scrolls.
+        _image = State(initialValue: BookCoverLoader.cachedImage(for: coverURL))
     }
 
     var body: some View {
@@ -45,15 +48,17 @@ struct BookCoverImage: View {
         .task(id: coverURL) { await load() }
     }
 
+    // Runs on the MainActor (`.task` inherits the view's actor), so state
+    // assignments need no explicit hop.
     private func load() async {
         if let cached = BookCoverLoader.cachedImage(for: coverURL) {
-            await MainActor.run { image = cached }
+            if image !== cached { image = cached }
             return
         }
-        await MainActor.run { image = nil }  // avoid showing a reused cell's old cover
+        if image != nil { image = nil }  // avoid showing a reused cell's old cover
         let headers = BookCoverLoader.headers(sourceBaseURL: sourceBaseURL, sourceHeaders: sourceHeaders)
         let loaded = await BookCoverLoader.loadImage(urlString: coverURL, headers: headers)
-        await MainActor.run { image = loaded }
+        if !Task.isCancelled { image = loaded }
     }
 }
 
