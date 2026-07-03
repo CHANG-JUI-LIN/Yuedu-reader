@@ -100,7 +100,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         context.coordinator.externalTargetPosition = externalTargetPosition
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: uiViewController)
         let clampedPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
-        print("[CurlTrace] updateUIViewController binding=\(currentPage) visible=\((uiViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
+        AppLogger.render("[CurlTrace] updateUIViewController binding=\(currentPage) visible=\((uiViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
         let targetViewController = {
             if let externalTargetPosition {
                 return context.coordinator.displayViewController(for: externalTargetPosition)
@@ -113,6 +113,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: .forward, animated: false)
             uiViewController.view.layoutIfNeeded()
             _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
+            if context.coordinator.externalTargetPosition != nil {
+                DispatchQueue.main.async { context.coordinator.clearExternalTargetPosition() }
+            }
             return
         }
         if context.coordinator.currentTheme != theme {
@@ -125,6 +128,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             context.coordinator.applyPlaybackHighlight(to: targetVC)
             uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: .forward, animated: false)
             _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
+            if context.coordinator.externalTargetPosition != nil {
+                DispatchQueue.main.async { context.coordinator.clearExternalTargetPosition() }
+            }
             return
         }
 
@@ -283,10 +289,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
         }
 
-        private enum CurlTransitionPhase {
-            case idle
-            case animating(deferredChapterReady: Bool)
-        }
+        private var activeCurlTransitionCount = 0
+        private var hasDeferredChapterReady = false
 
         // Cover animation overlay components
         private let coverOverlayView = UIView()
@@ -305,7 +309,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private weak var callbackEngineObject: AnyObject?
         private var callbackEngineIdentifier: ObjectIdentifier?
         fileprivate var isTransitioning = false
-        private var curlTransitionPhase: CurlTransitionPhase = .idle
 
         var isPageTransitioning: Bool {
             sessionCoordinator?.isPageTransitioning ?? false
@@ -352,31 +355,24 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         private func beginCurlTransitionIfNeeded() {
             guard pageTurnStyle == .curl else { return }
-            curlTransitionPhase = .animating(deferredChapterReady: false)
+            activeCurlTransitionCount += 1
         }
 
         private func deferChapterReadyIfCurlIsAnimating() -> Bool {
             guard pageTurnStyle == .curl else { return false }
-            switch curlTransitionPhase {
-            case .idle:
-                return false
-            case .animating:
-                curlTransitionPhase = .animating(deferredChapterReady: true)
-                print("[CurlTrace] defer handleChapterReady during curl transition")
-                return true
-            }
+            guard activeCurlTransitionCount > 0 else { return false }
+            hasDeferredChapterReady = true
+            AppLogger.render("[CurlTrace] defer handleChapterReady during curl transition count=\(activeCurlTransitionCount)")
+            return true
         }
 
         private func finishCurlTransitionIfNeeded(on pageViewController: UIPageViewController) {
             guard pageTurnStyle == .curl else { return }
-            let shouldRefresh: Bool
-            switch curlTransitionPhase {
-            case .idle:
-                return
-            case .animating(let deferredChapterReady):
-                shouldRefresh = deferredChapterReady
-            }
-            curlTransitionPhase = .idle
+            guard activeCurlTransitionCount > 0 else { return }
+            activeCurlTransitionCount -= 1
+            guard activeCurlTransitionCount == 0 else { return }
+            let shouldRefresh = hasDeferredChapterReady
+            hasDeferredChapterReady = false
             if shouldRefresh {
                 handleChapterReady(on: pageViewController)
             }
@@ -483,7 +479,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     guard self.callbackEngineIdentifier == identifier else { return }
                     let line =
                         "[StartupTrace][ReaderView.Coordinator] onChapterReady currentPage=\(self.currentPage) enginePage=\(engine.currentPage) totalPages=\(engine.totalPages)"
-                    print(line)
+                    AppLogger.render(line)
                     NSLog("%@", line)
                     self.handleChapterReady(on: pageViewController)
                 }
@@ -679,7 +675,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
             let prepareLine =
                 "[StartupTrace][ReaderView.Coordinator] handleChapterReady targetPage=\(targetPage) fallbackPage=\(fallbackPage)"
-            print(prepareLine)
+            AppLogger.render(prepareLine)
             NSLog("%@", prepareLine)
 
             var direction: UIPageViewController.NavigationDirection
@@ -695,7 +691,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let resolved = syncStablePosition(afterShowing: freshVC, notifyFallback: false)
             let resolvedLine =
                 "[StartupTrace][ReaderView.Coordinator] handleChapterReady syncedPage=\(resolved ?? -1)"
-            print(resolvedLine)
+            AppLogger.render(resolvedLine)
             NSLog("%@", resolvedLine)
             if let target = externalTargetPosition,
                let resolved,
@@ -966,7 +962,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if isPlaceholderDisplay(viewController) {
                 if mode.allowsPlaceholder || allowsInteractiveChapterEndPlaceholder(target, mode: mode) {
                     pendingNavigation = PendingNavigation(target: target)
-                    print("[FlipTrace] navigation \(mode) placeholder target=\(pageDescription)")
+                    AppLogger.render("[FlipTrace] navigation \(mode) placeholder target=\(pageDescription)")
                     return viewController
                 }
                 // UIPageViewController data source MUST NOT return nil during an interactive
@@ -1038,20 +1034,20 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
             let (currentSpine, currentLocal) = currentEngine.localPosition(for: vc.globalPageIndex)
             if currentLocal == 0 && currentSpine > 0 {
-                print("[FlipTrace] pageBackward crossing chapter fromSpine=\(currentSpine) page=\(vc.globalPageIndex) toSpine=\(currentSpine - 1)")
+                AppLogger.render("[FlipTrace] pageBackward crossing chapter fromSpine=\(currentSpine) page=\(vc.globalPageIndex) toSpine=\(currentSpine - 1)")
                 let targetPosition = CoreTextReadingPosition.chapterEnd(currentSpine - 1)
                 let previousVC = navigationViewController(
                     for: .position(targetPosition),
                     mode: .interactiveTurn
                 )
-                print("[FlipTrace] pageBackward landing type=\(previousVC.map { "\(type(of: $0))" } ?? "nil") page=\((previousVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
+                AppLogger.render("[FlipTrace] pageBackward landing type=\(previousVC.map { "\(type(of: $0))" } ?? "nil") page=\((previousVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
                 return previousVC
             }
             let previousVC = navigationViewController(
                 for: .page(vc.globalPageIndex - 1),
                 mode: .interactiveTurn
             )
-            print("[FlipTrace] pageBackward sameChapter fromPage=\(vc.globalPageIndex) landingType=\(previousVC.map { "\(type(of: $0))" } ?? "nil") page=\(vc.globalPageIndex - 1)")
+            AppLogger.render("[FlipTrace] pageBackward sameChapter fromPage=\(vc.globalPageIndex) landingType=\(previousVC.map { "\(type(of: $0))" } ?? "nil") page=\(vc.globalPageIndex - 1)")
             return previousVC
         }
 
@@ -1078,29 +1074,29 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let (currentSpine, _) = currentEngine.localPosition(for: vc.globalPageIndex)
             if let lastPage = currentEngine.lastPageIndex(ofChapter: currentSpine),
                vc.globalPageIndex == lastPage {
-                print("[FlipTrace] pageForward crossing chapter fromSpine=\(currentSpine) page=\(vc.globalPageIndex) toSpine=\(currentSpine + 1)")
+                AppLogger.render("[FlipTrace] pageForward crossing chapter fromSpine=\(currentSpine) page=\(vc.globalPageIndex) toSpine=\(currentSpine + 1)")
                 let nextPosition = CoreTextReadingPosition.chapterStart(currentSpine + 1)
                 if pageTurnStyle != .curl,
                    let targetPage = currentEngine.pageIndex(for: nextPosition),
                    let snapVC = currentEngine.snapshotViewController(at: targetPage) {
-                    print("[FlipTrace] pageForward snapshot landing page=\(targetPage) type=\(type(of: snapVC))")
+                    AppLogger.render("[FlipTrace] pageForward snapshot landing page=\(targetPage) type=\(type(of: snapVC))")
                     return snapVC
                 }
                 let nextVC = navigationViewController(
                     for: .position(nextPosition),
                     mode: .interactiveTurn
                 )
-                print("[FlipTrace] pageForward realOrPlaceholder landing type=\(nextVC.map { "\(type(of: $0))" } ?? "nil") page=\((nextVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
+                AppLogger.render("[FlipTrace] pageForward realOrPlaceholder landing type=\(nextVC.map { "\(type(of: $0))" } ?? "nil") page=\((nextVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
                 return nextVC
             }
             let nextIndex = vc.globalPageIndex + 1
             if pageTurnStyle != .curl,
                let snapVC = currentEngine.snapshotViewController(at: nextIndex) {
-                print("[FlipTrace] pageForward snapshot landing page=\(nextIndex) type=\(type(of: snapVC))")
+                AppLogger.render("[FlipTrace] pageForward snapshot landing page=\(nextIndex) type=\(type(of: snapVC))")
                 return snapVC
             }
             let nextVC = navigationViewController(for: .page(nextIndex), mode: .interactiveTurn)
-            print("[FlipTrace] pageForward sameChapter fromPage=\(vc.globalPageIndex) landingType=\(nextVC.map { "\(type(of: $0))" } ?? "nil") page=\(nextIndex)")
+            AppLogger.render("[FlipTrace] pageForward sameChapter fromPage=\(vc.globalPageIndex) landingType=\(nextVC.map { "\(type(of: $0))" } ?? "nil") page=\(nextIndex)")
             return nextVC
         }
 
@@ -1134,7 +1130,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             previousViewControllers: [UIViewController],
             transitionCompleted completed: Bool
         ) {
-            print("[CurlTrace] didFinish completed=\(completed) visible=\((pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1) binding=\(currentPage)")
+            AppLogger.render("[CurlTrace] didFinish completed=\(completed) visible=\((pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1) binding=\(currentPage)")
 
             defer {
                 finishCurlTransitionIfNeeded(on: pvc)
@@ -1161,14 +1157,14 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // immediately after curl can corrupt the transition state.
             if pageTurnStyle != .curl,
                let snapVC = pvc.viewControllers?.first as? SnapshotPageViewController {
-                print("[FlipTrace] didFinish landing SNAPSHOT page=\(snapVC.globalPageIndex)")
+                AppLogger.render("[FlipTrace] didFinish landing SNAPSHOT page=\(snapVC.globalPageIndex)")
                 let realVC: UIViewController
                 if let position = snapVC.coreTextReadingPosition {
                     realVC = currentEngine.pageViewController(for: position)
                 } else {
                     realVC = currentEngine.pageViewController(at: snapVC.globalPageIndex)
                 }
-                print("[FlipTrace] didFinish replaceSnapshot realType=\(type(of: realVC)) page=\((realVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
+                AppLogger.render("[FlipTrace] didFinish replaceSnapshot realType=\(type(of: realVC)) page=\((realVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
                 applyPlaybackHighlight(to: realVC)
                 pvc.setViewControllers([realVC], direction: .forward, animated: false)
                 if let resolvedPage = syncStablePosition(afterShowing: realVC, notifyFallback: false) {
@@ -1180,7 +1176,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
 
             guard let vc = pvc.viewControllers?.first as? any PageIndexProviding & UIViewController else { return }
-            print("[FlipTrace] didFinish landing type=\(type(of: vc)) page=\(vc.globalPageIndex)")
+            AppLogger.render("[FlipTrace] didFinish landing type=\(type(of: vc)) page=\(vc.globalPageIndex)")
             if let resolvedPage = syncStablePosition(afterShowing: vc, notifyFallback: false) {
                 continueQueuedTransitionIfNeeded(on: pvc, showing: resolvedPage)
             } else {
@@ -1278,7 +1274,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                             let targetVC = displayViewController(at: target)
                             if isPlaceholderDisplay(targetVC) {
                                 pendingNavigation = PendingNavigation(target: .page(target))
-                                print("[FlipTrace] coverInteractive forward blocked placeholder targetPage=\(target)")
+                                AppLogger.render("[FlipTrace] coverInteractive forward blocked placeholder targetPage=\(target)")
                             }
                             return
                         }
@@ -1339,7 +1335,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         // Set the real VC immediately so updateUIViewController returns early, avoiding double animation.
                         if let pvc = self.coverPageViewController {
                             let realVC = self.displayViewController(at: targetPage)
-                            print("[FlipTrace] coverInteractive commit targetPage=\(targetPage) realType=\(type(of: realVC))")
+                            AppLogger.render("[FlipTrace] coverInteractive commit targetPage=\(targetPage) realType=\(type(of: realVC))")
                             self.applyPlaybackHighlight(to: realVC)
                             pvc.setViewControllers([realVC], direction: .forward, animated: false)
                             pvc.view.layoutIfNeeded()
@@ -1383,7 +1379,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 let targetVC = displayViewController(at: targetPage)
                 if isPlaceholderDisplay(targetVC) {
                     pendingNavigation = PendingNavigation(target: .page(targetPage))
-                    print("[FlipTrace] coverProgrammatic blocked placeholder targetPage=\(targetPage)")
+                    AppLogger.render("[FlipTrace] coverProgrammatic blocked placeholder targetPage=\(targetPage)")
                     return
                 }
             }
@@ -1416,7 +1412,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     // Capture the latest binding value.
                     let latestPage = self.currentPage
                     let realVC = self.displayViewController(at: latestPage)
-                    print("[FlipTrace] coverProgrammatic forward latestPage=\(latestPage) realType=\(type(of: realVC))")
+                    AppLogger.render("[FlipTrace] coverProgrammatic forward latestPage=\(latestPage) realType=\(type(of: realVC))")
                     self.applyPlaybackHighlight(to: realVC)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded()
@@ -1436,7 +1432,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 guard let targetSnapshot = renderSnapshotForDisplayPage(targetPage) else {
                     let latestPage = self.currentPage
                     let realVC = displayViewController(at: latestPage)
-                    print("[FlipTrace] coverProgrammatic backward snapshotMiss targetPage=\(targetPage) latestPage=\(latestPage) realType=\(type(of: realVC))")
+                    AppLogger.render("[FlipTrace] coverProgrammatic backward snapshotMiss targetPage=\(targetPage) latestPage=\(latestPage) realType=\(type(of: realVC))")
                     self.applyPlaybackHighlight(to: realVC)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded()
@@ -1461,7 +1457,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 } completion: { _ in
                     let latestPage = self.currentPage
                     let realVC = self.displayViewController(at: latestPage)
-                    print("[FlipTrace] coverProgrammatic backward latestPage=\(latestPage) realType=\(type(of: realVC))")
+                    AppLogger.render("[FlipTrace] coverProgrammatic backward latestPage=\(latestPage) realType=\(type(of: realVC))")
                     self.applyPlaybackHighlight(to: realVC)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded()
