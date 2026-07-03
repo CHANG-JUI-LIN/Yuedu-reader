@@ -12,6 +12,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     let sessionCoordinator: ReaderSessionCoordinator?
     let externalTargetVersion: UInt
     let externalTargetPosition: CoreTextReadingPosition?
+    let pageTurnCommand: ReaderPageTurnCommand?
     let clearExternalTargetPosition: () -> Void
     @Binding var currentPage: Int
     let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
@@ -57,9 +58,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         context.coordinator.applyPlaybackHighlight(to: initialVC)
         context.coordinator.captureStablePosition(from: initialVC)
         pvc.setViewControllers(context.coordinator.viewControllerStack(startingWith: initialVC), direction: .forward, animated: false)
-        // Sync the binding so ReaderView.currentPage aligns with the engine-restored position.
+        // Absorb any stale page-turn command so a rebuilt controller (page-style
+        // switch recreates the coordinator) never replays an old intent.
+        context.coordinator.lastExecutedTurnVersion = pageTurnCommand?.version ?? 0
+        // Sync the binding (display output) so ReaderView.currentPage aligns with
+        // the engine-restored position.
         if initialPage != currentPage {
-            context.coordinator.suppressNextTransition = true
             DispatchQueue.main.async {
                 self.currentPage = initialPage
                 self.onPageChanged(initialPage, nil)
@@ -99,20 +103,22 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         uiViewController.isDoubleSided = pageTurnStyle == .curl && !isDoublePageSpread
         context.coordinator.externalTargetPosition = externalTargetPosition
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: uiViewController)
-        let clampedPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
-        AppLogger.render("[CurlTrace] updateUIViewController binding=\(currentPage) visible=\((uiViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
+        // Phase-2 executor model: this method no longer reconciles the currentPage
+        // binding against the visible page (the old implicit channel that caused
+        // correction-transition oscillation). It executes exactly three inputs:
+        // appearance rebuilds (spread/theme), the Navigator-owned external target
+        // (position command), and an explicit ReaderPageTurnCommand. The binding
+        // is display output; between commands the PVC's visible page is truth.
+        let displayFallbackPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
         let targetViewController = {
             if let externalTargetPosition {
                 return context.coordinator.displayViewController(for: externalTargetPosition)
             }
-            return context.coordinator.displayViewController(at: clampedPage)
+            return context.coordinator.displayViewController(at: displayFallbackPage)
         }
+
         if spreadModeChanged {
-            let targetVC = targetViewController()
-            context.coordinator.applyPlaybackHighlight(to: targetVC)
-            uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: .forward, animated: false)
-            uiViewController.view.layoutIfNeeded()
-            _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
+            _ = context.coordinator.setPage(targetViewController(), on: uiViewController, layoutNow: true)
             if context.coordinator.externalTargetPosition != nil {
                 DispatchQueue.main.async { context.coordinator.clearExternalTargetPosition() }
             }
@@ -124,88 +130,77 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 textColor: UIColor(theme.textColor),
                 backgroundColor: UIColor(theme.backgroundColor)
             )
-            let targetVC = targetViewController()
-            context.coordinator.applyPlaybackHighlight(to: targetVC)
-            uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: .forward, animated: false)
-            _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
+            _ = context.coordinator.setPage(targetViewController(), on: uiViewController)
             if context.coordinator.externalTargetPosition != nil {
                 DispatchQueue.main.async { context.coordinator.clearExternalTargetPosition() }
             }
             return
         }
 
-        if let visible = uiViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController) {
-            if visible.globalPageIndex == clampedPage, externalTargetPosition == nil {
-                context.coordinator.applyPlaybackHighlight(to: visible)
-                return
+        guard let visible = uiViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController) else {
+            // No visible page yet (first layout race): align to the best-known target.
+            _ = context.coordinator.setPage(targetViewController(), on: uiViewController)
+            return
+        }
+
+        // 1) Position command: Navigator-owned external target (TOC jump, restore,
+        //    mode switch, TTS anchor). One-shot — cleared once applied to a real page.
+        if externalTargetPosition != nil, !context.coordinator.isTransitioning {
+            let targetVC = targetViewController()
+            guard !(pageTurnStyle == .curl && context.coordinator.isPlaceholderDisplay(targetVC)) else { return }
+            _ = context.coordinator.setPage(targetVC, on: uiViewController, layoutNow: true)
+            // One-shot: without this the target persists and every re-render snaps
+            // back — the curl "animates then bounces back" bug after scroll→paged.
+            if !context.coordinator.isPlaceholderDisplay(targetVC) {
+                let clear = clearExternalTargetPosition
+                DispatchQueue.main.async { clear() }
             }
+            return
+        }
+
+        // 2) Page-turn command (tap zones, volume keys). Executed exactly once per
+        //    version; stale re-renders with the same command are no-ops.
+        if let command = pageTurnCommand, command.version != context.coordinator.lastExecutedTurnVersion {
+            context.coordinator.lastExecutedTurnVersion = command.version
+            let target = max(0, min(command.target, max(engine.totalPages - 1, 0)))
+            guard target != visible.globalPageIndex else { return }
+            AppLogger.render("[CurlTrace] turnCommand v\(command.version) target=\(target) visible=\(visible.globalPageIndex)")
+
             var direction: UIPageViewController.NavigationDirection =
-                clampedPage >= visible.globalPageIndex ? .forward : .reverse
+                target >= visible.globalPageIndex ? .forward : .reverse
             // RTL: swap navigation direction to match data source swap (Before↔After).
             if isRTL {
                 direction = direction == .forward ? .reverse : .forward
             }
-
-            // Suppress flag from makeUIViewController: force instant transition on first alignment.
-            if context.coordinator.suppressNextTransition {
-                context.coordinator.suppressNextTransition = false
-                let targetVC = targetViewController()
-                context.coordinator.applyPlaybackHighlight(to: targetVC)
-                uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: direction, animated: false)
-                _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
-                return
-            }
-
-            if externalTargetPosition != nil, !context.coordinator.isTransitioning {
-                let targetVC = targetViewController()
-                guard !(pageTurnStyle == .curl && context.coordinator.isPlaceholderDisplay(targetVC)) else { return }
-                context.coordinator.applyPlaybackHighlight(to: targetVC)
-                uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: direction, animated: false)
-                uiViewController.view.layoutIfNeeded()
-                _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
-                // One-shot: the external target is a positioning instruction. Once it has
-                // been applied to a real page, clear it so later re-renders (or the user's
-                // own page turns) are never forced back to it. Without this, the target
-                // persists and updateUIViewController keeps snapping back — the curl
-                // "animates then bounces back" bug after a scroll→paged switch.
-                if !context.coordinator.isPlaceholderDisplay(targetVC) {
-                    let clear = clearExternalTargetPosition
-                    DispatchQueue.main.async { clear() }
-                }
-                return
-            }
-
-            // Non-adjacent page jumps (TOC navigation, offset recalculation) use instant transition to avoid cover chain reverse.
-            let isAdjacent = context.coordinator.isAdjacentDisplayPage(clampedPage, to: visible.globalPageIndex)
-            let shouldAnimate = (pageTurnStyle != .none) && isAdjacent
+            let isAdjacent = context.coordinator.isAdjacentDisplayPage(target, to: visible.globalPageIndex)
+            let shouldAnimate = command.animated && (pageTurnStyle != .none) && isAdjacent
 
             if pageTurnStyle == .cover {
                 if shouldAnimate {
                     context.coordinator.animateCoverTransition(
                         from: visible.globalPageIndex,
-                        to: clampedPage,
+                        to: target,
                         direction: direction,
                         on: uiViewController
                     )
                 } else if !context.coordinator.isTransitioning {
-                    let targetVC = targetViewController()
-                    context.coordinator.applyPlaybackHighlight(to: targetVC)
-                    uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: direction, animated: false)
-                    uiViewController.view.layoutIfNeeded()
-                    _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
+                    let targetVC = context.coordinator.displayViewController(at: target)
+                    _ = context.coordinator.setPage(targetVC, on: uiViewController, direction: direction, layoutNow: true)
                 }
                 return
             }
 
             if shouldAnimate {
                 let effects = context.coordinator.requestPageTransition(
-                    to: clampedPage,
+                    to: target,
                     visiblePage: visible.globalPageIndex
                 )
-                guard effects.contains(.requestPageTransition(targetPage: clampedPage)) else { return }
+                // Deferred: the queue recorded the latest target; the running
+                // transition's settle chains to it (latest intent wins).
+                guard effects.contains(.requestPageTransition(targetPage: target)) else { return }
             } else if context.coordinator.isPageTransitioning {
                 _ = context.coordinator.requestPageTransition(
-                    to: clampedPage,
+                    to: target,
                     visiblePage: visible.globalPageIndex
                 )
                 return
@@ -213,7 +208,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
             context.coordinator.performProgrammaticTransition(
                 on: uiViewController,
-                to: clampedPage,
+                to: target,
                 from: visible.globalPageIndex,
                 direction: direction,
                 animated: shouldAnimate
@@ -221,10 +216,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             return
         }
 
-        let targetVC = targetViewController()
-        context.coordinator.applyPlaybackHighlight(to: targetVC)
-        uiViewController.setViewControllers(context.coordinator.viewControllerStack(startingWith: targetVC), direction: .forward, animated: false)
-        _ = context.coordinator.syncStablePosition(afterShowing: targetVC, notifyFallback: true)
+        // 3) No command: keep the playback highlight fresh and leave the PVC alone.
+        context.coordinator.applyPlaybackHighlight(to: visible)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -302,9 +295,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private let coverIncomingImageView = UIImageView()
         private var coverTargetPage: Int?
         private var coverDirection: ReaderCoverTurnDirection?
-        /// Set to true after makeUIViewController has set the initial page,
-        /// so the subsequent updateUIViewController skips redundant backward animation (binding not yet synced).
-        fileprivate var suppressNextTransition = false
+        /// Version of the last ReaderPageTurnCommand this coordinator executed.
+        /// updateUIViewController runs on every SwiftUI render; the version check
+        /// makes each command fire exactly once.
+        fileprivate var lastExecutedTurnVersion: UInt = 0
         fileprivate var currentCoreTextPosition: CoreTextReadingPosition?
         private var pendingNavigation: PendingNavigation?
         weak var coverPageViewController: UIPageViewController?
@@ -393,6 +387,31 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if shouldRefresh {
                 handleChapterReady(on: pageViewController)
             }
+        }
+
+        /// The single non-animated stack writer. Every code path that places a page
+        /// without animation (appearance rebuilds, position commands, chapter-ready
+        /// refreshes, snapshot swaps, initial alignment) goes through here, so the
+        /// highlight/stack/sync sequence can't drift between call sites. Animated
+        /// transitions go through performProgrammaticTransition instead.
+        @discardableResult
+        fileprivate func setPage(
+            _ targetVC: UIViewController,
+            on pageViewController: UIPageViewController,
+            direction: UIPageViewController.NavigationDirection = .forward,
+            layoutNow: Bool = false,
+            notifyFallback: Bool = true
+        ) -> Int? {
+            applyPlaybackHighlight(to: targetVC)
+            pageViewController.setViewControllers(
+                viewControllerStack(startingWith: targetVC),
+                direction: direction,
+                animated: false
+            )
+            if layoutNow {
+                pageViewController.view.layoutIfNeeded()
+            }
+            return syncStablePosition(afterShowing: targetVC, notifyFallback: notifyFallback)
         }
 
         fileprivate func viewControllerStack(startingWith viewController: UIViewController) -> [UIViewController] {
@@ -703,9 +722,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
             if isRTL { direction = direction == .forward ? .reverse : .forward }
 
-            pageViewController.setViewControllers(viewControllerStack(startingWith: freshVC), direction: direction, animated: false)
-            applyPlaybackHighlight(to: freshVC)
-            let resolved = syncStablePosition(afterShowing: freshVC, notifyFallback: false)
+            let resolved = setPage(freshVC, on: pageViewController, direction: direction, notifyFallback: false)
             let resolvedLine =
                 "[StartupTrace][ReaderView.Coordinator] handleChapterReady syncedPage=\(resolved ?? -1)"
             AppLogger.render(resolvedLine)
@@ -1192,9 +1209,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     realVC = currentEngine.pageViewController(at: snapVC.globalPageIndex)
                 }
                 AppLogger.render("[FlipTrace] didFinish replaceSnapshot realType=\(type(of: realVC)) page=\((realVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
-                applyPlaybackHighlight(to: realVC)
-                pvc.setViewControllers([realVC], direction: .forward, animated: false)
-                if let resolvedPage = syncStablePosition(afterShowing: realVC, notifyFallback: false) {
+                if let resolvedPage = setPage(realVC, on: pvc, notifyFallback: false) {
                     continueQueuedTransitionIfNeeded(on: pvc, showing: resolvedPage)
                 } else {
                     continueQueuedTransitionIfNeeded(on: pvc, showing: snapVC.globalPageIndex)

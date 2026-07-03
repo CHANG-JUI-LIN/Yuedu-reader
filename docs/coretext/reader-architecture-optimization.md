@@ -280,16 +280,23 @@ func updateUIViewController(_ pvc: UIPageViewController, context: Context) {
 - slide / cover / none 各模式回歸
 - `CoreTextWritingModeTests`
 
-### 階段 2：updateUIViewController 降級 + 寫入點收斂
+### 階段 2：updateUIViewController 降級 + 寫入點收斂 ✅（2026-07-03 實作）
 
 **目標**：8+ 個 `setViewControllers` 寫入點降到 2 個（初始設定 + Navigator 驅動）。
 
-**改動**：
-- `updateUIViewController` 不再讀 `currentPage` / `externalTargetPosition`，只聽 Navigator 事件
-- Coordinator 移除 `suppressNextTransition` / `pendingNavigation` / `externalTargetPosition`
-- 所有 setViewControllers 寫入點收到 `Coordinator.setPage(_:)` 單一方法
+**實際落地**：
+- `updateUIViewController` 改為純執行器：刪除 binding-vs-visible 調和塊（震盪引擎本體），只執行三種輸入 — 外觀重建（spread/theme）、Navigator 擁有的外部目標（位置指令）、新的顯式 `ReaderPageTurnCommand`（點按/音量鍵翻頁，version 去重、每指令恰執行一次）
+- `currentPage` binding 降為顯示輸出 + 連點累積基準；寫它不再觸發任何轉場
+- `suppressNextTransition` 整個刪除（無調和即無需抑制）
+- SwiftUI 驅動的非動畫寫入全部收斂到 `Coordinator.setPage(_:)` 單一方法
+- 精確恢復殘差校正改為重發位置指令（原靠調和器）
 
-**風險**：中高。需確保不引入回歸。
+**刻意保留（2.1 候選）**：
+- `pendingNavigation`（佔位頁解析機制，引擎事件驅動，非震盪向量）
+- make 初始對齊、旋轉 spineLocationFor、cover 動畫器內部 4 處佔位換真頁 swap
+- Navigator 的 TransitionToken 骨架未接電（佇列 + curl 計數已承載其語意；避免雙 FSM 漂移）
+
+**風險**：中高。需完整迴歸（連點、TOC 跳章、恢復、換源、spread/theme、三種動畫模式）。
 
 ### 階段 3：滑動預點陣化 + 圖片預解碼
 

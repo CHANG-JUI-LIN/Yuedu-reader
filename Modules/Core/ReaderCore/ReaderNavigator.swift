@@ -9,6 +9,21 @@ enum PageDirection {
     case next
 }
 
+// MARK: - Page Turn Command
+
+/// Explicit page-turn intent (tap zones, volume keys). Carried as a SwiftUI value
+/// into the paged representable, which executes it exactly once (tracked by
+/// `version`). This replaces the old implicit channel where the executor compared
+/// the `currentPage` binding against the visible page and issued "correction"
+/// transitions — the mechanism behind the oscillation bug family. The binding is
+/// display output only; commands and the Navigator-owned external target are the
+/// only inputs that move pages.
+struct ReaderPageTurnCommand: Equatable {
+    let target: Int
+    let animated: Bool
+    let version: UInt
+}
+
 // MARK: - TransitionToken
 
 @MainActor

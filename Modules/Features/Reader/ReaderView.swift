@@ -46,6 +46,9 @@ struct ReaderView: View {
     @State var chapters: [BookChapter] = []
     @State var allPages: [PageContent] = []
     @State var currentPage = 0
+    // Phase-2 explicit page-turn intent channel (see ReaderPageTurnCommand).
+    @State var pageTurnCommand: ReaderPageTurnCommand?
+    @State var pageTurnVersion: UInt = 0
     @State var showBars = false
     @State var showSettings = false
     @State var showTOC = false
@@ -985,6 +988,7 @@ struct ReaderView: View {
                     sessionCoordinator: nil,
                     externalTargetVersion: 0,
                     externalTargetPosition: nil,
+                    pageTurnCommand: pageTurnCommand,
                     clearExternalTargetPosition: {},
                     currentPage: $currentPage,
                     onPageChanged: { newPage, _ in
@@ -1036,6 +1040,7 @@ struct ReaderView: View {
                     sessionCoordinator: readerSessionCoordinator,
                     externalTargetVersion: coreTextExternalTargetVersion,
                     externalTargetPosition: readerSessionCoordinator?.externalTargetPosition,
+                    pageTurnCommand: pageTurnCommand,
                     clearExternalTargetPosition: { clearCoreTextExternalTarget() },
                     currentPage: $currentPage,
                     onPageChanged: { newPage, visiblePosition in
@@ -1610,6 +1615,12 @@ struct ReaderView: View {
                     }
                     self.progressTrace("applyInitialProgress preciseRestore resolvedPage=\(resolvedPage) from=(\(spineIndex),\(target.charOffset))")
                     self.currentPage = resolvedPage
+                    // Phase-2: binding writes are display-only; re-issue the position
+                    // command so the executor corrects any estimated-page residual
+                    // (previously the binding-vs-visible reconciler picked this up).
+                    self.setCoreTextExternalTarget(
+                        CoreTextReadingPosition(spineIndex: spineIndex, charOffset: target.charOffset)
+                    )
                     self.currentChapterIndex = spineIndex
                     self.moveReaderSession(
                         to: CoreTextReadingPosition(spineIndex: spineIndex, charOffset: target.charOffset),

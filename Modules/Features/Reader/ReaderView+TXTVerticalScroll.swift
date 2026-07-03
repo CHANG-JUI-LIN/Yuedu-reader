@@ -211,19 +211,7 @@ extension ReaderView {
 
     func goToPrevPage() {
         guard currentPage > 0 else { return }
-        let targetPage = previousReaderPage(before: currentPage)
-        switch effectivePageTurnStyle {
-        case .none:
-            var t = Transaction()
-            t.disablesAnimations = true
-            withTransaction(t) { currentPage = targetPage }
-        case .slide:
-            withAnimation(.easeInOut(duration: PageTurnAnimation.slideDuration)) {
-                currentPage = targetPage
-            }
-        case .cover, .curl:
-            currentPage = targetPage
-        }
+        issuePageTurn(to: previousReaderPage(before: currentPage))
     }
 
     func goToNextPage() {
@@ -234,19 +222,22 @@ extension ReaderView {
             maxPage = allPages.count - 1
         }
         guard currentPage < maxPage else { return }
-        let targetPage = nextReaderPage(after: currentPage, maxPage: maxPage)
-        switch effectivePageTurnStyle {
-        case .none:
-            var t = Transaction()
-            t.disablesAnimations = true
-            withTransaction(t) { currentPage = targetPage }
-        case .slide:
-            withAnimation(.easeInOut(duration: PageTurnAnimation.slideDuration)) {
-                currentPage = targetPage
-            }
-        case .cover, .curl:
-            currentPage = targetPage
-        }
+        issuePageTurn(to: nextReaderPage(after: currentPage, maxPage: maxPage))
+    }
+
+    /// Phase-2 intent channel: page turns are explicit one-shot commands consumed
+    /// by the paged executor (see ReaderPageTurnCommand). `currentPage` is still
+    /// written immediately — as display state and as the accumulation baseline for
+    /// rapid-tap bursts — but the executor no longer treats binding drift as an
+    /// instruction, so this write can never trigger a correction transition.
+    func issuePageTurn(to targetPage: Int) {
+        currentPage = targetPage
+        pageTurnVersion &+= 1
+        pageTurnCommand = ReaderPageTurnCommand(
+            target: targetPage,
+            animated: effectivePageTurnStyle != .none,
+            version: pageTurnVersion
+        )
     }
 
 }
