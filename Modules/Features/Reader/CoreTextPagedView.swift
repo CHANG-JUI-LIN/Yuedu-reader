@@ -164,7 +164,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             context.coordinator.lastExecutedTurnVersion = command.version
             let target = max(0, min(command.target, max(engine.totalPages - 1, 0)))
             guard target != visible.globalPageIndex else { return }
-            AppLogger.render("[CurlTrace] turnCommand v\(command.version) target=\(target) visible=\(visible.globalPageIndex)")
+            // Rapid-tap speed-up: register cadence now, before the cover / slide /
+            // curl branches read activeTurnSpeed.
+            let turnSpeed = context.coordinator.registerTurnSpeed()
+            AppLogger.render("[CurlTrace] turnCommand v\(command.version) target=\(target) visible=\(visible.globalPageIndex) speed=\(String(format: "%.2f", turnSpeed))")
 
             var direction: UIPageViewController.NavigationDirection =
                 target >= visible.globalPageIndex ? .forward : .reverse
@@ -299,6 +302,14 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// updateUIViewController runs on every SwiftUI render; the version check
         /// makes each command fire exactly once.
         fileprivate var lastExecutedTurnVersion: UInt = 0
+        /// Rapid-tap speed-up: the faster consecutive page turns arrive, the faster
+        /// the flip animation plays (Legado-style). Tracks tap cadence; chained
+        /// catch-up transitions inherit the last value since they don't re-register
+        /// a user tap. Resets toward 1× after a pause.
+        private var lastTurnStartTime: CFAbsoluteTime = 0
+        private(set) var activeTurnSpeed: Float = 1.0
+        private static let normalFlipDuration: CFAbsoluteTime = 0.28
+        private static let maxBurstSpeed: Float = 3.0
         fileprivate var currentCoreTextPosition: CoreTextReadingPosition?
         private var pendingNavigation: PendingNavigation?
         weak var coverPageViewController: UIPageViewController?
@@ -347,6 +358,25 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         private var usesCurlBackPages: Bool {
             pageTurnStyle == .curl && !isDoublePageSpread
+        }
+
+        /// Register a fresh user-initiated page turn and return the flip speed to
+        /// use. Speed tracks tap cadence: tapping at the natural flip rate stays 1×,
+        /// tapping twice as fast plays ~2×, capped at maxBurstSpeed. A turn after a
+        /// pause (large gap) resolves back to 1×. Called once per user command;
+        /// chained catch-up transitions read `activeTurnSpeed` without re-registering.
+        @discardableResult
+        fileprivate func registerTurnSpeed() -> Float {
+            let now = CACurrentMediaTime()
+            let dt = now - lastTurnStartTime
+            lastTurnStartTime = now
+            guard dt > 0.0001 else {
+                activeTurnSpeed = Self.maxBurstSpeed
+                return activeTurnSpeed
+            }
+            let ratio = Float(Self.normalFlipDuration / dt)
+            activeTurnSpeed = min(max(ratio, 1.0), Self.maxBurstSpeed)
+            return activeTurnSpeed
         }
 
         private func beginCurlTransitionIfNeeded() {
@@ -855,7 +885,19 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         ) {
             let targetViewController = displayViewController(at: targetPage)
             applyPlaybackHighlight(to: targetViewController)
+            // Rapid-tap speed-up (slide/curl): UIKit's setViewControllers(animated:)
+            // has no duration parameter, so scale the native transition via the
+            // container layer's timing. Set before the animation is added; reset to
+            // 1× on settle so it never leaks into interactive swipes or later lone
+            // taps. Chained catch-up turns re-apply activeTurnSpeed on their own call.
+            let scalesNativeTransition = animated && (pageTurnStyle == .slide || pageTurnStyle == .curl)
+            if scalesNativeTransition {
+                pageViewController.view.layer.speed = activeTurnSpeed
+            }
             let finishTransition: (UIViewController) -> Void = { shownViewController in
+                if scalesNativeTransition {
+                    pageViewController.view.layer.speed = 1.0
+                }
                 if let resolvedPage = self.syncStablePosition(afterShowing: shownViewController, notifyFallback: true) {
                     self.continueQueuedTransitionIfNeeded(on: pageViewController, showing: resolvedPage)
                 } else {
@@ -1453,7 +1495,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if turnDirection == .forward {
                 setupForwardOutgoing(currentPageSnapshot: oldPage, newPage: targetPage, motion: motion, in: view)
                 coverDimView.alpha = 0.35
-                UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseOut]) {
+                UIView.animate(withDuration: 0.25 / Double(activeTurnSpeed), delay: 0, options: [.curveEaseOut]) {
                     let destX = motion.settledX(width: width, shouldCommit: true)
                     self.coverIncomingImageView.frame.origin.x = destX
                     self.coverShadowView.frame.origin.x = destX
@@ -1499,7 +1541,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 }
                 coverCurrentImageView.image = renderSnapshotForDisplayPage(oldPage)
                 setupIncomingView(for: targetPage, snapshot: targetSnapshot, motion: motion, in: view)
-                UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseOut]) {
+                UIView.animate(withDuration: 0.25 / Double(activeTurnSpeed), delay: 0, options: [.curveEaseOut]) {
                     let destX = motion.settledX(width: width, shouldCommit: true)
                     self.coverIncomingImageView.frame.origin.x = destX
                     self.coverShadowView.frame.origin.x = destX
