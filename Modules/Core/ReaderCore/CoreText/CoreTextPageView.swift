@@ -899,6 +899,13 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
                     onFootnoteTap?(note, viewRect(forRenderRect: attachment.rect))
                     return
                 }
+                // 段評 comment badge → the attachment handler (which opens the review sheet).
+                // Internal-link navigation must not swallow it: the online paged reader's link
+                // handler doesn't understand review hrefs, so the tap would die there.
+                if ReaderHTMLUtilities.reviewTarget(fromHref: href) != nil {
+                    onImageAttachmentTap?(attachment)
+                    return
+                }
                 onInternalLinkTap?(href)
                 return
             }

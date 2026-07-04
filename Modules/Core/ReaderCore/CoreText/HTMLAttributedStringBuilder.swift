@@ -1731,6 +1731,15 @@ final class HTMLAttributedStringBuilder {
         if let borderWidth = declarations["border-width"] {
             applyBorderWidthShorthand(borderWidth, to: &style, rootFontSize: rootFontSize)
         }
+        if let borderColor = declarations["border-color"],
+           let firstToken = borderColor.split(whereSeparator: \.isWhitespace).first,
+           let color = parseBorderColor(String(firstToken), currentTextColor: style.textColor) {
+            // 1–4 value shorthand; approximate multi-color sides with the first color.
+            style.borderTopColor = color
+            style.borderBottomColor = color
+            style.borderLeftColor = color
+            style.borderRightColor = color
+        }
         applyBorderStyleShorthand(declarations["border-style"], to: &style)
         applyBorderLineStyle(declarations["border-top-style"], edge: .top, to: &style)
         applyBorderLineStyle(declarations["border-bottom-style"], edge: .bottom, to: &style)

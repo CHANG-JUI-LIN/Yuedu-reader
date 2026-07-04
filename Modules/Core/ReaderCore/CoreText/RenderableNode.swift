@@ -320,7 +320,7 @@ public enum MathDisplayMode: Sendable {
 
 // MARK: - RenderColor (UIKit-independent color type)
 
-public struct RenderColor: Sendable {
+public struct RenderColor: Sendable, Equatable {
     public let red: CGFloat
     public let green: CGFloat
     public let blue: CGFloat
