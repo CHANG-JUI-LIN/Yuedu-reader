@@ -25,6 +25,15 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private var playbackToken = UUID()
     private var activeUtterance: AVSpeechUtterance?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    /// UTF-16 offset (into the current chunk) of the last word the synthesizer reported it was
+    /// about to speak. Used so a resume that lost the paused state — the OS commonly ends a
+    /// paused utterance when backgrounded — can re-speak only the remainder of the sentence
+    /// instead of replaying the whole ~5s chunk from its start.
+    private var spokenUTF16Offset = 0
+    /// Offset (into the current chunk) at which the active utterance's text begins: 0 for a
+    /// full chunk, `spokenUTF16Offset` for a partial resume. Lets the delegate map the
+    /// utterance-relative range it reports back onto the full chunk.
+    private var utteranceBaseOffset = 0
 
     // Read by paragraph: system voices speak long utterances smoothly, so set the cap
     // high enough that a normal paragraph stays a single gap-free chunk. The cap only
@@ -92,7 +101,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             let success = synthesizer.continueSpeaking()
             ttsLog("[TTS][SystemEngine] resume continue success=\(success)")
         } else {
-            speakChunk(at: currentIndex, token: playbackToken)
+            resumeCurrentChunkFromSpokenOffset(token: playbackToken)
         }
     }
 
@@ -133,6 +142,8 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         stopSynthesizer()
         currentIndex = targetIndex
         isPaused = true
+        spokenUTF16Offset = 0
+        utteranceBaseOffset = 0
         publishSegmentChanged(index: targetIndex)
     }
 
@@ -154,6 +165,9 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
         currentIndex = index
         publishSegmentChanged(index: index)
+        // Fresh chunk: nothing spoken yet, and its utterance starts at the chunk's beginning.
+        spokenUTF16Offset = 0
+        utteranceBaseOffset = 0
 
         let hints = chunkPronunciationHints.indices.contains(index) ? chunkPronunciationHints[index] : []
         let utterance = Self.makeUtterance(
@@ -168,6 +182,54 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         onPlaybackStarted?(estimatedDuration(for: chunks[index]))
         ttsLog("[TTS][SystemEngine] speak chunk index=\(index) rate=\(utterance.rate) voice=\(utterance.voice?.identifier ?? "default")")
         synthesizer.speak(utterance)
+    }
+
+    /// Resume path taken when the synthesizer has already dropped its paused state (so
+    /// `continueSpeaking` is a no-op). Re-speaks only the not-yet-spoken tail of the current
+    /// chunk, from `spokenUTF16Offset`, avoiding the ~5s replay of the whole sentence.
+    private func resumeCurrentChunkFromSpokenOffset(token: UUID) {
+        guard token == playbackToken else { return }
+        guard chunks.indices.contains(currentIndex) else {
+            handlePageChunksFinished(token: token)
+            return
+        }
+        let full = chunks[currentIndex] as NSString
+        let offset = min(max(spokenUTF16Offset, 0), full.length)
+        // Nothing spoken yet, or the whole chunk already spoken: fall back to the normal path.
+        guard offset > 0, offset < full.length else {
+            speakChunk(at: currentIndex, token: token)
+            return
+        }
+
+        let remaining = full.substring(from: offset)
+        publishSegmentChanged(index: currentIndex)
+
+        let hints = remainingHints(forChunk: currentIndex, fromUTF16Offset: offset)
+        let utterance = Self.makeUtterance(text: remaining, rate: lastRate, pronunciationHints: hints)
+        utterance.voice = preferredVoice(for: remaining)
+        activeUtterance = utterance
+        utteranceBaseOffset = offset
+        isPlaying = true
+
+        onPlaybackStarted?(estimatedDuration(for: remaining))
+        ttsLog("[TTS][SystemEngine] resume from offset=\(offset)/\(full.length) index=\(currentIndex)")
+        synthesizer.speak(utterance)
+    }
+
+    /// Pronunciation hints for the tail of a chunk starting at `offset`, with each hint's range
+    /// clipped to the tail and rebased so it lines up with the re-spoken substring.
+    private func remainingHints(forChunk index: Int, fromUTF16Offset offset: Int) -> [TTSPronunciationHint] {
+        guard chunkPronunciationHints.indices.contains(index) else { return [] }
+        let full = chunks[index] as NSString
+        let tail = NSRange(location: offset, length: max(0, full.length - offset))
+        return chunkPronunciationHints[index].compactMap { hint in
+            let clipped = NSIntersectionRange(hint.range, tail)
+            guard clipped.length > 0 else { return nil }
+            return TTSPronunciationHint(
+                range: NSRange(location: clipped.location - offset, length: clipped.length),
+                ipa: hint.ipa
+            )
+        }
     }
 
     private func jumpToChunk(at index: Int) {
@@ -224,6 +286,8 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         currentIndex = 0
         isPaused = false
         isPlaying = false
+        spokenUTF16Offset = 0
+        utteranceBaseOffset = 0
         endBackgroundTask()
     }
 
@@ -329,6 +393,19 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 }
 
 extension SystemTTSEngine: AVSpeechSynthesizerDelegate {
+    func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        willSpeakRangeOfSpeechString characterRange: NSRange,
+        utterance: AVSpeechUtterance
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, utterance === self.activeUtterance else { return }
+            // `characterRange` is relative to this utterance's string; add the utterance's base
+            // offset to track how far into the full chunk we've reached.
+            self.spokenUTF16Offset = self.utteranceBaseOffset + characterRange.location
+        }
+    }
+
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         DispatchQueue.main.async { [weak self] in
             guard let self, utterance === self.activeUtterance else { return }
