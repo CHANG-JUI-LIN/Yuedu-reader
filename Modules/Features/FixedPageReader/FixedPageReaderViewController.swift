@@ -311,8 +311,8 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
             await MainActor.run {
                 FixedPageImageLoader.prefetch(
                     Array(pages.prefix(prefetchCount)),
-                    targetWidth: targetWidth,
-                    using: imagePrefetcher)
+                    targetWidth: self.targetWidth,
+                    using: self.imagePrefetcher)
             }
         }
     }

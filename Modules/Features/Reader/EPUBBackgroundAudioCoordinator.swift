@@ -69,9 +69,8 @@ final class EPUBBackgroundAudioCoordinator {
     }
 
     private func activateAudioSession() {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default)
-        try? session.setActive(true)
+        // Off-main to avoid the AVAudioSession main-thread hang risk.
+        AudioSessionActivator.activate(category: .playback, mode: .default)
     }
 
     private struct BackgroundAudio {

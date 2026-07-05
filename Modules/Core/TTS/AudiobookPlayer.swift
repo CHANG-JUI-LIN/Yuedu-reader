@@ -613,16 +613,14 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     // MARK: - Audio session
 
     private func activateAudioSession() {
-        let s = AVAudioSession.sharedInstance()
-        try? s.setCategory(.playback, mode: .default, options: [])
-        try? s.setActive(true)
         UIApplication.shared.beginReceivingRemoteControlEvents()
+        // Blocking AVAudioSession calls run off-main (see AudioSessionActivator).
+        AudioSessionActivator.activate(category: .playback, mode: .default)
     }
 
     private func deactivateAudioSession() {
         UIApplication.shared.endReceivingRemoteControlEvents()
-        try? AVAudioSession.sharedInstance().setActive(
-            false, options: [.notifyOthersOnDeactivation])
+        AudioSessionActivator.setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
     // MARK: - Now Playing + Remote commands

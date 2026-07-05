@@ -220,7 +220,9 @@ class JSCoreEngine {
 
         group.enter()
         queue.async { [weak self] in
-            guard let self else { group.leave(); return }
+            // Only guard against the engine being torn down; `self` itself is unused
+            // because `work` is a self-contained closure.
+            guard self != nil else { group.leave(); return }
             result = work()
             group.leave()
         }

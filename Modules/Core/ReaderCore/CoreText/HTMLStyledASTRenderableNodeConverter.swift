@@ -32,10 +32,6 @@ enum HTMLStyledASTRenderableNodeConverter {
         _ children: [HTMLAttributedStringBuilder.ASTNode],
         parentFontSize: CGFloat
     ) -> [RenderableNode] {
-        let hasBlockSibling = children.contains { node in
-            if case .element(let element) = node { return element.resolvedStyle.isBlock }
-            return false
-        }
         return children.compactMap { node -> RenderableNode? in
             guard case .text(let textNode) = node else {
                 return node.asRenderableNode(parentFontSize: parentFontSize)

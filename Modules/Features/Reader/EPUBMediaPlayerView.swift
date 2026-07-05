@@ -229,9 +229,8 @@ final class EPUBVideoPlaybackManager {
 
     private func activateAudioSessionIfNeeded() {
         guard !audioSessionActivated else { return }
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .moviePlayback)
-        try? session.setActive(true)
+        // Off-main to avoid the AVAudioSession main-thread hang risk.
+        AudioSessionActivator.activate(category: .playback, mode: .moviePlayback)
         audioSessionActivated = true
     }
 }

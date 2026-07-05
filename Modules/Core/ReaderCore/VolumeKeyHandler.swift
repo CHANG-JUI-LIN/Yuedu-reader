@@ -41,8 +41,9 @@ final class VolumeKeyHandler: NSObject, ObservableObject {
     func startListening() {
         guard observation == nil else { return }
 
-        // Activate audio session (only when listening)
-        try? audioSession.setActive(true)
+        // Activate audio session (only when listening); off-main to avoid the
+        // AVAudioSession main-thread hang risk. outputVolume is readable regardless.
+        AudioSessionActivator.setActive(true)
         previousVolume = audioSession.outputVolume
 
         // Hide the system volume HUD: place an MPVolumeView off-screen

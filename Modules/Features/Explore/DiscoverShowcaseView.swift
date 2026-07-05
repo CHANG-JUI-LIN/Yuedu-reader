@@ -687,9 +687,9 @@ private struct DiscoverCategoryView: View {
                 )
                 let additional = DiscoverViewModel.uniqueAdditionalBooks(loaded, existing: existing)
                 let displays = await DiscoverViewModel.makeDisplays(additional, source: source)
-                await applyLoadedPage(displays, page: page)
+                applyLoadedPage(displays, page: page)
             } catch {
-                await applyLoadMoreError((error as NSError).localizedDescription)
+                applyLoadMoreError((error as NSError).localizedDescription)
             }
         }
     }
