@@ -167,6 +167,9 @@ public struct RenderStyle: Sendable {
     public var compactChildBlockSpacing: Bool
     public var avoidsPageBreakInside: Bool
     public var ssmlIPA: String?
+    /// The author explicitly declared vertical margins (including an explicit 0). Inside a
+    /// decorated container the explicit value wins over the reader's default paragraph spacing.
+    public var hasExplicitVerticalMargins: Bool
     /// CSS `background-image` URL on a block (decorative frames / textures). The renderer loads
     /// it and the block-decoration system draws it behind the block's text (Phase 1, before glyphs).
     public var backgroundImageSource: String?
@@ -229,6 +232,7 @@ public struct RenderStyle: Sendable {
         compactChildBlockSpacing: Bool = false,
         avoidsPageBreakInside: Bool = false,
         ssmlIPA: String? = nil,
+        hasExplicitVerticalMargins: Bool = false,
         backgroundImageSource: String? = nil,
         backgroundImageSize: CGSize? = nil,
         backgroundImageStretches: Bool = false,
@@ -285,6 +289,7 @@ public struct RenderStyle: Sendable {
         self.compactChildBlockSpacing = compactChildBlockSpacing
         self.avoidsPageBreakInside = avoidsPageBreakInside
         self.ssmlIPA = ssmlIPA
+        self.hasExplicitVerticalMargins = hasExplicitVerticalMargins
         self.backgroundImageSource = backgroundImageSource
         self.backgroundImageSize = backgroundImageSize
         self.backgroundImageStretches = backgroundImageStretches

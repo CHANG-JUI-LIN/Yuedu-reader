@@ -351,6 +351,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
                 isLastPage: pageIndex == layout.pageRanges.count - 1,
                 attributedString: layout.attributedString,
                 suppressedRanges: suppressedRanges,
+                // Decoration rects are anchored to the unshifted line origins — bottom
+                // justification would move the text out from under its boxes.
+                bottomJustified: (layout.blockRenderables[pageIndex] ?? []).isEmpty,
                 in: ctx
             )
         }
@@ -554,6 +557,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         isLastPage: Bool,
         attributedString: NSAttributedString,
         suppressedRanges: [NSRange],
+        bottomJustified: Bool,
         in ctx: CGContext
     ) {
         CoreTextHorizontalLineDrawer.drawLines(
@@ -565,6 +569,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             attrStr: attributedString,
             suppressedRanges: suppressedRanges,
             hrDividerKey: HTMLAttributedStringBuilder.hrDividerAttribute,
+            bottomJustified: bottomJustified,
             in: ctx
         )
     }

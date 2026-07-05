@@ -172,6 +172,10 @@ final class HTMLAttributedStringBuilder {
         var listStyleType: String? = nil
         var verticalAlign: VerticalAlign
         var isBlock: Bool
+        /// The author explicitly declared vertical margins (margin / margin-top / margin-bottom),
+        /// including an explicit 0. Inside decorated boxes the explicit value wins over the
+        /// reader's default paragraph spacing.
+        var hasExplicitVerticalMargins: Bool = false
         var backgroundImage: String?
         /// Resolved CSS `background-size` in points (e.g. `3em 3em`). nil = intrinsic size.
         var backgroundImageSize: CGSize? = nil
@@ -660,7 +664,13 @@ final class HTMLAttributedStringBuilder {
             if style.isHidden {
                 continue
             }
-            if style.pageBreakBefore {
+            // A heading carrying a Sigil TOC anchor is its own TOC section (Episode 内的 1/2/3/4
+            // 小节): reference readers (多看) start each on a fresh page, so the TOC jump lands on
+            // a page top instead of mid-page. Skipped when nothing precedes it — the chapter
+            // opening already sits at a page top.
+            let isTOCSectionHeading = tag.hasPrefix("h") && tag.count == 2
+                && element.id().hasPrefix("sigil_toc_id")
+            if style.pageBreakBefore || (isTOCSectionHeading && !result.isEmpty) {
                 result.append(.pageBreak)
             }
             let children = await buildChildren(
@@ -718,36 +728,39 @@ final class HTMLAttributedStringBuilder {
         guard output.length > 0 else { return }
         let nonCollapsibleTop = paddingTop + borderTopWidth
         let nonCollapsibleBottom = paddingBottom + borderBottomWidth
+        let nsString = output.string as NSString
 
-        var firstRange = NSRange()
-        let firstParagraph = output.attribute(.paragraphStyle, at: 0, effectiveRange: &firstRange) as? NSParagraphStyle
-        CoreTextPaginator.debugVerticalLog(
-            "reserveContainer beforeTop firstBefore=\(firstParagraph?.paragraphSpacingBefore ?? -1) firstAfter=\(firstParagraph?.paragraphSpacing ?? -1) range=(\(firstRange.location),\(firstRange.length)) collapsibleTop=\(collapsibleTop) collapsibleBottom=\(collapsibleBottom) nonCollapsibleTop=\(nonCollapsibleTop) nonCollapsibleBottom=\(nonCollapsibleBottom)"
-        )
+        // Apply to PARAGRAPH ranges, never the attribute's effectiveRange: children with
+        // value-identical paragraph styles (e.g. `.yj p { margin: 0 }`) coalesce into one run,
+        // so the effectiveRange would smear the first/last child's folded inset across EVERY
+        // paragraph in the box (inflating all its inner gaps).
         if collapsibleTop > 0 || nonCollapsibleTop > 0 {
-            var range = NSRange(location: 0, length: 0)
-            if let para = output.attribute(.paragraphStyle, at: 0, effectiveRange: &range) as? NSParagraphStyle,
+            let firstParaRange = nsString.paragraphRange(for: NSRange(location: 0, length: 0))
+            if firstParaRange.length > 0,
+               let para = output.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle,
                let mutable = para.mutableCopy() as? NSMutableParagraphStyle {
                 let current = mutable.paragraphSpacingBefore
                 let collapsed = max(current, collapsibleTop)
                 mutable.paragraphSpacingBefore = collapsed + nonCollapsibleTop
-                CoreTextPaginator.debugVerticalLog(
-                    "reserveContainer top range=(\(range.location),\(range.length)) collapsible=\(collapsibleTop) nonCollapsible=\(nonCollapsibleTop) was=\(current) collapsed=\(collapsed) now=\(mutable.paragraphSpacingBefore)"
-                )
-                output.addAttribute(.paragraphStyle, value: mutable, range: range)
+                output.addAttribute(.paragraphStyle, value: mutable, range: firstParaRange)
             }
         }
         if collapsibleBottom > 0 || nonCollapsibleBottom > 0 {
-            var range = NSRange(location: 0, length: 0)
-            if let para = output.attribute(.paragraphStyle, at: output.length - 1, effectiveRange: &range) as? NSParagraphStyle,
+            let lastParaRange = nsString.paragraphRange(for: NSRange(location: output.length - 1, length: 0))
+            if lastParaRange.length > 0,
+               let para = output.attribute(.paragraphStyle, at: lastParaRange.location, effectiveRange: nil) as? NSParagraphStyle,
                let mutable = para.mutableCopy() as? NSMutableParagraphStyle {
                 let current = mutable.paragraphSpacing
                 let collapsed = max(current, collapsibleBottom)
                 mutable.paragraphSpacing = collapsed + nonCollapsibleBottom
-                CoreTextPaginator.debugVerticalLog(
-                    "reserveContainer bottom range=(\(range.location),\(range.length)) collapsible=\(collapsibleBottom) nonCollapsible=\(nonCollapsibleBottom) was=\(current) collapsed=\(collapsed) now=\(mutable.paragraphSpacing)"
-                )
-                output.addAttribute(.paragraphStyle, value: mutable, range: range)
+                output.addAttribute(.paragraphStyle, value: mutable, range: lastParaRange)
+                AppLogger.render("⟐ boxReserve", context: [
+                    "para": "(\(lastParaRange.location),\(lastParaRange.length))/\(output.length)",
+                    "was": Int(current),
+                    "now": Int(mutable.paragraphSpacing),
+                    "pad": Int(nonCollapsibleBottom),
+                    "margin": Int(collapsibleBottom),
+                ])
             }
         }
     }
@@ -1565,6 +1578,7 @@ final class HTMLAttributedStringBuilder {
                 percentageBase: percentageBase
            ) {
             style.paragraphSpacing = max(0, value)
+            style.hasExplicitVerticalMargins = true
         }
         if let marginTop = declarations["margin-top"],
            let value = resolveLength(
@@ -1576,6 +1590,7 @@ final class HTMLAttributedStringBuilder {
            ) {
             style.paragraphSpacingBefore = max(0, value)
             style.visualOffsetBefore = max(0, value)
+            style.hasExplicitVerticalMargins = true
         }
         if let margin = declarations["margin"] {
             applyMarginShorthand(
@@ -1961,9 +1976,11 @@ final class HTMLAttributedStringBuilder {
         if let top = resolved.top, let topValue = resolveBoxValue(top, currentFontSize: currentFontSize, rootFontSize: rootFontSize, percentageBase: percentageBase) {
             style.paragraphSpacingBefore = max(0, topValue)
             style.visualOffsetBefore = max(0, topValue)
+            style.hasExplicitVerticalMargins = true
         }
         if let bottom = resolved.bottom, let bottomValue = resolveBoxValue(bottom, currentFontSize: currentFontSize, rootFontSize: rootFontSize, percentageBase: percentageBase) {
             style.paragraphSpacing = max(0, bottomValue)
+            style.hasExplicitVerticalMargins = true
         }
         if let left = resolved.left {
             if left.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "auto" {

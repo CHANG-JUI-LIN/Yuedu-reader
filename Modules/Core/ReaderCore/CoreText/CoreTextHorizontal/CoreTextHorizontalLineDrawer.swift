@@ -19,6 +19,7 @@ enum CoreTextHorizontalLineDrawer {
         attrStr: NSAttributedString,
         suppressedRanges: [NSRange] = [],
         hrDividerKey: NSAttributedString.Key,
+        bottomJustified: Bool = true,
         in ctx: CGContext
     ) {
         let lines = CTFrameGetLines(frame) as! [CTLine]
@@ -30,11 +31,15 @@ enum CoreTextHorizontalLineDrawer {
         let nsString = attrStr.string as NSString
         let stringLength = attrStr.length
 
-        // Phase 5A: distribute bottom space across paragraph gaps on non-last pages
+        // Phase 5A: distribute bottom space across paragraph gaps on non-last pages.
+        // Callers disable this on pages carrying block decorations: the shift moves the glyph
+        // lines, but decoration rects were extracted from the UNSHIFTED line origins, so boxes
+        // would detach from their own text (a `.sys` pill drifting onto the paragraphs above),
+        // and authored-tight gaps (`.sys p { margin: 0 }`) would inflate by the distributed slack.
         var extraSpacePerGap: CGFloat = 0
         var paragraphGapAfterLine: Set<Int> = []
 
-        if !isLastPage && lines.count > 1 {
+        if bottomJustified && !isLastPage && lines.count > 1 {
             for i in 0..<(lines.count - 1) {
                 let r = CTLineGetStringRange(lines[i])
                 let checkIdx = r.location + r.length
@@ -98,17 +103,21 @@ enum CoreTextHorizontalLineDrawer {
                 isParagraphLastLine = nextCharCode == 0x000A || nextCharCode == 0x2028
             }
 
-            // Get paragraph alignment
-            let isJustified: Bool
-            if lineRange.location < stringLength {
-                let paraStyle = attrStr.attribute(.paragraphStyle, at: lineRange.location, effectiveRange: nil) as? NSParagraphStyle
-                isJustified = paraStyle?.alignment == .justified
-            } else {
-                isJustified = false
-            }
+            // Paragraph alignment + right inset. Justification must stretch a line to the
+            // paragraph's OWN right edge (tailIndent), not the full column — otherwise justified
+            // lines inside padded boxes (`.yj` letter, `.ph` phone frame) poke through the
+            // right border (the box is drawn 8pt inside the text zone those lines stretched to).
+            let paraStyle: NSParagraphStyle? = lineRange.location < stringLength
+                ? attrStr.attribute(.paragraphStyle, at: lineRange.location, effectiveRange: nil) as? NSParagraphStyle
+                : nil
+            let isJustified = paraStyle?.alignment == .justified
+            let tailInset: CGFloat = {
+                guard let tail = paraStyle?.tailIndent, tail < 0 else { return 0 }
+                return -tail
+            }()
 
             origin.x = max(contentMinX, origin.x)
-            let maxRightX = contentMinX + contentWidth
+            let maxRightX = contentMinX + contentWidth - tailInset
             let availableWidth = max(1, maxRightX - origin.x)
 
             let lineToDraw = resolveJustifiedLine(

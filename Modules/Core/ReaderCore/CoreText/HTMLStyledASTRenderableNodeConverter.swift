@@ -378,6 +378,7 @@ private extension RenderStyle {
                 }
             },
             avoidsPageBreakInside: s.avoidsPageBreakInside,
+            hasExplicitVerticalMargins: s.hasExplicitVerticalMargins,
             backgroundImageSource: s.backgroundImage,
             backgroundImageSize: s.backgroundImageSize,
             backgroundImageStretches: s.backgroundImageStretches,

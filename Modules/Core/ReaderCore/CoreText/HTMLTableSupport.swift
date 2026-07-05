@@ -87,7 +87,7 @@ extension HTMLTableModel {
                 )
                 cell.alignment = cellStyle.textAlign
                 cell.textColor = cellStyle.hasCSSColor ? RenderColor(uiColor: cellStyle.textColor) : nil
-                cell.backgroundColor = cellStyle.backgroundFillColor.map { RenderColor(uiColor: $0) }
+                cell.backgroundColor = cellStyle.backgroundFillColor.flatMap { RenderColor(uiColor: $0) }
                 cell.fontScale = max(0.5, min(2, cellStyle.fontSize / tableFontSize))
                 cell.explicitWidth = cellStyle.width
                 cell.borderTop = cellStyle.borderTopWidth
@@ -110,7 +110,7 @@ extension HTMLTableModel {
                 ?? tableStyle.borderLeftColor
                 ?? tableStyle.borderRightColor
                 ?? tableStyle.borderBottomColor
-        ).map { RenderColor(uiColor: $0) }
+        ).flatMap { RenderColor(uiColor: $0) }
         model.widthPercent = tableStyle.rawWidthPercent
         return model
     }
@@ -186,14 +186,14 @@ enum HTMLTableRasterizer {
         let columns = max(1, table.columnCount)
         guard columns > 0, !table.rows.isEmpty else { return nil }
 
-        // Honor the authored table width (`table { width: 90% }`); the placeholder centers it.
-        let authoredFraction = table.widthPercent.map { max(0.3, min(1, $0 / 100)) }
-        let width = max(120, min(maxWidth * (authoredFraction ?? 1), 900))
+        let width = max(120, min(maxWidth, 900))
         let outerPadding: CGFloat = 8
         let cellPadding = CGSize(width: 8, height: 6)
         let hairline: CGFloat = 1 / max(UIScreen.main.scale, 1)
         let contentWidth = max(1, width - outerPadding * 2)
 
+        // Authored cell typography (duokan `td { font-size: .8em }`) — the reference rendering
+        // (多看) keeps table text a step smaller than the surrounding body text.
         func cellFont(_ cell: HTMLTableCell) -> UIFont {
             let size = max(9, baseFont.pointSize * cell.fontScale)
             return cell.isHeader
@@ -298,7 +298,6 @@ enum HTMLTableRasterizer {
             "cols": columnWidths.map { Int($0) }.description,
             "rows": rowHeights.map { Int($0) }.description,
             "visible": "\(visibleRows)/\(table.rows.count)",
-            "authored": table.usesAuthoredBorders,
         ])
 
         let format = UIGraphicsImageRendererFormat()
@@ -310,10 +309,10 @@ enum HTMLTableRasterizer {
             context.fill(bounds)
 
             let gridColor = UIColor.separator.resolvedColor(with: UITraitCollection.current)
+            let usesAuthoredBorders = table.usesAuthoredBorders
             let authoredLineColor = table.borderColor?.uiColor ?? gridColor
             let headerFill = textColor.withAlphaComponent(0.08)
             let captionColor = textColor.withAlphaComponent(0.75)
-            let usesAuthoredBorders = table.usesAuthoredBorders
 
             func strokeLine(from: CGPoint, to: CGPoint, lineWidth: CGFloat) {
                 authoredLineColor.setStroke()
@@ -364,8 +363,8 @@ enum HTMLTableRasterizer {
                     }
 
                     if usesAuthoredBorders {
-                        // Authored line work only (duokan: `td { border-width: 0 1px 0 0 }`
-                        // draws just the column rule; the header band has no borders at all).
+                        // Authored line work only (duokan: `td { border-width: 0 1px 0 0 }` =
+                        // column rules, no row lines; the header band declares no borders).
                         if cell.borderTop > 0 {
                             strokeLine(from: CGPoint(x: rect.minX, y: rect.minY), to: CGPoint(x: rect.maxX, y: rect.minY), lineWidth: cell.borderTop)
                         }
@@ -376,7 +375,7 @@ enum HTMLTableRasterizer {
                             strokeLine(from: CGPoint(x: rect.minX, y: rect.minY), to: CGPoint(x: rect.minX, y: rect.maxY), lineWidth: cell.borderLeft)
                         }
                         if cell.borderRight > 0, rect.maxX < width - outerPadding - 0.5 {
-                            // Skip the rule on the table's right edge — the outer border owns it.
+                            // The table's own right edge is drawn by the outer border below.
                             strokeLine(from: CGPoint(x: rect.maxX, y: rect.minY), to: CGPoint(x: rect.maxX, y: rect.maxY), lineWidth: cell.borderRight)
                         }
                     } else {
@@ -387,7 +386,9 @@ enum HTMLTableRasterizer {
 
                     let resolvedAlignment: NSTextAlignment = {
                         if cell.alignment != .natural && cell.alignment != .justified { return cell.alignment }
-                        return cell.isHeader ? .center : .natural
+                        // Reference (多看) sets the header band's title flush left.
+                        if cell.isHeader { return usesAuthoredBorders ? .natural : .center }
+                        return .natural
                     }()
                     drawText(
                         cell.text,

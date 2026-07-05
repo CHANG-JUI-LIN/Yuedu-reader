@@ -398,6 +398,12 @@ struct NodeAttributedStringRenderer {
 
         var childCtx = applyBlockStyle(style, to: ctx, isHeading: isHeading, headingLevel: headingLevel)
         if wrapsFloatBubble { childCtx.compactBlockSpacing = true }
+        if style.backgroundColor != nil
+            || style.backgroundImageSource != nil
+            || style.borderTopWidth > 0 || style.borderBottomWidth > 0
+            || style.borderLeftWidth > 0 || style.borderRightWidth > 0 {
+            childCtx.insideDecoratedContainer = true
+        }
         let result = NSMutableAttributedString()
         if isVertical(style),
            !hasBlockChildren,
@@ -625,6 +631,10 @@ struct NodeAttributedStringRenderer {
             resolvedParagraphSpacing = 0
         } else if style.paragraphSpacingAfter > 0 {
             resolvedParagraphSpacing = style.paragraphSpacingAfter
+        } else if ctx.insideDecoratedContainer && style.hasExplicitVerticalMargins {
+            // Inside a decorated box the author's explicit `margin: 0` wins over the reader's
+            // default paragraph spacing (`.sys p { margin: 0 }` — the pill's lines sit snug).
+            resolvedParagraphSpacing = 0
         } else {
             resolvedParagraphSpacing = defaultParagraphSpacing
         }
@@ -1186,12 +1196,19 @@ struct NodeAttributedStringRenderer {
         ctx: RenderContext
     ) async -> NSAttributedString {
         let blockCtx = applyBlockStyle(style, to: ctx, isHeading: false)
+        // Rasterize at exactly the width the table's paragraph gives it (column width minus the
+        // `width: 90%` + `margin: auto` centering insets). Generating at the full page width and
+        // letting the image metrics squeeze it into the paragraph scaled the whole bitmap down
+        // (~0.9x here) — smaller, blurry cell text versus the tap-to-open original ("被压缩").
         let maxWidth: CGFloat
-        if let renderWidth = config.renderWidth {
+        if let available = availableImageWidth(in: blockCtx) {
+            maxWidth = available
+        } else if let renderWidth = config.renderWidth {
             maxWidth = renderWidth
         } else {
             maxWidth = await MainActor.run { UIScreen.main.bounds.width }
         }
+
         let image = await MainActor.run {
             HTMLTableRasterizer.render(
                 table: table,
@@ -1208,6 +1225,10 @@ struct NodeAttributedStringRenderer {
         var tableStyle = style
         tableStyle.width = image.size.width
         tableStyle.height = image.size.height
+        // The paragraph's centering insets already applied `table { width: 90% }` when the
+        // bitmap width was chosen above; leaving the percent on the style would make the image
+        // metrics multiply it in AGAIN (0.9 × 0.9 ≈ 0.8 of the column — the residual "压缩").
+        tableStyle.rawWidthPercent = nil
         let metrics = await resolvedImageMetrics(
             image: image,
             style: tableStyle,
@@ -1229,7 +1250,13 @@ struct NodeAttributedStringRenderer {
         let range = NSRange(location: 0, length: placeholder.length)
         placeholder.addAttribute(
             .paragraphStyle,
-            value: imageBlockParagraphStyle(base: blockCtx.paragraphStyle, metrics: metrics),
+            value: imageBlockParagraphStyle(
+                base: blockCtx.paragraphStyle,
+                metrics: metrics,
+                // `table { margin: 1em auto }` — without this the placeholder line stays
+                // left-pinned and the table hugs the left edge with all the slack on the right.
+                isHorizontallyCentered: style.isHorizontallyCentered
+            ),
             range: range
         )
         placeholder.addAttribute(
@@ -2111,6 +2138,16 @@ struct NodeAttributedStringRenderer {
                         ? min(spacingBefore, Self.containerNonCollapsibleInsets(in: result, paragraphRange: currRange).top)
                         : 0
                     let collapsed = max(spacing - prevStructural, spacingBefore - currStructural)
+                    if prevStructural > 0 || currStructural > 0 {
+                        AppLogger.render("⟐ boxGap", context: [
+                            "prevSpacing": Int(spacing),
+                            "currBefore": Int(spacingBefore),
+                            "prevStruct": Int(prevStructural),
+                            "currStruct": Int(currStructural),
+                            "collapsed": Int(collapsed),
+                            "prevTail": String((result.string as NSString).substring(with: prevRange).suffix(6)),
+                        ])
+                    }
                     if let prevMutable = prevPara.mutableCopy() as? NSMutableParagraphStyle,
                        let currMutable = currPara.mutableCopy() as? NSMutableParagraphStyle {
                         prevMutable.paragraphSpacing = prevStructural + collapsed
@@ -2427,6 +2464,9 @@ struct NodeAttributedStringRenderer {
         /// paragraph-spacing between the tightly-packed name labels and bubbles, so a large
         /// paragraph-gap setting doesn't blow the thread apart (Apple Books / Readest stay tight).
         var compactBlockSpacing: Bool = false
+        /// True inside a decorated container (fill/border/background-image box, e.g. `.sys`):
+        /// there the author's explicit `margin: 0` beats the reader's default paragraph spacing.
+        var insideDecoratedContainer: Bool = false
 
         /// Records the body's base font size for heading proportional scaling.
         var baseSize: CGFloat
