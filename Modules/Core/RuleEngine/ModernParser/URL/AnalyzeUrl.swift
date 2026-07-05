@@ -428,15 +428,16 @@ class AnalyzeUrl {
             retry = ri
         }
 
-        if let wv = dict["useWebView"] {
+        if let wv = dict["useWebView"] ?? dict["webView"] {
             useWebView = parseBool(wv)
         }
 
         webJs = dict["webJs"] as? String
 
-        if let delay = dict["webViewDelayTime"] as? Int {
+        if let delay = (dict["webViewDelayTime"] ?? dict["webViewDelay"]) as? Int {
             webViewDelayTime = delay
-        } else if let delay = dict["webViewDelayTime"] as? String, let d = Int(delay) {
+        } else if let delayStr = (dict["webViewDelayTime"] ?? dict["webViewDelay"]) as? String,
+                  let d = Int(delayStr) {
             webViewDelayTime = d
         }
 

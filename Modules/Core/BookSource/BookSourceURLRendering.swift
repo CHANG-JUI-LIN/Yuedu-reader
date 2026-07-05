@@ -55,6 +55,7 @@ extension BookSource {
         var charset: String?
         var useWebView: Bool
         var headers: [String: String]
+        var webViewDelayMs: Int = 0
     }
 
     /// Render a search URL (aligns with Legado AnalyzeUrl).
@@ -175,6 +176,13 @@ extension BookSource {
                     let text = stringifyRequestValue(opt["webView"])?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                     return ["true", "1", "yes", "y"].contains(text ?? "")
                 }()
+                let webViewDelayMs: Int = {
+                    if let d = opt["webViewDelayTime"] as? Int { return d }
+                    if let d = opt["webViewDelayTime"] as? String, let v = Int(d) { return v }
+                    if let d = opt["webViewDelay"] as? Int { return d }
+                    if let d = opt["webViewDelay"] as? String, let v = Int(d) { return v }
+                    return 0
+                }()
                 let headers = stringifyRequestHeaders(opt["headers"])
                 return SearchRequestSpec(
                     url: urlPart,
@@ -182,7 +190,8 @@ extension BookSource {
                     body: body,
                     charset: charset,
                     useWebView: useWebView,
-                    headers: headers
+                    headers: headers,
+                    webViewDelayMs: webViewDelayMs
                 )
             }
         }

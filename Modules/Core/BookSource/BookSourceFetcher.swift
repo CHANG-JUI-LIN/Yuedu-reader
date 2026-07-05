@@ -129,9 +129,9 @@ actor BookSourceFetcher {
 
     /// Static method, hops to MainActor to execute WKWebView load
     @MainActor
-    static func fetchViaWebView(url: URL, headers: [String: String]) async throws -> String
+    static func fetchViaWebView(url: URL, headers: [String: String], jsWait: TimeInterval? = nil) async throws -> String
     {
-        try await WebViewFetcher.shared.fetchHTML(url: url, headers: headers, timeout: 15)
+        try await WebViewFetcher.shared.fetchHTML(url: url, headers: headers, timeout: 15, jsWait: jsWait ?? AppConfig.webViewJSRenderWait)
     }
 
     // MARK: - HTTP Request

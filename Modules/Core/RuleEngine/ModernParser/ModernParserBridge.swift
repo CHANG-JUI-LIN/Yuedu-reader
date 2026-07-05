@@ -6,11 +6,13 @@ import CryptoKit
 enum ModernParserBridgeError: LocalizedError {
     case invalidURL(String)
     case parseError(String)
+    case timeout
 
     var errorDescription: String? {
         switch self {
         case .invalidURL(let url): return "Invalid URL: \(url)"
         case .parseError(let msg): return "Parse error: \(msg)"
+        case .timeout: return "Request timed out"
         }
     }
 }
@@ -1281,7 +1283,31 @@ class ModernParserBridge {
             }
         }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // Use a cooperative timeout so a hanging server never blocks the search/reader
+        // indefinitely. The per-source search already has its own timeout in the
+        // aggregator, but individual TOC/book-info fetches do not.
+        request.timeoutInterval = 30
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await withThrowingTaskGroup(
+                of: (Data, URLResponse).self
+            ) { group in
+                group.addTask {
+                    try await URLSession.shared.data(for: request)
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 30_000_000_000)
+                    throw ModernParserBridgeError.timeout
+                }
+                guard let result = try await group.next() else {
+                    throw CancellationError()
+                }
+                group.cancelAll()
+                return result
+            }
+        } catch is ModernParserBridgeError {
+            throw ModernParserBridgeError.timeout
+        }
 
         let encoding = Self.encodingFromCharset(analyzeUrl.charset)
         let body = String(data: data, encoding: encoding)
@@ -1433,6 +1459,9 @@ class ModernParserBridge {
 
     /// Hashed `jsLib` content that was last evaluated.  `nil` means jsLib has never been evaluated.
     private var evaluatedJsLibHash: String?
+    /// Engine generation at the time `evaluatedJsLibHash` was set.  Invalidated
+    /// when `jsEngine.generation` changes (engine was reset after a JS timeout).
+    private var evaluatedJsLibEngineGen: UInt64 = 0
 
     /// Evaluate jsLib once per source, caching the hash so we don't re-evaluate
     /// on every request.  jsLib functions (e.g. `BaseUrl()`, `getVariable()`,
@@ -1441,6 +1470,13 @@ class ModernParserBridge {
         let jsLib = sourceRuleData.source.jsLib
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !jsLib.isEmpty else { return }
+
+        // If the JS engine was reset (timeout recovery), the new context has no
+        // jsLib code — force re-evaluation.
+        if jsEngine.generation != evaluatedJsLibEngineGen {
+            evaluatedJsLibHash = nil
+            evaluatedJsLibEngineGen = jsEngine.generation
+        }
 
         let newHash = jsLib.md5Hash
         guard newHash != evaluatedJsLibHash else { return }

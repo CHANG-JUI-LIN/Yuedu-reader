@@ -177,4 +177,18 @@ extension View {
             self.toolbarTitleDisplayMode(.large)
         }
     }
+
+    /// Like `toolbarTitleDisplayModeInlineLarge()`, but falls back to `.inline`
+    /// on iOS 17 instead of `.large`. Use on views that also apply `.refreshable`
+    /// — combining `.large` with SwiftUI's `.refreshable` on iOS 17 triggers an
+    /// infinite layout recursion in `_UINavigationBarLayout` +
+    /// `_UINavigationControllerRefreshControlHost` (`EXC_BAD_ACCESS`).
+    @ViewBuilder
+    func toolbarTitleDisplayModeInlineLargeOrInline() -> some View {
+        if #available(iOS 18, *) {
+            self.toolbarTitleDisplayMode(.inlineLarge)
+        } else {
+            self.toolbarTitleDisplayMode(.inline)
+        }
+    }
 }

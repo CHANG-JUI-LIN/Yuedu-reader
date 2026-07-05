@@ -30,8 +30,14 @@ class JSCoreEngine {
     // Serial queue owns the JSContext — all evaluations run on this thread.
     // Using a dedicated queue instead of NSLock eliminates the deadlock that
     // NSLock causes when JS calls java.ajax() (semaphore) while the lock is held.
-    private let jsQueue = DispatchQueue(label: "com.yuedu.jsengine.serial", qos: .userInitiated)
+    private var jsQueue = DispatchQueue(label: "com.yuedu.jsengine.serial", qos: .userInitiated)
     private let jsQueueKey = DispatchSpecificKey<Void>()
+
+    /// JS evaluation timeout. If a script takes longer than this, the engine is
+    /// reset and the evaluation returns nil. Guards against infinite loops in
+    /// book-source rule JS that would otherwise permanently block the serial
+    /// queue and freeze the calling Task (common on iOS 17).
+    private static let jsTimeout: TimeInterval = 30
 
     /// Last JavaScript error message (nil if no error on last evaluation).
     private(set) var lastError: String?
@@ -174,6 +180,17 @@ class JSCoreEngine {
 
     // MARK: - Public API
 
+    // Lock protecting `jsQueue` swap during timeout recovery.
+    private let queueLock = NSLock()
+
+    /// Read the current jsQueue under lock (safe to call from any thread).
+    private var safeJsQueue: DispatchQueue {
+        queueLock.lock()
+        let q = jsQueue
+        queueLock.unlock()
+        return q
+    }
+
     /// Dispatch work to the JS serial queue, re-entrant-safe.
     /// If already executing on the JS queue (e.g. java.getString → engine.getString → evaluate),
     /// the work runs inline to avoid a deadlock.
@@ -181,16 +198,51 @@ class JSCoreEngine {
         if DispatchQueue.getSpecific(key: jsQueueKey) != nil {
             return work() // already on the JS queue — run inline
         }
-        return jsQueue.sync { work() }
+        return safeJsQueue.sync { work() }
+    }
+
+    /// Like `onJSQueue` but with a timeout. Returns `.timedOut` when the JS
+    /// evaluation takes longer than `Self.jsTimeout` seconds. On timeout the
+    /// engine is reset so subsequent evaluations can proceed.
+    private enum JSTimeoutResult<T> {
+        case completed(T)
+        case timedOut
+    }
+
+    private func onJSQueueWithTimeout<T>(_ work: @escaping () -> T) -> JSTimeoutResult<T> {
+        if DispatchQueue.getSpecific(key: jsQueueKey) != nil {
+            return .completed(work())
+        }
+
+        var result: T? = nil
+        let group = DispatchGroup()
+        let queue = safeJsQueue
+
+        group.enter()
+        queue.async { [weak self] in
+            guard let self else { group.leave(); return }
+            result = work()
+            group.leave()
+        }
+
+        if group.wait(timeout: .now() + Self.jsTimeout) == .timedOut {
+            resetEngine()
+            return .timedOut
+        }
+
+        return .completed(result!)
     }
 
     /// Evaluate JavaScript code and return the result as a string.
-    /// Returns `nil` on JS error or if the result is `undefined`/`null`.
+    /// Returns `nil` on JS error, timeout, or if the result is `undefined`/`null`.
     func evaluate(_ script: String) -> String? {
-        onJSQueue {
+        switch onJSQueueWithTimeout({ [self] () -> String? in
             lastError = nil
             guard let value = context.evaluateScript(script) else { return nil }
             return extractString(from: value)
+        }) {
+        case .completed(let r): return r
+        case .timedOut: return nil
         }
     }
 
@@ -204,7 +256,7 @@ class JSCoreEngine {
     /// are exposed to JS as objects so rules can use `result.book_id` after
     /// a `$.data` extraction, matching Legado's dynamic result semantics.
     func evaluate(_ script: String, result: Any?, bindings: [String: Any] = [:]) -> String? {
-        onJSQueue {
+        switch onJSQueueWithTimeout({ [self] () -> String? in
             lastError = nil
             setResult(result)
             for (key, value) in bindings {
@@ -213,6 +265,9 @@ class JSCoreEngine {
             let prepared = Self.prepareSourceJS(script)
             guard let value = context.evaluateScript(prepared) else { return nil }
             return extractString(from: value)
+        }) {
+        case .completed(let r): return r
+        case .timedOut: return nil
         }
     }
 
@@ -263,13 +318,16 @@ class JSCoreEngine {
 
     /// Evaluate with multiple bindings injected into the context before execution.
     func evaluate(_ script: String, bindings: [String: Any]) -> String? {
-        onJSQueue {
+        switch onJSQueueWithTimeout({ [self] () -> String? in
             lastError = nil
             for (key, value) in bindings {
                 context.setObject(value, forKeyedSubscript: key as NSString)
             }
             guard let val = context.evaluateScript(Self.prepareSourceJS(script)) else { return nil }
             return extractString(from: val)
+        }) {
+        case .completed(let r): return r
+        case .timedOut: return nil
         }
     }
 
@@ -291,6 +349,30 @@ class JSCoreEngine {
             configureContext(ctx)
             lastError = nil
         }
+    }
+
+    /// Monotonically increasing generation counter. Incremented on `resetEngine()`.
+    /// `ModernParserBridge` uses this to know when to re-evaluate jsLib.
+    private(set) var generation: UInt64 = 0
+
+    /// Hard-reset the engine by creating a fresh serial queue and JSContext.
+    /// Used after a JS evaluation timeout to break free from a hung script;
+    /// the old queue and context are abandoned (they continue running on their
+    /// thread but never affect the new engine).
+    private func resetEngine() {
+        let label = "com.yuedu.jsengine.\(UUID().uuidString.prefix(8))"
+        let newQueue = DispatchQueue(label: label, qos: .userInitiated)
+        newQueue.setSpecific(key: jsQueueKey, value: ())
+        let newContext = JSContext()!
+        configureContext(newContext)
+
+        queueLock.lock()
+        jsQueue = newQueue
+        context = newContext
+        generation += 1
+        queueLock.unlock()
+
+        lastError = nil
     }
 
     func setBookBridge(_ bridge: LegadoBookBridge) {

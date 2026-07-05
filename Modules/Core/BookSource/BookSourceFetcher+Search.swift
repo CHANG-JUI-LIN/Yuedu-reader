@@ -47,7 +47,8 @@ extension BookSourceFetcher {
         let html: String
         do {
             if source.needsWebView || requestSpec.useWebView {
-                html = try await Self.fetchViaWebView(url: url, headers: mergedHeaders)
+                let jsWait = requestSpec.webViewDelayMs > 0 ? TimeInterval(requestSpec.webViewDelayMs) / 1000.0 : nil
+                html = try await Self.fetchViaWebView(url: url, headers: mergedHeaders, jsWait: jsWait)
             } else {
                 html = try await fetchHTML(
                     url: url, method: requestSpec.method, body: requestSpec.body,

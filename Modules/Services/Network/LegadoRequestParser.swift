@@ -56,7 +56,8 @@ struct LegadoRequestParser {
             headers: stringDictionary(from: options["headers"]),
             referer: stringifyJSONValue(options["referer"]),
             useWebView: asBool(options["webView"]),
-            charset: stringifyJSONValue(options["charset"])
+            charset: stringifyJSONValue(options["charset"]),
+            webViewDelayMs: parseWebViewDelay(options)
         )
     }
 
@@ -81,6 +82,14 @@ struct LegadoRequestParser {
             output[key] = stringValue
         }
         return output
+    }
+
+    private static func parseWebViewDelay(_ options: [String: Any]) -> Int {
+        if let d = options["webViewDelayTime"] as? Int { return d }
+        if let d = options["webViewDelayTime"] as? String, let v = Int(d) { return v }
+        if let d = options["webViewDelay"] as? Int { return d }
+        if let d = options["webViewDelay"] as? String, let v = Int(d) { return v }
+        return 0
     }
 
     private static func asBool(_ value: Any?) -> Bool {

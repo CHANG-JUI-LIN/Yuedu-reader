@@ -10,6 +10,7 @@ struct ChapterRequestSpec {
     var referer: String?
     var useWebView: Bool
     var charset: String?
+    var webViewDelayMs: Int = 0
 }
 
 struct ChapterParsePayload {

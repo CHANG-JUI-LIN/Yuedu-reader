@@ -132,6 +132,7 @@ extension BookSourceFetcher {
             ], hyp: "H1")
         // #endregion
 
+        let effectiveWebViewDelay = requestSpec.webViewDelayMs > 0 ? TimeInterval(requestSpec.webViewDelayMs) / 1000.0 : nil
         let fetchChapterHTML: @Sendable (URL, String, String?) async throws -> String = { [self] targetURL, method, body in
             func fetchViaConfiguredTransport(preferWebView: Bool) async throws -> String {
                 if preferWebView {
@@ -141,10 +142,10 @@ extension BookSourceFetcher {
                             headers: requestHeadersSnapshot,
                             jsAfterLoad: source.ruleContent.webJs,
                             timeout: 25,
-                            jsWait: 2.0
+                            jsWait: effectiveWebViewDelay ?? 2.0
                         )
                     }
-                    return try await Self.fetchViaWebView(url: targetURL, headers: requestHeadersSnapshot)
+                    return try await Self.fetchViaWebView(url: targetURL, headers: requestHeadersSnapshot, jsWait: effectiveWebViewDelay)
                 }
                 return try await self.fetchHTML(
                     url: targetURL,
