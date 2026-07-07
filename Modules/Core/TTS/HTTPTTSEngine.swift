@@ -23,6 +23,10 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private var lastTitle = ""
     private var lastRate: Float = 0.5
     private var isPaused = false
+    /// Whether the active template embeds `speakSpeed`, i.e. the server bakes the speed into
+    /// the synthesized audio. When it doesn't (plain templates, direct chapter audio), the
+    /// speed is applied client-side via `AVAudioPlayer.rate` instead.
+    private var serverControlsSpeed = false
     private var pendingPlaybackIndex: Int?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     /// Playback offset (seconds into the current chunk) captured at `pause`, so that a resume
@@ -75,6 +79,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         playbackToken = UUID()
         lastTitle = title
         lastRate = rate
+        serverControlsSpeed = !isDirectChapterAudio
+            && GlobalSettings.shared.httpTtsUrlTemplate.contains("speakSpeed")
         currentIndex = 0
         isPaused = false
         isPlaying = true
@@ -124,6 +130,34 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         playbackToken = UUID()
         resetPlaybackState()
         onStop?()
+    }
+
+    func updateRate(_ rate: Float) {
+        guard lastRate != rate else { return }
+        lastRate = rate
+        guard !chunks.isEmpty else { return }
+        ttsLog("[TTS][HTTPEngine] updateRate live rate=\(rate) serverControlsSpeed=\(serverControlsSpeed) index=\(currentIndex)")
+
+        if !serverControlsSpeed {
+            // The audio bytes are rate-independent; retune the live player and keep the cache.
+            audioPlayer?.rate = clientPlaybackRate
+            return
+        }
+
+        // Server-synthesized audio embeds the old speed, so everything downloaded so far is
+        // stale: drop it and re-synthesize from the current chunk at the new speed.
+        activeTasks.values.forEach { $0.cancel() }
+        activeTasks.removeAll()
+        audioCache.removeAll()
+        pendingPlaybackIndex = nil
+        resumePlaybackTime = 0
+        audioPlayer?.delegate = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
+        if isPlaying {
+            playChunk(at: currentIndex, token: playbackToken)
+        }
+        // A paused session re-fetches naturally on resume, because the cache is now empty.
     }
 
     func skipForward() {
@@ -339,6 +373,12 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     // MARK: - Playback
 
+    /// Client-side playback rate: 1.0 when the source synthesizes at the requested speed
+    /// itself; otherwise the UI rate (0.5 == 100%) mapped into AVAudioPlayer's 0.5–2.0 range.
+    private var clientPlaybackRate: Float {
+        serverControlsSpeed ? 1.0 : max(0.5, min(lastRate / 0.5, 2.0))
+    }
+
     private func playAudioData(_ data: Data, index: Int, token: UUID) {
         guard token == playbackToken else {
             ttsLog("[TTS][HTTPEngine] play ignored stale token index=\(index)")
@@ -351,6 +391,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
             let player = try AVAudioPlayer(data: data)
             player.delegate = self
+            player.enableRate = true
+            player.rate = clientPlaybackRate
             let prepared = player.prepareToPlay()
             player.volume = 1.0
             player.numberOfLoops = 0
@@ -382,6 +424,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
             let player = try AVAudioPlayer(data: data)
             player.delegate = self
+            player.enableRate = true
+            player.rate = clientPlaybackRate
             player.prepareToPlay()
             player.volume = 1.0
             player.numberOfLoops = 0

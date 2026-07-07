@@ -189,8 +189,11 @@ struct TTSPanelView: View {
                                 get: { tts.speechRate },
                                 set: { tts.updateRate($0) }
                             ),
-                            in: 0.1...0.65,
-                            step: 0.05
+                            in: 0.1...1.0,
+                            step: 0.05,
+                            onEditingChanged: { editing in
+                                if !editing { tts.applyRateToActivePlayback() }
+                            }
                         )
                         Image(systemName: "speedometer")
                             .foregroundColor(DSColor.textSecondary)

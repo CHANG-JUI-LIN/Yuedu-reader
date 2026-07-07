@@ -112,6 +112,21 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         onStop?()
     }
 
+    func updateRate(_ rate: Float) {
+        guard lastRate != rate else { return }
+        lastRate = rate
+        guard isPlaying else {
+            // A paused utterance keeps the rate it was created with, so drop it; resume then
+            // rebuilds from the spoken offset (which survives `stopSynthesizer`) at the new rate.
+            if isPaused { stopSynthesizer() }
+            return
+        }
+        ttsLog("[TTS][SystemEngine] updateRate live rate=\(rate) index=\(currentIndex)")
+        // Re-speak the unspoken tail of the current chunk so the new rate is audible now.
+        stopSynthesizer()
+        resumeCurrentChunkFromSpokenOffset(token: playbackToken)
+    }
+
     func skipForward() {
         ttsLog("[TTS][SystemEngine] skipForward requested index=\(currentIndex) count=\(chunks.count)")
         guard !chunks.isEmpty else { return }
@@ -355,7 +370,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         return utterance
     }
 
-    /// Maps the UI rate (0.10–0.65, where 0.5 is "normal") onto an `AVSpeechUtterance` rate
+    /// Maps the UI rate (0.10–1.0, where 0.5 is "normal") onto an `AVSpeechUtterance` rate
     /// centered on the system default, then clamps to the supported range.
     static func utteranceRate(forUIRate uiRate: Float) -> Float {
         let scaled = AVSpeechUtteranceDefaultSpeechRate * (uiRate / 0.5)

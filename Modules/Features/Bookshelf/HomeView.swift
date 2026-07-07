@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 // MARK: - Bookshelf Home
 struct HomeView: View {
     @EnvironmentObject var store: BookStore
+    @ObservedObject private var gs = GlobalSettings.shared
 
     @State private var showAddSheet = false
     @State private var showWebDAVImport = false
@@ -22,6 +23,13 @@ struct HomeView: View {
     @Namespace private var bookTransition
 
     private var hInset: CGFloat { sizeClass == .regular ? 32 : 20 }
+    private var gridColumnSpacing: CGFloat { DSSpacing.md }
+    private var gridColumns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: gridColumnSpacing, alignment: .top),
+            count: gs.bookshelfGridColumnCount
+        )
+    }
 
     @State private var readerBookId: UUID? = nil
 
@@ -359,8 +367,8 @@ struct HomeView: View {
     private var bookGrid: some View {
         ScrollView {
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 100, maximum: 160), spacing: 10)],
-                spacing: 12
+                columns: gridColumns,
+                spacing: DSSpacing.lg
             ) {
                 ForEach(sortedFilteredBooks) { book in
                     BookGridCell(
@@ -376,9 +384,10 @@ struct HomeView: View {
                 }
             }
             .padding(.horizontal, hInset)
-            .padding(.vertical, 12)
+            .padding(.vertical, DSSpacing.md)
         }
         .animation(.easeOut(duration: 0.25), value: sortedFilteredBooks.map(\.id))
+        .animation(DSAnimation.standard, value: gs.bookshelfGridColumnCount)
         .refreshable {
             await ChapterUpdater.refreshAll(bookStore: store)
         }
@@ -966,7 +975,10 @@ private func previewOnlineBook(hasUpdate: Bool) -> ReadingBook {
 }
 
 #Preview("BookGridCell – 有更新 / 無更新") {
-    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100, maximum: 160), spacing: 10)], spacing: 12) {
+    LazyVGrid(
+        columns: Array(repeating: GridItem(.flexible(), spacing: DSSpacing.md), count: 3),
+        spacing: DSSpacing.lg
+    ) {
         BookGridCell(book: previewOnlineBook(hasUpdate: true), onOpen: {}, onEdit: {}, onDelete: {})
         BookGridCell(book: previewOnlineBook(hasUpdate: false), onOpen: {}, onEdit: {}, onDelete: {})
     }

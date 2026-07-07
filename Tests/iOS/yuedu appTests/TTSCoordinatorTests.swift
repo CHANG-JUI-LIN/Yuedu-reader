@@ -175,7 +175,9 @@ struct TTSCoordinatorTests {
             ]
         )
 
-        let data = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 1.0)
+        // UI rate 0.5 == 100% must reach the source as legado speakSpeed 10 (the normal
+        // band in its JS), so no speed style is prepended.
+        let data = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 0.5)
 
         #expect(data == audio)
         #expect(MimoTTSTestURLProtocol.lastRequest?.url?.absoluteString == "https://api.xiaomimimo.com/v1/chat/completions")
@@ -192,6 +194,15 @@ struct TTSCoordinatorTests {
         let messages = try #require(body["messages"] as? [[String: String]])
         #expect(messages.last?["role"] == "assistant")
         #expect(messages.last?["content"] == "<style>开心</style>你好")
+
+        // UI rate 1.0 == 200% maps to speakSpeed 20, which the source JS treats as 语速很快.
+        MimoTTSTestURLProtocol.lastRequestBody = nil
+        _ = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 1.0)
+
+        let fastBody = try #require(MimoTTSTestURLProtocol.lastRequestBody)
+        let fast = try #require(JSONSerialization.jsonObject(with: fastBody) as? [String: Any])
+        let fastMessages = try #require(fast["messages"] as? [[String: String]])
+        #expect(fastMessages.last?["content"] == "<style>语速很快 开心</style>你好")
     }
 }
 

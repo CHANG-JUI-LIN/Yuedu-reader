@@ -311,7 +311,13 @@ final class TTSCoordinator: ObservableObject {
         nowPlayingBookTitle
     }
 
+    private static let speechRateDefaultsKey = "yd_tts_speech_rate"
+
     init() {
+        if UserDefaults.standard.object(forKey: Self.speechRateDefaultsKey) != nil {
+            let stored = UserDefaults.standard.float(forKey: Self.speechRateDefaultsKey)
+            speechRate = max(0.1, min(stored, 1.0))
+        }
         rewireCallbacks()
         setupAudioSessionNotifications()
         ttsLog("[TTS][Coordinator] init")
@@ -525,7 +531,16 @@ final class TTSCoordinator: ObservableObject {
     }
 
     func updateRate(_ rate: Float) {
-        speechRate = max(0.1, min(rate, 0.65))
+        speechRate = max(0.1, min(rate, 1.0))
+        UserDefaults.standard.set(speechRate, forKey: Self.speechRateDefaultsKey)
+    }
+
+    /// Push the current rate into any in-flight playback. Kept separate from `updateRate`
+    /// so the slider can call it once on gesture end — re-synthesizing HTTP TTS audio on
+    /// every mid-drag tick would hammer rate-limited sources.
+    func applyRateToActivePlayback() {
+        httpEngine.updateRate(speechRate)
+        systemEngine.updateRate(speechRate)
     }
 
     func setSleepTimer(minutes: Int) {

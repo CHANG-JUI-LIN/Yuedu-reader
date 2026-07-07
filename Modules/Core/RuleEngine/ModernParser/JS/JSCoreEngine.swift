@@ -529,6 +529,16 @@ class JSCoreEngine {
         // Luo-Ya-Cheng (洛雅橙/lyc) mod compatibility shim.
         // This must be installed after `__yueduJavaMap`: LYC explore scripts call
         // `infoMap.save()` while assembling their filter rows.
+        //
+        // `Set` doubles as LYC's key-value setter AND JavaScript's built-in Set
+        // constructor. A plain `function Set(key, value)` shadowed the builtin, so any
+        // source rule constructing `new Set()` (e.g. 企点 chapterList de-dups volume
+        // names this way when 显示卷名 is on) got a method-less object, threw
+        // "addedVolumes.has is not a function", and the whole TOC parse aborted
+        // (symptom: 目录为空). Worse, the constructor call leaked a
+        // `source.put(undefined, undefined)` into the variable store. Keep both callers
+        // working: `new Set(...)` / bare `Set()` delegate to the native constructor,
+        // while LYC's `Set(key, value)` call form still writes through `source.put`.
         ctx.evaluateScript("""
             function csh() {
                 if (typeof source === 'undefined') return;
@@ -554,9 +564,17 @@ class JSCoreEngine {
                 if (typeof source !== 'undefined') return source.get(key) || '';
                 return '';
             }
-            function Set(key, value) {
-                if (typeof source !== 'undefined') source.put(key, value);
-            }
+            (function (global) {
+                var NativeSet = global.Set;
+                function lycSet(key, value) {
+                    if (new.target || arguments.length === 0) {
+                        return arguments.length ? new NativeSet(key) : new NativeSet();
+                    }
+                    if (typeof source !== 'undefined') source.put(key, value);
+                }
+                lycSet.prototype = NativeSet.prototype;
+                global.Set = lycSet;
+            })(this);
             var infoMap = __yueduJavaMap({});
             function createFilter(sort, size, isfinish, orderBy, fmale) {
                 // The source's jsLib may replace this fallback with its filter builder.

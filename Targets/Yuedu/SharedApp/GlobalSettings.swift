@@ -227,6 +227,9 @@ func localized(_ key: String, bundle: Bundle = .main) -> String {
 
 class GlobalSettings: ObservableObject {
     static let shared = GlobalSettings()
+    static let bookshelfGridColumnCountOptions = [2, 3, 4]
+    static let defaultBookshelfGridColumnCount = 3
+    private static let bookshelfGridColumnCountKey = "yd_bookshelf_grid_column_count"
 
     // MARK: - Account State
 
@@ -361,6 +364,27 @@ class GlobalSettings: ObservableObject {
         Locale.autoupdatingCurrent.identifier
     }
 
+    // MARK: - Bookshelf Settings
+
+    @Published var bookshelfGridColumnCount: Int {
+        didSet {
+            let sanitized = Self.sanitizedBookshelfGridColumnCount(bookshelfGridColumnCount)
+            if bookshelfGridColumnCount != sanitized {
+                bookshelfGridColumnCount = sanitized
+            } else {
+                UserDefaults.standard.set(sanitized, forKey: Self.bookshelfGridColumnCountKey)
+            }
+        }
+    }
+
+    static func sanitizedBookshelfGridColumnCount(_ value: Int) -> Int {
+        guard let minimum = bookshelfGridColumnCountOptions.min(),
+              let maximum = bookshelfGridColumnCountOptions.max() else {
+            return defaultBookshelfGridColumnCount
+        }
+        return min(max(value, minimum), maximum)
+    }
+
     // MARK: - Network Settings
 
     @Published var searchConcurrency: Int {
@@ -478,6 +502,11 @@ class GlobalSettings: ObservableObject {
         } else {
             userFonts = []
         }
+
+        bookshelfGridColumnCount = Self.sanitizedBookshelfGridColumnCount(
+            (UserDefaults.standard.object(forKey: Self.bookshelfGridColumnCountKey) as? Int)
+            ?? Self.defaultBookshelfGridColumnCount
+        )
 
         searchConcurrency =
             (UserDefaults.standard.object(forKey: "yd_search_concurrency") as? Int) ?? 8

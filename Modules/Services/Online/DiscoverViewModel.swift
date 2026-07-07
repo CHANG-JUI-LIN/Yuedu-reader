@@ -556,7 +556,13 @@ final class DiscoverViewModel: ObservableObject {
         customKeys: Set<String>?,
         defaultLimit: Int
     ) -> [DiscoverCardItem] {
-        let fetchable = items.filter { $0.isFetchable }
+        // A source can emit the same category in several of its groups (番茄's
+        // explore API repeats hot tags across lists with the same category_id,
+        // i.e. identical stableKey). Selection is keyed by stableKey, so without
+        // dedup a custom selection matches every occurrence and the showcase
+        // shows duplicate sections; keep only the first occurrence.
+        var seen = Set<String>()
+        let fetchable = items.filter { $0.isFetchable && seen.insert($0.stableKey).inserted }
         guard let customKeys else {
             return Array(fetchable.prefix(defaultLimit))
         }

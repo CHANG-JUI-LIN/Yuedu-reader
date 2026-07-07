@@ -67,6 +67,20 @@ struct SettingsView: View {
                         )
                     }
 
+                    Section(header: Text(localized("書架顯示"))) {
+                        Picker(selection: $gs.bookshelfGridColumnCount) {
+                            ForEach(GlobalSettings.bookshelfGridColumnCountOptions, id: \.self) { columnCount in
+                                Text(String(format: localized("%d 欄"), columnCount))
+                                    .tag(columnCount)
+                            }
+                        } label: {
+                            Label(localized("每列欄數"), systemImage: "square.grid.3x3.fill")
+                                .foregroundColor(DSColor.textPrimary)
+                                .labelStyle(IconConsistentLabelStyle())
+                        }
+                        .pickerStyle(.menu)
+                    }
+
                     // ── Book Source Management ──
                     Section(header: Text(localized("書源管理"))) {
                         DSSettingsRow(

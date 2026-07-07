@@ -89,6 +89,16 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             pan.maximumNumberOfTouches = 1
             pvc.view.addGestureRecognizer(pan)
         }
+        if adapterDescriptor.usesInstantPan {
+            context.coordinator.instantPanPageViewController = pvc
+            let pan = UIPanGestureRecognizer(
+                target: context.coordinator,
+                action: #selector(Coordinator.handleInstantPan(_:))
+            )
+            pan.maximumNumberOfTouches = 1
+            pan.cancelsTouchesInView = false
+            pvc.view.addGestureRecognizer(pan)
+        }
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: pvc)
 
         return pvc
@@ -313,6 +323,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         fileprivate var currentCoreTextPosition: CoreTextReadingPosition?
         private var pendingNavigation: PendingNavigation?
         weak var coverPageViewController: UIPageViewController?
+        weak var instantPanPageViewController: UIPageViewController?
         private weak var callbackEngineObject: AnyObject?
         private var callbackEngineIdentifier: ObjectIdentifier?
         fileprivate var isTransitioning = false
@@ -1324,10 +1335,70 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         
         private enum GestureConstants {
             static let initialTranslationThreshold: CGFloat = 18.0
+            static let instantPanDistanceThreshold: CGFloat = 44.0
+            static let instantPanVelocityThreshold: CGFloat = 420.0
             static let commitProgressRatio: CGFloat = 0.34
             static let commitVelocityThreshold: CGFloat = 560.0
             static let settleAnimationDuration: TimeInterval = 0.22
             static let maxDimmingAlpha: CGFloat = 0.35
+        }
+
+        @objc func handleInstantPan(_ gesture: UIPanGestureRecognizer) {
+            guard pageTurnStyle == .none,
+                  let pvc = instantPanPageViewController,
+                  let view = gesture.view else { return }
+
+            if gesture.state == .began && (isTransitioning || isPageTransitioning) {
+                gesture.state = .cancelled
+                return
+            }
+
+            guard gesture.state == .ended else { return }
+
+            let translationX = gesture.translation(in: view).x
+            let velocityX = gesture.velocity(in: view).x
+            let turnDirection: ReaderCoverTurnDirection?
+            if abs(translationX) >= GestureConstants.instantPanDistanceThreshold {
+                turnDirection = ReaderCoverPageMotion.direction(
+                    for: translationX,
+                    threshold: GestureConstants.instantPanDistanceThreshold,
+                    isRTL: isRTL
+                )
+            } else if abs(velocityX) >= GestureConstants.instantPanVelocityThreshold {
+                turnDirection = ReaderCoverPageMotion.direction(
+                    for: velocityX,
+                    threshold: GestureConstants.instantPanVelocityThreshold,
+                    isRTL: isRTL
+                )
+            } else {
+                turnDirection = nil
+            }
+
+            guard let turnDirection else { return }
+            let visiblePage = (pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex
+                ?? currentPage
+            let targetPage: Int?
+            switch turnDirection {
+            case .forward:
+                targetPage = nextDisplayPage(after: visiblePage)
+            case .backward:
+                targetPage = previousDisplayPage(before: visiblePage)
+            }
+            guard let targetPage else { return }
+
+            var navigationDirection: UIPageViewController.NavigationDirection =
+                targetPage >= visiblePage ? .forward : .reverse
+            if isRTL {
+                navigationDirection = navigationDirection == .forward ? .reverse : .forward
+            }
+
+            performProgrammaticTransition(
+                on: pvc,
+                to: targetPage,
+                from: visiblePage,
+                direction: navigationDirection,
+                animated: false
+            )
         }
 
         @objc func handleCoverPan(_ gesture: UIPanGestureRecognizer) {

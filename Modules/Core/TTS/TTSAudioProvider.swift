@@ -784,8 +784,11 @@ final class CustomHTTPProvider: TTSAudioProvider {
     }
 
     private func legadoSpeakSpeed(for rate: Float) -> Int {
-        let normalized = Double(rate / 0.5)
-        return max(0, min(15, Int((normalized * 5).rounded())))
+        // Legado passes `speakSpeed = 語速滑桿 + 5`, so 10 == 1.0× and each unit is 0.1×.
+        // Imported source JS (e.g. thresholds like `sp>14`/`sp<6`) is written against that
+        // scale; UI rate 0.5 == 1.0× must therefore map to 10, and 200% to 20.
+        let multiplier = Double(rate / 0.5)
+        return max(0, min(50, Int((multiplier * 10).rounded())))
     }
 
     private func edgeTTSRateString(for rate: Float) -> String {

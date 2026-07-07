@@ -70,6 +70,7 @@ struct PageViewControllerPagingAdapterDescriptor: Equatable {
     let transitionStyle: UIPageViewController.TransitionStyle
     let disablesBuiltInSwipe: Bool
     let usesCoverOverlay: Bool
+    let usesInstantPan: Bool
 
     init(pageTurnStyle: PageTurnStyle) {
         style = ReaderPagingStyle(pageTurnStyle: pageTurnStyle)
@@ -78,18 +79,22 @@ struct PageViewControllerPagingAdapterDescriptor: Equatable {
             transitionStyle = .pageCurl
             disablesBuiltInSwipe = false
             usesCoverOverlay = false
+            usesInstantPan = false
         case .slide:
             transitionStyle = .scroll
             disablesBuiltInSwipe = false
             usesCoverOverlay = false
+            usesInstantPan = false
         case .cover:
             transitionStyle = .scroll
             disablesBuiltInSwipe = true
             usesCoverOverlay = true
+            usesInstantPan = false
         case .none:
             transitionStyle = .scroll
             disablesBuiltInSwipe = true
             usesCoverOverlay = false
+            usesInstantPan = true
         }
     }
 

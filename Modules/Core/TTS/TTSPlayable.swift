@@ -16,9 +16,11 @@ protocol TTSPlayable: AnyObject {
     var onPlaybackStarted: ((TimeInterval) -> Void)? { get set }
     var onSegmentChanged: ((Int, Int, String) -> Void)? { get set }
 
-    /// Start reading the given text. Rate is interpreted by the HTTP TTS service,
-    /// currently using a 0.10–0.65 range in the UI.
+    /// Start reading the given text. Rate uses the UI scale 0.10–1.0 where 0.5 is 100%.
     func speak(text: String, title: String, rate: Float, pronunciationHints: [TTSPronunciationHint])
+    /// Apply a new rate to the playback session already in progress, so a slider change
+    /// takes effect immediately instead of only on the next `speak`.
+    func updateRate(_ rate: Float)
     func configureAudioSessionOwnership(_ enabled: Bool)
     func pause()
     func resume()

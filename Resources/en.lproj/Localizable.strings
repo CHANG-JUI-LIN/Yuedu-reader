@@ -444,6 +444,9 @@
 "選取" = "Select";
 "列表" = "List";
 "格狀" = "Grid";
+"書架顯示" = "Library Display";
+"每列欄數" = "Items per Row";
+"%d 欄" = "%d columns";
 "最近閱讀" = "Recently Read";
 "手動" = "Manual";
 "字體" = "Font";

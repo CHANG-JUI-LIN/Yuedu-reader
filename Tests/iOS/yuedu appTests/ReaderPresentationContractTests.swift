@@ -13,12 +13,14 @@ struct ReaderPresentationContractTests {
         #expect(slide.transitionStyle == .scroll)
         #expect(!slide.disablesBuiltInSwipe)
         #expect(!slide.usesCoverOverlay)
+        #expect(!slide.usesInstantPan)
         #expect(slide.spineLocation(isRTL: true) == .min)
 
         let curl = PageViewControllerPagingAdapterDescriptor(pageTurnStyle: .curl)
         #expect(curl.style == .curl)
         #expect(curl.transitionStyle == .pageCurl)
         #expect(!curl.disablesBuiltInSwipe)
+        #expect(!curl.usesInstantPan)
         #expect(curl.spineLocation(isRTL: true) == .max)
 
         let cover = PageViewControllerPagingAdapterDescriptor(pageTurnStyle: .cover)
@@ -26,6 +28,7 @@ struct ReaderPresentationContractTests {
         #expect(cover.transitionStyle == .scroll)
         #expect(cover.disablesBuiltInSwipe)
         #expect(cover.usesCoverOverlay)
+        #expect(!cover.usesInstantPan)
         #expect(cover.spineLocation(isRTL: true) == .max)
 
         let none = PageViewControllerPagingAdapterDescriptor(pageTurnStyle: .none)
@@ -33,6 +36,7 @@ struct ReaderPresentationContractTests {
         #expect(none.transitionStyle == .scroll)
         #expect(none.disablesBuiltInSwipe)
         #expect(!none.usesCoverOverlay)
+        #expect(none.usesInstantPan)
     }
 
     @Test("cover motion mirrors gesture and offscreen edge for RTL")

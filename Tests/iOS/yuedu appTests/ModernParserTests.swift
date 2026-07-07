@@ -189,6 +189,53 @@ struct ModernParserBridgeChapterCompatibilityTests {
 
         #expect(payload.content == "paragraph one\nparagraph two")
     }
+
+    @Test("chapterList JS using new Set() parses volume rows (企点 目录显示卷名)")
+    func chapterListNewSetParsesVolumeRows() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "qidian-volume-\(UUID().uuidString)"
+        // Mirrors 企点's chapterList: volume names are de-duped via `new Set()`.
+        // The LYC compatibility shim used to shadow the builtin Set constructor,
+        // so `.has` threw and the whole TOC parsed empty — but only when the
+        // volume branch actually ran (显示卷名 on), never in the default state.
+        source.ruleToc.chapterList = """
+        <js>
+        var data = JSON.parse(result);
+        var charts = [];
+        var volumes = data.Data.Volumes;
+        var addedVolumes = new Set();
+        data.Data.Chapters.map(o => {
+            var volume = volumes.find(vs => vs.VolumeCode == o.Vc);
+            if (volume && !addedVolumes.has(volume.VolumeName)) {
+                charts.push({ title: volume.VolumeName, isVolume: true });
+                addedVolumes.add(volume.VolumeName);
+            }
+            charts.push({ title: o.N, url: "https://x.test/c/" + o.C });
+        });
+        charts;
+        </js>
+        """
+        source.ruleToc.chapterName = "title"
+        source.ruleToc.chapterUrl = "url"
+        source.ruleToc.isVolume = "isVolume"
+
+        let catalog = """
+        {"Data":{"Volumes":[{"VolumeCode":11,"VolumeName":"第一卷 风起"},{"VolumeCode":22,"VolumeName":"第二卷 云涌"}],\
+        "Chapters":[{"C":1,"N":"第1章","Vc":11},{"C":2,"N":"第2章","Vc":11},{"C":3,"N":"第3章","Vc":22}]}}
+        """
+
+        let chapters = try ModernParserBridge(source: source).parseTOC(
+            html: catalog,
+            baseURL: "https://x.test/detail?bookId=1",
+            source: source
+        )
+
+        #expect(chapters.count == 5)
+        #expect(chapters.map(\.isVolume) == [true, false, false, true, false])
+        #expect(chapters[0].title == "第一卷 风起")
+        #expect(chapters[3].title == "第二卷 云涌")
+        #expect(chapters[1].url == "https://x.test/c/1")
+    }
 }
 
 // MARK: - 2. SourceRule Tests
@@ -1747,6 +1794,25 @@ struct JSCoreEngineTests {
         #expect(engine.lastError != nil || result == nil || result == "undefined")
     }
 
+    @Test("LYC Set shim delegates constructor calls to the native Set")
+    func lycSetShimPreservesNativeConstructor() {
+        let engine = JSCoreEngine()
+        let constructed = engine.evaluate("""
+        (function () {
+            var s = new Set();
+            s.add('a'); s.add('a'); s.add('b');
+            var s2 = new Set(['x', 'y', 'x']);
+            return [s.size, s.has('a'), s2.size, s instanceof Set, Array.from(s2).join('-')].join('|');
+        })();
+        """)
+        #expect(constructed == "2|true|2|true|x-y")
+
+        // LYC's plain-call form must still write through the source bridge.
+        _ = engine.evaluate("Set('lyckey', 'lycvalue')")
+        let stored = engine.evaluate("source.get('lyckey')")
+        #expect(stored == "lycvalue")
+    }
+
     @Test("reset clears context")
     func resetClearsContext() {
         let engine = JSCoreEngine()
@@ -2540,6 +2606,39 @@ struct DiscoverFilterTests {
 
         #expect(automatic.map(\.title) == ["排行榜", "热门标签"])
         #expect(custom.map(\.title) == ["主题"])
+    }
+
+    @MainActor
+    @Test("duplicate source categories collapse into one showcase section")
+    func duplicateDiscoverCategoriesCollapseIntoOneSection() throws {
+        // 番茄-style sources repeat the same tag (identical title + url, hence
+        // identical stableKey) in several explore groups. A custom selection
+        // matches every occurrence, which used to duplicate the section.
+        let raw: [ModernParserBridge.DiscoverItem] = [
+            .init(title: "重生", url: "https://example.com/tag/1"),
+            .init(title: "系统", url: "https://example.com/tag/2"),
+            .init(title: "重生", url: "https://example.com/tag/1"),
+            .init(title: "都市", url: "https://example.com/tag/3")
+        ]
+        let cards = raw.compactMap(DiscoverViewModel.mapItem)
+        let rebirth = try #require(cards.first { $0.title == "重生" })
+        let system = try #require(cards.first { $0.title == "系统" })
+
+        let custom = DiscoverViewModel.showcaseItems(
+            from: cards,
+            customKeys: Set([rebirth.stableKey, system.stableKey]),
+            defaultLimit: 12
+        )
+        let automatic = DiscoverViewModel.showcaseItems(
+            from: cards,
+            customKeys: nil,
+            defaultLimit: 3
+        )
+
+        #expect(custom.map(\.title) == ["重生", "系统"])
+        // Dedup happens before the default prefix, so the duplicate no longer
+        // burns one of the visible slots.
+        #expect(automatic.map(\.title) == ["重生", "系统", "都市"])
     }
 
     @Test("discover pagination drops duplicate page results")
