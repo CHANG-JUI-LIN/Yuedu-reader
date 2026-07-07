@@ -12,6 +12,7 @@ struct ReaderView: View {
     @Environment(\.presentationMode) var presentationMode
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.colorScheme) private var systemColorScheme
     @ObservedObject var settings = GlobalSettings.shared
     @StateObject var readerConfig = ReaderConfig.shared
 
@@ -154,6 +155,17 @@ struct ReaderView: View {
     var readerTheme: ReaderTheme {
         get { readerConfig.theme }
         nonmutating set { readerConfig.theme = newValue }
+    }
+
+    /// When "follow system" theme is on, align the reader theme with the current
+    /// system light/dark appearance. Setting `readerConfig.theme` triggers the
+    /// `.appearance` refresh through `ReaderConfig`'s binding, so pages recolor.
+    func applyFollowSystemThemeIfNeeded() {
+        guard settings.readerFollowSystemTheme else { return }
+        let desired = ReaderTheme.forSystem(dark: systemColorScheme == .dark)
+        if readerConfig.theme != desired {
+            readerConfig.theme = desired
+        }
     }
 
 
@@ -1170,6 +1182,7 @@ struct ReaderView: View {
                 ]
             )
             readerConfig.syncFromGlobalSettings()
+            applyFollowSystemThemeIfNeeded()
             if !hasPerformedInitialLoad {
                 snapshotBook = book
                 hasPerformedInitialLoad = true
@@ -1271,6 +1284,12 @@ struct ReaderView: View {
             } else {
                 UIScreen.main.brightness = CGFloat(settings.readerBrightness)
             }
+        }
+        .onChanged(of: systemColorScheme) { _ in
+            applyFollowSystemThemeIfNeeded()
+        }
+        .onChanged(of: settings.readerFollowSystemTheme) { _ in
+            applyFollowSystemThemeIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification))
         { _ in

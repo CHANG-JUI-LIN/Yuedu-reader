@@ -12,6 +12,7 @@ struct ReaderSettingsView: View {
     @StateObject private var readerConfig = ReaderConfig.shared
     @ObservedObject private var settings = GlobalSettings.shared
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var systemColorScheme
     @State private var showingFontImporter = false
     @State private var fontImportError: FontImportError?
     @State private var customLayoutEnabled = true
@@ -244,16 +245,53 @@ struct ReaderSettingsView: View {
         .background(theme.backgroundColor)
     }
 
+    private var currentThemeLabel: String {
+        settings.readerFollowSystemTheme ? localized("跟隨系統") : localized(theme.rawValue)
+    }
+
     private var themeSelector: some View {
         VStack(alignment: .leading, spacing: 10) {
             SettingRowHeader(title: localized("主題"), systemImage: "circle.lefthalf.filled")
 
-            Picker(localized("主題"), selection: $theme) {
-                ForEach(ReaderTheme.allCases, id: \.self) { item in
-                    Text(localized(item.rawValue)).tag(item)
+            Menu {
+                Button {
+                    settings.readerFollowSystemTheme = true
+                    theme = ReaderTheme.forSystem(dark: systemColorScheme == .dark)
+                    readerConfig.refresh.send(.appearance)
+                } label: {
+                    Label(
+                        localized("跟隨系統"),
+                        systemImage: settings.readerFollowSystemTheme ? "checkmark" : "circle.righthalf.filled"
+                    )
                 }
+
+                Divider()
+
+                ForEach(ReaderTheme.allCases, id: \.self) { item in
+                    Button {
+                        settings.readerFollowSystemTheme = false
+                        theme = item
+                    } label: {
+                        Label(
+                            localized(item.rawValue),
+                            systemImage: (!settings.readerFollowSystemTheme && theme == item) ? "checkmark" : "circle.lefthalf.filled"
+                        )
+                    }
+                }
+            } label: {
+                HStack {
+                    Text(currentThemeLabel)
+                        .foregroundStyle(DSColor.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(DSFont.caption)
+                        .foregroundStyle(DSColor.textSecondary)
+                }
+                .padding(.horizontal, DSSpacing.md)
+                .padding(.vertical, DSSpacing.sm)
+                .background(DSColor.surface)
+                .clipShape(RoundedRectangle(cornerRadius: DSRadius.md))
             }
-            .pickerStyle(.segmented)
         }
     }
 

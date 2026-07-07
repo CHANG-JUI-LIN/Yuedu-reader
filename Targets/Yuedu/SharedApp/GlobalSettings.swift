@@ -40,6 +40,18 @@ enum ReaderTheme: String, CaseIterable {
         return ReaderTheme(rawValue: raw) ?? .white
     }
 
+    /// The most recently used non-night theme. Used by "follow system" mode to
+    /// pick a light-appearance theme when the system switches to light.
+    static var lastLightTheme: ReaderTheme {
+        let raw = UserDefaults.standard.string(forKey: lastLightThemeKey) ?? ""
+        return ReaderTheme(rawValue: raw) ?? .white
+    }
+
+    /// The theme to apply when "follow system" mode is on, for the given scheme.
+    static func forSystem(dark: Bool) -> ReaderTheme {
+        dark ? .night : lastLightTheme
+    }
+
     func persist() {
         UserDefaults.standard.set(rawValue, forKey: Self.userDefaultsKey)
         if self != .night {
@@ -323,6 +335,12 @@ class GlobalSettings: ObservableObject {
     @Published var readerTapBothSidesNextPage: Bool {
         didSet { UserDefaults.standard.set(readerTapBothSidesNextPage, forKey: "yd_reader_tap_both_next") }
     }
+    /// When on, the reader theme automatically follows the system light/dark
+    /// appearance (light → last light theme, dark → night). Selecting a specific
+    /// theme from the menu turns this off. Applied live in `ReaderView`.
+    @Published var readerFollowSystemTheme: Bool {
+        didSet { UserDefaults.standard.set(readerFollowSystemTheme, forKey: "yd_reader_follow_system_theme") }
+    }
     @Published var selectedReaderFontPostScript: String? {
         didSet {
             if let selectedReaderFontPostScript, !selectedReaderFontPostScript.isEmpty {
@@ -495,6 +513,7 @@ class GlobalSettings: ObservableObject {
         let rawWritingMode = UserDefaults.standard.string(forKey: "yd_reader_writing_mode") ?? ""
         readerWritingMode = ReaderWritingMode(rawValue: rawWritingMode) ?? .horizontal
         readerTapBothSidesNextPage = UserDefaults.standard.bool(forKey: "yd_reader_tap_both_next")
+        readerFollowSystemTheme = UserDefaults.standard.bool(forKey: "yd_reader_follow_system_theme")
         selectedReaderFontPostScript = UserDefaults.standard.string(forKey: "yd_reader_font_postscript")
         if let fontData = UserDefaults.standard.data(forKey: "yd_user_fonts"),
            let decodedFonts = try? JSONDecoder().decode([UserFontInfo].self, from: fontData) {
