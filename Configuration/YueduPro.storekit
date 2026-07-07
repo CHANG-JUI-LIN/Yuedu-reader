@@ -1,0 +1,99 @@
+{
+  "identifier" : "D6E64924-88B9-4443-B9DB-BA7DA9C6F7ED",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_applicationInternalID" : "6772972358",
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "zh_TW",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "4B1A0032-648A-4BE4-AAE6-86B68D25D05B",
+      "localizations" : [
+        {
+          "description" : "",
+          "displayName" : "Yuedu Pro",
+          "locale" : "zh_TW"
+        }
+      ],
+      "name" : "Yuedu Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "14.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "C3BA2738-5ACB-4F05-9FED-5AE9CA1F1C49",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "解鎖全部 Yuedu Pro 高級個人化，按年計費",
+              "displayName" : "Yuedu Pro 年訂閱",
+              "locale" : "zh_TW"
+            },
+            {
+              "description" : "Unlock all Yuedu Pro personalization, billed yearly",
+              "displayName" : "Yuedu Pro Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.zhangruilin.yuedureader.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Yuedu Pro Yearly",
+          "subscriptionGroupID" : "4B1A0032-648A-4BE4-AAE6-86B68D25D05B",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "1.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "1CECCECC-C9F7-4D2E-91CE-EBE64E3EE96C",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "解鎖全部 Yuedu Pro 高級個人化，按月計費",
+              "displayName" : "Yuedu Pro 月訂閱",
+              "locale" : "zh_TW"
+            },
+            {
+              "description" : "Unlock all Yuedu Pro personalization, billed monthly",
+              "displayName" : "Yuedu Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.zhangruilin.yuedureader.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Yuedu Pro Monthly",
+          "subscriptionGroupID" : "4B1A0032-648A-4BE4-AAE6-86B68D25D05B",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

@@ -6,6 +6,7 @@ import UIKit
 struct UserDetailView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var gs = GlobalSettings.shared
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @StateObject private var firestoreSync = FirestoreSyncManager.shared
     @State private var showLogin = false
     @State private var selectedAvatarItem: PhotosPickerItem?
@@ -16,6 +17,7 @@ struct UserDetailView: View {
     @State private var isDeletingAccount = false
     @State private var deleteAccountErrorMessage: String?
     @State private var showReadingStats = false
+    @State private var showPaywall = false
     @State private var showRenameAlert = false
     @State private var draftDisplayName = ""
     @State private var showDeletePasswordAlert = false
@@ -88,6 +90,39 @@ struct UserDetailView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .listRowBackground(Color.white)
+            }
+
+            Section {
+                Button {
+                    showPaywall = true
+                } label: {
+                    HStack(spacing: DSSpacing.md) {
+                        Image(systemName: "crown.fill")
+                            .font(.system(size: 17, weight: .medium))
+                            .frame(width: 28, height: 28)
+                            .foregroundStyle(DSColor.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Yuedu Pro")
+                                .foregroundColor(.primary)
+                            Text(subscriptionStore.isProActive
+                                 ? localized("已訂閱，感謝支持")
+                                 : localized("解鎖高級個人化"))
+                                .font(DSFont.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        if subscriptionStore.isProActive {
+                            Text(localized("已啟用"))
+                                .font(DSFont.caption.weight(.semibold))
+                                .foregroundStyle(DSColor.success)
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.secondary.opacity(0.5))
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
             }
 
             Section(header: Text(localized("閱讀工具"))) {
@@ -227,6 +262,10 @@ struct UserDetailView: View {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 ReadingStatsView()
             }
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+                .environmentObject(subscriptionStore)
         }
         .fullScreenCover(isPresented: $showLogin) {
             LoginView {
@@ -463,5 +502,6 @@ struct AccountAvatarView: View {
 #Preview {
     NavigationStack {
         UserDetailView()
+            .environmentObject(SubscriptionStore.shared)
     }
 }

@@ -98,6 +98,7 @@
 		460D36592F51C5B8006E774C /* YueduReader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YueduReader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		460D36662F51C5B9006E774C /* yuedu appTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "yuedu appTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		460D36702F51C5B9006E774C /* yuedu appUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "yuedu appUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4639A10E2FFD2ACF008040BE /* YueduPro.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; name = YueduPro.storekit; path = Configuration/YueduPro.storekit; sourceTree = "<group>"; };
 		4E4E1DDA4EE35F67778097F0 /* yuedu_app_Widget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = yuedu_app_Widget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		81F92752186D8D0E971A17B9 /* yuedu_app_ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = yuedu_app_ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E661223F57364063B509666C /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
@@ -245,6 +246,7 @@
 		460D36502F51C5B8006E774C = {
 			isa = PBXGroup;
 			children = (
+				4639A10E2FFD2ACF008040BE /* YueduPro.storekit */,
 				E661223F57364063B509666C /* GoogleService-Info.plist */,
 				A10000000000000000000001 /* Targets/Yuedu */,
 				A10000000000000000000002 /* Modules */,

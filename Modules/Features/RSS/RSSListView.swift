@@ -826,6 +826,7 @@ private struct RSSSettingsContentView: View {
     var body: some View {
         SettingsView()
             .environmentObject(BookStore())
+            .environmentObject(SubscriptionStore.shared)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {

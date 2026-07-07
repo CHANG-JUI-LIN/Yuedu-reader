@@ -394,4 +394,5 @@ private struct AboutSupportView: View {
 #Preview {
     SettingsView()
         .environmentObject(BookStore())
+        .environmentObject(SubscriptionStore.shared)
 }

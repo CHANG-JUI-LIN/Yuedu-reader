@@ -4,12 +4,14 @@ import SwiftUI
 struct yuedu_appApp: App {
     @UIApplicationDelegateAdaptor(RSSAppNotificationDelegate.self) private var rssNotificationDelegate
     @StateObject private var bookStore = BookStore()
+    @StateObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(bookStore)
+                .environmentObject(subscriptionStore)
                 .environment(\.appDependencies, .live)
                 .onAppear {
                     CoreTextFontRegistrationService.cleanupStaleTemporaryFonts()
