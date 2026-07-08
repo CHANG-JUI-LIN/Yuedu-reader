@@ -376,6 +376,35 @@ struct SourceRuleTests {
         let rule = SourceRule(ruleStr: "data.list", mainMode: .default, isJSON: true)
         #expect(rule.mode == .json)
     }
+
+    @Test("##$## delimiter extracts URL options suffix")
+    func dollarHashHashSeparatesURLOptions() {
+        let rule = SourceRule(ruleStr: "https://example.com/api##$##,{header}")
+        rule.makeUpRule(
+            result: nil,
+            getData: { _ in "" },
+            evalJS: { _ in nil },
+            analyzeRule: { _ in nil }
+        )
+        #expect(rule.rule == "https://example.com/api")
+        #expect(rule.urlOptionsSuffix == ",{header}")
+        #expect(rule.replaceRegex == "")
+    }
+
+    @Test("##$## with regex after options")
+    func dollarHashHashWithRegexAfterOptions() {
+        let rule = SourceRule(ruleStr: "div@text##$##,{header}##pattern##replacement")
+        rule.makeUpRule(
+            result: nil,
+            getData: { _ in "" },
+            evalJS: { _ in nil },
+            analyzeRule: { _ in nil }
+        )
+        #expect(rule.rule == "div@text")
+        #expect(rule.urlOptionsSuffix == ",{header}")
+        #expect(rule.replaceRegex == "pattern")
+        #expect(rule.replacement == "replacement")
+    }
 }
 
 // MARK: - 3. RegexExtractor Tests
@@ -1320,6 +1349,35 @@ struct AnalyzeUrlTests {
         #expect(au.retry == 3)
     }
 
+    @Test("{header} template resolves to sourceHeader in URL options")
+    func headerTemplateInOptions() {
+        let headerJSON = "{\"User-Agent\":\"Custom/1.0\"}"
+        let au = AnalyzeUrl(
+            ruleUrl: "https://example.com/api,##$##,{header}",
+            sourceHeader: headerJSON
+        )
+        #expect(au.headers["User-Agent"] == "Custom/1.0")
+    }
+
+    @Test("{{header}} template resolves via resolveTemplateExpression")
+    func headerTemplateDoubleBraces() {
+        let au = AnalyzeUrl(
+            ruleUrl: "https://example.com/api?_h={{header}}",
+            sourceHeader: "{\"Custom\":\"Header\"}"
+        )
+        // {{header}} expands to the source header JSON string in the URL
+        #expect(au.url.contains("%7B%22Custom%22:%22Header%22%7D")
+                || au.url.contains("{\"Custom\":\"Header\"}"))
+    }
+
+    @Test("{{header}} fallback to empty when no sourceHeader set")
+    func headerTemplateEmptyWhenNotSet() {
+        let au = AnalyzeUrl(
+            ruleUrl: "https://example.com/api?_h={{header}}"
+        )
+        #expect(au.url.contains("_h="))
+    }
+
     @Test("<js> URL can produce typed data URI body as hex")
     func jsUrlDataUriFetchReturnsHexBody() async throws {
         var source = BookSource()
@@ -2100,6 +2158,37 @@ struct LegadoJSBridgeTests {
         let bridge = LegadoJSBridge()
         let result = bridge.log("test message")
         #expect(result == "test message")
+    }
+
+    @Test("aaDecode maps Unicode obfuscation to ASCII")
+    func aaDecodeMapsUnicode() {
+        // 源阅 aaencode: fullwidth Latin + special Unicode → ASCII
+        let encoded = "\u{FF28}\u{FF45}\u{FF4C}\u{FF4C}\u{FF4F}"  // Ｈｅｌｌｏ
+        let decoded = LegadoJSBridge.aaDecode(encoded)
+        #expect(decoded == "Hello")
+    }
+
+    @Test("aaDecode handles empty input")
+    func aaDecodeEmptyInput() {
+        #expect(LegadoJSBridge.aaDecode("") == "")
+    }
+
+    @Test("aaDecode handles mixed obfuscation (源阅 style)")
+    func aaDecodeMixedObfuscation() {
+        // Fullwidth chars and special Unicode in a typical obfuscated JS pattern
+        let obfuscated = "\u{FF28}\u{0E31}\u{15AD}\u{FF29}\u{FF2A}\u{0E32}\u{14A6}"
+        let decoded = LegadoJSBridge.aaDecode(obfuscated)
+        #expect(decoded.contains("H"))
+        #expect(decoded.contains("("))
+        #expect(decoded.contains("I"))
+        #expect(decoded.contains("J"))
+    }
+
+    @Test("java.axja exposed via JS bridge")
+    func javaAxjaBridgeExposed() {
+        let engine = JSCoreEngine()
+        let result = engine.evaluate("typeof java.axja")
+        #expect(result == "function")
     }
 }
 

@@ -11,6 +11,7 @@ import UIKit
 @objc protocol LegadoJSBridgeExport: JSExport {
     // Networking
     func ajax(_ urlStr: String) -> String
+    func axja(_ urlStr: String) -> String
     func ajaxAll(_ urlArray: [String]) -> [LegadoStrResponse]
     func connect(_ urlStr: String) -> String
     func post(_ urlStr: String, _ body: String, _ headers: JSValue) -> LegadoStrResponse
@@ -215,6 +216,75 @@ import UIKit
             ])
         }
         return body
+    }
+
+    func axja(_ urlStr: String) -> String {
+        let body = performRequest(urlStr)
+        return Self.aaDecode(body)
+    }
+
+    /// Decode aaencode (源阅 obfuscation) — maps Unicode-encoded characters
+    /// back to their ASCII equivalents. Mirrors Legado's `StringUtils.aaDecode`.
+    static func aaDecode(_ str: String) -> String {
+        guard !str.isEmpty else { return str }
+        let pairs: [(UnicodeScalar, String)] = [
+            ("\u{203F}", "_"), ("\u{2040}", " "),
+            ("\u{00A1}", "!"), ("\u{00A6}", "|"),
+            ("\u{15AD}", "("), ("\u{15AE}", ")"),
+            ("\u{20A9}", "\\"), ("\u{4DC0}", "||"),
+            ("\u{20B4}", "$"), ("\u{0C8C}", "="),
+            ("\u{0C98}", ">"), ("\u{0C95}", "<"),
+            ("\u{14A6}", "}"), ("\u{14A5}", "{"),
+            ("\u{0E50}", "0"), ("\u{0E51}", "1"),
+            ("\u{0E52}", "2"), ("\u{0E53}", "3"),
+            ("\u{0E54}", "4"), ("\u{0E55}", "5"),
+            ("\u{0E56}", "6"), ("\u{0E57}", "7"),
+            ("\u{0E58}", "8"), ("\u{0E59}", "9"),
+            ("\u{2010}", "-"), ("\u{2011}", "-"),
+            ("\u{2012}", "-"), ("\u{2013}", "-"),
+            ("\u{2014}", "--"), ("\u{2015}", "--"),
+            ("\u{2215}", "/"), ("\u{FF0F}", "/"),
+            ("\u{FF3A}", "Z"), ("\u{FF3A}", "z"),
+            ("\u{FF21}", "A"), ("\u{FF41}", "a"),
+            ("\u{FF22}", "B"), ("\u{FF42}", "b"),
+            ("\u{FF23}", "C"), ("\u{FF43}", "c"),
+            ("\u{FF24}", "D"), ("\u{FF44}", "d"),
+            ("\u{FF25}", "E"), ("\u{FF45}", "e"),
+            ("\u{FF26}", "F"), ("\u{FF46}", "f"),
+            ("\u{FF27}", "G"), ("\u{FF47}", "g"),
+            ("\u{FF28}", "H"), ("\u{FF48}", "h"),
+            ("\u{FF29}", "I"), ("\u{FF49}", "i"),
+            ("\u{FF2A}", "J"), ("\u{FF4A}", "j"),
+            ("\u{FF2B}", "K"), ("\u{FF4B}", "k"),
+            ("\u{FF2C}", "L"), ("\u{FF4C}", "l"),
+            ("\u{FF2D}", "M"), ("\u{FF4D}", "m"),
+            ("\u{FF2E}", "N"), ("\u{FF4E}", "n"),
+            ("\u{FF2F}", "O"), ("\u{FF4F}", "o"),
+            ("\u{FF30}", "P"), ("\u{FF50}", "p"),
+            ("\u{FF31}", "Q"), ("\u{FF51}", "q"),
+            ("\u{FF32}", "R"), ("\u{FF52}", "r"),
+            ("\u{FF33}", "S"), ("\u{FF53}", "s"),
+            ("\u{FF34}", "T"), ("\u{FF54}", "t"),
+            ("\u{FF35}", "U"), ("\u{FF55}", "u"),
+            ("\u{FF36}", "V"), ("\u{FF56}", "v"),
+            ("\u{FF37}", "W"), ("\u{FF57}", "w"),
+            ("\u{FF38}", "X"), ("\u{FF58}", "x"),
+            ("\u{FF39}", "Y"), ("\u{FF59}", "y"),
+            ("\u{FF10}", "0"), ("\u{FF11}", "1"),
+            ("\u{FF12}", "2"), ("\u{FF13}", "3"),
+            ("\u{FF14}", "4"), ("\u{FF15}", "5"),
+            ("\u{FF16}", "6"), ("\u{FF17}", "7"),
+            ("\u{FF18}", "8"), ("\u{FF19}", "9"),
+            ("\u{02C8}", "'"),
+        ]
+        var result = str
+        for (scalar, replacement) in pairs {
+            result = result.replacingOccurrences(
+                of: String(scalar),
+                with: replacement
+            )
+        }
+        return result
     }
 
     func ajaxAll(_ urlArray: [String]) -> [LegadoStrResponse] {

@@ -71,6 +71,10 @@ class AnalyzeUrl {
     /// Signature: (jsCode, bindings) -> result string
     var jsEvaluator: ((String, [String: Any]) -> String?)?
 
+    /// Book source header JSON string. When non-nil, `{header}` in URL option
+    /// blocks is replaced with this value before JSON parsing (源阅 syntax).
+    private let sourceHeader: String?
+
     /// RuleData sources for `@get:{}` variable resolution.
     private weak var source: RuleDataInterface?
     private weak var ruleData: RuleDataInterface?
@@ -115,6 +119,7 @@ class AnalyzeUrl {
          page: Int? = nil,
          speakText: String? = nil,
          speakSpeed: Int? = nil,
+         sourceHeader: String? = nil,
          baseUrl: String? = nil,
          source: RuleDataInterface? = nil,
          book: RuleDataInterface? = nil,
@@ -125,6 +130,7 @@ class AnalyzeUrl {
         self.page = page
         self.speakText = speakText
         self.speakSpeed = speakSpeed
+        self.sourceHeader = sourceHeader
         self.source = source
         self.ruleData = book
         self.chapter = chapter
@@ -334,6 +340,8 @@ class AnalyzeUrl {
             return speakText ?? ""
         case "speakSpeed":
             return speakSpeed.map { String($0) } ?? ""
+        case "header":
+            return sourceHeader ?? ""
         default:
             // Try JS evaluator for arbitrary expressions
             if let evaluator = jsEvaluator {
@@ -371,8 +379,13 @@ class AnalyzeUrl {
         // --- Resolve relative URL ---
         url = resolveUrl(urlNoOption)
 
+        // --- Resolve {header} template in option block (源阅 syntax) ---
+        let resolvedOptions = optionStr?.replacingOccurrences(
+            of: "{header}",
+            with: sourceHeader ?? ""
+        )
         // --- Parse JSON options ---
-        if let json = optionStr {
+        if let json = resolvedOptions {
             parseOptions(json)
         }
 
@@ -642,6 +655,7 @@ class AnalyzeUrl {
         bindings["key"] = key ?? ""
         bindings["speakText"] = speakText ?? ""
         bindings["speakSpeed"] = speakSpeed ?? 0
+        bindings["header"] = sourceHeader ?? ""
         return bindings
     }
 

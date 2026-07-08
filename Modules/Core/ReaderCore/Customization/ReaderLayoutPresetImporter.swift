@@ -120,7 +120,7 @@ private struct LegadoReadConfig: Decodable {
 
     var readerLayoutPreset: ReaderLayoutPreset {
         let baseFontSize = sanitized(textSize ?? 18, range: 12...32)
-        let fontSizeForRatio = max(baseFontSize ?? 18, 1)
+        let fontSizeForRatio = max(baseFontSize, 1)
         let lineHeight = lineSpacingExtra.map { value in
             sanitized(1 + max(0, value) / fontSizeForRatio, range: 1.0...2.4)
         }

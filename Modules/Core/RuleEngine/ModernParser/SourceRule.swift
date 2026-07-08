@@ -44,6 +44,12 @@ final class SourceRule {
     /// When `true`, only the first regex match is replaced (`###` suffix).
     var replaceFirst: Bool = false
 
+    /// URL options suffix extracted from `##$##` delimiter (源阅 syntax).
+    /// When a `##`-split segment ends with `$`, the next segment carries URL
+    /// option text (e.g. `,{header}`) rather than being a regex replacement.
+    /// Saved here and appended back to the resolved rule by the caller.
+    var urlOptionsSuffix: String = ""
+
     /// Key-value pairs extracted from `@put:{…}` directives.
     var putMap: [String: String] = [:]
 
@@ -184,17 +190,31 @@ final class SourceRule {
         // Split by ## to extract regex replacement info.
         // Bracket-aware split so that `@css:div[data-x="##"]` keeps its ## intact.
         let segments = Self.bracketAwareSplitOnHashHash(rule)
-        rule = segments[0].trimmingCharacters(in: .whitespaces)
+        var baseRule = segments[0]
 
-        if segments.count > 1 {
-            replaceRegex = segments[1]
+        // ##$## 源阅 delimiter: when segment[0] ends with `$`, the next ##
+        // segment carries URL options (e.g. `,{header}`), not a regex pattern.
+        urlOptionsSuffix = ""
+        if baseRule.hasSuffix("$"), segments.count > 1 {
+            baseRule = String(baseRule.dropLast()).trimmingCharacters(in: .whitespaces)
+            urlOptionsSuffix = segments[1]
         }
-        if segments.count > 2 {
-            replacement = segments[2]
+        rule = baseRule
+
+        var segIdx = 1
+        if !urlOptionsSuffix.isEmpty { segIdx = 2 }
+
+        if segments.count > segIdx {
+            replaceRegex = segments[segIdx]
+            segIdx += 1
+        }
+        if segments.count > segIdx {
+            replacement = segments[segIdx]
+            segIdx += 1
         }
         // ### suffix (Legado OnlyOne regex) produces a 4th non-empty segment ("#")
         // which is the standard way to signal "replace first match only".
-        if segments.count > 3, !segments[3].isEmpty {
+        if segments.count > segIdx, !segments[segIdx].isEmpty {
             replaceFirst = true
         }
     }

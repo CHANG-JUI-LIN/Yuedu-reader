@@ -527,6 +527,7 @@ struct BookSourceFormLoginView: View {
         engine.analyzeUrlHandler = { urlStr in
             let analyzeUrl = AnalyzeUrl(
                 ruleUrl: urlStr,
+                sourceHeader: source.header,
                 baseUrl: source.bookSourceUrl,
                 source: ruleData,
                 jsEvaluator: { js, bindings in engine.evaluate(js, bindings: bindings) }

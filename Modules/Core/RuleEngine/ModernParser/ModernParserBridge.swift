@@ -169,6 +169,7 @@ class ModernParserBridge {
             guard let self else { return nil }
             let analyzeUrl = AnalyzeUrl(
                 ruleUrl: urlStr,
+                sourceHeader: self.sourceRuleData.source.header,
                 baseUrl: self.sourceRuleData.source.bookSourceUrl,
                 source: self.sourceRuleData,
                 jsEvaluator: { [weak self] jsCode, bindings in
@@ -1235,6 +1236,7 @@ class ModernParserBridge {
             ruleUrl: ruleUrl,
             key: key,
             page: page,
+            sourceHeader: sourceRuleData.source.header,
             baseUrl: sourceRuleData.source.bookSourceUrl,
             source: sourceRuleData,
             jsEvaluator: { [weak self] jsCode, bindings in
