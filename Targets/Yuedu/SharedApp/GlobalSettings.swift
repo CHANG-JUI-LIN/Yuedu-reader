@@ -239,7 +239,9 @@ final class ReaderConfig: ObservableObject {
                 gs.readerTitleTopSpacing = Double(topSpacing)
                 gs.readerTitleBottomSpacing = Double(bottomSpacing)
                 guard let self, !self.suppressRefresh else { return }
-                self.refresh.send(.appearance)
+                // Title size/spacing/visibility change the in-content title, which
+                // shifts pagination — needs a relayout, not just a recolor.
+                self.refresh.send(.layout)
             }
             .store(in: &cancellables)
     }
@@ -610,7 +612,7 @@ class GlobalSettings: ObservableObject {
         readerTitleVisible =
             (UserDefaults.standard.object(forKey: "yd_reader_title_visible") as? Bool) ?? true
         readerTitleSize =
-            (UserDefaults.standard.object(forKey: "yd_reader_title_size") as? Double) ?? 14.0
+            (UserDefaults.standard.object(forKey: "yd_reader_title_size") as? Double) ?? 20.0
         readerTitleTopSpacing =
             (UserDefaults.standard.object(forKey: "yd_reader_title_top_spacing") as? Double) ?? 10.0
         readerTitleBottomSpacing =

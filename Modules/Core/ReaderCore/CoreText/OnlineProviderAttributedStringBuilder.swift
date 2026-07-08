@@ -334,7 +334,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         themeTextColor: UIColor,
         themeBackgroundColor: UIColor
     ) async -> AttributedChapterBuildResult {
-        let titleFont = UserReaderFontResolver.titleFont(size: settings.fontSize + 8, isBold: settings.isBold)
+        let titleFont = UserReaderFontResolver.titleFont(size: settings.titleSize, isBold: settings.isBold)
         let bodyFont = UserReaderFontResolver.bodyFont(size: settings.fontSize, isBold: settings.isBold)
         let bodyTargetLineHeight = ReaderTypographyCorrection.targetLineHeight(
             font: bodyFont,
@@ -348,7 +348,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
 
         let titleParaStyle = NSMutableParagraphStyle()
         titleParaStyle.alignment = .center
-        titleParaStyle.paragraphSpacing = 24
+        titleParaStyle.paragraphSpacingBefore = settings.titleTopSpacing
+        titleParaStyle.paragraphSpacing = settings.titleBottomSpacing
 
         let bodyParaStyle = NSMutableParagraphStyle()
         bodyParaStyle.alignment = .natural
@@ -358,15 +359,17 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         bodyParaStyle.paragraphSpacing = settings.paragraphSpacing
 
         let attr = NSMutableAttributedString()
-        attr.append(NSAttributedString(
-            string: payload.title + "\n",
-            attributes: [
-                .font: titleFont,
-                .foregroundColor: themeTextColor,
-                .paragraphStyle: titleParaStyle,
-                .kern: settings.letterSpacing as NSNumber
-            ]
-        ))
+        if settings.titleVisible, !payload.title.isEmpty {
+            attr.append(NSAttributedString(
+                string: payload.title + "\n",
+                attributes: [
+                    .font: titleFont,
+                    .foregroundColor: themeTextColor,
+                    .paragraphStyle: titleParaStyle,
+                    .kern: settings.letterSpacing as NSNumber
+                ]
+            ))
+        }
 
         let paragraphs = ReaderHTMLUtilities.bodyParagraphs(
             fromPlainText: text,

@@ -45,7 +45,7 @@ struct ReaderSettingsView: View {
     private let defaultPageMarginV: CGFloat = 16
     private let defaultFooterBottomPadding = ReaderLayoutMetrics.defaultFooterBottomPadding
     private let defaultFooterTextGap = ReaderLayoutMetrics.defaultFooterTextGap
-    private let defaultReaderTitleSize: CGFloat = 14
+    private let defaultReaderTitleSize: CGFloat = 20
     private let defaultReaderTitleTopSpacing: CGFloat = 10
     private let defaultReaderTitleBottomSpacing: CGFloat = 10
 

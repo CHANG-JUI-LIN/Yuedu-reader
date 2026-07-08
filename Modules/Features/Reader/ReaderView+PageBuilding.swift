@@ -27,7 +27,11 @@ extension ReaderView {
             contentInsets: UIEdgeInsets(top: topInset, left: marginH, bottom: bottomInset, right: marginH),
             writingMode: effectiveWritingMode,
             fontPostScriptName: UserReaderFontResolver.selectedPostScriptName,
-            isBold: readerConfig.readerFontBold
+            isBold: readerConfig.readerFontBold,
+            titleVisible: readerConfig.readerTitleVisible,
+            titleSize: readerConfig.readerTitleSize,
+            titleTopSpacing: readerConfig.readerTitleTopSpacing,
+            titleBottomSpacing: readerConfig.readerTitleBottomSpacing
         )
     }
 

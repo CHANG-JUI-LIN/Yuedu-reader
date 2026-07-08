@@ -80,7 +80,7 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         let chapterTitle = chapterTitle(at: index)
         let paragraphs = TXTChapterParser.paragraphsForChapterContent(chapterText)
 
-        let titleFont = UserReaderFontResolver.titleFont(size: settings.fontSize + 8, isBold: settings.isBold)
+        let titleFont = UserReaderFontResolver.titleFont(size: settings.titleSize, isBold: settings.isBold)
         let bodyFont = UserReaderFontResolver.bodyFont(size: settings.fontSize, isBold: settings.isBold)
         let bodyTargetLineHeight = ReaderTypographyCorrection.targetLineHeight(
             font: bodyFont,
@@ -94,7 +94,8 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
 
         let titleParaStyle = NSMutableParagraphStyle()
         titleParaStyle.alignment = .center
-        titleParaStyle.paragraphSpacing = 24
+        titleParaStyle.paragraphSpacingBefore = settings.titleTopSpacing
+        titleParaStyle.paragraphSpacing = settings.titleBottomSpacing
 
         let bodyParaStyle = NSMutableParagraphStyle()
         bodyParaStyle.alignment = .natural
@@ -104,17 +105,19 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         bodyParaStyle.paragraphSpacing = settings.paragraphSpacing
 
         let attrStr = NSMutableAttributedString()
-        attrStr.append(
-            NSAttributedString(
-                string: chapterTitle + "\n",
-                attributes: [
-                    .font: titleFont,
-                    .foregroundColor: themeTextColor,
-                    .paragraphStyle: titleParaStyle,
-                    .kern: settings.letterSpacing as NSNumber,
-                ]
+        if settings.titleVisible, !chapterTitle.isEmpty {
+            attrStr.append(
+                NSAttributedString(
+                    string: chapterTitle + "\n",
+                    attributes: [
+                        .font: titleFont,
+                        .foregroundColor: themeTextColor,
+                        .paragraphStyle: titleParaStyle,
+                        .kern: settings.letterSpacing as NSNumber,
+                    ]
+                )
             )
-        )
+        }
 
         for para in paragraphs {
             let indentedPara = "\u{3000}\u{3000}" + para.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"

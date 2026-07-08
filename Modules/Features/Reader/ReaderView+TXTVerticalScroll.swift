@@ -127,7 +127,11 @@ extension ReaderView {
             ),
             writingMode: effectiveWritingMode,
             fontPostScriptName: UserReaderFontResolver.selectedPostScriptName,
-            isBold: readerConfig.readerFontBold
+            isBold: readerConfig.readerFontBold,
+            titleVisible: readerConfig.readerTitleVisible,
+            titleSize: readerConfig.readerTitleSize,
+            titleTopSpacing: readerConfig.readerTitleTopSpacing,
+            titleBottomSpacing: readerConfig.readerTitleBottomSpacing
         )
     }
 
@@ -152,7 +156,7 @@ extension ReaderView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(chapters.enumerated()), id: \.offset) { ci, chapter in
                         Text(chapter.title.converted(to: settings.textConversion))
-                            .font(.system(size: fontSize + 8, weight: .bold, design: .serif))
+                            .font(.system(size: readerConfig.readerTitleSize, weight: .bold, design: .serif))
                             .foregroundColor(readerTheme.textColor)
                             .padding(.top, 80)
                             .padding(.horizontal, 24)

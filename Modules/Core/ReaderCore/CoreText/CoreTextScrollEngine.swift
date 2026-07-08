@@ -137,7 +137,12 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             footerHeight: renderSettings.footerHeight,
             contentInsets: renderSettings.contentInsets,
             writingMode: renderSettings.writingMode,
-            fontPostScriptName: renderSettings.fontPostScriptName
+            fontPostScriptName: renderSettings.fontPostScriptName,
+            isBold: renderSettings.isBold,
+            titleVisible: renderSettings.titleVisible,
+            titleSize: renderSettings.titleSize,
+            titleTopSpacing: renderSettings.titleTopSpacing,
+            titleBottomSpacing: renderSettings.titleBottomSpacing
         )
     }
 

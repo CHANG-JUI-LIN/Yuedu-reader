@@ -675,6 +675,13 @@ struct ReaderRenderSettings: Equatable {
     /// but included here so the relayout dedup check detects font changes.
     var fontPostScriptName: String? = nil
     var isBold: Bool = false
+    // In-content chapter title (rendered at the top of each chapter). Driven by
+    // the reader's "顯示標題 / 標題大小 / 標題上距 / 標題下距" settings; included
+    // here so a change re-triggers pagination via the relayout dedup check.
+    var titleVisible: Bool = true
+    var titleSize: CGFloat = 20
+    var titleTopSpacing: CGFloat = 10
+    var titleBottomSpacing: CGFloat = 10
 }
 
 enum ReaderWritingMode: String, CaseIterable, Codable {
