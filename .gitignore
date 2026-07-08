@@ -54,3 +54,6 @@ AGENTS.md
 LocalPackages/
 CLAUDE.md
 .codex/
+
+# Local theme-pack sample material (IP images, ~52MB) — not shipped; theme packs deferred
+Resources/Assets/ReaderThemes/

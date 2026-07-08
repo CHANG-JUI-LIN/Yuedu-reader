@@ -14,6 +14,7 @@ struct ReaderView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.colorScheme) private var systemColorScheme
     @ObservedObject var settings = GlobalSettings.shared
+    @ObservedObject var subscriptionStore = SubscriptionStore.shared
     @StateObject var readerConfig = ReaderConfig.shared
 
     // MARK: - Speculative Pre-Layout for Cross-Chapter Scrolling
@@ -166,6 +167,20 @@ struct ReaderView: View {
         if readerConfig.theme != desired {
             readerConfig.theme = desired
         }
+    }
+
+    /// Applies the selected app appearance theme to the reader only when the
+    /// user explicitly enables "bind reading theme" in Settings.
+    func syncActiveThemePreset() {
+        let preset = settings.appearanceBindReaderTheme
+            ? settings.appearanceTheme(
+                for: systemColorScheme,
+                isProActive: subscriptionStore.hasAccess(.readerThemePacks)
+            )
+            : nil
+        guard AppearanceThemePreset.activeReaderTheme != preset else { return }
+        AppearanceThemePreset.activeReaderTheme = preset
+        readerConfig.refresh.send(.appearance)
     }
 
 
@@ -977,6 +992,12 @@ struct ReaderView: View {
     private func buildBody() -> AnyView {
         AnyView(
             ZStack(alignment: .top) {
+            AppearanceThemeBackgroundView(
+                preset: AppearanceThemePreset.activeReaderTheme,
+                colorScheme: systemColorScheme
+            )
+            .id(AppearanceThemePreset.activeReaderTheme?.id ?? "no-reader-theme-background")
+
             readerTheme.backgroundColor
                 .ignoresSafeArea()
                 .animation(.easeInOut(duration: uiFeedbackDuration), value: readerTheme)
@@ -1182,6 +1203,7 @@ struct ReaderView: View {
                 ]
             )
             readerConfig.syncFromGlobalSettings()
+            syncActiveThemePreset()
             applyFollowSystemThemeIfNeeded()
             if !hasPerformedInitialLoad {
                 snapshotBook = book
@@ -1287,9 +1309,28 @@ struct ReaderView: View {
         }
         .onChanged(of: systemColorScheme) { _ in
             applyFollowSystemThemeIfNeeded()
+            syncActiveThemePreset()
         }
         .onChanged(of: settings.readerFollowSystemTheme) { _ in
             applyFollowSystemThemeIfNeeded()
+        }
+        .onChanged(of: settings.appearanceThemeID) { _ in
+            syncActiveThemePreset()
+        }
+        .onChanged(of: settings.appearanceDarkThemeID) { _ in
+            syncActiveThemePreset()
+        }
+        .onChanged(of: settings.appearanceUsesSeparateDarkTheme) { _ in
+            syncActiveThemePreset()
+        }
+        .onChanged(of: settings.appearanceBindReaderTheme) { _ in
+            syncActiveThemePreset()
+        }
+        .onChanged(of: settings.customAppearanceThemes) { _ in
+            syncActiveThemePreset()
+        }
+        .onReceive(subscriptionStore.$isProActive) { _ in
+            syncActiveThemePreset()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification))
         { _ in
@@ -1769,7 +1810,4 @@ struct ReaderView: View {
     // MARK: - Loading & Page Building
     // Extracted to ReaderView+PageBuilding.swift
 }
-
-
-
 

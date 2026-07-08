@@ -3,9 +3,9 @@ import Testing
 
 @Suite("Bookshelf Grid Layout Settings")
 struct BookshelfGridLayoutSettingsTests {
-    @Test("grid column options start with 2, 3, and 4")
-    func gridColumnOptionsAreTwoThreeFour() {
-        #expect(GlobalSettings.bookshelfGridColumnCountOptions == [2, 3, 4])
+    @Test("grid column options include 2 through 5")
+    func gridColumnOptionsAreTwoThroughFive() {
+        #expect(GlobalSettings.bookshelfGridColumnCountOptions == [2, 3, 4, 5])
         #expect(GlobalSettings.defaultBookshelfGridColumnCount == 3)
     }
 
@@ -15,6 +15,7 @@ struct BookshelfGridLayoutSettingsTests {
         #expect(GlobalSettings.sanitizedBookshelfGridColumnCount(2) == 2)
         #expect(GlobalSettings.sanitizedBookshelfGridColumnCount(3) == 3)
         #expect(GlobalSettings.sanitizedBookshelfGridColumnCount(4) == 4)
-        #expect(GlobalSettings.sanitizedBookshelfGridColumnCount(5) == 4)
+        #expect(GlobalSettings.sanitizedBookshelfGridColumnCount(5) == 5)
+        #expect(GlobalSettings.sanitizedBookshelfGridColumnCount(6) == 5)
     }
 }

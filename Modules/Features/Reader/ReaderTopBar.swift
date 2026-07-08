@@ -3,6 +3,10 @@ import SwiftUI
 struct ReaderTopBar: View {
     let theme: ReaderTheme
     let chapterTitle: String
+    let titleVisible: Bool
+    let titleSize: CGFloat
+    let titleTopSpacing: CGFloat
+    let titleBottomSpacing: CGFloat
     let isBookmarked: Bool
     let overlayMaxWidth: CGFloat
     let onBack: () -> Void
@@ -28,11 +32,15 @@ struct ReaderTopBar: View {
                             .frame(width: 36, height: 36)
                     }
                     
-                    Text(chapterTitle)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(theme.textColor)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
+                    if titleVisible {
+                        Text(chapterTitle)
+                            .font(.system(size: titleSize, weight: .medium))
+                            .foregroundColor(theme.textColor)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Spacer(minLength: 0)
+                    }
                     
                     Button {
                         onToggleBookmark()
@@ -43,8 +51,6 @@ struct ReaderTopBar: View {
                             .scaleEffect(isBookmarked ? 1.15 : 1.0)
                             .frame(width: 36, height: 36)
                     }
-                    // Wait, we need uiFeedbackDuration here, but since it's hardcoded externally often 0.15,
-                    // we'll pass the animation from the parent block, so we just use normal animation here.
                     .animation(.easeInOut(duration: 0.15), value: isBookmarked)
 
                     if let onOpenBookDetail {
@@ -63,7 +69,8 @@ struct ReaderTopBar: View {
                 .frame(maxWidth: overlayMaxWidth)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.top, titleTopSpacing)
+            .padding(.bottom, titleBottomSpacing)
             .background(theme.barColor)
             
             Divider().opacity(0.18)

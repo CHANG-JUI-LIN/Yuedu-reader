@@ -73,7 +73,7 @@ struct UserDetailView: View {
                                     .foregroundColor(.white)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
-                                    .background(Color.blue)
+                                    .background(DSColor.accent)
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             .padding(.top, 8)
@@ -255,6 +255,7 @@ struct UserDetailView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .themedAppSurface()
         .navigationTitle(localized("個人資料"))
         .toolbarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
@@ -378,10 +379,10 @@ struct UserDetailView: View {
     }
 
     private var syncStatusColor: Color {
-        guard gs.isLoggedIn else { return .blue }
+        guard gs.isLoggedIn else { return DSColor.accent }
         switch firestoreSync.state {
         case .synced, .syncing:
-            return .blue
+            return DSColor.accent
         case .failed:
             return .orange
         default:
@@ -478,7 +479,7 @@ struct AccountAvatarView: View {
                         Image(systemName: "person.crop.circle.fill")
                             .resizable()
                             .scaledToFit()
-                            .foregroundColor(.blue)
+                            .foregroundColor(DSColor.accent)
                             .padding(size * 0.08)
                     }
                 }
@@ -486,7 +487,7 @@ struct AccountAvatarView: View {
                 Image(systemName: gs.isLoggedIn ? "person.crop.circle.fill" : "person.crop.circle")
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(gs.isLoggedIn ? .blue : .secondary)
+                    .foregroundColor(gs.isLoggedIn ? DSColor.accent : .secondary)
                     .padding(size * 0.08)
             }
         }

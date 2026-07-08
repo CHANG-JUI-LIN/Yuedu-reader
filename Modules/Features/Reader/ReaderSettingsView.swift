@@ -11,10 +11,14 @@ struct ReaderSettingsView: View {
 
     @StateObject private var readerConfig = ReaderConfig.shared
     @ObservedObject private var settings = GlobalSettings.shared
+    @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var systemColorScheme
     @State private var showingFontImporter = false
+    @State private var showingLayoutImporter = false
+    @State private var showLayoutPaywall = false
     @State private var fontImportError: FontImportError?
+    @State private var layoutImportAlert: LayoutImportAlert?
     @State private var customLayoutEnabled = true
 
     private var supportsFontSize: Bool { capabilities.contains(.fontSize) }
@@ -38,8 +42,12 @@ struct ReaderSettingsView: View {
     private let defaultLetterSpacing: CGFloat = 0
     private let defaultParagraphSpacingMultiplier: CGFloat = 0.8
     private let defaultPageMarginH: CGFloat = 24
+    private let defaultPageMarginV: CGFloat = 16
     private let defaultFooterBottomPadding = ReaderLayoutMetrics.defaultFooterBottomPadding
     private let defaultFooterTextGap = ReaderLayoutMetrics.defaultFooterTextGap
+    private let defaultReaderTitleSize: CGFloat = 14
+    private let defaultReaderTitleTopSpacing: CGFloat = 10
+    private let defaultReaderTitleBottomSpacing: CGFloat = 10
 
     private enum PageTurnOption: String, CaseIterable, Hashable {
         case slide
@@ -112,12 +120,30 @@ struct ReaderSettingsView: View {
         ) { result in
             handleFontImport(result)
         }
+        .fileImporter(
+            isPresented: $showingLayoutImporter,
+            allowedContentTypes: Self.layoutPresetContentTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            handleLayoutImport(result)
+        }
         .alert(item: $fontImportError) { error in
             Alert(
                 title: Text(localized("字體匯入失敗")),
                 message: Text(error.message),
                 dismissButton: .default(Text(localized("確定")))
             )
+        }
+        .alert(item: $layoutImportAlert) { alert in
+            Alert(
+                title: Text(localized(alert.titleKey)),
+                message: Text(alert.message),
+                dismissButton: .default(Text(localized("確定")))
+            )
+        }
+        .sheet(isPresented: $showLayoutPaywall) {
+            PaywallView(highlightedFeature: .layoutPresetImport)
+                .environmentObject(SubscriptionStore.shared)
         }
         .onAppear {
             customLayoutEnabled = hasCustomLayoutOverrides
@@ -357,6 +383,19 @@ struct ReaderSettingsView: View {
 
     private var layoutDetailsSection: some View {
         Section(header: Text(localized("輔助使用與佈局選項"))) {
+            Button {
+                if subscriptionStore.hasAccess(.layoutPresetImport) {
+                    showingLayoutImporter = true
+                } else {
+                    showLayoutPaywall = true
+                }
+            } label: {
+                Label(
+                    localized("匯入排版參數"),
+                    systemImage: subscriptionStore.hasAccess(.layoutPresetImport) ? "square.and.arrow.down" : "lock.fill"
+                )
+            }
+
             if !settings.scrollMode {
                 ToggleRow(
                     title: localized("全局翻頁"),
@@ -425,6 +464,39 @@ struct ReaderSettingsView: View {
                         range: 0...48,
                         step: 1
                     )
+
+                    Toggle(localized("顯示標題"), isOn: $readerConfig.readerTitleVisible)
+                        .font(.body)
+
+                    LayoutSliderRow(
+                        title: localized("標題大小"),
+                        icon: .titleSize,
+                        valueText: "\(Int(readerConfig.readerTitleSize)) pt",
+                        value: $readerConfig.readerTitleSize,
+                        range: 10...24,
+                        step: 1,
+                        isEnabled: readerConfig.readerTitleVisible
+                    )
+
+                    LayoutSliderRow(
+                        title: localized("標題上距"),
+                        icon: .titleTopSpacing,
+                        valueText: "\(Int(readerConfig.readerTitleTopSpacing)) pt",
+                        value: $readerConfig.readerTitleTopSpacing,
+                        range: 0...28,
+                        step: 1,
+                        isEnabled: readerConfig.readerTitleVisible
+                    )
+
+                    LayoutSliderRow(
+                        title: localized("標題下距"),
+                        icon: .titleBottomSpacing,
+                        valueText: "\(Int(readerConfig.readerTitleBottomSpacing)) pt",
+                        value: $readerConfig.readerTitleBottomSpacing,
+                        range: 0...28,
+                        step: 1,
+                        isEnabled: readerConfig.readerTitleVisible
+                    )
                 }
             }
         }
@@ -472,8 +544,13 @@ struct ReaderSettingsView: View {
             abs(readerConfig.letterSpacing - defaultLetterSpacing) > 0.001 ||
             abs(readerConfig.paragraphSpacingMultiplier - defaultParagraphSpacingMultiplier) > 0.001 ||
             abs(readerConfig.pageMarginH - defaultPageMarginH) > 0.001 ||
+            abs(readerConfig.pageMarginV - defaultPageMarginV) > 0.001 ||
             abs(readerConfig.footerBottomPadding - defaultFooterBottomPadding) > 0.001 ||
-            abs(readerConfig.footerTextGap - defaultFooterTextGap) > 0.001
+            abs(readerConfig.footerTextGap - defaultFooterTextGap) > 0.001 ||
+            readerConfig.readerTitleVisible != true ||
+            abs(readerConfig.readerTitleSize - defaultReaderTitleSize) > 0.001 ||
+            abs(readerConfig.readerTitleTopSpacing - defaultReaderTitleTopSpacing) > 0.001 ||
+            abs(readerConfig.readerTitleBottomSpacing - defaultReaderTitleBottomSpacing) > 0.001
     }
 
     private func resetLayoutDefaults() {
@@ -481,8 +558,13 @@ struct ReaderSettingsView: View {
         readerConfig.letterSpacing = defaultLetterSpacing
         readerConfig.paragraphSpacingMultiplier = defaultParagraphSpacingMultiplier
         readerConfig.pageMarginH = defaultPageMarginH
+        readerConfig.pageMarginV = defaultPageMarginV
         readerConfig.footerBottomPadding = defaultFooterBottomPadding
         readerConfig.footerTextGap = defaultFooterTextGap
+        readerConfig.readerTitleVisible = true
+        readerConfig.readerTitleSize = defaultReaderTitleSize
+        readerConfig.readerTitleTopSpacing = defaultReaderTitleTopSpacing
+        readerConfig.readerTitleBottomSpacing = defaultReaderTitleBottomSpacing
     }
 
     private var pageTurnOptionBinding: Binding<PageTurnOption> {
@@ -561,6 +643,11 @@ struct ReaderSettingsView: View {
         UTType(filenameExtension: "otf") ?? .data,
     ]
 
+    private static let layoutPresetContentTypes: [UTType] = [
+        .json,
+        UTType(filenameExtension: "zip") ?? .data,
+    ]
+
     private func handleFontImport(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
@@ -576,6 +663,82 @@ struct ReaderSettingsView: View {
             fontImportError = FontImportError(message: error.localizedDescription)
         }
     }
+
+    private func handleLayoutImport(_ result: Result<[URL], Error>) {
+        Task { @MainActor in
+            do {
+                guard let url = try result.get().first else { return }
+                let shouldStopAccessing = url.startAccessingSecurityScopedResource()
+                defer {
+                    if shouldStopAccessing {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+                let preset = try await ReaderLayoutPresetImporter.importPreset(from: url)
+                applyLayoutPreset(preset)
+                let importedName = preset.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let message = importedName?.isEmpty == false
+                    ? String(format: localized("已匯入「%@」的排版參數"), importedName!)
+                    : localized("已匯入排版參數")
+                layoutImportAlert = LayoutImportAlert(titleKey: "排版匯入成功", message: message)
+            } catch {
+                layoutImportAlert = LayoutImportAlert(
+                    titleKey: "排版匯入失敗",
+                    message: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func applyLayoutPreset(_ preset: ReaderLayoutPreset) {
+        customLayoutEnabled = true
+        if let fontSize = preset.fontSize {
+            self.fontSize = fontSize
+        }
+        if let isBold = preset.isBold {
+            readerConfig.readerFontBold = isBold
+        }
+        if let lineHeightMultiple = preset.lineHeightMultiple {
+            readerConfig.lineHeightMultiple = lineHeightMultiple
+        }
+        if let letterSpacing = preset.letterSpacing {
+            readerConfig.letterSpacing = letterSpacing
+        }
+        if let paragraphSpacingMultiplier = preset.paragraphSpacingMultiplier {
+            readerConfig.paragraphSpacingMultiplier = paragraphSpacingMultiplier
+        }
+        if let pageMarginH = preset.pageMarginH {
+            readerConfig.pageMarginH = pageMarginH
+        }
+        if let pageMarginV = preset.pageMarginV {
+            readerConfig.pageMarginV = pageMarginV
+        }
+        if let footerBottomPadding = preset.footerBottomPadding {
+            readerConfig.footerBottomPadding = footerBottomPadding
+        }
+        if let footerTextGap = preset.footerTextGap {
+            readerConfig.footerTextGap = footerTextGap
+        }
+        if let titleVisible = preset.titleVisible {
+            readerConfig.readerTitleVisible = titleVisible
+        }
+        if let titleSize = preset.titleSize {
+            readerConfig.readerTitleSize = titleSize
+        }
+        if let titleTopSpacing = preset.titleTopSpacing {
+            readerConfig.readerTitleTopSpacing = titleTopSpacing
+        }
+        if let titleBottomSpacing = preset.titleBottomSpacing {
+            readerConfig.readerTitleBottomSpacing = titleBottomSpacing
+        }
+        if let scrollMode = preset.scrollMode {
+            settings.scrollMode = scrollMode
+        }
+        if let pageTurnStyle = preset.pageTurnStyle, preset.scrollMode != true {
+            settings.pageTurnStyle = pageTurnStyle
+        }
+        readerConfig.refresh.send(.layout)
+    }
 }
 
 private enum LayoutMetricIconKind {
@@ -585,6 +748,9 @@ private enum LayoutMetricIconKind {
     case pageMargin
     case footerBottom
     case footerTextGap
+    case titleSize
+    case titleTopSpacing
+    case titleBottomSpacing
 }
 
 
@@ -691,6 +857,23 @@ private struct LayoutMetricIcon: View {
                 Image(systemName: "arrow.up.and.down")
                     .font(.system(size: 12, weight: .bold))
                 iconLine(width: 14)
+            }
+        case .titleSize:
+            Image(systemName: "textformat.size")
+                .font(.system(size: 18, weight: .semibold))
+        case .titleTopSpacing:
+            VStack(spacing: 3) {
+                Image(systemName: "arrow.up.to.line")
+                    .font(.system(size: 12, weight: .bold))
+                Text("T")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+        case .titleBottomSpacing:
+            VStack(spacing: 3) {
+                Text("T")
+                    .font(.system(size: 13, weight: .semibold))
+                Image(systemName: "arrow.down.to.line")
+                    .font(.system(size: 12, weight: .bold))
             }
         }
     }
@@ -803,6 +986,12 @@ private struct ToggleRow: View {
 
 private struct FontImportError: Identifiable {
     let id = UUID()
+    let message: String
+}
+
+private struct LayoutImportAlert: Identifiable {
+    let id = UUID()
+    let titleKey: String
     let message: String
 }
 

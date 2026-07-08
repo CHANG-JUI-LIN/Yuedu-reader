@@ -100,7 +100,7 @@ private struct VerticalTOCColumn: View {
                     isSelected: isSelected,
                     maxCharacters: 24
                 )
-                .foregroundStyle(isSelected ? Color.blue : Color.primary)
+                .foregroundStyle(isSelected ? DSColor.accent : Color.primary)
                 .frame(width: VerticalTOCLayout.textWidth, alignment: .top)
                 .frame(maxHeight: .infinity, alignment: .top)
 
@@ -128,7 +128,7 @@ private struct VerticalTOCColumn: View {
             .overlay(alignment: .leading) {
                 if isSelected {
                     Rectangle()
-                        .fill(Color.blue)
+                        .fill(DSColor.accent)
                         .frame(width: VerticalTOCLayout.selectedBarWidth)
                 }
             }

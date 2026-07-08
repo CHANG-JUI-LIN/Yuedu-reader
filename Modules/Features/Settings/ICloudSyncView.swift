@@ -127,7 +127,7 @@ struct ICloudSyncView: View {
     private var statusColor: Color {
         switch manager.accountStatus {
         case .available:
-            return .blue
+            return DSColor.accent
         case .noAccount, .restricted, .temporarilyUnavailable:
             return .orange
         default:

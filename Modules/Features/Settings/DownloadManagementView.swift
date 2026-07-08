@@ -88,7 +88,7 @@ struct DownloadManagementView: View {
                                 .foregroundColor(DSColor.textSecondary)
                         }
                         ProgressView(value: downloadProgress(for: book))
-                            .tint(book.offlineDownloadState == .paused ? DSColor.textSecondary : .blue)
+                            .tint(book.offlineDownloadState == .paused ? DSColor.textSecondary : DSColor.accent)
                         HStack {
                             Text(String(format: "%.1f MB", cacheSizeMB(for: book)))
                                 .font(DSFont.caption)

@@ -1018,14 +1018,14 @@ struct WebTOCSheet: View {
                             Spacer()
                             if idx == selectedIndex {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(DSColor.accent)
                             }
                         }
                         .padding(.vertical, 2)
                     }
                     .buttonStyle(.plain)
                     .listRowBackground(
-                        idx == selectedIndex ? Color.blue.opacity(0.07) : Color.clear
+                        idx == selectedIndex ? DSColor.accent.opacity(0.07) : Color.clear
                     )
                 }
                 .listStyle(.plain)
@@ -1046,7 +1046,7 @@ struct WebTOCSheet: View {
                         .font(.system(size: 16, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Color.blue)
+                        .background(DSColor.accent)
                         .foregroundColor(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                 }

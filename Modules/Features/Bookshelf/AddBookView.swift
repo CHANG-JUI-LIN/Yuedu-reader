@@ -224,7 +224,7 @@ struct FileImportTab: View {
                         } label: {
                             Label(localized("加入書架"), systemImage: "books.vertical")
                                 .frame(maxWidth: .infinity).padding()
-                                .background(Color.blue).foregroundColor(.white)
+                                .background(DSColor.accent).foregroundColor(.white)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
                         .disabled(titleInput.trimmingCharacters(in: .whitespaces).isEmpty || isLoading)
@@ -245,12 +245,12 @@ struct FileImportTab: View {
                                 .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                         }
                         .frame(maxWidth: .infinity).padding(32)
-                        .background(Color.blue.opacity(0.08))
+                        .background(DSColor.accentLight)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .overlay(
                             RoundedRectangle(cornerRadius: 14)
                                 .strokeBorder(
-                                    Color.blue.opacity(0.4),
+                                    DSColor.accent.opacity(0.4),
                                     style: StrokeStyle(lineWidth: 1.5, dash: [6])))
                     }
                     .buttonStyle(.plain)
@@ -824,7 +824,7 @@ struct URLImportTab: View {
                     } label: {
                         Label(localized("抓取頁面"), systemImage: "arrow.down.circle")
                             .frame(maxWidth: .infinity).padding()
-                            .background(Color.blue).foregroundColor(.white)
+                            .background(DSColor.accent).foregroundColor(.white)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .disabled(urlInput.trimmingCharacters(in: .whitespaces).isEmpty || isLoading)
@@ -940,7 +940,7 @@ struct HintCard: View {
             Spacer()
         }
         .padding()
-        .background(Color.blue.opacity(0.06))
+        .background(DSColor.accent.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }

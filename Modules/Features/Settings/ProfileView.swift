@@ -3,7 +3,9 @@ import UIKit
 
 struct SettingsView: View {
     @EnvironmentObject var store: BookStore
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.openURL) private var openURL
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var gs = GlobalSettings.shared
     @State private var showSourceList = false
     @State private var showDownloadManager = false
@@ -41,6 +43,13 @@ struct SettingsView: View {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     }
 
+    private var appearanceThemeName: String {
+        gs.appearanceTheme(
+            for: colorScheme,
+            isProActive: subscriptionStore.hasAccess(.readerThemePacks)
+        ).localizedName
+    }
+
     var body: some View {
         NavigationStack {
                 Form {
@@ -65,6 +74,22 @@ struct SettingsView: View {
                                 }
                             }
                         )
+                    }
+
+                    Section(header: Text(localized("外觀"))) {
+                        NavigationLink {
+                            AppearanceThemeView()
+                        } label: {
+                            HStack {
+                                Label(localized("外觀主題"), systemImage: "paintpalette.fill")
+                                    .foregroundColor(DSColor.textPrimary)
+                                    .labelStyle(IconConsistentLabelStyle())
+                                Spacer(minLength: 12)
+                                Text(appearanceThemeName)
+                                    .font(DSFont.caption)
+                                    .foregroundColor(DSColor.textSecondary)
+                            }
+                        }
                     }
 
                     Section(header: Text(localized("書架顯示"))) {
@@ -170,6 +195,7 @@ struct SettingsView: View {
                         }
                     }
                 }
+            .themedAppSurface()
             .navigationTitle(localized("設定"))
             .toolbarTitleDisplayModeInlineLarge()
             .sheet(isPresented: $showSourceList) {

@@ -1,4 +1,14 @@
 {
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
   "identifier" : "D6E64924-88B9-4443-B9DB-BA7DA9C6F7ED",
   "nonRenewingSubscriptions" : [
 
@@ -8,15 +18,24 @@
   ],
   "settings" : {
     "_applicationInternalID" : "6772972358",
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
     "_developerTeamID" : "",
+    "_disableDialogs" : false,
     "_failTransactionsEnabled" : false,
     "_lastSynchronizedDate" : 0,
-    "_locale" : "zh_TW",
+    "_locale" : "zh_Hant",
+    "_renewalBillingIssuesEnabled" : false,
     "_storefront" : "USA",
     "_storeKitErrors" : [
 
-    ]
+    ],
+    "_timeRate" : 0
   },
+  "subscriptionBundleGroups" : [
+
+  ],
   "subscriptionGroups" : [
     {
       "id" : "4B1A0032-648A-4BE4-AAE6-86B68D25D05B",
@@ -24,7 +43,7 @@
         {
           "description" : "",
           "displayName" : "Yuedu Pro",
-          "locale" : "zh_TW"
+          "locale" : "zh_Hant"
         }
       ],
       "name" : "Yuedu Pro",
@@ -33,6 +52,15 @@
           "adHocOffers" : [
 
           ],
+          "billingPlans" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "commitmentDisplayPrice" : "14.99",
+              "displayPrice" : "14.99",
+              "internalID" : "AAB7E4DD",
+              "isEnabled" : true
+            }
+          ],
           "codeOffers" : [
 
           ],
@@ -40,12 +68,14 @@
           "familyShareable" : false,
           "groupNumber" : 1,
           "internalID" : "C3BA2738-5ACB-4F05-9FED-5AE9CA1F1C49",
-          "introductoryOffer" : null,
+          "introductoryOffers" : [
+
+          ],
           "localizations" : [
             {
               "description" : "解鎖全部 Yuedu Pro 高級個人化，按年計費",
               "displayName" : "Yuedu Pro 年訂閱",
-              "locale" : "zh_TW"
+              "locale" : "zh_Hant"
             },
             {
               "description" : "Unlock all Yuedu Pro personalization, billed yearly",
@@ -57,11 +87,23 @@
           "recurringSubscriptionPeriod" : "P1Y",
           "referenceName" : "Yuedu Pro Yearly",
           "subscriptionGroupID" : "4B1A0032-648A-4BE4-AAE6-86B68D25D05B",
-          "type" : "RecurringSubscription"
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
         },
         {
           "adHocOffers" : [
 
+          ],
+          "billingPlans" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "commitmentDisplayPrice" : "1.99",
+              "displayPrice" : "1.99",
+              "internalID" : "04E985CE",
+              "isEnabled" : true
+            }
           ],
           "codeOffers" : [
 
@@ -70,12 +112,14 @@
           "familyShareable" : false,
           "groupNumber" : 1,
           "internalID" : "1CECCECC-C9F7-4D2E-91CE-EBE64E3EE96C",
-          "introductoryOffer" : null,
+          "introductoryOffers" : [
+
+          ],
           "localizations" : [
             {
               "description" : "解鎖全部 Yuedu Pro 高級個人化，按月計費",
               "displayName" : "Yuedu Pro 月訂閱",
-              "locale" : "zh_TW"
+              "locale" : "zh_Hant"
             },
             {
               "description" : "Unlock all Yuedu Pro personalization, billed monthly",
@@ -87,13 +131,19 @@
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Yuedu Pro Monthly",
           "subscriptionGroupID" : "4B1A0032-648A-4BE4-AAE6-86B68D25D05B",
-          "type" : "RecurringSubscription"
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
         }
       ]
     }
   ],
+  "subscriptionSuiteGroups" : [
+
+  ],
   "version" : {
-    "major" : 4,
-    "minor" : 0
+    "major" : 6,
+    "minor" : 3
   }
 }

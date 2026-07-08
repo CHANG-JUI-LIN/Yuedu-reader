@@ -41,7 +41,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
         case .layoutPresetImport: return "排版參數導入"
         case .readerBackgroundImport: return "閱讀背景導入"
         case .bottomBarCustomization: return "底部導覽列自訂"
-        case .readerThemePacks: return "閱讀器主題包"
+        case .readerThemePacks: return "外觀主題包"
         case .alternateAppIcons: return "桌面圖標切換"
         }
     }
@@ -54,8 +54,8 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
         case .dialogueHighlight: return "自動高亮引號對話與角色台詞"
         case .layoutPresetImport: return "匯入排版參數 preset 一鍵套用"
         case .readerBackgroundImport: return "匯入圖片作為閱讀背景"
-        case .bottomBarCustomization: return "排序與隱藏底部工具項"
-        case .readerThemePacks: return "套用整組閱讀器主題配色"
+        case .bottomBarCustomization: return "自訂底部 Tab 頁面、大小與圖標"
+        case .readerThemePacks: return "套用整組外觀主題與閱讀主題配色"
         case .alternateAppIcons: return "切換預置的桌面圖標"
         }
     }

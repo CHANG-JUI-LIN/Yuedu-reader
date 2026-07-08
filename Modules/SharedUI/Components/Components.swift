@@ -35,7 +35,7 @@ struct DSSettingsRow: View {
     let title: String
     var detail: String? = nil
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             HStack {
@@ -60,10 +60,39 @@ struct DSSettingsRow: View {
 struct IconConsistentLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 8) {
-            configuration.icon
-                .font(.system(size: 17, weight: .medium))
-                .frame(width: 28, height: 28)
+            themedIcon(configuration.icon)
             configuration.title
+        }
+    }
+
+    /// Row icons pick up the theme accent when an app theme is active; with no
+    /// theme (classic) they keep whatever color the label was given (primary).
+    @ViewBuilder
+    private func themedIcon(_ icon: Configuration.Icon) -> some View {
+        let sized = icon
+            .font(.system(size: 17, weight: .medium))
+            .frame(width: 28, height: 28)
+        if AppearanceThemePreset.activeAppTheme != nil {
+            sized.foregroundStyle(DSColor.accent)
+        } else {
+            sized
+        }
+    }
+}
+
+extension View {
+    /// Retints a scrollable `Form`/`List` to the active app theme by hiding the
+    /// system background and painting the themed page color behind it. A no-op
+    /// when no theme is active (classic), so default users keep the exact system
+    /// appearance. Apply directly on the `Form`/`List` — applying it to an
+    /// ancestor does not reliably reach a `List` nested inside a NavigationStack.
+    @ViewBuilder
+    func themedAppSurface() -> some View {
+        if AppearanceThemePreset.activeAppTheme != nil {
+            scrollContentBackground(.hidden)
+                .background(DSColor.groupedBackground.ignoresSafeArea())
+        } else {
+            self
         }
     }
 }

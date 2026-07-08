@@ -199,7 +199,7 @@ struct ReaderDownloadOptionsView: View {
                         .foregroundColor(DSColor.textSecondary)
                 }
                 ProgressView(value: progressValue)
-                    .tint(downloadState == .downloading ? .blue : DSColor.textSecondary)
+                    .tint(downloadState == .downloading ? DSColor.accent : DSColor.textSecondary)
             }
             .padding(.vertical, DSSpacing.xs)
         }

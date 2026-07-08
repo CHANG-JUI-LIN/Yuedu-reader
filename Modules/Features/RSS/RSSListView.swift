@@ -399,7 +399,7 @@ struct RSSListView: View {
                 } label: {
                     Label(localized("標記全部已讀"), systemImage: "checkmark.circle")
                 }
-                .tint(.blue)
+                .tint(DSColor.accent)
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {

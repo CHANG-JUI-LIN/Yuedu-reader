@@ -72,6 +72,7 @@ enum ReaderTheme: String, CaseIterable {
     }
 
     var uiBackgroundColor: UIColor {
+        if let preset = AppearanceThemePreset.activeReaderTheme { return preset.background }
         switch self {
         case .white: return Self.weChatDayBackground
         case .sepia: return UIColor(red: 244 / 255, green: 236 / 255, blue: 216 / 255, alpha: 1)
@@ -80,6 +81,7 @@ enum ReaderTheme: String, CaseIterable {
     }
 
     var uiTextColor: UIColor {
+        if let preset = AppearanceThemePreset.activeReaderTheme { return preset.text }
         switch self {
         case .white: return UIColor(red: 51 / 255, green: 51 / 255, blue: 51 / 255, alpha: 1)
         case .sepia: return UIColor(red: 91 / 255, green: 70 / 255, blue: 54 / 255, alpha: 1)
@@ -88,7 +90,8 @@ enum ReaderTheme: String, CaseIterable {
     }
 
     var uiAccentColor: UIColor {
-        Self.weChatAccent
+        if let preset = AppearanceThemePreset.activeReaderTheme { return preset.accent }
+        return Self.weChatAccent
     }
 
     var barColor: Color {
@@ -96,6 +99,7 @@ enum ReaderTheme: String, CaseIterable {
     }
 
     var uiBarColor: UIColor {
+        if let preset = AppearanceThemePreset.activeReaderTheme { return preset.bar }
         switch self {
         case .white: return .white
         case .sepia: return UIColor(red: 0.93, green: 0.91, blue: 0.83, alpha: 1)
@@ -129,6 +133,10 @@ final class ReaderConfig: ObservableObject {
     @Published var pageMarginV: CGFloat
     @Published var footerBottomPadding: CGFloat
     @Published var footerTextGap: CGFloat
+    @Published var readerTitleVisible: Bool
+    @Published var readerTitleSize: CGFloat
+    @Published var readerTitleTopSpacing: CGFloat
+    @Published var readerTitleBottomSpacing: CGFloat
     @Published var readerFontBold: Bool
     @Published var theme: ReaderTheme
 
@@ -155,6 +163,10 @@ final class ReaderConfig: ObservableObject {
         pageMarginV = CGFloat(gs.pageMarginV)
         footerBottomPadding = CGFloat(gs.footerBottomPadding)
         footerTextGap = CGFloat(gs.footerTextGap)
+        readerTitleVisible = gs.readerTitleVisible
+        readerTitleSize = CGFloat(gs.readerTitleSize)
+        readerTitleTopSpacing = CGFloat(gs.readerTitleTopSpacing)
+        readerTitleBottomSpacing = CGFloat(gs.readerTitleBottomSpacing)
         readerFontBold = gs.readerFontBold
         theme = ReaderTheme.loadPersisted()
         setupBindings()
@@ -171,6 +183,10 @@ final class ReaderConfig: ObservableObject {
         pageMarginV = CGFloat(gs.pageMarginV)
         footerBottomPadding = CGFloat(gs.footerBottomPadding)
         footerTextGap = CGFloat(gs.footerTextGap)
+        readerTitleVisible = gs.readerTitleVisible
+        readerTitleSize = CGFloat(gs.readerTitleSize)
+        readerTitleTopSpacing = CGFloat(gs.readerTitleTopSpacing)
+        readerTitleBottomSpacing = CGFloat(gs.readerTitleBottomSpacing)
         readerFontBold = gs.readerFontBold
         theme = ReaderTheme.loadPersisted()
         suppressRefresh = false
@@ -213,6 +229,19 @@ final class ReaderConfig: ObservableObject {
                 self.refresh.send(.appearance)
             }
             .store(in: &cancellables)
+
+        Publishers.CombineLatest4($readerTitleVisible, $readerTitleSize, $readerTitleTopSpacing, $readerTitleBottomSpacing)
+            .dropFirst()
+            .sink { [weak self] visible, size, topSpacing, bottomSpacing in
+                let gs = GlobalSettings.shared
+                gs.readerTitleVisible = visible
+                gs.readerTitleSize = Double(size)
+                gs.readerTitleTopSpacing = Double(topSpacing)
+                gs.readerTitleBottomSpacing = Double(bottomSpacing)
+                guard let self, !self.suppressRefresh else { return }
+                self.refresh.send(.appearance)
+            }
+            .store(in: &cancellables)
     }
 }
 
@@ -239,9 +268,22 @@ func localized(_ key: String, bundle: Bundle = .main) -> String {
 
 class GlobalSettings: ObservableObject {
     static let shared = GlobalSettings()
-    static let bookshelfGridColumnCountOptions = [2, 3, 4]
+    static let bookshelfGridColumnCountOptions = [2, 3, 4, 5]
     static let defaultBookshelfGridColumnCount = 3
     private static let bookshelfGridColumnCountKey = "yd_bookshelf_grid_column_count"
+    /// "默認" (classic) — the app's original look; also the fallback when a
+    /// selected Pro theme becomes unavailable (entitlement lapse / deletion).
+    static let defaultAppearanceThemeID = AppearanceThemePreset.classicID
+    private static let appearanceThemeIDKey = "yd_appearance_theme_id"
+    private static let appearanceDarkThemeIDKey = "yd_appearance_dark_theme_id"
+    private static let appearanceSeparateDarkThemeKey = "yd_appearance_separate_dark_theme"
+    private static let appearanceBindReaderThemeKey = "yd_appearance_bind_reader_theme"
+    private static let appearanceReaderInterfaceKey = "yd_appearance_reader_interface"
+    private static let customAppearanceThemesKey = "yd_custom_appearance_themes"
+    private static let rootTabVisibleIDsKey = "yd_root_tab_visible_ids"
+    private static let rootTabHidesLabelsKey = "yd_root_tab_hides_labels"
+    private static let rootTabIconSizeKey = "yd_root_tab_icon_size"
+    static let rootTabIconAssetsKey = "yd_root_tab_icon_assets"
 
     // MARK: - Account State
 
@@ -320,6 +362,18 @@ class GlobalSettings: ObservableObject {
     @Published var footerTextGap: Double {
         didSet { UserDefaults.standard.set(footerTextGap, forKey: "yd_footer_text_gap") }
     }
+    @Published var readerTitleVisible: Bool {
+        didSet { UserDefaults.standard.set(readerTitleVisible, forKey: "yd_reader_title_visible") }
+    }
+    @Published var readerTitleSize: Double {
+        didSet { UserDefaults.standard.set(readerTitleSize, forKey: "yd_reader_title_size") }
+    }
+    @Published var readerTitleTopSpacing: Double {
+        didSet { UserDefaults.standard.set(readerTitleTopSpacing, forKey: "yd_reader_title_top_spacing") }
+    }
+    @Published var readerTitleBottomSpacing: Double {
+        didSet { UserDefaults.standard.set(readerTitleBottomSpacing, forKey: "yd_reader_title_bottom_spacing") }
+    }
     @Published var pageTurnStyle: PageTurnStyle {
         didSet { UserDefaults.standard.set(pageTurnStyle.rawValue, forKey: "yd_page_turn_style") }
     }
@@ -341,6 +395,57 @@ class GlobalSettings: ObservableObject {
     @Published var readerFollowSystemTheme: Bool {
         didSet { UserDefaults.standard.set(readerFollowSystemTheme, forKey: "yd_reader_follow_system_theme") }
     }
+
+    // MARK: - App Appearance Themes
+
+    @Published var appearanceThemeID: String {
+        didSet { UserDefaults.standard.set(appearanceThemeID, forKey: Self.appearanceThemeIDKey) }
+    }
+    @Published var appearanceDarkThemeID: String {
+        didSet { UserDefaults.standard.set(appearanceDarkThemeID, forKey: Self.appearanceDarkThemeIDKey) }
+    }
+    @Published var appearanceUsesSeparateDarkTheme: Bool {
+        didSet { UserDefaults.standard.set(appearanceUsesSeparateDarkTheme, forKey: Self.appearanceSeparateDarkThemeKey) }
+    }
+    @Published var appearanceBindReaderTheme: Bool {
+        didSet { UserDefaults.standard.set(appearanceBindReaderTheme, forKey: Self.appearanceBindReaderThemeKey) }
+    }
+    @Published var appearanceReaderInterface: AppearanceReaderInterface {
+        didSet { UserDefaults.standard.set(appearanceReaderInterface.rawValue, forKey: Self.appearanceReaderInterfaceKey) }
+    }
+    @Published var customAppearanceThemes: [AppearanceCustomTheme] {
+        didSet { Self.saveCustomAppearanceThemes(customAppearanceThemes) }
+    }
+
+    // MARK: - Root Tab Customization
+
+    @Published var rootTabVisibleIDs: [String] {
+        didSet {
+            let sanitized = Self.sanitizedRootTabVisibleIDs(rootTabVisibleIDs)
+            if rootTabVisibleIDs != sanitized {
+                rootTabVisibleIDs = sanitized
+            } else {
+                UserDefaults.standard.set(rootTabVisibleIDs, forKey: Self.rootTabVisibleIDsKey)
+            }
+        }
+    }
+    @Published var rootTabHidesLabels: Bool {
+        didSet { UserDefaults.standard.set(rootTabHidesLabels, forKey: Self.rootTabHidesLabelsKey) }
+    }
+    @Published var rootTabIconSize: Double {
+        didSet {
+            let sanitized = Self.sanitizedRootTabIconSize(rootTabIconSize)
+            if abs(rootTabIconSize - sanitized) > 0.001 {
+                rootTabIconSize = sanitized
+            } else {
+                UserDefaults.standard.set(rootTabIconSize, forKey: Self.rootTabIconSizeKey)
+            }
+        }
+    }
+    @Published var rootTabIconAssets: [RootTabIconAsset] {
+        didSet { Self.saveRootTabIconAssets(rootTabIconAssets) }
+    }
+
     @Published var selectedReaderFontPostScript: String? {
         didSet {
             if let selectedReaderFontPostScript, !selectedReaderFontPostScript.isEmpty {
@@ -502,6 +607,14 @@ class GlobalSettings: ObservableObject {
         footerTextGap =
             (UserDefaults.standard.object(forKey: "yd_footer_text_gap") as? Double)
             ?? Double(ReaderLayoutMetrics.defaultFooterTextGap)
+        readerTitleVisible =
+            (UserDefaults.standard.object(forKey: "yd_reader_title_visible") as? Bool) ?? true
+        readerTitleSize =
+            (UserDefaults.standard.object(forKey: "yd_reader_title_size") as? Double) ?? 14.0
+        readerTitleTopSpacing =
+            (UserDefaults.standard.object(forKey: "yd_reader_title_top_spacing") as? Double) ?? 10.0
+        readerTitleBottomSpacing =
+            (UserDefaults.standard.object(forKey: "yd_reader_title_bottom_spacing") as? Double) ?? 10.0
         let rawPageTurn = UserDefaults.standard.string(forKey: "yd_page_turn_style") ?? ""
         pageTurnStyle = PageTurnStyle(rawValue: rawPageTurn) ?? .slide
         let rawSpreadMode = UserDefaults.standard.string(forKey: "yd_reader_spread_mode") ?? ""
@@ -514,6 +627,25 @@ class GlobalSettings: ObservableObject {
         readerWritingMode = ReaderWritingMode(rawValue: rawWritingMode) ?? .horizontal
         readerTapBothSidesNextPage = UserDefaults.standard.bool(forKey: "yd_reader_tap_both_next")
         readerFollowSystemTheme = UserDefaults.standard.bool(forKey: "yd_reader_follow_system_theme")
+        customAppearanceThemes = Self.loadCustomAppearanceThemes()
+        appearanceThemeID = UserDefaults.standard.string(forKey: Self.appearanceThemeIDKey)
+            ?? Self.defaultAppearanceThemeID
+        appearanceDarkThemeID = UserDefaults.standard.string(forKey: Self.appearanceDarkThemeIDKey)
+            ?? Self.defaultAppearanceThemeID
+        appearanceUsesSeparateDarkTheme = UserDefaults.standard.bool(forKey: Self.appearanceSeparateDarkThemeKey)
+        appearanceBindReaderTheme = UserDefaults.standard.bool(forKey: Self.appearanceBindReaderThemeKey)
+        let rawReaderInterface = UserDefaults.standard.string(forKey: Self.appearanceReaderInterfaceKey) ?? ""
+        appearanceReaderInterface = AppearanceReaderInterface(rawValue: rawReaderInterface) ?? .classic
+        rootTabVisibleIDs = Self.sanitizedRootTabVisibleIDs(
+            UserDefaults.standard.stringArray(forKey: Self.rootTabVisibleIDsKey)
+                ?? Self.defaultRootTabVisibleIDs
+        )
+        rootTabHidesLabels = UserDefaults.standard.bool(forKey: Self.rootTabHidesLabelsKey)
+        let loadedRootTabIconSize =
+            (UserDefaults.standard.object(forKey: Self.rootTabIconSizeKey) as? Double)
+            ?? Self.defaultRootTabIconSize
+        rootTabIconSize = Self.sanitizedRootTabIconSize(loadedRootTabIconSize)
+        rootTabIconAssets = Self.loadRootTabIconAssets()
         selectedReaderFontPostScript = UserDefaults.standard.string(forKey: "yd_reader_font_postscript")
         if let fontData = UserDefaults.standard.data(forKey: "yd_user_fonts"),
            let decodedFonts = try? JSONDecoder().decode([UserFontInfo].self, from: fontData) {
@@ -575,6 +707,80 @@ class GlobalSettings: ObservableObject {
         }
         if let data = try? JSONEncoder().encode(headers) {
             UserDefaults.standard.set(data, forKey: "yd_http_tts_headers")
+        }
+    }
+
+    func selectedAppearanceThemeID(for colorScheme: ColorScheme) -> String {
+        if appearanceUsesSeparateDarkTheme, colorScheme == .dark {
+            return appearanceDarkThemeID
+        }
+        return appearanceThemeID
+    }
+
+    func appearanceTheme(
+        for colorScheme: ColorScheme,
+        isProActive: Bool
+    ) -> AppearanceThemePreset {
+        let selectedID = selectedAppearanceThemeID(for: colorScheme)
+        if let selected = AppearanceThemePreset.preset(id: selectedID, customThemes: customAppearanceThemes),
+           isProActive || !selected.requiresPro {
+            return selected
+        }
+        return AppearanceThemePreset.preset(
+            id: Self.defaultAppearanceThemeID,
+            customThemes: customAppearanceThemes
+        ) ?? AppearanceThemePreset.freeSolidPresets[0]
+    }
+
+    func setAppearanceTheme(_ preset: AppearanceThemePreset, for colorScheme: ColorScheme) {
+        if appearanceUsesSeparateDarkTheme, colorScheme == .dark {
+            appearanceDarkThemeID = preset.id
+        } else {
+            appearanceThemeID = preset.id
+        }
+    }
+
+    @discardableResult
+    func createCustomAppearanceTheme(from preset: AppearanceThemePreset) -> AppearanceCustomTheme {
+        var custom = preset.customCopy(name: localized("自訂主題"))
+        var index = 1
+        let existingNames = Set(customAppearanceThemes.map(\.name))
+        while existingNames.contains(custom.name) {
+            index += 1
+            custom.name = localized("自訂主題") + " \(index)"
+        }
+        customAppearanceThemes.append(custom)
+        appearanceThemeID = custom.id
+        return custom
+    }
+
+    /// Deletes a custom theme. Any selection (light or dark slot) pointing at
+    /// the deleted theme falls back to the classic default.
+    func deleteCustomAppearanceTheme(id: String) {
+        customAppearanceThemes.removeAll { $0.id == id }
+        if appearanceThemeID == id {
+            appearanceThemeID = Self.defaultAppearanceThemeID
+        }
+        if appearanceDarkThemeID == id {
+            appearanceDarkThemeID = Self.defaultAppearanceThemeID
+        }
+    }
+
+    private static func loadCustomAppearanceThemes() -> [AppearanceCustomTheme] {
+        guard let data = UserDefaults.standard.data(forKey: customAppearanceThemesKey),
+              let decoded = try? JSONDecoder().decode([AppearanceCustomTheme].self, from: data) else {
+            return []
+        }
+        return decoded
+    }
+
+    private static func saveCustomAppearanceThemes(_ themes: [AppearanceCustomTheme]) {
+        if themes.isEmpty {
+            UserDefaults.standard.removeObject(forKey: customAppearanceThemesKey)
+            return
+        }
+        if let data = try? JSONEncoder().encode(themes) {
+            UserDefaults.standard.set(data, forKey: customAppearanceThemesKey)
         }
     }
 

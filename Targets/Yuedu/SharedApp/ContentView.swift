@@ -2,17 +2,44 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var store: BookStore
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject private var gs = GlobalSettings.shared
     @StateObject private var rssStore = RSSStore.shared
     @ObservedObject private var importDrainer = SharedImportQueueDrainer.shared
     @StateObject private var nowPlaying = NowPlayingHub.shared
+    @State private var selectedRootTab: RootTabItem = .bookshelf
 
     private var rssUnreadCount: Int {
         rssStore.totalUnreadCount()
     }
 
+    private var appearanceTheme: AppearanceThemePreset {
+        gs.appearanceTheme(
+            for: colorScheme,
+            isProActive: subscriptionStore.hasAccess(.readerThemePacks)
+        )
+    }
+
+    /// The theme whose surface colors should retint the whole app, or nil for
+    /// system colors. Presets are light palettes, so surfaces only retint in
+    /// light appearance; dark mode keeps clean system colors (accent still
+    /// applies). Classic = no override.
+    private var resolvedAppTheme: AppearanceThemePreset? {
+        (colorScheme == .light && !appearanceTheme.isClassic) ? appearanceTheme : nil
+    }
+
     var body: some View {
-        tabView
+        // Sync the app-wide themed surfaces (read by DSColor) with the current
+        // appearance before descendants read them this render pass. This is a
+        // plain global, not SwiftUI state, so assigning it here is side-effect
+        // free as far as invalidation goes.
+        AppearanceThemePreset.activeAppTheme = resolvedAppTheme
+        return tabView
+        // Classic (默認) = the app's original look: no tint override at all.
+        .tint(appearanceTheme.isClassic ? nil : appearanceTheme.accentColor)
+        .accentColor(appearanceTheme.isClassic ? nil : appearanceTheme.accentColor)
         .overlay(alignment: .top) {
             if let outcome = importDrainer.lastOutcome {
                 SharedImportToast(outcome: outcome)
@@ -33,6 +60,12 @@ struct ContentView: View {
         .iPadAdaptiveRootTabStyle()
         .rootTabBarMinimizeStyle()
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: importDrainer.lastOutcome)
+        .onAppear {
+            selectedRootTab = gs.fallbackRootTab(for: selectedRootTab)
+        }
+        .onChange(of: gs.rootTabVisibleIDs) { _, _ in
+            selectedRootTab = gs.fallbackRootTab(for: selectedRootTab)
+        }
         .fullScreenCover(isPresented: $nowPlaying.isPresentingAudiobook) {
             if let bookId = nowPlaying.audiobookBookId {
                 if store.books.contains(where: { $0.id == bookId }) {
@@ -46,55 +79,96 @@ struct ContentView: View {
         }
     }
 
-    /// The root tab bar. iOS 18 gets the modern `Tab` builder (with a dedicated
-    /// `.search` role tab); iOS 17 falls back to the classic `.tabItem` form,
-    /// where search is just a regular tab.
-    @ViewBuilder
+    /// The root tab bar is driven by `GlobalSettings` so users can hide pages
+    /// and customize tab icon assets without changing the feature screens.
     private var tabView: some View {
-        if #available(iOS 18.0, *) {
-            TabView {
-                Tab(localized("書架"), systemImage: "books.vertical") {
-                    HomeView()
-                }
-
-                Tab(localized("探索"), systemImage: "safari") {
-                    BrowserView()
-                }
-
-                Tab(localized("RSS 訂閱"), systemImage: "newspaper") {
-                    RSSListView()
-                }
-                .badge(rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
-
-                Tab(localized("設定"), systemImage: "gearshape") {
-                    SettingsView()
-                }
-                Tab(role: .search) {
-                    NavigationStack {
-                        SearchView()
+        TabView(selection: $selectedRootTab) {
+            ForEach(gs.visibleRootTabs) { tab in
+                rootTabContent(for: tab)
+                    .modifier(ThemedSurfaceBackground(active: resolvedAppTheme != nil))
+                    .tag(tab)
+                    .tabItem {
+                        rootTabItemLabel(for: tab)
                     }
-                }
+                    .badge(tab == .rss && rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
             }
+        }
+    }
+
+    private var shouldHideRootTabLabels: Bool {
+        gs.rootTabHidesLabels && horizontalSizeClass == .compact
+    }
+
+    private var usesCustomRootTabIconSize: Bool {
+        gs.usesCustomRootTabIconSize
+    }
+
+    @ViewBuilder
+    private func rootTabContent(for tab: RootTabItem) -> some View {
+        switch tab {
+        case .bookshelf:
+            HomeView()
+        case .explore:
+            BrowserView()
+        case .rss:
+            RSSListView()
+        case .settings:
+            SettingsView()
+        case .search:
+            NavigationStack {
+                SearchView()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rootTabItemLabel(for tab: RootTabItem) -> some View {
+        if let renderedIcon = RootTabIconRenderer.customIcon(
+            for: tab,
+            colorScheme: colorScheme,
+            pointSize: CGFloat(
+                gs.usesCustomRootTabIconSize
+                    ? gs.rootTabIconSize
+                    : GlobalSettings.initialCustomRootTabIconSize
+            ),
+            settings: gs
+        ) {
+            Image(uiImage: renderedIcon.image)
+                .renderingMode(renderedIcon.isTemplate ? .template : .original)
+            if !shouldHideRootTabLabels {
+                Text(localized(tab.titleKey))
+            }
+        } else if usesCustomRootTabIconSize {
+            let renderedIcon = RootTabIconRenderer.systemIcon(
+                for: tab,
+                pointSize: CGFloat(gs.rootTabIconSize)
+            )
+            Image(uiImage: renderedIcon.image)
+                .renderingMode(.template)
+            if !shouldHideRootTabLabels {
+                Text(localized(tab.titleKey))
+            }
+        } else if shouldHideRootTabLabels {
+            Image(systemName: tab.defaultSystemImage)
         } else {
-            TabView {
-                HomeView()
-                    .tabItem { Label(localized("書架"), systemImage: "books.vertical") }
+            Label(localized(tab.titleKey), systemImage: tab.defaultSystemImage)
+        }
+    }
+}
 
-                BrowserView()
-                    .tabItem { Label(localized("探索"), systemImage: "safari") }
+/// Retints scrollable Form/List surfaces to the active app theme by hiding the
+/// system background and painting the themed page color behind. A no-op when
+/// inactive (classic), so default users keep the exact system appearance.
+private struct ThemedSurfaceBackground: ViewModifier {
+    let active: Bool
 
-                RSSListView()
-                    .tabItem { Label(localized("RSS 訂閱"), systemImage: "newspaper") }
-                    .badge(rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
-
-                SettingsView()
-                    .tabItem { Label(localized("設定"), systemImage: "gearshape") }
-
-                NavigationStack {
-                    SearchView()
-                }
-                .tabItem { Label(localized("搜索書籍"), systemImage: "magnifyingglass") }
-            }
+    func body(content: Content) -> some View {
+        if active {
+            content
+                .scrollContentBackground(.hidden)
+                .background(DSColor.groupedBackground.ignoresSafeArea())
+        } else {
+            content
         }
     }
 }

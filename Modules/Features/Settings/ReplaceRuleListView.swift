@@ -152,8 +152,8 @@ private struct ReplaceRuleRow: View {
                             .font(.caption2)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
-                            .background(Color.blue.opacity(0.15))
-                            .foregroundColor(.blue)
+                            .background(DSColor.highlight)
+                            .foregroundColor(DSColor.accent)
                             .cornerRadius(3)
                     }
                     if rule.isRegex {

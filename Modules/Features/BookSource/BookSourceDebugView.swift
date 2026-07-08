@@ -62,7 +62,7 @@ struct LogEntryRow: View {
                     if let url = entry.url {
                         Text(url)
                             .font(.caption)
-                            .foregroundColor(.blue)
+                            .foregroundColor(DSColor.accent)
                             .lineLimit(isExpanded ? nil : 1)
                     }
                 }

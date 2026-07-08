@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Design System: Color Tokens
 
@@ -24,28 +25,37 @@ enum DSColor {
     static let textDisabled = Color.secondary.opacity(0.5)
 
     // ── Background ──
+    // When an app appearance theme is active these retint the whole app; with
+    // no theme (classic) they resolve to the exact system colors as before.
     /// Page background
-    static let background = Color(.systemBackground)
+    static var background: Color { themed(\.appPageBackground) ?? Color(.systemBackground) }
     /// Group / card background
-    static let surface = Color(.secondarySystemBackground)
+    static var surface: Color { themed(\.appCardBackground) ?? Color(.secondarySystemBackground) }
     /// Tertiary background (nested groups)
-    static let surfaceTertiary = Color(.tertiarySystemBackground)
+    static var surfaceTertiary: Color { themed(\.appSecondaryBackground) ?? Color(.tertiarySystemBackground) }
     /// Grouped content background
-    static let groupedBackground = Color(.systemGroupedBackground)
+    static var groupedBackground: Color { themed(\.appPageBackground) ?? Color(.systemGroupedBackground) }
 
     // ── Borders & Separators ──
     /// Thin separator
-    static let separator = Color(.separator)
+    static var separator: Color { themed(\.appSeparator) ?? Color(.separator) }
     /// Light border
-    static let border = Color(.systemGray4)
+    static var border: Color { themed(\.appBorder) ?? Color(.systemGray4) }
+
+    /// Resolves a themed surface color from the active app theme, or nil when no
+    /// theme is active (classic/system).
+    private static func themed(_ keyPath: KeyPath<AppearanceThemePreset, UIColor>) -> Color? {
+        guard let theme = AppearanceThemePreset.activeAppTheme else { return nil }
+        return Color(uiColor: theme[keyPath: keyPath])
+    }
 
     // ── Functional ──
     /// Light label / selected background
-    static let accentLight = Color.blue.opacity(0.08)
+    static let accentLight = Color.accentColor.opacity(0.08)
     /// Card shadow
     static let shadow = Color.black.opacity(0.05)
     /// Selected highlight
-    static let highlight = Color.blue.opacity(0.15)
+    static let highlight = Color.accentColor.opacity(0.15)
 
     // ── Book Cover Gradient Palette ──
     static let coverGradients: [[Color]] = [

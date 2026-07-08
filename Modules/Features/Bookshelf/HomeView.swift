@@ -12,6 +12,7 @@ struct HomeView: View {
     @State private var addSheetSessionID = UUID()
     @State private var editingBook: ReadingBook? = nil
     @State private var bookToDelete: ReadingBook? = nil
+    @State private var selectedOnlineBookDetail: OnlineBook? = nil
     @State private var editMode = EditMode.inactive
     @State private var selectedGroup: String = ""
     @State private var selectedBookIds: Set<UUID> = []
@@ -23,7 +24,13 @@ struct HomeView: View {
     @Namespace private var bookTransition
 
     private var hInset: CGFloat { sizeClass == .regular ? 32 : 20 }
-    private var gridColumnSpacing: CGFloat { DSSpacing.md }
+    private var isCompactFiveColumnGrid: Bool { gs.bookshelfGridColumnCount >= 5 }
+    private var gridHorizontalInset: CGFloat {
+        sizeClass == .regular ? 32 : (isCompactFiveColumnGrid ? DSSpacing.lg : hInset)
+    }
+    private var gridColumnSpacing: CGFloat {
+        isCompactFiveColumnGrid ? DSSpacing.sm : DSSpacing.md
+    }
     private var gridColumns: [GridItem] {
         Array(
             repeating: GridItem(.flexible(), spacing: gridColumnSpacing, alignment: .top),
@@ -79,6 +86,7 @@ struct HomeView: View {
                     }
                 }
             }
+            .themedAppSurface()
             .animation(DSAnimation.standard, value: store.books.isEmpty)
             .navigationTitle(localized("書架"))
             .toolbarTitleDisplayModeInlineLargeOrInline()
@@ -180,6 +188,15 @@ struct HomeView: View {
             .sheet(isPresented: $showOPDSImport) {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                     OPDSImportView().environmentObject(store)
+                }
+            }
+            .navigationDestination(item: $selectedOnlineBookDetail) { book in
+                if BookSourceStore.shared.isAudiobook(book) {
+                    AudiobookDetailView(book: book)
+                        .environmentObject(store)
+                } else {
+                    OnlineBookView(book: book)
+                        .environmentObject(store)
                 }
             }
             .sheet(item: $editingBook) { book in
@@ -339,7 +356,10 @@ struct HomeView: View {
                         readerBookId = book.id
                     },
                     onEdit: { editingBook = book },
-                    onDelete: { bookToDelete = book }
+                    onDelete: { bookToDelete = book },
+                    onShowDetail: canShowOnlineBookDetail(for: book)
+                        ? { showOnlineBookDetail(for: book) }
+                        : nil
                 )
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 0, leading: hInset, bottom: 0, trailing: hInset))
@@ -373,17 +393,21 @@ struct HomeView: View {
                 ForEach(sortedFilteredBooks) { book in
                     BookGridCell(
                         book: book,
+                        isCompactLayout: isCompactFiveColumnGrid,
                         transitionNamespace: bookTransition,
                         onOpen: {
                             store.updateLastOpened(bookId: book.id)
                             readerBookId = book.id
                         },
                         onEdit: { editingBook = book },
-                        onDelete: { bookToDelete = book }
+                        onDelete: { bookToDelete = book },
+                        onShowDetail: canShowOnlineBookDetail(for: book)
+                            ? { showOnlineBookDetail(for: book) }
+                            : nil
                     )
                 }
             }
-            .padding(.horizontal, hInset)
+            .padding(.horizontal, gridHorizontalInset)
             .padding(.vertical, DSSpacing.md)
         }
         .animation(.easeOut(duration: 0.25), value: sortedFilteredBooks.map(\.id))
@@ -391,6 +415,33 @@ struct HomeView: View {
         .refreshable {
             await ChapterUpdater.refreshAll(bookStore: store)
         }
+    }
+
+    private func canShowOnlineBookDetail(for book: ReadingBook) -> Bool {
+        book.isOnline && book.bookSourceId != nil
+    }
+
+    private func showOnlineBookDetail(for book: ReadingBook) {
+        selectedOnlineBookDetail = onlineBookDetail(for: book)
+    }
+
+    private func onlineBookDetail(for book: ReadingBook) -> OnlineBook? {
+        guard book.isOnline, let sourceId = book.bookSourceId else { return nil }
+        let source = BookSourceStore.shared.sources.first(where: { $0.id == sourceId })
+        return OnlineBook(
+            name: book.title,
+            author: book.author,
+            intro: "",
+            coverUrl: book.coverUrl ?? "",
+            bookUrl: book.bookInfoURL ?? book.source,
+            tocUrl: book.tocURL ?? "",
+            wordCount: "",
+            lastChapter: book.latestChapterDisplayTitle ?? "",
+            kind: "",
+            sourceId: sourceId,
+            sourceName: source?.bookSourceName ?? "",
+            runtimeVariables: book.runtimeVariables
+        )
     }
 }
 
@@ -544,6 +595,7 @@ struct BookRow: View {
     let onTap: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
+    var onShowDetail: (() -> Void)? = nil
 
     private let coverW: CGFloat = 45
     private let coverH: CGFloat = 65
@@ -568,7 +620,8 @@ struct BookRow: View {
                             BookOverflowMenu(
                                 iconSize: 16,
                                 onEdit: onEdit,
-                                onDelete: onDelete
+                                onDelete: onDelete,
+                                onShowDetail: onShowDetail
                             )
                         }
                     }
@@ -744,10 +797,12 @@ private struct BookSyncIndicator: View {
 // MARK: - Book Grid Cell
 struct BookGridCell: View {
     let book: ReadingBook
+    var isCompactLayout: Bool = false
     var transitionNamespace: Namespace.ID? = nil
     let onOpen: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
+    var onShowDetail: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -787,29 +842,30 @@ struct BookGridCell: View {
             }
             .buttonStyle(.plain)
 
-            HStack(alignment: .top, spacing: 4) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(book.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(book.title)
+                    .font(.system(size: isCompactLayout ? 12 : 13, weight: .semibold))
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(alignment: .center, spacing: 2) {
                     Text(book.author)
-                        .font(.system(size: 11))
+                        .font(.system(size: isCompactLayout ? 10 : 11))
                         .foregroundColor(DSColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
+
+                    BookOverflowMenu(
+                        iconSize: isCompactLayout ? 13 : 14,
+                        controlSize: isCompactLayout ? 28 : 32,
+                        onEdit: onEdit,
+                        onDelete: onDelete,
+                        onShowDetail: onShowDetail
+                    )
                 }
-                .frame(height: 34, alignment: .topLeading)
-                Spacer(minLength: 0)
-                BookOverflowMenu(
-                    iconSize: 14,
-                    onEdit: onEdit,
-                    onDelete: onDelete
-                )
             }
-            .frame(height: 34)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -865,11 +921,18 @@ struct BookGridCell: View {
 
 private struct BookOverflowMenu: View {
     let iconSize: CGFloat
+    var controlSize: CGFloat = 44
     let onEdit: () -> Void
     let onDelete: () -> Void
+    var onShowDetail: (() -> Void)? = nil
 
     var body: some View {
         Menu {
+            if let onShowDetail {
+                Button { onShowDetail() } label: {
+                    Label(localized("書籍詳情"), systemImage: "book")
+                }
+            }
             Button { onEdit() } label: {
                 Label(localized("編輯書籍資訊"), systemImage: "pencil")
             }
@@ -880,11 +943,11 @@ private struct BookOverflowMenu: View {
             Image(systemName: "ellipsis")
                 .font(.system(size: iconSize, weight: .semibold))
                 .foregroundColor(DSColor.textSecondary)
-                .frame(width: 44, height: 44)
+                .frame(width: controlSize, height: controlSize)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(localized("編輯書籍資訊"))
+        .accessibilityLabel(localized("更多"))
     }
 }
 

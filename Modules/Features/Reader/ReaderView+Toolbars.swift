@@ -8,6 +8,10 @@ extension ReaderView {
         ReaderTopBar(
             theme: readerTheme,
             chapterTitle: currentChapterTitle.converted(to: settings.textConversion),
+            titleVisible: readerConfig.readerTitleVisible,
+            titleSize: readerConfig.readerTitleSize,
+            titleTopSpacing: readerConfig.readerTitleTopSpacing,
+            titleBottomSpacing: readerConfig.readerTitleBottomSpacing,
             isBookmarked: isCurrentPageBookmarked,
             overlayMaxWidth: overlayContentMaxWidth,
             onBack: {

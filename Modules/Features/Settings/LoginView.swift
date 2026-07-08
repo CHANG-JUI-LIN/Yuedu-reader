@@ -21,7 +21,7 @@ struct LoginView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Image(systemName: "books.vertical.fill")
                         .font(.system(size: 60))
-                        .foregroundColor(.blue)
+                        .foregroundColor(DSColor.accent)
                         .padding(.top, 20)
                     Text(localized("歡迎回來"))
                         .font(.largeTitle.bold())
@@ -86,7 +86,7 @@ struct LoginView: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(!canSubmitEmail || isLoading ? Color.gray : Color.blue)
+                            .background(!canSubmitEmail || isLoading ? Color.gray : DSColor.accent)
                             .cornerRadius(12)
                     }
                     .disabled(!canSubmitEmail || isLoading)
@@ -150,7 +150,7 @@ struct LoginView: View {
                 } label: {
                     Text(localized(emailMode.togglePrompt))
                         .font(.footnote.bold())
-                        .foregroundColor(.blue)
+                        .foregroundColor(DSColor.accent)
                 }
                 .disabled(isLoading)
                 .padding(.bottom, 8)

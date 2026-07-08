@@ -112,7 +112,7 @@ struct BookSearchView: View {
         VStack(spacing: 0) {
             ProgressView(value: aggregator.progress.fraction)
                 .progressViewStyle(.linear)
-                .tint(.blue)
+                .tint(DSColor.accent)
                 .frame(height: 2)
 
             if aggregator.progress.total > 0 {
@@ -200,7 +200,7 @@ struct BookSearchView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
-        .background(Color(UIColor.systemBackground))
+        .background(DSColor.background)
     }
 
     @ViewBuilder
@@ -212,7 +212,7 @@ struct BookSearchView: View {
                 .font(.caption)
                 .lineLimit(1)
                 .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(selectedSourceId == id ? Color.blue : Color(UIColor.systemGray5))
+                .background(selectedSourceId == id ? DSColor.accent : Color(UIColor.systemGray5))
                 .foregroundColor(selectedSourceId == id ? .white : .primary)
                 .clipShape(Capsule())
         }
@@ -356,7 +356,7 @@ struct AggregatedResultRow: View {
                 .padding(.horizontal, 7).padding(.vertical, 3)
                 .background(
                     book.origins.count > 1
-                        ? AnyShapeStyle(Color.blue.opacity(0.85))
+                        ? AnyShapeStyle(DSColor.accent.opacity(0.85))
                         : AnyShapeStyle(Color(UIColor.systemGray5))
                 )
                 .clipShape(Capsule())
