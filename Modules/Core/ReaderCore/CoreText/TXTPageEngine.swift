@@ -22,6 +22,8 @@ final class TXTPageEngine: PageRenderingProvider {
     
     private var themeTextColor: UIColor = .label
     private var themeBackgroundColor: UIColor = .systemBackground
+    private var cachedReaderBackgroundImageURL: URL?
+    private var cachedReaderBackgroundImage: UIImage?
     private var textAnnotations: [CoreTextTextAnnotation] = []
     private var renderSettings: ReaderRenderSettings
     var onChapterReady: ((Int?) -> Void)?
@@ -37,6 +39,14 @@ final class TXTPageEngine: PageRenderingProvider {
 
     func updateRenderSettings(_ settings: ReaderRenderSettings) {
         self.renderSettings = settings
+    }
+
+    private func currentReaderBackgroundImage() -> UIImage? {
+        let url = renderSettings.readerBackgroundImageURL
+        guard cachedReaderBackgroundImageURL != url else { return cachedReaderBackgroundImage }
+        cachedReaderBackgroundImageURL = url
+        cachedReaderBackgroundImage = url.flatMap { UIImage(contentsOfFile: $0.path) }
+        return cachedReaderBackgroundImage
     }
 
     func setTextAnnotations(_ annotations: [CoreTextTextAnnotation]) {
@@ -93,8 +103,14 @@ final class TXTPageEngine: PageRenderingProvider {
     func applyThemeChange(textColor: UIColor, backgroundColor: UIColor) {
         self.themeTextColor = textColor
         self.themeBackgroundColor = backgroundColor
+        let readerBackgroundImage = currentReaderBackgroundImage()
         for spineIndex in layouts.keys {
-            layouts[spineIndex] = layouts[spineIndex]?.withUpdatedColors(textColor: textColor, backgroundColor: backgroundColor)
+            layouts[spineIndex] = layouts[spineIndex]?.withUpdatedAppearance(
+                textColor: textColor,
+                backgroundColor: backgroundColor,
+                readerBackgroundImage: readerBackgroundImage,
+                dialogueColor: renderSettings.dialogueHighlightColor
+            )
         }
         chapterSnapshots.removeAll()
         onChapterReady?(nil)
@@ -277,7 +293,12 @@ final class TXTPageEngine: PageRenderingProvider {
         let layout = await paginationManager.paginate(request).layout
         guard !shouldAbortPreload(generation: generation) else { return }
         
-        layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
+        layouts[spineIndex] = layout.withUpdatedAppearance(
+            textColor: themeTextColor,
+            backgroundColor: themeBackgroundColor,
+            readerBackgroundImage: currentReaderBackgroundImage(),
+            dialogueColor: renderSettings.dialogueHighlightColor
+        )
         if let l = layouts[spineIndex], !l.pageRanges.isEmpty {
             chapterSnapshots[spineIndex] = renderImage(layout: l, pageIndex: 0)
         }

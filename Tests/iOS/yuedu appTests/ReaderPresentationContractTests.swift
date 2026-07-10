@@ -6,6 +6,17 @@ import UIKit
 
 @MainActor
 struct ReaderPresentationContractTests {
+    @Test("匯入自訂背景後只返回主題 Grid")
+    func customBackgroundImportReturnsToThemeGrid() {
+        var state = ReaderQuickThemePanelNavigationState()
+
+        state.showCustomBackgroundOptions()
+        #expect(state.isShowingCustomBackgroundOptions)
+
+        state.completeBackgroundImageImport()
+        #expect(!state.isShowingCustomBackgroundOptions)
+    }
+
     @Test("maps app page turn styles to paging adapter descriptors")
     func mapsPageTurnStyleToAdapterDescriptor() {
         let slide = PageViewControllerPagingAdapterDescriptor(pageTurnStyle: .slide)

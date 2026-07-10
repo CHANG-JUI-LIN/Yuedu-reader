@@ -31,7 +31,11 @@ extension ReaderView {
             titleVisible: readerConfig.readerTitleVisible,
             titleSize: readerConfig.readerTitleSize,
             titleTopSpacing: readerConfig.readerTitleTopSpacing,
-            titleBottomSpacing: readerConfig.readerTitleBottomSpacing
+            titleBottomSpacing: readerConfig.readerTitleBottomSpacing,
+            readerBackgroundImageURL: activeReaderBackgroundImageURL,
+            dialogueHighlightColor: readerTheme.dialogueHighlightColor(
+                enabled: GlobalSettings.shared.readerDialogueHighlightEnabled
+            )
         )
     }
 
@@ -386,6 +390,21 @@ extension ReaderView {
         }
         epubRenderer.updateRenderSettings(newSettings)
         Task { await engine.invalidateLayout(newSize: size) }
+    }
+
+    func forceReaderRenderableContentRefresh() {
+        if effectiveScrollMode, epubRenderer.scrollEngine != nil {
+            scheduleScrollReslice()
+            return
+        }
+
+        guard let engine = epubRenderer.engine else {
+            rebuildPages()
+            return
+        }
+
+        epubRenderer.updateRenderSettings(currentRenderSettings(marginH: effectivePageMarginH))
+        Task { await engine.invalidateLayout(newSize: engine.renderSize) }
     }
 
     func applyUnifiedAppearanceUpdate() {

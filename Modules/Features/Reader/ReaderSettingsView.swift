@@ -1,5 +1,6 @@
 import Combine
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct ReaderSettingsView: View {
@@ -13,10 +14,10 @@ struct ReaderSettingsView: View {
     @ObservedObject private var settings = GlobalSettings.shared
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var systemColorScheme
     @State private var showingFontImporter = false
     @State private var showingLayoutImporter = false
     @State private var showLayoutPaywall = false
+    @State private var showDialogueHighlightPaywall = false
     @State private var fontImportError: FontImportError?
     @State private var layoutImportAlert: LayoutImportAlert?
     @State private var customLayoutEnabled = true
@@ -25,10 +26,9 @@ struct ReaderSettingsView: View {
     private var supportsUserFont: Bool { supportsFontSize && allowsUserSelectedReaderFont }
     private var supportsLineHeight: Bool { capabilities.contains(.lineHeight) }
     private var supportsSpacing: Bool { capabilities.contains(.spacing) }
-    private var supportsBackground: Bool {
-        capabilities.contains(.background) || capabilities.contains(.darkMode)
+    private var supportsPageDisplay: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && supportsLineHeight && !settings.scrollMode
     }
-
     private var pageBackground: Color {
         Color(uiColor: .systemGroupedBackground)
     }
@@ -45,31 +45,9 @@ struct ReaderSettingsView: View {
     private let defaultPageMarginV: CGFloat = 16
     private let defaultFooterBottomPadding = ReaderLayoutMetrics.defaultFooterBottomPadding
     private let defaultFooterTextGap = ReaderLayoutMetrics.defaultFooterTextGap
-    private let defaultReaderTitleSize: CGFloat = 20
+    private let defaultReaderTitleSize: CGFloat = 28
     private let defaultReaderTitleTopSpacing: CGFloat = 10
-    private let defaultReaderTitleBottomSpacing: CGFloat = 10
-
-    private enum PageTurnOption: String, CaseIterable, Hashable {
-        case slide
-        case cover
-        case curl
-        case scroll
-        case none
-
-        var titleKey: String {
-            switch self {
-            case .slide: return "滑動"
-            case .cover: return "覆蓋"
-            case .curl: return "仿真"
-            case .scroll: return "上下"
-            case .none: return "無動畫"
-            }
-        }
-    }
-
-    private var availablePageTurnOptions: [PageTurnOption] {
-        PageTurnOption.allCases
-    }
+    private let defaultReaderTitleBottomSpacing: CGFloat = 20
 
     var body: some View {
         NavigationStack {
@@ -86,10 +64,11 @@ struct ReaderSettingsView: View {
                         layoutDetailsSection
                     }
 
-                    if supportsBackground || supportsLineHeight {
-                        quickSettingsSection
+                    if supportsPageDisplay {
+                        pageDisplaySection
                     }
 
+                    readerDecorationSection
                     displaySection
                 }
             }
@@ -103,12 +82,14 @@ struct ReaderSettingsView: View {
                     } label: {
                         Image(systemName: "xmark")
                     }
+                    .accessibilityLabel(localized("關閉"))
                 }
                 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {dismiss() } label: {
                         Image(systemName: "checkmark")
                     }
+                    .accessibilityLabel(localized("完成"))
                 }
             }
         }
@@ -145,6 +126,10 @@ struct ReaderSettingsView: View {
             PaywallView(highlightedFeature: .layoutPresetImport)
                 .environmentObject(SubscriptionStore.shared)
         }
+        .sheet(isPresented: $showDialogueHighlightPaywall) {
+            PaywallView(highlightedFeature: .dialogueHighlight)
+                .environmentObject(SubscriptionStore.shared)
+        }
         .onAppear {
             customLayoutEnabled = hasCustomLayoutOverrides
             if settings.followSystemBrightness {
@@ -158,41 +143,17 @@ struct ReaderSettingsView: View {
         }
     }
 
-    private var quickSettingsSection: some View {
-        Section(header: Text(localized("外觀與翻頁"))) {
-            if supportsBackground {
-                themeSelector
-            }
-
-            if supportsLineHeight {
-                SegmentedPickerRow(
-                    title: localized("翻頁"),
-                    selection: pageTurnOptionBinding,
-                    items: availablePageTurnOptions,
-                    titleProvider: { option in
-                        localized(scrollTitleKey(for: option))
-                    }
-                )
-            }
-
-            if supportsLineHeight && !settings.scrollMode {
-                SegmentedPickerRow(
-                    title: localized("頁面顯示"),
-                    selection: $settings.readerSpreadMode,
-                    items: ReaderSpreadMode.settingsCases,
-                    titleProvider: { mode in
-                        localized(spreadTitleKey(for: mode))
-                    }
-                )
-            }
+    private var pageDisplaySection: some View {
+        Section {
+            SegmentedPickerRow(
+                title: localized("頁面顯示"),
+                selection: $settings.readerSpreadMode,
+                items: ReaderSpreadMode.settingsCases,
+                titleProvider: { mode in
+                    localized(spreadTitleKey(for: mode))
+                }
+            )
         }
-    }
-
-    private func scrollTitleKey(for option: PageTurnOption) -> String {
-        guard option == .scroll, isVerticalWritingMode else {
-            return option.titleKey
-        }
-        return "右往左"
     }
 
     private func spreadTitleKey(for mode: ReaderSpreadMode) -> String {
@@ -269,56 +230,6 @@ struct ReaderSettingsView: View {
         .clipped()
         .foregroundStyle(theme.textColor)
         .background(theme.backgroundColor)
-    }
-
-    private var currentThemeLabel: String {
-        settings.readerFollowSystemTheme ? localized("跟隨系統") : localized(theme.rawValue)
-    }
-
-    private var themeSelector: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SettingRowHeader(title: localized("主題"), systemImage: "circle.lefthalf.filled")
-
-            Menu {
-                Button {
-                    settings.readerFollowSystemTheme = true
-                    theme = ReaderTheme.forSystem(dark: systemColorScheme == .dark)
-                    readerConfig.refresh.send(.appearance)
-                } label: {
-                    Label(
-                        localized("跟隨系統"),
-                        systemImage: settings.readerFollowSystemTheme ? "checkmark" : "circle.righthalf.filled"
-                    )
-                }
-
-                Divider()
-
-                ForEach(ReaderTheme.allCases, id: \.self) { item in
-                    Button {
-                        settings.readerFollowSystemTheme = false
-                        theme = item
-                    } label: {
-                        Label(
-                            localized(item.rawValue),
-                            systemImage: (!settings.readerFollowSystemTheme && theme == item) ? "checkmark" : "circle.lefthalf.filled"
-                        )
-                    }
-                }
-            } label: {
-                HStack {
-                    Text(currentThemeLabel)
-                        .foregroundStyle(DSColor.textPrimary)
-                    Spacer()
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(DSFont.caption)
-                        .foregroundStyle(DSColor.textSecondary)
-                }
-                .padding(.horizontal, DSSpacing.md)
-                .padding(.vertical, DSSpacing.sm)
-                .background(DSColor.surface)
-                .clipShape(RoundedRectangle(cornerRadius: DSRadius.md))
-            }
-        }
     }
 
     private var fontSelector: some View {
@@ -402,6 +313,12 @@ struct ReaderSettingsView: View {
                     subtitle: localized("開啟後，點畫面左右兩側都翻到下一頁；中間仍呼出選單"),
                     isOn: $settings.readerTapBothSidesNextPage
                 )
+
+                ToggleRow(
+                    title: localized("上滑退出閱讀"),
+                    subtitle: localized("向上滑動時浮現「✕」，滑過一半後鬆手即退出閱讀器"),
+                    isOn: $settings.readerSwipeUpToExit
+                )
             }
 
             Toggle(localized("自訂"), isOn: customLayoutBinding)
@@ -473,7 +390,7 @@ struct ReaderSettingsView: View {
                         icon: .titleSize,
                         valueText: "\(Int(readerConfig.readerTitleSize)) pt",
                         value: $readerConfig.readerTitleSize,
-                        range: 10...24,
+                        range: 14...40,
                         step: 1,
                         isEnabled: readerConfig.readerTitleVisible
                     )
@@ -483,7 +400,7 @@ struct ReaderSettingsView: View {
                         icon: .titleTopSpacing,
                         valueText: "\(Int(readerConfig.readerTitleTopSpacing)) pt",
                         value: $readerConfig.readerTitleTopSpacing,
-                        range: 0...28,
+                        range: 0...100,
                         step: 1,
                         isEnabled: readerConfig.readerTitleVisible
                     )
@@ -493,10 +410,41 @@ struct ReaderSettingsView: View {
                         icon: .titleBottomSpacing,
                         valueText: "\(Int(readerConfig.readerTitleBottomSpacing)) pt",
                         value: $readerConfig.readerTitleBottomSpacing,
-                        range: 0...28,
+                        range: 0...100,
                         step: 1,
                         isEnabled: readerConfig.readerTitleVisible
                     )
+                }
+            }
+        }
+    }
+
+    private var readerDecorationSection: some View {
+        Section(header: Text(localized("閱讀裝飾"))) {
+            NavigationLink {
+                ReaderCommentBubbleSettingsView()
+            } label: {
+                Label(localized("氣泡設定"), systemImage: "text.bubble")
+            }
+
+            ToggleRow(
+                title: localized("文字底線"),
+                subtitle: localized("在每行水平正文下方顯示淡底線。"),
+                isOn: readerTextUnderlineDecorationBinding
+            )
+
+            Toggle(isOn: dialogueHighlightBinding) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: DSSpacing.sm) {
+                        Text(localized("對話文字高亮"))
+                            .font(.body)
+                        if !subscriptionStore.hasAccess(.dialogueHighlight) {
+                            ProLockBadge()
+                        }
+                    }
+                    Text(localized("將引號內的對話文字染成主題強調色。"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -567,40 +515,6 @@ struct ReaderSettingsView: View {
         readerConfig.readerTitleBottomSpacing = defaultReaderTitleBottomSpacing
     }
 
-    private var pageTurnOptionBinding: Binding<PageTurnOption> {
-        Binding(
-            get: {
-                if settings.scrollMode {
-                    return .scroll
-                }
-                switch settings.pageTurnStyle {
-                case .slide: return .slide
-                case .cover: return .cover
-                case .curl: return .curl
-                case .none: return .none
-                }
-            },
-            set: { option in
-                switch option {
-                case .slide:
-                    settings.scrollMode = false
-                    settings.pageTurnStyle = .slide
-                case .cover:
-                    settings.scrollMode = false
-                    settings.pageTurnStyle = .cover
-                case .curl:
-                    settings.scrollMode = false
-                    settings.pageTurnStyle = .curl
-                case .scroll:
-                    settings.scrollMode = true
-                case .none:
-                    settings.scrollMode = false
-                    settings.pageTurnStyle = .none
-                }
-            }
-        )
-    }
-
     private var followSystemBrightnessBinding: Binding<Bool> {
         Binding(
             get: { settings.followSystemBrightness },
@@ -623,6 +537,32 @@ struct ReaderSettingsView: View {
                 if !settings.followSystemBrightness {
                     UIScreen.main.brightness = value
                 }
+            }
+        )
+    }
+
+    private var readerTextUnderlineDecorationBinding: Binding<Bool> {
+        Binding(
+            get: { settings.readerTextUnderlineDecorationEnabled },
+            set: { enabled in
+                settings.readerTextUnderlineDecorationEnabled = enabled
+                readerConfig.refresh.send(.layout)
+            }
+        )
+    }
+
+    /// Pro-gated: turning it on without an active subscription presents the paywall
+    /// (highlighting `.dialogueHighlight`) and leaves the setting off. The reader's
+    /// `onChanged` observer rebuilds the content so the tint applies/clears live.
+    private var dialogueHighlightBinding: Binding<Bool> {
+        Binding(
+            get: { settings.readerDialogueHighlightEnabled },
+            set: { enabled in
+                if enabled && !subscriptionStore.hasAccess(.dialogueHighlight) {
+                    showDialogueHighlightPaywall = true
+                    return
+                }
+                settings.readerDialogueHighlightEnabled = enabled
             }
         )
     }

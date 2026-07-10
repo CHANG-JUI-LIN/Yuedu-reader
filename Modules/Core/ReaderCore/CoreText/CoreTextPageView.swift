@@ -295,16 +295,16 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         ctx.setFillColor(layout.backgroundColor.cgColor)
         ctx.fill(canonicalBounds)
 
+        if let backgroundImage = layout.readerBackgroundImage ?? layout.pageBackgroundImage {
+            drawPageBackground(backgroundImage, in: canonicalBounds)
+        }
+
         if layout.pageKinds[pageIndex] == .image {
             for attachment in layout.blockAttachments[pageIndex] ?? [] {
                 attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
             }
             ctx.restoreGState()
             return
-        }
-
-        if let backgroundImage = layout.pageBackgroundImage {
-            drawPageBackground(backgroundImage, in: canonicalBounds)
         }
 
         // Phase 1: CG geometry operations (background colors, borders) — coordinate-system independent

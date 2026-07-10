@@ -22,7 +22,7 @@ extension ReaderView {
                         footerTextGap: readerConfig.footerTextGap
                       )
                     : 0,
-                backgroundColor: readerTheme.uiBackgroundColor,
+                backgroundColor: readerScrollBackgroundColor,
                 initialChapter: initialPos.chapter,
                 initialCharOffset: initialPos.charOffset,
                 resliceToken: scrollResliceToken,
@@ -72,7 +72,7 @@ extension ReaderView {
                     ensureChapterReady(chapterIndex: chapterIndex)
                 }
             )
-            .background(readerTheme.backgroundColor)
+            .background(readerSurfaceBackground)
             .ignoresSafeArea()
             .modifier(ScrollConfigObserver(readerConfig: readerConfig, readerTheme: readerTheme) { scheduleScrollReslice() })
         } else {
@@ -131,7 +131,11 @@ extension ReaderView {
             titleVisible: readerConfig.readerTitleVisible,
             titleSize: readerConfig.readerTitleSize,
             titleTopSpacing: readerConfig.readerTitleTopSpacing,
-            titleBottomSpacing: readerConfig.readerTitleBottomSpacing
+            titleBottomSpacing: readerConfig.readerTitleBottomSpacing,
+            readerBackgroundImageURL: activeReaderBackgroundImageURL,
+            dialogueHighlightColor: readerTheme.dialogueHighlightColor(
+                enabled: GlobalSettings.shared.readerDialogueHighlightEnabled
+            )
         )
     }
 
@@ -206,7 +210,7 @@ extension ReaderView {
                 }
             }
         }
-        .background(readerTheme.backgroundColor)
+        .background(readerSurfaceBackground)
         .contentShape(Rectangle())
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }

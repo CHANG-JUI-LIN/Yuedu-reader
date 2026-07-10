@@ -75,6 +75,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         super.init(nibName: nil, bundle: nil)
         view.backgroundColor = backgroundColor
         collectionView.backgroundColor = backgroundColor
+        let isTransparent = backgroundColor.cgColor.alpha < 0.999
+        view.isOpaque = !isTransparent
+        collectionView.isOpaque = !isTransparent
         collectionView.semanticContentAttribute = axis.semanticContentAttribute
     }
 
@@ -304,6 +307,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     func updateBackgroundColor(_ color: UIColor) {
         view.backgroundColor = color
         collectionView.backgroundColor = color
+        let isTransparent = color.cgColor.alpha < 0.999
+        view.isOpaque = !isTransparent
+        collectionView.isOpaque = !isTransparent
     }
 
     func setTextAnnotations(_ annotations: [CoreTextTextAnnotation]) {

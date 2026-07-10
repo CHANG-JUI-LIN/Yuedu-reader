@@ -21,12 +21,39 @@ enum PageTurnStyle: String, CaseIterable {
     case none = "無動畫"
 }
 
+enum ReaderCommentBubblePresetMode: String, CaseIterable, Identifiable {
+    case builtin
+    case square
+    case custom
+
+    var id: String { rawValue }
+
+    var titleKey: String {
+        switch self {
+        case .builtin: return "氣泡"
+        case .square: return "方泡"
+        case .custom: return "自訂 SVG"
+        }
+    }
+
+    var localizedTitle: String { localized(titleKey) }
+}
+
+enum ReaderCustomBackgroundMode: String, CaseIterable, Identifiable {
+    case none
+    case color
+    case image
+
+    var id: String { rawValue }
+}
+
 // MARK: - Reader Theme
 
 enum ReaderTheme: String, CaseIterable {
-    case white = "白天"
-    case sepia = "護眼"
     case night = "夜間"
+    case white = "白天"
+    case green = "護眼綠"
+    case sepia = "護眼"
 
     private static let userDefaultsKey = "yd_reader_theme"
     private static let lastLightThemeKey = "lastLightTheme"
@@ -34,6 +61,23 @@ enum ReaderTheme: String, CaseIterable {
     private static let weChatDayBackground = UIColor(red: 244 / 255, green: 245 / 255, blue: 247 / 255, alpha: 1)
     private static let weChatNightBackground = UIColor.black
     private static let weChatNightBarBackground = UIColor(red: 26 / 255, green: 26 / 255, blue: 26 / 255, alpha: 1)
+    private static let eyeComfortGreenBackground = UIColor(
+        red: 207 / 255,
+        green: 232 / 255,
+        blue: 204 / 255,
+        alpha: 1
+    )
+
+    var titleKey: String {
+        switch self {
+        case .night: return "黑色"
+        case .white: return "白色"
+        case .green: return "護眼綠"
+        case .sepia: return "棕色"
+        }
+    }
+
+    var localizedTitle: String { localized(titleKey) }
 
     static func loadPersisted() -> ReaderTheme {
         let raw = UserDefaults.standard.string(forKey: userDefaultsKey) ?? ""
@@ -63,8 +107,16 @@ enum ReaderTheme: String, CaseIterable {
         Color(uiColor: uiBackgroundColor)
     }
 
+    var previewBackgroundColor: Color {
+        Color(uiColor: intrinsicUIBackgroundColor)
+    }
+
     var textColor: Color {
         Color(uiColor: uiTextColor)
+    }
+
+    var previewTextColor: Color {
+        Color(uiColor: intrinsicUITextColor)
     }
 
     var accentColor: Color {
@@ -73,8 +125,13 @@ enum ReaderTheme: String, CaseIterable {
 
     var uiBackgroundColor: UIColor {
         if let preset = AppearanceThemePreset.activeReaderTheme { return preset.background }
+        return intrinsicUIBackgroundColor
+    }
+
+    private var intrinsicUIBackgroundColor: UIColor {
         switch self {
         case .white: return Self.weChatDayBackground
+        case .green: return Self.eyeComfortGreenBackground
         case .sepia: return UIColor(red: 244 / 255, green: 236 / 255, blue: 216 / 255, alpha: 1)
         case .night: return Self.weChatNightBackground
         }
@@ -82,8 +139,13 @@ enum ReaderTheme: String, CaseIterable {
 
     var uiTextColor: UIColor {
         if let preset = AppearanceThemePreset.activeReaderTheme { return preset.text }
+        return intrinsicUITextColor
+    }
+
+    private var intrinsicUITextColor: UIColor {
         switch self {
         case .white: return UIColor(red: 51 / 255, green: 51 / 255, blue: 51 / 255, alpha: 1)
+        case .green: return UIColor(red: 47 / 255, green: 61 / 255, blue: 47 / 255, alpha: 1)
         case .sepia: return UIColor(red: 91 / 255, green: 70 / 255, blue: 54 / 255, alpha: 1)
         case .night: return UIColor(red: 217 / 255, green: 217 / 255, blue: 217 / 255, alpha: 1)
         }
@@ -94,6 +156,15 @@ enum ReaderTheme: String, CaseIterable {
         return Self.weChatAccent
     }
 
+    /// Text tint for the "對話文字高亮" reading decoration. Returns the theme accent
+    /// nudged slightly toward the body text color, so long dialogue passages stay soft
+    /// yet clearly distinct. Readable on every theme (the accent always has contrast
+    /// against its own background). Returns `nil` when the decoration is disabled.
+    func dialogueHighlightColor(enabled: Bool) -> UIColor? {
+        guard enabled else { return nil }
+        return AppearanceThemePreset.mix(uiAccentColor, uiTextColor, 0.15)
+    }
+
     var barColor: Color {
         Color(uiColor: uiBarColor)
     }
@@ -102,6 +173,8 @@ enum ReaderTheme: String, CaseIterable {
         if let preset = AppearanceThemePreset.activeReaderTheme { return preset.bar }
         switch self {
         case .white: return .white
+        case .green:
+            return UIColor(red: 191 / 255, green: 218 / 255, blue: 188 / 255, alpha: 1)
         case .sepia: return UIColor(red: 0.93, green: 0.91, blue: 0.83, alpha: 1)
         case .night: return Self.weChatNightBarBackground
         }
@@ -110,6 +183,7 @@ enum ReaderTheme: String, CaseIterable {
     var epubJSName: String {
         switch self {
         case .white: return "white"
+        case .green: return "green"
         case .sepia: return "sepia"
         case .night: return "night"
         }
@@ -282,10 +356,25 @@ class GlobalSettings: ObservableObject {
     private static let appearanceBindReaderThemeKey = "yd_appearance_bind_reader_theme"
     private static let appearanceReaderInterfaceKey = "yd_appearance_reader_interface"
     private static let customAppearanceThemesKey = "yd_custom_appearance_themes"
+    private static let commentBubbleFollowsSourceSVGKey = "yd_comment_bubble_follows_source_svg"
+    private static let commentBubblePresetModeKey = "yd_comment_bubble_preset_mode"
+    private static let commentBubbleCustomSVGKey = "yd_comment_bubble_custom_svg"
+    private static let commentBubbleCustomStyleNameKey = "yd_comment_bubble_custom_style_name"
+    private static let commentBubbleScaleKey = "yd_comment_bubble_scale"
+    private static let commentBubbleTextScaleKey = "yd_comment_bubble_text_scale"
+    private static let readerTextUnderlineDecorationKey = "yd_reader_text_underline_decoration"
+    private static let readerDialogueHighlightKey = "yd_reader_dialogue_highlight"
+    private static let readerCustomBackgroundModeKey = "yd_reader_custom_background_mode"
+    private static let readerCustomBackgroundColorHexKey = "yd_reader_custom_background_color_hex"
+    private static let readerCustomBackgroundImageFileNameKey = "yd_reader_custom_background_image_file_name"
     private static let rootTabVisibleIDsKey = "yd_root_tab_visible_ids"
     private static let rootTabHidesLabelsKey = "yd_root_tab_hides_labels"
     private static let rootTabIconSizeKey = "yd_root_tab_icon_size"
     static let rootTabIconAssetsKey = "yd_root_tab_icon_assets"
+    static let commentBubbleScaleRange: ClosedRange<Double> = 0.5...2.0
+    static let commentBubbleTextScaleRange: ClosedRange<Double> = 0.2...0.8
+    static let defaultCommentBubbleScale = 1.0
+    static let defaultCommentBubbleTextScale = 0.4
 
     // MARK: - Account State
 
@@ -391,11 +480,93 @@ class GlobalSettings: ObservableObject {
     @Published var readerTapBothSidesNextPage: Bool {
         didSet { UserDefaults.standard.set(readerTapBothSidesNextPage, forKey: "yd_reader_tap_both_next") }
     }
+    /// Paged mode only: swiping up shows a growing ✕ chip and releasing closes
+    /// the reader. Defaults ON; scroll mode never installs the gesture. Read at
+    /// gesture-begin time by `CoreTextPageEngineView` — no relayout needed.
+    @Published var readerSwipeUpToExit: Bool {
+        didSet { UserDefaults.standard.set(readerSwipeUpToExit, forKey: "yd_reader_swipe_up_exit") }
+    }
     /// When on, the reader theme automatically follows the system light/dark
     /// appearance (light → last light theme, dark → night). Selecting a specific
     /// theme from the menu turns this off. Applied live in `ReaderView`.
     @Published var readerFollowSystemTheme: Bool {
         didSet { UserDefaults.standard.set(readerFollowSystemTheme, forKey: "yd_reader_follow_system_theme") }
+    }
+    @Published var readerTextUnderlineDecorationEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(readerTextUnderlineDecorationEnabled, forKey: Self.readerTextUnderlineDecorationKey)
+        }
+    }
+    /// Tint quoted dialogue (「」『』"" '') in the theme accent color. Applied as a
+    /// `.foregroundColor` override when the chapter attributed string is built, so it
+    /// colors justified glyphs natively and works in both horizontal and vertical modes.
+    @Published var readerDialogueHighlightEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(readerDialogueHighlightEnabled, forKey: Self.readerDialogueHighlightKey)
+        }
+    }
+    @Published var commentBubbleFollowsSourceSVG: Bool {
+        didSet {
+            UserDefaults.standard.set(commentBubbleFollowsSourceSVG, forKey: Self.commentBubbleFollowsSourceSVGKey)
+        }
+    }
+    @Published var commentBubblePresetMode: ReaderCommentBubblePresetMode {
+        didSet {
+            UserDefaults.standard.set(commentBubblePresetMode.rawValue, forKey: Self.commentBubblePresetModeKey)
+        }
+    }
+    @Published var commentBubbleCustomSVG: String {
+        didSet {
+            UserDefaults.standard.set(commentBubbleCustomSVG, forKey: Self.commentBubbleCustomSVGKey)
+        }
+    }
+    @Published var commentBubbleCustomStyleName: String {
+        didSet {
+            UserDefaults.standard.set(commentBubbleCustomStyleName, forKey: Self.commentBubbleCustomStyleNameKey)
+        }
+    }
+    @Published var commentBubbleScale: Double {
+        didSet {
+            let sanitized = Self.sanitizedCommentBubbleScale(commentBubbleScale)
+            if commentBubbleScale != sanitized {
+                commentBubbleScale = sanitized
+            } else {
+                UserDefaults.standard.set(commentBubbleScale, forKey: Self.commentBubbleScaleKey)
+            }
+        }
+    }
+    @Published var commentBubbleTextScale: Double {
+        didSet {
+            let sanitized = Self.sanitizedCommentBubbleTextScale(commentBubbleTextScale)
+            if commentBubbleTextScale != sanitized {
+                commentBubbleTextScale = sanitized
+            } else {
+                UserDefaults.standard.set(commentBubbleTextScale, forKey: Self.commentBubbleTextScaleKey)
+            }
+        }
+    }
+    @Published var readerCustomBackgroundMode: ReaderCustomBackgroundMode {
+        didSet {
+            UserDefaults.standard.set(readerCustomBackgroundMode.rawValue, forKey: Self.readerCustomBackgroundModeKey)
+        }
+    }
+    @Published var readerCustomBackgroundColorHex: UInt32? {
+        didSet {
+            if let readerCustomBackgroundColorHex {
+                UserDefaults.standard.set(Int(readerCustomBackgroundColorHex), forKey: Self.readerCustomBackgroundColorHexKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.readerCustomBackgroundColorHexKey)
+            }
+        }
+    }
+    @Published var readerCustomBackgroundImageFileName: String? {
+        didSet {
+            if let readerCustomBackgroundImageFileName, !readerCustomBackgroundImageFileName.isEmpty {
+                UserDefaults.standard.set(readerCustomBackgroundImageFileName, forKey: Self.readerCustomBackgroundImageFileNameKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.readerCustomBackgroundImageFileNameKey)
+            }
+        }
     }
 
     // MARK: - App Appearance Themes
@@ -612,11 +783,11 @@ class GlobalSettings: ObservableObject {
         readerTitleVisible =
             (UserDefaults.standard.object(forKey: "yd_reader_title_visible") as? Bool) ?? true
         readerTitleSize =
-            (UserDefaults.standard.object(forKey: "yd_reader_title_size") as? Double) ?? 20.0
+            (UserDefaults.standard.object(forKey: "yd_reader_title_size") as? Double) ?? 28.0
         readerTitleTopSpacing =
             (UserDefaults.standard.object(forKey: "yd_reader_title_top_spacing") as? Double) ?? 10.0
         readerTitleBottomSpacing =
-            (UserDefaults.standard.object(forKey: "yd_reader_title_bottom_spacing") as? Double) ?? 10.0
+            (UserDefaults.standard.object(forKey: "yd_reader_title_bottom_spacing") as? Double) ?? 20.0
         let rawPageTurn = UserDefaults.standard.string(forKey: "yd_page_turn_style") ?? ""
         pageTurnStyle = PageTurnStyle(rawValue: rawPageTurn) ?? .slide
         let rawSpreadMode = UserDefaults.standard.string(forKey: "yd_reader_spread_mode") ?? ""
@@ -628,7 +799,37 @@ class GlobalSettings: ObservableObject {
         let rawWritingMode = UserDefaults.standard.string(forKey: "yd_reader_writing_mode") ?? ""
         readerWritingMode = ReaderWritingMode(rawValue: rawWritingMode) ?? .horizontal
         readerTapBothSidesNextPage = UserDefaults.standard.bool(forKey: "yd_reader_tap_both_next")
+        readerSwipeUpToExit =
+            (UserDefaults.standard.object(forKey: "yd_reader_swipe_up_exit") as? Bool) ?? true
         readerFollowSystemTheme = UserDefaults.standard.bool(forKey: "yd_reader_follow_system_theme")
+        readerTextUnderlineDecorationEnabled = UserDefaults.standard.bool(forKey: Self.readerTextUnderlineDecorationKey)
+        readerDialogueHighlightEnabled = UserDefaults.standard.bool(forKey: Self.readerDialogueHighlightKey)
+        if UserDefaults.standard.object(forKey: Self.commentBubbleFollowsSourceSVGKey) == nil {
+            commentBubbleFollowsSourceSVG = true
+        } else {
+            commentBubbleFollowsSourceSVG = UserDefaults.standard.bool(forKey: Self.commentBubbleFollowsSourceSVGKey)
+        }
+        let rawBubbleMode = UserDefaults.standard.string(forKey: Self.commentBubblePresetModeKey) ?? ""
+        commentBubblePresetMode = ReaderCommentBubblePresetMode(rawValue: rawBubbleMode) ?? .builtin
+        commentBubbleCustomSVG = UserDefaults.standard.string(forKey: Self.commentBubbleCustomSVGKey) ?? ""
+        commentBubbleCustomStyleName = UserDefaults.standard.string(forKey: Self.commentBubbleCustomStyleNameKey)
+            ?? "自訂 SVG"
+        commentBubbleScale = Self.sanitizedCommentBubbleScale(
+            (UserDefaults.standard.object(forKey: Self.commentBubbleScaleKey) as? Double)
+                ?? Self.defaultCommentBubbleScale
+        )
+        commentBubbleTextScale = Self.sanitizedCommentBubbleTextScale(
+            (UserDefaults.standard.object(forKey: Self.commentBubbleTextScaleKey) as? Double)
+                ?? Self.defaultCommentBubbleTextScale
+        )
+        let rawCustomBackgroundMode = UserDefaults.standard.string(forKey: Self.readerCustomBackgroundModeKey) ?? ""
+        readerCustomBackgroundMode = ReaderCustomBackgroundMode(rawValue: rawCustomBackgroundMode) ?? .none
+        if let savedCustomBackgroundColor = UserDefaults.standard.object(forKey: Self.readerCustomBackgroundColorHexKey) as? Int {
+            readerCustomBackgroundColorHex = UInt32(clamping: savedCustomBackgroundColor)
+        } else {
+            readerCustomBackgroundColorHex = nil
+        }
+        readerCustomBackgroundImageFileName = UserDefaults.standard.string(forKey: Self.readerCustomBackgroundImageFileNameKey)
         customAppearanceThemes = Self.loadCustomAppearanceThemes()
         appearanceThemeID = UserDefaults.standard.string(forKey: Self.appearanceThemeIDKey)
             ?? Self.defaultAppearanceThemeID
@@ -674,6 +875,14 @@ class GlobalSettings: ObservableObject {
         importedTTSSources = Self.loadImportedTTSSources()
         ttsUseSystemVoice = UserDefaults.standard.bool(forKey: "yd_tts_use_system_voice")
         ttsSystemVoiceIdentifier = UserDefaults.standard.string(forKey: "yd_tts_system_voice_id") ?? ""
+    }
+
+    static func sanitizedCommentBubbleScale(_ value: Double) -> Double {
+        min(max(value, commentBubbleScaleRange.lowerBound), commentBubbleScaleRange.upperBound)
+    }
+
+    static func sanitizedCommentBubbleTextScale(_ value: Double) -> Double {
+        min(max(value, commentBubbleTextScaleRange.lowerBound), commentBubbleTextScaleRange.upperBound)
     }
 
     private static func loadImportedTTSSources() -> [ImportedTTSSource] {
@@ -784,6 +993,103 @@ class GlobalSettings: ObservableObject {
         if let data = try? JSONEncoder().encode(themes) {
             UserDefaults.standard.set(data, forKey: customAppearanceThemesKey)
         }
+    }
+
+    var readerCustomBackgroundImageURL: URL? {
+        guard let fileName = readerCustomBackgroundImageFileName, !fileName.isEmpty else { return nil }
+        return try? ReaderCustomBackgroundStorageManager.shared.fileURL(fileName: fileName)
+    }
+
+    var readerCustomBackgroundPreviewUIColor: UIColor {
+        switch readerCustomBackgroundMode {
+        case .color:
+            if let readerCustomBackgroundColorHex {
+                return AppearanceThemePreset.hex(readerCustomBackgroundColorHex)
+            }
+            return ReaderTheme.white.uiBackgroundColor
+        case .image:
+            return UIColor(white: 1.0, alpha: 0.82)
+        case .none:
+            return UIColor.systemGray5
+        }
+    }
+
+    var readerCustomBackgroundPreviewTextUIColor: UIColor {
+        switch readerCustomBackgroundMode {
+        case .color:
+            return Self.readableTextColor(for: readerCustomBackgroundPreviewUIColor)
+        case .image:
+            return AppearanceThemePreset.hex(0x2E322F)
+        case .none:
+            return UIColor.label
+        }
+    }
+
+    var readerCustomBackgroundPreset: AppearanceThemePreset? {
+        guard readerCustomBackgroundMode != .none else { return nil }
+        let background = readerCustomBackgroundPreviewUIColor
+        let text = readerCustomBackgroundPreviewTextUIColor
+        let accent = AppearanceThemePreset.hex(0x007AFF)
+        return AppearanceThemePreset(
+            id: "reader_custom_\(readerCustomBackgroundMode.rawValue)_\(readerCustomBackgroundColorHex ?? 0)_\(readerCustomBackgroundImageFileName ?? "")",
+            nameKey: "自定義",
+            displayName: localized("自定義"),
+            background: background,
+            text: text,
+            bar: background,
+            accent: accent,
+            dialogue: accent.withAlphaComponent(0.16),
+            previewBackground: background,
+            relativePreviewImagePath: nil,
+            imagePaths: [],
+            requiresPro: false,
+            isImagePreset: readerCustomBackgroundMode == .image,
+            isCustom: true
+        )
+    }
+
+    func applyReaderCustomBackgroundColor(_ color: UIColor) {
+        readerCustomBackgroundColorHex = color.rgbHex ?? 0xF4F5F7
+        readerCustomBackgroundMode = .color
+        readerFollowSystemTheme = false
+        appearanceBindReaderTheme = false
+        AppearanceThemePreset.activeReaderTheme = readerCustomBackgroundPreset
+        ReaderConfig.shared.refresh.send(.appearance)
+    }
+
+    @discardableResult
+    func importReaderCustomBackgroundImage(from url: URL) throws -> String {
+        let fileName = try ReaderCustomBackgroundStorageManager.shared.importBackground(fileURL: url)
+        readerCustomBackgroundImageFileName = fileName
+        readerCustomBackgroundMode = .image
+        readerFollowSystemTheme = false
+        appearanceBindReaderTheme = false
+        AppearanceThemePreset.activeReaderTheme = readerCustomBackgroundPreset
+        ReaderConfig.shared.refresh.send(.appearance)
+        return fileName
+    }
+
+    func clearReaderCustomBackground() {
+        readerCustomBackgroundMode = .none
+        AppearanceThemePreset.activeReaderTheme = appearanceBindReaderTheme ? AppearanceThemePreset.activeReaderTheme : nil
+        ReaderConfig.shared.refresh.send(.appearance)
+    }
+
+    private static func readableTextColor(for color: UIColor) -> UIColor {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return .label
+        }
+        func linearized(_ component: CGFloat) -> CGFloat {
+            component <= 0.03928
+                ? component / 12.92
+                : pow((component + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linearized(red) + 0.7152 * linearized(green) + 0.0722 * linearized(blue)
+        return luminance > 0.45 ? AppearanceThemePreset.hex(0x2E322F) : AppearanceThemePreset.hex(0xF5F5F5)
     }
 
     @discardableResult
@@ -904,5 +1210,67 @@ class GlobalSettings: ObservableObject {
         default:
             return user.providerData.first?.providerID ?? "Firebase"
         }
+    }
+}
+
+enum ReaderCustomBackgroundStorageError: Error {
+    case unsupportedImageFile
+    case cannotReadImage
+
+    var messageKey: String {
+        switch self {
+        case .unsupportedImageFile:
+            return "只支援 WebP、JPG、JPEG 圖片。"
+        case .cannotReadImage:
+            return "無法讀取圖片。"
+        }
+    }
+}
+
+final class ReaderCustomBackgroundStorageManager {
+    static let shared = ReaderCustomBackgroundStorageManager()
+
+    private let fileManager: FileManager
+    private let allowedExtensions: Set<String> = ["webp", "jpg", "jpeg"]
+
+    private init(fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+    }
+
+    func importBackground(fileURL: URL) throws -> String {
+        let sourceExtension = fileURL.pathExtension.lowercased()
+        guard allowedExtensions.contains(sourceExtension) else {
+            throw ReaderCustomBackgroundStorageError.unsupportedImageFile
+        }
+        guard let image = UIImage(contentsOfFile: fileURL.path),
+              image.size.width > 0,
+              image.size.height > 0 else {
+            throw ReaderCustomBackgroundStorageError.cannotReadImage
+        }
+
+        let directory = try backgroundsDirectoryURL()
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let fileName = "reader-background-\(UUID().uuidString).\(sourceExtension)"
+        let destination = directory.appendingPathComponent(fileName)
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.copyItem(at: fileURL, to: destination)
+        return fileName
+    }
+
+    func fileURL(fileName: String) throws -> URL {
+        try backgroundsDirectoryURL().appendingPathComponent(fileName)
+    }
+
+    private func backgroundsDirectoryURL() throws -> URL {
+        let base = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        return base.appendingPathComponent("ReaderBackgrounds", isDirectory: true)
     }
 }

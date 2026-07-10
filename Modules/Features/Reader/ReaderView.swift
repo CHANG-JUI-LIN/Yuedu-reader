@@ -53,6 +53,8 @@ struct ReaderView: View {
     @State var pageTurnVersion: UInt = 0
     @State var showBars = false
     @State var showSettings = false
+    @State var showQuickThemePanel = false
+    @State var showReaderSearch = false
     @State var showTOC = false
     @State var showBookmarks = false
 
@@ -158,6 +160,44 @@ struct ReaderView: View {
         nonmutating set { readerConfig.theme = newValue }
     }
 
+    /// The imported image is the reader surface itself, not a SwiftUI decoration
+    /// behind an opaque CoreText page. The same URL is passed into render settings
+    /// so every paged canvas draws it beneath the text.
+    var activeReaderBackgroundImageURL: URL? {
+        guard settings.readerCustomBackgroundMode == .image,
+              let url = settings.readerCustomBackgroundImageURL,
+              FileManager.default.fileExists(atPath: url.path)
+        else {
+            return nil
+        }
+        return url
+    }
+
+    private var activeReaderBackgroundImage: UIImage? {
+        guard let url = activeReaderBackgroundImageURL else { return nil }
+        return UIImage(contentsOfFile: url.path)
+    }
+
+    var readerScrollBackgroundColor: UIColor {
+        activeReaderBackgroundImageURL == nil ? readerTheme.uiBackgroundColor : .clear
+    }
+
+    @ViewBuilder
+    var readerSurfaceBackground: some View {
+        ZStack {
+            readerTheme.backgroundColor
+            if let image = activeReaderBackgroundImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+    }
+
     /// When "follow system" theme is on, align the reader theme with the current
     /// system light/dark appearance. Setting `readerConfig.theme` triggers the
     /// `.appearance` refresh through `ReaderConfig`'s binding, so pages recolor.
@@ -172,17 +212,21 @@ struct ReaderView: View {
     /// Applies the selected app appearance theme to the reader only when the
     /// user explicitly enables "bind reading theme" in Settings.
     func syncActiveThemePreset() {
-        let preset = settings.appearanceBindReaderTheme
-            ? settings.appearanceTheme(
+        let preset: AppearanceThemePreset?
+        if let customBackgroundPreset = settings.readerCustomBackgroundPreset {
+            preset = customBackgroundPreset
+        } else if settings.appearanceBindReaderTheme {
+            preset = settings.appearanceTheme(
                 for: systemColorScheme,
                 isProActive: subscriptionStore.hasAccess(.readerThemePacks)
             )
-            : nil
+        } else {
+            preset = nil
+        }
         guard AppearanceThemePreset.activeReaderTheme != preset else { return }
         AppearanceThemePreset.activeReaderTheme = preset
         readerConfig.refresh.send(.appearance)
     }
-
 
     var usesReadableReaderWidth: Bool {
         horizontalSizeClass == .regular || UIDevice.current.userInterfaceIdiom == .pad
@@ -974,32 +1018,34 @@ struct ReaderView: View {
 
     // ── Body ──
     var body: some View {
-        buildBody()
-            .task {
-                guard readerSessionCoordinator == nil else { return }
-                let fallback = CoreTextReadingPosition(spineIndex: 0, charOffset: 0)
-                ensureReaderNavigator(initialPosition: fallback)
-                let restored = await readerSessionCoordinator?.restore()
-                if let restored {
-                    currentChapterIndex = restored.spineIndex
-                    scrollVisibleChapter = restored.spineIndex
-                    pendingScrollJumpTarget = restored.coreTextPosition
+        NavigationStack {
+            buildBody()
+                .toolbar {
+                    appleBooksToolbarContent
                 }
-                isRestoringPosition = false
+                .toolbar(showsAppleBooksToolbars ? .visible : .hidden, for: .navigationBar)
+                .toolbar(showsAppleBooksToolbars ? .visible : .hidden, for: .bottomBar)
+                .toolbarBackground(.hidden, for: .navigationBar, .bottomBar)
+        }
+        .tint(readerTheme.textColor)
+        .task {
+            guard readerSessionCoordinator == nil else { return }
+            let fallback = CoreTextReadingPosition(spineIndex: 0, charOffset: 0)
+            ensureReaderNavigator(initialPosition: fallback)
+            let restored = await readerSessionCoordinator?.restore()
+            if let restored {
+                currentChapterIndex = restored.spineIndex
+                scrollVisibleChapter = restored.spineIndex
+                pendingScrollJumpTarget = restored.coreTextPosition
             }
+            isRestoringPosition = false
+        }
     }
 
     private func buildBody() -> AnyView {
         AnyView(
             ZStack(alignment: .top) {
-            AppearanceThemeBackgroundView(
-                preset: AppearanceThemePreset.activeReaderTheme,
-                colorScheme: systemColorScheme
-            )
-            .id(AppearanceThemePreset.activeReaderTheme?.id ?? "no-reader-theme-background")
-
-            readerTheme.backgroundColor
-                .ignoresSafeArea()
+            readerSurfaceBackground
                 .animation(.easeInOut(duration: uiFeedbackDuration), value: readerTheme)
 
             if chapters.isEmpty {
@@ -1038,7 +1084,8 @@ struct ReaderView: View {
                         default:
                             withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
                         }
-                    }
+                    },
+                    onSwipeUpExit: { closeReader() }
                 )
                 .id(readerPageViewIdentity)
                 .ignoresSafeArea()
@@ -1050,8 +1097,7 @@ struct ReaderView: View {
                 ZStack {
                     scrollBody
                     if epubRenderer.scrollEngine != nil, !epubRenderer.scrollEngineReady {
-                        readerTheme.backgroundColor
-                            .ignoresSafeArea()
+                        readerSurfaceBackground
                             .overlay { ProgressView(localized("載入中…")) }
                             .transition(.opacity)
                     }
@@ -1093,7 +1139,8 @@ struct ReaderView: View {
                     },
                     onFootnoteTap: { text in
                         footnoteItem = ReaderFootnoteItem(text: text)
-                    }
+                    },
+                    onSwipeUpExit: { closeReader() }
                 )
                 .id(readerPageViewIdentity)
                 .ignoresSafeArea()
@@ -1126,8 +1173,7 @@ struct ReaderView: View {
                 }
                 .transition(.opacity.animation(.easeOut(duration: 0.2)))
             }
-            if showBars { topBar }
-            if showBars { bottomBar }
+            if showBars { readerChrome }
             if showTTSJumpPrompt {
                 VStack {
                     Spacer()
@@ -1326,6 +1372,39 @@ struct ReaderView: View {
         .onChanged(of: settings.appearanceBindReaderTheme) { _ in
             syncActiveThemePreset()
         }
+        .onChanged(of: settings.readerCustomBackgroundMode) { _ in
+            syncActiveThemePreset()
+        }
+        .onChanged(of: settings.readerCustomBackgroundColorHex) { _ in
+            syncActiveThemePreset()
+        }
+        .onChanged(of: settings.readerCustomBackgroundImageFileName) { _ in
+            syncActiveThemePreset()
+        }
+        .onChanged(of: settings.commentBubbleFollowsSourceSVG) { _ in
+            forceReaderRenderableContentRefresh()
+        }
+        .onChanged(of: settings.commentBubblePresetMode) { _ in
+            forceReaderRenderableContentRefresh()
+        }
+        .onChanged(of: settings.commentBubbleCustomSVG) { _ in
+            forceReaderRenderableContentRefresh()
+        }
+        .onChanged(of: settings.commentBubbleCustomStyleName) { _ in
+            forceReaderRenderableContentRefresh()
+        }
+        .onChanged(of: settings.commentBubbleScale) { _ in
+            forceReaderRenderableContentRefresh()
+        }
+        .onChanged(of: settings.commentBubbleTextScale) { _ in
+            forceReaderRenderableContentRefresh()
+        }
+        .onChanged(of: settings.readerTextUnderlineDecorationEnabled) { _ in
+            forceReaderRenderableContentRefresh()
+        }
+        .onChanged(of: settings.readerDialogueHighlightEnabled) { _ in
+            forceReaderRenderableContentRefresh()
+        }
         .onChanged(of: settings.customAppearanceThemes) { _ in
             syncActiveThemePreset()
         }
@@ -1406,6 +1485,44 @@ struct ReaderView: View {
                     capabilities: readerCapabilities,
                     allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
                     isVerticalWritingMode: effectiveWritingMode.isVertical
+                )
+            }
+        }
+        .sheet(isPresented: $showQuickThemePanel) {
+            ReaderQuickThemePanelView(
+                fontSize: Binding(
+                    get: { fontSize },
+                    set: { fontSize = $0 }
+                ),
+                readerTheme: Binding(
+                    get: { readerTheme },
+                    set: { readerTheme = $0 }
+                ),
+                pageTurnOption: quickPageTurnOption,
+                isVerticalWritingMode: effectiveWritingMode.isVertical,
+                onSelectPageTurnOption: { applyQuickPageTurnOption($0) },
+                onCustomize: {
+                    showQuickThemePanel = false
+                    DispatchQueue.main.async {
+                        showSettings = true
+                    }
+                },
+                onClose: { showQuickThemePanel = false }
+            )
+            .presentationDetents([.height(DSLayout.readerQuickPanelSheetHeight)])
+            .presentationDragIndicator(.hidden)
+            .interactiveDismissDisabled()
+        }
+        .sheet(isPresented: $showReaderSearch) {
+            AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
+                ReaderBookSearchView(
+                    items: readerSearchItems,
+                    onSelect: { item in
+                        showReaderSearch = false
+                        showBars = false
+                        issuePageTurn(to: item.pageIndex)
+                    },
+                    onClose: { showReaderSearch = false }
                 )
             }
         }
@@ -1810,4 +1927,3 @@ struct ReaderView: View {
     // MARK: - Loading & Page Building
     // Extracted to ReaderView+PageBuilding.swift
 }
-

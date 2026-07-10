@@ -18,6 +18,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
     let onTapZone: (String) -> Void
     var onFootnoteTap: (String) -> Void = { _ in }
+    var onSwipeUpExit: () -> Void = {}
 
     func makeUIViewController(context: Context) -> UIPageViewController {
         let adapterDescriptor = PageViewControllerPagingAdapterDescriptor(pageTurnStyle: pageTurnStyle)
@@ -99,6 +100,19 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             pan.cancelsTouchesInView = false
             pvc.view.addGestureRecognizer(pan)
         }
+
+        // Swipe-up exit: only begins on a clearly upward drag (delegate-gated),
+        // so page-turn pans/taps keep their behavior. Reads the setting at
+        // begin time, so toggling it needs no controller rebuild.
+        let exitPan = UIPanGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleSwipeUpExitPan(_:))
+        )
+        exitPan.maximumNumberOfTouches = 1
+        exitPan.delegate = context.coordinator
+        context.coordinator.swipeUpExitPanGesture = exitPan
+        pvc.view.addGestureRecognizer(exitPan)
+
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: pvc)
 
         return pvc
@@ -248,13 +262,15 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             currentPage: $currentPage,
             onPageChanged: onPageChanged,
             onTapZone: onTapZone,
-            onFootnoteTap: onFootnoteTap
+            onFootnoteTap: onFootnoteTap,
+            onSwipeUpExit: onSwipeUpExit
         )
     }
 
     final class Coordinator: NSObject,
         UIPageViewControllerDataSource,
-        UIPageViewControllerDelegate
+        UIPageViewControllerDelegate,
+        UIGestureRecognizerDelegate
     {
         var currentEngine: any PageRenderingProvider
         let pageTurnStyle: PageTurnStyle
@@ -265,6 +281,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
         let onTapZone: (String) -> Void
         let onFootnoteTap: (String) -> Void
+        let onSwipeUpExit: () -> Void
         let isRTL: Bool
         var isDoublePageSpread: Bool
         let spreadGutter: CGFloat
@@ -324,6 +341,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private var pendingNavigation: PendingNavigation?
         weak var coverPageViewController: UIPageViewController?
         weak var instantPanPageViewController: UIPageViewController?
+        // Swipe-up exit gesture state
+        weak var swipeUpExitPanGesture: UIPanGestureRecognizer?
+        private var swipeUpExitChipContainer: UIView?
+        private weak var swipeUpExitChipIcon: UIImageView?
+        private var swipeUpExitArmed = false
+        private let swipeUpExitHaptic = UIImpactFeedbackGenerator(style: .medium)
         private weak var callbackEngineObject: AnyObject?
         private var callbackEngineIdentifier: ObjectIdentifier?
         fileprivate var isTransitioning = false
@@ -515,7 +538,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
              currentPage: Binding<Int>,
              onPageChanged: @escaping (Int, CoreTextReadingPosition?) -> Void,
              onTapZone: @escaping (String) -> Void,
-             onFootnoteTap: @escaping (String) -> Void) {
+             onFootnoteTap: @escaping (String) -> Void,
+             onSwipeUpExit: @escaping () -> Void = {}) {
             self.currentEngine = engine
             self.pageTurnStyle = pageTurnStyle
             self.currentTheme = theme
@@ -530,6 +554,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             self.onPageChanged = onPageChanged
             self.onTapZone = onTapZone
             self.onFootnoteTap = onFootnoteTap
+            self.onSwipeUpExit = onSwipeUpExit
             if let externalTargetPosition {
                 self.currentCoreTextPosition = externalTargetPosition
                 self.pendingNavigation = PendingNavigation(target: .position(externalTargetPosition))
@@ -1695,6 +1720,161 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             coverDimView.alpha = 0
             coverTargetPage = nil
             coverDirection = nil
+        }
+
+        // MARK: - Swipe-up exit gesture
+
+        @objc func handleSwipeUpExitPan(_ gesture: UIPanGestureRecognizer) {
+            guard let view = gesture.view else { return }
+            let progress = ReaderSwipeUpExitMotion.progress(
+                forTranslationY: gesture.translation(in: view).y
+            )
+
+            switch gesture.state {
+            case .began:
+                swipeUpExitArmed = false
+                swipeUpExitHaptic.prepare()
+                let chip = ensureSwipeUpExitChip(in: view)
+                chip.layer.removeAllAnimations()
+                chip.isHidden = false
+                applySwipeUpExitChipLayout(progress: progress, in: view)
+
+            case .changed:
+                let armed = progress >= ReaderSwipeUpExitMotion.commitProgress
+                if armed != swipeUpExitArmed {
+                    swipeUpExitArmed = armed
+                    if armed { swipeUpExitHaptic.impactOccurred() }
+                }
+                applySwipeUpExitChipLayout(progress: progress, in: view)
+
+            case .ended, .cancelled, .failed:
+                let shouldExit = gesture.state == .ended && ReaderSwipeUpExitMotion.shouldCommit(
+                    progress: progress,
+                    velocityY: gesture.velocity(in: view).y
+                )
+                swipeUpExitArmed = false
+                if shouldExit {
+                    UIView.animate(withDuration: ReaderSwipeUpExitMotion.commitFadeDuration) {
+                        self.swipeUpExitChipContainer?.alpha = 0
+                    } completion: { _ in
+                        self.swipeUpExitChipContainer?.isHidden = true
+                    }
+                    onSwipeUpExit()
+                } else {
+                    UIView.animate(
+                        withDuration: ReaderSwipeUpExitMotion.cancelSettleDuration,
+                        delay: 0,
+                        options: [.curveEaseOut, .beginFromCurrentState]
+                    ) {
+                        self.applySwipeUpExitChipLayout(progress: 0, in: view)
+                    } completion: { _ in
+                        self.swipeUpExitChipContainer?.isHidden = true
+                    }
+                }
+
+            default:
+                break
+            }
+        }
+
+        /// Builds the ✕ chip lazily and keeps it parented to the gesture's view.
+        /// A blur circle adapts to any reader background; the icon follows the
+        /// current theme's text color.
+        private func ensureSwipeUpExitChip(in view: UIView) -> UIView {
+            let chip: UIView
+            if let existing = swipeUpExitChipContainer {
+                chip = existing
+            } else {
+                let size = ReaderSwipeUpExitMotion.chipDiameter
+                let container = UIView(frame: CGRect(x: 0, y: 0, width: size, height: size))
+                container.isUserInteractionEnabled = false
+                container.layer.shadowColor = UIColor.black.cgColor
+                container.layer.shadowOpacity = 0.18
+                container.layer.shadowRadius = 10
+                container.layer.shadowOffset = CGSize(width: 0, height: 4)
+
+                let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+                blur.frame = container.bounds
+                blur.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                blur.clipsToBounds = true
+                blur.layer.cornerRadius = size / 2
+                container.addSubview(blur)
+
+                let icon = UIImageView(
+                    image: UIImage(
+                        systemName: "xmark",
+                        withConfiguration: UIImage.SymbolConfiguration(
+                            pointSize: ReaderSwipeUpExitMotion.chipIconPointSize,
+                            weight: .semibold
+                        )
+                    )
+                )
+                icon.contentMode = .center
+                icon.frame = container.bounds
+                icon.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                container.addSubview(icon)
+
+                swipeUpExitChipContainer = container
+                swipeUpExitChipIcon = icon
+                chip = container
+            }
+            swipeUpExitChipIcon?.tintColor = UIColor(currentTheme.textColor)
+            if chip.superview !== view {
+                chip.removeFromSuperview()
+                view.addSubview(chip)
+            }
+            view.bringSubviewToFront(chip)
+            return chip
+        }
+
+        private func applySwipeUpExitChipLayout(progress: CGFloat, in view: UIView) {
+            guard let chip = swipeUpExitChipContainer else { return }
+            var scale = ReaderSwipeUpExitMotion.chipScale(forProgress: progress)
+            if swipeUpExitArmed { scale *= ReaderSwipeUpExitMotion.armedScaleBoost }
+            chip.center = CGPoint(
+                x: view.bounds.midX,
+                y: ReaderSwipeUpExitMotion.chipCenterY(
+                    forProgress: progress,
+                    viewHeight: view.bounds.height,
+                    bottomSafeInset: view.safeAreaInsets.bottom
+                )
+            )
+            chip.transform = CGAffineTransform(scaleX: scale, y: scale)
+            chip.alpha = ReaderSwipeUpExitMotion.chipAlpha(forProgress: progress)
+        }
+
+        // MARK: - UIGestureRecognizerDelegate (swipe-up exit)
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard gestureRecognizer === swipeUpExitPanGesture else { return true }
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer,
+                  let view = pan.view,
+                  GlobalSettings.shared.readerSwipeUpToExit,
+                  !isTransitioning, !isPageTransitioning else { return false }
+            return ReaderSwipeUpExitMotion.shouldBegin(velocity: pan.velocity(in: view))
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            // Horizontal page-turn pans on the same container (cover / instant /
+            // curl) wait for the exit pan, which fails immediately unless the
+            // drag is clearly upward — page turns keep their responsiveness.
+            guard gestureRecognizer === swipeUpExitPanGesture else { return false }
+            return otherGestureRecognizer is UIPanGestureRecognizer
+                && otherGestureRecognizer.view === gestureRecognizer.view
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            // Selection-handle drags travel upward too; the page content's own
+            // pan wins whenever a text selection can consume the touch.
+            guard gestureRecognizer === swipeUpExitPanGesture else { return false }
+            return otherGestureRecognizer is UIPanGestureRecognizer
+                && otherGestureRecognizer.view is CoreTextPageView
         }
     }
 }

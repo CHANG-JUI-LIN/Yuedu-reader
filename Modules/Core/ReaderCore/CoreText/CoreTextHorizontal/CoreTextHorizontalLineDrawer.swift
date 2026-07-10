@@ -146,7 +146,68 @@ enum CoreTextHorizontalLineDrawer {
 
             ctx.textPosition = origin
             CTLineDraw(lineToDraw, ctx)
+            drawTextUnderlineDecorationIfNeeded(
+                line: lineToDraw,
+                origin: origin,
+                lineStart: lineStart,
+                attrStr: attrStr,
+                stringLength: stringLength,
+                in: ctx
+            )
         }
+    }
+
+    // MARK: - Reader decoration underline
+
+    private static func drawTextUnderlineDecorationIfNeeded(
+        line: CTLine,
+        origin: CGPoint,
+        lineStart: Int,
+        attrStr: NSAttributedString,
+        stringLength: Int,
+        in ctx: CGContext
+    ) {
+        guard GlobalSettings.shared.readerTextUnderlineDecorationEnabled,
+              stringLength > 0,
+              lineStart >= 0,
+              lineStart < stringLength
+        else { return }
+
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
+            - CGFloat(CTLineGetTrailingWhitespaceWidth(line))
+        guard width > 2 else { return }
+
+        let nsString = attrStr.string as NSString
+        let lineRange = CTLineGetStringRange(line)
+        let nsRange = NSRange(location: max(0, lineRange.location), length: max(0, lineRange.length))
+        guard nsRange.location < stringLength else { return }
+        let boundedRange = NSIntersectionRange(nsRange, NSRange(location: 0, length: stringLength))
+        guard boundedRange.length > 0,
+              nsString.substring(with: boundedRange).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        else { return }
+
+        let rawForeground = attrStr.attribute(.foregroundColor, at: lineStart, effectiveRange: nil)
+        let foreground: UIColor?
+        if let uiColor = rawForeground as? UIColor {
+            foreground = uiColor
+        } else if rawForeground != nil {
+            foreground = UIColor(cgColor: rawForeground as! CGColor)
+        } else {
+            foreground = nil
+        }
+        let color = (foreground ?? .label).withAlphaComponent(0.18)
+        let underlineY = origin.y - max(2, descent * 0.72)
+
+        ctx.saveGState()
+        ctx.setStrokeColor(color.cgColor)
+        ctx.setLineWidth(0.6)
+        ctx.setLineCap(.round)
+        ctx.move(to: CGPoint(x: origin.x, y: underlineY))
+        ctx.addLine(to: CGPoint(x: origin.x + width, y: underlineY))
+        ctx.strokePath()
+        ctx.restoreGState()
     }
 
     // MARK: - Inline border chip

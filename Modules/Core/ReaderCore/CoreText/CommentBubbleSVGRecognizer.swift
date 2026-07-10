@@ -12,6 +12,38 @@ struct CommentBubbleSVG {
     }
     
     let elements: [Element]
+
+    var displayText: String? {
+        for element in elements {
+            if case .text(let text, _, _, _, _, _, _, _) = element {
+                return text
+            }
+        }
+        return nil
+    }
+
+    func replacingDisplayText(with text: String) -> CommentBubbleSVG {
+        CommentBubbleSVG(
+            viewBox: viewBox,
+            width: width,
+            height: height,
+            elements: elements.map { element in
+                guard case let .text(_, x, y, fontSize, fontWeight, anchor, color, transform) = element else {
+                    return element
+                }
+                return .text(
+                    text: text,
+                    x: x,
+                    y: y,
+                    fontSize: fontSize,
+                    fontWeight: fontWeight,
+                    anchor: anchor,
+                    color: color,
+                    transform: transform
+                )
+            }
+        )
+    }
 }
 
 extension CommentBubbleSVG.Element {
@@ -26,6 +58,47 @@ extension CommentBubbleSVG.Element {
 }
 
 struct CommentBubbleSVGRecognizer {
+    /// Custom SVG templates are intentionally bounded to keep parsing and native rasterization
+    /// predictable, while still accepting detailed user-authored artwork such as 猫咪气泡.svg.
+    static let maximumRecognizableSVGByteCount = 32 * 1024
+
+    static let builtinBubbleSVG = """
+    <svg width="96" height="72" viewBox="0 0 96 72" style="color:#8E8E93" xmlns="http://www.w3.org/2000/svg">
+      <rect x="8" y="8" width="80" height="56" rx="18" ry="18" fill="none" stroke="currentColor" stroke-width="6"/>
+      <text x="48" y="46" font-size="30" font-weight="600" text-anchor="middle" fill="currentColor">0</text>
+    </svg>
+    """
+
+    static let squareBubbleSVG = """
+    <svg width="96" height="72" viewBox="0 0 96 72" style="color:#8E8E93" xmlns="http://www.w3.org/2000/svg">
+      <path d="M10 10 H86 V52 H58 L48 62 L38 52 H10 Z" fill="none" stroke="currentColor" stroke-width="6"/>
+      <text x="48" y="44" font-size="28" font-weight="600" text-anchor="middle" fill="currentColor">0</text>
+    </svg>
+    """
+
+    static func templateSVG(
+        for mode: ReaderCommentBubblePresetMode,
+        customSVG: String
+    ) -> String {
+        switch mode {
+        case .builtin:
+            return builtinBubbleSVG
+        case .square:
+            return squareBubbleSVG
+        case .custom:
+            let trimmed = customSVG.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? builtinBubbleSVG : trimmed
+        }
+    }
+
+    static func inlineAttachmentHeight(
+        pointSize: CGFloat,
+        lineHeight: CGFloat,
+        overallScale: CGFloat
+    ) -> CGFloat {
+        let boundedOverallScale = min(max(overallScale, 0.5), 2.0)
+        return max(pointSize, lineHeight) * boundedOverallScale
+    }
 
     // MARK: - Diagnostics (⟐ bubble) — deduped so a chapter's hundreds of bubbles
     // don't flood Console; each distinct signature logs once per process.
@@ -52,8 +125,9 @@ struct CommentBubbleSVGRecognizer {
         // outline <path> (~1.4–1.9k chars). The structural checks below — exactly one
         // count-formatted <text> plus a shape — are what actually gate non-bubble SVGs, so
         // a tight length cap only mis-rejected real bubbles (光遇's is ~1916 chars).
-        guard cleaned.count < 8000 else {
-            diag("reject:too-long", context: ["len": cleaned.count])
+        let byteCount = cleaned.utf8.count
+        guard byteCount <= maximumRecognizableSVGByteCount else {
+            diag("reject:too-long", context: ["bytes": byteCount, "limit": maximumRecognizableSVGByteCount])
             return nil
         }
 
@@ -77,6 +151,38 @@ struct CommentBubbleSVGRecognizer {
                        "hasTransform": hasTransform,
                        "len": cleaned.count])
         return parsed
+    }
+
+    static func resolvedBubbleImage(
+        src: String,
+        svgContent: String?,
+        pointSize: CGFloat,
+        themeTextColor: UIColor
+    ) -> UIImage? {
+        guard let sourceBubble = recognize(src: src, svgContent: svgContent) else { return nil }
+        let settings = GlobalSettings.shared
+        if settings.commentBubbleFollowsSourceSVG {
+            return draw(svg: sourceBubble, pointSize: pointSize, themeTextColor: themeTextColor)
+        }
+
+        let bubbleText = sourceBubble.displayText ?? "0"
+        let templateSource = templateSVG(
+            for: settings.commentBubblePresetMode,
+            customSVG: settings.commentBubbleCustomSVG
+        )
+        let template = recognize(src: "", svgContent: templateSource)
+            ?? recognize(src: "", svgContent: builtinBubbleSVG)
+
+        guard let template else {
+            return draw(svg: sourceBubble, pointSize: pointSize, themeTextColor: themeTextColor)
+        }
+        return draw(
+            svg: template.replacingDisplayText(with: bubbleText),
+            pointSize: pointSize,
+            themeTextColor: themeTextColor,
+            overallScale: CGFloat(settings.commentBubbleScale),
+            textScaleRatio: CGFloat(settings.commentBubbleTextScale)
+        )
     }
     
     private static func getSVGString(src: String, svgContent: String?) -> String? {
@@ -165,13 +271,16 @@ struct CommentBubbleSVGRecognizer {
             let matches = pathRegex.matches(in: svg, range: NSRange(location: 0, length: ns.length))
             for match in matches {
                 let tag = ns.substring(with: match.range)
-                guard let d = extractAttribute("d", in: tag) else { continue }
-                let elementColor = resolveColor(styleProperty("color", in: tag), inheritedColor: rootColor)
+                let d = extractAttribute("d", in: tag) ?? ""
+                let elementColor = resolveElementColor(in: tag, inheritedColor: rootColor)
                 let stroke = resolvePaint("stroke", in: tag, inheritedColor: elementColor)
                 let strokeWidth = parseStrokeWidth(in: tag)
                 let fill = resolvePaint("fill", in: tag, inheritedColor: elementColor)
                 let transform = composedTransform(at: match.range.location, groups: groupSpans)
-                elements.append(.path(d: d, strokeColor: stroke, strokeWidth: strokeWidth > 0 ? strokeWidth : nil, fillColor: fill, transform: transform))
+                // Accept a <path> as a shape even without d, as long as it has fill or stroke.
+                if !d.isEmpty || fill != nil || stroke != nil {
+                    elements.append(.path(d: d, strokeColor: stroke, strokeWidth: strokeWidth > 0 ? strokeWidth : nil, fillColor: fill, transform: transform))
+                }
             }
         }
 
@@ -190,7 +299,7 @@ struct CommentBubbleSVGRecognizer {
                 let y = parseCoordinate(extractAttribute("y", in: tag), viewBoxSize: viewBox.height)
                 let w = parseCoordinate(extractAttribute("width", in: tag), viewBoxSize: viewBox.width)
                 let h = parseCoordinate(extractAttribute("height", in: tag), viewBoxSize: viewBox.height)
-                let elementColor = resolveColor(styleProperty("color", in: tag), inheritedColor: rootColor)
+                let elementColor = resolveElementColor(in: tag, inheritedColor: rootColor)
                 let stroke = resolvePaint("stroke", in: tag, inheritedColor: elementColor)
                 let strokeWidth = parseStrokeWidth(in: tag)
                 let fill = resolvePaint("fill", in: tag, inheritedColor: elementColor)
@@ -214,7 +323,7 @@ struct CommentBubbleSVGRecognizer {
                 let rx = r > 0 ? r : parseCoordinate(extractAttribute("rx", in: tag), viewBoxSize: viewBox.width)
                 let ry = r > 0 ? r : parseCoordinate(extractAttribute("ry", in: tag), viewBoxSize: viewBox.height)
                 guard rx > 0, ry > 0 else { continue }
-                let elementColor = resolveColor(styleProperty("color", in: tag), inheritedColor: rootColor)
+                let elementColor = resolveElementColor(in: tag, inheritedColor: rootColor)
                 let stroke = resolvePaint("stroke", in: tag, inheritedColor: elementColor)
                 let strokeWidth = parseStrokeWidth(in: tag)
                 let fill = resolvePaint("fill", in: tag, inheritedColor: elementColor)
@@ -237,10 +346,11 @@ struct CommentBubbleSVGRecognizer {
                     .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 
-                // Validate count format: numbers optionally followed by + (e.g., 99+)
-                let countRegex = try? NSRegularExpression(pattern: #"^[0-9]+[+]?$"#)
-                let countNs = text as NSString
-                if let countRegex, countRegex.firstMatch(in: text, range: NSRange(location: 0, length: countNs.length)) != nil {
+                // Accept count format (e.g., 99+), or the template placeholder $displayText
+                let isCount = (try? NSRegularExpression(pattern: #"^[0-9]+[+]?$"#))
+                    .map { $0.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil } ?? false
+                let isPlaceholder = text.trimmingCharacters(in: .whitespacesAndNewlines) == "$displayText"
+                if isCount || isPlaceholder {
                     let x = parseCoordinate(extractAttribute("x", in: tag), viewBoxSize: viewBox.width)
                     let y = parseCoordinate(extractAttribute("y", in: tag), viewBoxSize: viewBox.height)
                     let fontSize = parseDouble(extractAttribute("font-size", in: tag))
@@ -250,7 +360,7 @@ struct CommentBubbleSVGRecognizer {
                     let dy = parseDy(extractAttribute("dy", in: tag), fontSize: resolvedFontSize)
                     let fontWeight = extractAttribute("font-weight", in: tag)
                     let anchor = extractAttribute("text-anchor", in: tag)
-                    let elementColor = resolveColor(styleProperty("color", in: tag), inheritedColor: rootColor)
+                    let elementColor = resolveElementColor(in: tag, inheritedColor: rootColor)
                     let color = resolvePaint("fill", in: tag, inheritedColor: elementColor)
                     let transform = composedTransform(at: tagRange.location, groups: groupSpans)
 
@@ -418,6 +528,15 @@ struct CommentBubbleSVGRecognizer {
         return parseColor(clean)
     }
 
+    /// Resolves an element's CSS `color`, inheriting the root value when the element does not
+    /// specify one. This must stay separate from `resolvePaint`: an omitted `fill`/`stroke`
+    /// is not the same as `fill="currentColor"`/`stroke="currentColor"`.
+    private static func resolveElementColor(in tag: String, inheritedColor: UIColor?) -> UIColor? {
+        let raw = styleProperty("color", in: tag) ?? extractAttribute("color", in: tag)
+        guard let raw else { return inheritedColor }
+        return resolveColor(raw, inheritedColor: inheritedColor)
+    }
+
     /// Resolves an SVG paint (`fill`/`stroke`) honoring, in priority order, the element's inline
     /// `style="fill: …"`, then its presentation attribute; resolves `currentColor` against
     /// `inheritedColor`; and folds the matching `*-opacity` in as alpha. 光遇 段評 bubbles carry
@@ -467,8 +586,15 @@ struct CommentBubbleSVGRecognizer {
 
 extension CommentBubbleSVGRecognizer {
     
-    static func draw(svg: CommentBubbleSVG, pointSize: CGFloat, themeTextColor: UIColor) -> UIImage {
-        let targetHeight = max(12, pointSize * 0.96)
+    static func draw(
+        svg: CommentBubbleSVG,
+        pointSize: CGFloat,
+        themeTextColor: UIColor,
+        overallScale: CGFloat = 1,
+        textScaleRatio: CGFloat? = nil
+    ) -> UIImage {
+        let defaultHeight = max(12, pointSize * 0.96)
+        let targetHeight = max(8, defaultHeight * min(max(overallScale, 0.5), 2.0))
         
         let vW = svg.viewBox.size.width > 0 ? svg.viewBox.size.width : svg.width
         let vH = svg.viewBox.size.height > 0 ? svg.viewBox.size.height : svg.height
@@ -518,17 +644,32 @@ extension CommentBubbleSVGRecognizer {
 
                 case .path(let d, let stroke, let strokeWidth, let fill, let transform):
                     context.concatenate(transform)
-                    let path = SVGPathParser.parse(d: d)
-
-                    if let fill {
-                        fill.setFill()
-                        path.fill()
-                    }
-                    if let stroke {
-                        stroke.setStroke()
-                        path.lineWidth = strokeWidth ?? 1.0
-                        path.lineJoinStyle = .round
-                        path.stroke()
+                    if d.isEmpty {
+                        let rect = CGRect(x: svg.viewBox.minX, y: svg.viewBox.minY, width: svg.viewBox.width, height: svg.viewBox.height)
+                        let radius = min(svg.viewBox.width, svg.viewBox.height) / 2
+                        let path = UIBezierPath(roundedRect: rect, cornerRadius: radius)
+                        if let fill {
+                            fill.setFill()
+                            path.fill()
+                        }
+                        if let stroke {
+                            stroke.setStroke()
+                            path.lineWidth = strokeWidth ?? 1.0
+                            path.lineJoinStyle = .round
+                            path.stroke()
+                        }
+                    } else {
+                        let path = SVGPathParser.parse(d: d)
+                        if let fill {
+                            fill.setFill()
+                            path.fill()
+                        }
+                        if let stroke {
+                            stroke.setStroke()
+                            path.lineWidth = strokeWidth ?? 1.0
+                            path.lineJoinStyle = .round
+                            path.stroke()
+                        }
                     }
 
                 case .text:
@@ -553,7 +694,14 @@ extension CommentBubbleSVGRecognizer {
                 let canvasX = (vbPos.x - vbOrg.x) * scaleX + leadingGap
                 let canvasY = (vbPos.y - vbOrg.y) * scaleY
 
-                let canvasFontSize = max(6, min(fontSize * scaleY, targetHeight * 0.5))
+                let sourceFontSize = max(6, min(fontSize * scaleY, targetHeight * 0.5))
+                let canvasFontSize: CGFloat
+                if let textScaleRatio {
+                    let boundedTextScale = min(max(textScaleRatio, 0.2), 0.8)
+                    canvasFontSize = max(6, min(targetHeight * boundedTextScale, targetHeight * 0.8))
+                } else {
+                    canvasFontSize = sourceFontSize
+                }
                 let textColor = color ?? themeTextColor
                 let isSVGBold = (fontWeight?.lowercased().contains("bold") ?? false) || fontWeight == "600"
                 let isBold = isSVGBold || GlobalSettings.shared.readerFontBold

@@ -130,7 +130,12 @@ enum OnlineImageLoader {
             // Native comment bubble recognition — avoids WebView for simple count bubbles.
             if let recognized = CommentBubbleSVGRecognizer.recognize(src: uri, svgContent: svg) {
                 let pointSize = max(14, renderWidth * 0.04)
-                return CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: pointSize, themeTextColor: .secondaryLabel)
+                return CommentBubbleSVGRecognizer.resolvedBubbleImage(
+                    src: uri,
+                    svgContent: svg,
+                    pointSize: pointSize,
+                    themeTextColor: .secondaryLabel
+                ) ?? CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: pointSize, themeTextColor: .secondaryLabel)
             }
             // Render the book source's SVG exactly as authored (no native substitution) — all
             // styling must follow the source.

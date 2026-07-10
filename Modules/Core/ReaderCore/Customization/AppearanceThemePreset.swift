@@ -4,16 +4,25 @@ import UIKit
 
 enum AppearanceReaderInterface: String, CaseIterable, Identifiable, Codable {
     case classic
-    case compact
-    case immersive
+    case appleBooks
 
     var id: String { rawValue }
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case "classic":
+            self = .classic
+        case "appleBooks", "compact", "immersive":
+            self = .appleBooks
+        default:
+            return nil
+        }
+    }
 
     var titleKey: String {
         switch self {
         case .classic: return "經典"
-        case .compact: return "簡潔"
-        case .immersive: return "沉浸"
+        case .appleBooks: return "Apple Books"
         }
     }
 

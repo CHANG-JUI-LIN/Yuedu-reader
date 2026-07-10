@@ -76,6 +76,9 @@ final class CoreTextPaginator {
         let blockRenderables: [Int: [RenderedBlockRenderable]]
         let pageKinds: [PageKind]
         let pageBackgroundImage: UIImage?
+        /// Reader-selected image background. Unlike an authored EPUB body
+        /// background, this is a user preference and takes precedence at draw time.
+        var readerBackgroundImage: UIImage? = nil
         let anchorOffsets: [String: Int]
         let renderSize: CGSize
         let fontSize: CGFloat
@@ -93,7 +96,28 @@ final class CoreTextPaginator {
         /// No theme-wide `.backgroundColor` is applied to runs — CTLineDraw would paint it as a
         /// filled rect over page background images and box decorations; the page fill alone
         /// carries the theme color.
-        func withUpdatedColors(textColor: UIColor, backgroundColor: UIColor) -> ChapterLayout {
+        func withUpdatedColors(
+            textColor: UIColor,
+            backgroundColor: UIColor,
+            dialogueColor: UIColor? = nil
+        ) -> ChapterLayout {
+            withUpdatedAppearance(
+                textColor: textColor,
+                backgroundColor: backgroundColor,
+                readerBackgroundImage: readerBackgroundImage,
+                dialogueColor: dialogueColor
+            )
+        }
+
+        /// Updates reader appearance without re-paginating. A user-selected
+        /// background image is kept independently from authored CSS backgrounds so
+        /// clearing the reader preference restores the publication's own artwork.
+        func withUpdatedAppearance(
+            textColor: UIColor,
+            backgroundColor: UIColor,
+            readerBackgroundImage: UIImage?,
+            dialogueColor: UIColor? = nil
+        ) -> ChapterLayout {
             guard attributedString.length > 0 else { return self }
             let updated = NSMutableAttributedString(attributedString: attributedString)
             let fullRange = NSRange(location: 0, length: updated.length)
@@ -109,6 +133,13 @@ final class CoreTextPaginator {
                 if let cssColor = value as? UIColor {
                     updated.addAttribute(.foregroundColor, value: cssColor, range: effectiveRange)
                 }
+            }
+
+            // Re-tint quoted dialogue after the global recolor. The theme-swap path recolors an
+            // already-paginated layout without re-running the renderer, so the "對話文字高亮"
+            // decoration (applied at build time) would otherwise be wiped by the reset above.
+            if let dialogueColor {
+                DialogueHighlighter.apply(color: dialogueColor, to: updated)
             }
 
             // ── Background color ──
@@ -172,6 +203,7 @@ final class CoreTextPaginator {
                 blockRenderables: recoloredBlockRenderables,
                 pageKinds: pageKinds,
                 pageBackgroundImage: pageBackgroundImage,
+                readerBackgroundImage: readerBackgroundImage,
                 anchorOffsets: anchorOffsets,
                 renderSize: renderSize,
                 fontSize: fontSize,

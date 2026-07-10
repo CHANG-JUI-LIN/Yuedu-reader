@@ -24,6 +24,16 @@ struct NodeAttributedStringRenderer {
         let letterSpacing: CGFloat
         let textColor: UIColor
         let backgroundColor: UIColor
+        /// When non-nil, quoted dialogue is recolored with this tint (the "對話文字高亮"
+        /// reading decoration). Applied as a `.foregroundColor` override on the final string.
+        let dialogueTextColor: UIColor?
+        // Chapter title (prepended <h1> by normalizedChapterHTML) — driven by the
+        // reader's "顯示標題 / 標題大小 / 上距 / 下距" settings, not the generic
+        // heading scale, so those settings actually control the in-content title.
+        let chapterTitleVisible: Bool
+        let chapterTitleSize: CGFloat
+        let chapterTitleTopSpacing: CGFloat
+        let chapterTitleBottomSpacing: CGFloat
         let fontFamily: String?
         let renderWidth: CGFloat?
         let resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)?
@@ -55,6 +65,11 @@ struct NodeAttributedStringRenderer {
             self.letterSpacing = settings.letterSpacing
             self.textColor = textColor ?? settings.textColor
             self.backgroundColor = settings.backgroundColor
+            self.dialogueTextColor = settings.dialogueHighlightColor
+            self.chapterTitleVisible = settings.titleVisible
+            self.chapterTitleSize = settings.titleSize
+            self.chapterTitleTopSpacing = settings.titleTopSpacing
+            self.chapterTitleBottomSpacing = settings.titleBottomSpacing
             self.fontFamily = fontFamily
             self.renderWidth = renderWidth
             self.resolvedFont = resolvedFont
@@ -99,7 +114,27 @@ struct NodeAttributedStringRenderer {
         relaxParagraphsContainingRubyAnnotations(processed)
         relaxParagraphsContainingTallRuns(processed)
         normalizeCompactBlockSpacing(processed)
+        if let dialogueColor = config.dialogueTextColor {
+            DialogueHighlighter.apply(color: dialogueColor, to: processed)
+        }
         return processed
+    }
+
+    /// A blank line whose height equals the chapter title's 上距. Prepended
+    /// before the title because CoreText ignores `paragraphSpacingBefore` on the
+    /// first paragraph of a frame.
+    private func titleTopSpacerLine() -> NSAttributedString {
+        let para = NSMutableParagraphStyle()
+        para.minimumLineHeight = config.chapterTitleTopSpacing
+        para.maximumLineHeight = config.chapterTitleTopSpacing
+        return NSAttributedString(
+            string: "\n",
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 1),
+                .paragraphStyle: para,
+                .foregroundColor: config.textColor,
+            ]
+        )
     }
 
     // MARK: - Node Rendering (Recursive)
@@ -240,7 +275,19 @@ struct NodeAttributedStringRenderer {
         // ──────────────── Heading ────────────────
 
         case .heading(let children, let level, let style):
-            return await renderBlock(children: children, style: style, ctx: ctx, isHeading: true, headingLevel: level)
+            // "顯示標題" off hides the prepended chapter-title <h1>.
+            if level == 1, !config.chapterTitleVisible {
+                return NSAttributedString()
+            }
+            let headingStr = await renderBlock(children: children, style: style, ctx: ctx, isHeading: true, headingLevel: level)
+            // 上距: the title is the first paragraph, where CoreText ignores
+            // paragraphSpacingBefore — so prepend a fixed-height spacer line.
+            if level == 1, config.chapterTitleTopSpacing > 0 {
+                let result = NSMutableAttributedString(attributedString: titleTopSpacerLine())
+                result.append(headingStr)
+                return result
+            }
+            return headingStr
 
         // ──────────────── Container ────────────────
 
@@ -603,7 +650,11 @@ struct NodeAttributedStringRenderer {
         } else {
             sizeMultiplier = style.fontSizeMultiplier
         }
-        let newSize = ctx.baseSize * sizeMultiplier
+        // The chapter title is the prepended <h1>; honor the reader's explicit
+        // absolute title size instead of the generic heading scale.
+        let newSize = (isHeading && headingLevel == 1)
+            ? config.chapterTitleSize
+            : ctx.baseSize * sizeMultiplier
 
         // ── Weight and italic ──
         let families = style.fontFamilies.isEmpty ? ctx.fontFamilies : style.fontFamilies
@@ -652,6 +703,13 @@ struct NodeAttributedStringRenderer {
                 ? min(max(0, style.paragraphSpacingBefore), ctx.baseSize * 0.15)
                 : style.paragraphSpacingBefore
             para.paragraphSpacingBefore = resolvedParagraphSpacingBefore + style.paddingTop
+        }
+        // Chapter-title <h1> uses the reader's explicit 下距 setting. 上距 can't
+        // use paragraphSpacingBefore (CoreText ignores it on the first paragraph),
+        // so it is added as a spacer line in the `.heading` case instead.
+        if isHeading, headingLevel == 1 {
+            para.paragraphSpacingBefore = 0
+            para.paragraphSpacing = config.chapterTitleBottomSpacing
         }
         let cumulativeMarginLeft = ctx.inheritedBlockMarginLeft + style.marginLeft
         let cumulativeMarginRight = ctx.inheritedBlockMarginRight + style.marginRight
@@ -907,17 +965,33 @@ struct NodeAttributedStringRenderer {
             CommentBubbleSVGRecognizer.diag("textSized:enter recognized=\(recognized != nil)",
                 context: ["srcPrefix": String(src.prefix(48)), "svgContentLen": svgContent?.count ?? -1])
             if let recognized {
-                let image = CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: ctx.font.pointSize, themeTextColor: ctx.textColor)
+                let settings = GlobalSettings.shared
+                let image = CommentBubbleSVGRecognizer.resolvedBubbleImage(
+                    src: src,
+                    svgContent: svgContent,
+                    pointSize: ctx.font.pointSize,
+                    themeTextColor: ctx.textColor
+                ) ?? CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: ctx.font.pointSize, themeTextColor: ctx.textColor)
+                var bubbleStyle = style
+                if !settings.commentBubbleFollowsSourceSVG {
+                    bubbleStyle.rawWidthPercent = nil
+                    bubbleStyle.width = nil
+                    bubbleStyle.height = CommentBubbleSVGRecognizer.inlineAttachmentHeight(
+                        pointSize: ctx.font.pointSize,
+                        lineHeight: ctx.font.lineHeight,
+                        overallScale: CGFloat(settings.commentBubbleScale)
+                    )
+                }
                 let metrics = await resolvedImageMetrics(
                     image: image,
-                    style: style,
+                    style: bubbleStyle,
                     font: ctx.font,
                     displayMode: .inline,
                     availableWidthOverride: availableImageWidth(in: ctx)
                 )
                 return await makeImagePlaceholder(
                     image: image,
-                    style: style,
+                    style: bubbleStyle,
                     ctx: ctx,
                     imageSource: "",
                     imageAlt: alt,

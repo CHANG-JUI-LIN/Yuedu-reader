@@ -320,6 +320,9 @@ final class EPUBPageRenderer: ObservableObject {
         case "sepia":
             textColor = UIColor(red: 0.3, green: 0.2, blue: 0.1, alpha: 1)
             bgColor = UIColor(red: 0.97, green: 0.93, blue: 0.84, alpha: 1)
+        case "green":
+            textColor = UIColor(red: 47 / 255, green: 61 / 255, blue: 47 / 255, alpha: 1)
+            bgColor = UIColor(red: 207 / 255, green: 232 / 255, blue: 204 / 255, alpha: 1)
         default:
             textColor = .label
             bgColor = .systemBackground

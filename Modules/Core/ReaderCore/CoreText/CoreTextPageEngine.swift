@@ -141,6 +141,8 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     private var themeTextColor: UIColor = .label
     private var themeBackgroundColor: UIColor = .systemBackground
+    private var cachedReaderBackgroundImageURL: URL?
+    private var cachedReaderBackgroundImage: UIImage?
     private var textAnnotations: [CoreTextTextAnnotation] = []
     var onChapterReady: ((Int?) -> Void)?
     var onNavigateToPage: ((Int) -> Void)?
@@ -221,6 +223,14 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     func updateRenderSettings(_ settings: ReaderRenderSettings) {
         renderSettings = settings
+    }
+
+    private func currentReaderBackgroundImage() -> UIImage? {
+        let url = renderSettings.readerBackgroundImageURL
+        guard cachedReaderBackgroundImageURL != url else { return cachedReaderBackgroundImage }
+        cachedReaderBackgroundImageURL = url
+        cachedReaderBackgroundImage = url.flatMap { UIImage(contentsOfFile: $0.path) }
+        return cachedReaderBackgroundImage
     }
 
     func setTextAnnotations(_ annotations: [CoreTextTextAnnotation]) {
@@ -654,7 +664,12 @@ _layouts[spineIndex] == nil else { return }
         let layout = await paginationManager.paginate(request).layout
         guard !shouldAbortPreload(generation: generation) else { return }
 
-        _layouts[spineIndex] = layout.withUpdatedColors(textColor: themeTextColor, backgroundColor: themeBackgroundColor)
+        _layouts[spineIndex] = layout.withUpdatedAppearance(
+            textColor: themeTextColor,
+            backgroundColor: themeBackgroundColor,
+            readerBackgroundImage: currentReaderBackgroundImage(),
+            dialogueColor: renderSettings.dialogueHighlightColor
+        )
         AppLogger.render("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
         generateSnapshot(for: spineIndex)
         rebuildPageOffsets()
@@ -783,9 +798,15 @@ _layouts.removeAll()
     func applyThemeChange(textColor: UIColor, backgroundColor: UIColor) {
         themeTextColor = textColor
         themeBackgroundColor = backgroundColor
+        let readerBackgroundImage = currentReaderBackgroundImage()
         // Color changes don't affect line breaking; directly update attributedString + framesetter synchronously, preserving all blockAttachments etc.
         for spineIndex in _layouts.keys {
-_layouts[spineIndex] = _layouts[spineIndex]?.withUpdatedColors(textColor: textColor, backgroundColor: backgroundColor)
+            _layouts[spineIndex] = _layouts[spineIndex]?.withUpdatedAppearance(
+                textColor: textColor,
+                backgroundColor: backgroundColor,
+                readerBackgroundImage: readerBackgroundImage,
+                dialogueColor: renderSettings.dialogueHighlightColor
+            )
         }
         chapterSnapshots.removeAllObjects()
         onChapterReady?(nil)

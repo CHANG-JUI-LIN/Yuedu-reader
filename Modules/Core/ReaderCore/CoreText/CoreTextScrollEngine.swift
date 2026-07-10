@@ -142,7 +142,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             titleVisible: renderSettings.titleVisible,
             titleSize: renderSettings.titleSize,
             titleTopSpacing: renderSettings.titleTopSpacing,
-            titleBottomSpacing: renderSettings.titleBottomSpacing
+            titleBottomSpacing: renderSettings.titleBottomSpacing,
+            readerBackgroundImageURL: renderSettings.readerBackgroundImageURL,
+            dialogueHighlightColor: renderSettings.dialogueHighlightColor
         )
     }
 

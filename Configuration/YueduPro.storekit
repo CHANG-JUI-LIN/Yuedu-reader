@@ -25,7 +25,7 @@
     "_disableDialogs" : false,
     "_failTransactionsEnabled" : false,
     "_lastSynchronizedDate" : 0,
-    "_locale" : "zh_Hant",
+    "_locale" : "en_US",
     "_renewalBillingIssuesEnabled" : false,
     "_storefront" : "USA",
     "_storeKitErrors" : [

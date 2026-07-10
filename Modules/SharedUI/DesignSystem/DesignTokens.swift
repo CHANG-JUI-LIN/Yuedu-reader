@@ -35,6 +35,10 @@ enum DSColor {
     static var surfaceTertiary: Color { themed(\.appSecondaryBackground) ?? Color(.tertiarySystemBackground) }
     /// Grouped content background
     static var groupedBackground: Color { themed(\.appPageBackground) ?? Color(.systemGroupedBackground) }
+    /// Neutral gray fill for controls that must not inherit an appearance-theme tint.
+    static let neutralControlFill = Color(uiColor: .systemGray5)
+    /// Pressed-state fill layered inside `neutralControlFill` controls (pre-iOS 26 fallback).
+    static let neutralControlPressedFill = Color(uiColor: .systemGray3)
 
     // ── Borders & Separators ──
     /// Thin separator
@@ -142,6 +146,26 @@ enum DSLayout {
     static let readableShelfWidth: CGFloat = 920
     /// Reader overlays that should not span the entire iPad display.
     static let readableOverlayWidth: CGFloat = 960
+    /// Standard control height in the compact reader quick-settings panel.
+    static let readerQuickPanelControlHeight: CGFloat = 54
+    /// Compact control height for the quick panel's top toolbar buttons.
+    static let readerQuickPanelTopControlHeight: CGFloat = 46
+    /// Width reserved for the two icon menus in reader quick settings.
+    static let readerQuickPanelMenuWidth: CGFloat = 132
+    /// Compact width reserved for the two icon menus in reader quick settings.
+    static let readerQuickPanelTopMenuWidth: CGFloat = 120
+    /// Height of a landscape reading-background preview button.
+    static let readerQuickPanelReadingBackgroundTileHeight: CGFloat = 82
+    /// Height reserved for a 3x2 reading-background page and its page indicator.
+    static let readerQuickPanelReadingBackgroundPagerHeight: CGFloat = 214
+    /// Fixed iOS 17 detent height for the reader quick settings sheet.
+    static let readerQuickPanelSheetHeight: CGFloat = 508
+    /// Minimum height of the paragraph-comment SVG editor.
+    static let readerSVGEditorHeight: CGFloat = 160
+    /// Compact fixed width for a paragraph-comment bubble preview tile.
+    static let readerBubblePreviewTileWidth: CGFloat = 80
+    /// Minimum height of a paragraph-comment bubble preview tile.
+    static let readerBubblePreviewHeight: CGFloat = 76
     /// Wide management surfaces such as book-source lists.
     static let readableWideWidth: CGFloat = 980
     /// Extra horizontal inset applied to regular-width reader pages.
@@ -161,6 +185,8 @@ enum DSRadius {
     static let lg: CGFloat = 12
     /// Extra-large radius (image containers)
     static let xl: CGFloat = 16
+    /// Extra-extra-large radius (large preview tiles, prominent panel buttons)
+    static let xxl: CGFloat = 20
 }
 
 // MARK: - Design System: Animation Tokens

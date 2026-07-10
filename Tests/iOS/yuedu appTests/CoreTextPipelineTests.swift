@@ -421,7 +421,12 @@ struct CSSPropertyApplierTests {
 @Suite("CoreTextPaginator.ChapterLayout", .serialized)
 struct ChapterLayoutTests {
 
-    private func makeLayout(text: String, fontSize: CGFloat = 18) -> CoreTextPaginator.ChapterLayout {
+    private func makeLayout(
+        text: String,
+        fontSize: CGFloat = 18,
+        pageBackgroundImage: UIImage? = nil,
+        readerBackgroundImage: UIImage? = nil
+    ) -> CoreTextPaginator.ChapterLayout {
         let font = UIFont.systemFont(ofSize: fontSize)
         let attr = NSAttributedString(
             string: text,
@@ -439,7 +444,8 @@ struct ChapterLayoutTests {
             blockAttachments: [:],
             blockRenderables: [:],
             pageKinds: [.text, .text],
-            pageBackgroundImage: nil,
+            pageBackgroundImage: pageBackgroundImage,
+            readerBackgroundImage: readerBackgroundImage,
             anchorOffsets: [:],
             renderSize: CGSize(width: 320, height: 568),
             fontSize: fontSize,
@@ -473,10 +479,66 @@ struct ChapterLayoutTests {
         #expect(color == .red)
     }
 
+    @Test("reader-selected background renders above an authored page background")
+    func readerBackgroundImageOverridesAuthoredPageBackground() {
+        let authoredBackground = solidImage(.systemBlue)
+        let readerBackground = solidImage(.systemRed)
+        let layout = makeLayout(
+            text: "背景測試",
+            pageBackgroundImage: authoredBackground,
+            readerBackgroundImage: readerBackground
+        )
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let rendered = UIGraphicsImageRenderer(size: layout.renderSize, format: format).image { context in
+            CoreTextPageView.renderPage(
+                layout: layout,
+                pageIndex: 0,
+                in: context.cgContext,
+                bounds: CGRect(origin: .zero, size: layout.renderSize)
+            )
+        }
+
+        let pixel = renderedPixel(in: rendered, at: CGPoint(x: 4, y: 4))
+        #expect(pixel.red > 200)
+        #expect(pixel.green < 120)
+        #expect(pixel.blue < 120)
+    }
+
     @Test("空字串 layout withUpdatedColors 直接回傳自身")
     func withUpdatedColorsEmptyStringReturnsSelf() {
         let layout = makeLayout(text: "")
         let updated = layout.withUpdatedColors(textColor: .green, backgroundColor: .clear)
         #expect(updated.attributedString.length == 0)
+    }
+
+    private func solidImage(_ color: UIColor) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8), format: format).image { context in
+            color.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+    }
+
+    private func renderedPixel(in image: UIImage, at point: CGPoint) -> (red: UInt8, green: UInt8, blue: UInt8) {
+        guard let cgImage = image.cgImage,
+              let providerData = cgImage.dataProvider?.data
+        else {
+            Issue.record("Unable to inspect rendered background image")
+            return (0, 0, 0)
+        }
+
+        let data = providerData as Data
+        let x = max(0, min(Int(point.x), cgImage.width - 1))
+        let y = max(0, min(Int(point.y), cgImage.height - 1))
+        let offset = y * cgImage.bytesPerRow + x * 4
+        guard offset + 2 < data.count else {
+            Issue.record("Rendered background pixel was outside the image buffer")
+            return (0, 0, 0)
+        }
+        return (data[offset + 2], data[offset + 1], data[offset])
     }
 }
