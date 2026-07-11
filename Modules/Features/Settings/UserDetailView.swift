@@ -38,7 +38,7 @@ struct UserDetailView: View {
                     if gs.isLoggedIn {
                         PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
                             Label(localized("修改頭像"), systemImage: "photo")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(DSFont.fixed(size: 13, weight: .semibold))
                         }
                         .disabled(isSigningOut)
                     }
@@ -47,7 +47,7 @@ struct UserDetailView: View {
                         HStack(spacing: 4) {
                             Image(systemName: syncStatusIcon)
                             Text(gs.isLoggedIn ? firestoreSync.statusTitle : localized("登入後可同步進度"))
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(DSFont.fixed(size: 12, weight: .semibold))
                         }
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .background(syncStatusColor.opacity(0.1))
@@ -56,20 +56,20 @@ struct UserDetailView: View {
 
                         if gs.isLoggedIn, let date = firestoreSync.lastSyncDate {
                             Text("\(localized("上次同步")) \(date.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.system(size: 10))
+                                .font(DSFont.fixed(size: 10))
                                 .foregroundColor(.secondary)
                         }
 
                         if !gs.isLoggedIn {
                             Text(localized("登入後可跨設備同步書籍與進度"))
-                                .font(.system(size: 10))
+                                .font(DSFont.fixed(size: 10))
                                 .foregroundColor(.secondary)
 
                             Button {
                                 showLogin = true
                             } label: {
                                 Text(localized("登入 / 註冊"))
-                                    .font(.system(size: 15, weight: .semibold))
+                                    .font(DSFont.fixed(size: 15, weight: .semibold))
                                     .foregroundColor(.white)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
@@ -81,7 +81,7 @@ struct UserDetailView: View {
 
                         if let avatarErrorMessage {
                             Text(avatarErrorMessage)
-                                .font(.footnote)
+                                .font(DSFont.footnote)
                                 .foregroundColor(.red)
                                 .multilineTextAlignment(.center)
                         }
@@ -98,7 +98,7 @@ struct UserDetailView: View {
                 } label: {
                     HStack(spacing: DSSpacing.md) {
                         Image(systemName: "crown.fill")
-                            .font(.system(size: 17, weight: .medium))
+                            .font(DSFont.fixed(size: 17, weight: .medium))
                             .frame(width: 28, height: 28)
                             .foregroundStyle(DSColor.accent)
                         VStack(alignment: .leading, spacing: 2) {
@@ -117,7 +117,7 @@ struct UserDetailView: View {
                                 .foregroundStyle(DSColor.success)
                         } else {
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(DSFont.fixed(size: 13, weight: .semibold))
                                 .foregroundColor(.secondary.opacity(0.5))
                         }
                     }
@@ -134,7 +134,7 @@ struct UserDetailView: View {
                             .foregroundColor(.primary)
                         Spacer()
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(DSFont.fixed(size: 13, weight: .semibold))
                             .foregroundColor(.secondary.opacity(0.5))
                     }
                 }
@@ -155,7 +155,7 @@ struct UserDetailView: View {
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(DSFont.fixed(size: 13, weight: .semibold))
                                 .foregroundColor(.secondary.opacity(0.5))
                         }
                     }
@@ -180,7 +180,7 @@ struct UserDetailView: View {
 
                     if let linkErrorMessage {
                         Text(linkErrorMessage)
-                            .font(.footnote)
+                            .font(DSFont.footnote)
                             .foregroundColor(.red)
                     }
                 } header: {
@@ -246,7 +246,7 @@ struct UserDetailView: View {
 
                     if let deleteAccountErrorMessage {
                         Text(deleteAccountErrorMessage)
-                            .font(.footnote)
+                            .font(DSFont.footnote)
                             .foregroundColor(.red)
                     }
                 } footer: {
@@ -331,13 +331,13 @@ struct UserDetailView: View {
             Spacer()
             if auth.linkedProviderIDs.contains(providerID) {
                 Label(localized("已連結"), systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(DSFont.fixed(size: 13, weight: .semibold))
                     .foregroundColor(.green)
             } else if isLinking {
                 ProgressView()
             } else {
                 Button(localized("連結")) { startLink(providerID) }
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(DSFont.fixed(size: 15, weight: .semibold))
             }
         }
     }

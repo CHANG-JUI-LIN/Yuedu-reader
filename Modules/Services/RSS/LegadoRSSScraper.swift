@@ -1,158 +1,223 @@
 import Foundation
-import SwiftSoup
 
+/// Legado-compatible RSS scraping built on the same stack as book sources:
+/// `AnalyzeUrl` for request construction (URL option JSON, `{{page}}` templates,
+/// POST bodies, charset) and `ModernRuleEngine` for rule evaluation (CSS / XPath /
+/// JSONPath / regex / JS segments, `||`/`&&` combinators, `##` replacements).
+/// Mirrors Legado's `Rss.getArticles` + `RssParserByRule`.
 enum LegadoRSSScraper {
-    struct ScrapedItem {
-        let title: String
-        let link: String
-        let pubDate: Date?
-        let description: String
-        let contentHTML: String
-        let author: String?
-        let imageURL: String?
+
+    // MARK: - Sort categories (Legado RssSource.sortUrls())
+
+    /// Resolve the source's category tabs. `@js:`/`<js>` sortUrl rules are
+    /// evaluated with JSCoreEngine before splitting.
+    static func resolveSortEntries(for source: RSSSource) async -> [RSSSortEntry] {
+        let raw = source.sortUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !raw.isEmpty else {
+            return LegadoSortURLParser.entries(from: nil, fallbackURL: source.url)
+        }
+        guard LegadoSortURLParser.needsJSEvaluation(raw) else {
+            return LegadoSortURLParser.entries(from: raw, fallbackURL: source.url)
+        }
+
+        let js = LegadoSortURLParser.jsBody(raw) ?? ""
+        let sourceURL = source.url
+        let evaluated: String? = await Task.detached(priority: .userInitiated) {
+            let jsEngine = JSCoreEngine()
+            wireNetworkHandler(jsEngine)
+            return jsEngine.evaluateIsolated(js, bindings: [
+                "baseUrl": sourceURL,
+                "baseURL": sourceURL
+            ])
+        }.value
+        return LegadoSortURLParser.entries(from: evaluated, fallbackURL: source.url)
     }
 
-    static func scrape(source: RSSSource) async throws -> [RSSItem] {
-        guard let listRule = LegadoRuleParser.parseListRule(source.ruleArticles ?? "") else {
+    // MARK: - Scrape (Legado Rss.getArticles + RssParserByRule.parseXML)
+
+    static func scrape(source: RSSSource, entry: RSSSortEntry? = nil, page: Int = 1) async throws -> [RSSItem] {
+        var listRule = source.ruleArticles?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !listRule.isEmpty else {
             throw ScraperError.invalidRule("ruleArticles")
         }
 
-        let html = try await fetchHTML(url: source.url, headerJSON: source.header)
-        let document = try SwiftSoup.parse(html, source.url)
-        let articleElements = try document.select(listRule.cssSelector).array()
+        let entryURL = normalizedRequestURL(entry?.url ?? source.url)
+        let jsEngine = JSCoreEngine()
+        wireNetworkHandler(jsEngine)
 
-        guard !articleElements.isEmpty else {
+        let analyzeUrl = AnalyzeUrl(
+            ruleUrl: entryURL,
+            page: page,
+            sourceHeader: source.header,
+            baseUrl: source.url,
+            jsEvaluator: { [weak jsEngine] js, bindings in
+                jsEngine?.evaluateIsolated(js, bindings: bindings)
+            }
+        )
+
+        let (body, finalURL) = try await fetchBody(
+            analyzeUrl: analyzeUrl,
+            headerJSON: source.header
+        )
+
+        // Legado: a leading '-' on ruleArticles reverses the article list.
+        var reverse = false
+        if listRule.hasPrefix("-") {
+            reverse = true
+            listRule.removeFirst()
+        }
+
+        let engine = ModernRuleEngine()
+        engine.jsEvaluator = { [weak engine, weak jsEngine] jsCode, prevResult in
+            guard let engine, let jsEngine else { return nil }
+            var bindings: [String: Any] = [
+                "baseUrl": engine.baseUrl,
+                "baseURL": engine.baseUrl
+            ]
+            if let content = engine.content {
+                bindings["src"] = content
+            }
+            return jsEngine.evaluateIsolated(jsCode, result: prevResult, bindings: bindings)
+        }
+        engine.setContent(body, baseUrl: finalURL)
+
+        let elements = engine.getElements(ruleStr: listRule)
+        guard !elements.isEmpty else {
             throw ScraperError.noArticlesFound
         }
 
-        let titleRule = source.ruleTitle.flatMap { LegadoRuleParser.parseExtractRule($0) }
-        let linkRule = source.ruleLink.flatMap { LegadoRuleParser.parseExtractRule($0) }
-        let descRule = source.ruleDescription.flatMap { LegadoRuleParser.parseExtractRule($0) }
-        let contentRule = source.ruleContent.flatMap { LegadoRuleParser.parseExtractRule($0) }
-        let dateRule = source.rulePubDate.flatMap { LegadoRuleParser.parseExtractRule($0) }
-        let imageRule = source.ruleImage.flatMap { LegadoRuleParser.parseExtractRule($0) }
+        var items: [RSSItem] = []
+        items.reserveCapacity(elements.count)
 
-        let baseURL = source.url
-        let items: [RSSItem] = articleElements.compactMap { element in
-            guard let title = extractText(from: element, rule: titleRule),
-                  !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  let link = extractAttrOrText(from: element, rule: linkRule, attr: "href"),
-                  !link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            else { return nil }
+        for element in elements {
+            engine.setContent(element, baseUrl: finalURL)
 
-            let resolvedLink = resolveURL(link, relativeTo: baseURL) ?? link
-            let description = descRule.flatMap { extractText(from: element, rule: $0) } ?? ""
-            let contentHTML = contentRule.flatMap { extractHTML(from: element, rule: $0) } ?? ""
-            let pubDate = dateRule.flatMap { extractText(from: element, rule: $0) }.flatMap { parseDate($0) }
-            let author: String? = nil
-            let imageURL = imageRule.flatMap { extractText(from: element, rule: $0) }
+            let title = RSSContentSanitizer.cleanText(engine.getString(ruleStr: source.ruleTitle))
+            guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+
+            let link = engine.getString(ruleStr: source.ruleLink, isUrl: true)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let description = descriptionRuleIsEmpty(source) ? "" : engine.getString(ruleStr: source.ruleDescription)
+            let pubDateText = engine.getString(ruleStr: source.rulePubDate)
+            let imageURL = engine.getString(ruleStr: source.ruleImage, isUrl: true)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
 
             let finalDescription: String
             var finalContentHTML: String
-            if !contentHTML.isEmpty {
-                finalContentHTML = contentHTML
-                finalDescription = description.isEmpty ? RSSContentSanitizer.summary(from: contentHTML) : description
-            } else if !description.isEmpty {
+            if !description.isEmpty {
                 finalContentHTML = description
                 finalDescription = RSSContentSanitizer.summary(from: description)
             } else {
                 finalContentHTML = ""
                 finalDescription = ""
             }
-
-            if let imgURL = imageURL, !imgURL.isEmpty {
-                let imgTag = "<img src=\"\(imgURL)\" style=\"max-width:100%;height:auto;margin-bottom:1em;\" />"
+            if !imageURL.isEmpty {
+                let imgTag = "<img src=\"\(imageURL)\" style=\"max-width:100%;height:auto;margin-bottom:1em;\" />"
                 finalContentHTML = imgTag + finalContentHTML
             }
 
-            return RSSItem(
-                id: resolvedLink,
-                title: RSSContentSanitizer.cleanText(title),
-                link: resolvedLink,
-                pubDate: pubDate,
+            let itemID = link.isEmpty ? "\(source.id)::\(title)" : link
+            items.append(RSSItem(
+                id: itemID,
+                title: title,
+                link: link,
+                pubDate: parseDate(pubDateText),
                 description: finalDescription,
                 contentHTML: finalContentHTML,
-                author: author,
-                imageURL: imageURL,
+                author: nil,
+                imageURL: imageURL.isEmpty ? nil : imageURL,
                 sourceId: source.id
-            )
+            ))
         }
 
+        if reverse {
+            items.reverse()
+        }
+
+        guard !items.isEmpty else {
+            throw ScraperError.noArticlesFound
+        }
         return items
     }
 
-    // MARK: - Private
+    // MARK: - Article content (Legado Rss.getContent, ruleContent on the article page)
 
-    private static func extractText(from element: Element, rule: LegadoRule?) -> String? {
-        guard let rule, let extractAttr = rule.extractAttribute else { return try? element.text() }
-        do {
-            let els = try element.select(rule.cssSelector).array()
-            guard let first = els.first else { return nil }
-            switch extractAttr {
-            case "text": return try first.text()
-            case "html": return try first.html()
-            case "ownText": return first.ownText()
-            default: return try first.attr(extractAttr)
+    /// Fetch an article's full content by applying the source's ruleContent to the
+    /// article page. Returns HTML, or nil when the source has no ruleContent.
+    static func fetchArticleContent(source: RSSSource, articleLink: String) async throws -> String? {
+        let contentRule = source.ruleContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !contentRule.isEmpty else { return nil }
+
+        let jsEngine = JSCoreEngine()
+        wireNetworkHandler(jsEngine)
+
+        let analyzeUrl = AnalyzeUrl(
+            ruleUrl: normalizedRequestURL(articleLink),
+            sourceHeader: source.header,
+            baseUrl: source.url,
+            jsEvaluator: { [weak jsEngine] js, bindings in
+                jsEngine?.evaluateIsolated(js, bindings: bindings)
             }
-        } catch {
-            return nil
+        )
+        let (body, finalURL) = try await fetchBody(analyzeUrl: analyzeUrl, headerJSON: source.header)
+
+        let engine = ModernRuleEngine()
+        engine.jsEvaluator = { [weak engine, weak jsEngine] jsCode, prevResult in
+            guard let engine, let jsEngine else { return nil }
+            var bindings: [String: Any] = [
+                "baseUrl": engine.baseUrl,
+                "baseURL": engine.baseUrl
+            ]
+            if let content = engine.content {
+                bindings["src"] = content
+            }
+            return jsEngine.evaluateIsolated(jsCode, result: prevResult, bindings: bindings)
         }
+        engine.setContent(body, baseUrl: finalURL)
+
+        let html = engine.getString(ruleStr: contentRule)
+        let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
-    private static func extractAttrOrText(from element: Element, rule: LegadoRule?, attr defaultAttr: String) -> String? {
-        guard let rule else {
-            return (try? element.attr(defaultAttr)) ?? (try? element.text())
-        }
-        guard let extractAttr = rule.extractAttribute else { return (try? element.attr(defaultAttr)) ?? (try? element.text()) }
-        do {
-            let els = try element.select(rule.cssSelector).array()
-            guard let first = els.first else { return nil }
-            switch extractAttr {
-            case "text": return try first.text()
-            case "html": return try first.html()
-            default: return try first.attr(extractAttr)
-            }
-        } catch {
-            return nil
-        }
-    }
+    // MARK: - Fetch
 
-    private static func extractHTML(from element: Element, rule: LegadoRule?) -> String? {
-        guard let rule else { return try? element.html() }
-        guard let extractAttr = rule.extractAttribute else { return try? element.html() }
-        do {
-            let els = try element.select(rule.cssSelector).array()
-            guard let first = els.first else { return nil }
-            switch extractAttr {
-            case "html", "all": return try first.html()
-            case "text": return try first.text()
-            case "ownText": return first.ownText()
-            default: return try first.html()
-            }
-        } catch {
-            return nil
-        }
-    }
-
-    private static func fetchHTML(url: String, headerJSON: String?) async throws -> String {
-        guard let requestURL = URL(string: url)?.upgradedToHTTPS() else {
+    /// Execute the AnalyzeUrl request (or WebView fetch when required) and decode
+    /// the response body honoring the rule's charset option.
+    private static func fetchBody(
+        analyzeUrl: AnalyzeUrl,
+        headerJSON: String?
+    ) async throws -> (body: String, finalURL: String) {
+        guard var request = analyzeUrl.toURLRequest(), let originalURL = request.url else {
             throw ScraperError.invalidURL
         }
 
-        var request = URLRequest(url: requestURL)
+        if let upgraded = URLComponents(url: originalURL, resolvingAgainstBaseURL: false)?.url?.upgradedToHTTPS() {
+            request.url = upgraded
+        }
+
+        // Merge source-level headers (AnalyzeUrl carries only per-rule option headers).
+        for (key, value) in parsedHeaders(headerJSON) where request.value(forHTTPHeaderField: key) == nil {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        if request.value(forHTTPHeaderField: "User-Agent") == nil {
+            request.setValue(defaultUserAgent, forHTTPHeaderField: "User-Agent")
+        }
         request.timeoutInterval = 20
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
-        if let headerJSON, let headerData = headerJSON.data(using: .utf8),
-           let headers = try? JSONSerialization.jsonObject(with: headerData) as? [String: String] {
-            for (key, value) in headers {
-                request.setValue(value, forHTTPHeaderField: key)
-            }
-        } else if request.value(forHTTPHeaderField: "User-Agent") == nil {
-            request.setValue(
-                "Mozilla/5.0 (Linux; Android 8.1.0; zh-CN) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Mobile Safari/537.36",
-                forHTTPHeaderField: "User-Agent"
+        let requestURL = request.url ?? originalURL
+
+        if analyzeUrl.useWebView {
+            let jsWait = analyzeUrl.webViewDelayTime > 0
+                ? TimeInterval(analyzeUrl.webViewDelayTime) / 1000.0
+                : nil
+            let html = try await BookSourceFetcher.fetchViaWebView(
+                url: requestURL,
+                headers: request.allHTTPHeaderFields ?? [:],
+                jsWait: jsWait
             )
+            return (html, requestURL.absoluteString)
         }
 
         let (data, response): (Data, URLResponse)
@@ -164,23 +229,110 @@ enum LegadoRSSScraper {
             }
             throw error
         }
-        guard let http = response as? HTTPURLResponse,
-              (200...299).contains(http.statusCode) else {
+
+        if let http = response as? HTTPURLResponse,
+           !(200...299).contains(http.statusCode) {
             throw ScraperError.httpError
         }
 
-        guard let html = String(data: data, encoding: .utf8) else {
+        guard let body = decodeBody(data, charsetOption: analyzeUrl.charset, response: response) else {
             throw ScraperError.encodingError
         }
-        return html
+        let finalURL = (response.url ?? requestURL).absoluteString
+        return (body, finalURL)
     }
 
-    private static func resolveURL(_ link: String, relativeTo baseURL: String) -> String? {
-        guard let base = URL(string: baseURL) else { return nil }
-        if let url = URL(string: link), url.scheme != nil {
-            return url.absoluteString
+    /// Decode response data: rule charset option → HTTP charset → UTF-8 → GB18030.
+    static func decodeBody(_ data: Data, charsetOption: String?, response: URLResponse?) -> String? {
+        if let charset = charsetOption, !charset.isEmpty {
+            if let s = String(data: data, encoding: encodingFromCharset(charset)) { return s }
         }
-        return URL(string: link, relativeTo: base)?.absoluteURL.absoluteString
+        if let textEncodingName = response?.textEncodingName {
+            let cfEncoding = CFStringConvertIANACharSetNameToEncoding(textEncodingName as CFString)
+            if cfEncoding != kCFStringEncodingInvalidId {
+                let encoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cfEncoding))
+                if let s = String(data: data, encoding: encoding) { return s }
+            }
+        }
+        if let s = String(data: data, encoding: .utf8) { return s }
+        if let s = String(data: data, encoding: encodingFromCharset("gbk")) { return s }
+        return nil
+    }
+
+    private static func encodingFromCharset(_ charset: String) -> String.Encoding {
+        switch charset.lowercased() {
+        case "gbk", "gb2312", "gb18030":
+            return String.Encoding(
+                rawValue: CFStringConvertEncodingToNSStringEncoding(
+                    CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)
+                )
+            )
+        case "big5":
+            return String.Encoding(
+                rawValue: CFStringConvertEncodingToNSStringEncoding(
+                    CFStringEncoding(CFStringEncodings.big5.rawValue)
+                )
+            )
+        default:
+            return .utf8
+        }
+    }
+
+    // MARK: - Helpers
+
+    /// Legado sourceUrls often omit the scheme ("shuyuan.nyasama.net"). Prefix
+    /// https:// for host-like strings so AnalyzeUrl/URLSession accept them.
+    /// Template/option syntax is preserved untouched.
+    static func normalizedRequestURL(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.hasPrefix("data:")
+            || trimmed.hasPrefix("//") || trimmed.hasPrefix("/")
+            || trimmed.hasPrefix("<js>") || lower.hasPrefix("@js:") || trimmed.hasPrefix("{{") {
+            return trimmed
+        }
+        // Host-like: "example.com/path" or "example.com,{...}"
+        let beforeSlash = trimmed.split(separator: "/", maxSplits: 1).first ?? ""
+        let head = beforeSlash.split(separator: ",", maxSplits: 1).first ?? ""
+        if head.contains("."), !head.contains(" ") {
+            return "https://" + trimmed
+        }
+        return trimmed
+    }
+
+    private static func descriptionRuleIsEmpty(_ source: RSSSource) -> Bool {
+        (source.ruleDescription ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private static func parsedHeaders(_ headerJSON: String?) -> [String: String] {
+        guard let headerJSON, let data = headerJSON.data(using: .utf8),
+              let headers = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            return [:]
+        }
+        return headers
+    }
+
+    private static let defaultUserAgent =
+        "Mozilla/5.0 (Linux; Android 8.1.0; zh-CN) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Mobile Safari/537.36"
+
+    /// Wire java.ajax()-style network access for JS rules. Runs on the JS engine's
+    /// dedicated serial queue, so blocking on a semaphore is safe (same pattern as
+    /// ModernParserBridge).
+    private static func wireNetworkHandler(_ jsEngine: JSCoreEngine) {
+        jsEngine.networkHandler = { request in
+            let semaphore = DispatchSemaphore(value: 0)
+            var result: String?
+            let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+                if let data {
+                    result = LegadoJSBridge.decodeData(data, response: response)
+                }
+                semaphore.signal()
+            }
+            task.resume()
+            _ = semaphore.wait(timeout: .now() + 30)
+            return result
+        }
     }
 
     private static func isATSBlocked(_ error: Error) -> Bool {
@@ -198,6 +350,7 @@ enum LegadoRSSScraper {
             "EEE, dd MMM yyyy HH:mm:ss zzz",
             "EEE, d MMM yyyy HH:mm:ss Z",
             "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd HH:mm",
             "yyyy-MM-dd'T'HH:mm:ssZ",
             "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
             "yyyy-MM-dd'T'HH:mm:ssXXXXX",
@@ -205,6 +358,7 @@ enum LegadoRSSScraper {
             "yyyy-MM-dd",
             "yyyy/MM/dd HH:mm:ss",
             "yyyy/MM/dd",
+            "MM-dd HH:mm",
             "MM/dd/yyyy",
             "dd/MM/yyyy"
         ]
@@ -217,10 +371,17 @@ enum LegadoRSSScraper {
     }()
 
     private static func parseDate(_ string: String) -> Date? {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
         for formatter in dateFormatters {
-            if let date = formatter.date(from: string.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            if let date = formatter.date(from: trimmed) {
                 return date
             }
+        }
+        // Unix timestamps (seconds or milliseconds) are common in JSON APIs.
+        if let epoch = Double(trimmed) {
+            if epoch > 1_000_000_000_000 { return Date(timeIntervalSince1970: epoch / 1000) }
+            if epoch > 1_000_000_000 { return Date(timeIntervalSince1970: epoch) }
         }
         return nil
     }

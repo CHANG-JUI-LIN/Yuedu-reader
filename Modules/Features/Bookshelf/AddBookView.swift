@@ -86,7 +86,7 @@ struct FileImportTab: View {
 
                 if let content = pendingContent {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text(localized("確認書籍資訊")).font(.headline)
+                        Text(localized("確認書籍資訊")).font(DSFont.headline)
                         TextField(localized("書名"), text: $titleInput)
                             .padding(12)
                             .background(Color.secondary.opacity(0.15))
@@ -238,9 +238,9 @@ struct FileImportTab: View {
                     } label: {
                         VStack(spacing: 12) {
                             Image(systemName: "folder.badge.plus")
-                                .font(.system(size: 44)).foregroundColor(DSColor.accent)
+                                .font(DSFont.fixed(size: 44)).foregroundColor(DSColor.accent)
                             Text(localized("點擊選取 TXT / EPUB / 漫畫 / 音訊文件"))
-                                .font(.headline).foregroundColor(DSColor.accent)
+                                .font(DSFont.headline).foregroundColor(DSColor.accent)
                             Text(localized("從文件 App、iCloud、本機儲存等選取"))
                                 .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                         }
@@ -932,9 +932,9 @@ struct HintCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
-                .font(.title2).foregroundColor(DSColor.accent).frame(width: 32)
+                .font(DSFont.title2).foregroundColor(DSColor.accent).frame(width: 32)
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.subheadline.weight(.semibold))
+                Text(title).font(DSFont.subheadline.weight(.semibold))
                 Text(detail).font(DSFont.caption).foregroundColor(DSColor.textSecondary)
             }
             Spacer()

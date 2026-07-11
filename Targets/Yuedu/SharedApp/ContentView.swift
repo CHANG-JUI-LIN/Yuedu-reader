@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject private var gs = GlobalSettings.shared
     @StateObject private var rssStore = RSSStore.shared
     @ObservedObject private var importDrainer = SharedImportQueueDrainer.shared
@@ -30,16 +31,22 @@ struct ContentView: View {
         (colorScheme == .light && !appearanceTheme.isClassic) ? appearanceTheme : nil
     }
 
+    private var typographyRefreshID: String {
+        "\(gs.resolvedGlobalFontPostScript ?? "system")|\(dynamicTypeSize)"
+    }
+
     var body: some View {
         // Sync the app-wide themed surfaces (read by DSColor) with the current
         // appearance before descendants read them this render pass. This is a
         // plain global, not SwiftUI state, so assigning it here is side-effect
         // free as far as invalidation goes.
         AppearanceThemePreset.activeAppTheme = resolvedAppTheme
+        GlobalAppTypography.activate(postScriptName: gs.resolvedGlobalFontPostScript)
         return tabView
         // Classic (默認) = the app's original look: no tint override at all.
         .tint(appearanceTheme.isClassic ? nil : appearanceTheme.accentColor)
         .accentColor(appearanceTheme.isClassic ? nil : appearanceTheme.accentColor)
+        .font(DSFont.body)
         .overlay(alignment: .top) {
             if let outcome = importDrainer.lastOutcome {
                 SharedImportToast(outcome: outcome)
@@ -60,6 +67,13 @@ struct ContentView: View {
         .iPadAdaptiveRootTabStyle()
         .rootTabBarMinimizeStyle()
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: importDrainer.lastOutcome)
+        .task(id: typographyRefreshID) {
+            await MainActor.run {
+                GlobalAppTypographyUIKitBridge.apply(
+                    postScriptName: gs.resolvedGlobalFontPostScript
+                )
+            }
+        }
         .onAppear {
             selectedRootTab = gs.fallbackRootTab(for: selectedRootTab)
         }
@@ -198,7 +212,7 @@ private struct SharedImportToast: View {
 
     var body: some View {
         Label(message, systemImage: outcome.importedCount > 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
-            .font(.subheadline.weight(.medium))
+            .font(DSFont.subheadline.weight(.medium))
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -306,7 +320,7 @@ struct NowPlayingMiniPlayer: View {
                 }
             } label: {
                 Image(systemName: hub.playbackState == .playing ? "pause.fill" : "play.fill")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(DSFont.fixed(size: 18, weight: .bold))
                     .foregroundColor(.secondary)
                     .frame(width: 48, height: 48)
                     .background(.thinMaterial, in: Circle())
@@ -319,7 +333,7 @@ struct NowPlayingMiniPlayer: View {
                 }
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(DSFont.fixed(size: 17, weight: .semibold))
                     .foregroundColor(.secondary)
                     .frame(width: 34, height: 48)
             }

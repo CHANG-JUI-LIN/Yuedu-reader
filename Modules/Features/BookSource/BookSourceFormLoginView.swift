@@ -87,14 +87,14 @@ struct BookSourceFormLoginView: View {
                     Section {
                         Label(err, systemImage: "exclamationmark.triangle.fill")
                             .foregroundColor(.red)
-                            .font(.caption)
+                            .font(DSFont.caption)
                     }
                 }
                 if let suc = successMessage {
                     Section {
                         Label(suc, systemImage: "checkmark.circle.fill")
                             .foregroundColor(.green)
-                            .font(.caption)
+                            .font(DSFont.caption)
                     }
                 }
             }

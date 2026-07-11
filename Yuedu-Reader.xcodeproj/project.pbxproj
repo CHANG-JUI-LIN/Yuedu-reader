@@ -806,6 +806,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LM_FILTER_WARNINGS = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zhangruilin.yuedureader;
 				PRODUCT_MODULE_NAME = yuedu_app;
 				PRODUCT_NAME = YueduReader;
@@ -853,6 +854,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LM_FILTER_WARNINGS = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zhangruilin.yuedureader;
 				PRODUCT_MODULE_NAME = yuedu_app;
 				PRODUCT_NAME = YueduReader;

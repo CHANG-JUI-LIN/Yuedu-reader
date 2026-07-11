@@ -61,12 +61,12 @@ struct ReaderOverlayFooter: View {
             Spacer()
             HStack {
                 Text("\(pageInfo)  ·  \(progress)")
-                    .font(.system(size: 10).monospacedDigit())
+                    .font(DSFont.fixed(size: 10).monospacedDigit())
                     .foregroundColor(textColor.opacity(0.4))
                 Spacer()
                 HStack(spacing: 4) {
-                    Text(clock.displayTime).font(.system(size: 10).monospacedDigit())
-                    Image(systemName: clock.batteryIcon).font(.system(size: 10))
+                    Text(clock.displayTime).font(DSFont.fixed(size: 10).monospacedDigit())
+                    Image(systemName: clock.batteryIcon).font(DSFont.fixed(size: 10))
                 }
                 .foregroundColor(textColor.opacity(0.4))
             }
@@ -91,12 +91,12 @@ struct ReaderInlineFooter: View {
             Spacer()
             HStack {
                 Text("\(pageInfo)  ·  \(progress)")
-                    .font(.system(size: 10).monospacedDigit())
+                    .font(DSFont.fixed(size: 10).monospacedDigit())
                     .foregroundColor(textColor.opacity(0.4))
                 Spacer()
                 HStack(spacing: 4) {
-                    Text(clock.displayTime).font(.system(size: 10).monospacedDigit())
-                    Image(systemName: clock.batteryIcon).font(.system(size: 10))
+                    Text(clock.displayTime).font(DSFont.fixed(size: 10).monospacedDigit())
+                    Image(systemName: clock.batteryIcon).font(DSFont.fixed(size: 10))
                 }
                 .foregroundColor(textColor.opacity(0.4))
             }

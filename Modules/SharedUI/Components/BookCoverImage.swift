@@ -85,7 +85,7 @@ struct AudiobookCoverBadge: View {
 
     var body: some View {
         Image(systemName: "headphones")
-            .font(.system(size: glyphSize, weight: .bold))
+            .font(DSFont.fixed(size: glyphSize, weight: .bold))
             .foregroundStyle(.white)
             .padding(glyphSize * 0.5)
             .background(DSColor.accent, in: Circle())
@@ -104,7 +104,7 @@ struct TitleCardPlaceholder: View {
             .fill(Color(.secondarySystemBackground))
             .overlay(alignment: .topLeading) {
                 Text(title)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(DSFont.fixed(size: 11, weight: .medium))
                     .foregroundColor(DSColor.textSecondary)
                     .multilineTextAlignment(.leading)
                     .lineLimit(6)

@@ -22,7 +22,7 @@ struct ReaderTopBar: View {
                     } label: {
                         Image(systemName: "chevron.left")
                             .accessibilityIdentifier("reader_back_button")
-                            .font(.system(size: 17, weight: .medium))
+                            .font(DSFont.fixed(size: 17, weight: .medium))
                             .foregroundColor(theme.textColor)
                             .frame(width: 36, height: 36)
                     }
@@ -34,7 +34,7 @@ struct ReaderTopBar: View {
                     
                     if titleVisible {
                         Text(chapterTitle)
-                            .font(.system(size: titleSize, weight: .medium))
+                            .font(DSFont.fixed(size: titleSize, weight: .medium))
                             .foregroundColor(theme.textColor)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity)
@@ -46,7 +46,7 @@ struct ReaderTopBar: View {
                         onToggleBookmark()
                     } label: {
                         Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                            .font(.system(size: 17, weight: .medium))
+                            .font(DSFont.fixed(size: 17, weight: .medium))
                             .foregroundColor(isBookmarked ? .orange : theme.textColor)
                             .scaleEffect(isBookmarked ? 1.15 : 1.0)
                             .frame(width: 36, height: 36)
@@ -59,7 +59,7 @@ struct ReaderTopBar: View {
                         } label: {
                             Image(systemName: "ellipsis")
                                 .rotationEffect(.degrees(90))
-                                .font(.system(size: 17, weight: .medium))
+                                .font(DSFont.fixed(size: 17, weight: .medium))
                                 .foregroundColor(theme.textColor)
                                 .frame(width: 36, height: 36)
                         }

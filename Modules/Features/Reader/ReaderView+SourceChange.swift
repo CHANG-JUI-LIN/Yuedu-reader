@@ -16,14 +16,14 @@ extension ReaderView {
                                 .foregroundColor(.primary)
                             if let last = book?.onlineChapters?.last?.title, !last.isEmpty {
                                 Text(last)
-                                    .font(.caption)
+                                    .font(DSFont.caption)
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
                             }
                         }
                         Spacer()
                         Image(systemName: "checkmark")
-                            .font(.body.weight(.semibold))
+                            .font(DSFont.body.weight(.semibold))
                             .foregroundColor(.accentColor)
                     }
                 }
@@ -40,7 +40,7 @@ extension ReaderView {
                             HStack(spacing: 8) {
                                 ProgressView()
                                 Text(localized("正在搜尋更多書源…"))
-                                    .font(.footnote)
+                                    .font(DSFont.footnote)
                                     .foregroundColor(.secondary)
                             }
                         }
@@ -93,7 +93,7 @@ extension ReaderView {
                 // lastChapter distinguishes them.
                 if !origin.lastChapter.isEmpty {
                     Text(origin.lastChapter)
-                        .font(.caption)
+                        .font(DSFont.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
@@ -101,14 +101,14 @@ extension ReaderView {
             Spacer()
             if changeSourceFailedKeys.contains(ChangeSourceCache.urlKey(origin.bookUrl)) {
                 Text(localized("載入失敗"))
-                    .font(.caption2)
+                    .font(DSFont.caption2)
                     .foregroundColor(.red)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Capsule().fill(Color.red.opacity(0.12)))
             } else {
                 Image(systemName: "chevron.right")
-                    .font(.caption)
+                    .font(DSFont.caption)
                     .foregroundColor(.secondary)
             }
         }
@@ -138,7 +138,7 @@ extension ReaderView {
     func circleBtn(icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 18, weight: .light))
+                .font(DSFont.fixed(size: 18, weight: .light))
                 .foregroundColor(readerTheme.textColor.opacity(0.8))
                 .frame(width: 40, height: 40)
                 .background(Color.clear)

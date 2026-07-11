@@ -55,7 +55,7 @@ struct PaywallView: View {
     private var header: some View {
         VStack(spacing: DSSpacing.sm) {
             Image(systemName: "crown.fill")
-                .font(.system(size: 44))
+                .font(DSFont.fixed(size: 44))
                 .foregroundStyle(DSColor.accent)
                 .accessibilityHidden(true)
             Text("Yuedu Pro")
@@ -75,7 +75,7 @@ struct PaywallView: View {
             ForEach(orderedFeatures) { feature in
                 HStack(spacing: DSSpacing.md) {
                     Image(systemName: feature.iconName)
-                        .font(.system(size: 18, weight: .medium))
+                        .font(DSFont.fixed(size: 18, weight: .medium))
                         .foregroundStyle(DSColor.accent)
                         .frame(width: 32, height: 32)
                         .accessibilityHidden(true)

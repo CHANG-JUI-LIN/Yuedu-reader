@@ -266,7 +266,7 @@ struct BookSourceListView: View {
                 Image(
                     systemName: selectedIds.contains(source.id) ? "checkmark.square.fill" : "square"
                 )
-                .font(.system(size: 20))
+                .font(DSFont.fixed(size: 20))
                 .foregroundColor(
                     selectedIds.contains(source.id) ? DSColor.accent : Color(UIColor.systemGray3))
             }
@@ -283,7 +283,7 @@ struct BookSourceListView: View {
 
                     if !source.bookSourceGroup.isEmpty {
                         Text("(\(source.bookSourceGroup))")
-                            .font(.system(size: 13))
+                            .font(DSFont.fixed(size: 13))
                             .foregroundColor(DSColor.textSecondary)
                             .lineLimit(1)
                     }
@@ -291,7 +291,7 @@ struct BookSourceListView: View {
 
                 if !source.bookSourceUrl.isEmpty {
                     Text(source.bookSourceUrl)
-                        .font(.system(size: 11))
+                        .font(DSFont.fixed(size: 11))
                         .foregroundColor(DSColor.textSecondary.opacity(0.6))
                         .lineLimit(1)
                 }
@@ -381,12 +381,12 @@ struct BookSourceListView: View {
                             && !filteredSources.isEmpty
                             ? "checkmark.square.fill" : "square"
                     )
-                    .font(.system(size: 18))
+                    .font(DSFont.fixed(size: 18))
                     .foregroundColor(
                         selectedIds.count == filteredSources.count && !filteredSources.isEmpty
                             ? DSColor.accent : Color(UIColor.systemGray3))
                     Text(localized("全選") + "(\(selectedIds.count)/\(store.sources.count))")
-                        .font(.system(size: 13))
+                        .font(DSFont.fixed(size: 13))
                         .foregroundColor(DSColor.textPrimary)
                 }
             }
@@ -399,7 +399,7 @@ struct BookSourceListView: View {
                 invertSelection()
             } label: {
                 Text(localized("反選"))
-                    .font(.system(size: 13))
+                    .font(DSFont.fixed(size: 13))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 7)
                     .background(Color(UIColor.systemGray5))
@@ -415,7 +415,7 @@ struct BookSourceListView: View {
                 }
             } label: {
                 Text(localized("刪除"))
-                    .font(.system(size: 13))
+                    .font(DSFont.fixed(size: 13))
                     .foregroundColor(selectedIds.isEmpty ? .secondary : .red)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 7)
@@ -563,18 +563,18 @@ struct BookSourceListView: View {
         VStack(spacing: 24) {
             Spacer()
             Image(systemName: "books.vertical.circle")
-                .font(.system(size: 64))
+                .font(DSFont.fixed(size: 64))
                 .foregroundColor(Color.secondary.opacity(0.35))
             Text(localized("尚無書源"))
-                .font(.title2.weight(.semibold))
+                .font(DSFont.title2.weight(.semibold))
             Text(localized("點擊右上角 + 手動新增\n或 ↓ 貼上 Legado 書源 JSON 匯入"))
-                .font(.subheadline).foregroundColor(DSColor.textSecondary)
+                .font(DSFont.subheadline).foregroundColor(DSColor.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
                 showImport = true
             } label: {
                 Label(localized("匯入書源 JSON"), systemImage: "square.and.arrow.down")
-                    .font(.headline).foregroundColor(.white)
+                    .font(DSFont.headline).foregroundColor(.white)
                     .padding(.horizontal, 28).padding(.vertical, 13)
                     .background(DSColor.accent).clipShape(Capsule())
             }
@@ -590,7 +590,7 @@ struct BookSourceListView: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "info.circle").foregroundColor(DSColor.accent)
                     Text(localized("貼上 Legado 格式的書源 JSON（支援單個 {} 或陣列 []），或選取 .json 文件。"))
-                        .font(.caption).foregroundColor(DSColor.textSecondary)
+                        .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                 }
                 .padding()
                 .background(DSColor.accent.opacity(0.06))
@@ -598,7 +598,7 @@ struct BookSourceListView: View {
                 .padding()
 
                 TextEditor(text: $importJSON)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(DSFont.fixed(size: 13, design: .monospaced))
                     .padding(8)
                     .background(Color.secondary.opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -698,7 +698,7 @@ struct BookSourceListView: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "network").foregroundColor(DSColor.accent)
                     Text(localized("輸入書源 JSON 的網路地址，支援直接返回 JSON 的 URL。"))
-                        .font(.caption).foregroundColor(DSColor.textSecondary)
+                        .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                 }
                 .padding()
                 .background(DSColor.accent.opacity(0.06))
@@ -774,7 +774,7 @@ struct BookSourceListView: View {
     @ViewBuilder
     private func toastBanner(_ msg: String, color: Color) -> some View {
         Text(msg)
-            .font(.caption).foregroundColor(.white)
+            .font(DSFont.caption).foregroundColor(.white)
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(color.opacity(0.9)).clipShape(Capsule())
             .padding(.top, 8)

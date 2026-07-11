@@ -165,7 +165,7 @@ struct FixedPageReaderControlsOverlay: View {
         HStack(spacing: DSSpacing.sm) {
             Button(action: onClose) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .medium))
+                    .font(DSFont.fixed(size: 17, weight: .medium))
                     .foregroundColor(.white)
                     .frame(width: 36, height: 36)
             }
@@ -174,14 +174,14 @@ struct FixedPageReaderControlsOverlay: View {
                     state.showChapterList = true
                 } label: {
                     Image(systemName: "list.bullet")
-                        .font(.system(size: 17, weight: .medium))
+                        .font(DSFont.fixed(size: 17, weight: .medium))
                         .foregroundColor(.white)
                         .frame(width: 36, height: 36)
                 }
                 .accessibilityLabel(localized("目錄"))
             }
             Text(state.chapterTitle)
-                .font(.system(size: 14, weight: .medium))
+                .font(DSFont.fixed(size: 14, weight: .medium))
                 .foregroundColor(.white)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -247,7 +247,7 @@ struct FixedPageReaderSettingsView: View {
             }
         } label: {
             Image(systemName: "rectangle.portrait.on.rectangle.portrait")
-                .font(.system(size: 17, weight: .medium))
+                .font(DSFont.fixed(size: 17, weight: .medium))
                 .foregroundColor(.white)
                 .frame(width: 36, height: 36)
         }
@@ -268,7 +268,7 @@ struct FixedPageChapterListView: View {
                         HStack {
                             Text(item.title)
                                 .foregroundColor(.primary)
-                                .font(.subheadline)
+                                .font(DSFont.subheadline)
                             Spacer()
                             if item.index == state.currentChapterIndex {
                                 Image(systemName: "checkmark")

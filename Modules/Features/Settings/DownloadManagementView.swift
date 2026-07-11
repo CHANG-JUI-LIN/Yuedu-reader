@@ -81,10 +81,10 @@ struct DownloadManagementView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text(book.title)
-                                .font(.body)
+                                .font(DSFont.body)
                             Spacer()
                             Text(progressLabel(for: book))
-                                .font(.caption.monospacedDigit())
+                                .font(DSFont.caption.monospacedDigit())
                                 .foregroundColor(DSColor.textSecondary)
                         }
                         ProgressView(value: downloadProgress(for: book))

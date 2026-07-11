@@ -752,7 +752,7 @@ struct BrowserView: View {
         .overlay(alignment: .top) {
             if let msg = errorMsg {
                 Text(msg)
-                    .font(.caption).foregroundColor(.white)
+                    .font(DSFont.caption).foregroundColor(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(Color.red.opacity(0.85)).clipShape(Capsule())
                     .padding(.top, 8)
@@ -875,9 +875,9 @@ struct BrowserView: View {
                 } else {
                     VStack(spacing: 2) {
                         Image(systemName: browser.hasTOC ? "list.bullet" : "book.fill")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(DSFont.fixed(size: 20, weight: .medium))
                         Text(localized(browser.hasTOC ? "目錄" : "閱讀"))
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(DSFont.fixed(size: 10, weight: .semibold))
                     }
                     .foregroundColor(.white)
                 }
@@ -893,26 +893,26 @@ struct BrowserView: View {
         HStack(spacing: 8) {
             Button { withAnimation(DSAnimation.standard) { showHome = true } } label: {
                 Image(systemName: "house")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(DSFont.fixed(size: 16, weight: .medium))
                     .foregroundColor(.primary)
             }
 
             Button { browser.goBack() } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .medium))
+                    .font(DSFont.fixed(size: 17, weight: .medium))
                     .foregroundColor(browser.canGoBack ? .primary : Color.secondary.opacity(0.35))
             }.disabled(!browser.canGoBack)
 
             Button { browser.goForward() } label: {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 17, weight: .medium))
+                    .font(DSFont.fixed(size: 17, weight: .medium))
                     .foregroundColor(browser.canGoForward ? .primary : Color.secondary.opacity(0.35))
             }.disabled(!browser.canGoForward)
 
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(.caption).foregroundColor(.secondary)
+                Image(systemName: "magnifyingglass").font(DSFont.caption).foregroundColor(.secondary)
                 TextField(localized("輸入網址或搜尋"), text: $addressText)
-                    .font(.system(size: 14))
+                    .font(DSFont.fixed(size: 14))
                     .disableAutocorrection(true)
                     .focused($addressFocused)
                     .onSubmit {
@@ -932,7 +932,7 @@ struct BrowserView: View {
 
             Button { browser.reload() } label: {
                 Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise")
-                    .font(.system(size: 15)).foregroundColor(.secondary)
+                    .font(DSFont.fixed(size: 15)).foregroundColor(.secondary)
             }
         }
         .frame(maxWidth: browserContentMaxWidth)
@@ -952,10 +952,10 @@ struct BrowserView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Text(engine.icon)
-                                .font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                                .font(DSFont.fixed(size: 12, weight: .bold)).foregroundColor(.white)
                                 .frame(width: 22, height: 22)
                                 .background(engine.color).clipShape(Circle())
-                            Text(engine.rawValue).font(.subheadline).foregroundColor(.primary)
+                            Text(engine.rawValue).font(DSFont.subheadline).foregroundColor(.primary)
                         }
                         .padding(.horizontal, 12).padding(.vertical, 8)
                         .background(Color.secondary.opacity(0.15)).clipShape(Capsule())
@@ -963,7 +963,7 @@ struct BrowserView: View {
                 }
                 Divider().frame(height: 20)
                 Text(localized("進入小說章節頁，點「轉碼閱讀」直接開書"))
-                    .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                    .font(DSFont.caption).foregroundColor(.secondary).lineLimit(1)
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
             .frame(maxWidth: browserContentMaxWidth, alignment: .leading)
@@ -988,11 +988,11 @@ struct WebTOCSheet: View {
                 VStack(spacing: 4) {
                     if !title.isEmpty {
                         Text(title)
-                            .font(.subheadline.weight(.medium))
+                            .font(DSFont.subheadline.weight(.medium))
                             .lineLimit(1)
                     }
                     Text(localized("共偵測到") + " \(chapters.count) " + localized("章，選擇開始閱讀的章節"))
-                        .font(.caption)
+                        .font(DSFont.caption)
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 12)
@@ -1008,11 +1008,11 @@ struct WebTOCSheet: View {
                     } label: {
                         HStack {
                             Text("\(idx + 1).")
-                                .font(.caption.monospacedDigit())
+                                .font(DSFont.caption.monospacedDigit())
                                 .foregroundColor(.secondary)
                                 .frame(width: 36, alignment: .trailing)
                             Text(chapters[idx].title.isEmpty ? localized("第") + " \(idx + 1) " + localized("章") : chapters[idx].title)
-                                .font(.body)
+                                .font(DSFont.body)
                                 .foregroundColor(.primary)
                                 .lineLimit(1)
                             Spacer()
@@ -1043,7 +1043,7 @@ struct WebTOCSheet: View {
                     onConfirm(refs, selectedIndex)
                 } label: {
                     Text(localized("從第") + " \(selectedIndex + 1) " + localized("章開始閱讀"))
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(DSFont.fixed(size: 16, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(DSColor.accent)

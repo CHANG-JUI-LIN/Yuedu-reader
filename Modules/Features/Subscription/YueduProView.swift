@@ -32,7 +32,7 @@ struct YueduProView: View {
         Section {
             HStack(spacing: DSSpacing.md) {
                 Image(systemName: "crown.fill")
-                    .font(.system(size: 28))
+                    .font(DSFont.fixed(size: 28))
                     .foregroundStyle(DSColor.accent)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
@@ -75,7 +75,7 @@ struct YueduProView: View {
             ForEach(PremiumFeature.allCases) { feature in
                 HStack(spacing: DSSpacing.md) {
                     Image(systemName: feature.iconName)
-                        .font(.system(size: 17, weight: .medium))
+                        .font(DSFont.fixed(size: 17, weight: .medium))
                         .frame(width: 28, height: 28)
                         .foregroundStyle(DSColor.accent)
                         .accessibilityHidden(true)

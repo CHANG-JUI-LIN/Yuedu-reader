@@ -62,7 +62,7 @@ struct SettingsView: View {
                     Section(
                         header: Text(localized("App 語言")),
                         footer: Text(appLanguageFooter)
-                            .font(.caption)
+                            .font(DSFont.caption)
                             .foregroundColor(.secondary)
                     ) {
                         DSSettingsRow(
@@ -240,9 +240,9 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(gs.isLoggedIn ? (gs.accountDisplayName.isEmpty ? localized("已登入") : gs.accountDisplayName) : localized("尚未登入"))
-                    .font(.headline)
+                    .font(DSFont.headline)
                 Text(gs.accountSubtitle)
-                    .font(.caption).foregroundColor(.secondary)
+                    .font(DSFont.caption).foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -277,10 +277,10 @@ private struct AboutSupportView: View {
                         .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 4)
 
                     Text(localized("閱讀"))
-                        .font(.title3.weight(.semibold))
+                        .font(DSFont.title3.weight(.semibold))
 
                     Text(localized("聯絡方式、版本資訊與政策協議"))
-                        .font(.footnote)
+                        .font(DSFont.footnote)
                         .foregroundColor(DSColor.textSecondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -392,7 +392,7 @@ private struct AboutSupportView: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .medium))
+                    .font(DSFont.fixed(size: 18, weight: .medium))
                     .frame(width: 28, height: 28)
                     .foregroundColor(DSColor.textPrimary)
 

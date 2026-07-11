@@ -62,10 +62,10 @@ struct ReaderBottomControlBar: View {
                 if let draft = chapterSliderDraft {
                     VStack(spacing: 4) {
                         Text(String(format: "%.0f%%", draft * 100))
-                            .font(.system(size: 15, weight: .medium))
+                            .font(DSFont.fixed(size: 15, weight: .medium))
                             .foregroundColor(.white.opacity(0.85))
                         Text(chapterTitleForProgress(draft))
-                            .font(.system(size: 15, weight: .regular))
+                            .font(DSFont.fixed(size: 15, weight: .regular))
                             .foregroundColor(.white)
                             .lineLimit(1)
                     }
@@ -90,7 +90,7 @@ struct ReaderBottomControlBar: View {
     private func circleBtn(icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 18, weight: .light))
+                .font(DSFont.fixed(size: 18, weight: .light))
                 .foregroundColor(readerTheme.textColor.opacity(0.8))
                 .frame(width: 40, height: 40)
                 .background(Color.clear)
@@ -105,8 +105,8 @@ struct ReaderBottomControlBar: View {
                 onPrevChapter()
             } label: {
                 HStack(spacing: 3) {
-                    Image(systemName: "chevron.left").font(.system(size: 12))
-                    Text(localized("上一章")).font(.system(size: 14))
+                    Image(systemName: "chevron.left").font(DSFont.fixed(size: 12))
+                    Text(localized("上一章")).font(DSFont.fixed(size: 14))
                 }
                 .foregroundColor(
                     canGoPrevChapter ? readerTheme.textColor : readerTheme.textColor.opacity(0.22)
@@ -132,7 +132,7 @@ struct ReaderBottomControlBar: View {
                 ).accentColor(readerTheme.accentColor)
 
                 Text("\(chapterPageInfo)  ·  \(totalProgressPercent)")
-                    .font(.system(size: 10).monospacedDigit())
+                    .font(DSFont.fixed(size: 10).monospacedDigit())
                     .foregroundColor(readerTheme.textColor.opacity(0.4))
             }.padding(.horizontal, 6)
 
@@ -140,8 +140,8 @@ struct ReaderBottomControlBar: View {
                 onNextChapter()
             } label: {
                 HStack(spacing: 3) {
-                    Text(localized(canGoNextChapter ? "下一章" : "書末頁")).font(.system(size: 14))
-                    Image(systemName: "chevron.right").font(.system(size: 12))
+                    Text(localized(canGoNextChapter ? "下一章" : "書末頁")).font(DSFont.fixed(size: 14))
+                    Image(systemName: "chevron.right").font(DSFont.fixed(size: 12))
                 }
                 .foregroundColor(
                     canGoNextChapter ? readerTheme.textColor : readerTheme.textColor.opacity(0.22)
@@ -185,16 +185,16 @@ struct ReaderBottomControlBar: View {
         Button(action: action) {
             VStack(spacing: 2) {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: icon).font(.system(size: 20))
+                    Image(systemName: icon).font(DSFont.fixed(size: 20))
                     if let count = badge, count > 0 {
                         Text("\(count)")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(DSFont.fixed(size: 9, weight: .semibold))
                             .foregroundColor(.white).padding(.horizontal, 3).padding(.vertical, 1)
                             .background(Capsule().fill(Color.orange.opacity(0.85)))
                             .offset(x: 10, y: -4)
                     }
                 }
-                Text(label).font(.system(size: 10))
+                Text(label).font(DSFont.fixed(size: 10))
             }
             .foregroundColor(active ? readerTheme.accentColor : readerTheme.textColor.opacity(0.85))
             .frame(maxWidth: .infinity)

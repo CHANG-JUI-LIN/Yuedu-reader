@@ -68,7 +68,7 @@ struct ReadingStatsView: View {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(DSFont.fixed(size: 15, weight: .semibold))
                             .foregroundColor(DSColor.textSecondary)
                     }
                     .accessibilityLabel(localized("關閉"))

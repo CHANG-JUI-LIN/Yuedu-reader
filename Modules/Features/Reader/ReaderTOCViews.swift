@@ -62,13 +62,13 @@ private struct VerticalTOCText: View {
 
     private func cjkGlyph(_ s: String) -> some View {
         Text(s)
-            .font(.system(size: VerticalTOCLayout.fontSize, weight: .semibold))
+            .font(DSFont.fixed(size: VerticalTOCLayout.fontSize, weight: .semibold))
             .frame(width: VerticalTOCLayout.textWidth, height: VerticalTOCLayout.glyphHeight)
     }
 
     private func compressedGlyph(_ s: String) -> some View {
         Text(s)
-            .font(.system(size: VerticalTOCLayout.fontSize * 0.82, weight: .semibold))
+            .font(DSFont.fixed(size: VerticalTOCLayout.fontSize * 0.82, weight: .semibold))
             .frame(
                 width: VerticalTOCLayout.textWidth,
                 height: VerticalTOCLayout.glyphHeight * 0.55,
@@ -79,7 +79,7 @@ private struct VerticalTOCText: View {
 
     private func rotatedLatinGlyph(_ s: String) -> some View {
         Text(s)
-            .font(.system(size: 12, weight: .semibold))
+            .font(DSFont.fixed(size: 12, weight: .semibold))
             .rotationEffect(.degrees(90))
             .frame(width: VerticalTOCLayout.textWidth, height: VerticalTOCLayout.glyphHeight)
     }
@@ -108,7 +108,7 @@ private struct VerticalTOCColumn: View {
 
                 if showsPageNumber {
                     Text("\(page)")
-                        .font(.system(size: 15, weight: .regular))
+                        .font(DSFont.fixed(size: 15, weight: .regular))
                         .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                 }
             }
@@ -214,7 +214,7 @@ struct ReaderMenuView: View {
             VStack(spacing: 0) {
                 if totalPages > 0 {
                     Text(String(format: localized("第 %d 頁（共 %d 頁）"), currentPage + 1, totalPages))
-                        .font(.system(size: 14))
+                        .font(DSFont.fixed(size: 14))
                         .foregroundColor(.primary)
                         .padding(.vertical, DSSpacing.md)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -285,7 +285,7 @@ struct ReaderMenuView: View {
 
                         if showsPageNumbers {
                             Text("\(pageNumber(for: chapter))")
-                                .font(.system(size: 18, weight: .regular, design: .monospaced))
+                                .font(DSFont.fixed(size: 18, weight: .regular, design: .monospaced))
                                 .foregroundColor(.secondary)
                         }
                     }

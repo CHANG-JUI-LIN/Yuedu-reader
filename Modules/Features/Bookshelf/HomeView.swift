@@ -492,7 +492,7 @@ struct EditBookSheet: View {
                                 HStack(spacing: 6) {
                                     ForEach(store.allGroups, id: \.self) { g in
                                         Button(g) { groupInput = g }
-                                            .font(.caption)
+                                            .font(DSFont.caption)
                                             .padding(.horizontal, 10).padding(.vertical, 4)
                                             .background(groupInput == g ? DSColor.accent.opacity(0.2) : Color.secondary.opacity(0.1))
                                             .foregroundColor(groupInput == g ? DSColor.accent : DSColor.textSecondary)
@@ -556,7 +556,7 @@ struct EmptyLibraryView: View {
         VStack(spacing: 20) {
             Spacer()
             Image(systemName: "books.vertical")
-                .font(.system(size: 72))
+                .font(DSFont.fixed(size: 72))
                 .foregroundColor(DSColor.textSecondary.opacity(0.35))
             Text(localized("書架還是空的"))
                 .font(DSFont.title2.weight(.semibold))
@@ -647,20 +647,20 @@ struct BookRow: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(book.title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(DSFont.fixed(size: 15, weight: .medium))
                     .lineLimit(2)
                     .foregroundColor(.primary)
 
                 if !book.author.isEmpty {
                     Text(book.author)
-                        .font(.system(size: 13))
+                        .font(DSFont.fixed(size: 13))
                         .foregroundColor(DSColor.textSecondary)
                         .lineLimit(1)
                 }
 
                 if let latest = book.latestChapterDisplayTitle {
                     Text(localized("最新") + " · " + latest)
-                        .font(.system(size: 12))
+                        .font(DSFont.fixed(size: 12))
                         .foregroundColor(DSColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -692,7 +692,7 @@ struct BookRow: View {
     /// "更新" pill shown when a refresh found new chapters the user hasn't opened yet.
     private var updateBadge: some View {
         Text(localized("更新"))
-            .font(.system(size: 11, weight: .bold))
+            .font(DSFont.fixed(size: 11, weight: .bold))
             .foregroundColor(DSColor.textOnAccent)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
@@ -705,7 +705,7 @@ struct BookRow: View {
     private var progressBadge: some View {
         if book.shouldShowNewOnBookshelf {
             Text(localized("新增"))
-                .font(.system(size: 11, weight: .bold))
+                .font(DSFont.fixed(size: 11, weight: .bold))
                 .foregroundColor(.white)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
@@ -713,11 +713,11 @@ struct BookRow: View {
                 .clipShape(Capsule())
         } else if book.currentPosition >= 0.99 {
             Text(localized("已讀完"))
-                .font(.system(size: 12))
+                .font(DSFont.fixed(size: 12))
                 .foregroundColor(DSColor.textSecondary)
         } else {
             Text("\(Int(book.currentPosition * 100))%")
-                .font(.system(size: 12))
+                .font(DSFont.fixed(size: 12))
                 .foregroundColor(DSColor.textSecondary)
         }
     }
@@ -741,7 +741,7 @@ struct BookRow: View {
                     .fill(Color(.secondarySystemBackground))
                     .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
                 Text(book.title)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(DSFont.fixed(size: 9, weight: .medium))
                     .foregroundColor(DSColor.textSecondary)
                     .lineLimit(4)
                     .padding(5)
@@ -782,7 +782,7 @@ private struct BookSyncIndicator: View {
                     .rotationEffect(.degrees(-90))
                     .animation(DSAnimation.standard, value: progress)
                 Image(systemName: "arrow.down")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(DSFont.fixed(size: 10, weight: .semibold))
                     .foregroundColor(DSColor.accent)
             } else {
                 ProgressView()
@@ -817,7 +817,7 @@ struct BookGridCell: View {
                     }
                     if book.currentPosition > 0.01 && book.currentPosition < 0.99 {
                         Text("\(Int(book.currentPosition * 100))%")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(DSFont.fixed(size: 10, weight: .semibold))
                             .foregroundColor(.white)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
@@ -829,7 +829,7 @@ struct BookGridCell: View {
                 .overlay(alignment: .topLeading) {
                     if book.hasNewChapterUpdate {
                         Text(localized("更新"))
-                            .font(.system(size: 10, weight: .bold))
+                            .font(DSFont.fixed(size: 10, weight: .bold))
                             .foregroundColor(DSColor.textOnAccent)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
@@ -844,14 +844,14 @@ struct BookGridCell: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(book.title)
-                    .font(.system(size: isCompactLayout ? 12 : 13, weight: .semibold))
+                    .font(DSFont.fixed(size: isCompactLayout ? 12 : 13, weight: .semibold))
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(alignment: .center, spacing: 2) {
                     Text(book.author)
-                        .font(.system(size: isCompactLayout ? 10 : 11))
+                        .font(DSFont.fixed(size: isCompactLayout ? 10 : 11))
                         .foregroundColor(DSColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -894,7 +894,7 @@ struct BookGridCell: View {
                     .fill(Color(.secondarySystemBackground))
                     .overlay(
                         Text(book.title)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(DSFont.fixed(size: 11, weight: .medium))
                             .foregroundColor(DSColor.textSecondary)
                             .multilineTextAlignment(.leading)
                             .lineLimit(6)
@@ -941,7 +941,7 @@ private struct BookOverflowMenu: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: iconSize, weight: .semibold))
+                .font(DSFont.fixed(size: iconSize, weight: .semibold))
                 .foregroundColor(DSColor.textSecondary)
                 .frame(width: controlSize, height: controlSize)
                 .contentShape(Rectangle())
@@ -970,7 +970,7 @@ struct BulkAddToGroupSheet: View {
                             HStack(spacing: 6) {
                                 ForEach(store.allGroups, id: \.self) { g in
                                     Button(g) { groupInput = g }
-                                        .font(.caption)
+                                        .font(DSFont.caption)
                                         .padding(.horizontal, 10).padding(.vertical, 4)
                                         .background(groupInput == g ? DSColor.accent.opacity(0.2) : Color.secondary.opacity(0.1))
                                         .foregroundColor(groupInput == g ? DSColor.accent : DSColor.textSecondary)
@@ -982,7 +982,7 @@ struct BulkAddToGroupSheet: View {
                 }
                 Section {
                     Text(localized("將套用到") + " \(bookCount) " + localized("本書"))
-                        .font(.footnote)
+                        .font(DSFont.footnote)
                         .foregroundColor(DSColor.textSecondary)
                 }
             }

@@ -456,6 +456,12 @@
 "匯入字體..." = "Import Font...";
 "刪除字體" = "Delete Font";
 "字體匯入失敗" = "Font Import Failed";
+"全局字體" = "Global Font";
+"套用於 App 介面，閱讀正文仍使用閱讀設定。" = "Applies to the app interface. Reading text continues to use Reader Settings.";
+"尚未匯入字體" = "No Imported Fonts";
+"匯入後，字體會同時出現在全局字體與閱讀設定。" = "Imported fonts appear in both Global Font and Reader Settings.";
+"刪除此字體？" = "Delete This Font?";
+"刪除後，全局字體與閱讀設定將無法再使用此字體。" = "This font will no longer be available to Global Font or Reader Settings.";
 "僅支援 TTF 或 OTF 字體" = "Only TTF and OTF fonts are supported";
 "無法讀取字體檔案" = "Could not read the font file";
 "無法存取文件資料夾" = "Could not access the documents folder";
@@ -704,6 +710,10 @@
 "資料夾名稱" = "Folder Name";
 "重新命名" = "Rename";
 "開啟首頁" = "Open Home Page";
+"以網頁開啟" = "Open as Web Page";
+"開啟網頁" = "Open Web Page";
+"此訂閱源以網頁方式瀏覽" = "This subscription opens as a web page";
+"此來源是網頁而非 RSS 訂閱，可直接以網頁開啟。" = "This source is a web page, not an RSS feed. You can open it directly as a web page.";
 "隱藏已讀訂閱" = "Hide Read Feeds";
 "顯示已讀訂閱" = "Show Read Feeds";
 "首頁" = "Home Page";
@@ -1135,6 +1145,12 @@
 "這會取代目前的自訂氣泡樣式。" = "This replaces the current custom bubble style.";
 "匯入樣式" = "Import Style";
 "匯出當前樣式" = "Export Current Style";
+"編輯目前樣式" = "Edit Current Style";
+"刪除目前樣式" = "Delete Current Style";
+"刪除目前樣式？" = "Delete Current Style?";
+"「%@」會被永久刪除，此操作無法復原。" = "“%@” will be permanently deleted. This action can’t be undone.";
+"編輯樣式" = "Edit Style";
+"SVG / TXT" = "SVG / TXT";
 "整體大小" = "Overall Size";
 "當前樣式大小" = "Current Style Size";
 "這裡調整目前選取氣泡樣式的整體大小。" = "Adjust the overall size of the currently selected bubble style.";

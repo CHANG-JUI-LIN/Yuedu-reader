@@ -24,7 +24,7 @@ struct BookSourceLoginWebView: View {
                     Image(systemName: "key.fill")
                         .foregroundColor(DSColor.accent)
                     Text(localized("請在下方完成登入。登入成功後點「完成」，Cookie 將自動儲存供書源使用。"))
-                        .font(.caption)
+                        .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                     Spacer()
                 }

@@ -98,7 +98,7 @@ struct JsBridgeBrowserView: View {
             DSColor.background.ignoresSafeArea()
             VStack(spacing: DSSpacing.md) {
                 Image(systemName: "wifi.exclamationmark")
-                    .font(.largeTitle)
+                    .font(DSFont.largeTitle)
                     .foregroundStyle(DSColor.textSecondary)
                 Text(localized("載入失敗"))
                     .font(DSFont.headline)

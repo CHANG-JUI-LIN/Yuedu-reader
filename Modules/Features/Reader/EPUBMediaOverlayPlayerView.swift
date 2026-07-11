@@ -13,28 +13,28 @@ struct EPUBMediaOverlayPlayerView: View {
         NavigationStack {
             VStack(spacing: 20) {
                 Image(systemName: "waveform.and.person.filled")
-                    .font(.system(size: 58))
+                    .font(DSFont.fixed(size: 58))
                     .foregroundStyle(.tint)
 
                 VStack(spacing: 6) {
                     Text(title)
-                        .font(.headline)
+                        .font(DSFont.headline)
                         .multilineTextAlignment(.center)
                     Text("\(overlay.fragments.count) \(localized("段落"))")
-                        .font(.footnote)
+                        .font(DSFont.footnote)
                         .foregroundStyle(.secondary)
                 }
 
                 if let fragment = coordinator.currentFragment {
                     Text(fragment.textFragmentID ?? fragment.id)
-                        .font(.footnote.monospaced())
+                        .font(DSFont.footnote.monospaced())
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
                 if let error = coordinator.errorMessage {
                     Text(error)
-                        .font(.footnote)
+                        .font(DSFont.footnote)
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
                 }

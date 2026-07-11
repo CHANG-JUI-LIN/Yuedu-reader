@@ -267,7 +267,7 @@ extension ReaderView {
                 jumpBackToTTSChapter()
             } label: {
                 Label(localized("原進度"), systemImage: "arrow.uturn.backward")
-                    .font(.subheadline.weight(.semibold))
+                    .font(DSFont.subheadline.weight(.semibold))
                     .lineLimit(1)
             }
             .buttonStyle(.borderless)
@@ -280,7 +280,7 @@ extension ReaderView {
                 startTTSFromPromptChapter()
             } label: {
                 Label(localized("從本章開始聽"), systemImage: "headphones")
-                    .font(.subheadline.weight(.semibold))
+                    .font(DSFont.subheadline.weight(.semibold))
                     .lineLimit(1)
             }
             .buttonStyle(.borderless)

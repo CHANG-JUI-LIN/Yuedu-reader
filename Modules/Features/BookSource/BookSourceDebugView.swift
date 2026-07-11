@@ -51,17 +51,17 @@ struct LogEntryRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(icon(for: entry.type))
-                    .font(.headline)
+                    .font(DSFont.headline)
 
                 VStack(alignment: .leading) {
                     Text(entry.message)
-                        .font(.subheadline)
+                        .font(DSFont.subheadline)
                         .bold()
                         .lineLimit(isExpanded ? nil : 2)
 
                     if let url = entry.url {
                         Text(url)
-                            .font(.caption)
+                            .font(DSFont.caption)
                             .foregroundColor(DSColor.accent)
                             .lineLimit(isExpanded ? nil : 1)
                     }
@@ -69,7 +69,7 @@ struct LogEntryRow: View {
                 Spacer()
 
                 Text(entry.timestamp, style: .time)
-                    .font(.caption2)
+                    .font(DSFont.caption2)
                     .foregroundColor(.gray)
             }
             .contentShape(Rectangle())
@@ -82,21 +82,21 @@ struct LogEntryRow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(meta.keys.sorted(), id: \.self) { key in
                         if let dict = meta[key] as? [String: String] {
-                            Text("\(key):").font(.caption).bold()
+                            Text("\(key):").font(DSFont.caption).bold()
                             ForEach(dict.keys.sorted(), id: \.self) { hKey in
                                 Text("  \(hKey): \(dict[hKey] ?? "")")
                                     .font(.system(.caption, design: .monospaced))
                                     .foregroundColor(.gray)
                             }
                         } else if let str = meta[key] as? String {
-                            Text("\(key):").font(.caption).bold()
+                            Text("\(key):").font(DSFont.caption).bold()
                             Text(str)
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundColor(.gray)
                                 .lineLimit(10)
                         } else {
                             Text("\(key): \(String(describing: meta[key]!))")
-                                .font(.caption)
+                                .font(DSFont.caption)
                                 .foregroundColor(.gray)
                         }
                     }

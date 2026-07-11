@@ -98,7 +98,7 @@ struct BookSourceRuleDebugView: View {
                 if engine.logs.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "magnifyingglass")
-                            .font(.largeTitle)
+                            .font(DSFont.largeTitle)
                             .foregroundColor(.secondary)
                         Text(localized("輸入資料後按「執行」開始調試"))
                             .foregroundColor(.secondary)
@@ -147,16 +147,16 @@ private struct DebugLogRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 8) {
                 Text(icon)
-                    .font(.body)
+                    .font(DSFont.body)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.step)
-                        .font(.caption)
+                        .font(DSFont.caption)
                         .foregroundColor(color.opacity(0.8))
                         .bold()
 
                     Text(entry.summary)
-                        .font(.subheadline)
+                        .font(DSFont.subheadline)
                         .foregroundColor(color)
                         .lineLimit(isExpanded ? nil : 2)
                 }
@@ -164,7 +164,7 @@ private struct DebugLogRow: View {
                 Spacer()
 
                 Text(entry.timestamp, style: .time)
-                    .font(.caption2)
+                    .font(DSFont.caption2)
                     .foregroundColor(.secondary)
             }
             .contentShape(Rectangle())
@@ -190,7 +190,7 @@ private struct DebugLogRow: View {
                 HStack {
                     Spacer()
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption2)
+                        .font(DSFont.caption2)
                         .foregroundColor(.secondary)
                 }
             }

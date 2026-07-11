@@ -675,7 +675,7 @@ private struct RSSHomeSection<Content: View>: View {
                     }
 
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 17, weight: .bold))
+                        .font(DSFont.fixed(size: 17, weight: .bold))
                         .foregroundStyle(.primary)
                         .rotationEffect(.degrees(isExpanded ? 0 : -90))
                 }
@@ -986,17 +986,17 @@ private struct RSSMainFeedSectionHeader: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "chevron.down")
-                .font(.system(size: 11, weight: .semibold))
+                .font(DSFont.fixed(size: 11, weight: .semibold))
                 .rotationEffect(.degrees(isExpanded ? 0 : -90))
 
             Text(title)
-                .font(.footnote.weight(.semibold))
+                .font(DSFont.footnote.weight(.semibold))
 
             Spacer()
 
             if !isExpanded && unreadCount > 0 {
                 Text(unreadCount.formatted())
-                    .font(.footnote.weight(.semibold))
+                    .font(DSFont.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -1020,7 +1020,7 @@ private struct RSSMainFeedFolderRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "folder")
-                .font(.system(size: 20, weight: .semibold))
+                .font(DSFont.fixed(size: 20, weight: .semibold))
                 .foregroundStyle(DSColor.accent)
                 .frame(width: 32, height: 32)
 
@@ -1038,7 +1038,7 @@ private struct RSSMainFeedFolderRow: View {
             }
 
             Image(systemName: "chevron.down")
-                .font(.system(size: 13, weight: .bold))
+                .font(DSFont.fixed(size: 13, weight: .bold))
                 .foregroundStyle(.secondary)
                 .rotationEffect(.degrees(isExpanded ? 0 : -90))
                 .frame(width: 16)
@@ -1088,7 +1088,7 @@ private struct RSSMainFeedRow: View {
                 .frame(width: 32, height: 32)
         case .system(let imageName, let tint):
             Image(systemName: imageName)
-                .font(.system(size: 24, weight: .regular))
+                .font(DSFont.fixed(size: 24, weight: .regular))
                 .foregroundStyle(tint)
                 .frame(width: 32, height: 32)
         }
@@ -1103,7 +1103,7 @@ private struct RSSRefreshProgressBar: View {
             ProgressView()
                 .controlSize(.small)
             Text(String(format: localized("已刷新 %d / %d"), progress.completed, progress.total))
-                .font(.footnote)
+                .font(DSFont.footnote)
                 .foregroundStyle(.secondary)
             Spacer()
         }

@@ -186,6 +186,20 @@ struct RSSArticleReaderView: View {
         defer { isLoadingFullText = false }
 
         do {
+            // Legado sources with ruleContent extract the article body from the
+            // article page using the source's own rule (Rss.getContent semantics).
+            if let source, source.isLegadoRuleBased,
+               source.ruleContent?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+               !article.link.isEmpty,
+               let html = try await LegadoRSSScraper.fetchArticleContent(source: source, articleLink: article.link) {
+                store.updateFullText(
+                    articleId: article.id,
+                    text: RSSContentSanitizer.cleanText(html),
+                    html: html
+                )
+                return
+            }
+
             let extracted = try await RSSArticleContentLoader.loadFullText(for: article)
             store.updateFullText(articleId: article.id, text: extracted.text, html: extracted.html)
         } catch {

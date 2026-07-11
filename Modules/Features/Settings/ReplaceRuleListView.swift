@@ -21,7 +21,7 @@ struct ReplaceRuleListView: View {
                 if store.rules.isEmpty {
                     VStack(spacing: 16) {
                         Image(systemName: "text.magnifyingglass")
-                            .font(.system(size: 48))
+                            .font(DSFont.fixed(size: 48))
                             .foregroundColor(.secondary)
                         Text(localized("尚無替換規則"))
                             .foregroundColor(.secondary)
@@ -143,13 +143,13 @@ private struct ReplaceRuleRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(rule.name.isEmpty ? localized("未命名規則") : rule.name)
-                        .font(.subheadline)
+                        .font(DSFont.subheadline)
                         .bold()
                         .foregroundColor(rule.enabled ? .primary : .secondary)
 
                     if rule.scope != "global" {
                         Text(localized("書源"))
-                            .font(.caption2)
+                            .font(DSFont.caption2)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(DSColor.highlight)
@@ -158,7 +158,7 @@ private struct ReplaceRuleRow: View {
                     }
                     if rule.isRegex {
                         Text("Regex")
-                            .font(.caption2)
+                            .font(DSFont.caption2)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(Color.purple.opacity(0.12))
@@ -214,11 +214,11 @@ struct ReplaceRuleEditView: View {
                 Section(header: Text(localized("匹配"))) {
                     Toggle(localized("正則表達式"), isOn: $rule.isRegex)
                     TextField(localized("匹配模式"), text: $rule.pattern)
-                        .font(.system(size: 14, design: .monospaced))
+                        .font(DSFont.fixed(size: 14, design: .monospaced))
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                     TextField(localized("替換為（空白=刪除）"), text: $rule.replacement)
-                        .font(.system(size: 14, design: .monospaced))
+                        .font(DSFont.fixed(size: 14, design: .monospaced))
                         .autocapitalization(.none)
                 }
 

@@ -342,7 +342,7 @@ struct ExploreHomeView: View {
                         }
                         Spacer()
                         Image(systemName: "arrow.up.right")
-                            .font(.system(size: 12))
+                            .font(DSFont.fixed(size: 12))
                             .foregroundColor(DSColor.textSecondary)
                     }
                 }
@@ -381,7 +381,7 @@ struct ExploreHomeView: View {
                             image.resizable().scaledToFit().frame(width: 28, height: 28)
                         } else {
                             Text(engine.icon)
-                                .font(.headline.weight(.bold))
+                                .font(DSFont.headline.weight(.bold))
                                 .foregroundColor(engine.color)
                         }
                     }
@@ -548,7 +548,7 @@ private struct DiscoverSettingsView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(DSFont.fixed(size: 20, weight: .medium))
                     }
                     .accessibilityLabel(localized("顯示分區"))
                 }
@@ -648,10 +648,10 @@ private struct DiscoverSettingsView: View {
                     .frame(maxWidth: 220)
                 if isAction {
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(DSFont.fixed(size: 10, weight: .semibold))
                 } else if selected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(DSFont.fixed(size: 10, weight: .bold))
                 }
             }
             .font(DSFont.caption.weight(selected ? .semibold : .regular))
@@ -847,7 +847,7 @@ private struct HistoryRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.title)
-                    .font(.system(size: 15))
+                    .font(DSFont.fixed(size: 15))
                     .foregroundColor(DSColor.textPrimary)
                     .lineLimit(1)
                 Text(entry.host)
@@ -857,7 +857,7 @@ private struct HistoryRow: View {
             }
             Spacer(minLength: 4)
             Text(Self.relativeTime(entry.date))
-                .font(.system(size: 11))
+                .font(DSFont.fixed(size: 11))
                 .foregroundColor(DSColor.textSecondary)
         }
         .padding(.vertical, DSSpacing.sm)

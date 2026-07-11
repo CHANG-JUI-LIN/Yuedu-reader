@@ -130,7 +130,7 @@ private struct DiscoverFilterBar: View {
                 .font(DSFont.caption.weight(isActive ? .semibold : .regular))
                 .lineLimit(1)
             Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
+                .font(DSFont.fixed(size: 9, weight: .semibold))
         }
         .foregroundColor(isActive ? DSColor.accent : DSColor.textPrimary)
         .padding(.horizontal, DSSpacing.sm + 2)

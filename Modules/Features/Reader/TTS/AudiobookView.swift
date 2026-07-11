@@ -92,14 +92,14 @@ struct AudiobookReaderView: View {
         HStack {
             Button { dismiss() } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(DSFont.fixed(size: 18, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel(localized("收合"))
             Spacer()
             Text(localized("有聲書"))
-                .font(.system(size: 13, weight: .medium))
+                .font(DSFont.fixed(size: 13, weight: .medium))
                 .foregroundColor(.white.opacity(0.85))
             Spacer()
             // Symmetry spacer matching the close button width.
@@ -121,7 +121,7 @@ struct AudiobookReaderView: View {
                 ZStack {
                     Rectangle().fill(.white.opacity(0.12))
                     Image(systemName: "headphones")
-                        .font(.system(size: 64))
+                        .font(DSFont.fixed(size: 64))
                         .foregroundColor(.white.opacity(0.7))
                 }
             }
@@ -143,12 +143,12 @@ struct AudiobookReaderView: View {
     private var titleBlock: some View {
         VStack(spacing: 6) {
             Text(player.currentChapterTitle.isEmpty ? player.bookTitle : player.currentChapterTitle)
-                .font(.system(size: 18, weight: .bold))
+                .font(DSFont.fixed(size: 18, weight: .bold))
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
             Text(player.bookTitle)
-                .font(.system(size: 14))
+                .font(DSFont.fixed(size: 14))
                 .foregroundColor(.white.opacity(0.75))
                 .lineLimit(1)
         }
@@ -157,14 +157,14 @@ struct AudiobookReaderView: View {
     private func errorBlock(_ message: String) -> some View {
         VStack(spacing: 8) {
             Text(message)
-                .font(.caption)
+                .font(DSFont.caption)
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
             Button(localized("重試")) {
                 player.selectChapter(player.chapterIndex)
             }
             .foregroundColor(.white)
-            .font(.subheadline.weight(.semibold))
+            .font(DSFont.subheadline.weight(.semibold))
         }
         .padding(.horizontal, DSSpacing.xl)
         .padding(.top, DSSpacing.sm)
@@ -190,7 +190,7 @@ struct AudiobookReaderView: View {
                 Spacer()
                 Text(Self.formatTime(player.duration))
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(DSFont.fixed(size: 12, weight: .medium))
             .foregroundColor(.white.opacity(0.75))
         }
         .padding(.horizontal, DSSpacing.xl)
@@ -209,7 +209,7 @@ struct AudiobookReaderView: View {
             Spacer()
             Button { player.togglePlayPause() } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 64))
+                    .font(DSFont.fixed(size: 64))
                     .foregroundColor(.white)
             }
             .disabled(player.isLoading)
@@ -229,7 +229,7 @@ struct AudiobookReaderView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: size, weight: .medium))
+                .font(DSFont.fixed(size: size, weight: .medium))
                 .foregroundColor(.white.opacity(enabled ? 1 : 0.3))
                 .frame(width: 50, height: 50)
         }
@@ -270,9 +270,9 @@ struct AudiobookReaderView: View {
     private func bottomItem(text: String, systemImage: String) -> some View {
         VStack(spacing: 4) {
             Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .medium))
+                .font(DSFont.fixed(size: 18, weight: .medium))
             Text(text)
-                .font(.system(size: 11, weight: .medium))
+                .font(DSFont.fixed(size: 11, weight: .medium))
         }
         .foregroundColor(.white.opacity(0.9))
         .frame(minWidth: 56)
@@ -351,7 +351,7 @@ struct AudiobookChapterListView: View {
                                  ? String(format: localized("第 %d 章"), chapter.index + 1)
                                  : chapter.title)
                                 .foregroundColor(.primary)
-                                .font(.subheadline)
+                                .font(DSFont.subheadline)
                                 .lineLimit(1)
                             Spacer()
                             if chapter.index == player.chapterIndex {

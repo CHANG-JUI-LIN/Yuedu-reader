@@ -31,7 +31,7 @@ struct RSSFaviconView: View {
             .fill(DSColor.accent.opacity(0.14))
             .overlay {
                 Image(systemName: "newspaper")
-                    .font(.system(size: size * 0.48, weight: .semibold))
+                    .font(DSFont.fixed(size: size * 0.48, weight: .semibold))
                     .foregroundColor(DSColor.accent)
             }
     }

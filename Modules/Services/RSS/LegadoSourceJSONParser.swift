@@ -60,7 +60,24 @@ enum LegadoSourceJSONParser {
             enabledCookieJar: json["enabledCookieJar"] as? Bool ?? false,
             lastUpdateTime: json["lastUpdateTime"] as? Double ?? 0,
             loadWithBaseUrl: json["loadWithBaseUrl"] as? Bool ?? true,
-            singleUrl: json["singleUrl"] as? Bool ?? true
+            // Legado's RssSource default is false; the old `?? true` here broke
+            // web-page detection for every source that omitted the field.
+            singleUrl: json["singleUrl"] as? Bool ?? false,
+            ruleNextPage: json["ruleNextPage"] as? String,
+            sourceComment: json["sourceComment"] as? String,
+            variableComment: json["variableComment"] as? String,
+            concurrentRate: json["concurrentRate"] as? String,
+            loginUrl: json["loginUrl"] as? String,
+            loginUi: json["loginUi"] as? String,
+            loginCheckJs: json["loginCheckJs"] as? String,
+            coverDecodeJs: json["coverDecodeJs"] as? String,
+            jsLib: json["jsLib"] as? String,
+            style: json["style"] as? String,
+            injectJs: json["injectJs"] as? String,
+            contentWhitelist: json["contentWhitelist"] as? String,
+            contentBlacklist: json["contentBlacklist"] as? String,
+            shouldOverrideUrlLoading: json["shouldOverrideUrlLoading"] as? String,
+            importedFromLegado: true
         )
     }
 
@@ -89,6 +106,20 @@ enum LegadoSourceJSONParser {
         if let v = source.ruleImage { json["ruleImage"] = v }
         if let v = source.header { json["header"] = v }
         if let v = source.sortUrl { json["sortUrl"] = v }
+        if let v = source.ruleNextPage { json["ruleNextPage"] = v }
+        if let v = source.sourceComment { json["sourceComment"] = v }
+        if let v = source.variableComment { json["variableComment"] = v }
+        if let v = source.concurrentRate { json["concurrentRate"] = v }
+        if let v = source.loginUrl { json["loginUrl"] = v }
+        if let v = source.loginUi { json["loginUi"] = v }
+        if let v = source.loginCheckJs { json["loginCheckJs"] = v }
+        if let v = source.coverDecodeJs { json["coverDecodeJs"] = v }
+        if let v = source.jsLib { json["jsLib"] = v }
+        if let v = source.style { json["style"] = v }
+        if let v = source.injectJs { json["injectJs"] = v }
+        if let v = source.contentWhitelist { json["contentWhitelist"] = v }
+        if let v = source.contentBlacklist { json["contentBlacklist"] = v }
+        if let v = source.shouldOverrideUrlLoading { json["shouldOverrideUrlLoading"] = v }
 
         return json
     }

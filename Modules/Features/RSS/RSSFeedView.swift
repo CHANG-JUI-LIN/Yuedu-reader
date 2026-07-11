@@ -44,7 +44,7 @@ struct RSSSmartFeedView: View {
             if articles.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: kind.systemImage)
-                        .font(.largeTitle)
+                        .font(DSFont.largeTitle)
                         .foregroundColor(DSColor.textSecondary)
 
                     Text(emptyMessage)
@@ -107,12 +107,12 @@ struct RSSSmartFeedView: View {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
                     Text(kind.title)
-                        .font(.headline.weight(.semibold))
+                        .font(DSFont.headline.weight(.semibold))
                         .foregroundColor(DSColor.textPrimary)
                         .lineLimit(1)
 
                     Text("\(unreadCount) \(localized("未讀"))")
-                        .font(.caption)
+                        .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                 }
             }
@@ -179,6 +179,13 @@ struct RSSFeedView: View {
     @State private var searchText = ""
     @State private var selectedArticleID: String?
 
+    // Legado compatibility state
+    @State private var selectedSortEntry: RSSSortEntry?
+    @State private var presentedWebPageURL: URL?
+    @State private var autoOpenedWebPage = false
+    /// IDs fetched for the currently selected category; nil = show everything.
+    @State private var currentCategoryIDs: Set<String>?
+
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .none
@@ -191,15 +198,26 @@ struct RSSFeedView: View {
     }
 
     private var articles: [RSSArticleRecord] {
-        filter.apply(to: store.articles(for: currentSource.id), query: searchText)
+        var records = store.articles(for: currentSource.id)
+        if let ids = currentCategoryIDs, !ids.isEmpty {
+            records = records.filter { ids.contains($0.id) }
+        }
+        return filter.apply(to: records, query: searchText)
     }
 
     private var unreadCount: Int {
         store.unreadCount(for: currentSource.id)
     }
+
+    private var showsCategoryPicker: Bool {
+        fetcher.sortEntries.count > 1
+    }
     var body: some View {
         List {
-            if fetcher.isLoading && articles.isEmpty {
+            if let webPageURL = fetcher.webPageURL {
+                webPageSourceContent(url: webPageURL)
+
+            } else if fetcher.isLoading && articles.isEmpty {
                 HStack {
                     Spacer()
                     ProgressView()
@@ -212,13 +230,24 @@ struct RSSFeedView: View {
             } else if let errorMsg = fetcher.error, articles.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
+                        .font(DSFont.largeTitle)
                         .foregroundColor(DSColor.textSecondary)
 
                     Text(errorMsg)
                         .foregroundColor(DSColor.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
+
+                    if let fallbackURL = fetcher.webPageFallbackURL {
+                        Button {
+                            presentedWebPageURL = fallbackURL
+                        } label: {
+                            Label(localized("以網頁開啟"), systemImage: "safari")
+                                .font(DSFont.subheadline.weight(.semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.top, 4)
+                    }
                 }
                 .frame(maxWidth: .infinity, minHeight: 300)
                 .listRowBackground(Color.clear)
@@ -227,7 +256,7 @@ struct RSSFeedView: View {
             } else if articles.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "newspaper")
-                        .font(.largeTitle)
+                        .font(DSFont.largeTitle)
                         .foregroundColor(DSColor.textSecondary)
 
                     Text(emptyMessage)
@@ -282,6 +311,14 @@ struct RSSFeedView: View {
         .refreshable {
             await refresh()
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if showsCategoryPicker {
+                categoryPicker
+            }
+        }
+        .sheet(item: $presentedWebPageURL) { url in
+            SafariView(url: url)
+        }
         .toolbarTitleDisplayModeInlineLargeOrInline()
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedArticleID) { articleID in
@@ -292,12 +329,12 @@ struct RSSFeedView: View {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
                     Text(currentSource.name)
-                        .font(.headline.weight(.semibold))
+                        .font(DSFont.headline.weight(.semibold))
                         .foregroundColor(DSColor.textPrimary)
                         .lineLimit(1)
 
                     Text("\(unreadCount) \(localized("未讀"))")
-                        .font(.caption)
+                        .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                 }
             }
@@ -330,7 +367,11 @@ struct RSSFeedView: View {
             }
         }
         .task(id: source.id) {
-            if store.articles(for: source.id).isEmpty {
+            // Sources with category tabs or web-page semantics need a fetch to
+            // resolve their entries even when cached articles exist.
+            if store.articles(for: source.id).isEmpty
+                || currentSource.hasSortCategories
+                || currentSource.opensAsWebPage {
                 await refresh()
             }
         }
@@ -349,8 +390,76 @@ struct RSSFeedView: View {
         }
     }
 
+    // MARK: - Legado web-page source
+
+    @ViewBuilder
+    private func webPageSourceContent(url: URL) -> some View {
+        VStack(spacing: 14) {
+            RSSFaviconView(source: currentSource, size: 48)
+
+            Text(currentSource.name)
+                .font(DSFont.headline)
+                .foregroundColor(DSColor.textPrimary)
+
+            Text(localized("此訂閱源以網頁方式瀏覽"))
+                .font(DSFont.subheadline)
+                .foregroundColor(DSColor.textSecondary)
+                .multilineTextAlignment(.center)
+
+            Button {
+                presentedWebPageURL = url
+            } label: {
+                Label(localized("開啟網頁"), systemImage: "safari")
+                    .font(DSFont.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, minHeight: 300)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    // MARK: - Legado category tabs (sortUrl)
+
+    private var categoryPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: DSSpacing.sm) {
+                ForEach(fetcher.sortEntries) { entry in
+                    let isSelected = (selectedSortEntry ?? fetcher.sortEntries.first) == entry
+                    Button {
+                        guard selectedSortEntry != entry else { return }
+                        selectedSortEntry = entry
+                        Task { await refresh() }
+                    } label: {
+                        Text(entry.name.isEmpty ? localized("全部") : entry.name)
+                            .font(DSFont.subheadline.weight(.medium))
+                            .padding(.horizontal, DSSpacing.md)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule().fill(isSelected ? DSColor.accent : DSColor.neutralControlFill)
+                            )
+                            .foregroundColor(isSelected ? DSColor.textOnAccent : DSColor.textPrimary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.sm)
+        }
+        .background(.bar)
+    }
+
     private func refresh() async {
-        await fetcher.fetchItems(from: currentSource, metadata: store.feedMetadata(for: currentSource.id))
+        await fetcher.fetchItems(
+            from: currentSource,
+            metadata: store.feedMetadata(for: currentSource.id),
+            sortEntry: selectedSortEntry
+        )
+
+        if selectedSortEntry == nil, fetcher.sortEntries.count > 1 {
+            selectedSortEntry = fetcher.sortEntries.first
+        }
+
         if fetcher.error == nil {
             store.applyResolvedFeedURL(fetcher.resolvedFeedURL, homepageURL: fetcher.resolvedHomepageURL, to: currentSource.id)
             let notificationSource = store.source(id: currentSource.id) ?? currentSource
@@ -361,6 +470,19 @@ struct RSSFeedView: View {
                 newArticles = store.mergeFetchedItems(fetcher.items, for: currentSource.id)
             }
             RSSNotificationManager.shared.notifyNewArticles(newArticles, source: notificationSource)
+        }
+
+        // Category tabs show only the articles fetched for the selected tab.
+        if fetcher.sortEntries.count > 1, !fetcher.items.isEmpty {
+            currentCategoryIDs = Set(fetcher.items.map(\.id))
+        } else {
+            currentCategoryIDs = nil
+        }
+
+        // Legado singleUrl sources jump straight into the web page on first entry.
+        if let url = fetcher.webPageURL, !autoOpenedWebPage {
+            autoOpenedWebPage = true
+            presentedWebPageURL = url
         }
     }
 }
@@ -437,7 +559,7 @@ private struct RSSArticleRow: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(article.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? localized("暫無資料") : article.title.trimmingCharacters(in: .whitespacesAndNewlines))
-                        .font(.headline)
+                        .font(DSFont.headline)
                         .fontWeight(.bold)
                         .foregroundColor(DSColor.textPrimary)
                         .lineLimit(2)
@@ -445,7 +567,7 @@ private struct RSSArticleRow: View {
 
                     if !article.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(article.summary.trimmingCharacters(in: .whitespacesAndNewlines))
-                            .font(.subheadline)
+                            .font(DSFont.subheadline)
                             .foregroundColor(DSColor.textSecondary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
@@ -455,17 +577,17 @@ private struct RSSArticleRow: View {
                         RSSFaviconView(source: source, size: 16)
                         
                         Text(metadataText)
-                            .font(.caption)
+                            .font(DSFont.caption)
                             .fontWeight(.semibold)
                             .foregroundColor(DSColor.textSecondary)
                             .lineLimit(1)
                         
                         if let pubDate = article.pubDate {
                             Text("•")
-                                .font(.caption)
+                                .font(DSFont.caption)
                                 .foregroundColor(DSColor.textSecondary)
                             Text(timeFormatter.string(from: pubDate))
-                                .font(.caption)
+                                .font(DSFont.caption)
                                 .foregroundColor(DSColor.textSecondary)
                                 .lineLimit(1)
                         }
@@ -506,7 +628,7 @@ private struct RSSArticleRow: View {
     private var statusIndicator: some View {
         if article.isFavorite {
             Image(systemName: "star.fill")
-                .font(.system(size: 11, weight: .semibold))
+                .font(DSFont.fixed(size: 11, weight: .semibold))
                 .foregroundColor(.yellow)
         } else if !article.isRead {
             Circle()

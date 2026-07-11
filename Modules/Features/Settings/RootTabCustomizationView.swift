@@ -195,7 +195,7 @@ struct RootTabCustomizationView: View {
                 .frame(width: 44, height: 44)
         } else {
             Image(systemName: tab.defaultSystemImage)
-                .font(.system(size: 24, weight: .regular))
+                .font(DSFont.fixed(size: 24, weight: .regular))
                 .foregroundStyle(DSColor.textPrimary)
                 .frame(width: 44, height: 44)
         }

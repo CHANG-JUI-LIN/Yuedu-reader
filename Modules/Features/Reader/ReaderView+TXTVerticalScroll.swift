@@ -160,7 +160,7 @@ extension ReaderView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(chapters.enumerated()), id: \.offset) { ci, chapter in
                         Text(chapter.title.converted(to: settings.textConversion))
-                            .font(.system(size: readerConfig.readerTitleSize, weight: .bold, design: .serif))
+                            .font(DSFont.fixed(size: readerConfig.readerTitleSize, weight: .bold, design: .serif))
                             .foregroundColor(readerTheme.textColor)
                             .padding(.top, 80)
                             .padding(.horizontal, 24)
@@ -172,7 +172,7 @@ extension ReaderView {
                             VStack(spacing: 16) {
                                 ProgressView()
                                 Text(localized("載入章節中…"))
-                                    .font(.system(size: fontSize - 2, design: .serif))
+                                    .font(DSFont.fixed(size: fontSize - 2, design: .serif))
                                     .foregroundColor(readerTheme.textColor.opacity(0.6))
                             }
                             .frame(maxWidth: .infinity)
@@ -184,7 +184,7 @@ extension ReaderView {
                                 .components(separatedBy: "\n").filter { !$0.isEmpty }
                             ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, para in
                                 Text(para)
-                                    .font(.system(size: fontSize, design: .serif))
+                                    .font(DSFont.fixed(size: fontSize, design: .serif))
                                     .foregroundColor(readerTheme.textColor)
                                     .kerning(readerConfig.letterSpacing)
                                     .lineSpacing(readerConfig.lineSpacing)

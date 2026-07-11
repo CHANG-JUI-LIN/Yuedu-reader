@@ -15,7 +15,7 @@ struct CloudflareChallengeView: View {
                     Image(systemName: "exclamationmark.shield.fill")
                         .foregroundColor(.orange)
                     Text(localized("本站啟用了防護 (Cloudflare / DDoS-Guard)。\n請手動通過人機驗證後，系統將自動繼續。"))
-                        .font(.caption)
+                        .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                     Spacer()
                 }

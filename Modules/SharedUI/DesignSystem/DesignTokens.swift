@@ -78,26 +78,44 @@ enum DSColor {
 // MARK: - Design System: Font Tokens
 
 enum DSFont {
-    /// Smallest label (10pt)
-    static let caption2 = Font.caption2
+    /// Smallest label (11pt)
+    static var caption2: Font { GlobalAppTypography.font(.caption2) }
     /// Small caption (12pt)
-    static let caption = Font.caption
+    static var caption: Font { GlobalAppTypography.font(.caption) }
+    /// Footnote (13pt)
+    static var footnote: Font { GlobalAppTypography.font(.footnote) }
     /// Subheadline (15pt)
-    static let subheadline = Font.subheadline
+    static var subheadline: Font { GlobalAppTypography.font(.subheadline) }
+    /// Callout (16pt)
+    static var callout: Font { GlobalAppTypography.font(.callout) }
     /// Body (17pt)
-    static let body = Font.body
+    static var body: Font { GlobalAppTypography.font(.body) }
     /// Body bold
-    static let bodyBold = Font.body.weight(.semibold)
+    static var bodyBold: Font { GlobalAppTypography.font(.body, weight: .semibold) }
     /// Headline (17pt bold)
-    static let headline = Font.headline
+    static var headline: Font { GlobalAppTypography.font(.headline) }
     /// Title 3 (20pt)
-    static let title3 = Font.title3
+    static var title3: Font { GlobalAppTypography.font(.title3) }
     /// Title 2 (22pt)
-    static let title2 = Font.title2
+    static var title2: Font { GlobalAppTypography.font(.title2) }
     /// Title (28pt)
-    static let title = Font.title
+    static var title: Font { GlobalAppTypography.font(.title) }
     /// Large title (34pt)
-    static let largeTitle = Font.largeTitle
+    static var largeTitle: Font { GlobalAppTypography.font(.largeTitle) }
+
+    /// Existing fixed-size UI typography. Monospaced content intentionally
+    /// remains system monospaced even when a global interface font is active.
+    static func fixed(
+        size: CGFloat,
+        weight: Font.Weight = .regular,
+        design: Font.Design = .default
+    ) -> Font {
+        GlobalAppTypography.fixedFont(
+            size: size,
+            weight: weight,
+            systemDesign: design
+        )
+    }
 
     /// Monospaced font for code, rules, and URLs
     static func monospaced(size: CGFloat = 13) -> Font {

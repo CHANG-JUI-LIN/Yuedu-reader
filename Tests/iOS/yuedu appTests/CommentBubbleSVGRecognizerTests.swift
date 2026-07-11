@@ -16,6 +16,13 @@ struct CommentBubbleSVGRecognizerTests {
         )
     }
 
+    @Test("returns an empty SVG for an empty custom template")
+    func returnsEmptyCustomTemplateWithoutBuiltInFallback() {
+        #expect(
+            CommentBubbleSVGRecognizer.templateSVG(for: .custom, customSVG: "").isEmpty
+        )
+    }
+
     @Test("inherits the root SVG color for built-in bubble outlines and text")
     func inheritsRootColorForBuiltInTemplates() throws {
         for mode in [ReaderCommentBubblePresetMode.builtin, .square] {
@@ -32,7 +39,7 @@ struct CommentBubbleSVGRecognizerTests {
                     return strokeColor != nil || fillColor != nil
                 case .rect(_, _, _, _, _, _, let strokeColor, _, let fillColor, _):
                     return strokeColor != nil || fillColor != nil
-                case .text:
+                case .image(_, _, _), .text:
                     return false
                 }
             }
@@ -64,6 +71,29 @@ struct CommentBubbleSVGRecognizerTests {
 
         #expect(bubble.displayText == "$displayText")
         #expect(bubble.replacingDisplayText(with: "99+").displayText == "99+")
+    }
+
+    @Test("accepts an embedded raster image as the custom bubble artwork")
+    func acceptsEmbeddedRasterImageArtwork() throws {
+        let onePixelPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        let svg = """
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+             width="100%" height="100%" viewBox="0 0 100 100">
+          <image width="127" height="178" x="-13.5" y="-33"
+                 xlink:href="data:image/png;base64,\(onePixelPNG)"/>
+          <text x="50" y="36" font-size="40" text-anchor="middle">$displayText</text>
+        </svg>
+        """
+
+        let bubble = try #require(
+            CommentBubbleSVGRecognizer.recognize(src: "", svgContent: svg)
+        )
+
+        #expect(bubble.displayText == "$displayText")
+        #expect(bubble.elements.contains { element in
+            if case .image = element { return true }
+            return false
+        })
     }
 
     @Test("clamps bubble scale controls to their supported ranges")

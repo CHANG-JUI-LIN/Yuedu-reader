@@ -142,7 +142,7 @@ enum RSSRequestFactory {
     }
 
     static func feedRequest(for source: RSSSource, metadata: RSSFeedFetchMetadata?) -> URLRequest? {
-        guard let url = URL(string: source.url)?.upgradedToHTTPS() else {
+        guard let url = requestURL(for: source) else {
             return nil
         }
         var request = URLRequest(url: url)
@@ -156,6 +156,17 @@ enum RSSRequestFactory {
             request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")
         }
         return request
+    }
+
+    /// Build a fetchable URL from the source's raw URL string. Legado sourceUrls
+    /// often lack a scheme ("shuyuan.nyasama.net") or contain non-ASCII characters;
+    /// URLSession rejects those with NSURLErrorUnsupportedURL, so normalize first.
+    static func requestURL(for source: RSSSource) -> URL? {
+        if let url = URL(string: source.url),
+           url.scheme == "http" || url.scheme == "https" {
+            return url.upgradedToHTTPS()
+        }
+        return RSSSource.normalizedWebURL(from: source.url)
     }
 }
 

@@ -131,7 +131,7 @@ struct TTSSettingsView: View {
                 toggleSelection(source.id)
             } label: {
                 Image(systemName: selectedSourceIds.contains(source.id) ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 20))
+                    .font(DSFont.fixed(size: 20))
                     .foregroundColor(
                         selectedSourceIds.contains(source.id) ? DSColor.accent : Color(UIColor.systemGray3)
                     )
@@ -152,7 +152,7 @@ struct TTSSettingsView: View {
 
                         if isSelected(source) {
                             Text(localized("使用中"))
-                                .font(.system(size: 11, weight: .medium))
+                                .font(DSFont.fixed(size: 11, weight: .medium))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
@@ -162,13 +162,13 @@ struct TTSSettingsView: View {
                     }
 
                     Text(source.urlTemplate)
-                        .font(.system(size: 11))
+                        .font(DSFont.fixed(size: 11))
                         .foregroundColor(DSColor.textSecondary.opacity(0.6))
                         .lineLimit(1)
 
                     if source.loginUi != nil {
                         Text(localized("需設定帳號"))
-                            .font(.system(size: 10))
+                            .font(DSFont.fixed(size: 10))
                             .foregroundColor(DSColor.accent)
                             .lineLimit(1)
                     }
@@ -233,13 +233,13 @@ struct TTSSettingsView: View {
                         systemName: selectedSourceIds == filteredSourceIds && !filteredSources.isEmpty
                             ? "checkmark.square.fill" : "square"
                     )
-                    .font(.system(size: 18))
+                    .font(DSFont.fixed(size: 18))
                     .foregroundColor(
                         selectedSourceIds == filteredSourceIds && !filteredSources.isEmpty
                             ? DSColor.accent : Color(UIColor.systemGray3)
                     )
                     Text(localized("全選") + "(\(selectedSourceIds.count)/\(gs.importedTTSSources.count))")
-                        .font(.system(size: 13))
+                        .font(DSFont.fixed(size: 13))
                         .foregroundColor(DSColor.textPrimary)
                 }
             }
@@ -252,7 +252,7 @@ struct TTSSettingsView: View {
                 invertSelection()
             } label: {
                 Text(localized("反選"))
-                    .font(.system(size: 13))
+                    .font(DSFont.fixed(size: 13))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 7)
                     .background(Color(UIColor.systemGray5))
@@ -267,7 +267,7 @@ struct TTSSettingsView: View {
                 deleteSelectedSources()
             } label: {
                 Text(localized("刪除"))
-                    .font(.system(size: 13))
+                    .font(DSFont.fixed(size: 13))
                     .foregroundColor(selectedSourceIds.isEmpty ? .secondary : .red)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 7)
@@ -305,7 +305,7 @@ struct TTSSettingsView: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "network").foregroundColor(DSColor.accent)
                     Text(localized("輸入語音源 JSON 的網路地址，支援直接返回 JSON 的 URL。"))
-                        .font(.caption)
+                        .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                 }
                 .padding()
@@ -351,7 +351,7 @@ struct TTSSettingsView: View {
 
     private func toastBanner(_ text: String) -> some View {
         Text(text)
-            .font(.subheadline.weight(.medium))
+            .font(DSFont.subheadline.weight(.medium))
             .foregroundColor(.white)
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
@@ -399,7 +399,7 @@ struct TTSSettingsView: View {
 
                         if isSystemVoiceSelected {
                             Text(localized("使用中"))
-                                .font(.system(size: 11, weight: .medium))
+                                .font(DSFont.fixed(size: 11, weight: .medium))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
@@ -409,7 +409,7 @@ struct TTSSettingsView: View {
                     }
 
                     Text(localized("免網路，使用裝置內建語音朗讀"))
-                        .font(.system(size: 11))
+                        .font(DSFont.fixed(size: 11))
                         .foregroundColor(DSColor.textSecondary.opacity(0.6))
                         .lineLimit(1)
                 }
@@ -421,7 +421,7 @@ struct TTSSettingsView: View {
                 testSystemPlayback()
             } label: {
                 Image(systemName: "play.circle")
-                    .font(.system(size: 22))
+                    .font(DSFont.fixed(size: 22))
                     .foregroundColor(DSColor.accent)
             }
             .buttonStyle(.plain)
@@ -647,7 +647,7 @@ struct TTSSourceLoginView: View {
             .overlay(alignment: .top) {
                 if saved {
                     Text(localized("已儲存"))
-                        .font(.subheadline.weight(.medium))
+                        .font(DSFont.subheadline.weight(.medium))
                         .foregroundColor(.white)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 10)

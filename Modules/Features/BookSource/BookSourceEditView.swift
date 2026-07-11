@@ -153,9 +153,9 @@ struct BookSourceEditView: View {
             ruleField(
                 localized("下一頁 URL"), placeholder: ".next-page@href", text: $source.ruleContent.nextContentUrl)
             VStack(alignment: .leading, spacing: 4) {
-                Text(localized("替換規則")).font(.caption).foregroundColor(DSColor.textSecondary)
+                Text(localized("替換規則")).font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                 TextEditor(text: $source.ruleContent.replaceRegex)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(DSFont.fixed(size: 13, design: .monospaced))
                     .frame(height: 80)
             }
         }
@@ -168,7 +168,7 @@ struct BookSourceEditView: View {
             footer: Text(localized("JSON 格式，如：{\"Cookie\":\"...\"}"))
         ) {
             TextEditor(text: $source.header)
-                .font(.system(size: 13, design: .monospaced))
+                .font(DSFont.fixed(size: 13, design: .monospaced))
                 .frame(height: 70)
         }
     }
@@ -189,9 +189,9 @@ struct BookSourceEditView: View {
     private func ruleField(_ label: String, placeholder: String, text: Binding<String>) -> some View
     {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption).foregroundColor(DSColor.textSecondary)
+            Text(label).font(DSFont.caption).foregroundColor(DSColor.textSecondary)
             TextField(placeholder, text: text)
-                .font(.system(size: 14, design: .monospaced))
+                .font(DSFont.fixed(size: 14, design: .monospaced))
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
         }

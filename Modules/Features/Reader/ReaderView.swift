@@ -184,18 +184,21 @@ struct ReaderView: View {
 
     @ViewBuilder
     var readerSurfaceBackground: some View {
-        ZStack {
-            readerTheme.backgroundColor
-            if let image = activeReaderBackgroundImage {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
+        // Keep decorative pixels out of layout measurement. A tall image used
+        // as a ZStack child reports its aspect-sized height and pushes reader
+        // chrome beyond both viewport edges; an overlay inherits the color's
+        // already-constrained reader surface instead.
+        readerTheme.backgroundColor
+            .overlay {
+                if let image = activeReaderBackgroundImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                }
             }
-        }
-        .ignoresSafeArea()
-        .accessibilityHidden(true)
+            .clipped()
+            .ignoresSafeArea()
+            .accessibilityHidden(true)
     }
 
     /// When "follow system" theme is on, align the reader theme with the current
@@ -1387,10 +1390,10 @@ struct ReaderView: View {
         .onChanged(of: settings.commentBubblePresetMode) { _ in
             forceReaderRenderableContentRefresh()
         }
-        .onChanged(of: settings.commentBubbleCustomSVG) { _ in
+        .onChanged(of: settings.commentBubbleCustomStyles) { _ in
             forceReaderRenderableContentRefresh()
         }
-        .onChanged(of: settings.commentBubbleCustomStyleName) { _ in
+        .onChanged(of: settings.commentBubbleSelectedCustomStyleID) { _ in
             forceReaderRenderableContentRefresh()
         }
         .onChanged(of: settings.commentBubbleScale) { _ in

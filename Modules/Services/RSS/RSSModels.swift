@@ -126,10 +126,149 @@ struct RSSSource: Codable, Identifiable {
     var enabledCookieJar: Bool = false
     var lastUpdateTime: Double = 0
     var loadWithBaseUrl: Bool = true
-    var singleUrl: Bool = true
+    var singleUrl: Bool = false
+
+    // Extra Legado fields kept for lossless round-trip and future use.
+    // All optional so JSON saved by older app versions still decodes.
+    var ruleNextPage: String?
+    var sourceComment: String?
+    var variableComment: String?
+    var concurrentRate: String?
+    var loginUrl: String?
+    var loginUi: String?
+    var loginCheckJs: String?
+    var coverDecodeJs: String?
+    var jsLib: String?
+    var style: String?
+    var injectJs: String?
+    var contentWhitelist: String?
+    var contentBlacklist: String?
+    var shouldOverrideUrlLoading: String?
+    /// Set at Legado JSON import time; nil for hand-added feeds and legacy storage.
+    var importedFromLegado: Bool?
 
     var isLegadoRuleBased: Bool { ruleArticles != nil && !(ruleArticles?.isEmpty ?? true) }
     var displayFaviconURL: String? { faviconURL ?? sourceIcon }
+
+    /// Non-empty sortUrl means the source has Legado category tabs.
+    var hasSortCategories: Bool {
+        guard let sortUrl else { return false }
+        return !sortUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Fields only a Legado import would populate — hand-added feeds never set these.
+    var hasLegadoSignature: Bool {
+        if importedFromLegado == true { return true }
+        if sourceIcon?.isEmpty == false { return true }
+        if header?.isEmpty == false { return true }
+        if lastUpdateTime > 0 { return true }
+        if ruleTitle != nil || ruleLink != nil || ruleDescription != nil
+            || ruleContent != nil || rulePubDate != nil || ruleImage != nil { return true }
+        return false
+    }
+
+    /// Legado semantics: singleUrl sources open sourceUrl directly as a web page
+    /// (no feed fetch, no article list). Restricted to Legado-flavored sources so
+    /// hand-added feeds whose stored singleUrl was polluted by the old default
+    /// (true) keep their normal feed behavior.
+    var opensAsWebPage: Bool {
+        singleUrl && !isLegadoRuleBased && !hasSortCategories && hasLegadoSignature
+    }
+
+    /// Best-effort URL for opening this source as a web page.
+    var webPageURL: URL? {
+        RSSSource.normalizedWebURL(from: url)
+    }
+
+    /// Normalize a Legado sourceUrl into an openable http(s) URL:
+    /// strips `,{json options}` suffixes and `#comment` fragments Legado allows,
+    /// adds a missing scheme, and percent-encodes non-ASCII characters.
+    static func normalizedWebURL(from raw: String) -> URL? {
+        var cleaned = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return nil }
+
+        // Strip Legado URL option suffix: "https://x.com,{'method':'POST'}"
+        if let range = cleaned.range(of: #"\s*,\s*\{"#, options: .regularExpression) {
+            cleaned = String(cleaned[..<range.lowerBound])
+        }
+
+        if !cleaned.lowercased().hasPrefix("http://") && !cleaned.lowercased().hasPrefix("https://") {
+            // Only treat host-like strings as URLs (e.g. "shuyuan.nyasama.net").
+            guard cleaned.contains("."), !cleaned.contains(" ") else { return nil }
+            cleaned = "https://" + cleaned
+        }
+
+        if let url = URL(string: cleaned) {
+            guard url.scheme == "http" || url.scheme == "https", url.host != nil else { return nil }
+            return url.upgradedToHTTPS()
+        }
+
+        // Retry with percent-encoding for URLs containing CJK or other non-ASCII characters.
+        guard let encoded = cleaned.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.union(CharacterSet(charactersIn: "#%"))),
+              let url = URL(string: encoded),
+              url.scheme == "http" || url.scheme == "https", url.host != nil else {
+            return nil
+        }
+        return url.upgradedToHTTPS()
+    }
+}
+
+// MARK: - Legado sortUrl entries
+
+/// One Legado RSS category tab: `名称::URL` from sortUrl.
+struct RSSSortEntry: Equatable, Identifiable {
+    var name: String
+    var url: String
+    var id: String { "\(name)::\(url)" }
+}
+
+enum LegadoSortURLParser {
+    /// Split a (already JS-evaluated, if needed) sortUrl string into entries.
+    /// Matches Legado `RssSource.sortUrls()`: split on `(&&|\n)+`, each entry `name::url`,
+    /// entries without `::` are ignored; empty result falls back to the source URL.
+    static func entries(from sortUrl: String?, fallbackURL: String) -> [RSSSortEntry] {
+        var result: [RSSSortEntry] = []
+        if let sortUrl, !sortUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // Legado splits on the regex (&&|\n)+
+            let segments = sortUrl
+                .replacingOccurrences(of: "&&", with: "\n")
+                .components(separatedBy: "\n")
+            for segment in segments {
+                let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                guard let range = trimmed.range(of: "::") else { continue }
+                let name = String(trimmed[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let url = String(trimmed[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !url.isEmpty else { continue }
+                result.append(RSSSortEntry(name: name, url: url))
+            }
+        }
+        if result.isEmpty {
+            result.append(RSSSortEntry(name: "", url: fallbackURL))
+        }
+        return result
+    }
+
+    /// Whether the sortUrl needs JavaScript evaluation before splitting.
+    static func needsJSEvaluation(_ sortUrl: String) -> Bool {
+        let trimmed = sortUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("<js>") || trimmed.lowercased().hasPrefix("@js:")
+    }
+
+    /// Extract the JS body from a `<js>…</js>` or `@js:…` sortUrl.
+    static func jsBody(_ sortUrl: String) -> String? {
+        let trimmed = sortUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased().hasPrefix("@js:") {
+            return String(trimmed.dropFirst(4))
+        }
+        if trimmed.hasPrefix("<js>") {
+            guard let end = trimmed.range(of: "</js>", options: [.backwards, .caseInsensitive]) else {
+                return String(trimmed.dropFirst(4))
+            }
+            return String(trimmed[trimmed.index(trimmed.startIndex, offsetBy: 4)..<end.lowerBound])
+        }
+        return nil
+    }
 }
 
 struct RSSFolder: Codable, Identifiable, Equatable {

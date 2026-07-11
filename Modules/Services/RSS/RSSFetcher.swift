@@ -1063,16 +1063,37 @@ final class RSSFetcher: ObservableObject {
     @Published var resolvedFeedURL: String?
     @Published var resolvedHomepageURL: String?
 
-    func fetchItems(from source: RSSSource, metadata: RSSFeedFetchMetadata? = nil) async {
+    /// Legado sortUrl category tabs resolved for the current source.
+    @Published var sortEntries: [RSSSortEntry] = []
+    /// Set for Legado singleUrl sources: open this URL directly as a web page.
+    @Published var webPageURL: URL?
+    /// Set when fetching/parsing failed but the source looks like a plain web
+    /// page — the UI offers an "open as web page" fallback.
+    @Published var webPageFallbackURL: URL?
+
+    func fetchItems(from source: RSSSource, metadata: RSSFeedFetchMetadata? = nil, sortEntry: RSSSortEntry? = nil) async {
         isLoading = true
         error = nil
         response = nil
         resolvedFeedURL = nil
         resolvedHomepageURL = nil
+        webPageURL = nil
+        webPageFallbackURL = nil
         defer { isLoading = false }
 
+        // Legado singleUrl semantics: the source IS a web page, not a feed.
+        if source.opensAsWebPage {
+            items = []
+            if let url = source.webPageURL {
+                webPageURL = url
+            } else {
+                error = localized("RSS URL 無效")
+            }
+            return
+        }
+
         if source.isLegadoRuleBased {
-            await fetchWithLegadoRules(source: source)
+            await fetchWithLegadoRules(source: source, sortEntry: sortEntry)
             return
         }
 
@@ -1085,7 +1106,7 @@ final class RSSFetcher: ObservableObject {
         items = []
 
         if source.isLegadoRuleBased {
-            await fetchWithLegadoRules(source: source)
+            await fetchWithLegadoRules(source: source, sortEntry: nil)
             return
         }
 
@@ -1143,6 +1164,15 @@ final class RSSFetcher: ObservableObject {
                    let sourceURL = request.url,
                    data.isProbablyHTML,
                    await fetchDiscoveredFeed(from: data, sourceURL: sourceURL, originalSource: source) {
+                    return
+                }
+                if data.isProbablyHTML {
+                    // A web page without any discoverable feed (typical for Legado
+                    // singleUrl sources imported by older app versions): offer to
+                    // open it as a web page instead of surfacing an XML error.
+                    error = localized("此來源是網頁而非 RSS 訂閱，可直接以網頁開啟。")
+                    webPageFallbackURL = request.url ?? source.webPageURL
+                    items = []
                     return
                 }
                 // Keep the error from feed discovery if it was set; otherwise use parser error
@@ -1226,9 +1256,13 @@ final class RSSFetcher: ObservableObject {
         return nsError.domain == NSURLErrorDomain && nsError.code == -1022
     }
 
-    private func fetchWithLegadoRules(source: RSSSource) async {
+    private func fetchWithLegadoRules(source: RSSSource, sortEntry: RSSSortEntry?) async {
         do {
-            let parsedItems = try await LegadoRSSScraper.scrape(source: source)
+            let entries = await LegadoRSSScraper.resolveSortEntries(for: source)
+            sortEntries = entries
+
+            let entry = sortEntry ?? entries.first
+            let parsedItems = try await LegadoRSSScraper.scrape(source: source, entry: entry)
             items = parsedItems
             let metadata = RSSFeedFetchMetadata(lastFetchedAt: Date())
             self.response = .updated(items: parsedItems, metadata: metadata, feedInfo: nil)
@@ -1241,6 +1275,8 @@ final class RSSFetcher: ObservableObject {
             } else {
                 self.error = error.localizedDescription
             }
+            // Rule scraping failed — at least let the user open the page itself.
+            webPageFallbackURL = source.webPageURL
         }
     }
 }

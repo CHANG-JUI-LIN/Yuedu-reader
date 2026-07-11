@@ -7,6 +7,11 @@ struct yuedu_appApp: App {
     @StateObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        UserFontStorageManager.shared.registerAllOnLaunch()
+        GlobalSettings.shared.validateGlobalFontSelection()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -23,7 +28,6 @@ struct yuedu_appApp: App {
                             .appendingPathComponent("discover_cache")
                         try? FileManager.default.removeItem(at: dir)
                     }
-                    UserFontStorageManager.shared.registerAllOnLaunch()
                     // Bind the book store before the auth listener fires, so the
                     // first post-launch sync (triggered by the listener) sees it.
                     FirestoreSyncManager.shared.bind(bookStore: bookStore)

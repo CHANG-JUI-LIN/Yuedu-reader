@@ -32,6 +32,7 @@ struct AppearanceThemeView: View {
             VStack(alignment: .leading, spacing: DSSpacing.xl) {
                 themeSelectionCard
                 togglesSection
+                globalFontRow
                 readerInterfaceRow
                 rootTabRow
                 // Pro upsell only; subscribers customize via 新建 / theme tiles.
@@ -208,7 +209,7 @@ struct AppearanceThemeView: View {
                     RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
                         .fill(DSColor.textSecondary.opacity(0.2))
                     Image(systemName: subscriptionStore.hasAccess(.readerThemePacks) ? "plus" : "lock.fill")
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(DSFont.fixed(size: 24, weight: .semibold))
                         .foregroundStyle(selectedTheme.accentColor)
                 }
                 .frame(maxWidth: .infinity)
@@ -254,6 +255,37 @@ struct AppearanceThemeView: View {
         .padding(.horizontal, DSSpacing.lg)
         .padding(.vertical, DSSpacing.md)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+    }
+
+    private var globalFontRow: some View {
+        NavigationLink {
+            GlobalFontSettingsView()
+        } label: {
+            HStack {
+                Text(localized("全局字體"))
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                Spacer(minLength: DSSpacing.md)
+                Text(globalFontDisplayName)
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textSecondary)
+                Image(systemName: "chevron.right")
+                    .font(DSFont.subheadline)
+                    .foregroundStyle(DSColor.textSecondary)
+            }
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.lg)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var globalFontDisplayName: String {
+        guard let selected = settings.resolvedGlobalFontPostScript else {
+            return localized("系統字體")
+        }
+        return settings.userFonts.first { $0.postScriptName == selected }?.displayName
+            ?? localized("系統字體")
     }
 
     private var readerInterfaceRow: some View {
@@ -310,7 +342,7 @@ struct AppearanceThemeView: View {
             } label: {
                 HStack(spacing: DSSpacing.md) {
                     Image(systemName: "crown.fill")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(DSFont.fixed(size: 20, weight: .semibold))
                         .foregroundStyle(selectedTheme.accentColor)
                         .frame(width: 28, height: 28)
                     Text(localized("主題自定義"))
@@ -361,7 +393,7 @@ private struct ThemePreviewTile: View {
                         RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
                             .fill(Color.black.opacity(0.16))
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 22, weight: .semibold))
+                            .font(DSFont.fixed(size: 22, weight: .semibold))
                             .foregroundStyle(.white)
                     }
                 }

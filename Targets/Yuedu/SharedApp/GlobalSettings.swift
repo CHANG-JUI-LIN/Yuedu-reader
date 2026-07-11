@@ -3,6 +3,7 @@ import FirebaseAuth
 import Foundation
 import GoogleSignIn
 import SwiftUI
+import UIKit
 
 // MARK: - Reader Text Conversion
 
@@ -356,10 +357,13 @@ class GlobalSettings: ObservableObject {
     private static let appearanceBindReaderThemeKey = "yd_appearance_bind_reader_theme"
     private static let appearanceReaderInterfaceKey = "yd_appearance_reader_interface"
     private static let customAppearanceThemesKey = "yd_custom_appearance_themes"
+    private static let globalFontPostScriptKey = "yd_global_font_postscript"
     private static let commentBubbleFollowsSourceSVGKey = "yd_comment_bubble_follows_source_svg"
     private static let commentBubblePresetModeKey = "yd_comment_bubble_preset_mode"
     private static let commentBubbleCustomSVGKey = "yd_comment_bubble_custom_svg"
     private static let commentBubbleCustomStyleNameKey = "yd_comment_bubble_custom_style_name"
+    private static let commentBubbleCustomStylesV2Key = "yd_comment_bubble_custom_styles_v2"
+    private static let commentBubbleSelectedCustomStyleIDKey = "yd_comment_bubble_selected_custom_style_id"
     private static let commentBubbleScaleKey = "yd_comment_bubble_scale"
     private static let commentBubbleTextScaleKey = "yd_comment_bubble_text_scale"
     private static let readerTextUnderlineDecorationKey = "yd_reader_text_underline_decoration"
@@ -515,15 +519,27 @@ class GlobalSettings: ObservableObject {
             UserDefaults.standard.set(commentBubblePresetMode.rawValue, forKey: Self.commentBubblePresetModeKey)
         }
     }
-    @Published var commentBubbleCustomSVG: String {
+    @Published private(set) var commentBubbleCustomStyles: [ReaderCommentBubbleCustomStyle] {
         didSet {
-            UserDefaults.standard.set(commentBubbleCustomSVG, forKey: Self.commentBubbleCustomSVGKey)
+            Self.saveCommentBubbleCustomStyles(commentBubbleCustomStyles)
         }
     }
-    @Published var commentBubbleCustomStyleName: String {
+    @Published private(set) var commentBubbleSelectedCustomStyleID: UUID? {
         didSet {
-            UserDefaults.standard.set(commentBubbleCustomStyleName, forKey: Self.commentBubbleCustomStyleNameKey)
+            Self.saveCommentBubbleSelectedCustomStyleID(commentBubbleSelectedCustomStyleID)
         }
+    }
+    var commentBubbleSelectedCustomStyle: ReaderCommentBubbleCustomStyle? {
+        guard let commentBubbleSelectedCustomStyleID else { return nil }
+        return commentBubbleCustomStyles.first { $0.id == commentBubbleSelectedCustomStyleID }
+    }
+    /// Read-only compatibility accessor for renderer and settings call sites.
+    var commentBubbleCustomSVG: String {
+        commentBubbleSelectedCustomStyle?.svg ?? ""
+    }
+    /// Read-only compatibility accessor for renderer and settings call sites.
+    var commentBubbleCustomStyleName: String {
+        commentBubbleSelectedCustomStyle?.name ?? ""
     }
     @Published var commentBubbleScale: Double {
         didSet {
@@ -619,6 +635,18 @@ class GlobalSettings: ObservableObject {
         didSet { Self.saveRootTabIconAssets(rootTabIconAssets) }
     }
 
+    @Published var selectedGlobalFontPostScript: String? {
+        didSet {
+            if let selectedGlobalFontPostScript, !selectedGlobalFontPostScript.isEmpty {
+                UserDefaults.standard.set(
+                    selectedGlobalFontPostScript,
+                    forKey: Self.globalFontPostScriptKey
+                )
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.globalFontPostScriptKey)
+            }
+        }
+    }
     @Published var selectedReaderFontPostScript: String? {
         didSet {
             if let selectedReaderFontPostScript, !selectedReaderFontPostScript.isEmpty {
@@ -626,6 +654,23 @@ class GlobalSettings: ObservableObject {
             } else {
                 UserDefaults.standard.removeObject(forKey: "yd_reader_font_postscript")
             }
+        }
+    }
+
+    var resolvedGlobalFontPostScript: String? {
+        guard let selectedGlobalFontPostScript,
+              userFonts.contains(where: { $0.postScriptName == selectedGlobalFontPostScript }) else {
+            return nil
+        }
+        return selectedGlobalFontPostScript
+    }
+
+    func validateGlobalFontSelection() {
+        guard let selectedGlobalFontPostScript else { return }
+        guard userFonts.contains(where: { $0.postScriptName == selectedGlobalFontPostScript }),
+              UIFont(name: selectedGlobalFontPostScript, size: 17) != nil else {
+            self.selectedGlobalFontPostScript = nil
+            return
         }
     }
     @Published var userFonts: [UserFontInfo] {
@@ -809,11 +854,69 @@ class GlobalSettings: ObservableObject {
         } else {
             commentBubbleFollowsSourceSVG = UserDefaults.standard.bool(forKey: Self.commentBubbleFollowsSourceSVGKey)
         }
-        let rawBubbleMode = UserDefaults.standard.string(forKey: Self.commentBubblePresetModeKey) ?? ""
-        commentBubblePresetMode = ReaderCommentBubblePresetMode(rawValue: rawBubbleMode) ?? .builtin
-        commentBubbleCustomSVG = UserDefaults.standard.string(forKey: Self.commentBubbleCustomSVGKey) ?? ""
-        commentBubbleCustomStyleName = UserDefaults.standard.string(forKey: Self.commentBubbleCustomStyleNameKey)
-            ?? "自訂 SVG"
+        let defaults = UserDefaults.standard
+        let rawBubbleMode = defaults.string(forKey: Self.commentBubblePresetModeKey) ?? ""
+        var loadedBubbleMode = ReaderCommentBubblePresetMode(rawValue: rawBubbleMode) ?? .builtin
+        let legacyName = defaults.string(forKey: Self.commentBubbleCustomStyleNameKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let migratedName = legacyName.flatMap { $0.isEmpty ? nil : $0 }
+            ?? localized("自訂 SVG")
+        let recoverableLegacyStyles = ReaderCommentBubbleCustomStyleLibrary.migratingLegacyStyleIfNeeded(
+            in: [],
+            legacySVG: defaults.string(forKey: Self.commentBubbleCustomSVGKey) ?? "",
+            generatedPlaceholderSVG: CommentBubbleSVGRecognizer.builtinBubbleSVG,
+            migratedName: migratedName
+        )
+        let loadedCustomStyles: [ReaderCommentBubbleCustomStyle]
+        let loadedSelectedCustomStyleID: UUID?
+        let shouldPersistLoadedLibrary: Bool
+        let shouldRemoveLegacyKeys: Bool
+        let v2DecodingResult = ReaderCommentBubbleCustomStyleLibrary.decodeV2(
+            keyExists: defaults.object(forKey: Self.commentBubbleCustomStylesV2Key) != nil,
+            data: defaults.data(forKey: Self.commentBubbleCustomStylesV2Key)
+        )
+        switch v2DecodingResult {
+        case .valid(let decodedStyles):
+            loadedCustomStyles = ReaderCommentBubbleCustomStyleLibrary.uniqued(decodedStyles)
+            let persistedSelectedID = defaults.string(forKey: Self.commentBubbleSelectedCustomStyleIDKey)
+                .flatMap { UUID(uuidString: $0) }
+            loadedSelectedCustomStyleID = ReaderCommentBubbleCustomStyleLibrary.validatedSelectedID(
+                persistedSelectedID,
+                in: loadedCustomStyles
+            )
+            shouldPersistLoadedLibrary = true
+            shouldRemoveLegacyKeys = true
+        case .missing:
+            loadedCustomStyles = recoverableLegacyStyles
+            loadedSelectedCustomStyleID = loadedCustomStyles.first?.id
+            shouldPersistLoadedLibrary = true
+            shouldRemoveLegacyKeys = true
+        case .invalid where !recoverableLegacyStyles.isEmpty:
+            loadedCustomStyles = recoverableLegacyStyles
+            loadedSelectedCustomStyleID = loadedCustomStyles.first?.id
+            shouldPersistLoadedLibrary = true
+            shouldRemoveLegacyKeys = true
+        case .invalid:
+            loadedCustomStyles = []
+            loadedSelectedCustomStyleID = nil
+            shouldPersistLoadedLibrary = false
+            shouldRemoveLegacyKeys = false
+        }
+        if loadedBubbleMode == .custom, loadedSelectedCustomStyleID == nil {
+            loadedBubbleMode = .builtin
+        }
+        commentBubblePresetMode = loadedBubbleMode
+        commentBubbleCustomStyles = loadedCustomStyles
+        commentBubbleSelectedCustomStyleID = loadedSelectedCustomStyleID
+        if shouldPersistLoadedLibrary {
+            Self.saveCommentBubbleCustomStyles(loadedCustomStyles)
+            Self.saveCommentBubbleSelectedCustomStyleID(loadedSelectedCustomStyleID)
+            defaults.set(loadedBubbleMode.rawValue, forKey: Self.commentBubblePresetModeKey)
+        }
+        if shouldRemoveLegacyKeys {
+            defaults.removeObject(forKey: Self.commentBubbleCustomSVGKey)
+            defaults.removeObject(forKey: Self.commentBubbleCustomStyleNameKey)
+        }
         commentBubbleScale = Self.sanitizedCommentBubbleScale(
             (UserDefaults.standard.object(forKey: Self.commentBubbleScaleKey) as? Double)
                 ?? Self.defaultCommentBubbleScale
@@ -849,12 +952,24 @@ class GlobalSettings: ObservableObject {
             ?? Self.defaultRootTabIconSize
         rootTabIconSize = Self.sanitizedRootTabIconSize(loadedRootTabIconSize)
         rootTabIconAssets = Self.loadRootTabIconAssets()
-        selectedReaderFontPostScript = UserDefaults.standard.string(forKey: "yd_reader_font_postscript")
+        let decodedUserFonts: [UserFontInfo]
         if let fontData = UserDefaults.standard.data(forKey: "yd_user_fonts"),
            let decodedFonts = try? JSONDecoder().decode([UserFontInfo].self, from: fontData) {
-            userFonts = decodedFonts
+            decodedUserFonts = decodedFonts
         } else {
-            userFonts = []
+            decodedUserFonts = []
+        }
+        userFonts = decodedUserFonts
+        selectedReaderFontPostScript = UserDefaults.standard.string(forKey: "yd_reader_font_postscript")
+        let storedGlobalFont = UserDefaults.standard.string(forKey: Self.globalFontPostScriptKey)
+        let validatedGlobalFont = storedGlobalFont.flatMap { postScriptName in
+            decodedUserFonts.contains { $0.postScriptName == postScriptName }
+                ? postScriptName
+                : nil
+        }
+        selectedGlobalFontPostScript = validatedGlobalFont
+        if storedGlobalFont != nil, validatedGlobalFont == nil {
+            UserDefaults.standard.removeObject(forKey: Self.globalFontPostScriptKey)
         }
 
         bookshelfGridColumnCount = Self.sanitizedBookshelfGridColumnCount(
@@ -875,6 +990,69 @@ class GlobalSettings: ObservableObject {
         importedTTSSources = Self.loadImportedTTSSources()
         ttsUseSystemVoice = UserDefaults.standard.bool(forKey: "yd_tts_use_system_voice")
         ttsSystemVoiceIdentifier = UserDefaults.standard.string(forKey: "yd_tts_system_voice_id") ?? ""
+    }
+
+    func selectCommentBubbleBuiltinStyle() {
+        commentBubblePresetMode = .builtin
+    }
+
+    func selectCommentBubbleSquareStyle() {
+        commentBubblePresetMode = .square
+    }
+
+    func selectCommentBubbleCustomStyle(id: UUID) {
+        guard ReaderCommentBubbleCustomStyleLibrary.validatedSelectedID(
+            id,
+            in: commentBubbleCustomStyles
+        ) != nil else {
+            commentBubbleSelectedCustomStyleID = nil
+            commentBubblePresetMode = .builtin
+            return
+        }
+
+        commentBubbleSelectedCustomStyleID = id
+        commentBubblePresetMode = .custom
+    }
+
+    func upsertCommentBubbleCustomStyle(_ style: ReaderCommentBubbleCustomStyle) {
+        commentBubbleCustomStyles = ReaderCommentBubbleCustomStyleLibrary.uniqued(
+            ReaderCommentBubbleCustomStyleLibrary.upserting(
+                style,
+                into: commentBubbleCustomStyles
+            )
+        )
+        commentBubbleSelectedCustomStyleID = style.id
+        commentBubblePresetMode = .custom
+    }
+
+    func deleteCommentBubbleCustomStyle(id: UUID) {
+        let wasSelected = commentBubbleSelectedCustomStyleID == id
+        commentBubbleCustomStyles = ReaderCommentBubbleCustomStyleLibrary.deleting(
+            id: id,
+            from: commentBubbleCustomStyles
+        )
+
+        guard wasSelected else { return }
+        commentBubbleSelectedCustomStyleID = nil
+        commentBubblePresetMode = .builtin
+    }
+
+    private static func saveCommentBubbleCustomStyles(
+        _ styles: [ReaderCommentBubbleCustomStyle]
+    ) {
+        let encodedStyles = (try? JSONEncoder().encode(styles)) ?? Data("[]".utf8)
+        UserDefaults.standard.set(encodedStyles, forKey: commentBubbleCustomStylesV2Key)
+    }
+
+    private static func saveCommentBubbleSelectedCustomStyleID(_ id: UUID?) {
+        if let id {
+            UserDefaults.standard.set(
+                id.uuidString,
+                forKey: commentBubbleSelectedCustomStyleIDKey
+            )
+        } else {
+            UserDefaults.standard.removeObject(forKey: commentBubbleSelectedCustomStyleIDKey)
+        }
     }
 
     static func sanitizedCommentBubbleScale(_ value: Double) -> Double {
@@ -1036,7 +1214,7 @@ class GlobalSettings: ObservableObject {
             displayName: localized("自定義"),
             background: background,
             text: text,
-            bar: background,
+            bar: readerCustomBackgroundMode == .image ? .clear : background,
             accent: accent,
             dialogue: accent.withAlphaComponent(0.16),
             previewBackground: background,
@@ -1054,7 +1232,7 @@ class GlobalSettings: ObservableObject {
         readerFollowSystemTheme = false
         appearanceBindReaderTheme = false
         AppearanceThemePreset.activeReaderTheme = readerCustomBackgroundPreset
-        ReaderConfig.shared.refresh.send(.appearance)
+        sendReaderAppearanceRefresh()
     }
 
     @discardableResult
@@ -1065,14 +1243,20 @@ class GlobalSettings: ObservableObject {
         readerFollowSystemTheme = false
         appearanceBindReaderTheme = false
         AppearanceThemePreset.activeReaderTheme = readerCustomBackgroundPreset
-        ReaderConfig.shared.refresh.send(.appearance)
+        sendReaderAppearanceRefresh()
         return fileName
     }
 
     func clearReaderCustomBackground() {
         readerCustomBackgroundMode = .none
         AppearanceThemePreset.activeReaderTheme = appearanceBindReaderTheme ? AppearanceThemePreset.activeReaderTheme : nil
-        ReaderConfig.shared.refresh.send(.appearance)
+        sendReaderAppearanceRefresh()
+    }
+
+    private func sendReaderAppearanceRefresh() {
+        Task { @MainActor in
+            ReaderConfig.shared.refresh.send(.appearance)
+        }
     }
 
     private static func readableTextColor(for color: UIColor) -> UIColor {
@@ -1093,18 +1277,34 @@ class GlobalSettings: ObservableObject {
     }
 
     @discardableResult
-    func importReaderFont(from url: URL) throws -> UserFontInfo {
+    private func importUserFont(from url: URL) throws -> UserFontInfo {
         let info = try UserFontStorageManager.shared.importFont(fileURL: url)
         userFonts.removeAll { $0.postScriptName == info.postScriptName }
         userFonts.append(info)
         userFonts.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        return info
+    }
+
+    @discardableResult
+    func importReaderFont(from url: URL) throws -> UserFontInfo {
+        let info = try importUserFont(from: url)
         selectedReaderFontPostScript = info.postScriptName
         return info
     }
 
-    func deleteReaderFont(_ font: UserFontInfo) {
+    @discardableResult
+    func importGlobalFont(from url: URL) throws -> UserFontInfo {
+        let info = try importUserFont(from: url)
+        selectedGlobalFontPostScript = info.postScriptName
+        return info
+    }
+
+    func deleteUserFont(_ font: UserFontInfo) {
         UserFontStorageManager.shared.delete(font)
         userFonts.removeAll { $0.id == font.id }
+        if selectedGlobalFontPostScript == font.postScriptName {
+            selectedGlobalFontPostScript = nil
+        }
         if selectedReaderFontPostScript == font.postScriptName {
             selectedReaderFontPostScript = nil
         }

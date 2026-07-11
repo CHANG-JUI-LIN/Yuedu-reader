@@ -135,7 +135,7 @@ struct WebDAVSyncView: View {
             if !manager.statusMessage.isEmpty {
                 Text(manager.statusMessage)
                     .foregroundColor(DSColor.textSecondary)
-                    .font(.footnote)
+                    .font(DSFont.footnote)
             }
         }
     }
@@ -150,7 +150,7 @@ struct WebDAVSyncView: View {
                     .scaleEffect(1.4)
                 Text(manager.statusMessage)
                     .foregroundColor(.white)
-                    .font(.subheadline)
+                    .font(DSFont.subheadline)
             }
             .padding(24)
             .background(.ultraThinMaterial)

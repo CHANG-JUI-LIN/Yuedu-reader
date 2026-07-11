@@ -267,11 +267,11 @@ struct RSSOrganizeSheet: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.name)
-                        .font(.body)
+                        .font(DSFont.body)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     Text(source.url)
-                        .font(.caption)
+                        .font(DSFont.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }

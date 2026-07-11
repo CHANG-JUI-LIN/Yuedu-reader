@@ -119,21 +119,21 @@ struct BookSearchView: View {
                 HStack {
                     Spacer()
                     Text("\(aggregator.progress.completed)/\(aggregator.progress.total)")
-                        .font(.system(size: 10))
+                        .font(DSFont.fixed(size: 10))
                         .foregroundColor(.secondary)
                     if aggregator.progress.timedOut > 0 {
                         Text(localized("超時") + " \(aggregator.progress.timedOut)")
-                            .font(.system(size: 10))
+                            .font(DSFont.fixed(size: 10))
                             .foregroundColor(.orange)
                     }
                     if aggregator.progress.failed > 0 {
                         Text(localized("失敗") + " \(aggregator.progress.failed)")
-                            .font(.system(size: 10))
+                            .font(DSFont.fixed(size: 10))
                             .foregroundColor(.red)
                     }
                     if aggregator.progress.skipped > 0 {
                         Text(localized("暫跳") + " \(aggregator.progress.skipped)")
-                            .font(.system(size: 10))
+                            .font(DSFont.fixed(size: 10))
                             .foregroundColor(.secondary)
                     }
                 }
@@ -161,7 +161,7 @@ struct BookSearchView: View {
                 }
             } label: {
                 Image(systemName: paused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(DSFont.fixed(size: 20, weight: .bold))
                     .foregroundColor(DSColor.textOnAccent)
                     .frame(width: 52, height: 52)
                     .background(Circle().fill(paused ? DSColor.success : DSColor.accent))
@@ -180,10 +180,10 @@ struct BookSearchView: View {
         VStack(spacing: 16) {
             Spacer()
             Image(systemName: "pause.circle")
-                .font(.system(size: 48))
+                .font(DSFont.fixed(size: 48))
                 .foregroundColor(Color.secondary.opacity(0.4))
-            Text(localized("已暫停")).font(.headline)
-            Text(localized("點擊繼續搜索剩餘書源")).font(.subheadline).foregroundColor(.secondary)
+            Text(localized("已暫停")).font(DSFont.headline)
+            Text(localized("點擊繼續搜索剩餘書源")).font(DSFont.subheadline).foregroundColor(.secondary)
             Spacer()
         }
     }
@@ -209,7 +209,7 @@ struct BookSearchView: View {
             selectedSourceId = id
         } label: {
             Text(name)
-                .font(.caption)
+                .font(DSFont.caption)
                 .lineLimit(1)
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(selectedSourceId == id ? DSColor.accent : Color(UIColor.systemGray5))
@@ -243,10 +243,10 @@ struct BookSearchView: View {
     private var emptyResultView: some View {
         VStack(spacing: 16) {
             Spacer()
-            Image(systemName: "magnifyingglass").font(.system(size: 48)).foregroundColor(
+            Image(systemName: "magnifyingglass").font(DSFont.fixed(size: 48)).foregroundColor(
                 Color.secondary.opacity(0.3))
-            Text(localized("沒有找到") + "「\(submittedQuery)」").font(.headline)
-            Text(localized("嘗試換個關鍵字，或切換書源")).font(.subheadline).foregroundColor(.secondary)
+            Text(localized("沒有找到") + "「\(submittedQuery)」").font(DSFont.headline)
+            Text(localized("嘗試換個關鍵字，或切換書源")).font(DSFont.subheadline).foregroundColor(.secondary)
             Spacer()
         }
     }
@@ -255,15 +255,15 @@ struct BookSearchView: View {
         VStack(spacing: 16) {
             Spacer()
             if enabledSources.isEmpty {
-                Image(systemName: "exclamationmark.triangle").font(.system(size: 48))
+                Image(systemName: "exclamationmark.triangle").font(DSFont.fixed(size: 48))
                     .foregroundColor(.orange)
-                Text(localized("尚未設置書源")).font(.headline)
-                Text(localized("請先在書源管理中新增並啟用書源")).font(.subheadline).foregroundColor(.secondary)
+                Text(localized("尚未設置書源")).font(DSFont.headline)
+                Text(localized("請先在書源管理中新增並啟用書源")).font(DSFont.subheadline).foregroundColor(.secondary)
             } else {
-                Image(systemName: "text.magnifyingglass").font(.system(size: 48)).foregroundColor(
+                Image(systemName: "text.magnifyingglass").font(DSFont.fixed(size: 48)).foregroundColor(
                     Color.secondary.opacity(0.3))
-                Text(localized("輸入書名或作者搜索")).font(.subheadline).foregroundColor(.secondary)
-                Text(localized("已啟用") + " \(enabledSources.count) " + localized("個書源")).font(.caption)
+                Text(localized("輸入書名或作者搜索")).font(DSFont.subheadline).foregroundColor(.secondary)
+                Text(localized("已啟用") + " \(enabledSources.count) " + localized("個書源")).font(DSFont.caption)
                     .foregroundColor(
                         Color.secondary.opacity(0.7))
             }
@@ -319,13 +319,13 @@ struct AggregatedResultRow: View {
             // ── Info ──
             VStack(alignment: .leading, spacing: 3) {
                 Text(book.displayName)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(DSFont.fixed(size: 16, weight: .semibold))
                     .foregroundColor(.primary)
                     .lineLimit(1)
 
                 if !book.author.isEmpty {
                     Text(book.author)
-                        .font(.system(size: 12))
+                        .font(DSFont.fixed(size: 12))
                         .foregroundColor(.secondary)
                 }
 
@@ -333,7 +333,7 @@ struct AggregatedResultRow: View {
                     let introForList = book.displayIntro
                     if !introForList.isEmpty {
                         Text(introForList)
-                            .font(.system(size: 12))
+                            .font(DSFont.fixed(size: 12))
                             .foregroundColor(Color.secondary.opacity(0.8))
                             .lineLimit(2)
                             .padding(.top, 2)
@@ -347,9 +347,9 @@ struct AggregatedResultRow: View {
             // ── Source Count Badge ──
             VStack(alignment: .trailing) {
                 HStack(spacing: 3) {
-                    Image(systemName: "globe").font(.system(size: 9))
+                    Image(systemName: "globe").font(DSFont.fixed(size: 9))
                     Text("\(book.origins.count) " + localized("源"))
-                        .font(.system(size: 10, weight: .medium))
+                        .font(DSFont.fixed(size: 10, weight: .medium))
                         .lineLimit(1)
                 }
                 .foregroundColor(book.origins.count > 1 ? .white : .secondary)
@@ -373,7 +373,7 @@ struct AggregatedResultRow: View {
             .frame(width: 72, height: 96)
             .overlay(
                 Text(book.displayName)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(DSFont.fixed(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
@@ -406,14 +406,14 @@ struct SourcePickerSheet: View {
                                 .frame(width: 60, height: 80)
                                 .overlay(
                                     Text(String(searchBook.displayName.prefix(1)))
-                                        .font(.title2).foregroundColor(.secondary))
+                                        .font(DSFont.title2).foregroundColor(.secondary))
                         }
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(searchBook.displayName).font(.headline)
-                        Text(searchBook.author).font(.subheadline).foregroundColor(.secondary)
+                        Text(searchBook.displayName).font(DSFont.headline)
+                        Text(searchBook.author).font(DSFont.subheadline).foregroundColor(.secondary)
                         if !searchBook.intro.isEmpty {
-                            Text(ReaderHTMLUtilities.displayText(fromHTMLFragment: searchBook.intro)).font(.caption).foregroundColor(.secondary)
+                            Text(ReaderHTMLUtilities.displayText(fromHTMLFragment: searchBook.intro)).font(DSFont.caption).foregroundColor(.secondary)
                                 .lineLimit(2)
                         }
                     }
@@ -431,18 +431,18 @@ struct SourcePickerSheet: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(origin.sourceName)
-                                    .font(.system(size: 15, weight: .medium))
+                                    .font(DSFont.fixed(size: 15, weight: .medium))
                                     .foregroundColor(.primary)
                                 if !origin.lastChapter.isEmpty {
                                     Text(origin.lastChapter)
-                                        .font(.system(size: 12))
+                                        .font(DSFont.fixed(size: 12))
                                         .foregroundColor(.secondary)
                                         .lineLimit(1)
                                 }
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 13))
+                                .font(DSFont.fixed(size: 13))
                                 .foregroundColor(Color.secondary.opacity(0.5))
                         }
                         .padding(.vertical, 4)

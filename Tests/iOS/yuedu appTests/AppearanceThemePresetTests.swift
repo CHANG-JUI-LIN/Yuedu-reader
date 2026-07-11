@@ -1,8 +1,26 @@
 import Testing
 @testable import yuedu_app
 
-@Suite("Appearance theme presets")
+@Suite("Appearance theme presets", .serialized)
 struct AppearanceThemePresetTests {
+    @Test("image reader backgrounds keep chrome transparent")
+    @MainActor
+    func imageReaderBackgroundKeepsChromeTransparent() {
+        let settings = GlobalSettings.shared
+        let savedMode = settings.readerCustomBackgroundMode
+        let savedFileName = settings.readerCustomBackgroundImageFileName
+        defer {
+            settings.readerCustomBackgroundMode = savedMode
+            settings.readerCustomBackgroundImageFileName = savedFileName
+        }
+
+        settings.readerCustomBackgroundMode = .image
+        settings.readerCustomBackgroundImageFileName = "reader-background-test.jpg"
+
+        let barAlpha = settings.readerCustomBackgroundPreset?.bar.cgColor.alpha
+        #expect(barAlpha == 0)
+    }
+
     @Test("free users get classic plus six built-in appearance themes")
     func freeThemeCount() {
         #expect(AppearanceThemePreset.freeSolidPresets.count == 6)

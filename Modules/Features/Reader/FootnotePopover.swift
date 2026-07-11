@@ -44,7 +44,7 @@ struct FootnotePopoverContent: View {
     var body: some View {
         ScrollView {
             Text(text)
-                .font(.callout)
+                .font(DSFont.callout)
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)

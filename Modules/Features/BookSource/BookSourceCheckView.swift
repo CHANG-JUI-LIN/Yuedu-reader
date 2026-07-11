@@ -50,7 +50,7 @@ struct BookSourceCheckView: View {
         VStack(spacing: DSSpacing.xl) {
             Spacer()
             Image(systemName: "stethoscope")
-                .font(.system(size: 56))
+                .font(DSFont.fixed(size: 56))
                 .foregroundColor(DSColor.textSecondary.opacity(0.35))
             Text(localized("沒有選取的書源"))
                 .font(DSFont.title3.weight(.semibold))

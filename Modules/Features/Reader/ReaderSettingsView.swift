@@ -184,7 +184,7 @@ struct ReaderSettingsView: View {
                 HStack(spacing: 16) {
                     SettingSymbolIcon(systemName: "bold")
                     Text(localized("粗體"))
-                        .font(.body)
+                        .font(DSFont.body)
                 }
             }
         }
@@ -262,7 +262,7 @@ struct ReaderSettingsView: View {
                 Menu(localized("刪除字體")) {
                     ForEach(settings.userFonts, id: \.id) { font in
                         Button(role: .destructive) {
-                            settings.deleteReaderFont(font)
+                            settings.deleteUserFont(font)
                             readerConfig.refresh.send(.layout)
                         } label: {
                             Label(font.displayName, systemImage: "trash")
@@ -285,7 +285,7 @@ struct ReaderSettingsView: View {
                 Text(currentFontName)
                     .foregroundStyle(.secondary)
                 Image(systemName: "chevron.up.down")
-                    .font(.footnote)
+                    .font(DSFont.footnote)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -322,7 +322,7 @@ struct ReaderSettingsView: View {
             }
 
             Toggle(localized("自訂"), isOn: customLayoutBinding)
-                .font(.body)
+                .font(DSFont.body)
 
             if customLayoutEnabled {
                 if supportsSpacing {
@@ -383,7 +383,7 @@ struct ReaderSettingsView: View {
                     )
 
                     Toggle(localized("顯示標題"), isOn: $readerConfig.readerTitleVisible)
-                        .font(.body)
+                        .font(DSFont.body)
 
                     LayoutSliderRow(
                         title: localized("標題大小"),
@@ -437,13 +437,13 @@ struct ReaderSettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: DSSpacing.sm) {
                         Text(localized("對話文字高亮"))
-                            .font(.body)
+                            .font(DSFont.body)
                         if !subscriptionStore.hasAccess(.dialogueHighlight) {
                             ProLockBadge()
                         }
                     }
                     Text(localized("將引號內的對話文字染成主題強調色。"))
-                        .font(.caption)
+                        .font(DSFont.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -755,7 +755,7 @@ private struct LayoutMetricIcon: View {
         case .lineSpacing:
             HStack(spacing: 4) {
                 Image(systemName: "arrow.up.and.down")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(DSFont.fixed(size: 15, weight: .bold))
                 VStack(alignment: .leading, spacing: 4) {
                     iconLine(width: 22)
                     iconLine(width: 22)
@@ -765,9 +765,9 @@ private struct LayoutMetricIcon: View {
         case .characterSpacing:
             VStack(spacing: -2) {
                 Text("甲乙丙")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(DSFont.fixed(size: 13, weight: .semibold))
                 Image(systemName: "arrow.left.and.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(DSFont.fixed(size: 12, weight: .bold))
             }
         case .paragraphSpacing:
             VStack(alignment: .leading, spacing: 4) {
@@ -789,31 +789,31 @@ private struct LayoutMetricIcon: View {
             VStack(spacing: 3) {
                 iconLine(width: 22)
                 Image(systemName: "arrow.down.to.line")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(DSFont.fixed(size: 12, weight: .bold))
             }
         case .footerTextGap:
             VStack(spacing: 3) {
                 iconLine(width: 22)
                 Image(systemName: "arrow.up.and.down")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(DSFont.fixed(size: 12, weight: .bold))
                 iconLine(width: 14)
             }
         case .titleSize:
             Image(systemName: "textformat.size")
-                .font(.system(size: 18, weight: .semibold))
+                .font(DSFont.fixed(size: 18, weight: .semibold))
         case .titleTopSpacing:
             VStack(spacing: 3) {
                 Image(systemName: "arrow.up.to.line")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(DSFont.fixed(size: 12, weight: .bold))
                 Text("T")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(DSFont.fixed(size: 13, weight: .semibold))
             }
         case .titleBottomSpacing:
             VStack(spacing: 3) {
                 Text("T")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(DSFont.fixed(size: 13, weight: .semibold))
                 Image(systemName: "arrow.down.to.line")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(DSFont.fixed(size: 12, weight: .bold))
             }
         }
     }
@@ -836,10 +836,10 @@ private struct StepperValueRow: View {
             HStack(spacing: 16) {
                 SettingSymbolIcon(systemName: "textformat.size")
                 Text(title)
-                    .font(.body)
+                    .font(DSFont.body)
                 Spacer()
                 Text(valueText)
-                    .font(.body.monospacedDigit())
+                    .font(DSFont.body.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
         }
@@ -852,7 +852,7 @@ private struct SettingSymbolIcon: View {
 
     var body: some View {
         Image(systemName: systemName)
-            .font(.system(size: 22, weight: .regular))
+            .font(DSFont.fixed(size: 22, weight: .regular))
             .frame(width: 34, height: 28)
             .foregroundStyle(DSColor.textPrimary)
     }
@@ -915,9 +915,9 @@ private struct ToggleRow: View {
         Toggle(isOn: $isOn) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.body)
+                    .font(DSFont.body)
                 Text(subtitle)
-                    .font(.caption)
+                    .font(DSFont.caption)
                     .foregroundStyle(.secondary)
             }
         }

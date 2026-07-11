@@ -157,6 +157,89 @@ struct UserFontSettingsTests {
         #expect(bodyFont.fontName == selectedFont.fontName)
     }
 
+    @Test("global font import selects only the app interface font")
+    func globalFontImportDoesNotChangeReaderSelection() throws {
+        let settings = GlobalSettings.shared
+        let savedFonts = settings.userFonts
+        let savedGlobal = settings.selectedGlobalFontPostScript
+        let savedReader = settings.selectedReaderFontPostScript
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Ahem.ttf")
+        var imported: UserFontInfo?
+        defer {
+            if let imported {
+                UserFontStorageManager.shared.delete(imported)
+            }
+            settings.userFonts = savedFonts
+            settings.selectedGlobalFontPostScript = savedGlobal
+            settings.selectedReaderFontPostScript = savedReader
+        }
+
+        settings.selectedReaderFontPostScript = "Courier"
+        imported = try settings.importGlobalFont(from: fixtureURL)
+
+        #expect(settings.selectedGlobalFontPostScript == imported?.postScriptName)
+        #expect(settings.selectedReaderFontPostScript == "Courier")
+        #expect(settings.userFonts.contains { $0.postScriptName == imported?.postScriptName })
+    }
+
+    @Test("reader font import does not change the app interface font")
+    func readerFontImportDoesNotChangeGlobalSelection() throws {
+        let settings = GlobalSettings.shared
+        let savedFonts = settings.userFonts
+        let savedGlobal = settings.selectedGlobalFontPostScript
+        let savedReader = settings.selectedReaderFontPostScript
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Ahem.ttf")
+        var imported: UserFontInfo?
+        defer {
+            if let imported {
+                UserFontStorageManager.shared.delete(imported)
+            }
+            settings.userFonts = savedFonts
+            settings.selectedGlobalFontPostScript = savedGlobal
+            settings.selectedReaderFontPostScript = savedReader
+        }
+
+        settings.selectedGlobalFontPostScript = "ExistingGlobalFont"
+        imported = try settings.importReaderFont(from: fixtureURL)
+
+        #expect(settings.selectedReaderFontPostScript == imported?.postScriptName)
+        #expect(settings.selectedGlobalFontPostScript == "ExistingGlobalFont")
+        #expect(settings.userFonts.contains { $0.postScriptName == imported?.postScriptName })
+    }
+
+    @Test("deleting a shared font clears every selection that references it")
+    func deletingSharedFontClearsGlobalAndReaderSelections() throws {
+        let settings = GlobalSettings.shared
+        let savedFonts = settings.userFonts
+        let savedGlobal = settings.selectedGlobalFontPostScript
+        let savedReader = settings.selectedReaderFontPostScript
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Ahem.ttf")
+        let imported = try UserFontStorageManager.shared.importFont(fileURL: fixtureURL)
+        defer {
+            UserFontStorageManager.shared.delete(imported)
+            settings.userFonts = savedFonts
+            settings.selectedGlobalFontPostScript = savedGlobal
+            settings.selectedReaderFontPostScript = savedReader
+        }
+
+        settings.userFonts.removeAll { $0.postScriptName == imported.postScriptName }
+        settings.userFonts.append(imported)
+        settings.selectedGlobalFontPostScript = imported.postScriptName
+        settings.selectedReaderFontPostScript = imported.postScriptName
+
+        settings.deleteUserFont(imported)
+
+        #expect(settings.selectedGlobalFontPostScript == nil)
+        #expect(settings.selectedReaderFontPostScript == nil)
+        #expect(!settings.userFonts.contains { $0.id == imported.id })
+    }
+
     private func defaultRenderSettings(fontSize: CGFloat) -> ReaderRenderSettings {
         ReaderRenderSettings(
             theme: "sepia",

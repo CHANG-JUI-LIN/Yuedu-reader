@@ -70,7 +70,7 @@ struct IconConsistentLabelStyle: LabelStyle {
     @ViewBuilder
     private func themedIcon(_ icon: Configuration.Icon) -> some View {
         let sized = icon
-            .font(.system(size: 17, weight: .medium))
+            .font(DSFont.fixed(size: 17, weight: .medium))
             .frame(width: 28, height: 28)
         if AppearanceThemePreset.activeAppTheme != nil {
             sized.foregroundStyle(DSColor.accent)
@@ -162,7 +162,7 @@ struct DSEmptyState: View {
     var body: some View {
         VStack(spacing: DSSpacing.md) {
             Image(systemName: icon)
-                .font(.system(size: 48))
+                .font(DSFont.fixed(size: 48))
                 .foregroundColor(DSColor.textSecondary.opacity(0.5))
             Text(title)
                 .font(DSFont.headline)

@@ -8,6 +8,7 @@ struct CommentBubbleSVG {
     enum Element {
         case path(d: String, strokeColor: UIColor?, strokeWidth: CGFloat?, fillColor: UIColor?, transform: CGAffineTransform)
         case rect(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, rx: CGFloat, ry: CGFloat, strokeColor: UIColor?, strokeWidth: CGFloat?, fillColor: UIColor?, transform: CGAffineTransform)
+        case image(data: Data, rect: CGRect, transform: CGAffineTransform)
         case text(text: String, x: CGFloat, y: CGFloat, fontSize: CGFloat, fontWeight: String?, anchor: String?, color: UIColor?, transform: CGAffineTransform)
     }
     
@@ -52,6 +53,7 @@ extension CommentBubbleSVG.Element {
         switch self {
         case .path(_, _, _, _, let t): return t
         case .rect(_, _, _, _, _, _, _, _, _, let t): return t
+        case .image(_, _, let t): return t
         case .text(_, _, _, _, _, _, _, let t): return t
         }
     }
@@ -86,8 +88,7 @@ struct CommentBubbleSVGRecognizer {
         case .square:
             return squareBubbleSVG
         case .custom:
-            let trimmed = customSVG.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? builtinBubbleSVG : trimmed
+            return customSVG.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
@@ -168,7 +169,7 @@ struct CommentBubbleSVGRecognizer {
         let bubbleText = sourceBubble.displayText ?? "0"
         let templateSource = templateSVG(
             for: settings.commentBubblePresetMode,
-            customSVG: settings.commentBubbleCustomSVG
+            customSVG: settings.commentBubbleSelectedCustomStyle?.svg ?? ""
         )
         let template = recognize(src: "", svgContent: templateSource)
             ?? recognize(src: "", svgContent: builtinBubbleSVG)
@@ -332,6 +333,34 @@ struct CommentBubbleSVGRecognizer {
             }
         }
 
+        // Raster-backed SVG templates commonly embed detailed artwork as a data URI and
+        // place the replaceable count in a normal <text> node. Keep this path bounded by
+        // maximumRecognizableSVGByteCount and accept only decodable PNG/JPEG image data.
+        let imagePattern = #"<image\b[^>]*>"#
+        if let imageRegex = try? NSRegularExpression(pattern: imagePattern, options: .caseInsensitive) {
+            let ns = svg as NSString
+            let matches = imageRegex.matches(in: svg, range: NSRange(location: 0, length: ns.length))
+            for match in matches {
+                let tag = ns.substring(with: match.range)
+                guard let href = extractAttribute("href", in: tag)
+                        ?? extractAttribute("xlink:href", in: tag),
+                      let data = decodeEmbeddedRasterImage(href) else {
+                    continue
+                }
+                let x = parseCoordinate(extractAttribute("x", in: tag), viewBoxSize: viewBox.width)
+                let y = parseCoordinate(extractAttribute("y", in: tag), viewBoxSize: viewBox.height)
+                let width = parseCoordinate(extractAttribute("width", in: tag), viewBoxSize: viewBox.width)
+                let height = parseCoordinate(extractAttribute("height", in: tag), viewBoxSize: viewBox.height)
+                guard width > 0, height > 0 else { continue }
+                let transform = composedTransform(at: match.range.location, groups: groupSpans)
+                elements.append(.image(
+                    data: data,
+                    rect: CGRect(x: x, y: y, width: width, height: height),
+                    transform: transform
+                ))
+            }
+        }
+
         // 4. Parse <text> tag and content
         let textPattern = #"<text\b[^>]*>(.*?)</text>"#
         if let textRegex = try? NSRegularExpression(pattern: textPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
@@ -384,6 +413,24 @@ struct CommentBubbleSVGRecognizer {
         let ns = tag as NSString
         guard let match = regex.firstMatch(in: tag, range: NSRange(location: 0, length: ns.length)) else { return nil }
         return ns.substring(with: match.range(at: 1))
+    }
+
+    private static func decodeEmbeddedRasterImage(_ href: String) -> Data? {
+        guard let commaIndex = href.firstIndex(of: ",") else { return nil }
+        let metadata = href[..<commaIndex].lowercased()
+        guard metadata.hasPrefix("data:image/png") || metadata.hasPrefix("data:image/jpeg") else {
+            return nil
+        }
+
+        let payload = String(href[href.index(after: commaIndex)...])
+        let data: Data?
+        if metadata.contains(";base64") {
+            data = Data(base64Encoded: payload, options: .ignoreUnknownCharacters)
+        } else {
+            data = (payload.removingPercentEncoding ?? payload).data(using: .utf8)
+        }
+        guard let data, !data.isEmpty, UIImage(data: data) != nil else { return nil }
+        return data
     }
     
     private static func parseDouble(_ val: String?) -> CGFloat {
@@ -671,6 +718,10 @@ extension CommentBubbleSVGRecognizer {
                             path.stroke()
                         }
                     }
+
+                case .image(let data, let rect, let transform):
+                    context.concatenate(transform)
+                    UIImage(data: data)?.draw(in: rect)
 
                 case .text:
                     // Text is drawn in a second pass below, in canvas space — see note there.

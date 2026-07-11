@@ -40,19 +40,19 @@ struct EPUBMediaPlayerView: View {
         NavigationStack {
             VStack(spacing: 24) {
                 Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 72))
+                    .font(DSFont.fixed(size: 72))
                     .foregroundStyle(.tint)
                 Text(displayTitle)
-                    .font(.headline)
+                    .font(DSFont.headline)
                     .multilineTextAlignment(.center)
                 Text(media.sourceHref)
-                    .font(.footnote)
+                    .font(DSFont.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.footnote)
+                        .font(DSFont.footnote)
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
                 }
@@ -60,7 +60,7 @@ struct EPUBMediaPlayerView: View {
                     togglePlayback()
                 } label: {
                     Label(isPlaying ? localized("暫停") : localized("播放"), systemImage: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.headline)
+                        .font(DSFont.headline)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -87,7 +87,7 @@ struct EPUBMediaPlayerView: View {
         VStack(spacing: 12) {
             if let errorMessage {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 34))
+                    .font(DSFont.fixed(size: 34))
                     .foregroundStyle(.yellow)
                 Text(errorMessage)
                     .foregroundStyle(.white)
@@ -105,7 +105,7 @@ struct EPUBMediaPlayerView: View {
     private var closeButton: some View {
         Button { dismiss() } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 15, weight: .semibold))
+                .font(DSFont.fixed(size: 15, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 34, height: 34)
                 .background(Color.black.opacity(0.55))

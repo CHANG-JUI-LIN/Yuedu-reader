@@ -66,16 +66,16 @@ struct LegadoMigrationView: View {
         Section(header: Text(localized("說明"))) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(localized("支援從 Legado（閱讀）Android 應用匯入："))
-                    .font(.subheadline)
+                    .font(DSFont.subheadline)
                     .foregroundColor(DSColor.textPrimary)
                 Text("• " + localized("書源 JSON（書源備份 / 分享檔）"))
-                    .font(.caption)
+                    .font(DSFont.caption)
                     .foregroundColor(DSColor.textSecondary)
                 Text("• " + localized("書籍 JSON（書架備份檔）"))
-                    .font(.caption)
+                    .font(DSFont.caption)
                     .foregroundColor(DSColor.textSecondary)
                 Text(localized("請從 Legado → 備份與恢復 中匯出對應 JSON 檔案後選擇匯入。"))
-                    .font(.caption)
+                    .font(DSFont.caption)
                     .foregroundColor(DSColor.textSecondary)
                     .padding(.top, 2)
             }
@@ -102,7 +102,7 @@ struct LegadoMigrationView: View {
                     ProgressView(value: manager.progress)
                         .tint(DSColor.accent)
                     Text(localized("匯入中，請稍候…"))
-                        .font(.caption)
+                        .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                 }
                 .padding(.vertical, 4)
@@ -136,7 +136,7 @@ struct LegadoMigrationView: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.red)
                     Text(error)
-                        .font(.caption)
+                        .font(DSFont.caption)
                         .foregroundColor(.red)
                 }
             }

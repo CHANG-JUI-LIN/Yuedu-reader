@@ -63,7 +63,7 @@ struct ICloudSyncView: View {
 
             if !iCloudReady {
                 Text(localized("請確認系統設定中已登入 iCloud，且 iCloud Drive/CloudKit 可用"))
-                    .font(.footnote)
+                    .font(DSFont.footnote)
                     .foregroundColor(DSColor.textSecondary)
             }
         }
@@ -115,7 +115,7 @@ struct ICloudSyncView: View {
             if !manager.statusMessage.isEmpty {
                 Text(manager.statusMessage)
                     .foregroundColor(DSColor.textSecondary)
-                    .font(.footnote)
+                    .font(DSFont.footnote)
             }
         }
     }
@@ -145,7 +145,7 @@ struct ICloudSyncView: View {
                     .scaleEffect(1.4)
                 Text(manager.statusMessage)
                     .foregroundColor(.white)
-                    .font(.subheadline)
+                    .font(DSFont.subheadline)
             }
             .padding(24)
             .background(.ultraThinMaterial)

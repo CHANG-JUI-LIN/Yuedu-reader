@@ -55,7 +55,7 @@ struct TTSPanelView: View {
                             Text(localized("語音源設定"))
                             Spacer()
                             Image(systemName: "chevron.right")
-                                .font(.caption)
+                                .font(DSFont.caption)
                                 .foregroundColor(DSColor.textSecondary)
                         }
                     }
@@ -82,7 +82,7 @@ struct TTSPanelView: View {
                             } label: {
                                 VStack(spacing: 4) {
                                     Image(systemName: "backward.fill")
-                                        .font(.system(size: 24))
+                                        .font(DSFont.fixed(size: 24))
                                     Text(localized("上一章"))
                                         .font(DSFont.caption)
                                 }
@@ -103,7 +103,7 @@ struct TTSPanelView: View {
                                 Image(
                                     systemName: tts.playbackState == .playing ? "pause.circle.fill" : "play.circle.fill"
                                 )
-                                .font(.system(size: 52))
+                                .font(DSFont.fixed(size: 52))
                                 .foregroundColor(.accentColor)
                             }
                             .disabled(tts.playbackState == .stopped && !hasAudioSource)
@@ -116,7 +116,7 @@ struct TTSPanelView: View {
                             } label: {
                                 VStack(spacing: 4) {
                                     Image(systemName: "forward.fill")
-                                        .font(.system(size: 24))
+                                        .font(DSFont.fixed(size: 24))
                                     Text(localized("下一章"))
                                         .font(DSFont.caption)
                                 }
@@ -174,7 +174,7 @@ struct TTSPanelView: View {
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
-                                .font(.caption)
+                                .font(DSFont.caption)
                                 .foregroundColor(DSColor.textSecondary)
                         }
                     }
@@ -295,7 +295,7 @@ struct AutoReadPanelView: View {
                                     systemName: autoReader.isRunning
                                         ? "pause.circle.fill" : "play.circle.fill"
                                 )
-                                .font(.system(size: 52))
+                                .font(DSFont.fixed(size: 52))
                                 .foregroundColor(.accentColor)
                                 Text(localized(autoReader.isRunning ? "暫停" : "開始自動翻頁"))
                                     .font(DSFont.caption)

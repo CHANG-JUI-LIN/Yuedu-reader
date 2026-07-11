@@ -224,12 +224,12 @@ struct AudiobookDetailView: View {
             VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 Text(displayName)
                     .foregroundStyle(.primary)
-                    .font(.title2.weight(.bold))
+                    .font(DSFont.title2.weight(.bold))
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(displayAuthor)
-                    .font(.subheadline)
+                    .font(DSFont.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
@@ -246,7 +246,7 @@ struct AudiobookDetailView: View {
         FlowLayout(spacing: DSSpacing.sm) {
             ForEach(tags, id: \.self) { tag in
                 Text(tag)
-                    .font(.caption)
+                    .font(DSFont.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, DSSpacing.md)
                     .padding(.vertical, 6)
@@ -271,7 +271,7 @@ struct AudiobookDetailView: View {
                         ? localized("已加入書架")
                         : (addingToShelf ? localized("加入中…") : localized("加入書架")))
                 }
-                .font(.subheadline.weight(.semibold))
+                .font(DSFont.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity, minHeight: 30)
             }
             .buttonStyle(.bordered)
@@ -288,7 +288,7 @@ struct AudiobookDetailView: View {
                     }
                     Text(resumeChapterIndex > 0 ? localized("繼續播放") : localized("開始播放"))
                 }
-                .font(.subheadline.weight(.semibold))
+                .font(DSFont.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity, minHeight: 30)
             }
             .buttonStyle(.borderedProminent)
@@ -313,9 +313,9 @@ struct AudiobookDetailView: View {
 
     private var introSection: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            Text(localized("簡介")).font(.headline)
+            Text(localized("簡介")).font(DSFont.headline)
             Text(displayIntro)
-                .font(.subheadline)
+                .font(DSFont.subheadline)
                 .foregroundStyle(.secondary)
                 .lineSpacing(3)
                 .lineLimit(introExpanded ? nil : 4)
@@ -325,7 +325,7 @@ struct AudiobookDetailView: View {
                     withAnimation(DSAnimation.standard) { introExpanded.toggle() }
                 } label: {
                     Image(systemName: "chevron.down")
-                        .font(.subheadline.weight(.semibold))
+                        .font(DSFont.subheadline.weight(.semibold))
                         .foregroundStyle(DSColor.accent)
                         .rotationEffect(.degrees(introExpanded ? 180 : 0))
                         .frame(maxWidth: .infinity)
@@ -345,18 +345,18 @@ struct AudiobookDetailView: View {
     private var sourceSection: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
             Text(localized("來源"))
-                .font(.headline)
+                .font(DSFont.headline)
 
             Button {
                 if canSwitchSource { showSourcePicker = true }
             } label: {
                 HStack(spacing: DSSpacing.md) {
                     Image(systemName: "globe")
-                        .font(.subheadline)
+                        .font(DSFont.subheadline)
                         .foregroundStyle(DSColor.accent)
 
                     Text(sourceName)
-                        .font(.subheadline.weight(.medium))
+                        .font(DSFont.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
@@ -364,10 +364,10 @@ struct AudiobookDetailView: View {
 
                     if canSwitchSource {
                         Text(localized("換源"))
-                            .font(.caption)
+                            .font(DSFont.caption)
                             .foregroundStyle(DSColor.accent)
                         Image(systemName: "chevron.right")
-                            .font(.caption)
+                            .font(DSFont.caption)
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -392,18 +392,18 @@ struct AudiobookDetailView: View {
         VStack(alignment: .leading, spacing: DSSpacing.md) {
             HStack(alignment: .firstTextBaseline) {
                 Text(localized("目錄"))
-                    .font(.headline)
+                    .font(DSFont.headline)
                 Spacer()
                 if !chapters.isEmpty {
                     Text("\(chapters.count) " + localized("章"))
-                        .font(.subheadline)
+                        .font(DSFont.subheadline)
                         .foregroundStyle(.secondary)
                 }
             }
 
             if !displayLatestChapter.isEmpty {
                 Label(displayLatestChapter, systemImage: "clock.arrow.circlepath")
-                    .font(.caption)
+                    .font(DSFont.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -425,21 +425,21 @@ struct AudiobookDetailView: View {
         } else if let loadError, chapters.isEmpty {
             VStack(spacing: DSSpacing.sm) {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.title3)
+                    .font(DSFont.title3)
                     .foregroundStyle(DSColor.warning)
                 Text(loadError)
-                    .font(.caption)
+                    .font(DSFont.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Button(localized("重試")) { load() }
-                    .font(.subheadline.weight(.medium))
+                    .font(DSFont.subheadline.weight(.medium))
                     .foregroundStyle(DSColor.accent)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, DSSpacing.lg)
         } else if chapters.isEmpty {
             Text(localized("目錄為空"))
-                .font(.subheadline)
+                .font(DSFont.subheadline)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, DSSpacing.lg)
@@ -457,17 +457,17 @@ struct AudiobookDetailView: View {
                         Text(chapter.title.isEmpty
                              ? String(format: localized("第 %d 章"), index + 1)
                              : chapter.title)
-                            .font(.subheadline)
+                            .font(DSFont.subheadline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                         Spacer(minLength: DSSpacing.sm)
                         if chapter.isVip || chapter.isPay {
                             Image(systemName: "lock.fill")
-                                .font(.caption2)
+                                .font(DSFont.caption2)
                                 .foregroundStyle(DSColor.warning)
                         }
                         Image(systemName: "chevron.right")
-                            .font(.caption)
+                            .font(DSFont.caption)
                             .foregroundStyle(.tertiary)
                     }
                     .padding(.horizontal, DSSpacing.lg)
@@ -487,9 +487,9 @@ struct AudiobookDetailView: View {
                     HStack {
                         Text(localized("共") + " \(chapters.count) " + localized("章"))
                         Spacer()
-                        Image(systemName: "chevron.right").font(.caption)
+                        Image(systemName: "chevron.right").font(DSFont.caption)
                     }
-                    .font(.subheadline.weight(.medium))
+                    .font(DSFont.subheadline.weight(.medium))
                     .foregroundStyle(DSColor.accent)
                     .padding(.horizontal, DSSpacing.lg)
                     .padding(.vertical, DSSpacing.md)

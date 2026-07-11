@@ -20,14 +20,14 @@ struct LoginView: View {
             VStack(spacing: 30) {
                 VStack(alignment: .leading, spacing: 10) {
                     Image(systemName: "books.vertical.fill")
-                        .font(.system(size: 60))
+                        .font(DSFont.fixed(size: 60))
                         .foregroundColor(DSColor.accent)
                         .padding(.top, 20)
                     Text(localized("歡迎回來"))
-                        .font(.largeTitle.bold())
+                        .font(DSFont.largeTitle.bold())
 
                     Text(localized("使用帳號同步書庫、進度與偏好"))
-                        .font(.subheadline)
+                        .font(DSFont.subheadline)
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -47,7 +47,7 @@ struct LoginView: View {
                 VStack(spacing: 20) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(localized("電子郵件"))
-                            .font(.caption.bold())
+                            .font(DSFont.caption.bold())
                             .foregroundColor(.secondary)
 
                         TextField(localized("請輸入您的 Email"), text: $email)
@@ -61,7 +61,7 @@ struct LoginView: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text(localized("密碼"))
-                            .font(.caption.bold())
+                            .font(DSFont.caption.bold())
                             .foregroundColor(.secondary)
 
                         SecureField(localized("請輸入密碼"), text: $password)
@@ -93,7 +93,7 @@ struct LoginView: View {
 
                     if let errorMessage {
                         Text(errorMessage)
-                            .font(.footnote)
+                            .font(DSFont.footnote)
                             .foregroundColor(.red)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -102,7 +102,7 @@ struct LoginView: View {
                 VStack(spacing: 20) {
                     HStack {
                         Rectangle().frame(height: 0.5).foregroundColor(.secondary.opacity(0.5))
-                        Text(localized("或使用以下方式")).font(.footnote).foregroundColor(.secondary)
+                        Text(localized("或使用以下方式")).font(DSFont.footnote).foregroundColor(.secondary)
                         Rectangle().frame(height: 0.5).foregroundColor(.secondary.opacity(0.5))
                     }
 
@@ -116,7 +116,7 @@ struct LoginView: View {
                                     .scaledToFit()
                                     .frame(width: 45, height: 45)
                                 Text(localized("使用 Google 帳號登錄"))
-                                    .font(.body.bold())
+                                    .font(DSFont.body.bold())
                             }
                             .foregroundColor(.black)
                             .frame(maxWidth: .infinity)
@@ -149,7 +149,7 @@ struct LoginView: View {
                     errorMessage = nil
                 } label: {
                     Text(localized(emailMode.togglePrompt))
-                        .font(.footnote.bold())
+                        .font(DSFont.footnote.bold())
                         .foregroundColor(DSColor.accent)
                 }
                 .disabled(isLoading)
