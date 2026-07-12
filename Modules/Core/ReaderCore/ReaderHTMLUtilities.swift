@@ -884,6 +884,33 @@ enum ReaderHTMLUtilities {
             )
         }
 
+        // For proxy Qidian servers (shenmoxs.top, qd.doubi.tk, etc.),
+        // use their own /comments endpoint instead of the dead api-x.shrtxs.cn.
+        if let sourceURL = context?.sourceURL,
+           !sourceURL.isEmpty,
+           !sourceURL.contains("m.qidian.com") {
+            let path = kind == .paragraph ? "/comments" : "/chapterComments"
+            var items = [
+                URLQueryItem(name: "bookId", value: cleanBookId),
+                URLQueryItem(name: "chapterId", value: cleanChapterId)
+            ]
+            if kind == .paragraph {
+                items.append(URLQueryItem(name: "paragraphId", value: cleanParagraphId ?? ""))
+            }
+            let url = buildURL(base: sourceURL, path: path, queryItems: items)
+            logQidianReviewTarget(
+                endpoint: "sourceURL",
+                kind: kind,
+                context: context,
+                url: url,
+                appendedToken: false
+            )
+            return ReviewTarget(
+                url: url,
+                title: kind == .paragraph ? "起點段評" : "本章討論"
+            )
+        }
+
         var items = [
             URLQueryItem(name: "bookId", value: cleanBookId),
             URLQueryItem(name: "chapterId", value: cleanChapterId)

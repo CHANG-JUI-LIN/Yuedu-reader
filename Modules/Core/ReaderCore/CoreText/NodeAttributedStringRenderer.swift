@@ -36,6 +36,10 @@ struct NodeAttributedStringRenderer {
         let chapterTitleBottomSpacing: CGFloat
         let fontFamily: String?
         let renderWidth: CGFloat?
+        /// Available reader content height. EPUB tables use this real page budget when they must
+        /// be split into raster attachments; deriving it from width arbitrarily broke medium
+        /// tables into adjacent image fragments on the same page.
+        let renderHeight: CGFloat?
         let resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)?
         let imageLoader: ((String) async -> UIImage?)?
         let mediaURLResolver: ((String) -> String?)?
@@ -53,6 +57,7 @@ struct NodeAttributedStringRenderer {
             textColor: UIColor? = nil,
             fontFamily: String? = nil,
             renderWidth: CGFloat? = nil,
+            renderHeight: CGFloat? = nil,
             resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
             imageLoader: ((String) async -> UIImage?)? = nil,
             mediaURLResolver: ((String) -> String?)? = nil,
@@ -72,6 +77,7 @@ struct NodeAttributedStringRenderer {
             self.chapterTitleBottomSpacing = settings.titleBottomSpacing
             self.fontFamily = fontFamily
             self.renderWidth = renderWidth
+            self.renderHeight = renderHeight
             self.resolvedFont = resolvedFont
             self.imageLoader = imageLoader
             self.mediaURLResolver = mediaURLResolver
@@ -470,6 +476,22 @@ struct NodeAttributedStringRenderer {
             }
             result.append(await render(node: child, ctx: childCtx))
         }
+        // A display:block inline element with a ~1-character width (`span.num { display:block;
+        // width:1em; border-radius:3em }` — the chapter-seal idiom) wraps once per character in
+        // a browser, forming a vertical capsule. CoreText wraps at the column width, so bake the
+        // per-character breaks in; the decoration box then unions the one-char lines.
+        var style = style
+        if !hasBlockChildren,
+           !isVertical(style),
+           !isVertical(style),
+           applyVerticalSealBreaks(to: result, style: style, font: childCtx.font) {
+            // CSS block boxes sit at the left content edge; they do not follow inherited
+            // text-align the way this renderer's decoration positioning otherwise does.
+            // The decoration box is content-box sized, so fold the horizontal padding in.
+            style.textAlign = .left
+            style.isHorizontallyCentered = false
+            style.width = (style.width ?? 0) + style.paddingLeft + style.paddingRight
+        }
         collapseAdjacentParagraphSpacing(
             result,
             honorStructuralInsets: !isVertical(style)
@@ -569,6 +591,74 @@ struct NodeAttributedStringRenderer {
         return result
     }
 
+    /// Splits a short single-line text run into one-character paragraphs — the vertical
+    /// chapter-seal idiom (`span.num { display:block; width:1em; border:…; border-radius:3em }`).
+    /// A browser wraps the 1em box once per character; CoreText wraps at the column width, so
+    /// the breaks are baked in here and the block decoration box unions the one-char lines.
+    /// Returns true when the transform applied.
+    private func applyVerticalSealBreaks(
+        to result: NSMutableAttributedString,
+        style: RenderStyle,
+        font: UIFont
+    ) -> Bool {
+        guard let width = style.width, width > 0, width <= font.pointSize * 1.8,
+              style.borderRadius > 0,
+              result.length > 0,
+              !result.string.contains("\u{FFFC}")
+        else {
+            return false
+        }
+        let trimmed = result.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 1, trimmed.count <= 8, !trimmed.contains(where: \.isNewline) else {
+            return false
+        }
+
+        let ns = result.string as NSString
+        var pieces: [NSAttributedString] = []
+        var idx = 0
+        while idx < ns.length {
+            let charRange = ns.rangeOfComposedCharacterSequence(at: idx)
+            idx = charRange.location + charRange.length
+            let piece = result.attributedSubstring(from: charRange)
+            guard !piece.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            pieces.append(piece)
+        }
+        guard pieces.count > 1 else { return false }
+
+        let rebuilt = NSMutableAttributedString()
+        for (index, piece) in pieces.enumerated() {
+            if index > 0 {
+                rebuilt.append(NSAttributedString(
+                    string: "\n",
+                    attributes: piece.attributes(at: 0, effectiveRange: nil)
+                ))
+            }
+            rebuilt.append(piece)
+        }
+
+        // Seal lines are flush-left (inset by the seal's own padding), unindented, and
+        // internally unspaced; only the seal's outer margins on the first/last line survive.
+        let nsRebuilt = rebuilt.string as NSString
+        var location = 0
+        while location < nsRebuilt.length {
+            let paraRange = nsRebuilt.paragraphRange(for: NSRange(location: location, length: 0))
+            location = max(NSMaxRange(paraRange), location + 1)
+            guard paraRange.length > 0,
+                  let para = (rebuilt.attribute(.paragraphStyle, at: paraRange.location, effectiveRange: nil)
+                    as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+            else { continue }
+            para.alignment = .left
+            para.firstLineHeadIndent = style.paddingLeft
+            para.headIndent = style.paddingLeft
+            para.tailIndent = 0
+            if paraRange.location > 0 { para.paragraphSpacingBefore = 0 }
+            if NSMaxRange(paraRange) < nsRebuilt.length { para.paragraphSpacing = 0 }
+            rebuilt.addAttribute(.paragraphStyle, value: para, range: paraRange)
+        }
+        result.setAttributedString(rebuilt)
+        return true
+    }
+
     /// A block-level `<br>` injects a hard "\n" inside the paragraph's content. CoreText treats
     /// the following text as a new paragraph, which would re-apply the first-line indent; the
     /// legacy pipeline rendered such continuations flush with the body, so drop the indent here.
@@ -608,22 +698,54 @@ struct NodeAttributedStringRenderer {
     }
 
     /// Builds an inline-chip style from an inline element's border, or nil when it has none.
+    /// Sides are tracked individually: a bottom-only border (`.underline { border-bottom: 1px
+    /// dashed }`) must render as an underline, not as a closed box around every line fragment.
     private static func inlineBorderBoxStyle(for style: RenderStyle) -> HTMLAttributedStringBuilder.InlineBorderBoxStyle? {
-        let widths = [style.borderTopWidth, style.borderBottomWidth, style.borderLeftWidth, style.borderRightWidth]
-        guard let borderWidth = widths.first(where: { $0 > 0 }) else { return nil }
-        let borderColor = (style.borderTopColor
-            ?? style.borderLeftColor
-            ?? style.borderRightColor
-            ?? style.borderBottomColor
-            ?? style.color)?.uiColor ?? .label
+        func hasEdge(_ width: CGFloat, _ lineStyle: String?) -> Bool {
+            width > 0 && lineStyle != "none" && lineStyle != "hidden"
+        }
+        typealias Edges = HTMLAttributedStringBuilder.InlineBorderBoxStyle.Edges
+        var edges: Edges = []
+        if hasEdge(style.borderTopWidth, style.borderTopStyle) { edges.insert(.top) }
+        if hasEdge(style.borderBottomWidth, style.borderBottomStyle) { edges.insert(.bottom) }
+        if hasEdge(style.borderLeftWidth, style.borderLeftStyle) { edges.insert(.left) }
+        if hasEdge(style.borderRightWidth, style.borderRightStyle) { edges.insert(.right) }
+        if edges.isEmpty, style.backgroundColor == nil { return nil }
+
+        // Color / width / line-style come from the first side that actually has a border,
+        // so a bottom-only rule isn't misread through absent sides.
+        let sides: [(Edges, CGFloat, RenderColor?, String?)] = [
+            (.top, style.borderTopWidth, style.borderTopColor, style.borderTopStyle),
+            (.bottom, style.borderBottomWidth, style.borderBottomColor, style.borderBottomStyle),
+            (.left, style.borderLeftWidth, style.borderLeftColor, style.borderLeftStyle),
+            (.right, style.borderRightWidth, style.borderRightColor, style.borderRightStyle)
+        ]
+        let present = sides.first { edges.contains($0.0) }
+        let borderWidth = present?.1 ?? 0
+        let borderColor = (present?.2 ?? style.color)?.uiColor ?? .label
+        let dash = borderDashPattern(lineStyle: present?.3, borderWidth: borderWidth)
         return HTMLAttributedStringBuilder.InlineBorderBoxStyle(
             borderColor: borderColor,
             borderWidth: borderWidth,
             cornerRadius: style.borderRadius,
             fillColor: style.backgroundColor?.uiColor,
             paddingHorizontal: max(style.paddingLeft, style.paddingRight),
-            paddingVertical: max(style.paddingTop, style.paddingBottom)
+            paddingVertical: max(style.paddingTop, style.paddingBottom),
+            edges: edges,
+            dash: dash
         )
+    }
+
+    /// CGContext dash lengths for a CSS `border-style` keyword; empty = solid.
+    private static func borderDashPattern(lineStyle: String?, borderWidth: CGFloat) -> [CGFloat] {
+        switch lineStyle?.lowercased() {
+        case "dashed":
+            return [max(3, borderWidth * 4), max(2, borderWidth * 3)]
+        case "dotted":
+            return [max(1, borderWidth), max(1, borderWidth * 2)]
+        default:
+            return []
+        }
     }
 
     // MARK: - Apply Block Style to Context
@@ -680,7 +802,7 @@ struct NodeAttributedStringRenderer {
         let resolvedParagraphSpacing: CGFloat
         if ctx.compactBlockSpacing {
             resolvedParagraphSpacing = 0
-        } else if style.paragraphSpacingAfter > 0 {
+        } else if style.paragraphSpacingAfter != 0 {
             resolvedParagraphSpacing = style.paragraphSpacingAfter
         } else if ctx.insideDecoratedContainer && style.hasExplicitVerticalMargins {
             // Inside a decorated box the author's explicit `margin: 0` wins over the reader's
@@ -744,6 +866,7 @@ struct NodeAttributedStringRenderer {
             para.headIndent = leftInset
             para.tailIndent = rightInset > 0 ? -rightInset : 0
         }
+
         para.alignment = nsTextAlignment(from: style.textAlign)
         para.baseWritingDirection = style.baseWritingDirection
         newCtx.paragraphStyle = para
@@ -1283,64 +1406,97 @@ struct NodeAttributedStringRenderer {
             maxWidth = await MainActor.run { UIScreen.main.bounds.width }
         }
 
-        let image = await MainActor.run {
-            HTMLTableRasterizer.render(
+        let tableImages = await loadTableImages(table)
+        let rasterPages = await MainActor.run {
+            HTMLTableRasterizer.renderPages(
                 table: table,
                 maxWidth: maxWidth,
+                maxPageHeight: config.renderHeight,
                 baseFont: blockCtx.font,
                 textColor: blockCtx.textColor,
-                backgroundColor: config.backgroundColor
+                backgroundColor: config.backgroundColor,
+                resolvedFont: config.resolvedFont,
+                imagesBySource: tableImages
             )
         }
-        guard let image else {
+        guard !rasterPages.isEmpty else {
             return NSAttributedString(string: table.accessibilityText + "\n", attributes: blockCtx.baseAttributes)
         }
 
-        var tableStyle = style
-        tableStyle.width = image.size.width
-        tableStyle.height = image.size.height
-        // The paragraph's centering insets already applied `table { width: 90% }` when the
-        // bitmap width was chosen above; leaving the percent on the style would make the image
-        // metrics multiply it in AGAIN (0.9 × 0.9 ≈ 0.8 of the column — the residual "压缩").
-        tableStyle.rawWidthPercent = nil
-        let metrics = await resolvedImageMetrics(
-            image: image,
-            style: tableStyle,
-            font: blockCtx.font,
-            displayMode: .block,
-            availableWidthOverride: availableImageWidth(in: blockCtx)
-        )
-        let placeholder = NSMutableAttributedString(
-            attributedString: await makeImagePlaceholder(
+        let output = NSMutableAttributedString()
+        for (pageIndex, rasterPage) in rasterPages.enumerated() {
+            let image = rasterPage.image
+            var tableStyle = style
+            tableStyle.width = image.size.width
+            tableStyle.height = image.size.height
+            // The paragraph's centering insets already applied `table { width: 90% }` when the
+            // bitmap width was chosen above; leaving the percent on the style would make the image
+            // metrics multiply it in AGAIN (0.9 × 0.9 ≈ 0.8 of the column — the residual "压缩").
+            tableStyle.rawWidthPercent = nil
+            let metrics = await resolvedImageMetrics(
                 image: image,
                 style: tableStyle,
-                ctx: blockCtx,
-                imageSource: "table",
-                imageAlt: table.accessibilityText,
+                font: blockCtx.font,
                 displayMode: .block,
-                precomputedMetrics: metrics
+                availableWidthOverride: availableImageWidth(in: blockCtx)
             )
-        )
-        let range = NSRange(location: 0, length: placeholder.length)
-        placeholder.addAttribute(
-            .paragraphStyle,
-            value: imageBlockParagraphStyle(
-                base: blockCtx.paragraphStyle,
-                metrics: metrics,
-                // `table { margin: 1em auto }` — without this the placeholder line stays
-                // left-pinned and the table hugs the left edge with all the slack on the right.
-                isHorizontallyCentered: style.isHorizontallyCentered
-            ),
-            range: range
-        )
-        placeholder.addAttribute(
-            HTMLAttributedStringBuilder.semanticTagAttribute,
-            value: "table",
-            range: range
-        )
-        let output = NSMutableAttributedString(attributedString: placeholder)
-        output.append(NSAttributedString(string: "\n", attributes: blockCtx.baseAttributes))
+            let placeholder = NSMutableAttributedString(
+                attributedString: await makeImagePlaceholder(
+                    image: image,
+                    style: tableStyle,
+                    ctx: blockCtx,
+                    imageSource: "table",
+                    imageAlt: table.accessibilityText,
+                    displayMode: .block,
+                    precomputedMetrics: metrics,
+                    linkRegions: normalizedLinkRegions(
+                        rasterPage.linkRegions,
+                        imageSize: image.size
+                    ),
+                    allowsPreview: false
+                )
+            )
+            let range = NSRange(location: 0, length: placeholder.length)
+            let baseParagraph = blockCtx.paragraphStyle.mutableCopy() as? NSMutableParagraphStyle
+                ?? NSMutableParagraphStyle()
+            if pageIndex > 0 { baseParagraph.paragraphSpacingBefore = 0 }
+            if pageIndex < rasterPages.count - 1 { baseParagraph.paragraphSpacing = 0 }
+            placeholder.addAttribute(
+                .paragraphStyle,
+                value: imageBlockParagraphStyle(
+                    base: baseParagraph,
+                    metrics: metrics,
+                    // `table { margin: 1em auto }` — without this the placeholder line stays
+                    // left-pinned and the table hugs the left edge with all the slack on the right.
+                    isHorizontallyCentered: style.isHorizontallyCentered
+                ),
+                range: range
+            )
+            placeholder.addAttribute(
+                HTMLAttributedStringBuilder.semanticTagAttribute,
+                value: "table",
+                range: range
+            )
+            output.append(placeholder)
+            output.append(NSAttributedString(string: "\n", attributes: blockCtx.baseAttributes))
+        }
         return output
+    }
+
+    private func loadTableImages(_ table: HTMLTableModel) async -> [String: UIImage] {
+        guard let imageLoader = config.imageLoader else { return [:] }
+        let sources = Set(table.rows.flatMap { row in
+            row.cells.flatMap { cell in
+                cell.textRuns.compactMap(\.imageSource)
+            }
+        })
+        var images: [String: UIImage] = [:]
+        for source in sources {
+            if let image = await imageLoader(source) {
+                images[source] = image
+            }
+        }
+        return images
     }
 
     private func renderMedia(
@@ -1494,7 +1650,9 @@ struct NodeAttributedStringRenderer {
         imageSource: String,
         imageAlt: String? = nil,
         displayMode: ImageRunInfo.DisplayMode,
-        precomputedMetrics: ImageMetrics? = nil
+        precomputedMetrics: ImageMetrics? = nil,
+        linkRegions: [ImageLinkRegion] = [],
+        allowsPreview: Bool = true
     ) async -> NSAttributedString {
         let metrics: ImageMetrics
         if let precomputedMetrics {
@@ -1524,12 +1682,33 @@ struct NodeAttributedStringRenderer {
                 imageAlt: imageAlt,
                 displayMode: displayMode,
                 opacity: style.opacity,
-                isTextSized: style.isTextSizedImage
+                isTextSized: style.isTextSizedImage,
+                linkRegions: linkRegions,
+                allowsPreview: allowsPreview
             )
         )
         let range = NSRange(location: 0, length: placeholder.length)
         placeholder.addAttributes(ctx.baseAttributes, range: range)
         return placeholder
+    }
+
+    private func normalizedLinkRegions(
+        _ regions: [HTMLTableRasterLinkRegion],
+        imageSize: CGSize
+    ) -> [ImageLinkRegion] {
+        guard imageSize.width > 0, imageSize.height > 0 else { return [] }
+        return regions.compactMap { region in
+            guard !region.href.isEmpty, !region.rect.isEmpty else { return nil }
+            return ImageLinkRegion(
+                normalizedRect: CGRect(
+                    x: region.rect.minX / imageSize.width,
+                    y: region.rect.minY / imageSize.height,
+                    width: region.rect.width / imageSize.width,
+                    height: region.rect.height / imageSize.height
+                ),
+                href: region.href
+            )
+        }
     }
 
     private func relaxParagraphsContainingTallRuns(_ attributedString: NSMutableAttributedString) {
@@ -2199,19 +2378,28 @@ struct NodeAttributedStringRenderer {
                let currPara = result.attribute(.paragraphStyle, at: currRange.location, effectiveRange: nil) as? NSParagraphStyle {
                 let spacing = prevPara.paragraphSpacing
                 let spacingBefore = currPara.paragraphSpacingBefore
-                if spacing > 0 || spacingBefore > 0 {
+                if spacing != 0 || spacingBefore != 0 {
                     // CSS collapses *margins* only. A decorated container's padding+border share
                     // of the reserved spacing (folded in by `reserveContainerBlockInsets`) is
                     // structural: the drawn box extends outward by exactly that amount, so moving
                     // it to the neighbour would make the border overlap the neighbour's line
                     // (chat-bubble borders slicing through the sender name above them).
-                    let prevStructural = honorStructuralInsets
+                    let prevStructural = honorStructuralInsets && spacing > 0
                         ? min(spacing, Self.containerNonCollapsibleInsets(in: result, paragraphRange: prevRange).bottom)
                         : 0
-                    let currStructural = honorStructuralInsets
+                    let currStructural = honorStructuralInsets && spacingBefore > 0
                         ? min(spacingBefore, Self.containerNonCollapsibleInsets(in: result, paragraphRange: currRange).top)
                         : 0
-                    let collapsed = max(spacing - prevStructural, spacingBefore - currStructural)
+                    let previousMargin = spacing - prevStructural
+                    let currentMargin = spacingBefore - currStructural
+                    let collapsed: CGFloat
+                    if previousMargin >= 0, currentMargin >= 0 {
+                        collapsed = max(previousMargin, currentMargin)
+                    } else if previousMargin <= 0, currentMargin <= 0 {
+                        collapsed = min(previousMargin, currentMargin)
+                    } else {
+                        collapsed = previousMargin + currentMargin
+                    }
                     if prevStructural > 0 || currStructural > 0 {
                         AppLogger.render("⟐ boxGap", context: [
                             "prevSpacing": Int(spacing),
@@ -2442,6 +2630,19 @@ struct NodeAttributedStringRenderer {
         hugsContent: Bool = false,
         backgroundImage: HTMLAttributedStringBuilder.BlockRenderStyle.BackgroundImage? = nil
     ) -> HTMLAttributedStringBuilder.BlockRenderStyle? {
+        // Dash pattern from the first side that actually has a border (matches the
+        // inline-chip extraction; per-side mixed styles are not modeled).
+        let borderSides: [(CGFloat, String?)] = [
+            (style.borderTopWidth, style.borderTopStyle),
+            (style.borderBottomWidth, style.borderBottomStyle),
+            (style.borderLeftWidth, style.borderLeftStyle),
+            (style.borderRightWidth, style.borderRightStyle)
+        ]
+        let presentSide = borderSides.first { $0.0 > 0 && $0.1 != "none" && $0.1 != "hidden" }
+        let borderDash = Self.borderDashPattern(
+            lineStyle: presentSide?.1,
+            borderWidth: presentSide?.0 ?? 0
+        )
         let renderStyle = HTMLAttributedStringBuilder.BlockRenderStyle(
             backgroundFillColor: style.backgroundColor?.uiColor,
             borderTopWidth: style.borderTopWidth,
@@ -2466,7 +2667,8 @@ struct NodeAttributedStringRenderer {
             borderRadius: style.borderRadius,
             avoidsPageBreakInside: style.avoidsPageBreakInside,
             hugsContent: hugsContent,
-            backgroundImage: backgroundImage
+            backgroundImage: backgroundImage,
+            borderDash: borderDash
         )
         return renderStyle.hasVisualDecoration ? renderStyle : nil
     }

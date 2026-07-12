@@ -5,7 +5,22 @@ struct AttributedChapterBuildResult {
     let attributedString: NSAttributedString
     let imagePage: HTMLAttributedStringBuilder.ImagePage?
     let pageBackgroundImage: UIImage?
+    let pageBackgroundColor: UIColor?
     let anchorOffsets: [String: Int]
+
+    init(
+        attributedString: NSAttributedString,
+        imagePage: HTMLAttributedStringBuilder.ImagePage?,
+        pageBackgroundImage: UIImage?,
+        pageBackgroundColor: UIColor? = nil,
+        anchorOffsets: [String: Int]
+    ) {
+        self.attributedString = attributedString
+        self.imagePage = imagePage
+        self.pageBackgroundImage = pageBackgroundImage
+        self.pageBackgroundColor = pageBackgroundColor
+        self.anchorOffsets = anchorOffsets
+    }
 }
 
 enum AttributedStringBuildingError: LocalizedError, Equatable {

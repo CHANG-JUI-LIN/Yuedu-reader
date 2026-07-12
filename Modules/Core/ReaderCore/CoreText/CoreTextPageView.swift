@@ -869,7 +869,13 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             return
         }
 
-        let point = gesture.location(in: self)
+        handleTap(at: gesture.location(in: self))
+    }
+
+    private func handleTap(at point: CGPoint) {
+        guard let layout,
+              localPageIndex < layout.pageRanges.count
+        else { return }
 
         if interactor.selectionManager.hasSelection {
             // If tap is on the existing selection, keep it and show menu again
@@ -898,7 +904,8 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             // must follow its link, not open the image viewer. The attachment already carries the
             // resolved `linkHref`, so trust it directly — a 1em footnote glyph is too small to
             // reliably reverse-map a tap point back to its placeholder character.
-            if let href = attachment.linkHref, !href.isEmpty {
+            let renderPoint = pointInRenderCoordinates(point, layout: layout)
+            if let href = attachment.linkTarget(at: renderPoint)?.href, !href.isEmpty {
                 // Duokan footnote → anchored popover at the marker (not a page jump / bottom sheet).
                 if let note = FootnoteStore.text(spineIndex: layout.spineIndex, href: href) {
                     onFootnoteTap?(note, viewRect(forRenderRect: attachment.rect))
@@ -914,8 +921,11 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
                 onInternalLinkTap?(href)
                 return
             }
-            // Block illustrations carry no link and fall through to the preview as before.
-            onImageAttachmentTap?(attachment)
+            // Rasterized tables are interaction surfaces, not standalone illustrations. A tap
+            // outside a table link must not open a full-screen preview of the table bitmap.
+            if attachment.allowsPreview {
+                onImageAttachmentTap?(attachment)
+            }
             return
         }
 
@@ -947,6 +957,22 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         }
 
         onInternalLinkTap?(href)
+    }
+
+    /// Test seam for exercising the same tap path used by the gesture recognizer.
+    func debugHandleTap(at point: CGPoint) {
+        handleTap(at: point)
+    }
+
+    private func pointInRenderCoordinates(
+        _ point: CGPoint,
+        layout: CoreTextPaginator.ChapterLayout
+    ) -> CGPoint {
+        guard bounds.width > 0, bounds.height > 0 else { return point }
+        return CGPoint(
+            x: (point.x - bounds.minX) * layout.renderSize.width / bounds.width,
+            y: (point.y - bounds.minY) * layout.renderSize.height / bounds.height
+        )
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {

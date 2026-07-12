@@ -260,6 +260,17 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     func readerRequestsNextChapter() { loadNextChapter() }
     func readerRequestsPreviousChapter() { loadPreviousChapter() }
     func readerToggleControls() { state.showControls.toggle() }
+    func readerToggleBookmark() {
+        guard chapters.indices.contains(chapterIndex) else { return }
+        store?.toggleBookmark(
+            bookId: book.id,
+            chapterIndex: chapterIndex,
+            chapterTitle: chapters[chapterIndex].title,
+            position: .chapterStart(chapterIndex),
+            excerpt: ""
+        )
+    }
+    func readerShowTableOfContents() { state.showChapterList = true }
 
     // MARK: Prefetching
 

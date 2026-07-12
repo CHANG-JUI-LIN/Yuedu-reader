@@ -534,6 +534,7 @@ private struct ReaderCustomBackgroundOptionsView: View {
     let onImageImported: () -> Void
 
     @ObservedObject private var settings = GlobalSettings.shared
+    @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @State private var showingImageImporter = false
     @State private var importAlert: ReaderCustomBackgroundImportAlert?
 
@@ -557,10 +558,12 @@ private struct ReaderCustomBackgroundOptionsView: View {
                     Label(localized("RGB 調色"), systemImage: "paintpalette")
                 }
 
-                Button {
-                    showingImageImporter = true
-                } label: {
-                    Label(localized("導入圖片背景"), systemImage: "photo")
+                if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsBackgroundImageImport {
+                    Button {
+                        showingImageImporter = true
+                    } label: {
+                        Label(localized("導入圖片背景"), systemImage: "photo")
+                    }
                 }
             } footer: {
                 Text(localized("圖片會直接顯示在閱讀背景與主題預覽中。"))

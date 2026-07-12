@@ -133,9 +133,9 @@ extension ReaderView {
             titleTopSpacing: readerConfig.readerTitleTopSpacing,
             titleBottomSpacing: readerConfig.readerTitleBottomSpacing,
             readerBackgroundImageURL: activeReaderBackgroundImageURL,
-            dialogueHighlightColor: readerTheme.dialogueHighlightColor(
-                enabled: GlobalSettings.shared.readerDialogueHighlightEnabled
-            )
+            dialogueHighlightColor: GlobalSettings.shared.readerDialogueHighlightEnabled
+                ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueHighlightColorHex)
+                : nil
         )
     }
 

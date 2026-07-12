@@ -23,4 +23,6 @@ protocol FixedPageReaderContainer: AnyObject {
     func readerRequestsNextChapter()
     func readerRequestsPreviousChapter()
     func readerToggleControls()
+    func readerToggleBookmark()
+    func readerShowTableOfContents()
 }

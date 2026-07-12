@@ -1,6 +1,63 @@
 import CoreText
 import UIKit
 
+/// Paints the publication-authored page backdrop behind a scroll chunk, including the reader's
+/// horizontal/vertical text insets. Large chunks repeat the artwork at viewport-sized intervals
+/// instead of stretching one page texture across several screen heights.
+final class CoreTextChunkBackdropView: UIView {
+    var chunk: CoreTextChunk?
+    var scrollAxis: CoreTextScrollAxis = .vertical
+    var viewportSize: CGSize = .zero
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+        isUserInteractionEnabled = false
+        contentMode = .redraw
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ rect: CGRect) {
+        guard let chunk else { return }
+        if let backgroundColor = chunk.pageBackgroundColor {
+            backgroundColor.setFill()
+            UIRectFill(bounds)
+        }
+        guard let backgroundImage = chunk.pageBackgroundImage else { return }
+        for tile in Self.backgroundTileRects(
+            in: bounds,
+            viewportSize: viewportSize,
+            axis: scrollAxis
+        ) {
+            CoreTextPageView.drawPageBackground(backgroundImage, in: tile)
+        }
+    }
+
+    static func backgroundTileRects(
+        in bounds: CGRect,
+        viewportSize: CGSize,
+        axis: CoreTextScrollAxis
+    ) -> [CGRect] {
+        guard bounds.width > 0, bounds.height > 0 else { return [] }
+        switch axis {
+        case .vertical:
+            let tileHeight = viewportSize.height > 0 ? viewportSize.height : bounds.height
+            let tileWidth = max(bounds.width, viewportSize.width > 0 ? viewportSize.width : bounds.width)
+            return stride(from: bounds.minY, to: bounds.maxY, by: tileHeight).map { y in
+                CGRect(x: bounds.minX, y: y, width: tileWidth, height: tileHeight)
+            }
+        case .horizontalRTL:
+            let tileWidth = viewportSize.width > 0 ? viewportSize.width : bounds.width
+            let tileHeight = max(bounds.height, viewportSize.height > 0 ? viewportSize.height : bounds.height)
+            return stride(from: bounds.minX, to: bounds.maxX, by: tileWidth).map { x in
+                CGRect(x: x, y: bounds.minY, width: tileWidth, height: tileHeight)
+            }
+        }
+    }
+}
+
 /// Draws the CTFrame directly. Handles the CoreText coordinate system inversion.
 final class CoreTextChunkDrawView: UIView {
     var chunk: CoreTextChunk?
@@ -84,6 +141,7 @@ final class CoreTextChunkDrawView: UIView {
 final class CoreTextChunkCollectionCell: UICollectionViewCell {
     static let reuseIdentifier = "CoreTextChunkCollectionCell"
 
+    private let backdropView = CoreTextChunkBackdropView()
     let drawView = CoreTextChunkDrawView()
     private let playbackOverlay = InteractionOverlayView()
     let overlay = InteractionOverlayView()
@@ -91,6 +149,8 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
     private var topConstraint: NSLayoutConstraint!
     private var widthConstraint: NSLayoutConstraint!
     private var heightConstraint: NSLayoutConstraint!
+    private var boundAxis: CoreTextScrollAxis = .vertical
+    private var boundLeadingSpacing: CGFloat = 0
     private(set) var currentChunk: CoreTextChunk?
     private var annotationOverlays: [LayerKey: InteractionOverlayView] = [:]
 
@@ -98,6 +158,7 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         super.init(frame: frame)
         backgroundColor = .clear
         contentView.backgroundColor = .clear
+        backdropView.translatesAutoresizingMaskIntoConstraints = true
         drawView.translatesAutoresizingMaskIntoConstraints = false
         playbackOverlay.translatesAutoresizingMaskIntoConstraints = false
         overlay.translatesAutoresizingMaskIntoConstraints = false
@@ -105,6 +166,7 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         playbackOverlay.showsHandles = false
         overlay.fillColor = UIColor.systemYellow.withAlphaComponent(0.30)
         overlay.handleColor = UIColor(red: 0.63, green: 0.40, blue: 0.00, alpha: 1.0)
+        contentView.addSubview(backdropView)
         contentView.addSubview(drawView)
         contentView.addSubview(playbackOverlay)
         contentView.addSubview(overlay)
@@ -137,9 +199,15 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         axis: CoreTextScrollAxis,
         horizontalInset: CGFloat,
         verticalInset: CGFloat,
-        leadingSpacing: CGFloat
+        leadingSpacing: CGFloat,
+        viewportSize: CGSize
     ) {
         currentChunk = chunk
+        boundAxis = axis
+        boundLeadingSpacing = leadingSpacing
+        backdropView.chunk = chunk
+        backdropView.scrollAxis = axis
+        backdropView.viewportSize = viewportSize
         drawView.chunk = chunk
 
         switch axis {
@@ -155,8 +223,34 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
             heightConstraint.constant = chunk.height
         }
 
+        setNeedsLayout()
+        backdropView.setNeedsDisplay()
         drawView.setNeedsDisplay()
         overlay.clearSelection()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let chunk = currentChunk else {
+            backdropView.frame = .zero
+            return
+        }
+        switch boundAxis {
+        case .vertical:
+            backdropView.frame = CGRect(
+                x: 0,
+                y: boundLeadingSpacing,
+                width: contentView.bounds.width,
+                height: chunk.height
+            )
+        case .horizontalRTL:
+            backdropView.frame = CGRect(
+                x: boundLeadingSpacing,
+                y: 0,
+                width: chunk.width,
+                height: contentView.bounds.height
+            )
+        }
     }
 
     func applySelection(chapterIndex: Int, chapterRange: NSRange?) {
@@ -312,6 +406,8 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         drawView.chunk?.evictFrame()
+        backdropView.chunk = nil
+        backdropView.frame = .zero
         drawView.chunk = nil
         currentChunk = nil
         overlay.clearSelection()

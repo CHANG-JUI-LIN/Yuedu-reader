@@ -208,6 +208,81 @@ struct OnlineReaderPipelineUnificationTests {
         #expect(attr.string.contains("一个老旧的钨丝灯"))
     }
 
+    @Test("rs-native review blocks keep online paragraph geometry")
+    func nativeReviewBlocksKeepOnlineParagraphGeometry() async throws {
+        // Exact structure emitted by 大灰狼起点.getCommentsios when 段評 is enabled.
+        let reviewHTML = #"""
+        <html><body><article id="reader-content">
+        <h1>第177章 让我也成为你们的主人吧</h1>
+        <div rs-native>白豆蔻农场之中的第一段正文。<comment count="4" onPress="java.showReadingBrowser('https://qd.doubi.tk/comments?bookId=1&amp;chapterId=2&amp;paragraphId=1','起点段评')"></comment></div>
+        <div rs-native>这是构筑师的第二段正文。</div>
+        <div rs-native>洛克知道眼前还有第三段正文。</div>
+        </article></body></html>
+        """#
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(
+                index: 0,
+                title: "第177章 让我也成为你们的主人吧",
+                plainText: "白豆蔻农场之中的第一段正文。\n这是构筑师的第二段正文。\n洛克知道眼前还有第三段正文。",
+                body: .html(reviewHTML),
+                sourceHref: "https://m.qidian.com/chapter/1/2/"
+            )
+        ])
+        let builder = OnlineProviderAttributedStringBuilder(
+            provider: provider,
+            renderSize: CGSize(width: 320, height: 640)
+        )
+
+        let result = try await builder.buildChapter(
+            at: 0,
+            settings: Self.settings,
+            themeTextColor: UIColor.label,
+            themeBackgroundColor: UIColor.systemBackground
+        )
+        let attributed = result.attributedString
+        let ns = attributed.string as NSString
+        let bodyTexts = [
+            "白豆蔻农场之中的第一段正文。",
+            "这是构筑师的第二段正文。",
+            "洛克知道眼前还有第三段正文。",
+        ]
+        let bodyStarts = try bodyTexts.map { text -> Int in
+            let range = ns.range(of: text)
+            return try #require(range.location == NSNotFound ? nil : range.location)
+        }
+
+        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
+        let frame = CTFramesetterCreateFrame(
+            framesetter,
+            CFRange(location: 0, length: attributed.length),
+            CGPath(rect: CGRect(x: 0, y: 0, width: 320, height: 640), transform: nil),
+            nil
+        )
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: lines.count), &origins)
+
+        let bodyOrigins = try bodyStarts.map { start -> CGPoint in
+            let lineIndex = try #require(
+                lines.firstIndex { CTLineGetStringRange($0).location == start }
+            )
+            return origins[lineIndex]
+        }
+        for (start, origin) in zip(bodyStarts, bodyOrigins) {
+            let paragraph = try #require(
+                attributed.attribute(.paragraphStyle, at: start, effectiveRange: nil)
+                    as? NSParagraphStyle
+            )
+            #expect(abs(paragraph.firstLineHeadIndent - Self.settings.fontSize * 2) < 0.5)
+            #expect(abs(paragraph.paragraphSpacing - Self.settings.paragraphSpacing) < 0.5)
+            #expect(abs(origin.x - Self.settings.fontSize * 2) < 0.5)
+        }
+        for index in 1..<bodyOrigins.count {
+            let baselineGap = bodyOrigins[index - 1].y - bodyOrigins[index].y
+            #expect(baselineGap > Self.settings.fontSize * Self.settings.lineHeightMultiple)
+        }
+    }
+
     // MARK: - Legacy parity: provider builder renders cached HTML images
 
     @Test("provider builder renders cached HTML images")

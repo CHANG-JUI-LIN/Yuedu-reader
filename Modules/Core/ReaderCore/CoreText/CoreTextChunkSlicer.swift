@@ -24,7 +24,9 @@ enum CoreTextChunkSlicer {
         chapterIndex: Int,
         contentWidth: CGFloat,
         heightCap: CGFloat = defaultHeightCap,
-        writingMode: ReaderWritingMode = .horizontal
+        writingMode: ReaderWritingMode = .horizontal,
+        pageBackgroundColor: UIColor? = nil,
+        pageBackgroundImage: UIImage? = nil
     ) -> Output {
         let framesetter = CoreTextFramesetterFactory.make(for: attrStr)
         let totalLen = attrStr.length
@@ -39,7 +41,9 @@ enum CoreTextChunkSlicer {
                 chapterIndex: chapterIndex,
                 contentHeight: contentWidth,
                 widthCap: heightCap,
-                writingMode: writingMode
+                writingMode: writingMode,
+                pageBackgroundColor: pageBackgroundColor,
+                pageBackgroundImage: pageBackgroundImage
             )
         }
 
@@ -175,7 +179,9 @@ enum CoreTextChunkSlicer {
                 writingMode: writingMode,
                 floatNotch: frameBuild.floatNotch,
                 floatAttachments: frameBuild.floatAttachments,
-                blockRenderables: decorations
+                blockRenderables: decorations,
+                pageBackgroundColor: pageBackgroundColor,
+                pageBackgroundImage: pageBackgroundImage
             ))
 
             offset = actualRange.location + actualRange.length
@@ -190,7 +196,9 @@ enum CoreTextChunkSlicer {
         chapterIndex: Int,
         contentHeight: CGFloat,
         widthCap: CGFloat,
-        writingMode: ReaderWritingMode
+        writingMode: ReaderWritingMode,
+        pageBackgroundColor: UIColor?,
+        pageBackgroundImage: UIImage?
     ) -> Output {
         let totalLen = attrStr.length
         var chunks: [CoreTextChunk] = []
@@ -258,7 +266,9 @@ enum CoreTextChunkSlicer {
                 frame: finalFrame,
                 writingMode: writingMode,
                 blockRenderables: [],
-                inlineAnnotations: annotations
+                inlineAnnotations: annotations,
+                pageBackgroundColor: pageBackgroundColor,
+                pageBackgroundImage: pageBackgroundImage
             ))
             offset = actualRange.location + actualRange.length
         }

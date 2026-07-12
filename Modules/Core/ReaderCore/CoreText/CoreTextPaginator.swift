@@ -6,6 +6,11 @@ final class CoreTextPaginator {
     }
 
     struct RenderedAttachment {
+        struct LinkTarget {
+            let href: String
+            let rect: CGRect
+        }
+
         let rect: CGRect
         let image: UIImage
         let opacity: CGFloat
@@ -14,6 +19,8 @@ final class CoreTextPaginator {
         let linkHref: String?
         let mediaAttachment: EPUBMediaAttachment?
         let originalSize: CGSize
+        let linkRegions: [ImageLinkRegion]
+        let allowsPreview: Bool
 
         init(
             rect: CGRect,
@@ -23,7 +30,9 @@ final class CoreTextPaginator {
             alt: String? = nil,
             linkHref: String? = nil,
             mediaAttachment: EPUBMediaAttachment? = nil,
-            originalSize: CGSize? = nil
+            originalSize: CGSize? = nil,
+            linkRegions: [ImageLinkRegion] = [],
+            allowsPreview: Bool = true
         ) {
             self.rect = rect
             self.image = image
@@ -33,6 +42,52 @@ final class CoreTextPaginator {
             self.linkHref = linkHref
             self.mediaAttachment = mediaAttachment
             self.originalSize = originalSize ?? image.size
+            self.linkRegions = linkRegions
+            self.allowsPreview = allowsPreview
+        }
+
+        /// Resolves either a whole-image link or a precise embedded link region at a render-space point.
+        func linkTarget(at point: CGPoint, hitSlop: CGFloat = 8) -> LinkTarget? {
+            if let linkHref, !linkHref.isEmpty,
+               rect.insetBy(dx: -hitSlop, dy: -hitSlop).contains(point) {
+                return LinkTarget(href: linkHref, rect: rect)
+            }
+            guard rect.width > 0, rect.height > 0 else { return nil }
+            let targets = linkRegions.map { region in
+                LinkTarget(href: region.href, rect: CGRect(
+                    x: rect.minX + region.normalizedRect.minX * rect.width,
+                    y: rect.minY + region.normalizedRect.minY * rect.height,
+                    width: region.normalizedRect.width * rect.width,
+                    height: region.normalizedRect.height * rect.height
+                ))
+            }
+            if let exact = targets.first(where: { $0.rect.contains(point) }) {
+                return exact
+            }
+            return targets
+                .filter { $0.rect.insetBy(dx: -hitSlop, dy: -hitSlop).contains(point) }
+                .min { lhs, rhs in
+                    let lhsX = lhs.rect.midX - point.x
+                    let lhsY = lhs.rect.midY - point.y
+                    let rhsX = rhs.rect.midX - point.x
+                    let rhsY = rhs.rect.midY - point.y
+                    return lhsX * lhsX + lhsY * lhsY < rhsX * rhsX + rhsY * rhsY
+                }
+        }
+
+        func replacingLinkHref(_ href: String) -> RenderedAttachment {
+            RenderedAttachment(
+                rect: rect,
+                image: image,
+                opacity: opacity,
+                sourceHref: sourceHref,
+                alt: alt,
+                linkHref: href,
+                mediaAttachment: mediaAttachment,
+                originalSize: originalSize,
+                linkRegions: linkRegions,
+                allowsPreview: allowsPreview
+            )
         }
     }
 
@@ -76,6 +131,9 @@ final class CoreTextPaginator {
         let blockRenderables: [Int: [RenderedBlockRenderable]]
         let pageKinds: [PageKind]
         let pageBackgroundImage: UIImage?
+        /// Publication-authored body fill painted beneath its (possibly transparent) background
+        /// image. Kept separate so reader theme changes do not erase the authored composition.
+        let authoredBackgroundColor: UIColor?
         /// Reader-selected image background. Unlike an authored EPUB body
         /// background, this is a user preference and takes precedence at draw time.
         var readerBackgroundImage: UIImage? = nil
@@ -192,6 +250,9 @@ final class CoreTextPaginator {
             }
 
             let newFramesetter = CoreTextFramesetterFactory.make(for: updated)
+            let effectiveBackgroundColor = readerBackgroundImage == nil
+                ? (authoredBackgroundColor ?? backgroundColor)
+                : backgroundColor
             return ChapterLayout(
                 spineIndex: spineIndex,
                 attributedString: updated,
@@ -203,11 +264,12 @@ final class CoreTextPaginator {
                 blockRenderables: recoloredBlockRenderables,
                 pageKinds: pageKinds,
                 pageBackgroundImage: pageBackgroundImage,
+                authoredBackgroundColor: authoredBackgroundColor,
                 readerBackgroundImage: readerBackgroundImage,
                 anchorOffsets: anchorOffsets,
                 renderSize: renderSize,
                 fontSize: fontSize,
-                backgroundColor: backgroundColor,
+                backgroundColor: effectiveBackgroundColor,
                 contentInsets: contentInsets,
                 writingMode: writingMode,
                 pageFloatNotches: pageFloatNotches
@@ -235,6 +297,22 @@ final class CoreTextPaginator {
         let letterSpacing: CGFloat
         let writingMode: ReaderWritingMode
         let contentFingerprint: Int
+        let pageBackgroundColorFingerprint: UInt32?
+    }
+
+    private static func colorFingerprint(_ color: UIColor?) -> UInt32? {
+        guard let color else { return nil }
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return UInt32(truncatingIfNeeded: color.hash)
+        }
+        func byte(_ component: CGFloat) -> UInt32 {
+            UInt32((max(0, min(1, component)) * 255).rounded())
+        }
+        return (byte(red) << 24) | (byte(green) << 16) | (byte(blue) << 8) | byte(alpha)
     }
 
     private static func layoutFingerprint(for attributedString: NSAttributedString) -> Int {
@@ -313,6 +391,7 @@ final class CoreTextPaginator {
         attrStr: NSAttributedString,
         imagePage: HTMLAttributedStringBuilder.ImagePage? = nil,
         pageBackgroundImage: UIImage? = nil,
+        pageBackgroundColor: UIColor? = nil,
         anchorOffsets: [String: Int] = [:],
         renderSize: CGSize,
         fontSize: CGFloat,
@@ -332,7 +411,8 @@ final class CoreTextPaginator {
                            paragraphSpacing: paragraphSpacing,
                            letterSpacing: letterSpacing,
                            writingMode: writingMode,
-                           contentFingerprint: Self.layoutFingerprint(for: attrStr))
+                           contentFingerprint: Self.layoutFingerprint(for: attrStr),
+                           pageBackgroundColorFingerprint: Self.colorFingerprint(pageBackgroundColor))
         Self.debugVerticalLog("EPUBFLOW paginator.request spine=\(spineIndex) writingMode=\(writingMode) isVertical=\(writingMode.isVertical) size=\(renderSize) fontSize=\(fontSize) insets=\(contentInsets) attrLen=\(attrStr.length) fingerprint=\(key.contentFingerprint)")
         if let cached = cachedLayout(for: key) {
             Self.debugVerticalLog("EPUBFLOW paginator.cacheHit spine=\(spineIndex) fingerprint=\(key.contentFingerprint)")
@@ -351,6 +431,7 @@ final class CoreTextPaginator {
                                attrStr: attrStr,
                                imagePage: imagePage,
                                pageBackgroundImage: pageBackgroundImage,
+                               pageBackgroundColor: pageBackgroundColor,
                                anchorOffsets: anchorOffsets,
                                renderSize: renderSize,
                                fontSize: fontSize,
@@ -398,6 +479,7 @@ final class CoreTextPaginator {
         attrStr: NSAttributedString,
         imagePage: HTMLAttributedStringBuilder.ImagePage?,
         pageBackgroundImage: UIImage?,
+        pageBackgroundColor: UIColor?,
         anchorOffsets: [String: Int],
         renderSize: CGSize,
         fontSize: CGFloat,
@@ -438,6 +520,8 @@ final class CoreTextPaginator {
             debugAttributedPrefix(attrStr, label: "computeLayout.attrPrefix", limit: 24)
         }
         debugVerticalLog("EPUBFLOW paginator.compute spine=\(spineIndex) writingMode=\(writingMode) isVertical=\(writingMode.isVertical) contentRect=\(contentRect) ctPathRect=\(contentPathRect) maxAnnotationAdvance=\(maxInlineAnnotationAdvance ?? 0) preparedLen=\(attrStr.length)")
+        let readerBackgroundColor = Self.pageBackgroundColor(from: attrStr)
+        let effectiveBackgroundColor = pageBackgroundColor ?? readerBackgroundColor
 
         if let imagePage {
             let framesetter = CoreTextFramesetterFactory.make(for: attrStr)
@@ -457,10 +541,11 @@ final class CoreTextPaginator {
                 blockRenderables: [:],
                 pageKinds: [.image],
                 pageBackgroundImage: nil,
+                authoredBackgroundColor: pageBackgroundColor,
                 anchorOffsets: anchorOffsets,
                 renderSize: renderSize,
                 fontSize: fontSize,
-                backgroundColor: pageBackgroundColor(from: attrStr),
+                backgroundColor: effectiveBackgroundColor,
                 contentInsets: contentInsets,
                 writingMode: writingMode
             )
@@ -617,6 +702,15 @@ final class CoreTextPaginator {
         let blockRenderableCount = blockRenderables.values.reduce(0) { $0 + $1.count }
         debugVerticalLog("EPUBFLOW paginator.extracted spine=\(spineIndex) inlineImages=\(inlineAttachmentCount) inlineAnnotations=\(inlineAnnotationCount) blockImages=\(blockAttachmentCount) blockRenderables=\(blockRenderableCount)")
 
+        logLayoutFormatProbe(
+            spineIndex: spineIndex,
+            attrStr: attrStr,
+            framesetter: framesetter,
+            pageRanges: pageRanges,
+            contentPathRect: contentPathRect,
+            writingMode: writingMode
+        )
+
         return ChapterLayout(
             spineIndex: spineIndex,
             attributedString: attrStr,
@@ -628,14 +722,97 @@ final class CoreTextPaginator {
             blockRenderables: blockRenderables,
             pageKinds: pageKinds,
             pageBackgroundImage: pageBackgroundImage,
+            authoredBackgroundColor: pageBackgroundColor,
             anchorOffsets: anchorOffsets,
             renderSize: renderSize,
             fontSize: fontSize,
-            backgroundColor: pageBackgroundColor(from: attrStr),
+            backgroundColor: effectiveBackgroundColor,
             contentInsets: contentInsets,
             writingMode: writingMode,
             pageFloatNotches: pageFloatNotches
         )
+    }
+
+    /// ⟐ layout-time format probe (Release-visible): for the first pages, logs each frame line's
+    /// ABSOLUTE string location, origin.x, and the HEX of the character before the line start,
+    /// plus each paragraph's terminator hex. Identifies which separator character CoreText saw
+    /// (LF re-indents; U+2028/U+0085 only line-break → indent+spacing vanish). Horizontal only;
+    /// throttled per process. Remove once the 段評 indent/spacing regression is fixed.
+    private nonisolated(unsafe) static var layoutFormatProbeCount = 0
+    private static func logLayoutFormatProbe(
+        spineIndex: Int,
+        attrStr: NSAttributedString,
+        framesetter: CTFramesetter,
+        pageRanges: [CFRange],
+        contentPathRect: CGRect,
+        writingMode: ReaderWritingMode
+    ) {
+        guard !writingMode.isVertical,
+              layoutFormatProbeCount < 6,
+              let pageRange = pageRanges.first
+        else { return }
+        layoutFormatProbeCount += 1
+
+        let ns = attrStr.string as NSString
+        // Paragraph walk: style + terminator hex for the first 4 paragraphs.
+        var paragraphInfo: [String] = []
+        var location = 0
+        while location < ns.length, paragraphInfo.count < 4 {
+            let paraRange = ns.paragraphRange(for: NSRange(location: location, length: 0))
+            location = max(NSMaxRange(paraRange), location + 1)
+            guard paraRange.length > 0 else { continue }
+            let para = attrStr.attribute(
+                .paragraphStyle, at: paraRange.location, effectiveRange: nil
+            ) as? NSParagraphStyle
+            let terminator = ns.character(at: NSMaxRange(paraRange) - 1)
+            let preview = ns.substring(with: paraRange)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .prefix(5)
+            paragraphInfo.append(
+                "@\(paraRange.location)+\(paraRange.length)"
+                    + " indent=\(Int(para?.firstLineHeadIndent ?? -1))"
+                    + " spacing=\(Int(para?.paragraphSpacing ?? -1))"
+                    + " end=\(String(format: "U+%04X", terminator))«\(preview)»"
+            )
+        }
+
+        // First page's frame, built exactly like the page view builds it at draw time.
+        let path = framePath(contentPathRect: contentPathRect, floatNotch: nil)
+        let frame = makeFrame(
+            framesetter: framesetter,
+            range: pageRange,
+            path: path,
+            writingMode: writingMode
+        )
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        if !lines.isEmpty {
+            CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        }
+        var lineInfo: [String] = []
+        for (index, line) in lines.enumerated() where index < 6 {
+            let lineRange = CTLineGetStringRange(line)
+            let start = lineRange.location
+            let previousHex: String
+            if start > 0, start - 1 < ns.length {
+                previousHex = String(format: "U+%04X", ns.character(at: start - 1))
+            } else {
+                previousHex = start == 0 ? "BOF" : "OOB"
+            }
+            let previewLength = min(3, max(0, ns.length - start))
+            let preview = previewLength > 0
+                ? ns.substring(with: NSRange(location: start, length: previewLength))
+                    .replacingOccurrences(of: "\n", with: "\\n")
+                : ""
+            lineInfo.append("@\(start)+\(lineRange.length) x=\(Int(origins[index].x)) prev=\(previousHex)«\(preview)»")
+        }
+
+        AppLogger.render("⟐ layout format spine=\(spineIndex)", context: [
+            "len": ns.length,
+            "page0": "\(pageRange.location)+\(pageRange.length)",
+            "paras": paragraphInfo.joined(separator: " | "),
+            "lines": lineInfo.joined(separator: " | "),
+        ])
     }
 
     private static func forcedPageBreakRanges(in attrStr: NSAttributedString) -> [NSRange] {
@@ -1551,7 +1728,9 @@ final class CoreTextPaginator {
                             alt: info.alt,
                             linkHref: linkHref?.isEmpty == false ? linkHref : nil,
                             mediaAttachment: mediaAttachment,
-                            originalSize: img.size
+                            originalSize: img.size,
+                            linkRegions: info.linkRegions,
+                            allowsPreview: info.allowsPreview
                         )
                         switch info.displayMode {
                         case .inline:
@@ -1589,7 +1768,10 @@ final class CoreTextPaginator {
                 sourceHref: attachment.sourceHref,
                 alt: attachment.alt,
                 linkHref: attachment.linkHref,
-                originalSize: attachment.originalSize
+                mediaAttachment: attachment.mediaAttachment,
+                originalSize: attachment.originalSize,
+                linkRegions: attachment.linkRegions,
+                allowsPreview: attachment.allowsPreview
             )]
             kinds[0] = .image
         }
@@ -2182,6 +2364,8 @@ final class CoreTextPaginator {
         var alt: String?
         var linkHref: String?
         var mediaAttachment: EPUBMediaAttachment?
+        var linkRegions: [ImageLinkRegion] = []
+        var allowsPreview = true
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
 
         for range in ranges {
@@ -2200,6 +2384,8 @@ final class CoreTextPaginator {
                     sourceHref = info.source
                 }
                 alt = info.alt
+                linkRegions = info.linkRegions
+                allowsPreview = info.allowsPreview
                 if let href = attrStr.attribute(
                     HTMLAttributedStringBuilder.internalLinkAttribute,
                     at: effectiveRange.location,
@@ -2215,7 +2401,8 @@ final class CoreTextPaginator {
                 ) as? EPUBMediaAttachment
                 stop.pointee = true
             }
-            if sourceHref != nil || alt != nil || linkHref != nil || mediaAttachment != nil {
+            if sourceHref != nil || alt != nil || linkHref != nil || mediaAttachment != nil
+                || !linkRegions.isEmpty || !allowsPreview {
                 break
             }
         }
@@ -2229,7 +2416,9 @@ final class CoreTextPaginator {
             alt: alt,
             linkHref: linkHref,
             mediaAttachment: mediaAttachment,
-            originalSize: image.size
+            originalSize: image.size,
+            linkRegions: linkRegions,
+            allowsPreview: allowsPreview
         )
     }
 

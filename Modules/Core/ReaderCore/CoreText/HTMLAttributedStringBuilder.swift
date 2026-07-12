@@ -100,6 +100,9 @@ final class HTMLAttributedStringBuilder {
         case baseline
         case `super`
         case sub
+        case top
+        case middle
+        case bottom
     }
 
     enum FloatSide {
@@ -250,12 +253,46 @@ final class HTMLAttributedStringBuilder {
     /// Padding is drawn as a visual inset around the run's glyphs — it does not reserve layout space,
     /// which is exactly right for self-contained badges like EPUB page-number markers.
     struct InlineBorderBoxStyle {
+        /// Which sides of the run's box carry a border. A partial set draws bare edge lines
+        /// (`.underline { border-bottom: 1px dashed }` = a dashed underline), never a closed box.
+        struct Edges: OptionSet {
+            let rawValue: Int
+            static let top = Edges(rawValue: 1 << 0)
+            static let left = Edges(rawValue: 1 << 1)
+            static let bottom = Edges(rawValue: 1 << 2)
+            static let right = Edges(rawValue: 1 << 3)
+            static let all: Edges = [.top, .left, .bottom, .right]
+        }
+
         let borderColor: UIColor
         let borderWidth: CGFloat
         let cornerRadius: CGFloat
         let fillColor: UIColor?
         let paddingHorizontal: CGFloat
         let paddingVertical: CGFloat
+        let edges: Edges
+        /// CGContext line dash lengths for `border-style: dashed/dotted`. Empty = solid.
+        let dash: [CGFloat]
+
+        init(
+            borderColor: UIColor,
+            borderWidth: CGFloat,
+            cornerRadius: CGFloat,
+            fillColor: UIColor?,
+            paddingHorizontal: CGFloat,
+            paddingVertical: CGFloat,
+            edges: Edges = .all,
+            dash: [CGFloat] = []
+        ) {
+            self.borderColor = borderColor
+            self.borderWidth = borderWidth
+            self.cornerRadius = cornerRadius
+            self.fillColor = fillColor
+            self.paddingHorizontal = paddingHorizontal
+            self.paddingVertical = paddingVertical
+            self.edges = edges
+            self.dash = dash
+        }
     }
 
     /// Visual style for HR dividers (stored in hrDividerAttribute).
@@ -326,6 +363,8 @@ final class HTMLAttributedStringBuilder {
         /// (otherwise a right-floated box drifts a few points and clips its last glyph).
         var hugsContent: Bool = false
         var backgroundImage: BackgroundImage? = nil
+        /// CGContext line dash lengths for `border-style: dashed/dotted`. Empty = solid.
+        var borderDash: [CGFloat] = []
 
         var hasVisualDecoration: Bool {
             backgroundFillColor != nil
@@ -360,7 +399,8 @@ final class HTMLAttributedStringBuilder {
                 borderRadius: borderRadius,
                 avoidsPageBreakInside: avoidsPageBreakInside,
                 hugsContent: hugsContent,
-                backgroundImage: backgroundImage
+                backgroundImage: backgroundImage,
+                borderDash: borderDash
             )
         }
     }
@@ -468,6 +508,16 @@ final class HTMLAttributedStringBuilder {
 
     func pageBackgroundImage(from body: ElementNode) async -> UIImage? {
         await loadBackgroundImage(from: body)
+    }
+
+    /// The publication-authored page fill for the root body. Keep it separate from block
+    /// backgrounds: the body itself is not converted into a RenderableNode, and this color must
+    /// be painted across the whole page before a potentially transparent background image.
+    func pageBackgroundColor(from body: ElementNode) -> UIColor? {
+        guard let color = body.resolvedStyle.backgroundFillColor,
+              color.cgColor.alpha > 0
+        else { return nil }
+        return color
     }
 
     func anchorOffsets(in attributedString: NSAttributedString) -> [String: Int] {
@@ -1047,6 +1097,9 @@ final class HTMLAttributedStringBuilder {
                 if lhs.specificity == rhs.specificity { return lhs.order < rhs.order }
                 return lhs.specificity < rhs.specificity
             }
+        // CSS cascade order: normal author rules, normal inline declarations, important author
+        // rules, then important inline declarations. Keeping the two priority bands separate is
+        // essential because a normal inline value must not override an authored `!important`.
         for rule in matchedRules {
             apply(
                 declarations: rule.declarations,
@@ -1057,9 +1110,25 @@ final class HTMLAttributedStringBuilder {
             )
         }
 
-        let inlineStyle = CSSParser.parseDeclarations((try? element.attr("style")) ?? "")
+        let inlineStyle = CSSParser.parseDeclarationBlock((try? element.attr("style")) ?? "")
         apply(
-            declarations: inlineStyle,
+            declarations: inlineStyle.normal,
+            to: &style,
+            parentStyle: parent,
+            rootFontSize: rootFontSize,
+            percentageBase: pct
+        )
+        for rule in matchedRules {
+            apply(
+                declarations: rule.importantDeclarations,
+                to: &style,
+                parentStyle: parent,
+                rootFontSize: rootFontSize,
+                percentageBase: pct
+            )
+        }
+        apply(
+            declarations: inlineStyle.important,
             to: &style,
             parentStyle: parent,
             rootFontSize: rootFontSize,
@@ -1075,6 +1144,9 @@ final class HTMLAttributedStringBuilder {
                 var merged: [String: String] = [:]
                 for rule in matchedFL {
                     for (k, v) in rule.declarations { merged[k] = v }
+                }
+                for rule in matchedFL {
+                    for (k, v) in rule.importantDeclarations { merged[k] = v }
                 }
                 style.firstLetterDeclarations = merged
 
@@ -1168,7 +1240,10 @@ final class HTMLAttributedStringBuilder {
                 .flatMap { $0.declarations.keys }
                 .sorted()
                 .joined(separator: ",")
-            let inlineKeys = inlineStyle.keys.sorted().joined(separator: ",")
+            let inlineKeys = Set(inlineStyle.normal.keys)
+                .union(inlineStyle.important.keys)
+                .sorted()
+                .joined(separator: ",")
             let textPreview = key == "style.span.small"
                 ? " text=\"\(debugTextPreview((try? element.text()) ?? ""))\""
                 : ""
@@ -1577,7 +1652,7 @@ final class HTMLAttributedStringBuilder {
                 relativeBase: style.fontSize,
                 percentageBase: percentageBase
            ) {
-            style.paragraphSpacing = max(0, value)
+            style.paragraphSpacing = value
             style.hasExplicitVerticalMargins = true
         }
         if let marginTop = declarations["margin-top"],
@@ -1588,8 +1663,8 @@ final class HTMLAttributedStringBuilder {
                 relativeBase: style.fontSize,
                 percentageBase: percentageBase
            ) {
-            style.paragraphSpacingBefore = max(0, value)
-            style.visualOffsetBefore = max(0, value)
+            style.paragraphSpacingBefore = value
+            style.visualOffsetBefore = value
             style.hasExplicitVerticalMargins = true
         }
         if let margin = declarations["margin"] {
@@ -1674,6 +1749,9 @@ final class HTMLAttributedStringBuilder {
             switch verticalAlign.trimmingCharacters(in: .whitespaces).lowercased() {
             case "super": style.verticalAlign = .super
             case "sub":   style.verticalAlign = .sub
+            case "top", "text-top": style.verticalAlign = .top
+            case "middle": style.verticalAlign = .middle
+            case "bottom", "text-bottom": style.verticalAlign = .bottom
             default:      style.verticalAlign = .baseline
             }
         }
@@ -1974,12 +2052,12 @@ final class HTMLAttributedStringBuilder {
         guard !tokens.isEmpty else { return }
         let resolved = expandBoxShorthand(tokens)
         if let top = resolved.top, let topValue = resolveBoxValue(top, currentFontSize: currentFontSize, rootFontSize: rootFontSize, percentageBase: percentageBase) {
-            style.paragraphSpacingBefore = max(0, topValue)
-            style.visualOffsetBefore = max(0, topValue)
+            style.paragraphSpacingBefore = topValue
+            style.visualOffsetBefore = topValue
             style.hasExplicitVerticalMargins = true
         }
         if let bottom = resolved.bottom, let bottomValue = resolveBoxValue(bottom, currentFontSize: currentFontSize, rootFontSize: rootFontSize, percentageBase: percentageBase) {
-            style.paragraphSpacing = max(0, bottomValue)
+            style.paragraphSpacing = bottomValue
             style.hasExplicitVerticalMargins = true
         }
         if let left = resolved.left {
@@ -2337,6 +2415,7 @@ final class HTMLAttributedStringBuilder {
 struct CSSRule {
     let selector: CSSSelector
     let declarations: [String: String]
+    let importantDeclarations: [String: String]
     let specificity: Int
     let order: Int
 }
@@ -2488,7 +2567,12 @@ enum CSSParser {
     /// blocks are left untouched (still unsupported, but no longer able to break a neighbor).
     private static func sanitize(_ css: String) -> String {
         css
-            .replacingOccurrences(of: #"/\*.*?\*/"#, with: "", options: .regularExpression)
+            // (?s): dot must match newlines — CJK publisher stylesheets routinely comment out
+            // whole multi-line rule blocks (`/*.p_title { … }*/`). Without it the comment
+            // survives, fuses with the next rule's selector (dropping that rule), and any
+            // `{ }` pairs inside the comment leak back in as live rules. An unterminated
+            // trailing comment is stripped to end-of-input.
+            .replacingOccurrences(of: #"(?s)/\*.*?(?:\*/|\z)"#, with: "", options: .regularExpression)
             .replacingOccurrences(
                 of: #"@(?:charset|namespace|import)\b[^{};]*;"#,
                 with: "",
@@ -2508,14 +2592,15 @@ enum CSSParser {
         let nsCSS = stripped as NSString
         return regex.matches(in: stripped, range: NSRange(location: 0, length: nsCSS.length)).enumerated().flatMap { index, match in
             let selectorText = nsCSS.substring(with: match.range(at: 1))
-            let declarations = parseDeclarations(nsCSS.substring(with: match.range(at: 2)))
+            let declarations = parseDeclarationBlock(nsCSS.substring(with: match.range(at: 2)))
             let selectors = selectorText
                 .split(separator: ",")
                 .compactMap { parseSelector(String($0)) }
             return selectors.map { selector in
                 CSSRule(
                     selector: selector,
-                    declarations: declarations,
+                    declarations: declarations.normal,
+                    importantDeclarations: declarations.important,
                     specificity: specificity(of: selector),
                     order: orderOffset + index
                 )
@@ -2538,7 +2623,7 @@ enum CSSParser {
         let nsCSS = stripped as NSString
         for (index, match) in regex.matches(in: stripped, range: NSRange(location: 0, length: nsCSS.length)).enumerated() {
             let selectorText = nsCSS.substring(with: match.range(at: 1))
-            let declarations = parseDeclarations(nsCSS.substring(with: match.range(at: 2)))
+            let declarations = parseDeclarationBlock(nsCSS.substring(with: match.range(at: 2)))
             for rawSelector in selectorText.split(separator: ",").map(String.init) {
                 let trimmed = rawSelector.trimmingCharacters(in: .whitespacesAndNewlines)
                 let isFirstLetter = trimmed.hasSuffix(":first-letter")
@@ -2554,7 +2639,8 @@ enum CSSParser {
                 guard !selectorBody.isEmpty, let selector = parseSelector(selectorBody) else { continue }
                 let rule = CSSRule(
                     selector: selector,
-                    declarations: declarations,
+                    declarations: declarations.normal,
+                    importantDeclarations: declarations.important,
                     specificity: specificity(of: selector),
                     order: orderOffset + index
                 )
@@ -2568,18 +2654,44 @@ enum CSSParser {
         return (regular, firstLetter)
     }
 
+    struct DeclarationBlock {
+        let normal: [String: String]
+        let important: [String: String]
+
+        var merged: [String: String] {
+            normal.merging(important) { _, importantValue in importantValue }
+        }
+    }
+
     static func parseDeclarations(_ css: String) -> [String: String] {
-        var declarations: [String: String] = [:]
+        parseDeclarationBlock(css).merged
+    }
+
+    static func parseDeclarationBlock(_ css: String) -> DeclarationBlock {
+        var normal: [String: String] = [:]
+        var important: [String: String] = [:]
         for segment in css.split(separator: ";", omittingEmptySubsequences: true) {
             let parts = segment.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: true)
             guard parts.count == 2 else { continue }
             let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            let rawValue = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            let importantRange = rawValue.range(
+                of: #"\s*!\s*important\s*$"#,
+                options: [.regularExpression, .caseInsensitive]
+            )
+            let value = importantRange.map {
+                String(rawValue[..<$0.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            } ?? rawValue
             if !key.isEmpty && !value.isEmpty {
-                declarations[key] = value
+                if importantRange != nil {
+                    important[key] = value
+                    normal.removeValue(forKey: key)
+                } else if important[key] == nil {
+                    normal[key] = value
+                }
             }
         }
-        return declarations
+        return DeclarationBlock(normal: normal, important: important)
     }
 
     /// Splits a complex selector into components joined by descendant (whitespace) and child (`>`)

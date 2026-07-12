@@ -2,8 +2,24 @@ import Foundation
 import UIKit
 
 enum HTMLStyledASTRenderableNodeConverter {
-    static func convert(body: HTMLAttributedStringBuilder.ElementNode) -> [RenderableNode] {
-        mapChildren(body.children, parentFontSize: body.resolvedStyle.fontSize)
+    enum WhitespacePolicy: Equatable {
+        /// CSS-like inline flow used by EPUB: preserve authored inline separators (including
+        /// U+3000), while dropping only whitespace adjacent to real block/line boundaries.
+        case preserveInlineFlow
+        /// The online-reader behavior from before the EPUB whitespace compatibility change:
+        /// every text node is trimmed at its own edges after ASCII whitespace collapsing.
+        case trimTextNodeBoundaries
+    }
+
+    static func convert(
+        body: HTMLAttributedStringBuilder.ElementNode,
+        whitespacePolicy: WhitespacePolicy = .preserveInlineFlow
+    ) -> [RenderableNode] {
+        mapChildren(
+            body.children,
+            parentFontSize: body.resolvedStyle.fontSize,
+            whitespacePolicy: whitespacePolicy
+        )
     }
 
     /// HTML whitespace collapsing for normal-flow text: runs of spaces, tabs, CR/LF and
@@ -24,28 +40,80 @@ enum HTMLStyledASTRenderableNodeConverter {
         return collapsed.replacingOccurrences(of: "\u{00A0}", with: " ")
     }
 
-    /// Maps a child list to renderable nodes, collapsing text whitespace and dropping the
-    /// indentation-only text nodes that sit between block-level siblings. Such a collapsed
-    /// space would otherwise leak into the following block and corrupt its paragraph style
-    /// (the same reason `HTMLAttributedStringBuilder.renderBlockChildren` skips them).
+    /// Maps a child list to renderable nodes, applying CSS-style whitespace processing:
+    /// runs of ASCII whitespace collapse to one space; a whitespace-only node adjacent to a
+    /// block boundary (a block sibling, or the edge of a block parent) is source formatting
+    /// and drops; and a content node's boundary spaces trim only against those same block
+    /// boundaries. Spaces inside inline flow are content ("foo <b>bar</b> baz"), as is
+    /// U+3000 ideographic space, which CSS never collapses — trimming it flattened duokan's
+    /// `<span>参考消息</span>　title` gap so the chip overlapped the title glyphs.
     static func mapChildren(
         _ children: [HTMLAttributedStringBuilder.ASTNode],
-        parentFontSize: CGFloat
+        parentFontSize: CGFloat,
+        parentIsBlock: Bool = true,
+        whitespacePolicy: WhitespacePolicy = .preserveInlineFlow
     ) -> [RenderableNode] {
-        return children.compactMap { node -> RenderableNode? in
-            guard case .text(let textNode) = node else {
-                return node.asRenderableNode(parentFontSize: parentFontSize)
+        if whitespacePolicy == .trimTextNodeBoundaries {
+            return children.compactMap { node -> RenderableNode? in
+                guard case .text(let textNode) = node else {
+                    return node.asRenderableNode(
+                        parentFontSize: parentFontSize,
+                        whitespacePolicy: whitespacePolicy
+                    )
+                }
+                let normalized = normalizeWhitespace(textNode.text)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !normalized.isEmpty else { return nil }
+                return .text(normalized)
             }
-            let normalized = normalizeWhitespace(textNode.text)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !normalized.isEmpty else { return nil }
-            return .text(normalized)
+        }
+
+        // A line/segment boundary eats the collapsed space beside it: block siblings
+        // (anonymous-block edges), <br> (a space right after it would render at the new
+        // line's start), and page breaks. Inline elements and images are flow — the
+        // space beside them is a word separator.
+        func isBoundary(_ node: HTMLAttributedStringBuilder.ASTNode) -> Bool {
+            switch node {
+            case .element(let element): return element.resolvedStyle.isBlock
+            case .lineBreak, .pageBreak: return true
+            case .text: return false
+            }
+        }
+        return children.enumerated().compactMap { index, node -> RenderableNode? in
+            guard case .text(let textNode) = node else {
+                return node.asRenderableNode(
+                    parentFontSize: parentFontSize,
+                    whitespacePolicy: whitespacePolicy
+                )
+            }
+            var normalized = normalizeWhitespace(textNode.text)
+            let afterBoundary = index == 0
+                ? parentIsBlock
+                : isBoundary(children[index - 1])
+            let beforeBoundary = index == children.count - 1
+                ? parentIsBlock
+                : isBoundary(children[index + 1])
+            if normalized.allSatisfy({ $0 == " " }) {
+                let dropped = afterBoundary || beforeBoundary
+                guard !normalized.isEmpty else { return nil }
+                return dropped ? nil : .text(" ")
+            }
+            if afterBoundary, normalized.hasPrefix(" ") {
+                normalized.removeFirst()
+            }
+            if beforeBoundary, normalized.hasSuffix(" ") {
+                normalized.removeLast()
+            }
+            return normalized.isEmpty ? nil : .text(normalized)
         }
     }
 }
 
 private extension HTMLAttributedStringBuilder.ASTNode {
-    func asRenderableNode(parentFontSize: CGFloat) -> RenderableNode {
+    func asRenderableNode(
+        parentFontSize: CGFloat,
+        whitespacePolicy: HTMLStyledASTRenderableNodeConverter.WhitespacePolicy
+    ) -> RenderableNode {
         switch self {
         case .text(let node):
             return .text(HTMLStyledASTRenderableNodeConverter.normalizeWhitespace(node.text))
@@ -57,15 +125,26 @@ private extension HTMLAttributedStringBuilder.ASTNode {
         case .pageBreak:
             return .pageBreak
         case .element(let node):
-            return node.asRenderableNode(parentFontSize: parentFontSize)
+            return node.asRenderableNode(
+                parentFontSize: parentFontSize,
+                whitespacePolicy: whitespacePolicy
+            )
         }
     }
 }
 
 private extension HTMLAttributedStringBuilder.ElementNode {
-    func asRenderableNode(parentFontSize: CGFloat) -> RenderableNode {
+    func asRenderableNode(
+        parentFontSize: CGFloat,
+        whitespacePolicy: HTMLStyledASTRenderableNodeConverter.WhitespacePolicy
+    ) -> RenderableNode {
         let myFontSize = resolvedStyle.fontSize
-        let mappedChildren = HTMLStyledASTRenderableNodeConverter.mapChildren(children, parentFontSize: myFontSize)
+        let mappedChildren = HTMLStyledASTRenderableNodeConverter.mapChildren(
+            children,
+            parentFontSize: myFontSize,
+            parentIsBlock: resolvedStyle.isBlock,
+            whitespacePolicy: whitespacePolicy
+        )
         var style = RenderStyle.from(resolvedStyle: resolvedStyle, parentFontSize: parentFontSize)
         if containsFloatDescendant || classes.contains("tk") {
             style.compactChildBlockSpacing = true
@@ -176,7 +255,11 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             }
 
         case "ruby":
-            node = rubySegments(parentFontSize: myFontSize, style: style)
+            node = rubySegments(
+                parentFontSize: myFontSize,
+                style: style,
+                whitespacePolicy: whitespacePolicy
+            )
 
         case "img", "image":
             let src = attributes["src"] ?? attributes["xlink:href"] ?? attributes["href"] ?? ""
@@ -212,7 +295,11 @@ private extension HTMLAttributedStringBuilder.ElementNode {
     /// Pairs each run of base content with the `<rt>` that follows it, so
     /// `<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>` produces one annotation per base character
     /// instead of one merged annotation across the whole element.
-    private func rubySegments(parentFontSize: CGFloat, style: RenderStyle) -> RenderableNode {
+    private func rubySegments(
+        parentFontSize: CGFloat,
+        style: RenderStyle,
+        whitespacePolicy: HTMLStyledASTRenderableNodeConverter.WhitespacePolicy
+    ) -> RenderableNode {
         var segments: [RenderableNode] = []
         var pendingBase: [RenderableNode] = []
         for child in children {
@@ -227,7 +314,10 @@ private extension HTMLAttributedStringBuilder.ElementNode {
                 }
                 pendingBase = []
             } else {
-                pendingBase.append(child.asRenderableNode(parentFontSize: parentFontSize))
+                pendingBase.append(child.asRenderableNode(
+                    parentFontSize: parentFontSize,
+                    whitespacePolicy: whitespacePolicy
+                ))
             }
         }
         segments.append(contentsOf: pendingBase)

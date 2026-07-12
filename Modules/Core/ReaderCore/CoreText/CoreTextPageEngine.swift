@@ -146,6 +146,11 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private var textAnnotations: [CoreTextTextAnnotation] = []
     var onChapterReady: ((Int?) -> Void)?
     var onNavigateToPage: ((Int) -> Void)?
+    /// Fired when a tapped in-content link (TOC table, cross-reference) resolves to a page.
+    /// Distinct from `onNavigateToPage`, which is a binding-level offset-correction channel:
+    /// the host's executor model never turns a bare binding write into a visible page change,
+    /// so a link tap must come through here to actually move the page view controller.
+    var onLinkNavigate: ((Int) -> Void)?
     /// Fired instead of `onNavigateToPage` when a tapped internal link resolves to a duokan
     /// popup footnote (`FootnoteStore`) — the note text, ready to show in place.
     var onFootnoteTap: ((String) -> Void)?
@@ -652,6 +657,7 @@ _layouts[spineIndex] == nil else { return }
             attributedString: buildResult.attributedString,
             imagePage: buildResult.imagePage,
             pageBackgroundImage: buildResult.pageBackgroundImage,
+            pageBackgroundColor: buildResult.pageBackgroundColor,
             anchorOffsets: buildResult.anchorOffsets,
             renderSize: renderSize,
             fontSize: renderSettings.fontSize,
@@ -721,6 +727,7 @@ _layouts.removeAll()
         } else {
             let resolvedHref = EPUBStyleResolver.resolveImageHref(rawPath, chapterHref: chapterSourceHref(at: spineIndex))
             guard let matchedIndex = chapterIndex(for: resolvedHref) ?? chapterIndex(for: rawPath) else {
+                AppLogger.render("⟐ link.resolve noChapter spine=\(spineIndex) raw=\(rawPath.prefix(80)) resolved=\(resolvedHref.prefix(96))")
                 return nil
             }
             targetSpine = matchedIndex
@@ -777,16 +784,7 @@ _layouts.removeAll()
             return nil
         }
         AppLogger.render("[FlipTrace] snapshotVC HIT page=\(index) spine=\(spineIndex) key=\(key)")
-        let bgColor: UIColor
-        if let layout = _layouts[spineIndex],
-           layout.attributedString.length > 0,
-           let color = layout.attributedString.attribute(
-               .backgroundColor, at: 0, effectiveRange: nil
-           ) as? UIColor {
-            bgColor = color
-        } else {
-            bgColor = .systemBackground
-        }
+        let bgColor = _layouts[spineIndex]?.backgroundColor ?? .systemBackground
         return SnapshotPageViewController(
             image: snapshot,
             globalPage: index,
@@ -1011,9 +1009,11 @@ _layouts.removeAll()
                     return
                 }
                 guard let targetPage = await self.resolveInternalLink(href, fromSpineIndex: spineIndex) else {
+                    AppLogger.render("⟐ link.tap unresolved spine=\(spineIndex) href=\(href.prefix(96))")
                     return
                 }
-                self.onNavigateToPage?(targetPage)
+                AppLogger.render("⟐ link.tap page=\(targetPage) href=\(href.prefix(64))")
+                (self.onLinkNavigate ?? self.onNavigateToPage)?(targetPage)
             }
         }
         let readingPosition = CoreTextReadingPosition(

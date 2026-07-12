@@ -1,11 +1,46 @@
 import Foundation
 
 // MARK: - Grid Touch Zone Actions
-enum TouchAction: String, CaseIterable, Codable {
+enum TouchAction: String, CaseIterable, Codable, Equatable {
     case prevPage = "上一頁"
     case nextPage = "下一頁"
     case toggleMenu = "選單"
     case none = "無動作"
+    case previousChapter = "上一章"
+    case nextChapter = "下一章"
+    case toggleBookmark = "添加/移除書籤"
+    case tableOfContents = "目錄"
+}
+
+enum ReaderTouchCommand: Equatable {
+    case none
+    case toggleMenu
+    case previousPage
+    case nextPage
+    case previousChapter
+    case nextChapter
+    case toggleBookmark
+    case tableOfContents
+}
+
+extension TouchAction {
+    static let editorCases: [TouchAction] = [
+        .none, .toggleMenu, .prevPage, .nextPage,
+        .previousChapter, .nextChapter, .toggleBookmark, .tableOfContents,
+    ]
+
+    var readerCommand: ReaderTouchCommand {
+        switch self {
+        case .none: return .none
+        case .toggleMenu: return .toggleMenu
+        case .prevPage: return .previousPage
+        case .nextPage: return .nextPage
+        case .previousChapter: return .previousChapter
+        case .nextChapter: return .nextChapter
+        case .toggleBookmark: return .toggleBookmark
+        case .tableOfContents: return .tableOfContents
+        }
+    }
 }
 
 // MARK: - Grid Touch Configuration
@@ -18,7 +53,7 @@ enum TouchAction: String, CaseIterable, Codable {
 /// ├───────┼────────┼───────┤
 /// │ 6 BL  │ 7 BC   │ 8 BR  │
 /// └───────┴────────┴───────┘
-struct TouchZoneConfig: Codable {
+struct TouchZoneConfig: Codable, Equatable {
     var zones: [TouchAction]  // Always 9 elements
 
     static let `default` = TouchZoneConfig(zones: [
@@ -38,6 +73,11 @@ struct TouchZoneConfig: Codable {
         return config
     }
 
+    static func effective(saved: TouchZoneConfig = .load(), isProActive: Bool) -> TouchZoneConfig {
+        guard isProActive, saved.zones.count == 9 else { return .default }
+        return saved
+    }
+
     func save() {
         if let data = try? JSONEncoder().encode(self) {
             UserDefaults.standard.set(data, forKey: Self.key)
@@ -46,6 +86,10 @@ struct TouchZoneConfig: Codable {
 
     /// Returns the action for a given normalized touch position (0~1, 0~1)
     func action(at point: CGPoint, in size: CGSize) -> TouchAction {
+        guard zones.count == 9,
+              size.width > 0, size.height > 0,
+              point.x >= 0, point.x <= size.width,
+              point.y >= 0, point.y <= size.height else { return .none }
         let col = min(2, Int(point.x / size.width * 3))
         let row = min(2, Int(point.y / size.height * 3))
         let idx = row * 3 + col

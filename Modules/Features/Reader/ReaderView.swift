@@ -57,6 +57,7 @@ struct ReaderView: View {
     @State var showReaderSearch = false
     @State var showTOC = false
     @State var showBookmarks = false
+    @State var showTouchZoneEditor = false
 
     // Online chapter lazy loading
     @StateObject var readerViewModel = ReaderViewModel()
@@ -1076,18 +1077,7 @@ struct ReaderView: View {
                     onPageChanged: { newPage, _ in
                         currentPage = newPage
                     },
-                    onTapZone: { zone in
-                        switch zone {
-                        case "left":
-                            guard !showBars else { return }
-                            goToPrevPage()
-                        case "right":
-                            guard !showBars else { return }
-                            goToNextPage()
-                        default:
-                            withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
-                        }
-                    },
+                    onTapZone: handleTouchAction,
                     onSwipeUpExit: { closeReader() }
                 )
                 .id(readerPageViewIdentity)
@@ -1128,18 +1118,7 @@ struct ReaderView: View {
                     onPageChanged: { newPage, visiblePosition in
                         scheduleCoreTextPageChanged(newPage, engine: ctEngine, visiblePosition: visiblePosition)
                     },
-                    onTapZone: { zone in
-                        switch zone {
-                        case "left":
-                            guard !showBars else { return }
-                            goToPrevPage()
-                        case "right":
-                            guard !showBars else { return }
-                            goToNextPage()
-                        default:
-                            withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
-                        }
-                    },
+                    onTapZone: handleTouchAction,
                     onFootnoteTap: { text in
                         footnoteItem = ReaderFootnoteItem(text: text)
                     },
@@ -1170,11 +1149,15 @@ struct ReaderView: View {
 
             // Top/Bottom bars
             if !showBars && !effectiveScrollMode && !chapters.isEmpty {
-                VStack {
-                    Spacer()
-                    bottomFooter
+                if readerConfig.readerFooterVisible {
+                    VStack {
+                        Spacer()
+                        bottomFooter
+                    }
+                    .transition(.opacity.animation(.easeOut(duration: 0.2)))
                 }
-                .transition(.opacity.animation(.easeOut(duration: 0.2)))
+                topHeader
+                    .transition(.opacity.animation(.easeOut(duration: 0.2)))
             }
             if showBars { readerChrome }
             if showTTSJumpPrompt {
@@ -1192,6 +1175,14 @@ struct ReaderView: View {
             // when the bars appear, and drop lower while they're hidden.
             NowPlayingMiniPlayer(placement: .reader, barsVisible: showBars)
                 .zIndex(50)
+
+            if showTouchZoneEditor {
+                ReaderTouchZoneEditorView(
+                    onCancel: { showTouchZoneEditor = false },
+                    onSave: { showTouchZoneEditor = false }
+                )
+                .zIndex(100)
+            }
         }
         .background(
             GeometryReader { g in
@@ -1405,7 +1396,13 @@ struct ReaderView: View {
         .onChanged(of: settings.readerTextUnderlineDecorationEnabled) { _ in
             forceReaderRenderableContentRefresh()
         }
+        .onChanged(of: settings.readerTextUnderlineDecorationColorHex) { _ in
+            forceReaderRenderableContentRefresh()
+        }
         .onChanged(of: settings.readerDialogueHighlightEnabled) { _ in
+            forceReaderRenderableContentRefresh()
+        }
+        .onChanged(of: settings.readerDialogueHighlightColorHex) { _ in
             forceReaderRenderableContentRefresh()
         }
         .onChanged(of: settings.customAppearanceThemes) { _ in
@@ -1487,7 +1484,12 @@ struct ReaderView: View {
                     ),
                     capabilities: readerCapabilities,
                     allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
-                    isVerticalWritingMode: effectiveWritingMode.isVertical
+                    isVerticalWritingMode: effectiveWritingMode.isVertical,
+                    onOpenTouchZoneEditor: {
+                        guard subscriptionStore.isProActive, !effectiveScrollMode else { return }
+                        showBars = false
+                        showTouchZoneEditor = true
+                    }
                 )
             }
         }
@@ -1656,7 +1658,7 @@ struct ReaderView: View {
         .sheet(item: $reviewTarget) { target in
             JsBridgeBrowserView(
                 urlString: target.url,
-                title: target.title.isEmpty ? localized("段評") : target.title
+                hidesToolbar: true
             ) { _ in
                 reviewTarget = nil
             }
@@ -1692,6 +1694,38 @@ struct ReaderView: View {
             applyInitialProgressIfNeeded()
         }
         )
+    }
+
+    func handleTouchAction(_ action: TouchAction) {
+        switch action.readerCommand {
+        case .none:
+            return
+        case .toggleMenu:
+            withAnimation(.easeInOut(duration: uiFeedbackDuration)) { showBars.toggle() }
+        case .previousPage:
+            guard !showBars else { return }
+            goToPrevPage()
+        case .nextPage:
+            guard !showBars else { return }
+            goToNextPage()
+        case .previousChapter:
+            guard canGoPrevChapter else { return }
+            jumpToChapter(currentChapterIndex - 1)
+        case .nextChapter:
+            guard canGoNextChapter else { return }
+            jumpToChapter(currentChapterIndex + 1)
+        case .toggleBookmark:
+            guard let position = currentTopBarBookmarkPosition else { return }
+            store.toggleBookmark(
+                bookId: bookId,
+                chapterIndex: position.spineIndex,
+                chapterTitle: bookmarkChapterTitle(for: position.spineIndex),
+                position: position,
+                excerpt: currentPageExcerpt
+            )
+        case .tableOfContents:
+            showTOC = true
+        }
     }
 
     private func performInitialLoad() {

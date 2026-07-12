@@ -181,9 +181,9 @@ enum DSLayout {
     /// Minimum height of the paragraph-comment SVG editor.
     static let readerSVGEditorHeight: CGFloat = 160
     /// Compact fixed width for a paragraph-comment bubble preview tile.
-    static let readerBubblePreviewTileWidth: CGFloat = 80
+    static let readerBubblePreviewTileWidth: CGFloat = 64
     /// Minimum height of a paragraph-comment bubble preview tile.
-    static let readerBubblePreviewHeight: CGFloat = 76
+    static let readerBubblePreviewHeight: CGFloat = 64
     /// Wide management surfaces such as book-source lists.
     static let readableWideWidth: CGFloat = 980
     /// Extra horizontal inset applied to regular-width reader pages.

@@ -348,6 +348,72 @@ struct CoreTextScrollTests {
         }
     }
 
+    @Test("scroll chunks retain the publication-authored page backdrop")
+    @MainActor
+    func scrollChunksRetainPublicationAuthoredPageBackdrop() throws {
+        let authoredColor = UIColor(red: 0x35 / 255, green: 0x2D / 255, blue: 0x2D / 255, alpha: 1)
+        let authoredImage = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 48)).image { context in
+            UIColor.white.withAlphaComponent(0.25).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 24, height: 48))
+        }
+        let attr = NSAttributedString(
+            string: (0..<40).map { "Authored page background paragraph \($0)." }.joined(separator: "\n"),
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 18),
+                .foregroundColor: UIColor.white,
+            ]
+        )
+
+        let output = CoreTextChunkSlicer.slice(
+            attributedString: attr,
+            chapterIndex: 0,
+            contentWidth: 220,
+            heightCap: 180,
+            writingMode: .horizontal,
+            pageBackgroundColor: authoredColor,
+            pageBackgroundImage: authoredImage
+        )
+
+        try #require(output.chunks.count > 1)
+        for chunk in output.chunks {
+            let color = try #require(chunk.pageBackgroundColor)
+            #expect(Self.bytes(of: color) == [53, 45, 45, 255])
+            #expect(chunk.pageBackgroundImage === authoredImage)
+        }
+    }
+
+    @Test("scroll engine carries the chapter backdrop into sliced chunks")
+    @MainActor
+    func scrollEngineCarriesChapterBackdropIntoSlicedChunks() async throws {
+        let authoredColor = UIColor(red: 0x35 / 255, green: 0x2D / 255, blue: 0x2D / 255, alpha: 1)
+        let authoredImage = UIGraphicsImageRenderer(size: CGSize(width: 12, height: 24)).image { _ in }
+        let engine = CoreTextScrollEngine(
+            builder: PageBackdropScrollTestBuilder(color: authoredColor, image: authoredImage),
+            renderSettings: Self.renderSettings
+        )
+
+        await engine.start(initialChapter: 0, contentWidth: 220)
+
+        let chunk = try #require(engine.chunks.first)
+        let color = try #require(chunk.pageBackgroundColor)
+        #expect(Self.bytes(of: color) == [53, 45, 45, 255])
+        #expect(chunk.pageBackgroundImage === authoredImage)
+    }
+
+    @Test("scroll backdrop repeats at viewport-sized intervals without stretching a tall chapter")
+    @MainActor
+    func scrollBackdropUsesViewportSizedTiles() {
+        let tiles = CoreTextChunkBackdropView.backgroundTileRects(
+            in: CGRect(x: 0, y: 0, width: 390, height: 2_000),
+            viewportSize: CGSize(width: 390, height: 844),
+            axis: .vertical
+        )
+
+        #expect(tiles.count == 3)
+        #expect(tiles.map(\.minY) == [0, 844, 1_688])
+        #expect(tiles.allSatisfy { $0.size == CGSize(width: 390, height: 844) })
+    }
+
     @Test("styled EPUB scroll chunks keep block renderables and continuous ranges")
     func styledEPUBScrollChunksKeepBlockRenderables() async {
         let config = HTMLAttributedStringBuilder.Config(
@@ -850,6 +916,38 @@ private struct ImagePageScrollTestBuilder: AttributedStringBuilding {
             ),
             imagePage: HTMLAttributedStringBuilder.ImagePage(source: "cover.jpg", image: image),
             pageBackgroundImage: nil,
+            anchorOffsets: [:]
+        )
+    }
+}
+
+private struct PageBackdropScrollTestBuilder: AttributedStringBuilding {
+    let color: UIColor
+    let image: UIImage
+
+    var chapterCount: Int { 1 }
+
+    func chapterTitle(at index: Int) -> String { "Backdrop" }
+    func chapterSourceHref(at index: Int) -> String? { "backdrop.xhtml" }
+    func chapterDataSize(at index: Int) async -> Int { 1 }
+
+    func buildChapter(
+        at index: Int,
+        settings: ReaderRenderSettings,
+        themeTextColor: UIColor,
+        themeBackgroundColor: UIColor
+    ) async throws -> AttributedChapterBuildResult {
+        AttributedChapterBuildResult(
+            attributedString: NSAttributedString(
+                string: "Backdrop chapter",
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: settings.fontSize),
+                    .foregroundColor: themeTextColor,
+                ]
+            ),
+            imagePage: nil,
+            pageBackgroundImage: image,
+            pageBackgroundColor: color,
             anchorOffsets: [:]
         )
     }

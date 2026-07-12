@@ -54,6 +54,7 @@ struct FixedPageReaderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var state = FixedPageReaderState()
     @State private var readingStatsTracker: ReadingStatsSessionTracker?
+    @State private var showTouchZoneEditor = false
 
     var body: some View {
         ZStack {
@@ -72,8 +73,23 @@ struct FixedPageReaderView: View {
                 }
 
                 if state.showControls {
-                    FixedPageReaderControlsOverlay(state: state, onClose: { dismiss() })
+                    FixedPageReaderControlsOverlay(
+                        state: state,
+                        onClose: { dismiss() },
+                        onOpenTouchZoneEditor: {
+                            state.showControls = false
+                            showTouchZoneEditor = true
+                        }
+                    )
                         .transition(.opacity)
+                }
+
+                if showTouchZoneEditor {
+                    ReaderTouchZoneEditorView(
+                        onCancel: { showTouchZoneEditor = false },
+                        onSave: { showTouchZoneEditor = false }
+                    )
+                    .zIndex(100)
                 }
             }
         }
@@ -151,6 +167,7 @@ private struct FixedPageReaderRepresentable: UIViewControllerRepresentable {
 struct FixedPageReaderControlsOverlay: View {
     @ObservedObject var state: FixedPageReaderState
     var onClose: () -> Void
+    var onOpenTouchZoneEditor: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -187,7 +204,8 @@ struct FixedPageReaderControlsOverlay: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             FixedPageReaderSettingsView(
                 fixedPageReaderConfiguration: state.fixedPageReaderConfiguration,
-                onSelectConfiguration: { state.onSetConfiguration?($0) }
+                onSelectConfiguration: { state.onSetConfiguration?($0) },
+                onOpenTouchZoneEditor: onOpenTouchZoneEditor
             )
         }
         .padding(.horizontal, DSSpacing.md)
@@ -232,6 +250,9 @@ struct FixedPageReaderControlsOverlay: View {
 struct FixedPageReaderSettingsView: View {
     let fixedPageReaderConfiguration: FixedPageReaderConfiguration
     var onSelectConfiguration: (FixedPageReaderConfiguration) -> Void
+    var onOpenTouchZoneEditor: () -> Void
+
+    @ObservedObject private var subscriptionStore = SubscriptionStore.shared
 
     var body: some View {
         Menu {
@@ -243,6 +264,13 @@ struct FixedPageReaderSettingsView: View {
                         mode.localizedName,
                         systemImage: fixedPageReaderConfiguration.mode == mode ? "checkmark" : mode.iconName
                     )
+                }
+            }
+            if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsTouchZoneEditor,
+               fixedPageReaderConfiguration.layout == .paged {
+                Divider()
+                Button(action: onOpenTouchZoneEditor) {
+                    Label(localized("翻頁區塊編輯"), systemImage: "hand.tap")
                 }
             }
         } label: {

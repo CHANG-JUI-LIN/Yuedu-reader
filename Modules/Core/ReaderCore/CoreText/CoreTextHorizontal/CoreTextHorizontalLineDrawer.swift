@@ -188,16 +188,9 @@ enum CoreTextHorizontalLineDrawer {
               nsString.substring(with: boundedRange).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         else { return }
 
-        let rawForeground = attrStr.attribute(.foregroundColor, at: lineStart, effectiveRange: nil)
-        let foreground: UIColor?
-        if let uiColor = rawForeground as? UIColor {
-            foreground = uiColor
-        } else if rawForeground != nil {
-            foreground = UIColor(cgColor: rawForeground as! CGColor)
-        } else {
-            foreground = nil
-        }
-        let color = (foreground ?? .label).withAlphaComponent(0.18)
+        let color = GlobalSettings.uiColor(
+            rgbHex: GlobalSettings.shared.readerTextUnderlineDecorationColorHex
+        ).withAlphaComponent(0.45)
         let underlineY = origin.y - max(2, descent * 0.72)
 
         ctx.saveGState()
@@ -253,25 +246,67 @@ enum CoreTextHorizontalLineDrawer {
             let x1 = origin.x + max(startOffset, endOffset)
             guard x1 > x0 else { return }
 
+            // The chip hugs the run's own font box, not the line's: a small badge on a
+            // line with larger text (`.chapter1 span` next to its heading) must not
+            // balloon to the tallest glyph's height, matching a browser's inline
+            // background box.
+            let runAscent: CGFloat
+            let runDescent: CGFloat
+            if let runFont = attrStr.attribute(.font, at: range.location, effectiveRange: nil) as? UIFont {
+                runAscent = runFont.ascender
+                runDescent = -runFont.descender
+            } else {
+                runAscent = ascent
+                runDescent = descent
+            }
             let rect = CGRect(
                 x: x0 - style.paddingHorizontal,
-                y: origin.y - descent - style.paddingVertical,
+                y: origin.y - runDescent - style.paddingVertical,
                 width: (x1 - x0) + 2 * style.paddingHorizontal,
-                height: (ascent + descent) + 2 * style.paddingVertical
+                height: (runAscent + runDescent) + 2 * style.paddingVertical
             )
-            let radius = max(0, min(style.cornerRadius, min(rect.width, rect.height) / 2))
-            let path = UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath
 
             ctx.saveGState()
             if let fill = style.fillColor {
+                let radius = max(0, min(style.cornerRadius, min(rect.width, rect.height) / 2))
                 ctx.setFillColor(fill.cgColor)
-                ctx.addPath(path)
+                ctx.addPath(UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath)
                 ctx.fillPath()
             }
-            ctx.setStrokeColor(style.borderColor.cgColor)
-            ctx.setLineWidth(style.borderWidth)
-            ctx.addPath(path)
-            ctx.strokePath()
+            if !style.edges.isEmpty, style.borderWidth > 0 {
+                ctx.setStrokeColor(style.borderColor.cgColor)
+                ctx.setLineWidth(style.borderWidth)
+                if !style.dash.isEmpty {
+                    ctx.setLineDash(phase: 0, lengths: style.dash)
+                }
+                if style.edges == .all {
+                    let radius = max(0, min(style.cornerRadius, min(rect.width, rect.height) / 2))
+                    ctx.addPath(UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath)
+                } else {
+                    // Partial borders draw as bare edge lines (CG y-up: minY is the visual
+                    // bottom). `.underline { border-bottom }` = an underline per fragment,
+                    // matching CSS box-decoration-break: slice.
+                    let path = CGMutablePath()
+                    if style.edges.contains(.bottom) {
+                        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+                        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+                    }
+                    if style.edges.contains(.top) {
+                        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+                        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+                    }
+                    if style.edges.contains(.left) {
+                        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+                        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+                    }
+                    if style.edges.contains(.right) {
+                        path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
+                        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+                    }
+                    ctx.addPath(path)
+                }
+                ctx.strokePath()
+            }
             ctx.restoreGState()
         }
     }

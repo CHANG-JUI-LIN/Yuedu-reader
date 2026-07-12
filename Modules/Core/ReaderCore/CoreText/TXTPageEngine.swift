@@ -281,6 +281,7 @@ final class TXTPageEngine: PageRenderingProvider {
             attributedString: buildResult.attributedString,
             imagePage: buildResult.imagePage,
             pageBackgroundImage: buildResult.pageBackgroundImage,
+            pageBackgroundColor: buildResult.pageBackgroundColor,
             anchorOffsets: buildResult.anchorOffsets,
             renderSize: renderSize,
             fontSize: renderSettings.fontSize,

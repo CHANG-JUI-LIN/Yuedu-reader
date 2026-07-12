@@ -34,7 +34,9 @@ struct AppearanceThemeView: View {
                 togglesSection
                 globalFontRow
                 readerInterfaceRow
-                rootTabRow
+                if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsBottomTabCustomization {
+                    rootTabRow
+                }
                 // Pro upsell only; subscribers customize via 新建 / theme tiles.
                 if !subscriptionStore.hasAccess(.readerThemePacks) {
                     customizationSection

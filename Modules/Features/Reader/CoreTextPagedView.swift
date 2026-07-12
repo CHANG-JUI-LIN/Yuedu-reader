@@ -16,7 +16,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     let clearExternalTargetPosition: () -> Void
     @Binding var currentPage: Int
     let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
-    let onTapZone: (String) -> Void
+    let onTapZone: (TouchAction) -> Void
     var onFootnoteTap: (String) -> Void = { _ in }
     var onSwipeUpExit: () -> Void = {}
 
@@ -279,7 +279,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         var sessionCoordinator: ReaderSessionCoordinator?
         @Binding var currentPage: Int
         let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
-        let onTapZone: (String) -> Void
+        let onTapZone: (TouchAction) -> Void
         let onFootnoteTap: (String) -> Void
         let onSwipeUpExit: () -> Void
         let isRTL: Bool
@@ -537,7 +537,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
              clearExternalTargetPosition: @escaping () -> Void,
              currentPage: Binding<Int>,
              onPageChanged: @escaping (Int, CoreTextReadingPosition?) -> Void,
-             onTapZone: @escaping (String) -> Void,
+             onTapZone: @escaping (TouchAction) -> Void,
              onFootnoteTap: @escaping (String) -> Void,
              onSwipeUpExit: @escaping () -> Void = {}) {
             self.currentEngine = engine
@@ -602,6 +602,13 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         self.onFootnoteTap(note)
                     }
                 }
+                coreTextEngine.onLinkNavigate = { [weak self, weak pageViewController] page in
+                    DispatchQueue.main.async {
+                        guard let self, let pageViewController else { return }
+                        guard self.callbackEngineIdentifier == identifier else { return }
+                        self.handleLinkNavigate(to: page, on: pageViewController)
+                    }
+                }
             }
 
             if engine.currentPage > 0, currentPage == 0 {
@@ -616,6 +623,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
             if let coreTextEngine = callbackEngineObject as? CoreTextPageEngine {
                 coreTextEngine.onFootnoteTap = nil
+                coreTextEngine.onLinkNavigate = nil
             }
             callbackEngineObject = nil
             callbackEngineIdentifier = nil
@@ -836,6 +844,26 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             publishCurrentPage(clamped, notify: true)
         }
 
+        /// A tapped in-content link (TOC table, cross-reference). Unlike `handleNavigate` —
+        /// which only republishes the binding for pagination-offset corrections — a link tap
+        /// must move the visible page itself: the executor model never reconciles the
+        /// binding against the page view controller between commands.
+        private func handleLinkNavigate(to page: Int, on pageViewController: UIPageViewController) {
+            let clamped = max(0, min(page, max(currentEngine.totalPages - 1, 0)))
+            guard !isTransitioning else {
+                pendingNavigation = PendingNavigation(target: .page(clamped))
+                return
+            }
+            let targetVC = displayViewController(at: clamped)
+            guard !isPlaceholderDisplay(targetVC) else {
+                // Chapter layout not ready yet — park the target; handleChapterReady
+                // consumes pendingNavigation once the real page exists.
+                pendingNavigation = PendingNavigation(target: .page(clamped))
+                return
+            }
+            _ = setPage(targetVC, on: pageViewController, layoutNow: true)
+        }
+
         @discardableResult
         func requestPageTransition(to targetPage: Int, visiblePage: Int) -> [ReaderEffect] {
             sessionCoordinator?.send(.pageTurnRequested(
@@ -983,24 +1011,18 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
             guard recognizer.state == .ended,
                   let view = recognizer.view else { return }
-            let x = recognizer.location(in: view).x
-            let w = view.bounds.width
-            let rawZone = x < w * 0.3 ? "left" : x > w * 0.7 ? "right" : "center"
-            let zone: String
-            if rawZone == "center" {
-                zone = "center"
-            } else if GlobalSettings.shared.readerTapBothSidesNextPage {
-                // Setting: both side zones advance to the next page (center still = menu).
-                // "right" is what ReaderView maps to goToNextPage(), regardless of RTL.
-                zone = "right"
-            } else if isRTL {
-                // Mirror the data source swap: swipe left-to-right = "before" = next page.
-                // Tap left side → same as swiping left → next page.  Tap right → prev page.
-                zone = rawZone == "left" ? "right" : "left"
+            let point = recognizer.location(in: view)
+            let action: TouchAction
+            if GlobalSettings.shared.readerTapBothSidesNextPage {
+                let xFraction = point.x / max(view.bounds.width, 1)
+                action = (0.3...0.7).contains(xFraction) ? .toggleMenu : .nextPage
             } else {
-                zone = rawZone
+                let config = TouchZoneConfig.effective(
+                    isProActive: SubscriptionStore.shared.isProActive
+                )
+                action = config.action(at: point, in: view.bounds.size)
             }
-            DispatchQueue.main.async { self.onTapZone(zone) }
+            DispatchQueue.main.async { self.onTapZone(action) }
         }
 
         func captureStablePosition(from viewController: UIViewController) {

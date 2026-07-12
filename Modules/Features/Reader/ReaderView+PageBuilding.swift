@@ -5,9 +5,21 @@ extension ReaderView {
 
     // MARK: - Loading & Page Building
     func currentRenderSettings(marginH: CGFloat) -> ReaderRenderSettings {
-        let topInset = ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
+        // The header band only exists in paged mode; scroll mode keeps the
+        // plain top inset so its slices don't reserve a band nobody draws.
+        let topInset = ReaderLayoutMetrics.topInset(
+            safeTop: effectiveReaderSafeTop,
+            headerVisible: readerConfig.readerHeaderVisible && !effectiveScrollMode,
+            headerTopPadding: readerConfig.readerHeaderTopPadding,
+            headerTextGap: readerConfig.readerHeaderTextGap
+        )
+        // Footer only draws in paged mode. When it's hidden (or scroll mode
+        // reserves its own band), pass the real safe bottom so the text still
+        // clears the home indicator instead of the footer band standing in for it.
+        let footerVisible = readerConfig.readerFooterVisible && !effectiveScrollMode
         let bottomInset = ReaderLayoutMetrics.bottomInset(
-            safeBottom: 0,
+            safeBottom: footerVisible ? 0 : windowSafeBottom,
+            footerVisible: footerVisible,
             footerBottomPadding: readerConfig.footerBottomPadding,
             footerTextGap: readerConfig.footerTextGap
         )
@@ -33,9 +45,9 @@ extension ReaderView {
             titleTopSpacing: readerConfig.readerTitleTopSpacing,
             titleBottomSpacing: readerConfig.readerTitleBottomSpacing,
             readerBackgroundImageURL: activeReaderBackgroundImageURL,
-            dialogueHighlightColor: readerTheme.dialogueHighlightColor(
-                enabled: GlobalSettings.shared.readerDialogueHighlightEnabled
-            )
+            dialogueHighlightColor: GlobalSettings.shared.readerDialogueHighlightEnabled
+                ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueHighlightColorHex)
+                : nil
         )
     }
 

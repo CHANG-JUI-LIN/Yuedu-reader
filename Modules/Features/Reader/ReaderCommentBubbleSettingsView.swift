@@ -13,25 +13,21 @@ struct ReaderCommentBubbleSettingsView: View {
     @State private var stylePendingDeletion: ReaderCommentBubbleCustomStyle?
     @State private var importAlert: BubbleImportAlert?
 
-    private let previewColumns = [
-        GridItem(.fixed(DSLayout.readerBubblePreviewTileWidth), spacing: DSSpacing.sm),
-        GridItem(.fixed(DSLayout.readerBubblePreviewTileWidth), spacing: DSSpacing.sm),
-        GridItem(.fixed(DSLayout.readerBubblePreviewTileWidth), spacing: DSSpacing.sm),
-    ]
-
     var body: some View {
         Form {
             Section(header: Text(localized("氣泡樣式"))) {
-                LazyVGrid(columns: previewColumns, alignment: .leading, spacing: DSSpacing.sm) {
-                    ForEach([
-                        ReaderCommentBubblePresetMode.builtin,
-                        ReaderCommentBubblePresetMode.square,
-                    ]) { mode in
-                        builtinStyleButton(mode: mode)
-                    }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: DSSpacing.sm) {
+                        ForEach([
+                            ReaderCommentBubblePresetMode.builtin,
+                            ReaderCommentBubblePresetMode.square,
+                        ]) { mode in
+                            builtinStyleButton(mode: mode)
+                        }
 
-                    ForEach(settings.commentBubbleCustomStyles) { style in
-                        customStyleButton(style: style)
+                        ForEach(settings.commentBubbleCustomStyles) { style in
+                            customStyleButton(style: style)
+                        }
                     }
                 }
                 .padding(.vertical, DSSpacing.sm)
@@ -216,7 +212,11 @@ struct ReaderCommentBubbleSettingsView: View {
                     .multilineTextAlignment(.center)
             }
             .foregroundStyle(isSelected ? DSColor.accent : DSColor.textPrimary)
-            .frame(maxWidth: .infinity, minHeight: DSLayout.readerBubblePreviewHeight)
+            .frame(
+                minWidth: DSLayout.readerBubblePreviewTileWidth,
+                maxWidth: DSLayout.readerBubblePreviewTileWidth,
+                minHeight: DSLayout.readerBubblePreviewHeight
+            )
             .background(isSelected ? DSColor.accentLight : DSColor.surfaceTertiary)
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
             .overlay {

@@ -12,6 +12,14 @@ struct JsBridgeBrowserView: View {
     let urlString: String
     let title: String
     let onDismiss: (_ body: String?) -> Void
+    let hidesToolbar: Bool
+
+    init(urlString: String, title: String = "", hidesToolbar: Bool = false, onDismiss: @escaping (_ body: String?) -> Void) {
+        self.urlString = urlString
+        self.title = title
+        self.hidesToolbar = hidesToolbar
+        self.onDismiss = onDismiss
+    }
 
     @StateObject private var bridge = JsBridgeBrowserBridge()
     @State private var isSyncing = false
@@ -19,62 +27,70 @@ struct JsBridgeBrowserView: View {
     private var navTitle: String { title.isEmpty ? localized("瀏覽器") : title }
 
     var body: some View {
-        NavigationStack {
-            ZStack(alignment: .top) {
-                JsBridgeBrowserRepresentable(urlString: urlString, bridge: bridge)
-                    .edgesIgnoringSafeArea(.bottom)
-
-                // Full-screen state until the page delivers its first content.
-                switch bridge.phase {
-                case .loading:
-                    loadingOverlay
-                case .failed:
-                    errorOverlay
-                case .committed, .finished:
-                    EmptyView()
-                }
-
-                // Safari-style thin progress bar across the top while loading.
-                if (bridge.phase == .loading || bridge.phase == .committed), bridge.progress < 1 {
-                    ProgressView(value: max(bridge.progress, 0.03))
-                        .progressViewStyle(.linear)
-                        .tint(DSColor.accent)
-                        .transition(.opacity)
-                }
-            }
-            .animation(DSAnimation.fast, value: bridge.phase)
-            .animation(DSAnimation.fast, value: bridge.progress)
-            .navigationTitle(navTitle)
-            .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        onDismiss(nil)
-                    } label: {
-                        Label(localized("取消"), systemImage: "xmark")
-                            .labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel(localized("取消"))
-                    .disabled(isSyncing)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if isSyncing {
-                        ProgressView().scaleEffect(0.85)
-                    } else {
-                        Button {
-                            isSyncing = true
-                            bridge.syncCookiesAndDismiss? { body in
-                                onDismiss(body)
+        if hidesToolbar {
+            contentView
+        } else {
+            NavigationStack {
+                contentView
+                    .navigationTitle(navTitle)
+                    .toolbarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button {
+                                onDismiss(nil)
+                            } label: {
+                                Label(localized("取消"), systemImage: "xmark")
+                                    .labelStyle(.iconOnly)
                             }
-                        } label: {
-                            Label(localized("完成"), systemImage: "checkmark")
-                                .labelStyle(.iconOnly)
+                            .accessibilityLabel(localized("取消"))
+                            .disabled(isSyncing)
                         }
-                        .accessibilityLabel(localized("完成"))
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            if isSyncing {
+                                ProgressView().scaleEffect(0.85)
+                            } else {
+                                Button {
+                                    isSyncing = true
+                                    bridge.syncCookiesAndDismiss? { body in
+                                        onDismiss(body)
+                                    }
+                                } label: {
+                                    Label(localized("完成"), systemImage: "checkmark")
+                                        .labelStyle(.iconOnly)
+                                }
+                                .accessibilityLabel(localized("完成"))
+                            }
+                        }
                     }
-                }
             }
         }
+    }
+
+    private var contentView: some View {
+        ZStack(alignment: .top) {
+            JsBridgeBrowserRepresentable(urlString: urlString, bridge: bridge)
+                .edgesIgnoringSafeArea(hidesToolbar ? .all : .bottom)
+
+            // Full-screen state until the page delivers its first content.
+            switch bridge.phase {
+            case .loading:
+                loadingOverlay
+            case .failed:
+                errorOverlay
+            case .committed, .finished:
+                EmptyView()
+            }
+
+            // Safari-style thin progress bar across the top while loading.
+            if (bridge.phase == .loading || bridge.phase == .committed), bridge.progress < 1 {
+                ProgressView(value: max(bridge.progress, 0.03))
+                    .progressViewStyle(.linear)
+                    .tint(DSColor.accent)
+                    .transition(.opacity)
+            }
+        }
+        .animation(DSAnimation.fast, value: bridge.phase)
+        .animation(DSAnimation.fast, value: bridge.progress)
     }
 
     // MARK: - Overlays

@@ -45,6 +45,12 @@ struct ReaderPreferences: Codable, Equatable {
     var readerWritingMode: String
     var textConversion: String
     var scrollMode: Bool
+    // Header fields arrived later — optional so payloads written by older
+    // builds still decode.
+    var readerHeaderVisible: Bool?
+    var readerHeaderTopPadding: Double?
+    var readerHeaderTextGap: Double?
+    var readerHeaderFieldPositions: [String: String]?
 
     static func current(settings: GlobalSettings = .shared) -> ReaderPreferences {
         ReaderPreferences(
@@ -60,7 +66,11 @@ struct ReaderPreferences: Codable, Equatable {
             pageTurnStyle: settings.pageTurnStyle.rawValue,
             readerWritingMode: settings.readerWritingMode.rawValue,
             textConversion: settings.textConversion.rawValue,
-            scrollMode: settings.scrollMode
+            scrollMode: settings.scrollMode,
+            readerHeaderVisible: settings.readerHeaderVisible,
+            readerHeaderTopPadding: settings.readerHeaderTopPadding,
+            readerHeaderTextGap: settings.readerHeaderTextGap,
+            readerHeaderFieldPositions: settings.readerHeaderFieldPositions
         )
     }
 
@@ -82,6 +92,18 @@ struct ReaderPreferences: Codable, Equatable {
         settings.readerWritingMode = ReaderWritingMode(rawValue: readerWritingMode) ?? settings.readerWritingMode
         settings.textConversion = TextConversion(rawValue: textConversion) ?? settings.textConversion
         settings.scrollMode = scrollMode
+        if let readerHeaderVisible {
+            settings.readerHeaderVisible = readerHeaderVisible
+        }
+        if let readerHeaderTopPadding {
+            settings.readerHeaderTopPadding = readerHeaderTopPadding
+        }
+        if let readerHeaderTextGap {
+            settings.readerHeaderTextGap = readerHeaderTextGap
+        }
+        if let readerHeaderFieldPositions {
+            settings.readerHeaderFieldPositions = readerHeaderFieldPositions
+        }
         ReaderConfig.shared.syncFromGlobalSettings()
     }
 }

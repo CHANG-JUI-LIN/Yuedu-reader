@@ -155,7 +155,9 @@ enum CoreTextChunkAttachmentExtractor {
                     alt: info.alt,
                     linkHref: linkHref,
                     mediaAttachment: mediaAttachment,
-                    originalSize: img.size
+                    originalSize: img.size,
+                    linkRegions: info.linkRegions,
+                    allowsPreview: info.allowsPreview
                 ))
             }
         }

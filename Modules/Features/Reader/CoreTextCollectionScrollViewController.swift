@@ -614,6 +614,21 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         }
 
         let point = gesture.location(in: collectionView)
+        if let (_, chunk, localPoint) = hitTestChunk(at: point),
+           let href = attachmentLinkTarget(in: chunk, at: localPoint)?.href {
+            if let note = FootnoteStore.text(spineIndex: chunk.chapterIndex, href: href),
+               let anchor = footnoteAnchor(at: point) {
+                FootnotePopoverHost.present(
+                    text: note,
+                    from: self,
+                    sourceView: anchor.sourceView,
+                    sourceRect: anchor.sourceRect
+                )
+                return
+            }
+            onInternalLinkTap?(href)
+            return
+        }
         if let media = mediaAttachment(at: point) {
             handleMediaTap(media)
             return
@@ -646,6 +661,14 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             attachment.mediaAttachment != nil
                 && attachment.rect.insetBy(dx: -8, dy: -8).contains(localPoint)
         }?.mediaAttachment
+    }
+
+    private func attachmentLinkTarget(
+        in chunk: CoreTextChunk,
+        at point: CGPoint
+    ) -> CoreTextPaginator.RenderedAttachment.LinkTarget? {
+        let attachments = chunk.attachments + chunk.blockRenderables.compactMap(\.imageAttachment)
+        return attachments.lazy.compactMap { $0.linkTarget(at: point) }.first
     }
 
     private func footnoteAnchor(at pointInCollection: CGPoint) -> (sourceView: UIView, sourceRect: CGRect)? {
@@ -877,7 +900,8 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
                 axis: scrollAxis,
                 horizontalInset: horizontalInset,
                 verticalInset: verticalInset,
-                leadingSpacing: chapterGap(for: indexPath.item)
+                leadingSpacing: chapterGap(for: indexPath.item),
+                viewportSize: collectionView.bounds.size
             )
         }
         return cell

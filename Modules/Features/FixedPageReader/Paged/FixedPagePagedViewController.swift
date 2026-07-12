@@ -108,21 +108,25 @@ final class FixedPagePagedViewController: UIViewController, FixedPageModeReader,
 
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         let point = gesture.location(in: view)
-        if fixedPageReaderConfiguration.navigationAxis == .vertical {
-            let third = view.bounds.height / 3
-            if point.y < third { goBack() }
-            else if point.y > 2 * third { advance() }
-            else { container?.readerToggleControls() }
-            return
-        }
-        let third = view.bounds.width / 3
-        let leftZone = point.x < third
-        let rightZone = point.x > 2 * third
-        guard leftZone || rightZone else { container?.readerToggleControls(); return }
-        if usesRightToLeftProgression {
-            if leftZone { advance() } else { goBack() }
+        let action: TouchAction
+        if GlobalSettings.shared.readerTapBothSidesNextPage {
+            let xFraction = point.x / max(view.bounds.width, 1)
+            action = (0.3...0.7).contains(xFraction) ? .toggleMenu : .nextPage
         } else {
-            if rightZone { advance() } else { goBack() }
+            action = TouchZoneConfig.effective(
+                isProActive: SubscriptionStore.shared.isProActive
+            ).action(at: point, in: view.bounds.size)
+        }
+
+        switch action.readerCommand {
+        case .none: break
+        case .toggleMenu: container?.readerToggleControls()
+        case .previousPage: goBack()
+        case .nextPage: advance()
+        case .previousChapter: container?.readerRequestsPreviousChapter()
+        case .nextChapter: container?.readerRequestsNextChapter()
+        case .toggleBookmark: container?.readerToggleBookmark()
+        case .tableOfContents: container?.readerShowTableOfContents()
         }
     }
 

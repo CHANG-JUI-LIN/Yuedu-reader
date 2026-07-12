@@ -81,6 +81,7 @@ struct yuedu_appTests {
             blockRenderables: [:],
             pageKinds: Array(repeating: .text, count: max(ranges.count, 1)),
             pageBackgroundImage: nil,
+            authoredBackgroundColor: nil,
             anchorOffsets: [:],
             renderSize: CGSize(width: 320, height: 480),
             fontSize: 18,

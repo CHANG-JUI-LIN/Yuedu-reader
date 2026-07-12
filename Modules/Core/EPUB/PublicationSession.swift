@@ -752,8 +752,21 @@ final class PublicationSession {
 
     func chapterIndex(for href: String) -> Int? {
         let normalized = Self.normalizedHREF(href)
-        return chapters.firstIndex(where: {
+        if let index = chapters.firstIndex(where: {
             $0.href == normalized || normalized.hasSuffix($0.href) || $0.href.hasSuffix(normalized)
+        }) {
+            return index
+        }
+        // Obfuscated-filename EPUBs (`Text/_*:*….html`) can reach us in mixed encodings: a
+        // tapped `<a href>` is the author's raw string while the stored spine href may be
+        // percent-encoded (or the reverse, e.g. through an older spine cache). Retry on the
+        // percent-decoded forms of both sides before giving up.
+        let decodedTarget = normalized.removingPercentEncoding ?? normalized
+        return chapters.firstIndex(where: {
+            let decoded = $0.href.removingPercentEncoding ?? $0.href
+            return decoded == decodedTarget
+                || decodedTarget.hasSuffix(decoded)
+                || decoded.hasSuffix(decodedTarget)
         })
     }
 

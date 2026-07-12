@@ -9,6 +9,7 @@ struct ReaderSettingsView: View {
     var capabilities: ReaderCapabilities = .reflowableText
     var allowsUserSelectedReaderFont = false
     var isVerticalWritingMode = false
+    var onOpenTouchZoneEditor: (() -> Void)?
 
     @StateObject private var readerConfig = ReaderConfig.shared
     @ObservedObject private var settings = GlobalSettings.shared
@@ -16,8 +17,6 @@ struct ReaderSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingFontImporter = false
     @State private var showingLayoutImporter = false
-    @State private var showLayoutPaywall = false
-    @State private var showDialogueHighlightPaywall = false
     @State private var fontImportError: FontImportError?
     @State private var layoutImportAlert: LayoutImportAlert?
     @State private var customLayoutEnabled = true
@@ -45,6 +44,8 @@ struct ReaderSettingsView: View {
     private let defaultPageMarginV: CGFloat = 16
     private let defaultFooterBottomPadding = ReaderLayoutMetrics.defaultFooterBottomPadding
     private let defaultFooterTextGap = ReaderLayoutMetrics.defaultFooterTextGap
+    private let defaultHeaderTopPadding = ReaderLayoutMetrics.defaultHeaderTopPadding
+    private let defaultHeaderTextGap = ReaderLayoutMetrics.defaultHeaderTextGap
     private let defaultReaderTitleSize: CGFloat = 28
     private let defaultReaderTitleTopSpacing: CGFloat = 10
     private let defaultReaderTitleBottomSpacing: CGFloat = 20
@@ -68,7 +69,9 @@ struct ReaderSettingsView: View {
                         pageDisplaySection
                     }
 
-                    readerDecorationSection
+                    if premiumVisibility.showsReaderDecoration {
+                        readerDecorationSection
+                    }
                     displaySection
                 }
             }
@@ -122,14 +125,6 @@ struct ReaderSettingsView: View {
                 dismissButton: .default(Text(localized("確定")))
             )
         }
-        .sheet(isPresented: $showLayoutPaywall) {
-            PaywallView(highlightedFeature: .layoutPresetImport)
-                .environmentObject(SubscriptionStore.shared)
-        }
-        .sheet(isPresented: $showDialogueHighlightPaywall) {
-            PaywallView(highlightedFeature: .dialogueHighlight)
-                .environmentObject(SubscriptionStore.shared)
-        }
         .onAppear {
             customLayoutEnabled = hasCustomLayoutOverrides
             if settings.followSystemBrightness {
@@ -141,6 +136,10 @@ struct ReaderSettingsView: View {
                 syncBrightnessFromSystem()
             }
         }
+    }
+
+    private var premiumVisibility: ReaderPremiumVisibilityPolicy {
+        ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive)
     }
 
     private var pageDisplaySection: some View {
@@ -294,20 +293,25 @@ struct ReaderSettingsView: View {
 
     private var layoutDetailsSection: some View {
         Section(header: Text(localized("輔助使用與佈局選項"))) {
-            Button {
-                if subscriptionStore.hasAccess(.layoutPresetImport) {
+            if premiumVisibility.showsLayoutPresetImport {
+                Button {
                     showingLayoutImporter = true
-                } else {
-                    showLayoutPaywall = true
+                } label: {
+                    Label(localized("匯入排版參數"), systemImage: "square.and.arrow.down")
                 }
-            } label: {
-                Label(
-                    localized("匯入排版參數"),
-                    systemImage: subscriptionStore.hasAccess(.layoutPresetImport) ? "square.and.arrow.down" : "lock.fill"
-                )
             }
 
             if !settings.scrollMode {
+                if premiumVisibility.showsTouchZoneEditor,
+                   let onOpenTouchZoneEditor {
+                    Button {
+                        dismiss()
+                        DispatchQueue.main.async { onOpenTouchZoneEditor() }
+                    } label: {
+                        Label(localized("翻頁區塊編輯"), systemImage: "hand.tap")
+                    }
+                }
+
                 ToggleRow(
                     title: localized("全局翻頁"),
                     subtitle: localized("開啟後，點畫面左右兩側都翻到下一頁；中間仍呼出選單"),
@@ -382,6 +386,43 @@ struct ReaderSettingsView: View {
                         step: 1
                     )
 
+                    if !settings.scrollMode {
+                        Toggle(localized("顯示頁眉"), isOn: $readerConfig.readerHeaderVisible)
+                            .font(DSFont.body)
+
+                        if readerConfig.readerHeaderVisible {
+                            ForEach(ReaderHeaderField.allCases) { field in
+                                Picker(selection: headerFieldPositionBinding(for: field)) {
+                                    ForEach(ReaderHeaderFieldPosition.allCases) { position in
+                                        Text(position.displayName).tag(position)
+                                    }
+                                } label: {
+                                    Text(field.displayName)
+                                        .font(DSFont.body)
+                                        .foregroundStyle(DSColor.textSecondary)
+                                }
+                            }
+
+                            LayoutSliderRow(
+                                title: localized("頂欄離頂"),
+                                icon: .headerTop,
+                                valueText: "\(Int(readerConfig.readerHeaderTopPadding)) pt",
+                                value: $readerConfig.readerHeaderTopPadding,
+                                range: 0...36,
+                                step: 1
+                            )
+
+                            LayoutSliderRow(
+                                title: localized("正文到頂欄"),
+                                icon: .headerTextGap,
+                                valueText: "\(Int(readerConfig.readerHeaderTextGap)) pt",
+                                value: $readerConfig.readerHeaderTextGap,
+                                range: 0...48,
+                                step: 1
+                            )
+                        }
+                    }
+
                     Toggle(localized("顯示標題"), isOn: $readerConfig.readerTitleVisible)
                         .font(DSFont.body)
 
@@ -433,19 +474,30 @@ struct ReaderSettingsView: View {
                 isOn: readerTextUnderlineDecorationBinding
             )
 
+            if settings.readerTextUnderlineDecorationEnabled {
+                ColorPicker(
+                    localized("底線顏色"),
+                    selection: readerTextUnderlineDecorationColorBinding,
+                    supportsOpacity: false
+                )
+            }
+
             Toggle(isOn: dialogueHighlightBinding) {
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: DSSpacing.sm) {
-                        Text(localized("對話文字高亮"))
-                            .font(DSFont.body)
-                        if !subscriptionStore.hasAccess(.dialogueHighlight) {
-                            ProLockBadge()
-                        }
-                    }
-                    Text(localized("將引號內的對話文字染成主題強調色。"))
+                    Text(localized("對話文字高亮"))
+                        .font(DSFont.body)
+                    Text(localized("使用自訂顏色標示引號內的對話文字。"))
                         .font(DSFont.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            if settings.readerDialogueHighlightEnabled {
+                ColorPicker(
+                    localized("高亮顏色"),
+                    selection: readerDialogueHighlightColorBinding,
+                    supportsOpacity: false
+                )
             }
         }
     }
@@ -495,6 +547,10 @@ struct ReaderSettingsView: View {
             abs(readerConfig.pageMarginV - defaultPageMarginV) > 0.001 ||
             abs(readerConfig.footerBottomPadding - defaultFooterBottomPadding) > 0.001 ||
             abs(readerConfig.footerTextGap - defaultFooterTextGap) > 0.001 ||
+            readerConfig.readerHeaderVisible != true ||
+            abs(readerConfig.readerHeaderTopPadding - defaultHeaderTopPadding) > 0.001 ||
+            abs(readerConfig.readerHeaderTextGap - defaultHeaderTextGap) > 0.001 ||
+            settings.readerHeaderFieldPositions != ReaderHeaderLayout.defaultFieldPositions ||
             readerConfig.readerTitleVisible != true ||
             abs(readerConfig.readerTitleSize - defaultReaderTitleSize) > 0.001 ||
             abs(readerConfig.readerTitleTopSpacing - defaultReaderTitleTopSpacing) > 0.001 ||
@@ -509,10 +565,24 @@ struct ReaderSettingsView: View {
         readerConfig.pageMarginV = defaultPageMarginV
         readerConfig.footerBottomPadding = defaultFooterBottomPadding
         readerConfig.footerTextGap = defaultFooterTextGap
+        readerConfig.readerHeaderVisible = true
+        readerConfig.readerHeaderTopPadding = defaultHeaderTopPadding
+        readerConfig.readerHeaderTextGap = defaultHeaderTextGap
+        settings.readerHeaderFieldPositions = ReaderHeaderLayout.defaultFieldPositions
         readerConfig.readerTitleVisible = true
         readerConfig.readerTitleSize = defaultReaderTitleSize
         readerConfig.readerTitleTopSpacing = defaultReaderTitleTopSpacing
         readerConfig.readerTitleBottomSpacing = defaultReaderTitleBottomSpacing
+    }
+
+    private func headerFieldPositionBinding(for field: ReaderHeaderField) -> Binding<ReaderHeaderFieldPosition> {
+        Binding(
+            get: {
+                let raw = settings.readerHeaderFieldPositions[field.rawValue] ?? ""
+                return ReaderHeaderFieldPosition(rawValue: raw) ?? .hidden
+            },
+            set: { settings.readerHeaderFieldPositions[field.rawValue] = $0.rawValue }
+        )
     }
 
     private var followSystemBrightnessBinding: Binding<Bool> {
@@ -551,18 +621,35 @@ struct ReaderSettingsView: View {
         )
     }
 
-    /// Pro-gated: turning it on without an active subscription presents the paywall
-    /// (highlighting `.dialogueHighlight`) and leaves the setting off. The reader's
-    /// `onChanged` observer rebuilds the content so the tint applies/clears live.
     private var dialogueHighlightBinding: Binding<Bool> {
         Binding(
             get: { settings.readerDialogueHighlightEnabled },
             set: { enabled in
-                if enabled && !subscriptionStore.hasAccess(.dialogueHighlight) {
-                    showDialogueHighlightPaywall = true
-                    return
-                }
                 settings.readerDialogueHighlightEnabled = enabled
+            }
+        )
+    }
+
+    private var readerTextUnderlineDecorationColorBinding: Binding<Color> {
+        Binding(
+            get: {
+                Color(uiColor: GlobalSettings.uiColor(rgbHex: settings.readerTextUnderlineDecorationColorHex))
+            },
+            set: {
+                settings.readerTextUnderlineDecorationColorHex =
+                    UIColor($0).rgbHex ?? GlobalSettings.defaultReaderUnderlineColorHex
+            }
+        )
+    }
+
+    private var readerDialogueHighlightColorBinding: Binding<Color> {
+        Binding(
+            get: {
+                Color(uiColor: GlobalSettings.uiColor(rgbHex: settings.readerDialogueHighlightColorHex))
+            },
+            set: {
+                settings.readerDialogueHighlightColorHex =
+                    UIColor($0).rgbHex ?? GlobalSettings.defaultReaderDialogueHighlightColorHex
             }
         )
     }
@@ -688,6 +775,8 @@ private enum LayoutMetricIconKind {
     case pageMargin
     case footerBottom
     case footerTextGap
+    case headerTop
+    case headerTextGap
     case titleSize
     case titleTopSpacing
     case titleBottomSpacing
@@ -797,6 +886,19 @@ private struct LayoutMetricIcon: View {
                 Image(systemName: "arrow.up.and.down")
                     .font(DSFont.fixed(size: 12, weight: .bold))
                 iconLine(width: 14)
+            }
+        case .headerTop:
+            VStack(spacing: 3) {
+                Image(systemName: "arrow.up.to.line")
+                    .font(DSFont.fixed(size: 12, weight: .bold))
+                iconLine(width: 22)
+            }
+        case .headerTextGap:
+            VStack(spacing: 3) {
+                iconLine(width: 14)
+                Image(systemName: "arrow.up.and.down")
+                    .font(DSFont.fixed(size: 12, weight: .bold))
+                iconLine(width: 22)
             }
         case .titleSize:
             Image(systemName: "textformat.size")

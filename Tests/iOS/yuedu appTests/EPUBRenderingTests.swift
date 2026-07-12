@@ -93,6 +93,710 @@ struct EPUBRenderingTests {
         #expect(abs(rect.height - 100) < 0.001)
     }
 
+    @Test func importantBodyBackgroundColorIsAvailableToThePageRenderer() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let ast = try #require(await builder.buildStyledAST(html: """
+        <html>
+          <body style="background-color: #352d2d !important">
+            <p style="color: #fff">Title page</p>
+          </body>
+        </html>
+        """, config: testHTMLConfig()))
+
+        #expect(colorMatches(
+            builder.pageBackgroundColor(from: ast),
+            red: 53.0 / 255.0,
+            green: 45.0 / 255.0,
+            blue: 45.0 / 255.0,
+            alpha: 1
+        ))
+    }
+
+    @Test func importantStylesheetBackgroundBeatsNormalInlineBackground() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let ast = try #require(await builder.buildStyledAST(html: """
+        <html>
+          <head><style>body { background-color: #352d2d !important; }</style></head>
+          <body style="background-color: #ffffff">
+            <p>Title page</p>
+          </body>
+        </html>
+        """, config: testHTMLConfig()))
+
+        #expect(colorMatches(
+            builder.pageBackgroundColor(from: ast),
+            red: 53.0 / 255.0,
+            green: 45.0 / 255.0,
+            blue: 45.0 / 255.0,
+            alpha: 1
+        ))
+    }
+
+    @Test func authoredNegativeTopMarginSurvivesIntoCoreTextParagraphStyle() async throws {
+        let attributed = await EPUBTestFixtures.renderIR(html: """
+        <html>
+          <head><style>.overlap { margin: -3em 0 3em 0; }</style></head>
+          <body>
+            <p>Heading</p>
+            <p class="overlap">Decorative timeline marker</p>
+          </body>
+        </html>
+        """, config: testHTMLConfig())
+        let string = attributed.string as NSString
+        let headingRange = string.range(of: "Heading")
+        let markerRange = string.range(of: "Decorative timeline marker")
+        let headingLocation = try #require(headingRange.location == NSNotFound ? nil : headingRange.location)
+        let markerLocation = try #require(markerRange.location == NSNotFound ? nil : markerRange.location)
+        let headingParagraph = try #require(
+            attributed.attribute(.paragraphStyle, at: headingLocation, effectiveRange: nil) as? NSParagraphStyle
+        )
+        let markerParagraph = try #require(
+            attributed.attribute(.paragraphStyle, at: markerLocation, effectiveRange: nil) as? NSParagraphStyle
+        )
+        let collapsedGap = headingParagraph.paragraphSpacing + markerParagraph.paragraphSpacingBefore
+
+        #expect(abs(collapsedGap + 43) < 0.1)
+    }
+
+    @Test func authoredBodyBackgroundColorSurvivesReaderThemeUpdates() async throws {
+        let texture = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 40)).image { context in
+            UIColor(white: 0.45, alpha: 0.3).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 20, height: 40))
+        }
+        let builder = HTMLAttributedStringBuilder()
+        builder.imageLoader = { source in source == "dragon.png" ? texture : nil }
+        let html = """
+        <html>
+          <body style="background-image: url('dragon.png'); background-color: #352d2d!important">
+            <p style="color: #fff">Title page</p>
+          </body>
+        </html>
+        """
+        let ast = try #require(await builder.buildStyledAST(html: html, config: testHTMLConfig()))
+        let rendered = await builder.build(html: html, config: testHTMLConfig())
+        let pageBackgroundImage = await builder.pageBackgroundImage(from: ast)
+        let pageBackgroundColor = builder.pageBackgroundColor(from: ast)
+        #expect(pageBackgroundImage != nil)
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: rendered.attributedString,
+            imagePage: nil,
+            pageBackgroundImage: pageBackgroundImage,
+            pageBackgroundColor: pageBackgroundColor,
+            anchorOffsets: [:],
+            renderSize: CGSize(width: 390, height: 844),
+            fontSize: 17,
+            contentInsets: .init(top: 52, left: 24, bottom: 72, right: 24)
+        )
+        let updated = layout.withUpdatedAppearance(
+            textColor: .black,
+            backgroundColor: .white,
+            readerBackgroundImage: nil
+        )
+
+        #expect(colorMatches(
+            updated.backgroundColor,
+            red: 53.0 / 255.0,
+            green: 45.0 / 255.0,
+            blue: 45.0 / 255.0,
+            alpha: 1
+        ))
+    }
+
+    @Test func tableModelPreservesCellLineBreakAndPerSideBorderColor() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let ast = try #require(await builder.buildStyledAST(html: """
+        <html>
+          <head><style>
+            table {
+              border-top: 1px solid #111;
+              border-right: 2px solid #222;
+              border-bottom: 3px solid #333;
+              border-left: 4px solid #444;
+            }
+            table td {
+              color: #fff;
+              border-left: 1px solid #fff;
+              font-family: "HYWS";
+              vertical-align: middle;
+              padding: 2px 3px 4px 5px;
+              line-height: 1.8em;
+            }
+            span.timebc {
+              color: #ccc;
+              font-family: "Sacred Hertz Straight";
+              font-size: 0.8em;
+            }
+          </style></head>
+          <body><table><tr><td>1.0<br/><span class="timebc">(2022.8.5)</span><sup><a class="duokan-footnote" href="#d1"><img src="note.png"/></a></sup></td></tr></table></body>
+        </html>
+        """, config: testHTMLConfig()))
+        let nodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
+        let table = try #require(nodes.compactMap { node -> HTMLTableModel? in
+            guard case .table(let table, _) = node else { return nil }
+            return table
+        }.first)
+        let cell = try #require(table.rows.first?.cells.first)
+
+        #expect(table.borderTop == 1)
+        #expect(table.borderRight == 2)
+        #expect(table.borderBottom == 3)
+        #expect(table.borderLeft == 4)
+        #expect(cell.text == "1.0\n(2022.8.5)")
+        #expect(cell.fontFamilies == ["HYWS"])
+        #expect(cell.verticalAlignment == .middle)
+        #expect(cell.paddingTop == 2)
+        #expect(cell.paddingRight == 3)
+        #expect(cell.paddingBottom == 4)
+        #expect(cell.paddingLeft == 5)
+        #expect(abs((cell.lineHeight ?? 0) - 30.6) < 0.1)
+        #expect(cell.textRuns.contains {
+            $0.text == "◦" && $0.linkHref == "#d1" && $0.imageSource == "note.png"
+        })
+        let dateRun = try #require(cell.textRuns.first { $0.text.contains("2022.8.5") })
+        #expect(dateRun.fontFamilies == ["Sacred Hertz Straight"])
+        #expect(abs(dateRun.fontScale - 0.8) < 0.001)
+        #expect(colorMatches(
+            dateRun.textColor?.uiColor,
+            red: 204.0 / 255.0,
+            green: 204.0 / 255.0,
+            blue: 204.0 / 255.0,
+            alpha: 1
+        ))
+        #expect(colorMatches(
+            cell.borderLeftColor?.uiColor,
+            red: 1,
+            green: 1,
+            blue: 1,
+            alpha: 1
+        ))
+    }
+
+    @Test @MainActor func borderlessTableRasterStaysFullyTransparent() throws {
+        let table = HTMLTableModel(
+            caption: nil,
+            rows: [
+                HTMLTableRow(cells: [
+                    HTMLTableCell(text: "", columnSpan: 1, rowSpan: 1, isHeader: false)
+                ])
+            ]
+        )
+        let image = try #require(HTMLTableRasterizer.render(
+            table: table,
+            maxWidth: 240,
+            baseFont: .systemFont(ofSize: 17),
+            textColor: .black,
+            backgroundColor: .white
+        ))
+
+        #expect(!imageContainsVisiblePixel(image))
+        #expect(image.size.width < 240)
+    }
+
+    @Test @MainActor func tableRasterDrawsAuthoredCellImages() throws {
+        let authoredImage = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 10)).image { context in
+            UIColor.systemRed.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 20, height: 10))
+        }
+        var cell = HTMLTableCell(text: "", columnSpan: 1, rowSpan: 1, isHeader: false)
+        cell.textRuns = [HTMLTableTextRun(
+            text: "",
+            fontScale: 1,
+            fontFamilies: [],
+            fontWeight: 400,
+            isItalic: false,
+            textColor: nil,
+            linkHref: nil,
+            imageSource: "time.png",
+            imageAlt: "time",
+            imageWidth: 20,
+            imageHeight: 10
+        )]
+        let table = HTMLTableModel(
+            caption: nil,
+            rows: [HTMLTableRow(cells: [cell])]
+        )
+        let image = try #require(HTMLTableRasterizer.renderPages(
+            table: table,
+            maxWidth: 240,
+            baseFont: .systemFont(ofSize: 17),
+            textColor: .black,
+            backgroundColor: .white,
+            imagesBySource: ["time.png": authoredImage]
+        ).first?.image)
+
+        #expect(imageContainsVisiblePixel(image))
+    }
+
+    @Test @MainActor func longTableRasterPagesKeepEveryAuthoredRow() {
+        let rowCount = 37
+        let table = HTMLTableModel(
+            caption: nil,
+            rows: (0..<rowCount).map { index in
+                HTMLTableRow(cells: [
+                    HTMLTableCell(
+                        text: "Row \(index)",
+                        columnSpan: 1,
+                        rowSpan: 1,
+                        isHeader: false
+                    )
+                ])
+            }
+        )
+        let pages = HTMLTableRasterizer.renderPages(
+            table: table,
+            maxWidth: 240,
+            baseFont: .systemFont(ofSize: 17),
+            textColor: .black,
+            backgroundColor: .white
+        )
+
+        #expect(pages.count > 1)
+        #expect(pages.flatMap { Array($0.rowRange) } == Array(0..<rowCount))
+    }
+
+    @Test @MainActor func tableRasterPreservesChapterAndFootnoteLinkRegions() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let ast = try #require(await builder.buildStyledAST(html: """
+        <html><body><table><tr>
+          <td><a href="chapter.xhtml">Chapter</a></td>
+          <td><a class="duokan-footnote" href="#d1"><img src="note.png"/></a></td>
+        </tr></table></body></html>
+        """, config: testHTMLConfig()))
+        let nodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
+        let table = try #require(nodes.compactMap { node -> HTMLTableModel? in
+            guard case .table(let table, _) = node else { return nil }
+            return table
+        }.first)
+
+        let page = try #require(HTMLTableRasterizer.renderPages(
+            table: table,
+            maxWidth: 240,
+            baseFont: .systemFont(ofSize: 17),
+            textColor: .black,
+            backgroundColor: .white
+        ).first)
+
+        #expect(page.linkRegions.contains { $0.href == "chapter.xhtml" && !$0.rect.isEmpty })
+        #expect(page.linkRegions.contains { $0.href == "#d1" && !$0.rect.isEmpty })
+    }
+
+    @Test @MainActor func actualHongwuEPUBKeepsBackdropLongTOCLinksAndTableFootnotes() async throws {
+        let sourceURL = URL(fileURLWithPath: "/Users/zhangruilin/Desktop/Test document/EPUB Format/壹▪洪武大帝.epub")
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else { return }
+
+        let session = try await PublicationSession.open(sourceURL: sourceURL)
+        let builder = EPUBAttributedStringBuilder(
+            session: session,
+            renderSize: CGSize(width: 390, height: 844)
+        )
+        let settings = testRenderSettings()
+
+        let frontispieceIndex = try #require(session.chapters.first { $0.title == "扉页" }?.index)
+        let frontispiece = try await builder.buildChapter(
+            at: frontispieceIndex,
+            settings: settings,
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+        #expect(frontispiece.pageBackgroundImage != nil)
+        #expect(colorMatches(
+            frontispiece.pageBackgroundColor,
+            red: 53.0 / 255.0,
+            green: 45.0 / 255.0,
+            blue: 45.0 / 255.0,
+            alpha: 1
+        ))
+        let frontispieceTable = try #require(tableImageRunInfos(in: frontispiece.attributedString).first)
+        #expect(frontispieceTable.drawWidth < 200)
+        #expect(!frontispieceTable.allowsPreview)
+
+        let productionNotesIndex = try #require(session.chapters.first { $0.title == "制作说明" }?.index)
+        let productionNotes = try await builder.buildChapter(
+            at: productionNotesIndex,
+            settings: settings,
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+        let productionTables = tableImageRunInfos(in: productionNotes.attributedString)
+        #expect(productionTables.contains { info in
+            !info.allowsPreview && info.linkRegions.contains { $0.href == "#d2" }
+        })
+
+        let tocIndex = try #require(session.chapters.first { $0.title == "目录" }?.index)
+        let toc = try await builder.buildChapter(
+            at: tocIndex,
+            settings: settings,
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+        let tocTables = tableImageRunInfos(in: toc.attributedString)
+        #expect(tocTables.count > 1)
+        #expect(tocTables.allSatisfy { !$0.allowsPreview })
+        #expect(tocTables.flatMap(\.linkRegions).count >= 30)
+
+        // Every in-book TOC entry must resolve back to a spine chapter — the hrefs are
+        // obfuscated filenames (`_*:*….html`) that URL(string:) refuses to parse.
+        let tocHref = try #require(session.chapters.first { $0.title == "目录" }?.href)
+        let chapterHrefs = tocTables.flatMap(\.linkRegions).map(\.href).filter { !$0.hasPrefix("#") }
+        #expect(chapterHrefs.count >= 30)
+        for href in chapterHrefs {
+            let resolved = EPUBStyleResolver.resolveImageHref(href, chapterHref: tocHref)
+            let match = session.chapterIndex(for: resolved) ?? session.chapterIndex(for: href)
+            #expect(match != nil, "TOC link did not resolve: \(href)")
+        }
+    }
+
+    // MARK: - Obfuscated-filename TOC links (洪武大帝 idiom, self-contained)
+
+    @Test func obfuscatedFilenameTOCTableLinksResolveAndCarryTapTargets() async throws {
+        let chapterName = "_**::ch:one*::.html"
+        let epubURL = try await makeEPUBArchive(entries: [
+            "mimetype": Data("application/epub+zip".utf8),
+            "META-INF/container.xml": Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+              <rootfiles>
+                <rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/>
+              </rootfiles>
+            </container>
+            """.utf8),
+            "OPS/package.opf": Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <package version="2.0" unique-identifier="bookid" xmlns="http://www.idpf.org/2007/opf">
+              <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <dc:identifier id="bookid">urn:uuid:obfuscated-toc</dc:identifier>
+                <dc:title>Obfuscated</dc:title>
+                <dc:language>zh</dc:language>
+              </metadata>
+              <manifest>
+                <item id="ml" href="Text/ml.xhtml" media-type="application/xhtml+xml"/>
+                <item id="c1" href="Text/\(chapterName)" media-type="application/xhtml+xml"/>
+                <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+              </manifest>
+              <spine toc="ncx">
+                <itemref idref="ml"/>
+                <itemref idref="c1"/>
+              </spine>
+            </package>
+            """.utf8),
+            "OPS/toc.ncx": Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+              <head><meta name="dtb:uid" content="urn:uuid:obfuscated-toc"/></head>
+              <docTitle><text>Obfuscated</text></docTitle>
+              <navMap>
+                <navPoint id="n1" playOrder="1"><navLabel><text>目录</text></navLabel><content src="Text/ml.xhtml"/></navPoint>
+                <navPoint id="n2" playOrder="2"><navLabel><text>童年</text></navLabel><content src="Text/\(chapterName)"/></navPoint>
+              </navMap>
+            </ncx>
+            """.utf8),
+            "OPS/Text/ml.xhtml": Data(epubXHTML(title: "目录", body: """
+            <table><tbody>
+              <tr><td>❖</td><td><a href="\(chapterName)">童年</a></td></tr>
+            </tbody></table>
+            """).utf8),
+            "OPS/Text/\(chapterName)": Data(epubXHTML(title: "童年", body: "<p>正文</p>").utf8)
+        ])
+
+        let session = try await PublicationSession.open(sourceURL: epubURL)
+        #expect(session.chapters.count == 2)
+
+        // 1. The naked anchor string (colon in its first path segment → URL(string:) == nil)
+        //    must still resolve, raw and resolved against the TOC page's directory.
+        let tocPageHref = session.chapters[0].href
+        let resolved = EPUBStyleResolver.resolveImageHref(chapterName, chapterHref: tocPageHref)
+        let matchedChapter = session.chapterIndex(for: resolved) ?? session.chapterIndex(for: chapterName)
+        #expect(matchedChapter == 1)
+
+        // 2. The rasterized TOC table carries a tappable hotspot for the link, and hit-testing
+        //    the paginated attachment at the hotspot's center returns the same href.
+        let builder = EPUBAttributedStringBuilder(
+            session: session,
+            renderSize: CGSize(width: 390, height: 844)
+        )
+        let toc = try await builder.buildChapter(
+            at: 0,
+            settings: testRenderSettings(),
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+        let regions = tableImageRunInfos(in: toc.attributedString).flatMap(\.linkRegions)
+        #expect(regions.contains { $0.href == chapterName })
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: toc.attributedString,
+            anchorOffsets: [:],
+            renderSize: CGSize(width: 390, height: 844),
+            fontSize: 17,
+            contentInsets: .init(top: 40, left: 20, bottom: 40, right: 20)
+        )
+        let attachments = layout.pageRanges.indices.flatMap { page in
+            (layout.inlineAttachments[page] ?? []) + (layout.blockAttachments[page] ?? [])
+        }
+        let tapped = attachments.compactMap { attachment -> CoreTextPaginator.RenderedAttachment.LinkTarget? in
+            guard !attachment.linkRegions.isEmpty else { return nil }
+            let region = attachment.linkRegions[0]
+            let center = CGPoint(
+                x: attachment.rect.minX + (region.normalizedRect.midX * attachment.rect.width),
+                y: attachment.rect.minY + (region.normalizedRect.midY * attachment.rect.height)
+            )
+            return attachment.linkTarget(at: center)
+        }
+        #expect(tapped.contains { $0.href == chapterName })
+
+        // Exercise the real paged-view tap path. The table is one raster attachment whose links
+        // live in `linkRegions`; checking only the attachment-wide `linkHref` made every TOC tap
+        // fall through to image preview instead of navigation.
+        let tableAttachment = try #require(attachments.first { !$0.linkRegions.isEmpty })
+        let region = try #require(tableAttachment.linkRegions.first)
+        let tapPoint = CGPoint(
+            x: tableAttachment.rect.minX + region.normalizedRect.midX * tableAttachment.rect.width,
+            y: tableAttachment.rect.minY + region.normalizedRect.midY * tableAttachment.rect.height
+        )
+        var tappedHref: String?
+        let pageView = CoreTextPageView(frame: CGRect(origin: .zero, size: layout.renderSize))
+        pageView.onInternalLinkTap = { tappedHref = $0 }
+        pageView.configure(layout: layout, pageIndex: 0)
+        pageView.debugHandleTap(at: tapPoint)
+        #expect(tappedHref == chapterName)
+    }
+
+    @Test @MainActor func hongwuProfileTableUsesActualPageHeightBeforeSplitting() async throws {
+        let rows = (0..<15).map { index in
+            "<tr><td>▪</td><td>欄位\(index)</td><td>這是一段人物檔案內容</td></tr>"
+        }.joined()
+        let builder = HTMLAttributedStringBuilder()
+        let ast = try #require(await builder.buildStyledAST(html: """
+        <html><head><style>
+        table { width: 100%; border: 1px solid #111; border-collapse: collapse; }
+        td { padding: 6px; line-height: 1.8em; border-top: 1px solid #111; }
+        </style></head><body><table>\(rows)</table></body></html>
+        """, config: testHTMLConfig()))
+        let nodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
+        let table = try #require(nodes.compactMap { node -> HTMLTableModel? in
+            guard case .table(let table, _) = node else { return nil }
+            return table
+        }.first)
+
+        let pages = HTMLTableRasterizer.renderPages(
+            table: table,
+            maxWidth: 350,
+            maxPageHeight: 760,
+            baseFont: .systemFont(ofSize: 17),
+            textColor: .black,
+            backgroundColor: .white
+        )
+        #expect(pages.count == 1)
+        #expect(pages.first?.rowRange == 0..<15)
+    }
+
+    // MARK: - CSS multiline comments (洪武大帝 css.css idiom)
+
+    @Test func multilineCSSCommentDoesNotSwallowTheNextRule() {
+        let rules = CSSParser.parse(css: """
+        /*.p_title {
+          background-color: #fff;
+          color: #fff;
+          text-align: center;
+        }*/
+        .p_title {
+          color: #fff;
+          background-color: #111;
+          border-radius: 5em;
+        }
+        """)
+        let declarations = rules.map(\.declarations)
+        #expect(rules.count == 1)
+        #expect(declarations.first?["background-color"] == "#111")
+    }
+
+    @Test func rulesInsideMultilineCommentsDoNotLeak() {
+        let rules = CSSParser.parse(css: """
+        /*
+        table.scbg5 tr td {
+          border: 1px solid #111;
+        }
+        .spanybk {
+          border: 1px solid #111;
+        }
+        */
+        .time-s {
+          float: left;
+          width: 35%;
+        }
+        """)
+        #expect(rules.count == 1)
+        #expect(rules.first?.declarations["width"] == "35%")
+    }
+
+    // MARK: - Inline per-side borders (.underline 题记 idiom)
+
+    @Test func borderBottomOnlySpanRendersAsDashedUnderlineNotABox() async throws {
+        let attributed = await EPUBTestFixtures.renderIR(html: """
+        <html><head><style>
+        .underline {
+          padding-bottom: 1px;
+          border-bottom: 1px dashed #111;
+        }
+        </style></head><body>
+          <p>○　<span class="underline">一切的事情都从1328年的那个夜晚开始</span></p>
+        </body></html>
+        """, config: testHTMLConfig())
+
+        let range = (attributed.string as NSString).range(of: "一切的事情")
+        #expect(range.location != NSNotFound)
+        let chip = try #require(attributed.attribute(
+            HTMLAttributedStringBuilder.inlineBorderBoxAttribute,
+            at: range.location,
+            effectiveRange: nil
+        ) as? HTMLAttributedStringBuilder.InlineBorderBoxStyle)
+        #expect(chip.edges == [.bottom])
+        #expect(!chip.dash.isEmpty)
+        #expect(chip.fillColor == nil)
+    }
+
+    @Test func fullBorderSpanKeepsClosedChipBox() async throws {
+        let attributed = await EPUBTestFixtures.renderIR(html: """
+        <html><body>
+          <p><span style="border: 1px solid #111; border-radius: 3em; padding: 2px 0.3em;">36</span></p>
+        </body></html>
+        """, config: testHTMLConfig())
+
+        let range = (attributed.string as NSString).range(of: "36")
+        #expect(range.location != NSNotFound)
+        let chip = try #require(attributed.attribute(
+            HTMLAttributedStringBuilder.inlineBorderBoxAttribute,
+            at: range.location,
+            effectiveRange: nil
+        ) as? HTMLAttributedStringBuilder.InlineBorderBoxStyle)
+        #expect(chip.edges == .all)
+        #expect(chip.dash.isEmpty)
+    }
+
+    @Test func backgroundOnlySpanGetsAFilledChip() async throws {
+        let attributed = await EPUBTestFixtures.renderIR(html: """
+        <html><head><style>
+        .chapter1 span { background-color: #111; color: #fff; padding: 2px 0.4em; }
+        </style></head><body>
+          <p class="chapter1"><span>参考消息</span>　五年五个皇帝</p>
+        </body></html>
+        """, config: testHTMLConfig())
+
+        let range = (attributed.string as NSString).range(of: "参考消息")
+        #expect(range.location != NSNotFound)
+        let chip = try #require(attributed.attribute(
+            HTMLAttributedStringBuilder.inlineBorderBoxAttribute,
+            at: range.location,
+            effectiveRange: nil
+        ) as? HTMLAttributedStringBuilder.InlineBorderBoxStyle)
+        #expect(chip.fillColor != nil)
+        #expect(chip.edges.isEmpty || chip.borderWidth == 0)
+    }
+
+    // MARK: - Whitespace processing (mapChildren)
+
+    @Test func ideographicSpaceAfterInlineChipIsContentNotFormatting() async throws {
+        let attributed = await EPUBTestFixtures.renderIR(html: """
+        <html><head><style>
+        .chapter1 span { background-color: #111; color: #fff; padding: 2px 0.4em; }
+        </style></head><body>
+          <p class="chapter1"><span>参考消息</span>　五年五个皇帝</p>
+        </body></html>
+        """, config: testHTMLConfig())
+
+        // The U+3000 between the chip and the heading is authored content, not collapsible
+        // whitespace — trimming it made the chip's drawn padding overlap the heading glyphs.
+        #expect(attributed.string.contains("参考消息\u{3000}五年五个皇帝"))
+    }
+
+    @Test func inlineFlowSpacesAroundInlineTagsSurvive() async throws {
+        let attributed = await EPUBTestFixtures.renderIR(html: """
+        <html><body>
+          <p>foo <b>bar</b> baz</p>
+        </body></html>
+        """, config: testHTMLConfig())
+
+        #expect(attributed.string.contains("foo bar baz"))
+    }
+
+    @Test func sourceIndentAfterLineBreakDoesNotLeakALeadingSpace() async throws {
+        let attributed = await EPUBTestFixtures.renderIR(html: """
+        <html><body>
+          <p>line one<br/>
+          line two</p>
+        </body></html>
+        """, config: testHTMLConfig())
+
+        // The collapsed space after <br> would sit at the new line's start; browsers drop it.
+        #expect(attributed.string.contains("line one\u{2028}line two"))
+    }
+
+    @Test func interBlockIndentationStaysDropped() async throws {
+        let attributed = await EPUBTestFixtures.renderIR(html: """
+        <html><body>
+          <div>
+            <p>alpha</p>
+            <p>beta</p>
+          </div>
+        </body></html>
+        """, config: testHTMLConfig())
+
+        // Source indentation between block siblings is formatting, never a space glyph.
+        #expect(attributed.string.contains("alpha"))
+        #expect(attributed.string.contains("beta"))
+        #expect(!attributed.string.contains(" "))
+    }
+
+    // MARK: - Vertical chapter seal (.num idiom)
+
+    @Test func narrowDisplayBlockSpanBecomesVerticalSeal() async throws {
+        let attributed = await EPUBTestFixtures.renderIR(html: """
+        <html><head><style>
+        .chapter { text-align: right; }
+        .num {
+          display: block;
+          border: 1px solid #111;
+          border-radius: 3em;
+          padding: 2px 0.3em;
+          font-size: 0.6em;
+          width: 1em;
+        }
+        </style></head><body>
+          <h3 class="chapter"><span class="num">第一章</span><br/>童年</h3>
+        </body></html>
+        """, config: testHTMLConfig())
+
+        // Per-character wrap: the seal renders one character per line.
+        #expect(attributed.string.contains("第\n一\n章"))
+
+        let range = (attributed.string as NSString).range(of: "第")
+        #expect(range.location != NSNotFound)
+        // The seal keeps its rounded-border block decoration over the stacked characters …
+        let decoration = attributed.attribute(
+            HTMLAttributedStringBuilder.blockRenderStyleAttribute,
+            at: range.location,
+            effectiveRange: nil
+        ) as? HTMLAttributedStringBuilder.BlockRenderStyle
+        #expect(decoration != nil)
+        #expect((decoration?.borderRadius ?? 0) > 0)
+        // … and the box hugs a one-character column, pinned to the left content edge the way
+        // a browser positions a block box (inherited text-align must not push it right).
+        #expect((decoration?.width ?? 0) < 34)
+        #expect(decoration?.textAlign == .left)
+        if let para = attributed.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle {
+            #expect(para.alignment == .left)
+        }
+        // 童年 keeps the heading's own right alignment.
+        let titleRange = (attributed.string as NSString).range(of: "童年")
+        if titleRange.location != NSNotFound,
+           let para = attributed.attribute(.paragraphStyle, at: titleRange.location, effectiveRange: nil) as? NSParagraphStyle {
+            #expect(para.alignment == .right)
+        }
+    }
+
     @Test func imageOnlyPageUsesFullRenderBounds() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 1080, height: 2400)).image { context in
             UIColor.white.setFill()
@@ -1413,6 +2117,22 @@ struct EPUBRenderingTests {
     }
 }
 
+private func tableImageRunInfos(in attributedString: NSAttributedString) -> [ImageRunInfo] {
+    let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+    var result: [ImageRunInfo] = []
+    attributedString.enumerateAttributes(
+        in: NSRange(location: 0, length: attributedString.length)
+    ) { attributes, _, _ in
+        guard attributes[HTMLAttributedStringBuilder.semanticTagAttribute] as? String == "table",
+              let value = attributes[delegateKey]
+        else { return }
+        let delegate = value as! CTRunDelegate
+        let pointer = CTRunDelegateGetRefCon(delegate)
+        result.append(Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue())
+    }
+    return result
+}
+
 private func firstMathImageRunInfo(in attributedString: NSAttributedString) -> ImageRunInfo? {
     let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
     var result: ImageRunInfo?
@@ -1555,6 +2275,24 @@ private func colorMatches(
         && abs(actualGreen - green) <= tolerance
         && abs(actualBlue - blue) <= tolerance
         && abs(actualAlpha - alpha) <= tolerance
+}
+
+private func imageContainsVisiblePixel(_ image: UIImage) -> Bool {
+    guard let source = image.cgImage else { return false }
+    let width = source.width
+    let height = source.height
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+    guard let context = CGContext(
+        data: &pixels,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width * 4,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else { return false }
+    context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+    return stride(from: 3, to: pixels.count, by: 4).contains { pixels[$0] != 0 }
 }
 
 private func testHTMLConfig() -> HTMLAttributedStringBuilder.Config {

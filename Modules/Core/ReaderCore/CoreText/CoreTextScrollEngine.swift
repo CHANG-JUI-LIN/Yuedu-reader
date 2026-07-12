@@ -228,6 +228,11 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             let attrStr = prepareAttributedString(result.attributedString)
             let width = contentWidth
             let cIdx = chapterIndex
+            // A user-selected reader background has the same precedence in scroll mode as it
+            // does in paged mode. Otherwise retain both authored layers for correct alpha compositing.
+            let usesReaderBackgroundImage = renderSettings.readerBackgroundImageURL != nil
+            let pageBackgroundColor = usesReaderBackgroundImage ? nil : result.pageBackgroundColor
+            let pageBackgroundImage = usesReaderBackgroundImage ? nil : result.pageBackgroundImage
 
             // Single-image page (cover / chapter illustration): builder puts the image in result.imagePage while attrStr is just a placeholder.
             if let imagePage = result.imagePage, let img = imagePage.image {
@@ -235,7 +240,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                     image: img,
                     chapterIndex: cIdx,
                     contentWidth: width,
-                    fallbackAttrStr: attrStr
+                    fallbackAttrStr: attrStr,
+                    pageBackgroundColor: pageBackgroundColor,
+                    pageBackgroundImage: pageBackgroundImage
                 )
                 insert(chunks: [chunk], chapterIndex: chapterIndex, prepend: prepend)
                 if let range = chapterRanges[chapterIndex] {
@@ -251,7 +258,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                     attributedString: attrStr,
                     chapterIndex: cIdx,
                     contentWidth: width,
-                    writingMode: writingMode
+                    writingMode: writingMode,
+                    pageBackgroundColor: pageBackgroundColor,
+                    pageBackgroundImage: pageBackgroundImage
                 )
             }.value
 
@@ -305,7 +314,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         image: UIImage,
         chapterIndex: Int,
         contentWidth: CGFloat,
-        fallbackAttrStr: NSAttributedString
+        fallbackAttrStr: NSAttributedString,
+        pageBackgroundColor: UIColor?,
+        pageBackgroundImage: UIImage?
     ) -> CoreTextChunk {
         if renderSettings.writingMode.isVertical, let imageContentWidth, imageContentWidth > 0 {
             let container = CGRect(
@@ -324,7 +335,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                 frame: nil,
                 writingMode: renderSettings.writingMode,
                 presetAttachments: [attachment],
-                isImageOnly: true
+                isImageOnly: true,
+                pageBackgroundColor: pageBackgroundColor,
+                pageBackgroundImage: pageBackgroundImage
             )
         }
 
@@ -346,7 +359,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             frame: nil,
             writingMode: renderSettings.writingMode,
             presetAttachments: [attachment],
-            isImageOnly: true
+            isImageOnly: true,
+            pageBackgroundColor: pageBackgroundColor,
+            pageBackgroundImage: pageBackgroundImage
         )
     }
 

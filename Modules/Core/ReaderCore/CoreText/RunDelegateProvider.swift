@@ -1,6 +1,13 @@
 import CoreText
 import UIKit
 
+/// A tappable area inside a rasterized image attachment. Rects are normalized to the image's
+/// logical bounds so hit-testing remains correct when CoreText scales the attachment.
+struct ImageLinkRegion: Sendable {
+    let normalizedRect: CGRect
+    let href: String
+}
+
 /// Holds image layout metadata used by CTRunDelegate callbacks.
 class ImageRunInfo {
     enum DisplayMode {
@@ -22,6 +29,8 @@ class ImageRunInfo {
     let displayMode: DisplayMode
     let opacity: CGFloat
     let isTextSized: Bool
+    let linkRegions: [ImageLinkRegion]
+    let allowsPreview: Bool
 
     init(
         image: UIImage?,
@@ -37,7 +46,9 @@ class ImageRunInfo {
         alt: String? = nil,
         displayMode: DisplayMode,
         opacity: CGFloat,
-        isTextSized: Bool = false
+        isTextSized: Bool = false,
+        linkRegions: [ImageLinkRegion] = [],
+        allowsPreview: Bool = true
     ) {
         self.image = image
         self.width = width
@@ -53,6 +64,8 @@ class ImageRunInfo {
         self.displayMode = displayMode
         self.opacity = opacity
         self.isTextSized = isTextSized
+        self.linkRegions = linkRegions
+        self.allowsPreview = allowsPreview
     }
 }
 
@@ -101,7 +114,9 @@ enum RunDelegateProvider {
         imageAlt: String? = nil,
         displayMode: ImageRunInfo.DisplayMode,
         opacity: CGFloat,
-        isTextSized: Bool = false
+        isTextSized: Bool = false,
+        linkRegions: [ImageLinkRegion] = [],
+        allowsPreview: Bool = true
     ) -> NSAttributedString {
         var callbacks = CTRunDelegateCallbacks(
             version: kCTRunDelegateCurrentVersion,
@@ -133,7 +148,9 @@ enum RunDelegateProvider {
             alt: imageAlt,
             displayMode: displayMode,
             opacity: opacity,
-            isTextSized: isTextSized
+            isTextSized: isTextSized,
+            linkRegions: linkRegions,
+            allowsPreview: allowsPreview
         )
 
         let retained = Unmanaged.passRetained(info).toOpaque()

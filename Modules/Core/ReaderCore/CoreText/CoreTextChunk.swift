@@ -14,6 +14,10 @@ final class CoreTextChunk {
     let framesetter: CTFramesetter
     let attributedString: NSAttributedString
     let writingMode: ReaderWritingMode
+    /// Publication-authored page backdrop. The color is painted first, then the image, so
+    /// transparent EPUB artwork composites against the intended fill instead of the reader theme.
+    let pageBackgroundColor: UIColor?
+    let pageBackgroundImage: UIImage?
 
     private(set) var frame: CTFrame?
     var isMaterialized: Bool {
@@ -45,7 +49,9 @@ final class CoreTextChunk {
          floatNotch: CGRect? = nil,
          floatAttachments: [CoreTextPaginator.RenderedAttachment] = [],
          blockRenderables: [CoreTextPaginator.RenderedBlockRenderable] = [],
-         inlineAnnotations: [CoreTextPaginator.RenderedInlineAnnotation] = []) {
+         inlineAnnotations: [CoreTextPaginator.RenderedInlineAnnotation] = [],
+         pageBackgroundColor: UIColor? = nil,
+         pageBackgroundImage: UIImage? = nil) {
         self.chapterIndex = chapterIndex
         self.charRange = charRange
         self.width = size.width
@@ -53,6 +59,8 @@ final class CoreTextChunk {
         self.framesetter = framesetter
         self.attributedString = attributedString
         self.writingMode = writingMode
+        self.pageBackgroundColor = pageBackgroundColor
+        self.pageBackgroundImage = pageBackgroundImage
         self.frame = frame
         self.isImageOnly = isImageOnly
         self.floatNotch = floatNotch

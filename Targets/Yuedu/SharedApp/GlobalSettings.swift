@@ -213,6 +213,10 @@ final class ReaderConfig: ObservableObject {
     @Published var readerTitleTopSpacing: CGFloat
     @Published var readerTitleBottomSpacing: CGFloat
     @Published var readerFontBold: Bool
+    @Published var readerHeaderVisible: Bool
+    @Published var readerHeaderTopPadding: CGFloat
+    @Published var readerHeaderTextGap: CGFloat
+    @Published var readerFooterVisible: Bool
     @Published var theme: ReaderTheme
 
     var lineSpacing: CGFloat {
@@ -243,6 +247,10 @@ final class ReaderConfig: ObservableObject {
         readerTitleTopSpacing = CGFloat(gs.readerTitleTopSpacing)
         readerTitleBottomSpacing = CGFloat(gs.readerTitleBottomSpacing)
         readerFontBold = gs.readerFontBold
+        readerHeaderVisible = gs.readerHeaderVisible
+        readerHeaderTopPadding = CGFloat(gs.readerHeaderTopPadding)
+        readerHeaderTextGap = CGFloat(gs.readerHeaderTextGap)
+        readerFooterVisible = gs.readerFooterVisible
         theme = ReaderTheme.loadPersisted()
         setupBindings()
     }
@@ -263,6 +271,10 @@ final class ReaderConfig: ObservableObject {
         readerTitleTopSpacing = CGFloat(gs.readerTitleTopSpacing)
         readerTitleBottomSpacing = CGFloat(gs.readerTitleBottomSpacing)
         readerFontBold = gs.readerFontBold
+        readerHeaderVisible = gs.readerHeaderVisible
+        readerHeaderTopPadding = CGFloat(gs.readerHeaderTopPadding)
+        readerHeaderTextGap = CGFloat(gs.readerHeaderTextGap)
+        readerFooterVisible = gs.readerFooterVisible
         theme = ReaderTheme.loadPersisted()
         suppressRefresh = false
     }
@@ -319,6 +331,31 @@ final class ReaderConfig: ObservableObject {
                 self.refresh.send(.layout)
             }
             .store(in: &cancellables)
+
+        Publishers.CombineLatest3($readerHeaderVisible, $readerHeaderTopPadding, $readerHeaderTextGap)
+            .dropFirst()
+            .sink { [weak self] visible, topPadding, textGap in
+                let gs = GlobalSettings.shared
+                gs.readerHeaderVisible = visible
+                gs.readerHeaderTopPadding = Double(topPadding)
+                gs.readerHeaderTextGap = Double(textGap)
+                guard let self, !self.suppressRefresh else { return }
+                // The header reserves a band above the text (contentInsets.top),
+                // so toggling/resizing it shifts pagination — needs a relayout.
+                self.refresh.send(.layout)
+            }
+            .store(in: &cancellables)
+
+        $readerFooterVisible
+            .dropFirst()
+            .sink { [weak self] visible in
+                GlobalSettings.shared.readerFooterVisible = visible
+                guard let self, !self.suppressRefresh else { return }
+                // Toggling the footer changes the reserved bottom band, so the
+                // text area height (and pagination) shifts — needs a relayout.
+                self.refresh.send(.layout)
+            }
+            .store(in: &cancellables)
     }
 }
 
@@ -367,7 +404,9 @@ class GlobalSettings: ObservableObject {
     private static let commentBubbleScaleKey = "yd_comment_bubble_scale"
     private static let commentBubbleTextScaleKey = "yd_comment_bubble_text_scale"
     private static let readerTextUnderlineDecorationKey = "yd_reader_text_underline_decoration"
+    private static let readerTextUnderlineDecorationColorHexKey = "yd_reader_text_underline_decoration_color_hex"
     private static let readerDialogueHighlightKey = "yd_reader_dialogue_highlight"
+    private static let readerDialogueHighlightColorHexKey = "yd_reader_dialogue_highlight_color_hex"
     private static let readerCustomBackgroundModeKey = "yd_reader_custom_background_mode"
     private static let readerCustomBackgroundColorHexKey = "yd_reader_custom_background_color_hex"
     private static let readerCustomBackgroundImageFileNameKey = "yd_reader_custom_background_image_file_name"
@@ -379,6 +418,17 @@ class GlobalSettings: ObservableObject {
     static let commentBubbleTextScaleRange: ClosedRange<Double> = 0.2...0.8
     static let defaultCommentBubbleScale = 1.0
     static let defaultCommentBubbleTextScale = 0.4
+    static let defaultReaderUnderlineColorHex: UInt32 = 0x8E8E93
+    static let defaultReaderDialogueHighlightColorHex: UInt32 = 0xFF6B3A
+
+    static func uiColor(rgbHex: UInt32) -> UIColor {
+        UIColor(
+            red: CGFloat((rgbHex >> 16) & 0xFF) / 255,
+            green: CGFloat((rgbHex >> 8) & 0xFF) / 255,
+            blue: CGFloat(rgbHex & 0xFF) / 255,
+            alpha: 1
+        )
+    }
 
     // MARK: - Account State
 
@@ -469,6 +519,26 @@ class GlobalSettings: ObservableObject {
     @Published var readerTitleBottomSpacing: Double {
         didSet { UserDefaults.standard.set(readerTitleBottomSpacing, forKey: "yd_reader_title_bottom_spacing") }
     }
+    /// Reader header (頁眉): the info band above the text in paged mode.
+    @Published var readerHeaderVisible: Bool {
+        didSet { UserDefaults.standard.set(readerHeaderVisible, forKey: "yd_reader_header_visible") }
+    }
+    @Published var readerHeaderTopPadding: Double {
+        didSet { UserDefaults.standard.set(readerHeaderTopPadding, forKey: "yd_reader_header_top_padding") }
+    }
+    @Published var readerHeaderTextGap: Double {
+        didSet { UserDefaults.standard.set(readerHeaderTextGap, forKey: "yd_reader_header_text_gap") }
+    }
+    /// Reader footer (頁腳): the page/progress/clock band below the text in paged mode.
+    @Published var readerFooterVisible: Bool {
+        didSet { UserDefaults.standard.set(readerFooterVisible, forKey: "yd_reader_footer_visible") }
+    }
+    /// Placement of each header field, keyed by `ReaderHeaderField.rawValue`
+    /// with `ReaderHeaderFieldPosition.rawValue` values. Fields without an
+    /// entry are hidden. Display-only — changing it never repaginates.
+    @Published var readerHeaderFieldPositions: [String: String] {
+        didSet { UserDefaults.standard.set(readerHeaderFieldPositions, forKey: "yd_reader_header_positions") }
+    }
     @Published var pageTurnStyle: PageTurnStyle {
         didSet { UserDefaults.standard.set(pageTurnStyle.rawValue, forKey: "yd_page_turn_style") }
     }
@@ -501,12 +571,22 @@ class GlobalSettings: ObservableObject {
             UserDefaults.standard.set(readerTextUnderlineDecorationEnabled, forKey: Self.readerTextUnderlineDecorationKey)
         }
     }
+    @Published var readerTextUnderlineDecorationColorHex: UInt32 {
+        didSet {
+            UserDefaults.standard.set(Int(readerTextUnderlineDecorationColorHex), forKey: Self.readerTextUnderlineDecorationColorHexKey)
+        }
+    }
     /// Tint quoted dialogue (「」『』"" '') in the theme accent color. Applied as a
     /// `.foregroundColor` override when the chapter attributed string is built, so it
     /// colors justified glyphs natively and works in both horizontal and vertical modes.
     @Published var readerDialogueHighlightEnabled: Bool {
         didSet {
             UserDefaults.standard.set(readerDialogueHighlightEnabled, forKey: Self.readerDialogueHighlightKey)
+        }
+    }
+    @Published var readerDialogueHighlightColorHex: UInt32 {
+        didSet {
+            UserDefaults.standard.set(Int(readerDialogueHighlightColorHex), forKey: Self.readerDialogueHighlightColorHexKey)
         }
     }
     @Published var commentBubbleFollowsSourceSVG: Bool {
@@ -833,6 +913,19 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_reader_title_top_spacing") as? Double) ?? 10.0
         readerTitleBottomSpacing =
             (UserDefaults.standard.object(forKey: "yd_reader_title_bottom_spacing") as? Double) ?? 20.0
+        readerHeaderVisible =
+            (UserDefaults.standard.object(forKey: "yd_reader_header_visible") as? Bool) ?? true
+        readerHeaderTopPadding =
+            (UserDefaults.standard.object(forKey: "yd_reader_header_top_padding") as? Double)
+            ?? Double(ReaderLayoutMetrics.defaultHeaderTopPadding)
+        readerHeaderTextGap =
+            (UserDefaults.standard.object(forKey: "yd_reader_header_text_gap") as? Double)
+            ?? Double(ReaderLayoutMetrics.defaultHeaderTextGap)
+        readerFooterVisible =
+            (UserDefaults.standard.object(forKey: "yd_reader_footer_visible") as? Bool) ?? true
+        readerHeaderFieldPositions =
+            (UserDefaults.standard.dictionary(forKey: "yd_reader_header_positions") as? [String: String])
+            ?? ReaderHeaderLayout.defaultFieldPositions
         let rawPageTurn = UserDefaults.standard.string(forKey: "yd_page_turn_style") ?? ""
         pageTurnStyle = PageTurnStyle(rawValue: rawPageTurn) ?? .slide
         let rawSpreadMode = UserDefaults.standard.string(forKey: "yd_reader_spread_mode") ?? ""
@@ -848,7 +941,15 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_reader_swipe_up_exit") as? Bool) ?? true
         readerFollowSystemTheme = UserDefaults.standard.bool(forKey: "yd_reader_follow_system_theme")
         readerTextUnderlineDecorationEnabled = UserDefaults.standard.bool(forKey: Self.readerTextUnderlineDecorationKey)
+        readerTextUnderlineDecorationColorHex = UInt32(clamping:
+            (UserDefaults.standard.object(forKey: Self.readerTextUnderlineDecorationColorHexKey) as? Int)
+                ?? Int(Self.defaultReaderUnderlineColorHex)
+        )
         readerDialogueHighlightEnabled = UserDefaults.standard.bool(forKey: Self.readerDialogueHighlightKey)
+        readerDialogueHighlightColorHex = UInt32(clamping:
+            (UserDefaults.standard.object(forKey: Self.readerDialogueHighlightColorHexKey) as? Int)
+                ?? Int(Self.defaultReaderDialogueHighlightColorHex)
+        )
         if UserDefaults.standard.object(forKey: Self.commentBubbleFollowsSourceSVGKey) == nil {
             commentBubbleFollowsSourceSVG = true
         } else {

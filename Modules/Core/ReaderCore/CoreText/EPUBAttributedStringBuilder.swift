@@ -152,6 +152,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         FootnoteStore.index(body: ast, spineIndex: index)
 
         let pageBackgroundImage = await localBuilder.pageBackgroundImage(from: ast)
+        let pageBackgroundColor = localBuilder.pageBackgroundColor(from: ast)
         if pageBackgroundImage == nil, let imagePage = await localBuilder.imagePage(from: ast) {
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: settings.fontSize),
@@ -162,6 +163,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                 attributedString: NSAttributedString(string: "\u{FFFC}", attributes: attrs),
                 imagePage: imagePage,
                 pageBackgroundImage: nil,
+                pageBackgroundColor: pageBackgroundColor,
                 anchorOffsets: [:]
             )
         }
@@ -172,6 +174,10 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                 from: settings,
                 textColor: themeTextColor,
                 renderWidth: config.renderWidth,
+                renderHeight: max(
+                    1,
+                    renderSize.height - settings.contentInsets.top - settings.contentInsets.bottom
+                ),
                 resolvedFont: { [weak self] families, weight, italic, size in
                     self?.styleResolver.resolveRegisteredFont(
                         families: families,
@@ -205,6 +211,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             attributedString: attributedString,
             imagePage: nil,
             pageBackgroundImage: pageBackgroundImage,
+            pageBackgroundColor: pageBackgroundColor,
             anchorOffsets: anchorOffsets
         )
     }
