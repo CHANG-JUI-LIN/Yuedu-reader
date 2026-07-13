@@ -85,6 +85,7 @@ struct AppearanceThemeView: View {
         .background {
             pageBackground.ignoresSafeArea()
         }
+        .font(DSFont.body)
         .navigationTitle(localized("外觀主題"))
         .toolbarTitleDisplayMode(.inline)
         .tint(selectedTheme.isClassic ? nil : selectedTheme.accentColor)
@@ -153,21 +154,8 @@ struct AppearanceThemeView: View {
         }
     }
 
-    @ViewBuilder
     private var pageBackground: some View {
-        if selectedTheme.isClassic {
-            DSColor.groupedBackground
-        } else {
-            LinearGradient(
-                colors: [
-                    selectedTheme.backgroundColor.opacity(0.78),
-                    selectedTheme.dialogueColor.opacity(0.36),
-                    DSColor.groupedBackground
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
+        DSColor.groupedBackground
     }
 
     private var themeSelectionCard: some View {
@@ -199,12 +187,12 @@ struct AppearanceThemeView: View {
             }
         }
         .padding(DSSpacing.lg)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
     }
 
     private func themeGroupTitle(_ title: String) -> some View {
         Text(title)
-            .font(DSFont.caption.weight(.semibold))
+            .font(DSFont.subheadline.weight(.semibold))
             .foregroundStyle(DSColor.textSecondary)
             .padding(.top, DSSpacing.xs)
     }
@@ -323,7 +311,7 @@ struct AppearanceThemeView: View {
         }
         .padding(.horizontal, DSSpacing.lg)
         .padding(.vertical, DSSpacing.md)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
     }
 
     private var globalFontRow: some View {
@@ -344,7 +332,7 @@ struct AppearanceThemeView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.lg)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -375,7 +363,7 @@ struct AppearanceThemeView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.lg)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -404,7 +392,7 @@ struct AppearanceThemeView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.lg)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -434,7 +422,7 @@ struct AppearanceThemeView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.lg)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -443,7 +431,7 @@ struct AppearanceThemeView: View {
 
     private func pageBackgroundSectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(DSFont.title3.weight(.semibold))
+            .font(DSFont.headline)
             .foregroundStyle(DSColor.textPrimary)
             .padding(.horizontal, DSSpacing.xs)
     }
@@ -451,20 +439,36 @@ struct AppearanceThemeView: View {
     private var pageBackgroundSection: some View {
         VStack(alignment: .leading, spacing: DSSpacing.lg) {
             pageBackgroundSectionHeader(localized("頁面背景"))
-            editScopeRow
-            VStack(spacing: DSSpacing.lg) {
+
+            VStack(spacing: 0) {
+                editScopeRow
+                groupedSectionDivider
                 pageBackgroundColorRow(titleKey: "亮色主色調", scheme: .light, slot: .primary)
+                groupedSectionDivider
                 pageBackgroundColorRow(titleKey: "亮色輔色調", scheme: .light, slot: .secondary)
+                groupedSectionDivider
                 pageBackgroundColorRow(titleKey: "深色主色調", scheme: .dark, slot: .primary)
+                groupedSectionDivider
                 pageBackgroundColorRow(titleKey: "深色輔色調", scheme: .dark, slot: .secondary)
-            }
-            VStack(spacing: DSSpacing.lg) {
+                groupedSectionDivider
                 backgroundImageRow(scheme: .light)
+                groupedSectionDivider
                 backgroundImageRow(scheme: .dark)
             }
+            .background(
+                DSColor.surface,
+                in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous)
+            )
+
             pageBackgroundSectionHeader(localized("預覽"))
             pageBackgroundPreviewCard
         }
+    }
+
+    private var groupedSectionDivider: some View {
+        Divider()
+            .overlay(DSColor.separator)
+            .padding(.leading, DSSpacing.lg)
     }
 
     private var editScopeRow: some View {
@@ -491,7 +495,6 @@ struct AppearanceThemeView: View {
         }
         .padding(.horizontal, DSSpacing.lg)
         .padding(.vertical, DSSpacing.lg)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
     }
 
     private func pageBackgroundColorRow(
@@ -506,7 +509,6 @@ struct AppearanceThemeView: View {
         }
         .padding(.horizontal, DSSpacing.lg)
         .padding(.vertical, DSSpacing.md)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
     }
 
     private func pageBackgroundColorBinding(
@@ -604,7 +606,6 @@ struct AppearanceThemeView: View {
         }
         .padding(.horizontal, DSSpacing.lg)
         .padding(.vertical, DSSpacing.md)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
     }
 
     /// Live preview of the effective background for the edited scope in the
@@ -624,7 +625,7 @@ struct AppearanceThemeView: View {
             }
             VStack(spacing: DSSpacing.sm) {
                 Text(localized("背景預覽"))
-                    .font(DSFont.title3.weight(.semibold))
+                    .font(DSFont.headline)
                     .foregroundStyle(DSColor.textPrimary)
                 Text("\(pageBackgroundScope.localizedTitle) · \(modeName)")
                     .font(DSFont.subheadline)
@@ -644,7 +645,7 @@ struct AppearanceThemeView: View {
     // MARK: - Theme actions (save / export / import / reset)
 
     private var themeActionsSection: some View {
-        VStack(spacing: DSSpacing.lg) {
+        VStack(spacing: 0) {
             themeActionRow(titleKey: "保存為新主題") {
                 newThemeName = ""
                 showSaveThemeAlert = true
@@ -658,6 +659,8 @@ struct AppearanceThemeView: View {
             } message: {
                 Text(localized("將當前配色與頁面背景保存為自訂主題。"))
             }
+
+            groupedSectionDivider
 
             themeActionRow(titleKey: "導出主題") {
                 themeExportDocument = AppearanceThemeExportDocument(
@@ -674,6 +677,8 @@ struct AppearanceThemeView: View {
                 themeExportDocument = nil
             }
 
+            groupedSectionDivider
+
             themeActionRow(titleKey: "導入主題") {
                 showThemeImporter = true
             }
@@ -683,6 +688,8 @@ struct AppearanceThemeView: View {
                 allowsMultipleSelection: false,
                 onCompletion: handleThemeImport
             )
+
+            groupedSectionDivider
 
             themeActionRow(titleKey: "重置為默認") {
                 showResetPageBackgroundConfirm = true
@@ -700,6 +707,10 @@ struct AppearanceThemeView: View {
                 Text(localized("將清除所有頁面（含各分頁）的背景顏色與背景圖設定。"))
             }
         }
+        .background(
+            DSColor.surface,
+            in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous)
+        )
     }
 
     private func themeActionRow(titleKey: String, action: @escaping () -> Void) -> some View {
@@ -712,8 +723,7 @@ struct AppearanceThemeView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.lg)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -738,7 +748,7 @@ struct AppearanceThemeView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.lg)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -811,7 +821,7 @@ struct AppearanceThemeView: View {
                         .foregroundStyle(selectedTheme.accentColor)
                         .frame(width: 28, height: 28)
                     Text(localized("主題自定義"))
-                        .font(DSFont.title3.weight(.semibold))
+                        .font(DSFont.headline)
                         .foregroundStyle(DSColor.textPrimary)
                     Spacer(minLength: 0)
                     Image(systemName: "lock.fill")
@@ -819,7 +829,7 @@ struct AppearanceThemeView: View {
                 }
                 .padding(.horizontal, DSSpacing.lg)
                 .padding(.vertical, DSSpacing.lg)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+                .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -918,15 +928,29 @@ private struct AppearanceReaderInterfaceView: View {
 
     var body: some View {
         Form {
-            Section(footer: Text(localized("選擇閱讀界面的工具列與控制方式。"))) {
-                Picker(localized("閱讀界面"), selection: $settings.appearanceReaderInterface) {
+            Section {
+                Picker(selection: $settings.appearanceReaderInterface) {
                     ForEach(AppearanceReaderInterface.allCases) { option in
-                        Text(option.localizedTitle).tag(option)
+                        Text(option.localizedTitle)
+                            .font(DSFont.body)
+                            .tag(option)
                     }
+                } label: {
+                    Text(localized("閱讀界面"))
+                        .font(DSFont.body)
+                        .foregroundStyle(DSColor.textPrimary)
                 }
                 .pickerStyle(.inline)
+            } footer: {
+                Text(localized("選擇閱讀界面的工具列與控制方式。"))
+                    .font(DSFont.footnote)
+                    .foregroundStyle(DSColor.textSecondary)
             }
+            .listRowBackground(DSColor.surface)
         }
+        .font(DSFont.body)
+        .scrollContentBackground(.hidden)
+        .background(DSColor.groupedBackground)
         .navigationTitle(localized("閱讀界面"))
         .toolbarTitleDisplayMode(.inline)
     }
@@ -950,14 +974,20 @@ private struct AppearanceThemeCustomizationView: View {
     var body: some View {
         Form {
             if let theme = themeBinding {
-                Section(header: Text(localized("主題自定義"))) {
+                Section {
                     TextField(localized("名稱"), text: stringBinding(theme, \.name))
-                    ColorPicker(localized("主色"), selection: colorBinding(theme, \.accentHex), supportsOpacity: false)
-                    ColorPicker(localized("背景"), selection: colorBinding(theme, \.backgroundHex), supportsOpacity: false)
-                    ColorPicker(localized("文字"), selection: colorBinding(theme, \.textHex), supportsOpacity: false)
-                    ColorPicker(localized("工具列"), selection: colorBinding(theme, \.barHex), supportsOpacity: false)
-                    ColorPicker(localized("對話高亮"), selection: colorBinding(theme, \.dialogueHex), supportsOpacity: false)
+                        .font(DSFont.body)
+                    themeColorPicker("主色", selection: colorBinding(theme, \.accentHex))
+                    themeColorPicker("背景", selection: colorBinding(theme, \.backgroundHex))
+                    themeColorPicker("文字", selection: colorBinding(theme, \.textHex))
+                    themeColorPicker("工具列", selection: colorBinding(theme, \.barHex))
+                    themeColorPicker("對話高亮", selection: colorBinding(theme, \.dialogueHex))
+                } header: {
+                    Text(localized("主題自定義"))
+                        .font(DSFont.headline)
+                        .foregroundStyle(DSColor.textPrimary)
                 }
+                .listRowBackground(DSColor.surface)
 
                 Section {
                     ThemePreviewTile(
@@ -972,9 +1002,14 @@ private struct AppearanceThemeCustomizationView: View {
                 }
             } else {
                 Text(localized("找不到主題"))
+                    .font(DSFont.body)
                     .foregroundStyle(DSColor.textSecondary)
+                    .listRowBackground(DSColor.surface)
             }
         }
+        .font(DSFont.body)
+        .scrollContentBackground(.hidden)
+        .background(DSColor.groupedBackground)
         .navigationTitle(localized("主題自定義"))
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
@@ -983,6 +1018,14 @@ private struct AppearanceThemeCustomizationView: View {
                     dismiss()
                 }
             }
+        }
+    }
+
+    private func themeColorPicker(_ titleKey: String, selection: Binding<Color>) -> some View {
+        ColorPicker(selection: selection, supportsOpacity: false) {
+            Text(localized(titleKey))
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textPrimary)
         }
     }
 

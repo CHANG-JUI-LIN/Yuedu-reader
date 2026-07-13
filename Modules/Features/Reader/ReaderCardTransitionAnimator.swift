@@ -22,6 +22,9 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
     private weak var activeTransitionContext: UIViewControllerContextTransitioning?
     private var displayLink: CADisplayLink?
     private var runtimeState: RuntimeState?
+    private var cancellationSettle: CancellationSettle?
+    private var cancellationSettleCompletion: (() -> Void)?
+    private var isHoldingOpenAfterCancellationSettle = false
     private var completionDelivered = false
     private var isCompletingTransition = false
 
@@ -214,6 +217,46 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         renderAnimationFrame()
     }
 
+    /// UIKit owns the navigation transaction, but the book visuals are drawn
+    /// from our phased progress model outside its animation block. On cancel,
+    /// replay that model to the open endpoint before UIKit finalizes the pop;
+    /// otherwise UIKit can clean up the transition before a visible return is
+    /// ever rendered.
+    @discardableResult
+    func settleInteractiveCancellation(
+        duration: TimeInterval,
+        completion: @escaping () -> Void
+    ) -> Bool {
+        guard
+            duration > 0,
+            let propertyAnimator,
+            let state = runtimeState,
+            state.isInteractive,
+            operation == .pop
+        else {
+            return false
+        }
+
+        let timelineFraction = ReaderCardTransitionMath.clampProgress(
+            propertyAnimator.fractionComplete
+        )
+        let startOpenProgress = ReaderCardTransitionMath.lerp(
+            state.startProgress,
+            state.endProgress,
+            timelineFraction
+        )
+        cancellationSettle = CancellationSettle(
+            startOpenProgress: startOpenProgress,
+            startTime: CACurrentMediaTime(),
+            duration: duration
+        )
+        cancellationSettleCompletion = completion
+        isHoldingOpenAfterCancellationSettle = false
+        applyRuntimeState(progress: startOpenProgress, state: state)
+        startDisplayLink()
+        return true
+    }
+
     // MARK: Visual construction
 
     private struct BookStage {
@@ -260,6 +303,12 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         let isInteractive: Bool
     }
 
+    private struct CancellationSettle {
+        let startOpenProgress: CGFloat
+        let startTime: CFTimeInterval
+        let duration: TimeInterval
+    }
+
     private func startDisplayLink() {
         displayLink?.invalidate()
         let link = CADisplayLink(target: self, selector: #selector(renderAnimationFrame))
@@ -268,7 +317,36 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
     }
 
     @objc private func renderAnimationFrame() {
-        guard let propertyAnimator, let state = runtimeState else { return }
+        guard let state = runtimeState else { return }
+
+        if isHoldingOpenAfterCancellationSettle {
+            applyRuntimeState(progress: state.startProgress, state: state)
+            return
+        }
+
+        if let cancellationSettle {
+            let elapsed = CACurrentMediaTime() - cancellationSettle.startTime
+            let timeFraction = ReaderCardTransitionMath.clampProgress(
+                CGFloat(elapsed / cancellationSettle.duration)
+            )
+            let progress = ReaderCardTransitionMath.cancellationOpenProgress(
+                from: cancellationSettle.startOpenProgress,
+                timeFraction: timeFraction
+            )
+            applyRuntimeState(progress: progress, state: state)
+
+            if timeFraction >= 1 {
+                self.cancellationSettle = nil
+                isHoldingOpenAfterCancellationSettle = true
+                applyRuntimeState(progress: state.startProgress, state: state)
+                let completion = cancellationSettleCompletion
+                cancellationSettleCompletion = nil
+                completion?()
+            }
+            return
+        }
+
+        guard let propertyAnimator else { return }
         let fraction = ReaderCardTransitionMath.clampProgress(propertyAnimator.fractionComplete)
         let timelineFraction = state.isInteractive
             ? fraction
@@ -309,6 +387,9 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
     private func cleanupTemporaryViews(transitionCompleted: Bool? = nil) {
         displayLink?.invalidate()
         displayLink = nil
+        cancellationSettle = nil
+        cancellationSettleCompletion = nil
+        isHoldingOpenAfterCancellationSettle = false
 
         guard let state = runtimeState else { return }
         for view in [state.fromView, state.toView] {

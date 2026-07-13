@@ -53,6 +53,7 @@ struct ReaderView: View {
     @State var pageTurnCommand: ReaderPageTurnCommand?
     @State var pageTurnVersion: UInt = 0
     @State var showBars = false
+    @State var appleBooksActivePanel: AppleBooksReaderControlPanel?
     @State var showSettings = false
     @State var showQuickThemePanel = false
     @State var showReaderSearch = false
@@ -1068,11 +1069,12 @@ struct ReaderView: View {
     var body: some View {
         NavigationStack {
             buildBody()
+                .navigationBarBackButtonHidden(true)
                 .toolbar {
                     appleBooksToolbarContent
                 }
                 .toolbar(showsAppleBooksToolbars ? .visible : .hidden, for: .navigationBar)
-                .toolbar(showsAppleBooksToolbars ? .visible : .hidden, for: .bottomBar)
+                .toolbar(showsAppleBooksBottomToolbar ? .visible : .hidden, for: .bottomBar)
                 .toolbarBackground(.hidden, for: .navigationBar, .bottomBar)
         }
         .tint(readerTheme.textColor)
@@ -1204,6 +1206,14 @@ struct ReaderView: View {
                     .transition(.opacity.animation(.easeOut(duration: 0.2)))
             }
             if showBars { readerChrome }
+            if showBars,
+               settings.appearanceReaderInterface == .appleBooks,
+               appleBooksActivePanel != nil {
+                appleBooksControls
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
+                    .zIndex(60)
+            }
             if showTTSJumpPrompt {
                 VStack {
                     Spacer()
@@ -1755,7 +1765,12 @@ struct ReaderView: View {
         case .none:
             return
         case .toggleMenu:
-            withAnimation(.easeInOut(duration: uiFeedbackDuration)) { showBars.toggle() }
+            withAnimation(.easeInOut(duration: uiFeedbackDuration)) {
+                showBars.toggle()
+                if !showBars {
+                    appleBooksActivePanel = nil
+                }
+            }
         case .previousPage:
             guard !showBars else { return }
             goToPrevPage()

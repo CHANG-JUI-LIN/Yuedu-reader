@@ -33,42 +33,73 @@ struct ReaderCardTransitionMathTests {
 
     // MARK: Finish / cancel decisions
 
-    @Test("release under the completion threshold finishes the close")
-    func distanceFinishesBelowThreshold() {
-        // progress 1 = fully open; closer to 0 = closer to closed.
-        // Releasing at progress <= 0.5 with no velocity commits the close.
-        #expect(ReaderCardTransitionMath.shouldFinishClose(progress: 0.0, velocity: 0))
-        #expect(ReaderCardTransitionMath.shouldFinishClose(progress: 0.3, velocity: 0))
-        #expect(ReaderCardTransitionMath.shouldFinishClose(progress: 0.5, velocity: 0))
-        // Just above threshold cancels back to the open reader.
-        #expect(!ReaderCardTransitionMath.shouldFinishClose(progress: 0.51, velocity: 0))
-        #expect(!ReaderCardTransitionMath.shouldFinishClose(progress: 1.0, velocity: 0))
+    @Test("release before twenty-percent close progress restores the open reader")
+    func releaseBeforeThresholdCancels() {
+        #expect(!ReaderCardTransitionMath.shouldFinishClose(
+            closeProgress: 0.19,
+            velocity: 0
+        ))
     }
 
-    @Test("fast close-direction velocity overrides distance")
-    func velocityOverridesFinish() {
-        // Positive velocity = toward close -> always finish, even when far from done.
+    @Test("release at twenty-percent close progress commits the close")
+    func releaseAtThresholdFinishes() {
         #expect(ReaderCardTransitionMath.shouldFinishClose(
-            progress: 0.95, velocity: ReaderCardTransitionMath.closeVelocityThreshold))
-        #expect(ReaderCardTransitionMath.shouldFinishClose(
-            progress: 0.95, velocity: 2_000))
+            closeProgress: 0.20,
+            velocity: 0
+        ))
     }
 
-    @Test("fast open-direction velocity cancels even when distance says finish")
-    func velocityCancels() {
-        // Negative velocity = back toward open -> cancel, even at progress 0.1.
-        #expect(!ReaderCardTransitionMath.shouldFinishClose(
-            progress: 0.1, velocity: -ReaderCardTransitionMath.closeVelocityThreshold))
-        #expect(!ReaderCardTransitionMath.shouldFinishClose(
-            progress: 0.1, velocity: -2_000))
+    @Test("fast outward flick commits before the distance threshold")
+    func outwardVelocityFinishes() {
+        #expect(ReaderCardTransitionMath.shouldFinishClose(
+            closeProgress: 0.05,
+            velocity: ReaderCardTransitionMath.closeVelocityThreshold
+        ))
     }
 
-    @Test("completion threshold boundary is inclusive")
-    func thresholdBoundary() {
-        #expect(ReaderCardTransitionMath.shouldFinishClose(
-            progress: 0.5, velocity: 0))
+    @Test("fast reverse flick restores even after the distance threshold")
+    func reverseVelocityCancels() {
         #expect(!ReaderCardTransitionMath.shouldFinishClose(
-            progress: 0.501, velocity: 0))
+            closeProgress: 0.40,
+            velocity: -ReaderCardTransitionMath.closeVelocityThreshold
+        ))
+    }
+
+    @Test("a small cancellation remains visible for the minimum settle duration")
+    func smallCancellationUsesMinimumSettleDuration() {
+        let transitionDuration: TimeInterval = 0.62
+        let minimumSettleDuration: TimeInterval = 0.20
+        let closeProgress: CGFloat = 0.05
+        let speed = ReaderCardTransitionMath.cancellationCompletionSpeed(
+            closeProgress: closeProgress,
+            transitionDuration: transitionDuration,
+            minimumSettleDuration: minimumSettleDuration
+        )
+        let resultingDuration = transitionDuration * Double(closeProgress / speed)
+
+        #expect(abs(resultingDuration - minimumSettleDuration) < 0.001)
+    }
+
+    @Test("cancel settle replays the open-book timeline back to fully open")
+    func cancellationSettleReturnsToOpen() {
+        let startOpenProgress: CGFloat = 0.81
+
+        let start = ReaderCardTransitionMath.cancellationOpenProgress(
+            from: startOpenProgress,
+            timeFraction: 0
+        )
+        let middle = ReaderCardTransitionMath.cancellationOpenProgress(
+            from: startOpenProgress,
+            timeFraction: 0.5
+        )
+        let end = ReaderCardTransitionMath.cancellationOpenProgress(
+            from: startOpenProgress,
+            timeFraction: 1
+        )
+
+        #expect(start == startOpenProgress)
+        #expect(middle > ReaderCardTransitionMath.lerp(startOpenProgress, 1, 0.5))
+        #expect(end == 1)
     }
 
     // MARK: Edge start region
@@ -498,6 +529,37 @@ struct ReaderNavigationCoordinatorTests {
         #expect(coordinator.source?.bookID == id)
         coordinator.detachNavigationController()
     }
+
+    @Test("a temporarily rejected push retries the same destination without losing the book")
+    func rejectedPushRetriesSameDestination() {
+        let coordinator = ReaderNavigationCoordinator()
+        let destination = UIViewController()
+        let navigationController = UINavigationController(rootViewController: destination)
+        let id = UUID()
+        var destinationCreationCount = 0
+        coordinator.attach(to: navigationController)
+
+        coordinator.open(
+            bookID: id,
+            source: ReaderTransitionSource(bookID: id),
+            destination: {
+                destinationCreationCount += 1
+                return destination
+            }
+        )
+
+        #expect(coordinator.activeBookID == id)
+        #expect(!coordinator.isReaderPresented)
+        #expect(destinationCreationCount == 1)
+
+        navigationController.setViewControllers([UIViewController()], animated: false)
+        coordinator.navigationTransitionDidSettle()
+
+        #expect(navigationController.topViewController === destination)
+        #expect(coordinator.isReaderPresented)
+        #expect(destinationCreationCount == 1)
+        coordinator.detachNavigationController()
+    }
 }
 
 @Suite("ReaderNavigationTransitionDriver", .serialized)
@@ -513,6 +575,26 @@ struct ReaderNavigationTransitionDriverTests {
         defer { driver.detach() }
 
         #expect(driver.canStartNavigationTransition)
+    }
+
+    @Test("driver announces when UIKit navigation has settled")
+    func didShowAnnouncesSettledNavigation() async {
+        let root = UIViewController()
+        let navigationController = UINavigationController(rootViewController: root)
+        let driver = ReaderNavigationTransitionDriver()
+        var settleCount = 0
+        driver.onNavigationTransitionSettled = { settleCount += 1 }
+        driver.attach(to: navigationController)
+        defer { driver.detach() }
+
+        driver.navigationController(
+            navigationController,
+            didShow: root,
+            animated: false
+        )
+        await Task.yield()
+
+        #expect(settleCount == 1)
     }
 
     @Test("an unattached driver rejects direct push without mutating a navigation stack")

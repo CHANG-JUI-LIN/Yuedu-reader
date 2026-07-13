@@ -33,7 +33,9 @@ final class ReaderNavigationCoordinator: ObservableObject {
 
     private let transitionDriver: ReaderNavigationTransitionDriver
     private var pendingDestinationFactory: (@MainActor () -> UIViewController)?
+    private var pendingDestinationViewController: UIViewController?
     private var pendingOpenCompletion: (@MainActor () -> Void)?
+    private var pendingPushRetryTask: Task<Void, Never>?
     private var pendingCloseAfterPush = false
     private var isProgrammaticPopPending = false
 
@@ -54,6 +56,9 @@ final class ReaderNavigationCoordinator: ObservableObject {
         driver.onPushTransitionCompleted = { [weak self] completed in
             self?.completePushTransition(completed: completed)
         }
+        driver.onNavigationTransitionSettled = { [weak self] in
+            self?.navigationTransitionDidSettle()
+        }
     }
 
     // MARK: Open / close
@@ -71,29 +76,65 @@ final class ReaderNavigationCoordinator: ObservableObject {
 
         pendingCloseAfterPush = false
         isProgrammaticPopPending = false
+        pendingPushRetryTask?.cancel()
+        pendingPushRetryTask = nil
         pendingOpenCompletion = onTransitionCompleted
         self.source = source ?? ReaderTransitionSource.fallback(bookID: bookID)
         self.readerBookID = bookID
         pendingDestinationFactory = destination
+        pendingDestinationViewController = nil
         beginPendingPushIfPossible()
     }
 
-    private func beginPendingPushIfPossible() {
-        guard transitionDriver.canStartNavigationTransition,
-              let factory = pendingDestinationFactory else { return }
-        pendingDestinationFactory = nil
-        let destination = factory()
+    private func beginPendingPushIfPossible(allowDeferredRetry: Bool = true) {
+        guard pendingDestinationFactory != nil || pendingDestinationViewController != nil else {
+            return
+        }
+        guard transitionDriver.canStartNavigationTransition else {
+            if allowDeferredRetry { schedulePendingPushRetry() }
+            return
+        }
+
+        let destination: UIViewController
+        if let pendingDestinationViewController {
+            destination = pendingDestinationViewController
+        } else {
+            guard let factory = pendingDestinationFactory else { return }
+            pendingDestinationFactory = nil
+            destination = factory()
+            pendingDestinationViewController = destination
+        }
 
         // Set this before calling UIKit because a non-animated test/fallback
         // transaction may synchronously deliver `didShow` from inside push.
         isReaderPresented = true
         guard transitionDriver.startPush(destination) else {
             isReaderPresented = false
-            readerBookID = nil
-            source = nil
-            pendingOpenCompletion = nil
+            if allowDeferredRetry { schedulePendingPushRetry() }
             return
         }
+        pendingPushRetryTask?.cancel()
+        pendingPushRetryTask = nil
+        pendingDestinationViewController = nil
+    }
+
+    private func schedulePendingPushRetry() {
+        guard pendingPushRetryTask == nil else { return }
+        pendingPushRetryTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self, !Task.isCancelled else { return }
+            self.pendingPushRetryTask = nil
+            self.beginPendingPushIfPossible(allowDeferredRetry: false)
+        }
+    }
+
+    /// UIKit can keep its transition coordinator alive through the completion
+    /// callback's current run loop. Retrying from this settled-state event
+    /// lets a shelf tap made immediately after pop reuse the queued reader.
+    func navigationTransitionDidSettle() {
+        pendingPushRetryTask?.cancel()
+        pendingPushRetryTask = nil
+        beginPendingPushIfPossible()
     }
 
     /// Pop the directly-owned reader. State is cleared only after UIKit says
@@ -142,6 +183,8 @@ final class ReaderNavigationCoordinator: ObservableObject {
     }
 
     private func completeInteractivePop() {
+        pendingPushRetryTask?.cancel()
+        pendingPushRetryTask = nil
         isProgrammaticPopPending = false
         isReaderPresented = false
         readerBookID = nil
@@ -154,10 +197,13 @@ final class ReaderNavigationCoordinator: ObservableObject {
         if completed { completion?() }
 
         if !completed {
+            pendingPushRetryTask?.cancel()
+            pendingPushRetryTask = nil
             isReaderPresented = false
             readerBookID = nil
             source = nil
             pendingDestinationFactory = nil
+            pendingDestinationViewController = nil
         }
 
         if pendingCloseAfterPush {
@@ -178,6 +224,8 @@ final class ReaderNavigationCoordinator: ObservableObject {
     private func completeProgrammaticPop(completed: Bool) {
         isProgrammaticPopPending = false
         if completed {
+            pendingPushRetryTask?.cancel()
+            pendingPushRetryTask = nil
             isReaderPresented = false
             readerBookID = nil
             source = nil

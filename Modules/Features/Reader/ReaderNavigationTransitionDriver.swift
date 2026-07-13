@@ -74,6 +74,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
     private weak var expectedToViewController: UIViewController?
     private var observesTransitionInvalidation = false
     private var interactionIsSettling = false
+    private var navigationSettleNotificationScheduled = false
     private(set) var isInteractivePopInFlight = false
 
     var sourceProvider: () -> ReaderTransitionSource? = { nil }
@@ -81,6 +82,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
     var onInteractivePopCompleted: () -> Void = {}
     var onPopTransitionCompleted: (Bool) -> Void = { _ in }
     var onPushTransitionCompleted: (Bool) -> Void = { _ in }
+    var onNavigationTransitionSettled: () -> Void = {}
 
     func attach(to navigationController: UINavigationController) {
         if self.navigationController === navigationController {
@@ -121,6 +123,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
         expectedFromViewController = nil
         expectedToViewController = nil
         interactionIsSettling = false
+        navigationSettleNotificationScheduled = false
         isInteractivePopInFlight = false
     }
 
@@ -236,7 +239,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
             claimNavigationDelegate()
             let interaction = UIPercentDrivenInteractiveTransition()
             interaction.completionCurve = .easeOut
-            interaction.completionSpeed = 0.92
+            interaction.completionSpeed = ReaderCardTransitionMath.maximumCompletionSpeed
             interactionController = interaction
             pendingOperation = .pop
             expectedFromViewController = navigationController.topViewController
@@ -263,18 +266,49 @@ final class ReaderNavigationTransitionDriver: NSObject {
 
         case .ended:
             guard !interactionIsSettling else { return }
+            guard let interaction = interactionController else { return }
+            interaction.update(popProgress)
+            activeAnimator?.renderCurrentProgress()
             interactionIsSettling = true
             let velocity = gesture.velocity(in: navigationController.view).x
-            let openProgress = ReaderCardTransitionMath.openProgress(
-                fromPopPercentage: popProgress
-            )
             if ReaderCardTransitionMath.shouldFinishClose(
-                progress: openProgress,
+                closeProgress: popProgress,
                 velocity: velocity
             ) {
-                interactionController?.finish()
+                interaction.completionSpeed = ReaderCardTransitionMath.maximumCompletionSpeed
+                interaction.finish()
             } else {
-                interactionController?.cancel()
+                let reduceMotion = UIAccessibility.isReduceMotionEnabled
+                let transitionDuration = reduceMotion
+                    ? DSAnimation.readerBookReducedMotionDuration
+                    : DSAnimation.readerBookTransitionDuration
+                let minimumSettleDuration = reduceMotion
+                    ? DSAnimation.readerBookReducedMotionDuration
+                    : DSAnimation.readerBookCancellationSettleDuration
+                interaction.pause()
+                let animatorOwnsSettle = activeAnimator?.settleInteractiveCancellation(
+                    duration: minimumSettleDuration
+                ) { [weak self, weak interaction] in
+                    guard
+                        let self,
+                        let interaction,
+                        self.interactionController === interaction,
+                        self.interactionIsSettling
+                    else { return }
+                    interaction.completionSpeed =
+                        ReaderCardTransitionMath.cancellationFinalizationSpeed
+                    interaction.cancel()
+                } ?? false
+
+                if !animatorOwnsSettle {
+                    interaction.completionSpeed =
+                        ReaderCardTransitionMath.cancellationCompletionSpeed(
+                            closeProgress: popProgress,
+                            transitionDuration: transitionDuration,
+                            minimumSettleDuration: minimumSettleDuration
+                        )
+                    interaction.cancel()
+                }
             }
 
         case .cancelled, .failed:
@@ -306,6 +340,22 @@ final class ReaderNavigationTransitionDriver: NSObject {
             } else {
                 onPopTransitionCompleted(completed)
             }
+        }
+        scheduleNavigationSettledNotification()
+    }
+
+    private func scheduleNavigationSettledNotification() {
+        guard !navigationSettleNotificationScheduled else { return }
+        navigationSettleNotificationScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.navigationSettleNotificationScheduled = false
+            guard
+                self.navigationController != nil,
+                self.pendingOperation == nil,
+                self.activeAnimator == nil
+            else { return }
+            self.onNavigationTransitionSettled()
         }
     }
 
@@ -465,7 +515,10 @@ extension ReaderNavigationTransitionDriver: UINavigationControllerDelegate {
         // clear our pending state. `didShow` is authoritative for that fallback
         // path. Custom transitions keep `activeAnimator` non-nil until after
         // `completeTransition`, so they do not double-fire.
-        guard let pendingOperation, activeAnimator == nil else { return }
+        guard let pendingOperation, activeAnimator == nil else {
+            scheduleNavigationSettledNotification()
+            return
+        }
         let completed: Bool
         if let expectedToViewController {
             completed = viewController === expectedToViewController

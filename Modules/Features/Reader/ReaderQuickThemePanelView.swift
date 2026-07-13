@@ -244,6 +244,7 @@ struct ReaderQuickThemePanelView: View {
                         localized(pageTurnTitleKey(for: option)),
                         systemImage: option.iconName
                     )
+                    .font(DSFont.body)
                     .tag(option)
                 }
             }
@@ -268,6 +269,7 @@ struct ReaderQuickThemePanelView: View {
             ) {
                 ForEach(ReaderQuickThemeMode.allCases) { mode in
                     Label(localized(mode.titleKey), systemImage: mode.iconName)
+                        .font(DSFont.body)
                         .tag(mode)
                         .disabled(mode == .surroundings)
                 }
@@ -556,6 +558,8 @@ private struct ReaderCustomBackgroundOptionsView: View {
                     )
                 } label: {
                     Label(localized("RGB 調色"), systemImage: "paintpalette")
+                        .font(DSFont.body)
+                        .foregroundStyle(DSColor.textPrimary)
                 }
 
                 if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsBackgroundImageImport {
@@ -563,12 +567,21 @@ private struct ReaderCustomBackgroundOptionsView: View {
                         showingImageImporter = true
                     } label: {
                         Label(localized("導入圖片背景"), systemImage: "photo")
+                            .font(DSFont.body)
+                            .foregroundStyle(DSColor.textPrimary)
                     }
                 }
             } footer: {
                 Text(localized("圖片會直接顯示在閱讀背景與主題預覽中。"))
+                    .font(DSFont.footnote)
+                    .foregroundStyle(DSColor.textSecondary)
             }
+            .listRowBackground(DSColor.surface)
         }
+        .font(DSFont.body)
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(DSColor.groupedBackground)
         .navigationTitle(localized("自定義閱讀背景"))
         .toolbarTitleDisplayMode(.inline)
         .fileImporter(
@@ -652,15 +665,21 @@ private struct ReaderCustomBackgroundColorEditorView: View {
     var body: some View {
         Form {
             Section {
-                ColorPicker(
-                    localized("背景顏色"),
-                    selection: $color,
-                    supportsOpacity: false
-                )
+                ColorPicker(selection: $color, supportsOpacity: false) {
+                    Text(localized("背景顏色"))
+                        .font(DSFont.body)
+                        .foregroundStyle(DSColor.textPrimary)
+                }
             } footer: {
                 Text(localized("套用後會作為自定義閱讀背景。"))
+                    .font(DSFont.footnote)
+                    .foregroundStyle(DSColor.textSecondary)
             }
+            .listRowBackground(DSColor.surface)
         }
+        .font(DSFont.body)
+        .scrollContentBackground(.hidden)
+        .background(DSColor.groupedBackground)
         .navigationTitle(localized("RGB 調色"))
         .toolbarTitleDisplayMode(.inline)
         .toolbar {

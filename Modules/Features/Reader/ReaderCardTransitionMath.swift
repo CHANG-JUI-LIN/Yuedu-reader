@@ -27,15 +27,22 @@ enum ReaderCardTransitionMath {
     /// the touch actually started at the edge.
     static let edgeStartWidth: CGFloat = 30
 
-    /// Open-state progress at which a released close gesture should commit.
-    /// progress <= threshold (close enough to closed) finishes; otherwise it
-    /// cancels back to the open reader.
-    static let completionThreshold: CGFloat = 0.5
+    /// Closing progress required before a slow release commits the pop.
+    /// Below this point the physical book transition reverses to fully open.
+    static let closeCompletionThreshold: CGFloat = 0.20
 
-    /// Horizontal drag velocity (points/second) whose magnitude is large
-    /// enough to override distance when deciding finish vs cancel. Sign
-    /// convention: positive velocity means the finger continues toward close.
+    /// Horizontal velocity (points/second) that overrides the distance rule.
+    /// Positive velocity continues toward close; negative velocity returns
+    /// toward the open reader.
     static let closeVelocityThreshold: CGFloat = 600
+
+    /// Normal UIKit settle speed used when no slower visible return is needed.
+    static let maximumCompletionSpeed: CGFloat = 0.92
+
+    /// UIKit finalizes only its navigation state after the custom animator has
+    /// already drawn a cancelled book fully open, so this hidden tail can run
+    /// faster than real time without affecting visible motion.
+    static let cancellationFinalizationSpeed: CGFloat = 4
 
     // MARK: Progress
 
@@ -106,24 +113,52 @@ enum ReaderCardTransitionMath {
 
     // MARK: Finish / cancel decision
 
-    /// Decide whether a released interactive close should finish (commit the
-    /// pop) or cancel (restore the open reader).
-    ///
-    /// - Parameters:
-    ///   - progress: Open-state progress at release in 0...1. During a close
-    ///     gesture the user drags from 1 toward 0, so a smaller value means
-    ///     the gesture is closer to completing.
-    ///   - velocity: Horizontal drag velocity (points/second) at release, with
-    ///     the sign normalized by the gesture controller: positive means the
-    ///     finger is still moving in the close direction; negative means it is
-    ///     moving back toward open.
-    /// - Returns: `true` to finish the close (pop the reader), `false` to
-    ///   cancel and restore the reader.
-    static func shouldFinishClose(progress: CGFloat, velocity: CGFloat) -> Bool {
-        let p = clampProgress(progress)
+    /// Decide whether releasing the edge swipe should close the reader.
+    /// Distance handles deliberate drags while velocity preserves natural
+    /// flicks and lets a fast reverse gesture explicitly restore the reader.
+    static func shouldFinishClose(closeProgress: CGFloat, velocity: CGFloat) -> Bool {
+        let progress = clampProgress(closeProgress)
         if velocity >= closeVelocityThreshold { return true }
         if velocity <= -closeVelocityThreshold { return false }
-        return p <= completionThreshold
+        return progress >= closeCompletionThreshold
+    }
+
+    /// Slow short cancellations enough that the reverse book-opening motion
+    /// remains perceptible. `UIPercentDrivenInteractiveTransition` otherwise
+    /// settles proportionally to the tiny travelled distance, which turns a
+    /// small cancelled swipe into a one-frame flash.
+    static func cancellationCompletionSpeed(
+        closeProgress: CGFloat,
+        transitionDuration: TimeInterval,
+        minimumSettleDuration: TimeInterval
+    ) -> CGFloat {
+        let progress = clampProgress(closeProgress)
+        guard
+            progress > 0,
+            transitionDuration > 0,
+            minimumSettleDuration > 0
+        else {
+            return maximumCompletionSpeed
+        }
+
+        let speedForMinimumDuration = CGFloat(
+            transitionDuration * Double(progress) / minimumSettleDuration
+        )
+        return min(speedForMinimumDuration, maximumCompletionSpeed)
+    }
+
+    /// Open-state progress for the animator-owned cancellation settle. The
+    /// physical book model is evaluated again at every returned progress, so
+    /// the visible return follows the same frame, hinge, shadow, and content
+    /// phases as opening instead of snapping UIKit's transition endpoint.
+    static func cancellationOpenProgress(
+        from startOpenProgress: CGFloat,
+        timeFraction: CGFloat
+    ) -> CGFloat {
+        let t = clampProgress(timeFraction)
+        let inverse = 1 - t
+        let eased = 1 - inverse * inverse * inverse
+        return lerp(clampProgress(startOpenProgress), 1, eased)
     }
 
     // MARK: Gesture gating helpers

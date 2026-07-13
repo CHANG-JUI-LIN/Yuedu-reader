@@ -1274,3 +1274,8 @@
 "匯入失敗" = "Import Failed";
 "匯入主題失敗。" = "Could not import the theme.";
 "不支援的主題檔案。" = "Unsupported theme file.";
+
+// MARK: - Apple Books Reader Controls
+"%@，進度 %@" = "%@, progress %@";
+"點兩下顯示閱讀進度" = "Double-tap to show reading progress";
+"點兩下展開閱讀工具" = "Double-tap to expand reading tools";

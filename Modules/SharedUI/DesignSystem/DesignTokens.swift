@@ -30,7 +30,7 @@ enum DSColor {
     /// Page background
     static var background: Color { themed(\.appPageBackground) ?? Color(.systemBackground) }
     /// Group / card background
-    static var surface: Color { themed(\.appCardBackground) ?? Color(.secondarySystemBackground) }
+    static var surface: Color { themed(\.appCardBackground) ?? Color(.secondarySystemGroupedBackground) }
     /// Tertiary background (nested groups)
     static var surfaceTertiary: Color { themed(\.appSecondaryBackground) ?? Color(.tertiarySystemBackground) }
     /// Grouped content background
@@ -39,6 +39,14 @@ enum DSColor {
     static let neutralControlFill = Color(uiColor: .systemGray5)
     /// Pressed-state fill layered inside `neutralControlFill` controls (pre-iOS 26 fallback).
     static let neutralControlPressedFill = Color(uiColor: .systemGray3)
+    /// Strong neutral fill used by the emphasized Apple Books reader-menu row.
+    static let neutralControlEmphasizedFill = Color.black
+    /// Foreground drawn on the black emphasized reader control.
+    static let neutralControlEmphasizedForeground = Color.white
+    /// Solid read-progress fill inside the emphasized reader scrubber.
+    static let neutralControlProgressFill = Color.white
+    /// Text drawn over the solid white read-progress fill.
+    static let neutralControlProgressForeground = Color.black
 
     // ── Borders & Separators ──
     /// Thin separator
@@ -178,6 +186,18 @@ enum DSLayout {
     static let readerQuickPanelReadingBackgroundPagerHeight: CGFloat = 214
     /// Fixed iOS 17 detent height for the reader quick settings sheet.
     static let readerQuickPanelSheetHeight: CGFloat = 508
+    /// Maximum width of the Apple Books-style floating reader controls.
+    static let readerAppleBooksPanelWidth: CGFloat = 252
+    /// Minimum hit target and visible size of Apple Books reader chrome controls.
+    static let readerAppleBooksControlSize: CGFloat = 44
+    /// Width of each action; four actions plus three gaps exactly fill the panel.
+    static let readerAppleBooksActionWidth: CGFloat = 57
+    /// Height of each compact action below the Apple Books reader menu.
+    static let readerAppleBooksActionHeight: CGFloat = 44
+    /// Height of each Apple Books reader-menu capsule row.
+    static let readerAppleBooksMenuRowHeight: CGFloat = 44
+    /// VoiceOver increment/decrement step for the Apple Books progress scrubber.
+    static let readerAppleBooksProgressAccessibilityStep: Double = 0.01
     /// Minimum height of the paragraph-comment SVG editor.
     static let readerSVGEditorHeight: CGFloat = 160
     /// Compact fixed width for a paragraph-comment bubble preview tile.
@@ -222,6 +242,8 @@ enum DSAnimation {
     static let slow = Animation.easeInOut(duration: 0.4)
     /// Deliberate physical open/close duration for the reader book-card transition.
     static let readerBookTransitionDuration: TimeInterval = 0.62
+    /// Minimum visible settle time when a short interactive close reverses.
+    static let readerBookCancellationSettleDuration: TimeInterval = 0.20
     /// Reduced-motion reader transition duration (opacity only).
     static let readerBookReducedMotionDuration: TimeInterval = 0.18
 }

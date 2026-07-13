@@ -18,6 +18,10 @@ extension ReaderView {
         showBars && settings.appearanceReaderInterface == .appleBooks
     }
 
+    var showsAppleBooksBottomToolbar: Bool {
+        showsAppleBooksToolbars && appleBooksActivePanel == nil
+    }
+
     @ToolbarContentBuilder
     var appleBooksToolbarContent: some ToolbarContent {
         if settings.appearanceReaderInterface == .appleBooks {
@@ -30,6 +34,7 @@ extension ReaderView {
 
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
+                    appleBooksActivePanel = nil
                     closeReader()
                 } label: {
                     Label(localized("退出閱讀"), systemImage: "xmark")
@@ -39,15 +44,23 @@ extension ReaderView {
                 .accessibilityLabel(localized("退出閱讀"))
             }
 
-            ToolbarItem(placement: .status) {
-                Text(appleBooksPageCounterText)
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(readerTheme.textColor.opacity(0.62))
-                    .monospacedDigit()
-            }
+            ToolbarItemGroup(placement: .bottomBar) {
+                Spacer()
 
-            ToolbarItem(placement: .bottomBar) {
-                appleBooksMenu
+                Button {
+                    toggleAppleBooksPanel(.menu)
+                } label: {
+                    Label(localized("選單"), systemImage: "list.bullet")
+                        .labelStyle(.iconOnly)
+                        .frame(
+                            width: DSLayout.readerAppleBooksControlSize,
+                            height: DSLayout.readerAppleBooksControlSize
+                        )
+                        .background(.thinMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(localized("選單"))
+                .accessibilityHint(localized("點兩下展開閱讀工具"))
             }
         }
     }
@@ -116,65 +129,73 @@ extension ReaderView {
         )
     }
 
-    var appleBooksMenu: some View {
-        Menu {
-            Button {
-                showTOC = true
-            } label: {
-                Label(
-                    String(format: localized("Contents · %@"), totalProgressPercent),
-                    systemImage: "list.bullet"
+    var appleBooksControls: some View {
+        AppleBooksReaderControls(
+            activePanel: $appleBooksActivePanel,
+            progressValue: { chapterSliderProgressValue() },
+            applyProgress: { applyChapterSliderProgress($0) },
+            progressDescription: { chapterTitle(forProgress: $0) },
+            secondaryActions: appleBooksSecondaryActions,
+            onOpenTOC: { showTOC = true },
+            onOpenSearch: { showReaderSearch = true },
+            onOpenSettings: { showQuickThemePanel = true }
+        )
+        .environment(\.colorScheme, readerTheme == .night ? .dark : .light)
+    }
+
+    var appleBooksSecondaryActions: [AppleBooksReaderAction] {
+        var actions = [
+            AppleBooksReaderAction(
+                id: .playback,
+                icon: "headphones",
+                label: localized("聽書"),
+                action: { openPlaybackPanel() }
+            )
+        ]
+
+        if book?.isOnline == true {
+            actions.append(
+                AppleBooksReaderAction(
+                    id: .download,
+                    icon: downloadButtonIcon,
+                    label: localized("下載"),
+                    action: { handleDownloadAction() }
                 )
-            }
-
-            Button {
-                showReaderSearch = true
-            } label: {
-                Label(localized("Search Book"), systemImage: "magnifyingglass")
-            }
-
-            Button {
-                showQuickThemePanel = true
-            } label: {
-                Label(localized("Themes & Settings"), systemImage: "textformat.size")
-            }
-
-            Divider()
-
-            Button {
-                openPlaybackPanel()
-            } label: {
-                Label(localized("聽書"), systemImage: "headphones")
-            }
-
-            if book?.isOnline == true {
-                Button {
-                    handleDownloadAction()
-                } label: {
-                    Label(localized("下載"), systemImage: downloadButtonIcon)
-                }
-            }
-
-            if book?.isOnline == true, book?.bookSourceId != nil {
-                Button {
-                    showChangeSourceSheet = true
-                } label: {
-                    Label(localized("換源"), systemImage: "arrow.left.and.right")
-                }
-            }
-
-            if !(book?.onlineChapters?.isEmpty ?? true) {
-                Button {
-                    refreshCurrentChapter()
-                } label: {
-                    Label(localized("刷新"), systemImage: "arrow.clockwise")
-                }
-            }
-        } label: {
-            Label(localized("選單"), systemImage: "list.bullet")
-                .labelStyle(.iconOnly)
+            )
         }
-        .accessibilityLabel(localized("選單"))
+
+        if book?.isOnline == true, book?.bookSourceId != nil {
+            actions.append(
+                AppleBooksReaderAction(
+                    id: .changeSource,
+                    icon: "arrow.left.and.right",
+                    label: localized("換源"),
+                    action: { showChangeSourceSheet = true }
+                )
+            )
+        }
+
+        if !(book?.onlineChapters?.isEmpty ?? true) {
+            actions.append(
+                AppleBooksReaderAction(
+                    id: .refresh,
+                    icon: "arrow.clockwise",
+                    label: localized("刷新"),
+                    action: { refreshCurrentChapter() }
+                )
+            )
+        }
+
+        return actions
+    }
+
+    func toggleAppleBooksPanel(_ target: AppleBooksReaderControlPanel) {
+        withAnimation(DSAnimation.standard) {
+            appleBooksActivePanel = AppleBooksReaderControlPanel.panel(
+                afterTapping: target,
+                current: appleBooksActivePanel
+            )
+        }
     }
 
     func closeReader() {
@@ -241,11 +262,6 @@ extension ReaderView {
             left = 0
         }
         return String(format: localized("%d pages left in chapter"), left)
-    }
-
-    var appleBooksPageCounterText: String {
-        let total = max(1, epubRenderer.engine?.totalPages ?? allPages.count)
-        return String(format: localized("%1$d of %2$d"), min(currentPage + 1, total), total)
     }
 
     var readerSearchItems: [ReaderBookSearchItem] {
