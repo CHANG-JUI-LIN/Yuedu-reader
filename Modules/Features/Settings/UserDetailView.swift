@@ -102,7 +102,7 @@ struct UserDetailView: View {
                             .frame(width: 28, height: 28)
                             .foregroundStyle(DSColor.accent)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Yuedu Pro")
+                            Text(localized("閱讀Pro"))
                                 .foregroundColor(.primary)
                             Text(subscriptionStore.isProActive
                                  ? localized("已訂閱，感謝支持")
@@ -255,7 +255,7 @@ struct UserDetailView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .themedAppSurface()
+        .themedAppSurface(for: .settings)
         .navigationTitle(localized("個人資料"))
         .toolbarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)

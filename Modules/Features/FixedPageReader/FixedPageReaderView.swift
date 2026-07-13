@@ -307,10 +307,13 @@ struct FixedPageChapterListView: View {
                     }
                     .id(item.index)
                 }
+                .scrollContentBackground(.hidden)
                 .onAppear {
                     proxy.scrollTo(state.currentChapterIndex, anchor: .center)
                 }
             }
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
             .navigationTitle(localized("目錄"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {

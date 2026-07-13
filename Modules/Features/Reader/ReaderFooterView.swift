@@ -54,6 +54,7 @@ struct ReaderOverlayFooter: View {
     let progress: String
     let textColor: Color
     let footerPadding: CGFloat
+    let horizontalPadding: CGFloat
     @StateObject private var clock = ClockBatteryModel()
 
     var body: some View {
@@ -70,7 +71,7 @@ struct ReaderOverlayFooter: View {
                 }
                 .foregroundColor(textColor.opacity(0.4))
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, horizontalPadding)
             .padding(.bottom, footerPadding)
         }
         .allowsHitTesting(false)
@@ -84,6 +85,7 @@ struct ReaderInlineFooter: View {
     let progress: String
     let textColor: Color
     let footerPadding: CGFloat
+    let horizontalPadding: CGFloat
     @StateObject private var clock = ClockBatteryModel()
 
     var body: some View {
@@ -100,7 +102,7 @@ struct ReaderInlineFooter: View {
                 }
                 .foregroundColor(textColor.opacity(0.4))
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, horizontalPadding)
             .padding(.bottom, footerPadding)
         }
         .allowsHitTesting(false)

@@ -59,7 +59,8 @@ struct ReadingStatsView: View {
                     .padding(.vertical, DSSpacing.lg)
                 }
             }
-            .background(DSColor.groupedBackground.ignoresSafeArea())
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
             .navigationTitle(localized("閱讀統計"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {

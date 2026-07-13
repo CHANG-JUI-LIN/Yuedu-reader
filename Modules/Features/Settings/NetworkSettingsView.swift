@@ -28,6 +28,7 @@ struct NetworkSettingsView: View {
                     )
                 }
             }
+            .themedAppSurface(for: .settings)
             .navigationTitle(localized("網路設定"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {

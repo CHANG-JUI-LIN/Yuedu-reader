@@ -82,6 +82,8 @@ struct ReaderBookmarkListView: View {
                     }
                 }
             }
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
             .environment(\.editMode, $editMode)
             .onChange(of: segment) {
                 selection.removeAll()

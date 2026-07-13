@@ -63,8 +63,10 @@ struct BookSourceListView: View {
                     bottomToolbar
                 }
             }
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
             .navigationTitle(localized("書源管理"))
             .toolbarTitleDisplayMode(.inline)
+            .pageBackgroundToolbar(for: .settings)
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
@@ -255,6 +257,7 @@ struct BookSourceListView: View {
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     @ViewBuilder
@@ -621,6 +624,7 @@ struct BookSourceListView: View {
             }
             .navigationTitle(localized("匯入書源"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -721,6 +725,7 @@ struct BookSourceListView: View {
             }
             .navigationTitle(localized("網路導入"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

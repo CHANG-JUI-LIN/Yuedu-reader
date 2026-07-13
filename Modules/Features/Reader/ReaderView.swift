@@ -1200,6 +1200,7 @@ struct ReaderView: View {
                         Spacer()
                         bottomFooter
                     }
+                    .ignoresSafeArea(.all, edges: .bottom)
                     .transition(.opacity.animation(.easeOut(duration: 0.2)))
                 }
                 topHeader

@@ -43,6 +43,8 @@ struct AppearancePageBackgroundConfig: Codable, Hashable {
     var darkSecondaryHex: UInt32?
     var lightImageFileName: String?
     var darkImageFileName: String?
+    var lightImageOpacity: Double?
+    var darkImageOpacity: Double?
 
     var isEmpty: Bool {
         lightPrimaryHex == nil && lightSecondaryHex == nil
@@ -58,6 +60,19 @@ struct AppearancePageBackgroundConfig: Codable, Hashable {
 
     func imageFileName(for colorScheme: ColorScheme) -> String? {
         normalizedImageFileName(colorScheme == .dark ? darkImageFileName : lightImageFileName)
+    }
+
+    func imageOpacity(for colorScheme: ColorScheme) -> Double {
+        let raw = colorScheme == .dark ? darkImageOpacity : lightImageOpacity
+        return raw ?? 1.0
+    }
+
+    mutating func setImageOpacity(_ opacity: Double?, for colorScheme: ColorScheme) {
+        if colorScheme == .dark {
+            darkImageOpacity = opacity
+        } else {
+            lightImageOpacity = opacity
+        }
     }
 
     mutating func setImageFileName(_ fileName: String?, for colorScheme: ColorScheme) {
@@ -95,7 +110,8 @@ struct AppearancePageBackgroundConfig: Codable, Hashable {
         let slice = AppearancePageBackgroundSlice(
             primaryHex: primaryHex(for: colorScheme),
             secondaryHex: secondaryHex(for: colorScheme),
-            imageFileName: imageFileName(for: colorScheme)
+            imageFileName: imageFileName(for: colorScheme),
+            imageOpacity: imageOpacity(for: colorScheme)
         )
         return slice.isEmpty ? nil : slice
     }
@@ -114,6 +130,19 @@ struct AppearancePageBackgroundSlice: Hashable {
     var primaryHex: UInt32?
     var secondaryHex: UInt32?
     var imageFileName: String?
+    var imageOpacity: Double
+
+    init(
+        primaryHex: UInt32? = nil,
+        secondaryHex: UInt32? = nil,
+        imageFileName: String? = nil,
+        imageOpacity: Double = 1.0
+    ) {
+        self.primaryHex = primaryHex
+        self.secondaryHex = secondaryHex
+        self.imageFileName = imageFileName
+        self.imageOpacity = imageOpacity
+    }
 
     var isEmpty: Bool {
         primaryHex == nil && secondaryHex == nil && imageFileName == nil
@@ -313,6 +342,8 @@ struct AppearanceThemeExportFile: Codable {
         var darkSecondaryHex: UInt32?
         var lightImage: ImagePayload?
         var darkImage: ImagePayload?
+        var lightImageOpacity: Double?
+        var darkImageOpacity: Double?
     }
 
     static let formatIdentifier = "yuedu-appearance-theme"
@@ -363,6 +394,7 @@ struct AppearancePageBackgroundLayerView: View {
                         .scaledToFill()
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .clipped()
+                        .opacity(slice.imageOpacity)
                 }
             }
         }

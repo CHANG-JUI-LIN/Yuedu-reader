@@ -23,6 +23,7 @@ struct WebDAVSyncView: View {
             }
             .navigationTitle(localized("WebDAV 同步"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

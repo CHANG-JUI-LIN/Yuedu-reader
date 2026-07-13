@@ -30,6 +30,7 @@ struct BookSourceDebugView: View {
             }
             .navigationTitle(localized("書源除錯大師"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

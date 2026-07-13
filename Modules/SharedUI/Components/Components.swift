@@ -80,20 +80,108 @@ struct IconConsistentLabelStyle: LabelStyle {
     }
 }
 
-extension View {
-    /// Retints a scrollable `Form`/`List` to the active app theme by hiding the
-    /// system background and painting the themed page color behind it. A no-op
-    /// when no theme is active (classic), so default users keep the exact system
-    /// appearance. Apply directly on the `Form`/`List` — applying it to an
-    /// ancestor does not reliably reach a `List` nested inside a NavigationStack.
-    @ViewBuilder
-    func themedAppSurface() -> some View {
-        if AppearanceThemePreset.activeAppTheme != nil {
-            scrollContentBackground(.hidden)
-                .background(DSColor.groupedBackground.ignoresSafeArea())
-        } else {
-            self
+/// Reusable page background: the themed grouped background plus, when the user
+/// configured a page background (Pro), the gradient/image layer for the given
+/// scope. Use inside `ZStack` or `.background { }` on any surface that should
+/// show the page background — tabs, sheets, and standalone views alike.
+struct PageBackgroundView: View {
+    let scope: AppearancePageBackgroundScope
+    @ObservedObject private var gs = GlobalSettings.shared
+    @ObservedObject private var subscriptionStore = SubscriptionStore.shared
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack {
+            DSColor.groupedBackground
+            if subscriptionStore.hasAccess(.readerThemePacks),
+               let slice = gs.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme) {
+                AppearancePageBackgroundLayerView(slice: slice)
+            }
         }
+    }
+}
+
+private struct ThemedAppSurfaceModifier: ViewModifier {
+    let scope: AppearancePageBackgroundScope
+    @ObservedObject private var gs = GlobalSettings.shared
+    @ObservedObject private var subscriptionStore = SubscriptionStore.shared
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var slice: AppearancePageBackgroundSlice? {
+        guard subscriptionStore.hasAccess(.readerThemePacks) else { return nil }
+        return gs.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme)
+    }
+
+    func body(content: Content) -> some View {
+        if let slice {
+            content
+                .scrollContentBackground(.hidden)
+                .background {
+                    ZStack {
+                        DSColor.groupedBackground
+                        AppearancePageBackgroundLayerView(slice: slice)
+                    }
+                    .ignoresSafeArea()
+                }
+                .toolbarBackground(.hidden, for: .navigationBar)
+        } else if AppearanceThemePreset.activeAppTheme != nil {
+            content
+                .scrollContentBackground(.hidden)
+                .background(DSColor.groupedBackground.ignoresSafeArea())
+                .toolbarBackground(.hidden, for: .navigationBar)
+        } else {
+            content
+                .scrollContentBackground(.hidden)
+                .background(DSColor.groupedBackground.ignoresSafeArea())
+                .toolbarBackground(.hidden, for: .navigationBar)
+        }
+    }
+}
+
+/// Hides the navigation bar's default material background when a page
+/// background or app theme is active, so the background shows through the
+/// nav-bar region (behind the title and toolbar buttons).
+private struct PageBackgroundToolbarModifier: ViewModifier {
+    let scope: AppearancePageBackgroundScope
+    @ObservedObject private var gs = GlobalSettings.shared
+    @ObservedObject private var subscriptionStore = SubscriptionStore.shared
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var hasBackground: Bool {
+        if subscriptionStore.hasAccess(.readerThemePacks),
+           gs.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme) != nil {
+            return true
+        }
+        return AppearanceThemePreset.activeAppTheme != nil
+    }
+
+    func body(content: Content) -> some View {
+        if hasBackground {
+            content.toolbarBackground(.hidden, for: .navigationBar)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// Retints a scrollable `Form`/`List` to the active app theme and paints
+    /// the page background layer for `scope`. The background is painted
+    /// directly behind the `Form`/`List` (with `ignoresSafeArea` so it extends
+    /// behind the navigation bar), and the navigation bar's default material is
+    /// hidden so the background shows through the nav-bar region. A no-op when
+    /// no theme is active and no page background is configured. Apply directly
+    /// on the `Form`/`List`.
+    func themedAppSurface(for scope: AppearancePageBackgroundScope = .global) -> some View {
+        modifier(ThemedAppSurfaceModifier(scope: scope))
+    }
+
+    /// Hides the navigation bar's default material when a page background or app
+    /// theme is active. Use on views that paint their own background via
+    /// `PageBackgroundView` (non-`Form`/`List` surfaces like `ScrollView`,
+    /// `ZStack`, etc.) so the nav-bar region shows the page background.
+    func pageBackgroundToolbar(for scope: AppearancePageBackgroundScope = .global) -> some View {
+        modifier(PageBackgroundToolbarModifier(scope: scope))
     }
 }
 

@@ -16,7 +16,7 @@ struct OPDSFeedRoute: Hashable {
 struct OPDSImportView: View {
     @EnvironmentObject var store: BookStore
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var catalogStore = OPDSCatalogStore.shared
+    @ObservedObject private var catalogStore = OPDSCatalogStore.shared
     @State private var showAddSheet = false
 
     private var presetsNotAdded: [OPDSCatalog] {
@@ -36,6 +36,7 @@ struct OPDSImportView: View {
             }
             .navigationTitle(localized("從 OPDS 匯入"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .bookshelf)
             .navigationDestination(for: OPDSFeedRoute.self) { route in
                 OPDSFeedView(route: route).environmentObject(store)
             }
@@ -132,6 +133,7 @@ struct AddOPDSCatalogSheet: View {
             }
             .navigationTitle(localized("新增 OPDS 目錄"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .bookshelf)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
@@ -207,7 +209,8 @@ struct OPDSFeedView: View {
             }
         }
         .navigationTitle(route.title)
-        .toolbarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .bookshelf)
         .searchableWhen(searchDescURL != nil, text: $searchText, prompt: localized("搜尋此目錄"))
         .onSubmit(of: .search) { Task { await runSearch() } }
         .task(id: route.url) { await loadInitial() }
@@ -258,9 +261,9 @@ struct OPDSFeedView: View {
         if importingID == entry.id {
             ProgressView()
         } else if importedIDs.contains(entry.id) {
-            Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+            Image(systemName: "checkmark.circle.fill").foregroundColor(DSColor.success)
         } else if failedID == entry.id {
-            Image(systemName: "exclamationmark.circle.fill").foregroundColor(.red)
+            Image(systemName: "exclamationmark.circle.fill").foregroundColor(DSColor.destructive)
         } else if entry.bestAcquisition != nil {
             Image(systemName: "arrow.down.circle").foregroundColor(DSColor.accent)
         }

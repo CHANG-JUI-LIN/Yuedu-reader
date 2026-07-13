@@ -215,12 +215,15 @@ struct TTSPanelView: View {
                                 if tts.sleepMinutes == min {
                                     Image(systemName: "checkmark")
                                         .foregroundColor(.accentColor)
-                                }
-                            }
-                        }
-                    }
                 }
             }
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
+        }
+    }
+}
+            }
+            .scrollContentBackground(.hidden)
             .navigationTitle(localized("語音朗讀"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
@@ -234,6 +237,8 @@ struct TTSPanelView: View {
                     .accessibilityLabel(localized("完成"))
                 }
             }
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
             .sheet(isPresented: $showChapterPicker) {
                 NavigationStack {
                     List(chapters.indices, id: \.self) { index in
@@ -252,6 +257,9 @@ struct TTSPanelView: View {
                             }
                         }
                     }
+                    .scrollContentBackground(.hidden)
+                    .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+                    .pageBackgroundToolbar(for: .settings)
                     .navigationTitle(localized("目錄"))
                     .toolbarTitleDisplayMode(.inline)
                     .toolbar {
@@ -329,6 +337,7 @@ struct AutoReadPanelView: View {
                     .foregroundColor(DSColor.textSecondary)
                 }
             }
+            .scrollContentBackground(.hidden)
             .navigationTitle(localized("自動閱讀"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {

@@ -21,6 +21,7 @@ struct BookSourceCheckView: View {
             }
             .navigationTitle(localized("書源檢測"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

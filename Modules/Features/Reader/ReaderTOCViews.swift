@@ -248,7 +248,8 @@ struct ReaderMenuView: View {
                     .accessibilityLabel(localized("完成"))
                 }
             }
-            .background(Color(uiColor: .systemBackground))
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
         }
     }
 

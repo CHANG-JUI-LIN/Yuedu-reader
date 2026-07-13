@@ -36,6 +36,7 @@ struct DownloadManagementView: View {
             }
             .navigationTitle(localized("下載管理"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

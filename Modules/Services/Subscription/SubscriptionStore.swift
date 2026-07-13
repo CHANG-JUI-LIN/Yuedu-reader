@@ -17,7 +17,7 @@ final class SubscriptionStore: ObservableObject {
     /// The product identifiers configured in App Store Connect and the local
     /// `.storekit` file. Order here is the display order on the paywall.
     enum ProProduct: String, CaseIterable {
-        case yearly = "com.zhangruilin.yuedureader.pro.yearly"
+        case lifetime = "com.zhangruilin.yuedureader.pro.lifetime"
         case monthly = "com.zhangruilin.yuedureader.pro.monthly"
     }
 

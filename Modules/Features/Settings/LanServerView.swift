@@ -69,6 +69,7 @@ struct LanServerView: View {
             }
             .navigationTitle(localized("局域網服務"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

@@ -57,6 +57,7 @@ struct GlobalFontSettingsView: View {
         }
         .navigationTitle(localized("全局字體"))
         .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .settings)
         .fileImporter(
             isPresented: $showingImporter,
             allowedContentTypes: Self.fontContentTypes,

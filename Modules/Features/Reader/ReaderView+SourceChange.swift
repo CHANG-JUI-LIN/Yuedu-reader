@@ -63,6 +63,9 @@ extension ReaderView {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
             .navigationTitle(localized("換源"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {

@@ -14,7 +14,31 @@
 
   ],
   "products" : [
-
+    {
+      "displayPrice" : "14.99",
+      "familyShareable" : true,
+      "internalID" : "E47B2A91",
+      "localizations" : [
+        {
+          "description" : "永久解鎖全部 Yuedu Pro 高級個人化",
+          "displayName" : "閱讀Pro 永久會員",
+          "locale" : "zh_Hant"
+        },
+        {
+          "description" : "永久解锁全部 Yuedu Pro 高级个性化",
+          "displayName" : "阅读Pro 永久会员",
+          "locale" : "zh_Hans"
+        },
+        {
+          "description" : "Unlock all Yuedu Pro premium features forever",
+          "displayName" : "Yuedu Pro Lifetime",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.zhangruilin.yuedureader.pro.lifetime",
+      "referenceName" : "Yuedu Pro Lifetime",
+      "type" : "NonConsumable"
+    }
   ],
   "settings" : {
     "_applicationInternalID" : "6772972358",
@@ -25,7 +49,7 @@
     "_disableDialogs" : false,
     "_failTransactionsEnabled" : false,
     "_lastSynchronizedDate" : 0,
-    "_locale" : "en_US",
+    "_locale" : "zh_Hant",
     "_renewalBillingIssuesEnabled" : false,
     "_storefront" : "USA",
     "_storeKitErrors" : [
@@ -42,56 +66,22 @@
       "localizations" : [
         {
           "description" : "",
-          "displayName" : "Yuedu Pro",
+          "displayName" : "閱讀Pro 月會員",
           "locale" : "zh_Hant"
+        },
+        {
+          "description" : "",
+          "displayName" : "阅读Pro 月会员",
+          "locale" : "zh_Hans"
+        },
+        {
+          "description" : "",
+          "displayName" : "Yuedu Pro Monthly",
+          "locale" : "en_US"
         }
       ],
-      "name" : "Yuedu Pro",
+      "name" : "閱讀Pro",
       "subscriptions" : [
-        {
-          "adHocOffers" : [
-
-          ],
-          "billingPlans" : [
-            {
-              "billingPlanType" : "BILLED_UPFRONT",
-              "commitmentDisplayPrice" : "14.99",
-              "displayPrice" : "14.99",
-              "internalID" : "AAB7E4DD",
-              "isEnabled" : true
-            }
-          ],
-          "codeOffers" : [
-
-          ],
-          "displayPrice" : "14.99",
-          "familyShareable" : false,
-          "groupNumber" : 1,
-          "internalID" : "C3BA2738-5ACB-4F05-9FED-5AE9CA1F1C49",
-          "introductoryOffers" : [
-
-          ],
-          "localizations" : [
-            {
-              "description" : "解鎖全部 Yuedu Pro 高級個人化，按年計費",
-              "displayName" : "Yuedu Pro 年訂閱",
-              "locale" : "zh_Hant"
-            },
-            {
-              "description" : "Unlock all Yuedu Pro personalization, billed yearly",
-              "displayName" : "Yuedu Pro Yearly",
-              "locale" : "en_US"
-            }
-          ],
-          "productID" : "com.zhangruilin.yuedureader.pro.yearly",
-          "recurringSubscriptionPeriod" : "P1Y",
-          "referenceName" : "Yuedu Pro Yearly",
-          "subscriptionGroupID" : "4B1A0032-648A-4BE4-AAE6-86B68D25D05B",
-          "type" : "RecurringSubscription",
-          "winbackOffers" : [
-
-          ]
-        },
         {
           "adHocOffers" : [
 
@@ -117,9 +107,14 @@
           ],
           "localizations" : [
             {
-              "description" : "解鎖全部 Yuedu Pro 高級個人化，按月計費",
-              "displayName" : "Yuedu Pro 月訂閱",
+              "description" : "每月解鎖全部 Yuedu Pro 高級個人化",
+              "displayName" : "閱讀Pro 月會員",
               "locale" : "zh_Hant"
+            },
+            {
+              "description" : "每月解锁全部 Yuedu Pro 高级个性化",
+              "displayName" : "阅读Pro 月会员",
+              "locale" : "zh_Hans"
             },
             {
               "description" : "Unlock all Yuedu Pro personalization, billed monthly",

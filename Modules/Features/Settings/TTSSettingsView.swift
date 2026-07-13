@@ -41,8 +41,10 @@ struct TTSSettingsView: View {
                     bottomToolbar
                 }
             }
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
             .navigationTitle(localized("語音朗讀設定"))
             .toolbarTitleDisplayMode(.inline)
+            .pageBackgroundToolbar(for: .settings)
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
@@ -123,6 +125,7 @@ struct TTSSettingsView: View {
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     private func sourceRow(_ source: ImportedTTSSource) -> some View {
@@ -329,6 +332,7 @@ struct TTSSettingsView: View {
             }
             .navigationTitle(localized("網路導入"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -635,6 +639,7 @@ struct TTSSourceLoginView: View {
             }
             .navigationTitle(source.name)
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(localized("取消")) { onDismiss() }

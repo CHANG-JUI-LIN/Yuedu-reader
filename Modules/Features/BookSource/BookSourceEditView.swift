@@ -29,6 +29,7 @@ struct BookSourceEditView: View {
             }
             .navigationTitle(source.bookSourceName.isEmpty ? localized("新建書源") : source.bookSourceName)
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {

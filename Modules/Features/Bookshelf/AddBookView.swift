@@ -32,6 +32,7 @@ struct AddBookView: View {
             }
             .navigationTitle(localized("添加書籍"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .bookshelf)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {

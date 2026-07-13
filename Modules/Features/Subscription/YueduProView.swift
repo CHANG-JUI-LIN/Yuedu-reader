@@ -16,8 +16,9 @@ struct YueduProView: View {
             featuresSection
             manageSection
         }
-        .navigationTitle("Yuedu Pro")
+        .navigationTitle(localized("閱讀Pro"))
         .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .settings)
         .sheet(isPresented: $showPaywall) {
             PaywallView()
                 .environmentObject(store)
@@ -36,7 +37,7 @@ struct YueduProView: View {
                     .foregroundStyle(DSColor.accent)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Yuedu Pro")
+                    Text(localized("閱讀Pro"))
                         .font(DSFont.headline)
                     Text(store.isProActive ? localized("已訂閱，感謝支持") : localized("解鎖高級個人化"))
                         .font(DSFont.caption)

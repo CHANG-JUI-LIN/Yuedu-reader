@@ -173,7 +173,8 @@ struct AudiobookDetailView: View {
             .padding(.vertical, DSSpacing.md)
         }
         .scrollIndicators(.hidden)
-        .background(DSColor.background)
+        .background(PageBackgroundView(scope: .global).ignoresSafeArea())
+        .pageBackgroundToolbar(for: .global)
         .toolbarTitleDisplayMode(.large)
         .toolbar(.hidden, for: .tabBar)
         .environment(\.locale, Locale(identifier: gs.localeIdentifier))

@@ -103,7 +103,7 @@ private struct DiscoverFilterBar: View {
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.sm)
         }
-        .background(DSColor.groupedBackground)
+        .background(DSColor.groupedBackground.opacity(0.001))
         .overlay(alignment: .bottom) {
             Divider()
         }

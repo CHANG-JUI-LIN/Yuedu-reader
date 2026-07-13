@@ -721,10 +721,12 @@ enum ReaderLayoutMetrics {
     static let footerHeight: CGFloat = 16
     static let defaultFooterBottomPadding: CGFloat = 4
     static let defaultFooterTextGap: CGFloat = 12
+    static let defaultFooterHorizontalPadding: CGFloat = 16
 
     static let headerHeight: CGFloat = 16
     static let defaultHeaderTopPadding: CGFloat = 6
     static let defaultHeaderTextGap: CGFloat = 12
+    static let defaultHeaderHorizontalPadding: CGFloat = 16
 
     /// Extra space below the footer text to the screen bottom edge.
     /// Text area bottom = safeBottom + footerBottomPadding + footerHeight + footerTextGap.
@@ -736,9 +738,6 @@ enum ReaderLayoutMetrics {
         max(minimumVerticalPadding, safeTop + topSafeAreaExtra)
     }
 
-    /// Text area top when the reader header (頁眉) is enabled.
-    /// Text top = safeTop + headerTopPadding + headerHeight + headerTextGap,
-    /// mirroring how the footer reserves its band at the bottom.
     static func topInset(
         safeTop: CGFloat,
         headerVisible: Bool,
@@ -746,10 +745,7 @@ enum ReaderLayoutMetrics {
         headerTextGap: CGFloat = defaultHeaderTextGap
     ) -> CGFloat {
         guard headerVisible else { return topInset(safeTop: safeTop) }
-        return max(
-            minimumVerticalPadding,
-            safeTop + headerTopPadding + headerHeight + headerTextGap
-        )
+        return max(minimumVerticalPadding, headerTopPadding + headerTextGap)
     }
 
     static func bottomInset(
@@ -764,7 +760,7 @@ enum ReaderLayoutMetrics {
         guard footerVisible else {
             return max(minimumVerticalPadding, safeBottom)
         }
-        return safeBottom + footerBottomPadding + footerHeight + footerTextGap
+        return footerBottomPadding + footerTextGap
     }
 }
 

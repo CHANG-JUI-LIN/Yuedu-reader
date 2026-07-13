@@ -88,6 +88,7 @@ struct WebDAVImportView: View {
         }
         .navigationTitle(localized("從 WebDAV 匯入"))
         .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .bookshelf)
     }
 }
 
@@ -138,6 +139,7 @@ struct WebDAVDirectoryView: View {
         }
         .navigationTitle(title)
         .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .bookshelf)
         .task(id: folderURL) { await load() }
     }
 

@@ -184,7 +184,8 @@ struct OnlineBookView: View {
             .padding(.bottom, DSSpacing.md)
         }
         .scrollIndicators(.hidden)
-        .background(DSColor.background)
+        .background(PageBackgroundView(scope: .global).ignoresSafeArea())
+        .pageBackgroundToolbar(for: .global)
         // Detail views (pushed or sheet-presented) use an inline title per docs/design.md.
         // This view doesn't set its own navigationTitle — the presenter does (e.g. ReaderView's
         // 書籍詳情 sheet) — but a `.large` here, being deeper in the hierarchy, overrode the

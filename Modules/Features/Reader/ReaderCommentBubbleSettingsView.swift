@@ -101,6 +101,7 @@ struct ReaderCommentBubbleSettingsView: View {
         }
         .navigationTitle(localized("氣泡設定"))
         .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .settings)
         .sheet(item: $editorDraft) { draft in
             CommentBubbleStyleEditorView(
                 draft: draft,
@@ -497,6 +498,7 @@ private struct CommentBubbleStyleEditorView: View {
             }
             .navigationTitle(localized(draft.titleKey))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {

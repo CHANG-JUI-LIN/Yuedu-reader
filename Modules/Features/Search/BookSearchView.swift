@@ -66,9 +66,10 @@ struct BookSearchView: View {
                 .animation(.spring(response: 0.32, dampingFraction: 0.78), value: aggregator.isPaused)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(DSColor.background)
+            .background(PageBackgroundView(scope: .search))
         }
-        .background(DSColor.background.ignoresSafeArea())
+        .background(PageBackgroundView(scope: .search).ignoresSafeArea())
+        .pageBackgroundToolbar(for: .search)
         .navigationTitle(localized("搜索書籍"))
         .toolbarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: localized("輸入書名或作者"))
@@ -200,7 +201,7 @@ struct BookSearchView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
-        .background(DSColor.background)
+        .background(DSColor.groupedBackground.opacity(0.001))
     }
 
     @ViewBuilder
@@ -450,9 +451,12 @@ struct SourcePickerSheet: View {
                     .buttonStyle(.plain)
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
+            .background(PageBackgroundView(scope: .bookshelf).ignoresSafeArea())
             .navigationTitle(localized("選擇來源") + "（\(searchBook.origins.count) " + localized("個") + "）")
             .toolbarTitleDisplayMode(.inline)
+            .pageBackgroundToolbar(for: .bookshelf)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

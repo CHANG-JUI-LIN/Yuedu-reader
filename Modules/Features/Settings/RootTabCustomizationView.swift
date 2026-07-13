@@ -34,6 +34,7 @@ struct RootTabCustomizationView: View {
         }
         .navigationTitle(localized("底部 Tab"))
         .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .settings)
         .fileImporter(
             isPresented: $showingIconImporter,
             allowedContentTypes: Self.iconContentTypes,

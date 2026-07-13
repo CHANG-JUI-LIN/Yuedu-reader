@@ -50,7 +50,8 @@ struct ExploreHomeView: View {
                 case .web: webForm
                 }
             }
-            .background(DSColor.groupedBackground.ignoresSafeArea())
+            .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .explore)
             .navigationTitle(localized("探索"))
             .toolbarTitleDisplayModeInlineLarge()
             .toolbar {
@@ -299,6 +300,7 @@ struct ExploreHomeView: View {
             }
             .navigationTitle(localized("最近瀏覽"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .explore)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
@@ -350,6 +352,7 @@ struct ExploreHomeView: View {
             }
             .navigationTitle(localized("書源網站"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .explore)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -440,10 +443,11 @@ private struct DiscoverSettingsView: View {
                 .padding(.horizontal, DSSpacing.lg)
                 .padding(.vertical, DSSpacing.lg)
             }
-            .background(DSColor.groupedBackground)
+            .background(DSColor.groupedBackground.opacity(0.001))
         }
         .navigationTitle(localized("發現頁設定"))
         .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .explore)
         .searchable(
             text: $searchText,
             placement: .navigationBarDrawer(displayMode: .always),
@@ -808,6 +812,7 @@ private struct DiscoverSourcePickerView: View {
         }
         .navigationTitle(localized("切換發現頁"))
         .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .explore)
         .searchable(
             text: $searchText,
             placement: .navigationBarDrawer(displayMode: .always),

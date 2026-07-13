@@ -62,8 +62,11 @@ struct ReaderBookSearchView: View {
                         }
                     }
                     .listStyle(.insetGrouped)
+                    .scrollContentBackground(.hidden)
                 }
             }
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
             .navigationTitle(localized("搜尋書籍"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {

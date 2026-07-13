@@ -195,7 +195,7 @@ struct SettingsView: View {
                         }
                     }
                 }
-            .themedAppSurface()
+            .themedAppSurface(for: .settings)
             .navigationTitle(localized("設定"))
             .toolbarTitleDisplayModeInlineLarge()
             .sheet(isPresented: $showSourceList) {
@@ -375,6 +375,7 @@ private struct AboutSupportView: View {
         }
         .navigationTitle(localized("關於 Yuedu Reader"))
         .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .settings)
         .alert(localized("已複製"), isPresented: $showCopiedQQGroup) {
             Button(localized("好"), role: .cancel) {}
         } message: {

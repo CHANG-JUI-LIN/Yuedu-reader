@@ -20,6 +20,8 @@ struct ReaderFootnotePopupView: View {
                     .textSelection(.enabled)
                     .padding(DSSpacing.lg)
             }
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
             .navigationTitle(localized("註釋"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {

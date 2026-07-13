@@ -76,7 +76,7 @@ struct ReaderSettingsView: View {
                     displaySection
                 }
             }
-            .background(pageBackground.ignoresSafeArea())
+            .themedAppSurface(for: .settings)
             .navigationTitle(localized("閱讀設定"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
@@ -369,29 +369,43 @@ struct ReaderSettingsView: View {
                         icon: .pageMargin,
                         valueText: "\(Int(readerConfig.pageMarginH))",
                         value: $readerConfig.pageMarginH,
-                        range: 8...48,
+                        range: 8...50,
                         step: 2
                     )
 
-                    LayoutSliderRow(
-                        title: localized("底欄離底"),
-                        icon: .footerBottom,
-                        valueText: "\(Int(readerConfig.footerBottomPadding)) pt",
-                        value: $readerConfig.footerBottomPadding,
-                        range: 0...36,
-                        step: 1
-                    )
-
-                    LayoutSliderRow(
-                        title: localized("正文到底欄"),
-                        icon: .footerTextGap,
-                        valueText: "\(Int(readerConfig.footerTextGap)) pt",
-                        value: $readerConfig.footerTextGap,
-                        range: 0...48,
-                        step: 1
-                    )
-
                     if !settings.scrollMode {
+                        Toggle(localized("顯示頁腳"), isOn: $readerConfig.readerFooterVisible)
+                            .font(DSFont.body)
+
+                        if readerConfig.readerFooterVisible {
+                            LayoutSliderRow(
+                                title: localized("頁腳離底"),
+                                icon: .footerBottom,
+                                valueText: "\(Int(readerConfig.footerBottomPadding)) pt",
+                                value: $readerConfig.footerBottomPadding,
+                                range: 0...100,
+                                step: 1
+                            )
+
+                            LayoutSliderRow(
+                                title: localized("正文到頁腳"),
+                                icon: .footerTextGap,
+                                valueText: "\(Int(readerConfig.footerTextGap)) pt",
+                                value: $readerConfig.footerTextGap,
+                                range: 0...100,
+                                step: 1
+                            )
+
+                            LayoutSliderRow(
+                                title: localized("頁腳邊距"),
+                                icon: .footerHorizontal,
+                                valueText: "\(Int(readerConfig.readerFooterHorizontalPadding)) pt",
+                                value: $readerConfig.readerFooterHorizontalPadding,
+                                range: 0...50,
+                                step: 1
+                            )
+                        }
+
                         Toggle(localized("顯示頁眉"), isOn: $readerConfig.readerHeaderVisible)
                             .font(DSFont.body)
 
@@ -409,19 +423,28 @@ struct ReaderSettingsView: View {
                             }
 
                             LayoutSliderRow(
-                                title: localized("頂欄離頂"),
+                                title: localized("頁眉離頂"),
                                 icon: .headerTop,
                                 valueText: "\(Int(readerConfig.readerHeaderTopPadding)) pt",
                                 value: $readerConfig.readerHeaderTopPadding,
-                                range: 0...36,
+                                range: 0...100,
                                 step: 1
                             )
 
                             LayoutSliderRow(
-                                title: localized("正文到頂欄"),
+                                title: localized("正文到頁眉"),
                                 icon: .headerTextGap,
                                 valueText: "\(Int(readerConfig.readerHeaderTextGap)) pt",
                                 value: $readerConfig.readerHeaderTextGap,
+                                range: 0...100,
+                                step: 1
+                            )
+
+                            LayoutSliderRow(
+                                title: localized("頁眉邊距"),
+                                icon: .headerHorizontal,
+                                valueText: "\(Int(readerConfig.readerHeaderHorizontalPadding)) pt",
+                                value: $readerConfig.readerHeaderHorizontalPadding,
                                 range: 0...48,
                                 step: 1
                             )
@@ -554,9 +577,12 @@ struct ReaderSettingsView: View {
             abs(readerConfig.pageMarginV - defaultPageMarginV) > 0.001 ||
             abs(readerConfig.footerBottomPadding - defaultFooterBottomPadding) > 0.001 ||
             abs(readerConfig.footerTextGap - defaultFooterTextGap) > 0.001 ||
+            abs(readerConfig.readerFooterHorizontalPadding - CGFloat(ReaderLayoutMetrics.defaultFooterHorizontalPadding)) > 0.001 ||
+            readerConfig.readerFooterVisible != true ||
             readerConfig.readerHeaderVisible != true ||
             abs(readerConfig.readerHeaderTopPadding - defaultHeaderTopPadding) > 0.001 ||
             abs(readerConfig.readerHeaderTextGap - defaultHeaderTextGap) > 0.001 ||
+            abs(readerConfig.readerHeaderHorizontalPadding - CGFloat(ReaderLayoutMetrics.defaultHeaderHorizontalPadding)) > 0.001 ||
             settings.readerHeaderFieldPositions != ReaderHeaderLayout.defaultFieldPositions ||
             readerConfig.readerTitleVisible != true ||
             abs(readerConfig.readerTitleSize - defaultReaderTitleSize) > 0.001 ||
@@ -572,9 +598,12 @@ struct ReaderSettingsView: View {
         readerConfig.pageMarginV = defaultPageMarginV
         readerConfig.footerBottomPadding = defaultFooterBottomPadding
         readerConfig.footerTextGap = defaultFooterTextGap
+        readerConfig.readerFooterHorizontalPadding = CGFloat(ReaderLayoutMetrics.defaultFooterHorizontalPadding)
+        readerConfig.readerFooterVisible = true
         readerConfig.readerHeaderVisible = true
         readerConfig.readerHeaderTopPadding = defaultHeaderTopPadding
         readerConfig.readerHeaderTextGap = defaultHeaderTextGap
+        readerConfig.readerHeaderHorizontalPadding = CGFloat(ReaderLayoutMetrics.defaultHeaderHorizontalPadding)
         settings.readerHeaderFieldPositions = ReaderHeaderLayout.defaultFieldPositions
         readerConfig.readerTitleVisible = true
         readerConfig.readerTitleSize = defaultReaderTitleSize
@@ -782,8 +811,10 @@ private enum LayoutMetricIconKind {
     case pageMargin
     case footerBottom
     case footerTextGap
+    case footerHorizontal
     case headerTop
     case headerTextGap
+    case headerHorizontal
     case titleSize
     case titleTopSpacing
     case titleBottomSpacing
@@ -907,6 +938,38 @@ private struct LayoutMetricIcon: View {
                     .font(DSFont.fixed(size: 12, weight: .bold))
                 iconLine(width: 22)
             }
+        case .footerHorizontal:
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .stroke(lineWidth: 2)
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(.secondary.opacity(0.35))
+                        .frame(width: 8)
+                        .padding(2)
+                }
+                .overlay(alignment: .trailing) {
+                    Rectangle()
+                        .fill(.secondary.opacity(0.35))
+                        .frame(width: 8)
+                        .padding(2)
+                }
+                .frame(width: 24, height: 24)
+        case .headerHorizontal:
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .stroke(lineWidth: 2)
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(.secondary.opacity(0.35))
+                        .frame(width: 8)
+                        .padding(2)
+                }
+                .overlay(alignment: .trailing) {
+                    Rectangle()
+                        .fill(.secondary.opacity(0.35))
+                        .frame(width: 8)
+                        .padding(2)
+                }
+                .frame(width: 24, height: 24)
         case .titleSize:
             Image(systemName: "textformat.size")
                 .font(DSFont.fixed(size: 18, weight: .semibold))

@@ -11,7 +11,7 @@ struct PaywallView: View {
     /// The feature the user tapped to reach the paywall, highlighted at the top.
     var highlightedFeature: PremiumFeature?
 
-    @State private var selectedProduct: SubscriptionStore.ProProduct = .yearly
+    @State private var selectedProduct: SubscriptionStore.ProProduct = .lifetime
 
     private let privacyPolicyURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/privacy.html")
     private let paidTermsURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/paid-terms.html")
@@ -30,8 +30,9 @@ struct PaywallView: View {
                 .frame(maxWidth: DSLayout.readableFormWidth)
                 .frame(maxWidth: .infinity)
             }
-            .background(DSColor.groupedBackground.ignoresSafeArea())
-            .navigationTitle("Yuedu Pro")
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
+            .navigationTitle(localized("閱讀Pro"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -58,7 +59,7 @@ struct PaywallView: View {
                 .font(DSFont.fixed(size: 44))
                 .foregroundStyle(DSColor.accent)
                 .accessibilityHidden(true)
-            Text("Yuedu Pro")
+            Text(localized("閱讀Pro"))
                 .font(DSFont.largeTitle.weight(.bold))
             Text(localized("解鎖高級個人化，打造專屬的閱讀體驗"))
                 .font(DSFont.subheadline)
@@ -137,7 +138,7 @@ struct PaywallView: View {
                     Text(planTitle(pro))
                         .font(DSFont.bodyBold)
                         .foregroundColor(DSColor.textPrimary)
-                    if pro == .yearly {
+                    if pro == .lifetime {
                         Text(localized("最超值"))
                             .font(DSFont.caption2)
                             .foregroundColor(DSColor.accent)
@@ -161,19 +162,21 @@ struct PaywallView: View {
 
     private func planTitle(_ pro: SubscriptionStore.ProProduct) -> String {
         switch pro {
-        case .yearly: return localized("年訂閱")
-        case .monthly: return localized("月訂閱")
+        case .lifetime: return localized("永久會員")
+        case .monthly: return localized("月會員")
         }
     }
 
     private func priceText(for pro: SubscriptionStore.ProProduct, product: Product?) -> String {
         if let product {
-            let suffix = pro == .yearly ? localized("／年") : localized("／月")
-            return product.displayPrice + suffix
+            if pro == .lifetime {
+                return product.displayPrice
+            }
+            return product.displayPrice + localized("／月")
         }
         // Fallback while products load / in previews.
         switch pro {
-        case .yearly: return "US$14.99" + localized("／年")
+        case .lifetime: return "US$14.99"
         case .monthly: return "US$1.99" + localized("／月")
         }
     }
@@ -195,7 +198,9 @@ struct PaywallView: View {
                     if store.isPurchasing {
                         ProgressView().tint(DSColor.textOnAccent)
                     } else {
-                        Text(localized("訂閱 Yuedu Pro"))
+                        Text(selectedProduct == .lifetime
+                             ? localized("購買 閱讀Pro")
+                             : localized("訂閱 閱讀Pro"))
                             .font(DSFont.bodyBold)
                     }
                 }
@@ -212,7 +217,9 @@ struct PaywallView: View {
                     .multilineTextAlignment(.center)
             }
 
-            Text(localized("訂閱會自動續期，可隨時在 App Store 取消"))
+            Text(selectedProduct == .lifetime
+                 ? localized("一次性購買，永久有效")
+                 : localized("訂閱會自動續期，可隨時在 App Store 取消"))
                 .font(DSFont.caption2)
                 .foregroundColor(DSColor.textSecondary)
                 .multilineTextAlignment(.center)

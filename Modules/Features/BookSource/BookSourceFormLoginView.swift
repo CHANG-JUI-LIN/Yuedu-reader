@@ -101,6 +101,7 @@ struct BookSourceFormLoginView: View {
             .disabled(isLoading)
             .navigationTitle(source.bookSourceName.isEmpty ? localized("書源登入") : source.bookSourceName)
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

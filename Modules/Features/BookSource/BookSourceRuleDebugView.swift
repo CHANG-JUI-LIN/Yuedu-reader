@@ -114,6 +114,7 @@ struct BookSourceRuleDebugView: View {
             }
             .navigationTitle(source.bookSourceName.isEmpty ? localized("書源調試") : source.bookSourceName)
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

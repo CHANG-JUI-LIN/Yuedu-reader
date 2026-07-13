@@ -26,6 +26,7 @@ struct LegadoMigrationView: View {
                 }
             .navigationTitle(localized("Legado 資料遷移"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

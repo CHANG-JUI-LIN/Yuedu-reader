@@ -49,7 +49,7 @@ struct RSSListView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                DSColor.groupedBackground
+                PageBackgroundView(scope: .rss)
                     .ignoresSafeArea()
 
                 ScrollView {
@@ -65,7 +65,7 @@ struct RSSListView: View {
             }
             .navigationTitle(localized("RSS 訂閱"))
             .toolbarTitleDisplayModeInlineLargeOrInline()
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .pageBackgroundToolbar(for: .rss)
             .toolbar {
                 // Two separate glass pills. A ToolbarSpacer (iOS 26+) breaks the
                 // auto-merge so the add (+) and options (…) menus sit in their own
@@ -898,6 +898,7 @@ private struct RSSOPMLImportSheet: View {
             }
                 .navigationTitle(localized("匯入 OPML"))
                 .toolbarTitleDisplayMode(.inline)
+                .themedAppSurface(for: .rss)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
@@ -1164,6 +1165,7 @@ private struct ImportLegadoJSONURLSheet: View {
             }
             .navigationTitle(localized("從網址匯入 Legado JSON"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .rss)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -1256,6 +1258,7 @@ private struct AddRSSSourceSheet: View {
             }
             .navigationTitle(localized("新增 RSS 訂閱"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .rss)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -1352,6 +1355,7 @@ private struct AddRSSFolderSheet: View {
             }
             .navigationTitle(localized("新增資料夾"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .rss)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -1400,6 +1404,7 @@ private struct RenameRSSFolderSheet: View {
             }
             .navigationTitle(localized("重新命名"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .rss)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -1468,6 +1473,7 @@ private struct RSSSourceInfoSheet: View {
             }
             .navigationTitle(localized("取得資訊"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .rss)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {

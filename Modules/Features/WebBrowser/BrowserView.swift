@@ -937,7 +937,7 @@ struct BrowserView: View {
         }
         .frame(maxWidth: browserContentMaxWidth)
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(Color(UIColor.systemBackground))
+        .background(PageBackgroundView(scope: .explore))
     }
 
     // MARK: Search Engine Shortcuts
@@ -1056,6 +1056,7 @@ struct WebTOCSheet: View {
             }
             .navigationTitle(localized("偵測到章節目錄"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .explore)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {

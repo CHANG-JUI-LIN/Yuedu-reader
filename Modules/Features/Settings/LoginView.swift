@@ -156,6 +156,9 @@ struct LoginView: View {
                 .padding(.bottom, 8)
             }
             .padding(.horizontal, 24)
+            .frame(maxHeight: .infinity)
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
         }
     }
 

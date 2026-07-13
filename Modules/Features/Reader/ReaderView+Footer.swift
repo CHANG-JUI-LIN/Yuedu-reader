@@ -9,7 +9,8 @@ extension ReaderView {
             pageInfo: chapterPageInfo,
             progress: totalProgressPercent,
             textColor: readerTheme.textColor,
-            footerPadding: readerConfig.footerBottomPadding
+            footerPadding: readerConfig.footerBottomPadding,
+            horizontalPadding: readerConfig.readerFooterHorizontalPadding
         )
     }
 
@@ -76,7 +77,8 @@ extension ReaderView {
             pageInfo: info.pageInfo,
             progress: info.progress,
             textColor: readerTheme.textColor,
-            footerPadding: readerConfig.footerBottomPadding
+            footerPadding: readerConfig.footerBottomPadding,
+            horizontalPadding: readerConfig.readerFooterHorizontalPadding
         )
     }
 

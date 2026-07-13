@@ -227,7 +227,7 @@ struct HomeView: View {
                     }
                 }
             }
-            .themedAppSurface()
+            .themedAppSurface(for: .bookshelf)
             .animation(DSAnimation.standard, value: store.books.isEmpty)
             .navigationTitle(localized("書架"))
             .toolbarTitleDisplayModeInlineLargeOrInline()
@@ -681,6 +681,7 @@ struct EditBookSheet: View {
                 }
                 .navigationTitle(localized("書籍資訊"))
                 .toolbarTitleDisplayMode(.inline)
+                .themedAppSurface(for: .bookshelf)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
@@ -1174,6 +1175,7 @@ struct BulkAddToGroupSheet: View {
             }
             .navigationTitle(localized("加入分組"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .bookshelf)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

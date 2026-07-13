@@ -76,6 +76,7 @@ struct ReaderOverlayHeader: View {
     let textColor: Color
     let safeAreaTop: CGFloat
     let topPadding: CGFloat
+    let horizontalPadding: CGFloat
 
     @ObservedObject private var settings = GlobalSettings.shared
     @StateObject private var clock = ClockBatteryModel()
@@ -91,8 +92,8 @@ struct ReaderOverlayHeader: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .frame(height: ReaderLayoutMetrics.headerHeight)
-            .padding(.horizontal, 16)
-            .padding(.top, safeAreaTop + topPadding)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.top, topPadding)
             Spacer(minLength: 0)
         }
         .ignoresSafeArea()
@@ -163,7 +164,8 @@ extension ReaderView {
                 progress: totalProgressPercent,
                 textColor: readerTheme.textColor,
                 safeAreaTop: effectiveReaderSafeTop,
-                topPadding: readerConfig.readerHeaderTopPadding
+                topPadding: readerConfig.readerHeaderTopPadding,
+                horizontalPadding: readerConfig.readerHeaderHorizontalPadding
             )
         }
     }
@@ -180,7 +182,8 @@ extension ReaderView {
             progress: "45.23%",
             textColor: Color(uiColor: ReaderTheme.sepia.uiTextColor),
             safeAreaTop: 59,
-            topPadding: ReaderLayoutMetrics.defaultHeaderTopPadding
+            topPadding: ReaderLayoutMetrics.defaultHeaderTopPadding,
+            horizontalPadding: ReaderLayoutMetrics.defaultHeaderHorizontalPadding
         )
     }
 }

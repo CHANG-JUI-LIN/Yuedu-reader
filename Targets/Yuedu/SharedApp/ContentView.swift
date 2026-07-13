@@ -199,7 +199,6 @@ private struct ThemedSurfaceBackground: ViewModifier {
     func body(content: Content) -> some View {
         if let slice = pageBackgroundSlice {
             content
-                .scrollContentBackground(.hidden)
                 .background {
                     ZStack {
                         DSColor.groupedBackground
@@ -209,7 +208,6 @@ private struct ThemedSurfaceBackground: ViewModifier {
                 }
         } else if themeActive {
             content
-                .scrollContentBackground(.hidden)
                 .background(DSColor.groupedBackground.ignoresSafeArea())
         } else {
             content

@@ -433,8 +433,9 @@
 "關閉" = "Close";
 "雲端備份來自裝置「\\(c.remote.deviceName)」（\\(remoteDate)）。本裝置上次同步：\\(localDate)。請選擇要使用哪個版本。" = "The cloud backup came from device \"\\(c.remote.deviceName)\" (\\(remoteDate)). This device last synced at \\(localDate). Choose which version to use.";
 "頁面留白" = "Page Margin";
-"底欄離底" = "Footer Bottom";
-"正文到底欄" = "Text to Footer";
+"頁腳離底" = "Footer Bottom";
+"正文到頁腳" = "Text to Footer";
+"頁腳邊距" = "Footer Margin";
 "點擊右上角 + 手動新增\\n或 ↓ 貼上 Legado 書源 JSON 匯入" = "Tap + in the top-right to add one manually\\nor use ↓ to paste Legado source JSON for import";
 "點擊選取 TXT / EPUB 文件" = "Tap to Select a TXT / EPUB File";
 "點擊選取 TXT / EPUB / 漫畫文件" = "Tap to Select a TXT / EPUB / Manga File";
@@ -1039,11 +1040,13 @@
 "沒有找到可恢復的訂閱" = "No purchases to restore.";
 "解鎖高級個人化，打造專屬的閱讀體驗" = "Unlock premium personalization and make reading your own.";
 "最超值" = "Best value";
-"年訂閱" = "Yearly";
-"月訂閱" = "Monthly";
-"／年" = "/yr";
+"閱讀Pro" = "Yuedu Pro";
+"永久會員" = "Lifetime";
+"月會員" = "Monthly";
 "／月" = "/mo";
-"訂閱 Yuedu Pro" = "Subscribe to Yuedu Pro";
+"訂閱 閱讀Pro" = "Subscribe to Yuedu Pro";
+"購買 閱讀Pro" = "Buy Yuedu Pro";
+"一次性購買，永久有效" = "One-time purchase, never expires";
 "訂閱會自動續期，可隨時在 App Store 取消" = "Auto-renews. Cancel anytime in the App Store.";
 "恢復購買" = "Restore Purchases";
 "訂閱條款" = "Subscription Terms";
@@ -1214,6 +1217,7 @@
 "閱讀背景預覽大字" = "A";
 "閱讀背景預覽小字" = "a";
 "顯示頁眉" = "Show Header";
+"顯示頁腳" = "Show Footer";
 "時間" = "Time";
 "電量" = "Battery";
 "頁碼" = "Page";
@@ -1222,8 +1226,9 @@
 "靠左" = "Left";
 "置中" = "Center";
 "靠右" = "Right";
-"頂欄離頂" = "Header Top Offset";
-"正文到頂欄" = "Text to Header Gap";
+"頁眉離頂" = "Header Top Offset";
+"正文到頁眉" = "Text to Header Gap";
+"頁眉邊距" = "Header Margin";
 "底線顏色" = "Underline Color";
 "高亮顏色" = "Highlight Color";
 "使用自訂顏色標示引號內的對話文字。" = "Use a custom color for dialogue inside quotation marks.";
@@ -1258,6 +1263,7 @@
 "從相簿選擇" = "Choose from Photos";
 "從檔案選擇" = "Choose from Files";
 "移除背景圖" = "Remove Background Image";
+"不透明度" = "Opacity";
 "背景預覽" = "Background Preview";
 "亮色模式" = "Light Mode";
 "深色模式" = "Dark Mode";

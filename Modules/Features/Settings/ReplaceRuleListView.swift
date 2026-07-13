@@ -46,6 +46,7 @@ struct ReplaceRuleListView: View {
             }
             .navigationTitle(localized("替換規則"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
@@ -231,6 +232,7 @@ struct ReplaceRuleEditView: View {
             }
             .navigationTitle(rule.name.isEmpty ? localized("新增規則") : rule.name)
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

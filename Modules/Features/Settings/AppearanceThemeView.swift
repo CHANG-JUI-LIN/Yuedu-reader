@@ -85,6 +85,7 @@ struct AppearanceThemeView: View {
         .background {
             pageBackground.ignoresSafeArea()
         }
+        .pageBackgroundToolbar(for: .settings)
         .font(DSFont.body)
         .navigationTitle(localized("外觀主題"))
         .toolbarTitleDisplayMode(.inline)
@@ -155,7 +156,16 @@ struct AppearanceThemeView: View {
     }
 
     private var pageBackground: some View {
-        DSColor.groupedBackground
+        ZStack {
+            DSColor.groupedBackground
+            if subscriptionStore.hasAccess(.readerThemePacks),
+               let slice = settings.resolvedPageBackgroundSlice(
+                   for: .settings,
+                   colorScheme: colorScheme
+               ) {
+                AppearancePageBackgroundLayerView(slice: slice)
+            }
+        }
     }
 
     private var themeSelectionCard: some View {
@@ -521,8 +531,21 @@ struct AppearanceThemeView: View {
                 let stored = slot == .primary
                     ? config.primaryHex(for: scheme)
                     : config.secondaryHex(for: scheme)
-                let hex = stored ?? Self.defaultPageBackgroundHex(scheme: scheme, slot: slot)
-                return Color(uiColor: AppearanceThemePreset.hex(hex))
+                if let stored {
+                    return Color(uiColor: AppearanceThemePreset.hex(stored))
+                }
+                if pageBackgroundScope != .global {
+                    let globalConfig = settings.pageBackgroundConfig(for: .global)
+                    let globalStored = slot == .primary
+                        ? globalConfig.primaryHex(for: scheme)
+                        : globalConfig.secondaryHex(for: scheme)
+                    if let globalStored {
+                        return Color(uiColor: AppearanceThemePreset.hex(globalStored))
+                    }
+                }
+                return Color(uiColor: AppearanceThemePreset.hex(
+                    Self.defaultPageBackgroundHex(scheme: scheme, slot: slot)
+                ))
             },
             set: { value in
                 guard let hex = UIColor(value).rgbHex else { return }
@@ -551,61 +574,109 @@ struct AppearanceThemeView: View {
 
     private func backgroundImageRow(scheme: ColorScheme) -> some View {
         let titleKey = scheme == .dark ? "深色背景圖" : "亮色背景圖"
-        let fileName = settings.pageBackgroundConfig(for: pageBackgroundScope).imageFileName(for: scheme)
-        return HStack(spacing: DSSpacing.md) {
-            Text(localized(titleKey))
-                .font(DSFont.body)
-                .foregroundStyle(DSColor.textPrimary)
-            Spacer(minLength: DSSpacing.md)
-            if let fileName,
-               let image = AppearancePageBackgroundImageStore.shared.image(fileName: fileName) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 44, height: 30)
-                    .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
-                            .stroke(DSColor.border, lineWidth: 0.5)
-                    )
-                    .accessibilityHidden(true)
-            }
-            Menu {
-                Button {
-                    backgroundImagePickScheme = scheme
-                    showBackgroundPhotosPicker = true
-                } label: {
-                    Label(localized("從相簿選擇"), systemImage: "photo.on.rectangle")
+        let config = settings.pageBackgroundConfig(for: pageBackgroundScope)
+        let fileName = config.imageFileName(for: scheme)
+        return VStack(spacing: 0) {
+            HStack(spacing: DSSpacing.md) {
+                Text(localized(titleKey))
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                Spacer(minLength: DSSpacing.md)
+                if let fileName,
+                   let image = AppearancePageBackgroundImageStore.shared.image(fileName: fileName) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 44, height: 30)
+                        .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
+                                .stroke(DSColor.border, lineWidth: 0.5)
+                        )
+                        .accessibilityHidden(true)
                 }
-                Button {
-                    backgroundImagePickScheme = scheme
-                    isImportingBackgroundFile = true
-                } label: {
-                    Label(localized("從檔案選擇"), systemImage: "folder")
-                }
-                if fileName != nil {
-                    Button(role: .destructive) {
-                        settings.clearPageBackgroundImage(scope: pageBackgroundScope, appearance: scheme)
+                Menu {
+                    Button {
+                        backgroundImagePickScheme = scheme
+                        showBackgroundPhotosPicker = true
                     } label: {
-                        Label(localized("移除背景圖"), systemImage: "trash")
+                        Label(localized("從相簿選擇"), systemImage: "photo.on.rectangle")
                     }
+                    Button {
+                        backgroundImagePickScheme = scheme
+                        isImportingBackgroundFile = true
+                    } label: {
+                        Label(localized("從檔案選擇"), systemImage: "folder")
+                    }
+                    if fileName != nil {
+                        Button(role: .destructive) {
+                            settings.clearPageBackgroundImage(scope: pageBackgroundScope, appearance: scheme)
+                        } label: {
+                            Label(localized("移除背景圖"), systemImage: "trash")
+                        }
+                    }
+                } label: {
+                    HStack(spacing: DSSpacing.xs) {
+                        Text(localized("選擇"))
+                        Image(systemName: "chevron.down")
+                            .font(DSFont.caption2.weight(.semibold))
+                    }
+                    .font(DSFont.subheadline.weight(.medium))
+                    .foregroundStyle(DSColor.accent)
+                    .padding(.horizontal, DSSpacing.md)
+                    .padding(.vertical, DSSpacing.sm - 2)
+                    .background(DSColor.accent.opacity(0.12), in: Capsule())
                 }
-            } label: {
-                HStack(spacing: DSSpacing.xs) {
-                    Text(localized("選擇"))
-                    Image(systemName: "chevron.down")
-                        .font(DSFont.caption2.weight(.semibold))
-                }
-                .font(DSFont.subheadline.weight(.medium))
-                .foregroundStyle(DSColor.accent)
-                .padding(.horizontal, DSSpacing.md)
-                .padding(.vertical, DSSpacing.sm - 2)
-                .background(DSColor.accent.opacity(0.12), in: Capsule())
+                .accessibilityLabel(localized(titleKey))
             }
-            .accessibilityLabel(localized(titleKey))
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.md)
+
+            if fileName != nil {
+                Divider()
+                    .overlay(DSColor.separator)
+                    .padding(.leading, DSSpacing.lg)
+
+                HStack(spacing: DSSpacing.md) {
+                    Text(localized("不透明度"))
+                        .font(DSFont.body)
+                        .foregroundStyle(DSColor.textPrimary)
+                    Slider(value: imageOpacityBinding(scheme: scheme), in: 0...1, step: 0.05)
+                        .tint(DSColor.accent)
+                    Text(String(format: "%.0f%%", imageOpacityDisplayValue(scheme: scheme) * 100))
+                        .font(DSFont.monospaced(size: 13))
+                        .foregroundStyle(DSColor.textSecondary)
+                        .frame(width: 44, alignment: .trailing)
+                }
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.vertical, DSSpacing.md)
+            }
         }
-        .padding(.horizontal, DSSpacing.lg)
-        .padding(.vertical, DSSpacing.md)
+    }
+
+    private func imageOpacityBinding(scheme: ColorScheme) -> Binding<Double> {
+        Binding(
+            get: {
+                let config = settings.pageBackgroundConfig(for: pageBackgroundScope)
+                let stored = config.imageOpacity(for: scheme)
+                if stored != 1.0 { return stored }
+                if pageBackgroundScope != .global {
+                    let globalConfig = settings.pageBackgroundConfig(for: .global)
+                    let globalStored = globalConfig.imageOpacity(for: scheme)
+                    if globalStored != 1.0 { return globalStored }
+                }
+                return 1.0
+            },
+            set: { value in
+                var config = settings.pageBackgroundConfig(for: pageBackgroundScope)
+                config.setImageOpacity(value, for: scheme)
+                settings.updatePageBackgroundConfig(config, for: pageBackgroundScope)
+            }
+        )
+    }
+
+    private func imageOpacityDisplayValue(scheme: ColorScheme) -> Double {
+        imageOpacityBinding(scheme: scheme).wrappedValue
     }
 
     /// Live preview of the effective background for the edited scope in the
@@ -621,7 +692,7 @@ struct AppearanceThemeView: View {
             if let slice {
                 AppearancePageBackgroundLayerView(slice: slice)
             } else {
-                pageBackground
+                DSColor.groupedBackground
             }
             VStack(spacing: DSSpacing.sm) {
                 Text(localized("背景預覽"))
@@ -639,6 +710,23 @@ struct AppearanceThemeView: View {
         .frame(maxWidth: .infinity)
         .frame(height: 320)
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .shadow(color: Color.primary.opacity(0.15), radius: 16, x: 0, y: 6)
+        .overlay {
+            RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            .white.opacity(0.5),
+                            .clear,
+                            .black.opacity(0.15)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1.5
+                )
+                .blur(radius: 2)
+        }
         .accessibilityElement(children: .combine)
     }
 
@@ -950,9 +1038,9 @@ private struct AppearanceReaderInterfaceView: View {
         }
         .font(DSFont.body)
         .scrollContentBackground(.hidden)
-        .background(DSColor.groupedBackground)
         .navigationTitle(localized("閱讀界面"))
         .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .settings)
     }
 }
 

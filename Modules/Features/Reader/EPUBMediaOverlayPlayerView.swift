@@ -65,6 +65,8 @@ struct EPUBMediaOverlayPlayerView: View {
             .padding(24)
             .navigationTitle(localized("媒體旁白"))
             .navigationBarTitleDisplayMode(.inline)
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {

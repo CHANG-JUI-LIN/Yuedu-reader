@@ -365,6 +365,9 @@ struct AudiobookChapterListView: View {
                 }
                 .onAppear { proxy.scrollTo(player.chapterIndex, anchor: .center) }
             }
+            .scrollContentBackground(.hidden)
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
             .navigationTitle(localized("目錄"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
@@ -399,6 +402,9 @@ struct AudiobookSleepTimerView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
             .navigationTitle(localized("睡眠定時"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {

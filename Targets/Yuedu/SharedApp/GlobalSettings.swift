@@ -216,7 +216,9 @@ final class ReaderConfig: ObservableObject {
     @Published var readerHeaderVisible: Bool
     @Published var readerHeaderTopPadding: CGFloat
     @Published var readerHeaderTextGap: CGFloat
+    @Published var readerHeaderHorizontalPadding: CGFloat
     @Published var readerFooterVisible: Bool
+    @Published var readerFooterHorizontalPadding: CGFloat
     @Published var theme: ReaderTheme
 
     var lineSpacing: CGFloat {
@@ -250,7 +252,9 @@ final class ReaderConfig: ObservableObject {
         readerHeaderVisible = gs.readerHeaderVisible
         readerHeaderTopPadding = CGFloat(gs.readerHeaderTopPadding)
         readerHeaderTextGap = CGFloat(gs.readerHeaderTextGap)
+        readerHeaderHorizontalPadding = CGFloat(gs.readerHeaderHorizontalPadding)
         readerFooterVisible = gs.readerFooterVisible
+        readerFooterHorizontalPadding = CGFloat(gs.readerFooterHorizontalPadding)
         theme = ReaderTheme.loadPersisted()
         setupBindings()
     }
@@ -274,7 +278,9 @@ final class ReaderConfig: ObservableObject {
         readerHeaderVisible = gs.readerHeaderVisible
         readerHeaderTopPadding = CGFloat(gs.readerHeaderTopPadding)
         readerHeaderTextGap = CGFloat(gs.readerHeaderTextGap)
+        readerHeaderHorizontalPadding = CGFloat(gs.readerHeaderHorizontalPadding)
         readerFooterVisible = gs.readerFooterVisible
+        readerFooterHorizontalPadding = CGFloat(gs.readerFooterHorizontalPadding)
         theme = ReaderTheme.loadPersisted()
         suppressRefresh = false
     }
@@ -332,27 +338,26 @@ final class ReaderConfig: ObservableObject {
             }
             .store(in: &cancellables)
 
-        Publishers.CombineLatest3($readerHeaderVisible, $readerHeaderTopPadding, $readerHeaderTextGap)
+        Publishers.CombineLatest4($readerHeaderVisible, $readerHeaderTopPadding, $readerHeaderTextGap, $readerHeaderHorizontalPadding)
             .dropFirst()
-            .sink { [weak self] visible, topPadding, textGap in
+            .sink { [weak self] visible, topPadding, textGap, hPadding in
                 let gs = GlobalSettings.shared
                 gs.readerHeaderVisible = visible
                 gs.readerHeaderTopPadding = Double(topPadding)
                 gs.readerHeaderTextGap = Double(textGap)
+                gs.readerHeaderHorizontalPadding = Double(hPadding)
                 guard let self, !self.suppressRefresh else { return }
-                // The header reserves a band above the text (contentInsets.top),
-                // so toggling/resizing it shifts pagination — needs a relayout.
                 self.refresh.send(.layout)
             }
             .store(in: &cancellables)
 
-        $readerFooterVisible
+        Publishers.CombineLatest($readerFooterVisible, $readerFooterHorizontalPadding)
             .dropFirst()
-            .sink { [weak self] visible in
-                GlobalSettings.shared.readerFooterVisible = visible
+            .sink { [weak self] visible, hPadding in
+                let gs = GlobalSettings.shared
+                gs.readerFooterVisible = visible
+                gs.readerFooterHorizontalPadding = Double(hPadding)
                 guard let self, !self.suppressRefresh else { return }
-                // Toggling the footer changes the reserved bottom band, so the
-                // text area height (and pagination) shifts — needs a relayout.
                 self.refresh.send(.layout)
             }
             .store(in: &cancellables)
@@ -533,9 +538,15 @@ class GlobalSettings: ObservableObject {
     @Published var readerHeaderTextGap: Double {
         didSet { UserDefaults.standard.set(readerHeaderTextGap, forKey: "yd_reader_header_text_gap") }
     }
+    @Published var readerHeaderHorizontalPadding: Double {
+        didSet { UserDefaults.standard.set(readerHeaderHorizontalPadding, forKey: "yd_reader_header_h_padding") }
+    }
     /// Reader footer (頁腳): the page/progress/clock band below the text in paged mode.
     @Published var readerFooterVisible: Bool {
         didSet { UserDefaults.standard.set(readerFooterVisible, forKey: "yd_reader_footer_visible") }
+    }
+    @Published var readerFooterHorizontalPadding: Double {
+        didSet { UserDefaults.standard.set(readerFooterHorizontalPadding, forKey: "yd_reader_footer_h_padding") }
     }
     /// Placement of each header field, keyed by `ReaderHeaderField.rawValue`
     /// with `ReaderHeaderFieldPosition.rawValue` values. Fields without an
@@ -959,6 +970,12 @@ class GlobalSettings: ObservableObject {
             ?? Double(ReaderLayoutMetrics.defaultHeaderTextGap)
         readerFooterVisible =
             (UserDefaults.standard.object(forKey: "yd_reader_footer_visible") as? Bool) ?? true
+        readerHeaderHorizontalPadding =
+            (UserDefaults.standard.object(forKey: "yd_reader_header_h_padding") as? Double)
+            ?? Double(ReaderLayoutMetrics.defaultHeaderHorizontalPadding)
+        readerFooterHorizontalPadding =
+            (UserDefaults.standard.object(forKey: "yd_reader_footer_h_padding") as? Double)
+            ?? Double(ReaderLayoutMetrics.defaultFooterHorizontalPadding)
         readerHeaderFieldPositions =
             (UserDefaults.standard.dictionary(forKey: "yd_reader_header_positions") as? [String: String])
             ?? ReaderHeaderLayout.defaultFieldPositions
@@ -1500,7 +1517,9 @@ class GlobalSettings: ObservableObject {
                 darkPrimaryHex: config.darkPrimaryHex,
                 darkSecondaryHex: config.darkSecondaryHex,
                 lightImage: exportImagePayload(config.lightImageFileName),
-                darkImage: exportImagePayload(config.darkImageFileName)
+                darkImage: exportImagePayload(config.darkImageFileName),
+                lightImageOpacity: config.lightImageOpacity,
+                darkImageOpacity: config.darkImageOpacity
             )
         }
         return AppearanceThemeExportFile(
@@ -1547,6 +1566,8 @@ class GlobalSettings: ObservableObject {
             )
             config.lightImageFileName = writeImportedThemeImage(payload.lightImage)
             config.darkImageFileName = writeImportedThemeImage(payload.darkImage)
+            config.lightImageOpacity = payload.lightImageOpacity
+            config.darkImageOpacity = payload.darkImageOpacity
             if !config.isEmpty {
                 payloadConfigs[key] = config
             }
@@ -1591,7 +1612,7 @@ class GlobalSettings: ObservableObject {
             }
             return ReaderTheme.white.uiBackgroundColor
         case .image:
-            return UIColor(white: 1.0, alpha: 0.82)
+            return UIColor.white
         case .none:
             return UIColor.systemGray5
         }
@@ -1619,7 +1640,7 @@ class GlobalSettings: ObservableObject {
             displayName: localized("自定義"),
             background: background,
             text: text,
-            bar: readerCustomBackgroundMode == .image ? .clear : background,
+            bar: background,
             accent: accent,
             dialogue: accent.withAlphaComponent(0.16),
             previewBackground: background,

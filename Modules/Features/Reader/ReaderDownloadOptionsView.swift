@@ -92,6 +92,7 @@ struct ReaderDownloadOptionsView: View {
             }
             .navigationTitle(localized("下載章節"))
             .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

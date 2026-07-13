@@ -54,6 +54,7 @@ struct LaunchImageSettingsView: View {
         }
         .navigationTitle(localized("啟動圖"))
         .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .settings)
         .fileImporter(
             isPresented: $isImporting,
             allowedContentTypes: Self.imageContentTypes,
