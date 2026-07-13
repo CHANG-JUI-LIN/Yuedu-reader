@@ -10,4 +10,8 @@ struct ReaderPremiumVisibilityPolicy {
     var showsBackgroundImageImport: Bool { isProActive }
     var showsLayoutPresetImport: Bool { isProActive }
     var showsTouchZoneEditor: Bool { isProActive }
+
+    func showsCommentBubbleSettings(hasParagraphReviews: Bool) -> Bool {
+        isProActive && hasParagraphReviews
+    }
 }

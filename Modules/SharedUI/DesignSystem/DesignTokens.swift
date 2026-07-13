@@ -190,6 +190,10 @@ enum DSLayout {
     static let readerRegularExtraHorizontalInset: CGFloat = 28
     /// Gutter between two pages in iPad landscape spread mode.
     static let readerSpreadGutter: CGFloat = 28
+    /// Width of the centered source card when no live bookshelf cover frame is available.
+    static let readerCardFallbackWidth: CGFloat = 96
+    /// Physical book-cover height/width ratio used by the transition fallback.
+    static let readerCardFallbackAspectRatio: CGFloat = 1.45
 }
 
 // MARK: - Design System: Corner Radius Tokens
@@ -216,6 +220,10 @@ enum DSAnimation {
     static let standard = Animation.easeOut(duration: 0.28)
     /// Slow expansion
     static let slow = Animation.easeInOut(duration: 0.4)
+    /// Deliberate physical open/close duration for the reader book-card transition.
+    static let readerBookTransitionDuration: TimeInterval = 0.62
+    /// Reduced-motion reader transition duration (opacity only).
+    static let readerBookReducedMotionDuration: TimeInterval = 0.18
 }
 
 // MARK: - View Extensions

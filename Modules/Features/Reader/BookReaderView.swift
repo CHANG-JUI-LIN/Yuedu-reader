@@ -10,6 +10,7 @@ import SwiftUI
 struct BookReaderView: View {
     let bookId: UUID
     @EnvironmentObject var store: BookStore
+    @Environment(\.readerNavigator) private var readerNavigator
 
     var body: some View {
         Group {
@@ -29,7 +30,7 @@ struct BookReaderView: View {
                 CrashContext.setKey("current_book_kind", "\(book.resolvedPipelineKind)")
                 CrashContext.setKey("current_book_online", book.isOnline)
                 CrashContext.breadcrumb("open reader: \(book.title) (\(book.resolvedPipelineKind))")
-                if book.lastOpenedDate == nil {
+                if book.lastOpenedDate == nil, readerNavigator == nil {
                     store.updateLastOpened(bookId: bookId)
                 }
             }

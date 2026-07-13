@@ -9,6 +9,7 @@ struct ReaderSettingsView: View {
     var capabilities: ReaderCapabilities = .reflowableText
     var allowsUserSelectedReaderFont = false
     var isVerticalWritingMode = false
+    var hasParagraphReviews = false
     var onOpenTouchZoneEditor: (() -> Void)?
 
     @StateObject private var readerConfig = ReaderConfig.shared
@@ -140,6 +141,10 @@ struct ReaderSettingsView: View {
 
     private var premiumVisibility: ReaderPremiumVisibilityPolicy {
         ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive)
+    }
+
+    private var showsCommentBubbleSettings: Bool {
+        premiumVisibility.showsCommentBubbleSettings(hasParagraphReviews: hasParagraphReviews)
     }
 
     private var pageDisplaySection: some View {
@@ -462,10 +467,12 @@ struct ReaderSettingsView: View {
 
     private var readerDecorationSection: some View {
         Section(header: Text(localized("閱讀裝飾"))) {
-            NavigationLink {
-                ReaderCommentBubbleSettingsView()
-            } label: {
-                Label(localized("氣泡設定"), systemImage: "text.bubble")
+            if showsCommentBubbleSettings {
+                NavigationLink {
+                    ReaderCommentBubbleSettingsView()
+                } label: {
+                    Label(localized("氣泡設定"), systemImage: "text.bubble")
+                }
             }
 
             ToggleRow(

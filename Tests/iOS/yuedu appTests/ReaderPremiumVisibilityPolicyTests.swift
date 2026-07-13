@@ -11,6 +11,7 @@ struct ReaderPremiumVisibilityPolicyTests {
         #expect(!policy.showsBackgroundImageImport)
         #expect(!policy.showsLayoutPresetImport)
         #expect(!policy.showsTouchZoneEditor)
+        #expect(!policy.showsCommentBubbleSettings(hasParagraphReviews: true))
     }
 
     @Test("Pro users see premium customization surfaces")
@@ -22,5 +23,7 @@ struct ReaderPremiumVisibilityPolicyTests {
         #expect(policy.showsBackgroundImageImport)
         #expect(policy.showsLayoutPresetImport)
         #expect(policy.showsTouchZoneEditor)
+        #expect(!policy.showsCommentBubbleSettings(hasParagraphReviews: false))
+        #expect(policy.showsCommentBubbleSettings(hasParagraphReviews: true))
     }
 }

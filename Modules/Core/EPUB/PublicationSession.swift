@@ -503,6 +503,55 @@ final class PublicationSession {
         PublicationSessionRegistry.shared.unregister(id: id)
     }
 
+    /// Reads only `container.xml` and the OPF package metadata. This avoids
+    /// constructing a full Readium publication merely to choose the opening
+    /// animation direction at tap time.
+    static func inspectOpeningFlow(sourceURL: URL) async -> EPUBOpeningFlow {
+        let metadata = await parseOPFMetadata(from: sourceURL)
+        let cssDeclaresVertical = metadata.writingMode != .verticalRL
+            ? await packageDeclaresVerticalWritingMode(
+                sourceURL: sourceURL,
+                metadata: metadata
+            )
+            : false
+        return EPUBOpeningFlow(
+            isVertical: metadata.writingMode == .verticalRL || cssDeclaresVertical,
+            pageProgressionIsRTL: metadata.pageProgressionDirection == .rtl
+        )
+    }
+
+    /// Detects the CSS-only vertical EPUBs that do not declare their writing
+    /// mode in OPF metadata. Stylesheets are cheap and authoritative for this
+    /// reader; a few leading spine documents cover inline body declarations
+    /// without expanding every chapter at tap time.
+    private static func packageDeclaresVerticalWritingMode(
+        sourceURL: URL,
+        metadata: OPFMetadataResult
+    ) async -> Bool {
+        guard let archive = try? await Archive(url: sourceURL, accessMode: .read) else {
+            return false
+        }
+
+        let stylesheetHrefs = metadata.manifestItemsByID.values
+            .filter { $0.mediaType?.lowercased() == "text/css" }
+            .map(\.href)
+            .sorted()
+        let leadingSpineHrefs = metadata.spineReferences
+            .filter(\.linear)
+            .prefix(3)
+            .map(\.href)
+
+        var inspected = Set<String>()
+        for href in stylesheetHrefs + leadingSpineHrefs {
+            guard inspected.insert(href).inserted else { continue }
+            if let source = await readArchiveEntry(href, archive: archive),
+               EPUBOpeningFlow.containsVerticalWritingModeDeclaration(in: source) {
+                return true
+            }
+        }
+        return false
+    }
+
     static func open(sourceURL: URL) async throws -> PublicationSession {
         guard FileManager.default.fileExists(atPath: sourceURL.path) else {
             throw PublicationSessionError.fileNotFound

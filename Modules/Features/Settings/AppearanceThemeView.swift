@@ -1,5 +1,7 @@
+import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct AppearanceThemeView: View {
     @ObservedObject private var settings = GlobalSettings.shared
@@ -10,6 +12,29 @@ struct AppearanceThemeView: View {
     @State private var showCustomizer = false
     @State private var editingCustomThemeID: String?
     @State private var customThemeToDelete: AppearanceThemePreset?
+    @State private var showLaunchImageSettings = false
+    @State private var showLaunchImagePaywall = false
+
+    // 頁面背景 editor state.
+    @State private var pageBackgroundScope: AppearancePageBackgroundScope = .global
+    @State private var backgroundImagePickScheme: ColorScheme = .light
+    @State private var showBackgroundPhotosPicker = false
+    @State private var backgroundPhotoItem: PhotosPickerItem?
+    @State private var isImportingBackgroundFile = false
+    @State private var showSaveThemeAlert = false
+    @State private var newThemeName = ""
+    @State private var themeExportDocument: AppearanceThemeExportDocument?
+    @State private var showThemeExporter = false
+    @State private var showThemeImporter = false
+    @State private var showResetPageBackgroundConfirm = false
+    @State private var pageBackgroundAlertMessage: String?
+
+    private static let backgroundImageContentTypes: [UTType] = [
+        UTType(filenameExtension: "webp") ?? .data,
+        UTType(filenameExtension: "jpg") ?? .jpeg,
+        UTType(filenameExtension: "jpeg") ?? .jpeg,
+        .png,
+    ]
 
     private var selectedTheme: AppearanceThemePreset {
         settings.appearanceTheme(
@@ -34,8 +59,15 @@ struct AppearanceThemeView: View {
                 togglesSection
                 globalFontRow
                 readerInterfaceRow
+                launchImageRow
                 if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsBottomTabCustomization {
                     rootTabRow
+                }
+                if subscriptionStore.hasAccess(.readerThemePacks) {
+                    pageBackgroundSection
+                    themeActionsSection
+                } else {
+                    pageBackgroundLockedRow
                 }
                 // Pro upsell only; subscribers customize via 新建 / theme tiles.
                 if !subscriptionStore.hasAccess(.readerThemePacks) {
@@ -65,6 +97,13 @@ struct AppearanceThemeView: View {
                 AppearanceThemeCustomizationView(themeID: editingCustomThemeID)
             }
         }
+        .navigationDestination(isPresented: $showLaunchImageSettings) {
+            LaunchImageSettingsView()
+        }
+        .sheet(isPresented: $showLaunchImagePaywall) {
+            PaywallView(highlightedFeature: .launchScreen)
+                .environmentObject(subscriptionStore)
+        }
         .confirmationDialog(
             localized("刪除此自訂主題？"),
             isPresented: Binding(
@@ -83,6 +122,34 @@ struct AppearanceThemeView: View {
             }
         } message: { theme in
             Text(theme.localizedName)
+        }
+        .photosPicker(
+            isPresented: $showBackgroundPhotosPicker,
+            selection: $backgroundPhotoItem,
+            matching: .images
+        )
+        .onChange(of: backgroundPhotoItem) { _, item in
+            guard let item else { return }
+            importBackgroundPhoto(item)
+        }
+        .fileImporter(
+            isPresented: $isImportingBackgroundFile,
+            allowedContentTypes: Self.backgroundImageContentTypes,
+            allowsMultipleSelection: false,
+            onCompletion: handleBackgroundFileImport
+        )
+        .alert(
+            localized("匯入失敗"),
+            isPresented: Binding(
+                get: { pageBackgroundAlertMessage != nil },
+                set: { if !$0 { pageBackgroundAlertMessage = nil } }
+            )
+        ) {
+            Button(localized("確定"), role: .cancel) {
+                pageBackgroundAlertMessage = nil
+            }
+        } message: {
+            Text(pageBackgroundAlertMessage ?? "")
         }
     }
 
@@ -313,6 +380,42 @@ struct AppearanceThemeView: View {
         .buttonStyle(.plain)
     }
 
+    /// Launch-image entry. Pro users push the settings page; free users tapping
+    /// it get the paywall highlighting the launch-screen feature.
+    private var launchImageRow: some View {
+        Button {
+            if subscriptionStore.hasAccess(.launchScreen) {
+                showLaunchImageSettings = true
+            } else {
+                showLaunchImagePaywall = true
+            }
+        } label: {
+            HStack {
+                Text(localized("啟動圖"))
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                Spacer(minLength: DSSpacing.md)
+                Text(launchImageStatusText)
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textSecondary)
+                Image(systemName: subscriptionStore.hasAccess(.launchScreen) ? "chevron.right" : "lock.fill")
+                    .font(DSFont.subheadline)
+                    .foregroundStyle(DSColor.textSecondary)
+            }
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.lg)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var launchImageStatusText: String {
+        guard subscriptionStore.hasAccess(.launchScreen) else {
+            return localized("需要 Pro")
+        }
+        return settings.launchImageEnabled ? localized("已開啟") : localized("已關閉")
+    }
+
     private var rootTabRow: some View {
         NavigationLink {
             RootTabCustomizationView()
@@ -334,6 +437,366 @@ struct AppearanceThemeView: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - 頁面背景 (page background editor)
+
+    private func pageBackgroundSectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(DSFont.title3.weight(.semibold))
+            .foregroundStyle(DSColor.textPrimary)
+            .padding(.horizontal, DSSpacing.xs)
+    }
+
+    private var pageBackgroundSection: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            pageBackgroundSectionHeader(localized("頁面背景"))
+            editScopeRow
+            VStack(spacing: DSSpacing.lg) {
+                pageBackgroundColorRow(titleKey: "亮色主色調", scheme: .light, slot: .primary)
+                pageBackgroundColorRow(titleKey: "亮色輔色調", scheme: .light, slot: .secondary)
+                pageBackgroundColorRow(titleKey: "深色主色調", scheme: .dark, slot: .primary)
+                pageBackgroundColorRow(titleKey: "深色輔色調", scheme: .dark, slot: .secondary)
+            }
+            VStack(spacing: DSSpacing.lg) {
+                backgroundImageRow(scheme: .light)
+                backgroundImageRow(scheme: .dark)
+            }
+            pageBackgroundSectionHeader(localized("預覽"))
+            pageBackgroundPreviewCard
+        }
+    }
+
+    private var editScopeRow: some View {
+        HStack {
+            Text(localized("編輯範圍"))
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textPrimary)
+            Spacer(minLength: DSSpacing.md)
+            Menu {
+                Picker(localized("編輯範圍"), selection: $pageBackgroundScope) {
+                    ForEach(AppearancePageBackgroundScope.allCases) { scope in
+                        Text(scope.localizedTitle).tag(scope)
+                    }
+                }
+            } label: {
+                HStack(spacing: DSSpacing.xs) {
+                    Text(pageBackgroundScope.localizedTitle)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(DSFont.caption.weight(.semibold))
+                }
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.accent)
+            }
+        }
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.lg)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+    }
+
+    private func pageBackgroundColorRow(
+        titleKey: String,
+        scheme: ColorScheme,
+        slot: PageBackgroundColorSlot
+    ) -> some View {
+        ColorPicker(selection: pageBackgroundColorBinding(scheme: scheme, slot: slot), supportsOpacity: false) {
+            Text(localized(titleKey))
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textPrimary)
+        }
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.md)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+    }
+
+    private func pageBackgroundColorBinding(
+        scheme: ColorScheme,
+        slot: PageBackgroundColorSlot
+    ) -> Binding<Color> {
+        Binding(
+            get: {
+                let config = settings.pageBackgroundConfig(for: pageBackgroundScope)
+                let stored = slot == .primary
+                    ? config.primaryHex(for: scheme)
+                    : config.secondaryHex(for: scheme)
+                let hex = stored ?? Self.defaultPageBackgroundHex(scheme: scheme, slot: slot)
+                return Color(uiColor: AppearanceThemePreset.hex(hex))
+            },
+            set: { value in
+                guard let hex = UIColor(value).rgbHex else { return }
+                var config = settings.pageBackgroundConfig(for: pageBackgroundScope)
+                if slot == .primary {
+                    config.setPrimaryHex(hex, for: scheme)
+                } else {
+                    config.setSecondaryHex(hex, for: scheme)
+                }
+                settings.updatePageBackgroundConfig(config, for: pageBackgroundScope)
+            }
+        )
+    }
+
+    /// Placeholder swatch values shown before the user picks anything; chosen to
+    /// match the stock system page look for each appearance.
+    private static func defaultPageBackgroundHex(
+        scheme: ColorScheme,
+        slot: PageBackgroundColorSlot
+    ) -> UInt32 {
+        if scheme == .dark {
+            return slot == .primary ? 0x1C1C1E : 0x2C2C2E
+        }
+        return slot == .primary ? 0xF2F2F7 : 0xFFFFFF
+    }
+
+    private func backgroundImageRow(scheme: ColorScheme) -> some View {
+        let titleKey = scheme == .dark ? "深色背景圖" : "亮色背景圖"
+        let fileName = settings.pageBackgroundConfig(for: pageBackgroundScope).imageFileName(for: scheme)
+        return HStack(spacing: DSSpacing.md) {
+            Text(localized(titleKey))
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textPrimary)
+            Spacer(minLength: DSSpacing.md)
+            if let fileName,
+               let image = AppearancePageBackgroundImageStore.shared.image(fileName: fileName) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 44, height: 30)
+                    .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
+                            .stroke(DSColor.border, lineWidth: 0.5)
+                    )
+                    .accessibilityHidden(true)
+            }
+            Menu {
+                Button {
+                    backgroundImagePickScheme = scheme
+                    showBackgroundPhotosPicker = true
+                } label: {
+                    Label(localized("從相簿選擇"), systemImage: "photo.on.rectangle")
+                }
+                Button {
+                    backgroundImagePickScheme = scheme
+                    isImportingBackgroundFile = true
+                } label: {
+                    Label(localized("從檔案選擇"), systemImage: "folder")
+                }
+                if fileName != nil {
+                    Button(role: .destructive) {
+                        settings.clearPageBackgroundImage(scope: pageBackgroundScope, appearance: scheme)
+                    } label: {
+                        Label(localized("移除背景圖"), systemImage: "trash")
+                    }
+                }
+            } label: {
+                HStack(spacing: DSSpacing.xs) {
+                    Text(localized("選擇"))
+                    Image(systemName: "chevron.down")
+                        .font(DSFont.caption2.weight(.semibold))
+                }
+                .font(DSFont.subheadline.weight(.medium))
+                .foregroundStyle(DSColor.accent)
+                .padding(.horizontal, DSSpacing.md)
+                .padding(.vertical, DSSpacing.sm - 2)
+                .background(DSColor.accent.opacity(0.12), in: Capsule())
+            }
+            .accessibilityLabel(localized(titleKey))
+        }
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.md)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+    }
+
+    /// Live preview of the effective background for the edited scope in the
+    /// current appearance (with global fallback), or the stock look when the
+    /// scope has nothing configured.
+    private var pageBackgroundPreviewCard: some View {
+        let slice = settings.resolvedPageBackgroundSlice(
+            for: pageBackgroundScope,
+            colorScheme: colorScheme
+        )
+        let modeName = colorScheme == .dark ? localized("深色模式") : localized("亮色模式")
+        return ZStack {
+            if let slice {
+                AppearancePageBackgroundLayerView(slice: slice)
+            } else {
+                pageBackground
+            }
+            VStack(spacing: DSSpacing.sm) {
+                Text(localized("背景預覽"))
+                    .font(DSFont.title3.weight(.semibold))
+                    .foregroundStyle(DSColor.textPrimary)
+                Text("\(pageBackgroundScope.localizedTitle) · \(modeName)")
+                    .font(DSFont.subheadline)
+                    .foregroundStyle(DSColor.textSecondary)
+                Text(localized("弱文字樣例"))
+                    .font(DSFont.footnote)
+                    .foregroundStyle(DSColor.textSecondary.opacity(0.72))
+            }
+            .padding(DSSpacing.lg)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 320)
+        .clipShape(RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Theme actions (save / export / import / reset)
+
+    private var themeActionsSection: some View {
+        VStack(spacing: DSSpacing.lg) {
+            themeActionRow(titleKey: "保存為新主題") {
+                newThemeName = ""
+                showSaveThemeAlert = true
+            }
+            .alert(localized("保存為新主題"), isPresented: $showSaveThemeAlert) {
+                TextField(localized("主題名稱"), text: $newThemeName)
+                Button(localized("保存")) {
+                    settings.saveCurrentAppearanceAsTheme(named: newThemeName, basedOn: selectedTheme)
+                }
+                Button(localized("取消"), role: .cancel) {}
+            } message: {
+                Text(localized("將當前配色與頁面背景保存為自訂主題。"))
+            }
+
+            themeActionRow(titleKey: "導出主題") {
+                themeExportDocument = AppearanceThemeExportDocument(
+                    exportFile: settings.appearanceThemeExportFile(for: selectedTheme)
+                )
+                showThemeExporter = true
+            }
+            .fileExporter(
+                isPresented: $showThemeExporter,
+                document: themeExportDocument,
+                contentType: .json,
+                defaultFilename: "yuedu-theme-\(selectedTheme.localizedName)"
+            ) { _ in
+                themeExportDocument = nil
+            }
+
+            themeActionRow(titleKey: "導入主題") {
+                showThemeImporter = true
+            }
+            .fileImporter(
+                isPresented: $showThemeImporter,
+                allowedContentTypes: [.json],
+                allowsMultipleSelection: false,
+                onCompletion: handleThemeImport
+            )
+
+            themeActionRow(titleKey: "重置為默認") {
+                showResetPageBackgroundConfirm = true
+            }
+            .confirmationDialog(
+                localized("重置為默認？"),
+                isPresented: $showResetPageBackgroundConfirm,
+                titleVisibility: .visible
+            ) {
+                Button(localized("重置為默認"), role: .destructive) {
+                    settings.resetAllPageBackgrounds()
+                }
+                Button(localized("取消"), role: .cancel) {}
+            } message: {
+                Text(localized("將清除所有頁面（含各分頁）的背景顏色與背景圖設定。"))
+            }
+        }
+    }
+
+    private func themeActionRow(titleKey: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(localized(titleKey))
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.lg)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Free-user entry: same row shape as the Pro editor's rows, tapping opens
+    /// the paywall highlighting theme packs.
+    private var pageBackgroundLockedRow: some View {
+        Button {
+            showPaywall = true
+        } label: {
+            HStack {
+                Text(localized("頁面背景"))
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                Spacer(minLength: DSSpacing.md)
+                Text(localized("需要 Pro"))
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textSecondary)
+                Image(systemName: "lock.fill")
+                    .font(DSFont.subheadline)
+                    .foregroundStyle(DSColor.textSecondary)
+            }
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.lg)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Background import handlers
+
+    private func importBackgroundPhoto(_ item: PhotosPickerItem) {
+        let scope = pageBackgroundScope
+        let scheme = backgroundImagePickScheme
+        Task { @MainActor in
+            defer { backgroundPhotoItem = nil }
+            guard let data = try? await item.loadTransferable(type: Data.self) else {
+                pageBackgroundAlertMessage = localized("無法讀取圖片。")
+                return
+            }
+            do {
+                try settings.importPageBackgroundImage(data: data, scope: scope, appearance: scheme)
+            } catch let error as AppearancePageBackgroundImageError {
+                pageBackgroundAlertMessage = localized(error.messageKey)
+            } catch {
+                pageBackgroundAlertMessage = localized("無法讀取圖片。")
+            }
+        }
+    }
+
+    private func handleBackgroundFileImport(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if didAccess { url.stopAccessingSecurityScopedResource() }
+            }
+            try settings.importPageBackgroundImage(
+                from: url,
+                scope: pageBackgroundScope,
+                appearance: backgroundImagePickScheme
+            )
+        } catch let error as AppearancePageBackgroundImageError {
+            pageBackgroundAlertMessage = localized(error.messageKey)
+        } catch {
+            pageBackgroundAlertMessage = localized("無法讀取圖片。")
+        }
+    }
+
+    private func handleThemeImport(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if didAccess { url.stopAccessingSecurityScopedResource() }
+            }
+            let data = try Data(contentsOf: url)
+            try settings.importAppearanceTheme(from: data)
+        } catch let error as AppearanceThemeImportError {
+            pageBackgroundAlertMessage = localized(error.messageKey)
+        } catch {
+            pageBackgroundAlertMessage = localized("匯入主題失敗。")
+        }
     }
 
     /// Free-user upsell row; hidden entirely once Pro is active.
@@ -549,6 +1012,33 @@ private struct AppearanceThemeCustomizationView: View {
                 theme.wrappedValue = copy
             }
         )
+    }
+}
+
+/// Which end of the page-background gradient a color row edits.
+private enum PageBackgroundColorSlot {
+    case primary
+    case secondary
+}
+
+/// JSON wrapper handed to `fileExporter` for 導出主題.
+struct AppearanceThemeExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+
+    let data: Data
+
+    init(exportFile: AppearanceThemeExportFile) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        data = (try? encoder.encode(exportFile)) ?? Data()
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
     }
 }
 

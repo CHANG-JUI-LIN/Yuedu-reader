@@ -178,9 +178,19 @@ extension ReaderView {
     }
 
     func closeReader() {
-        saveProgress()
         if let snap = snapshotBook, snap.isOnline, book == nil {
             showAddToShelfAlert = true
+        } else {
+            dismissReaderPresentation()
+        }
+    }
+
+    /// Complete an already-confirmed exit without re-opening the add-to-shelf
+    /// prompt. All pushed-reader exits must pass through the coordinator so
+    /// the custom close animator, UIKit stack, and retained reader state agree.
+    func dismissReaderPresentation() {
+        if let navigator = readerNavigator {
+            navigator.close()
         } else {
             presentationMode.wrappedValue.dismiss()
         }

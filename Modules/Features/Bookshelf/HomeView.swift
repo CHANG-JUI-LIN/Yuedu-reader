@@ -1,9 +1,63 @@
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
 // MARK: - Bookshelf Home
+enum BookshelfCoverLoader {
+    static func load(filename: String) -> UIImage? {
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(filename)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
+    }
+}
+
+@MainActor
+private final class BookshelfReaderGeometryStore: ObservableObject {
+    private var frames: [UUID: CGRect] = [:]
+
+    func update(_ frame: CGRect, for bookID: UUID) {
+        guard !frame.isEmpty else { return }
+        frames[bookID] = frame
+    }
+
+    func frame(for bookID: UUID) -> CGRect? {
+        frames[bookID]
+    }
+
+    func invalidate(bookID: UUID) {
+        frames[bookID] = nil
+    }
+}
+
+private struct BookshelfCoverFramePreferenceKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if !next.isEmpty { value = next }
+    }
+}
+
+private extension View {
+    func reportBookshelfCoverFrame(_ frame: Binding<CGRect>) -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: BookshelfCoverFramePreferenceKey.self,
+                    value: proxy.frame(in: .global)
+                )
+            }
+        }
+        .onPreferenceChange(BookshelfCoverFramePreferenceKey.self) { newFrame in
+            if !newFrame.isEmpty { frame.wrappedValue = newFrame }
+        }
+    }
+}
+
 struct HomeView: View {
     @EnvironmentObject var store: BookStore
+    @Environment(\.appDependencies) private var appDependencies
     @ObservedObject private var gs = GlobalSettings.shared
 
     @State private var showAddSheet = false
@@ -38,7 +92,94 @@ struct HomeView: View {
         )
     }
 
-    @State private var readerBookId: UUID? = nil
+    @StateObject private var readerCoordinator = ReaderNavigationCoordinator()
+    @StateObject private var readerGeometryStore = BookshelfReaderGeometryStore()
+    @State private var pendingReaderOpenToken: UUID?
+
+    /// Reader id presented modally (kept fullScreenCover) for kinds that are
+    /// explicitly out of scope for the card-navigation migration: audiobook,
+    /// manga, fixed-page. Text / reflowable EPUB / online HTML go through the
+    /// `readerCoordinator` push path instead.
+    @State private var modalReaderBookId: UUID? = nil
+
+    private func openBook(_ book: ReadingBook, sourceGeometry: ReaderCardGeometry?) {
+        if BookCardNavigationGate.shouldUseCardTransition(for: book) {
+            let requestToken = UUID()
+            pendingReaderOpenToken = requestToken
+            let snapshot: UIImage? = book.coverImagePath.flatMap {
+                BookshelfCoverLoader.load(filename: $0)
+            }
+            Task { @MainActor in
+                let direction = await resolveOpeningDirection(for: book)
+                guard pendingReaderOpenToken == requestToken else { return }
+                pendingReaderOpenToken = nil
+                let source = ReaderTransitionSource(
+                    bookID: book.id,
+                    cornerRadius: sourceGeometry?.cornerRadius ?? DSRadius.md,
+                    frame: sourceGeometry?.frame,
+                    frameProvider: { [weak readerGeometryStore, weak store] in
+                        guard store?.books.contains(where: { $0.id == book.id }) == true else {
+                            return nil
+                        }
+                        return readerGeometryStore?.frame(for: book.id)
+                    },
+                    snapshot: snapshot,
+                    direction: direction
+                )
+                let shouldInvalidateForRecentSort =
+                    sortOrder == BookSortOrder.recentlyRead.rawValue
+                    && sortedFilteredBooks.first?.id != book.id
+                let readerBookID = book.id
+                let readerStore = store
+                let readerDependencies = appDependencies
+                readerCoordinator.open(
+                    bookID: readerBookID,
+                    source: source,
+                    destination: { [weak readerCoordinator] in
+                        ReaderHostingController(content: AnyView(
+                            BookReaderView(bookId: readerBookID)
+                                .environmentObject(readerStore)
+                                .environment(\.appDependencies, readerDependencies)
+                                .environment(\.readerNavigator, readerCoordinator)
+                        ))
+                    },
+                    onTransitionCompleted: { [weak readerGeometryStore, weak store] in
+                        if shouldInvalidateForRecentSort {
+                            // Do not let a closing transition use the old row
+                            // position while the recently-read sort moves it.
+                            readerGeometryStore?.invalidate(bookID: readerBookID)
+                        }
+                        store?.updateLastOpened(bookId: readerBookID)
+                    }
+                )
+            }
+        } else {
+            pendingReaderOpenToken = nil
+            store.updateLastOpened(bookId: book.id)
+            modalReaderBookId = book.id
+        }
+    }
+
+    private func resolveOpeningDirection(
+        for book: ReadingBook
+    ) async -> ReaderBookOpeningDirection {
+        if book.resolvedPipelineKind == .epub {
+            let url = store.localEPUBURL(for: book)
+            let flow = await PublicationSession.inspectOpeningFlow(sourceURL: url)
+            return ReaderBookOpeningDirection.resolve(
+                writingMode: flow.isVertical ? .verticalRTL : .horizontal,
+                pageProgressionIsRTL: flow.pageProgressionIsRTL
+            )
+        }
+
+        let writingMode: ReaderWritingMode = book.allowsVerticalWritingMode
+            ? gs.readerWritingMode
+            : .horizontal
+        return ReaderBookOpeningDirection.resolve(
+            writingMode: writingMode,
+            pageProgressionIsRTL: false
+        )
+    }
 
     var sortedFilteredBooks: [ReadingBook] {
         let base = selectedGroup.isEmpty ? store.books : store.books.filter { $0.group == selectedGroup }
@@ -248,14 +389,25 @@ struct HomeView: View {
                     .environmentObject(store)
                 }
             }
+            // Keep the probe inside this NavigationStack's root destination.
+            // Its responder chain resolves this shelf's UIKit navigation
+            // controller before the coordinator directly pushes the reader,
+            // rather than guessing among sibling stacks owned by TabView.
+            .background {
+                ReaderEdgeSwipeEnabler(navigator: readerCoordinator)
+                    .frame(width: 0, height: 0)
+            }
         }
+        // Non-migrated reader kinds (audiobook / manga / fixed-page) keep the
+        // original modal presentation. They are explicitly out of scope for the
+        // first delivery of the card-navigation migration.
         .fullScreenCover(
             isPresented: Binding(
-                get: { readerBookId != nil },
-                set: { if !$0 { readerBookId = nil } }
+                get: { modalReaderBookId != nil },
+                set: { if !$0 { modalReaderBookId = nil } }
             )
         ) {
-            if let bookId = readerBookId {
+            if let bookId = modalReaderBookId {
                 BookReaderView(bookId: bookId)
                     .environmentObject(store)
             }
@@ -351,9 +503,11 @@ struct HomeView: View {
                     book: book,
                     isEditing: editMode == .active,
                     transitionNamespace: bookTransition,
-                    onTap: {
-                        store.updateLastOpened(bookId: book.id)
-                        readerBookId = book.id
+                    onTap: { sourceGeometry in
+                        openBook(book, sourceGeometry: sourceGeometry)
+                    },
+                    onCoverFrameChange: { frame in
+                        readerGeometryStore.update(frame, for: book.id)
                     },
                     onEdit: { editingBook = book },
                     onDelete: { bookToDelete = book },
@@ -395,9 +549,11 @@ struct HomeView: View {
                         book: book,
                         isCompactLayout: isCompactFiveColumnGrid,
                         transitionNamespace: bookTransition,
-                        onOpen: {
-                            store.updateLastOpened(bookId: book.id)
-                            readerBookId = book.id
+                        onOpen: { sourceGeometry in
+                            openBook(book, sourceGeometry: sourceGeometry)
+                        },
+                        onCoverFrameChange: { frame in
+                            readerGeometryStore.update(frame, for: book.id)
                         },
                         onEdit: { editingBook = book },
                         onDelete: { bookToDelete = book },
@@ -592,13 +748,15 @@ struct BookRow: View {
     let book: ReadingBook
     var isEditing: Bool = false
     var transitionNamespace: Namespace.ID? = nil
-    let onTap: () -> Void
+    let onTap: (ReaderCardGeometry?) -> Void
+    var onCoverFrameChange: ((CGRect) -> Void)? = nil
     let onEdit: () -> Void
     let onDelete: () -> Void
     var onShowDetail: (() -> Void)? = nil
 
     private let coverW: CGFloat = 45
     private let coverH: CGFloat = 65
+    @State private var liveCoverFrame: CGRect = .zero
 
     var body: some View {
         VStack(spacing: 0) {
@@ -608,7 +766,16 @@ struct BookRow: View {
                 if isEditing {
                     rowContent
                 } else {
-                    Button(action: onTap) { rowContent }
+                    Button(action: {
+                        onTap(
+                            liveCoverFrame.isEmpty
+                                ? nil
+                                : ReaderCardGeometry(
+                                    frame: liveCoverFrame,
+                                    cornerRadius: DSRadius.sm
+                                )
+                        )
+                    }) { rowContent }
                         .buttonStyle(.plain)
 
                     VStack {
@@ -633,6 +800,9 @@ struct BookRow: View {
                 .fill(Color(uiColor: .separator))
                 .frame(height: 0.5)
         }
+        .onChange(of: liveCoverFrame) { _, frame in
+            if !frame.isEmpty { onCoverFrameChange?(frame) }
+        }
     }
 
     private var rowContent: some View {
@@ -644,6 +814,7 @@ struct BookRow: View {
                     bookCover
                 }
             }
+            .reportBookshelfCoverFrame($liveCoverFrame)
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(book.title)
@@ -730,14 +901,14 @@ struct BookRow: View {
                 .resizable()
                 .scaledToFill()
                 .frame(width: coverW, height: coverH)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm))
                 .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
                 .overlay(alignment: .bottomTrailing) {
                     if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 7) }
                 }
         } else {
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: DSRadius.sm)
                     .fill(Color(.secondarySystemBackground))
                     .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
                 Text(book.title)
@@ -799,14 +970,25 @@ struct BookGridCell: View {
     let book: ReadingBook
     var isCompactLayout: Bool = false
     var transitionNamespace: Namespace.ID? = nil
-    let onOpen: () -> Void
+    let onOpen: (ReaderCardGeometry?) -> Void
+    var onCoverFrameChange: ((CGRect) -> Void)? = nil
     let onEdit: () -> Void
     let onDelete: () -> Void
     var onShowDetail: (() -> Void)? = nil
+    @State private var liveCoverFrame: CGRect = .zero
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Button(action: onOpen) {
+            Button(action: {
+                onOpen(
+                    liveCoverFrame.isEmpty
+                        ? nil
+                        : ReaderCardGeometry(
+                            frame: liveCoverFrame,
+                            cornerRadius: DSRadius.md
+                        )
+                )
+            }) {
                 ZStack(alignment: .topTrailing) {
                     Group {
                         if #available(iOS 18.0, *), let ns = transitionNamespace {
@@ -815,6 +997,7 @@ struct BookGridCell: View {
                             coverView
                         }
                     }
+                    .reportBookshelfCoverFrame($liveCoverFrame)
                     if book.currentPosition > 0.01 && book.currentPosition < 0.99 {
                         Text("\(Int(book.currentPosition * 100))%")
                             .font(DSFont.fixed(size: 10, weight: .semibold))
@@ -868,6 +1051,9 @@ struct BookGridCell: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: liveCoverFrame) { _, frame in
+            if !frame.isEmpty { onCoverFrameChange?(frame) }
+        }
     }
 
     @ViewBuilder
@@ -883,14 +1069,14 @@ struct BookGridCell: View {
                     .scaledToFill()
             )
             .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: DSRadius.md))
             .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
             .overlay(alignment: .bottomTrailing) {
                 if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 11) }
             }
         } else {
             base.overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: DSRadius.md)
                     .fill(Color(.secondarySystemBackground))
                     .overlay(
                         Text(book.title)
@@ -1031,8 +1217,8 @@ private func previewOnlineBook(hasUpdate: Bool) -> ReadingBook {
 
 #Preview("BookRow – 有更新 / 無更新") {
     List {
-        BookRow(book: previewOnlineBook(hasUpdate: true), onTap: {}, onEdit: {}, onDelete: {})
-        BookRow(book: previewOnlineBook(hasUpdate: false), onTap: {}, onEdit: {}, onDelete: {})
+        BookRow(book: previewOnlineBook(hasUpdate: true), onTap: { _ in }, onEdit: {}, onDelete: {})
+        BookRow(book: previewOnlineBook(hasUpdate: false), onTap: { _ in }, onEdit: {}, onDelete: {})
     }
     .listStyle(.plain)
 }
@@ -1042,8 +1228,8 @@ private func previewOnlineBook(hasUpdate: Bool) -> ReadingBook {
         columns: Array(repeating: GridItem(.flexible(), spacing: DSSpacing.md), count: 3),
         spacing: DSSpacing.lg
     ) {
-        BookGridCell(book: previewOnlineBook(hasUpdate: true), onOpen: {}, onEdit: {}, onDelete: {})
-        BookGridCell(book: previewOnlineBook(hasUpdate: false), onOpen: {}, onEdit: {}, onDelete: {})
+        BookGridCell(book: previewOnlineBook(hasUpdate: true), onOpen: { _ in }, onEdit: {}, onDelete: {})
+        BookGridCell(book: previewOnlineBook(hasUpdate: false), onOpen: { _ in }, onEdit: {}, onDelete: {})
     }
     .padding()
 }

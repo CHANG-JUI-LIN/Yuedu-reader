@@ -37,6 +37,10 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
     var barHex: UInt32
     var accentHex: UInt32
     var dialogueHex: UInt32
+    /// Page-background snapshot captured by 保存為新主題, keyed by
+    /// `AppearancePageBackgroundScope` raw value. Optional so themes saved
+    /// before this field existed keep decoding.
+    var pageBackgrounds: [String: AppearancePageBackgroundConfig]?
 
     init(
         id: String = UUID().uuidString,
@@ -45,7 +49,8 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
         textHex: UInt32,
         barHex: UInt32,
         accentHex: UInt32,
-        dialogueHex: UInt32
+        dialogueHex: UInt32,
+        pageBackgrounds: [String: AppearancePageBackgroundConfig]? = nil
     ) {
         self.id = id
         self.name = name
@@ -54,6 +59,7 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
         self.barHex = barHex
         self.accentHex = accentHex
         self.dialogueHex = dialogueHex
+        self.pageBackgrounds = pageBackgrounds
     }
 }
 

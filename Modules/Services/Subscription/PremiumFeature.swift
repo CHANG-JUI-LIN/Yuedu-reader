@@ -15,6 +15,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
     case bottomBarCustomization
     case readerThemePacks
     case alternateAppIcons
+    case launchScreen
 
     var id: String { rawValue }
 
@@ -29,6 +30,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
         case .bottomBarCustomization: return "square.grid.2x2"
         case .readerThemePacks: return "paintpalette"
         case .alternateAppIcons: return "app.badge"
+        case .launchScreen: return "app.dashed"
         }
     }
 
@@ -43,6 +45,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
         case .bottomBarCustomization: return "底部導覽列自訂"
         case .readerThemePacks: return "外觀主題包"
         case .alternateAppIcons: return "桌面圖標切換"
+        case .launchScreen: return "啟動圖"
         }
     }
 
@@ -57,6 +60,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
         case .bottomBarCustomization: return "自訂底部 Tab 頁面、大小與圖標"
         case .readerThemePacks: return "套用整組外觀主題與閱讀主題配色"
         case .alternateAppIcons: return "切換預置的桌面圖標"
+        case .launchScreen: return "自訂 App 開屏畫面"
         }
     }
 

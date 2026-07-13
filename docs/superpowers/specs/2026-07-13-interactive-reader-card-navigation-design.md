@@ -27,7 +27,7 @@ Use a UIKit navigation and transition layer around the existing SwiftUI feature 
 
 1. A shared `ReaderNavigationCoordinator` owns reader push/pop requests and the source-card metadata for the active book.
 2. The app's SwiftUI navigation roots expose their underlying navigation controller to the coordinator without moving reader rendering into UIKit.
-3. `BookReaderView` remains the SwiftUI destination and is hosted by a `UIHostingController` when pushed.
+3. `BookReaderView` remains SwiftUI content, but the coordinator creates and directly pushes its `UIHostingController`. UIKit therefore owns the push from before it begins; a SwiftUI `navigationDestination` must not race the navigation delegate or silently substitute the default slide.
 4. A `ReaderCardTransitionAnimator` implements `UIViewControllerAnimatedTransitioning` for open and close animations.
 5. A `ReaderCardInteractionController` uses `UIPercentDrivenInteractiveTransition` to map the leading-edge pan to transition progress.
 6. A dedicated `UIScreenEdgePanGestureRecognizer` is configured for the leading edge, with an additional 10-point start-location gate. It does not use an invisible SwiftUI overlay, so ordinary taps are not swallowed.
@@ -77,7 +77,19 @@ At minimum, the animator interpolates:
 - reader content opacity: delayed fade-in during the latter part of opening
 - source cover opacity: hidden only while the transition snapshot represents it
 
-The book-opening layer is isolated behind `ReaderBookOpeningEffect`. Its first implementation uses lightweight snapshot layers for cover and page surfaces; it must not reparent the live CoreText or SwiftUI reader view. This keeps layout and reading state independent from animation.
+The book-opening layer is isolated behind `ReaderBookOpeningEffect`. Its first implementation uses lightweight snapshot layers for the front cover, inside cover, page block, spine crease, and reader surface; it must not reparent the live CoreText or SwiftUI reader view. This keeps layout and reading state independent from animation.
+
+The selected physical model is a single-cover 3D hinge, not a flat card rotation or a two-page spread:
+
+- left-spine books hinge on the left edge and rotate the front cover outward in the negative Y direction;
+- right-spine books mirror the same geometry around the right edge and rotate in the positive Y direction;
+- the front cover lives outside the clipped page block, so it can visibly swing beyond the book bounds instead of being cut off;
+- front and inside-cover faces remain visually distinct through the edge-on point;
+- the page block expands from the physical spine while the whole book grows from the shelf cover to the full reader frame;
+- a narrow spine crease and moving contact shadow preserve the hinge during slow drags;
+- after the cover passes roughly 90 degrees, the reader snapshot progressively replaces the page block; near the final state the off-screen cover fades so the live reader can occupy the full display.
+
+Closing evaluates the exact same geometry in reverse. An interactive pop therefore scrubs the cover angle, page-block width, crease, frame, corner radius, and reader reveal from one normalized progress value without switching animations.
 
 The animation follows these phases, all driven by the same continuous progress:
 
@@ -146,7 +158,7 @@ Maps normalized progress to cover/page snapshot transforms. This component is re
 
 ### SwiftUI bridge
 
-Provides the reader's current scroll-mode state and close action to the coordinator. It must remain narrow and must not become a second navigation state store.
+Provides the reader destination factory, current scroll-mode state, and close action to the coordinator. The coordinator queues an open until the shelf navigation controller is attached, then directly performs the UIKit push. It must never publish a SwiftUI presentation flag first and attach the transition driver afterward.
 
 ## Error Handling and Cleanup
 

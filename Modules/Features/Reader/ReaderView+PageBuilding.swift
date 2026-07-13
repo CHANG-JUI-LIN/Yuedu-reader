@@ -59,6 +59,20 @@ extension ReaderView {
         let document = BookDocumentFactory.makeEPUBDocument(book: book, session: session)
         applyDocument(document)
 
+        // Do not overwrite the tap-time CSS preflight with "unspecified"
+        // package metadata. CSS-only vertical EPUBs remain right-spine through
+        // loading; explicit OPF writing mode or RTL progression is still
+        // authoritative (LTR progression alone does not imply horizontal text).
+        if session.epubWritingMode != .unspecified
+            || session.pageProgressionDirection == .rtl {
+            readerNavigator?.updateOpeningDirection(
+                ReaderBookOpeningDirection.resolve(
+                    writingMode: session.epubWritingMode == .verticalRL ? .verticalRTL : .horizontal,
+                    pageProgressionIsRTL: session.pageProgressionDirection == .rtl
+                )
+            )
+        }
+
         // Start any authored background soundtrack for the chapter we're opening on.
         activePublicationSession = session
         Task { await backgroundAudioCoordinator.update(session: session, chapterIndex: currentChapterIndex) }

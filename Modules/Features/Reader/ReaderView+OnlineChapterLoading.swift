@@ -31,6 +31,10 @@ extension ReaderView {
             AppLogger.render("[StateDebug] chapterStates[\(chapterIndex)] \(String(describing: previousStates[chapterIndex])) → \(newState) currentChapter=\(currentChapterIndex) usesCoreText=\(usesCoreTextEPUB) isCoreTextReady=\(epubRenderer.isCoreTextReady)")
             #endif
             if newState == .ready {
+                if let package = cachedChapterPackage(for: chapterIndex),
+                   containsParagraphReview(in: package.content) {
+                    hasParagraphReviews = true
+                }
                 prefetchAdjacentChapters(around: chapterIndex)
             }
             applyChapterRefreshAction(for: chapterIndex, newState: newState)

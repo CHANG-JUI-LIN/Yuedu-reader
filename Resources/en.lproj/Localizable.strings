@@ -1227,3 +1227,50 @@
 "底線顏色" = "Underline Color";
 "高亮顏色" = "Highlight Color";
 "使用自訂顏色標示引號內的對話文字。" = "Use a custom color for dialogue inside quotation marks.";
+
+// MARK: - Launch Image (App Splash)
+"啟動圖" = "Launch Screen";
+"自訂 App 開屏畫面" = "Customize the app launch screen";
+"啟用啟動圖" = "Enable Launch Screen";
+"開啟後，每次啟動 App 會短暫顯示你設定的啟動圖。" = "When on, your launch image briefly appears each time the app opens.";
+"尚未導入任何啟動圖，請在下方選擇圖片。" = "No launch image yet—choose one below.";
+"淺色啟動圖" = "Light Launch Image";
+"深色啟動圖" = "Dark Launch Image";
+"淺色模式啟動時顯示。" = "Shown when launching in light mode.";
+"深色模式啟動時顯示。若只設定一張，另一模式會沿用。" = "Shown when launching in dark mode. With only one image set, the other mode reuses it.";
+"已設定" = "Set";
+"更換圖片" = "Replace Image";
+"已關閉" = "Off";
+"啟動圖匯入失敗" = "Launch Image Import Failed";
+"無法匯入啟動圖。" = "Couldn't import the launch image.";
+"只支援 WebP、JPG、JPEG 或 PNG 圖片。" = "Only WebP, JPG, JPEG, or PNG images are supported.";
+
+// MARK: - Page Background & Theme Export (外觀主題)
+"頁面背景" = "Page Background";
+"編輯範圍" = "Edit Scope";
+"全局默認" = "Global Default";
+"亮色主色調" = "Light Primary Color";
+"亮色輔色調" = "Light Secondary Color";
+"深色主色調" = "Dark Primary Color";
+"深色輔色調" = "Dark Secondary Color";
+"亮色背景圖" = "Light Background Image";
+"深色背景圖" = "Dark Background Image";
+"從相簿選擇" = "Choose from Photos";
+"從檔案選擇" = "Choose from Files";
+"移除背景圖" = "Remove Background Image";
+"背景預覽" = "Background Preview";
+"亮色模式" = "Light Mode";
+"深色模式" = "Dark Mode";
+"弱文字樣例" = "Secondary text sample";
+"保存為新主題" = "Save as New Theme";
+"將當前配色與頁面背景保存為自訂主題。" = "Saves the current colors and page backgrounds as a custom theme.";
+"主題名稱" = "Theme Name";
+"保存" = "Save";
+"導出主題" = "Export Theme";
+"導入主題" = "Import Theme";
+"重置為默認" = "Reset to Default";
+"重置為默認？" = "Reset to default?";
+"將清除所有頁面（含各分頁）的背景顏色與背景圖設定。" = "This clears the background colors and images for every page, including per-tab settings.";
+"匯入失敗" = "Import Failed";
+"匯入主題失敗。" = "Could not import the theme.";
+"不支援的主題檔案。" = "Unsupported theme file.";

@@ -91,6 +91,10 @@ struct ContentView: View {
                 }
             }
         }
+        // Cold-launch splash: sits above every tab/overlay and fades out.
+        .overlay {
+            LaunchImageSplashOverlay()
+        }
     }
 
     /// The root tab bar is driven by `GlobalSettings` so users can hide pages
@@ -99,7 +103,11 @@ struct ContentView: View {
         TabView(selection: $selectedRootTab) {
             ForEach(gs.visibleRootTabs) { tab in
                 rootTabContent(for: tab)
-                    .modifier(ThemedSurfaceBackground(active: resolvedAppTheme != nil))
+                    .modifier(ThemedSurfaceBackground(
+                        themeActive: resolvedAppTheme != nil,
+                        scope: AppearancePageBackgroundScope(rawValue: tab.rawValue) ?? .global,
+                        isProActive: subscriptionStore.hasAccess(.readerThemePacks)
+                    ))
                     .tag(tab)
                     .tabItem {
                         rootTabItemLabel(for: tab)
@@ -171,13 +179,35 @@ struct ContentView: View {
 }
 
 /// Retints scrollable Form/List surfaces to the active app theme by hiding the
-/// system background and painting the themed page color behind. A no-op when
-/// inactive (classic), so default users keep the exact system appearance.
+/// system background and painting the themed page color behind — plus, when the
+/// user configured a page background (Pro), the per-scope gradient/image layer.
+/// A no-op when neither applies, so default users keep the exact system look.
 private struct ThemedSurfaceBackground: ViewModifier {
-    let active: Bool
+    let themeActive: Bool
+    let scope: AppearancePageBackgroundScope
+    let isProActive: Bool
+    @ObservedObject private var gs = GlobalSettings.shared
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// Custom page background for this tab, with global fallback. Inactive when
+    /// the Pro entitlement lapses so backgrounds degrade like themes do.
+    private var pageBackgroundSlice: AppearancePageBackgroundSlice? {
+        guard isProActive else { return nil }
+        return gs.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme)
+    }
 
     func body(content: Content) -> some View {
-        if active {
+        if let slice = pageBackgroundSlice {
+            content
+                .scrollContentBackground(.hidden)
+                .background {
+                    ZStack {
+                        DSColor.groupedBackground
+                        AppearancePageBackgroundLayerView(slice: slice)
+                    }
+                    .ignoresSafeArea()
+                }
+        } else if themeActive {
             content
                 .scrollContentBackground(.hidden)
                 .background(DSColor.groupedBackground.ignoresSafeArea())

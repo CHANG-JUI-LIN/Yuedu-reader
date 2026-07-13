@@ -10,6 +10,7 @@ struct ReaderView: View {
     @EnvironmentObject var store: BookStore
     @Environment(\.appDependencies) var dependencies
     @Environment(\.presentationMode) var presentationMode
+    @Environment(\.readerNavigator) var readerNavigator
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.colorScheme) private var systemColorScheme
@@ -62,6 +63,7 @@ struct ReaderView: View {
     // Online chapter lazy loading
     @StateObject var readerViewModel = ReaderViewModel()
     @State var observedChapterStates: [Int: ChapterLoadState] = [:]
+    @State var hasParagraphReviews = false
 
     /// Top safe area (points), passed to EPUB engine as minimum margin-top.
     @State var readerSafeAreaTop: CGFloat = 59
@@ -387,6 +389,48 @@ struct ReaderView: View {
 
         return chapters.first(where: { $0.index == currentChapterIndex })
             ?? (chapters.indices.contains(currentChapterIndex) ? chapters[currentChapterIndex] : nil)
+    }
+
+    /// Paragraph-review bubbles are detected from rendered review links as well
+    /// as freshly fetched source HTML. The latter makes the setting available
+    /// as soon as a review-bearing online chapter finishes loading.
+    private var currentBookHasParagraphReviews: Bool {
+        if hasParagraphReviews {
+            return true
+        }
+        if let engine = epubRenderer.engine,
+           engine.layouts.values.contains(where: { containsParagraphReview(in: $0.attributedString) }) {
+            return true
+        }
+        if let scrollEngine = epubRenderer.scrollEngine,
+           scrollEngine.chunks.contains(where: { containsParagraphReview(in: $0.attributedString) }) {
+            return true
+        }
+        if let package = cachedChapterPackage(for: currentChapterIndex) {
+            return containsParagraphReview(in: package.content)
+        }
+        return false
+    }
+
+    private func containsParagraphReview(in attributedString: NSAttributedString) -> Bool {
+        guard attributedString.length > 0 else { return false }
+        var containsReview = false
+        attributedString.enumerateAttribute(
+            HTMLAttributedStringBuilder.internalLinkAttribute,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, _, stop in
+            if let link = value as? String,
+               link.hasPrefix("\(ReaderHTMLUtilities.reviewURLScheme)://") {
+                containsReview = true
+                stop.pointee = true
+            }
+        }
+        return containsReview
+    }
+
+    func containsParagraphReview(in content: String) -> Bool {
+        content.localizedCaseInsensitiveContains("showcmt(")
+            || content.localizedCaseInsensitiveContains("\(ReaderHTMLUtilities.reviewURLScheme)://")
     }
 
     func tocChapter(forSpineIndex spineIndex: Int, charOffset: Int) -> BookChapter? {
@@ -1224,10 +1268,10 @@ struct ReaderView: View {
                         chapters: snap.onlineChapters ?? []
                     )
                 }
-                presentationMode.wrappedValue.dismiss()
+                dismissReaderPresentation()
             }
             Button(localized("不加入"), role: .cancel) {
-                presentationMode.wrappedValue.dismiss()
+                dismissReaderPresentation()
             }
         }
         .onAppear {
@@ -1440,7 +1484,15 @@ struct ReaderView: View {
         .onChanged(of: settings.scrollMode) { enabled in
             handleScrollModeChanged(enabled)
         }
-        .onChanged(of: settings.readerWritingMode) { _ in
+        .onChanged(of: settings.readerWritingMode) { writingMode in
+            if !isEPUB, (book ?? snapshotBook)?.allowsVerticalWritingMode == true {
+                readerNavigator?.updateOpeningDirection(
+                    ReaderBookOpeningDirection.resolve(
+                        writingMode: writingMode,
+                        pageProgressionIsRTL: false
+                    )
+                )
+            }
             handleReaderConfigRefresh(.layout)
         }
         .onChanged(of: effectiveReaderSpreadMode) { _ in
@@ -1485,6 +1537,7 @@ struct ReaderView: View {
                     capabilities: readerCapabilities,
                     allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
                     isVerticalWritingMode: effectiveWritingMode.isVertical,
+                    hasParagraphReviews: currentBookHasParagraphReviews,
                     onOpenTouchZoneEditor: {
                         guard subscriptionStore.isProActive, !effectiveScrollMode else { return }
                         showBars = false
@@ -1677,6 +1730,7 @@ struct ReaderView: View {
             if ready {
                 if !isVerticalEPUB && epubRenderer.cssDetectedVerticalWritingMode {
                     isVerticalEPUB = true
+                    readerNavigator?.updateOpeningDirection(.rightSpine)
                 }
                 syncCoreTextTextAnnotations()
                 applyInitialProgressIfNeeded()

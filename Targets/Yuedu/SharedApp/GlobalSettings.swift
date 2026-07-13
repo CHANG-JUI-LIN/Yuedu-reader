@@ -394,6 +394,7 @@ class GlobalSettings: ObservableObject {
     private static let appearanceBindReaderThemeKey = "yd_appearance_bind_reader_theme"
     private static let appearanceReaderInterfaceKey = "yd_appearance_reader_interface"
     private static let customAppearanceThemesKey = "yd_custom_appearance_themes"
+    private static let appearancePageBackgroundsKey = "yd_appearance_page_backgrounds"
     private static let globalFontPostScriptKey = "yd_global_font_postscript"
     private static let commentBubbleFollowsSourceSVGKey = "yd_comment_bubble_follows_source_svg"
     private static let commentBubblePresetModeKey = "yd_comment_bubble_preset_mode"
@@ -410,6 +411,9 @@ class GlobalSettings: ObservableObject {
     private static let readerCustomBackgroundModeKey = "yd_reader_custom_background_mode"
     private static let readerCustomBackgroundColorHexKey = "yd_reader_custom_background_color_hex"
     private static let readerCustomBackgroundImageFileNameKey = "yd_reader_custom_background_image_file_name"
+    private static let launchImageEnabledKey = "yd_launch_image_enabled"
+    private static let launchImageLightFileNameKey = "yd_launch_image_light_file_name"
+    private static let launchImageDarkFileNameKey = "yd_launch_image_dark_file_name"
     private static let rootTabVisibleIDsKey = "yd_root_tab_visible_ids"
     private static let rootTabHidesLabelsKey = "yd_root_tab_hides_labels"
     private static let rootTabIconSizeKey = "yd_root_tab_icon_size"
@@ -679,11 +683,43 @@ class GlobalSettings: ObservableObject {
     @Published var appearanceBindReaderTheme: Bool {
         didSet { UserDefaults.standard.set(appearanceBindReaderTheme, forKey: Self.appearanceBindReaderThemeKey) }
     }
+
+    // MARK: - Launch Image (App Splash)
+
+    /// Master switch for the custom launch splash. Defaults off; gated on Pro at
+    /// the UI entry point and again when the overlay decides whether to present.
+    @Published var launchImageEnabled: Bool {
+        didSet { UserDefaults.standard.set(launchImageEnabled, forKey: Self.launchImageEnabledKey) }
+    }
+    @Published var launchImageLightFileName: String? {
+        didSet {
+            if let launchImageLightFileName, !launchImageLightFileName.isEmpty {
+                UserDefaults.standard.set(launchImageLightFileName, forKey: Self.launchImageLightFileNameKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.launchImageLightFileNameKey)
+            }
+        }
+    }
+    @Published var launchImageDarkFileName: String? {
+        didSet {
+            if let launchImageDarkFileName, !launchImageDarkFileName.isEmpty {
+                UserDefaults.standard.set(launchImageDarkFileName, forKey: Self.launchImageDarkFileNameKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.launchImageDarkFileNameKey)
+            }
+        }
+    }
     @Published var appearanceReaderInterface: AppearanceReaderInterface {
         didSet { UserDefaults.standard.set(appearanceReaderInterface.rawValue, forKey: Self.appearanceReaderInterfaceKey) }
     }
     @Published var customAppearanceThemes: [AppearanceCustomTheme] {
         didSet { Self.saveCustomAppearanceThemes(customAppearanceThemes) }
+    }
+    /// Live per-scope page backgrounds (keyed by `AppearancePageBackgroundScope`
+    /// raw value). This is what tabs render; saved themes only feed it through
+    /// 保存為新主題 / theme selection / 導入主題.
+    @Published var appearancePageBackgrounds: [String: AppearancePageBackgroundConfig] {
+        didSet { Self.savePageBackgrounds(appearancePageBackgrounds) }
     }
 
     // MARK: - Root Tab Customization
@@ -1035,12 +1071,16 @@ class GlobalSettings: ObservableObject {
         }
         readerCustomBackgroundImageFileName = UserDefaults.standard.string(forKey: Self.readerCustomBackgroundImageFileNameKey)
         customAppearanceThemes = Self.loadCustomAppearanceThemes()
+        appearancePageBackgrounds = Self.loadPageBackgrounds()
         appearanceThemeID = UserDefaults.standard.string(forKey: Self.appearanceThemeIDKey)
             ?? Self.defaultAppearanceThemeID
         appearanceDarkThemeID = UserDefaults.standard.string(forKey: Self.appearanceDarkThemeIDKey)
             ?? Self.defaultAppearanceThemeID
         appearanceUsesSeparateDarkTheme = UserDefaults.standard.bool(forKey: Self.appearanceSeparateDarkThemeKey)
         appearanceBindReaderTheme = UserDefaults.standard.bool(forKey: Self.appearanceBindReaderThemeKey)
+        launchImageEnabled = UserDefaults.standard.bool(forKey: Self.launchImageEnabledKey)
+        launchImageLightFileName = UserDefaults.standard.string(forKey: Self.launchImageLightFileNameKey)
+        launchImageDarkFileName = UserDefaults.standard.string(forKey: Self.launchImageDarkFileNameKey)
         let rawReaderInterface = UserDefaults.standard.string(forKey: Self.appearanceReaderInterfaceKey) ?? ""
         appearanceReaderInterface = AppearanceReaderInterface(rawValue: rawReaderInterface) ?? .classic
         rootTabVisibleIDs = Self.sanitizedRootTabVisibleIDs(
@@ -1228,6 +1268,7 @@ class GlobalSettings: ObservableObject {
         } else {
             appearanceThemeID = preset.id
         }
+        applyPageBackgroundsFromCustomTheme(id: preset.id)
     }
 
     @discardableResult
@@ -1247,6 +1288,9 @@ class GlobalSettings: ObservableObject {
     /// Deletes a custom theme. Any selection (light or dark slot) pointing at
     /// the deleted theme falls back to the classic default.
     func deleteCustomAppearanceTheme(id: String) {
+        if let payload = customAppearanceThemes.first(where: { $0.id == id })?.pageBackgrounds {
+            deletePageBackgroundFiles(in: payload)
+        }
         customAppearanceThemes.removeAll { $0.id == id }
         if appearanceThemeID == id {
             appearanceThemeID = Self.defaultAppearanceThemeID
@@ -1272,6 +1316,266 @@ class GlobalSettings: ObservableObject {
         if let data = try? JSONEncoder().encode(themes) {
             UserDefaults.standard.set(data, forKey: customAppearanceThemesKey)
         }
+    }
+
+    // MARK: - Page Backgrounds (app-wide)
+
+    private static func loadPageBackgrounds() -> [String: AppearancePageBackgroundConfig] {
+        guard let data = UserDefaults.standard.data(forKey: appearancePageBackgroundsKey),
+              let decoded = try? JSONDecoder().decode(
+                  [String: AppearancePageBackgroundConfig].self,
+                  from: data
+              ) else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private static func savePageBackgrounds(_ value: [String: AppearancePageBackgroundConfig]) {
+        if value.isEmpty {
+            UserDefaults.standard.removeObject(forKey: appearancePageBackgroundsKey)
+            return
+        }
+        if let data = try? JSONEncoder().encode(value) {
+            UserDefaults.standard.set(data, forKey: appearancePageBackgroundsKey)
+        }
+    }
+
+    func pageBackgroundConfig(for scope: AppearancePageBackgroundScope) -> AppearancePageBackgroundConfig {
+        appearancePageBackgrounds[scope.rawValue] ?? AppearancePageBackgroundConfig()
+    }
+
+    func updatePageBackgroundConfig(
+        _ config: AppearancePageBackgroundConfig,
+        for scope: AppearancePageBackgroundScope
+    ) {
+        if config.isEmpty {
+            appearancePageBackgrounds.removeValue(forKey: scope.rawValue)
+        } else {
+            appearancePageBackgrounds[scope.rawValue] = config
+        }
+    }
+
+    /// The layer to draw behind `scope` in `colorScheme`: the scope's own config
+    /// when it paints anything for that appearance, otherwise the global one.
+    /// Nil keeps the stock system look.
+    func resolvedPageBackgroundSlice(
+        for scope: AppearancePageBackgroundScope,
+        colorScheme: ColorScheme
+    ) -> AppearancePageBackgroundSlice? {
+        if let own = appearancePageBackgrounds[scope.rawValue]?.slice(for: colorScheme) {
+            return own
+        }
+        guard scope != .global else { return nil }
+        return appearancePageBackgrounds[AppearancePageBackgroundScope.global.rawValue]?
+            .slice(for: colorScheme)
+    }
+
+    @discardableResult
+    func importPageBackgroundImage(
+        from url: URL,
+        scope: AppearancePageBackgroundScope,
+        appearance colorScheme: ColorScheme
+    ) throws -> String {
+        let fileName = try AppearancePageBackgroundImageStore.shared.importImage(fileURL: url)
+        replacePageBackgroundImage(fileName: fileName, scope: scope, colorScheme: colorScheme)
+        return fileName
+    }
+
+    @discardableResult
+    func importPageBackgroundImage(
+        data: Data,
+        scope: AppearancePageBackgroundScope,
+        appearance colorScheme: ColorScheme
+    ) throws -> String {
+        let fileName = try AppearancePageBackgroundImageStore.shared.importImage(data: data)
+        replacePageBackgroundImage(fileName: fileName, scope: scope, colorScheme: colorScheme)
+        return fileName
+    }
+
+    func clearPageBackgroundImage(
+        scope: AppearancePageBackgroundScope,
+        appearance colorScheme: ColorScheme
+    ) {
+        replacePageBackgroundImage(fileName: nil, scope: scope, colorScheme: colorScheme)
+    }
+
+    private func replacePageBackgroundImage(
+        fileName: String?,
+        scope: AppearancePageBackgroundScope,
+        colorScheme: ColorScheme
+    ) {
+        var config = pageBackgroundConfig(for: scope)
+        if let old = config.imageFileName(for: colorScheme) {
+            AppearancePageBackgroundImageStore.shared.delete(fileName: old)
+        }
+        config.setImageFileName(fileName, for: colorScheme)
+        updatePageBackgroundConfig(config, for: scope)
+    }
+
+    /// Clears every scope's page background and deletes the imported images.
+    func resetAllPageBackgrounds() {
+        deletePageBackgroundFiles(in: appearancePageBackgrounds)
+        appearancePageBackgrounds = [:]
+    }
+
+    private func deletePageBackgroundFiles(in configs: [String: AppearancePageBackgroundConfig]) {
+        for config in configs.values {
+            for name in config.imageFileNames {
+                AppearancePageBackgroundImageStore.shared.delete(fileName: name)
+            }
+        }
+    }
+
+    /// Deep-copies a page-background dict, duplicating the image files, so the
+    /// copy's owner can be deleted independently of the source.
+    private func duplicatedPageBackgrounds(
+        _ source: [String: AppearancePageBackgroundConfig]
+    ) -> [String: AppearancePageBackgroundConfig]? {
+        guard !source.isEmpty else { return nil }
+        var result: [String: AppearancePageBackgroundConfig] = [:]
+        for (key, config) in source {
+            var copy = config
+            copy.lightImageFileName = config.lightImageFileName.flatMap {
+                AppearancePageBackgroundImageStore.shared.duplicate(fileName: $0)
+            }
+            copy.darkImageFileName = config.darkImageFileName.flatMap {
+                AppearancePageBackgroundImageStore.shared.duplicate(fileName: $0)
+            }
+            if !copy.isEmpty {
+                result[key] = copy
+            }
+        }
+        return result.isEmpty ? nil : result
+    }
+
+    /// Snapshots the current theme colors plus the live page backgrounds into a
+    /// new custom theme and selects it. Image files are duplicated so the theme
+    /// owns its copies.
+    @discardableResult
+    func saveCurrentAppearanceAsTheme(
+        named name: String,
+        basedOn preset: AppearanceThemePreset
+    ) -> AppearanceCustomTheme {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var custom = preset.customCopy(
+            name: uniqueCustomThemeName(base: trimmed.isEmpty ? localized("自訂主題") : trimmed)
+        )
+        custom.pageBackgrounds = duplicatedPageBackgrounds(appearancePageBackgrounds)
+        customAppearanceThemes.append(custom)
+        appearanceThemeID = custom.id
+        return custom
+    }
+
+    /// Selecting a saved theme that carries a page-background snapshot replaces
+    /// the live page backgrounds with it (the snapshot itself stays untouched).
+    private func applyPageBackgroundsFromCustomTheme(id: String) {
+        guard let theme = customAppearanceThemes.first(where: { $0.id == id }),
+              let payload = theme.pageBackgrounds,
+              !payload.isEmpty else {
+            return
+        }
+        deletePageBackgroundFiles(in: appearancePageBackgrounds)
+        appearancePageBackgrounds = duplicatedPageBackgrounds(payload) ?? [:]
+    }
+
+    private func uniqueCustomThemeName(base: String) -> String {
+        let existing = Set(customAppearanceThemes.map(\.name))
+        guard existing.contains(base) else { return base }
+        var index = 2
+        while existing.contains("\(base) \(index)") { index += 1 }
+        return "\(base) \(index)"
+    }
+
+    // MARK: - Theme export / import
+
+    /// Packages `preset`'s colors and the live page backgrounds (images embedded
+    /// as base64) into a shareable single-file theme.
+    func appearanceThemeExportFile(for preset: AppearanceThemePreset) -> AppearanceThemeExportFile {
+        var payloads: [String: AppearanceThemeExportFile.PageBackgroundPayload] = [:]
+        for (key, config) in appearancePageBackgrounds {
+            payloads[key] = AppearanceThemeExportFile.PageBackgroundPayload(
+                lightPrimaryHex: config.lightPrimaryHex,
+                lightSecondaryHex: config.lightSecondaryHex,
+                darkPrimaryHex: config.darkPrimaryHex,
+                darkSecondaryHex: config.darkSecondaryHex,
+                lightImage: exportImagePayload(config.lightImageFileName),
+                darkImage: exportImagePayload(config.darkImageFileName)
+            )
+        }
+        return AppearanceThemeExportFile(
+            format: AppearanceThemeExportFile.formatIdentifier,
+            version: 1,
+            name: preset.localizedName,
+            backgroundHex: preset.background.rgbHex ?? 0xF4F5F7,
+            textHex: preset.text.rgbHex ?? 0x333333,
+            barHex: preset.bar.rgbHex ?? 0xFFFFFF,
+            accentHex: preset.accent.rgbHex ?? 0x007AFF,
+            dialogueHex: preset.dialogue.rgbHex ?? 0xD8E9FB,
+            pageBackgrounds: payloads.isEmpty ? nil : payloads
+        )
+    }
+
+    private func exportImagePayload(_ fileName: String?) -> AppearanceThemeExportFile.ImagePayload? {
+        guard let fileName, !fileName.isEmpty,
+              let data = AppearancePageBackgroundImageStore.shared.fileData(fileName: fileName) else {
+            return nil
+        }
+        return AppearanceThemeExportFile.ImagePayload(
+            fileExtension: (fileName as NSString).pathExtension,
+            base64: data.base64EncodedString()
+        )
+    }
+
+    /// Imports a theme file: creates a custom theme (with its page-background
+    /// snapshot), selects it, and applies the snapshot to the live settings.
+    @discardableResult
+    func importAppearanceTheme(from data: Data) throws -> AppearanceCustomTheme {
+        guard let file = try? JSONDecoder().decode(AppearanceThemeExportFile.self, from: data),
+              file.format == AppearanceThemeExportFile.formatIdentifier else {
+            throw AppearanceThemeImportError.invalidFile
+        }
+
+        var payloadConfigs: [String: AppearancePageBackgroundConfig] = [:]
+        for (key, payload) in file.pageBackgrounds ?? [:] {
+            guard AppearancePageBackgroundScope(rawValue: key) != nil else { continue }
+            var config = AppearancePageBackgroundConfig(
+                lightPrimaryHex: payload.lightPrimaryHex,
+                lightSecondaryHex: payload.lightSecondaryHex,
+                darkPrimaryHex: payload.darkPrimaryHex,
+                darkSecondaryHex: payload.darkSecondaryHex
+            )
+            config.lightImageFileName = writeImportedThemeImage(payload.lightImage)
+            config.darkImageFileName = writeImportedThemeImage(payload.darkImage)
+            if !config.isEmpty {
+                payloadConfigs[key] = config
+            }
+        }
+
+        let custom = AppearanceCustomTheme(
+            name: uniqueCustomThemeName(
+                base: file.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? localized("自訂主題")
+                    : file.name
+            ),
+            backgroundHex: file.backgroundHex,
+            textHex: file.textHex,
+            barHex: file.barHex,
+            accentHex: file.accentHex,
+            dialogueHex: file.dialogueHex,
+            pageBackgrounds: payloadConfigs.isEmpty ? nil : payloadConfigs
+        )
+        customAppearanceThemes.append(custom)
+        appearanceThemeID = custom.id
+        applyPageBackgroundsFromCustomTheme(id: custom.id)
+        return custom
+    }
+
+    private func writeImportedThemeImage(
+        _ payload: AppearanceThemeExportFile.ImagePayload?
+    ) -> String? {
+        guard let payload, let data = Data(base64Encoded: payload.base64) else { return nil }
+        return try? AppearancePageBackgroundImageStore.shared.importImage(data: data)
     }
 
     var readerCustomBackgroundImageURL: URL? {
@@ -1352,6 +1656,59 @@ class GlobalSettings: ObservableObject {
         readerCustomBackgroundMode = .none
         AppearanceThemePreset.activeReaderTheme = appearanceBindReaderTheme ? AppearanceThemePreset.activeReaderTheme : nil
         sendReaderAppearanceRefresh()
+    }
+
+    // MARK: - Launch Image import / resolution
+
+    @discardableResult
+    func importLaunchImage(from url: URL, for scheme: LaunchImageScheme) throws -> String {
+        let fileName = try LaunchImageStorageManager.shared.importImage(fileURL: url, scheme: scheme)
+        switch scheme {
+        case .light:
+            removeLaunchImageFile(launchImageLightFileName)
+            launchImageLightFileName = fileName
+        case .dark:
+            removeLaunchImageFile(launchImageDarkFileName)
+            launchImageDarkFileName = fileName
+        }
+        return fileName
+    }
+
+    func clearLaunchImage(for scheme: LaunchImageScheme) {
+        switch scheme {
+        case .light:
+            removeLaunchImageFile(launchImageLightFileName)
+            launchImageLightFileName = nil
+        case .dark:
+            removeLaunchImageFile(launchImageDarkFileName)
+            launchImageDarkFileName = nil
+        }
+    }
+
+    func launchImageFileName(for scheme: LaunchImageScheme) -> String? {
+        let name = scheme == .dark ? launchImageDarkFileName : launchImageLightFileName
+        return (name?.isEmpty == false) ? name : nil
+    }
+
+    /// On-disk URL of the splash image to show for `colorScheme`, or nil when the
+    /// matching (and fallback) slot is empty. Falls back to the other appearance's
+    /// image so a single imported image still shows in both modes.
+    func launchImageURL(for colorScheme: ColorScheme) -> URL? {
+        let primary = colorScheme == .dark ? launchImageDarkFileName : launchImageLightFileName
+        let secondary = colorScheme == .dark ? launchImageLightFileName : launchImageDarkFileName
+        let name = (primary?.isEmpty == false ? primary : nil)
+            ?? (secondary?.isEmpty == false ? secondary : nil)
+        guard let name,
+              let url = try? LaunchImageStorageManager.shared.fileURL(fileName: name),
+              FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        return url
+    }
+
+    private func removeLaunchImageFile(_ fileName: String?) {
+        guard let fileName, !fileName.isEmpty else { return }
+        LaunchImageStorageManager.shared.delete(fileName: fileName)
     }
 
     private func sendReaderAppearanceRefresh() {
@@ -1573,5 +1930,82 @@ final class ReaderCustomBackgroundStorageManager {
             create: true
         )
         return base.appendingPathComponent("ReaderBackgrounds", isDirectory: true)
+    }
+}
+
+// MARK: - Launch Image storage
+
+enum LaunchImageScheme: String, CaseIterable, Identifiable {
+    case light
+    case dark
+    var id: String { rawValue }
+}
+
+enum LaunchImageStorageError: Error {
+    case unsupportedImageFile
+    case cannotReadImage
+
+    var messageKey: String {
+        switch self {
+        case .unsupportedImageFile:
+            return "只支援 WebP、JPG、JPEG 或 PNG 圖片。"
+        case .cannotReadImage:
+            return "無法讀取圖片。"
+        }
+    }
+}
+
+/// Copies imported launch images into Application Support/LaunchImages and hands
+/// back a stable file name persisted in `GlobalSettings`.
+final class LaunchImageStorageManager {
+    static let shared = LaunchImageStorageManager()
+
+    private let fileManager: FileManager
+    private let allowedExtensions: Set<String> = ["webp", "jpg", "jpeg", "png"]
+
+    private init(fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+    }
+
+    func importImage(fileURL: URL, scheme: LaunchImageScheme) throws -> String {
+        let sourceExtension = fileURL.pathExtension.lowercased()
+        guard allowedExtensions.contains(sourceExtension) else {
+            throw LaunchImageStorageError.unsupportedImageFile
+        }
+        guard let image = UIImage(contentsOfFile: fileURL.path),
+              image.size.width > 0,
+              image.size.height > 0 else {
+            throw LaunchImageStorageError.cannotReadImage
+        }
+
+        let directory = try imagesDirectoryURL()
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let fileName = "launch-\(scheme.rawValue)-\(UUID().uuidString).\(sourceExtension)"
+        let destination = directory.appendingPathComponent(fileName)
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.copyItem(at: fileURL, to: destination)
+        return fileName
+    }
+
+    func fileURL(fileName: String) throws -> URL {
+        try imagesDirectoryURL().appendingPathComponent(fileName)
+    }
+
+    func delete(fileName: String) {
+        guard let url = try? fileURL(fileName: fileName) else { return }
+        try? fileManager.removeItem(at: url)
+    }
+
+    private func imagesDirectoryURL() throws -> URL {
+        let base = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        return base.appendingPathComponent("LaunchImages", isDirectory: true)
     }
 }
