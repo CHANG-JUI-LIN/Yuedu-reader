@@ -123,8 +123,8 @@ extension ReaderView {
             onOpenChangeSource: { showChangeSourceSheet = true },
             onDownloadAction: { handleDownloadAction() },
             onOpenTTS: { openPlaybackPanel() },
-            onOpenTOC: { showTOC = true },
-            onOpenBookmarks: { showBookmarks = true },
+            onOpenTOC: { readerMenuTab = .toc; showTOC = true },
+            onOpenBookmarks: { readerMenuTab = .bookmark; showTOC = true },
             onOpenSettings: { showQuickThemePanel = true }
         )
     }
@@ -136,7 +136,7 @@ extension ReaderView {
             applyProgress: { applyChapterSliderProgress($0) },
             progressDescription: { chapterTitle(forProgress: $0) },
             secondaryActions: appleBooksSecondaryActions,
-            onOpenTOC: { showTOC = true },
+            onOpenTOC: { readerMenuTab = .toc; showTOC = true },
             onOpenSearch: { showReaderSearch = true },
             onOpenSettings: { showQuickThemePanel = true }
         )

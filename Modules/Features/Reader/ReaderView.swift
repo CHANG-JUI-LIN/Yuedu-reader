@@ -58,7 +58,7 @@ struct ReaderView: View {
     @State var showQuickThemePanel = false
     @State var showReaderSearch = false
     @State var showTOC = false
-    @State var showBookmarks = false
+    @State var readerMenuTab: ReaderMenuView.Tab = .toc
     @State var showTouchZoneEditor = false
 
     // Online chapter lazy loading
@@ -1655,22 +1655,15 @@ struct ReaderView: View {
                     currentIndex: currentChapterIndex,
                     currentChapterID: currentTOCChapterID,
                     onSelectChapter: { jumpToTOCEntry($0) },
-                    isPresented: $showTOC
-                )
-            }
-        }
-        .sheet(isPresented: $showBookmarks) {
-            AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
-                ReaderBookmarkListView(
-                    bookTitle: book?.title ?? "",
                     bookmarks: book?.bookmarks ?? [],
-                    pageNumber: { inChapterPageNumber(for: $0) },
-                    onSelect: { bm in
-                        showBookmarks = false
+                    bookmarkPageNumber: { inChapterPageNumber(for: $0) },
+                    onSelectBookmark: { bm in
+                        showTOC = false
                         jumpToBookmark(bm)
                     },
-                    onDelete: { deleteBookmarkEntry($0) },
-                    isPresented: $showBookmarks
+                    onDeleteBookmark: { deleteBookmarkEntry($0) },
+                    isPresented: $showTOC,
+                    selectedTab: $readerMenuTab
                 )
             }
         }
@@ -1794,6 +1787,7 @@ struct ReaderView: View {
                 excerpt: currentPageExcerpt
             )
         case .tableOfContents:
+            readerMenuTab = .toc
             showTOC = true
         }
     }

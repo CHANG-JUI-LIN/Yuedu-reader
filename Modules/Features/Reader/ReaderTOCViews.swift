@@ -195,6 +195,13 @@ private struct VerticalTOCView: View {
 }
 
 struct ReaderMenuView: View {
+    enum Tab: Hashable {
+        case toc
+        case bookmark
+        case highlight
+    }
+
+    // 目錄
     let chapters: [BookChapter]
     let coverImagePath: String?
     let bookTitle: String
@@ -207,7 +214,34 @@ struct ReaderMenuView: View {
     let currentChapterID: UUID?
     let onSelectChapter: (BookChapter) -> Void
 
+    // 書籤／重點
+    let bookmarks: [Bookmark]
+    /// 標註在所屬章節內的頁碼（1-based）；無法解析時回傳 nil。
+    let bookmarkPageNumber: (Bookmark) -> Int?
+    let onSelectBookmark: (Bookmark) -> Void
+    let onDeleteBookmark: (Bookmark) -> Void
+
     @Binding var isPresented: Bool
+    @Binding var selectedTab: Tab
+
+    @State private var selection = Set<UUID>()
+    @State private var editMode: EditMode = .inactive
+
+    private var bookmarkItems: [Bookmark] {
+        bookmarks.filter { $0.kind == .bookmark }
+    }
+
+    private var highlightItems: [Bookmark] {
+        bookmarks.filter { $0.kind == .underline || $0.kind == .highlight }
+    }
+
+    private var currentItems: [Bookmark] {
+        selectedTab == .bookmark ? bookmarkItems : highlightItems
+    }
+
+    private var isEditing: Bool {
+        editMode.isEditing
+    }
 
     var body: some View {
         NavigationStack {
@@ -220,25 +254,50 @@ struct ReaderMenuView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                 }
 
-                if tocLayoutMode == .verticalRTLColumns {
-                    VerticalTOCView(
-                        chapters: chapters,
-                        currentIndex: currentIndex,
-                        currentChapterID: currentChapterID,
-                        pageOffsets: pageOffsets,
-                        showsPageNumbers: showsPageNumbers,
-                        onSelectChapter: { chapter in
-                            onSelectChapter(chapter)
-                            isPresented = false
-                        }
-                    )
-                } else {
-                    tocContent
+                Picker("", selection: $selectedTab) {
+                    Text(localized("目錄")).tag(Tab.toc)
+                    Text(localized("書籤")).tag(Tab.bookmark)
+                    Text(localized("重點")).tag(Tab.highlight)
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.vertical, DSSpacing.sm)
+
+                Group {
+                    switch selectedTab {
+                    case .toc:
+                        tocTab
+                    case .bookmark:
+                        BookmarkListSection(
+                            isBookmark: true,
+                            items: bookmarkItems,
+                            pageNumber: bookmarkPageNumber,
+                            onSelect: onSelectBookmark,
+                            onDelete: onDeleteBookmark,
+                            selection: $selection
+                        )
+                    case .highlight:
+                        BookmarkListSection(
+                            isBookmark: false,
+                            items: highlightItems,
+                            pageNumber: bookmarkPageNumber,
+                            onSelect: onSelectBookmark,
+                            onDelete: onDeleteBookmark,
+                            selection: $selection
+                        )
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .navigationTitle(bookTitle)
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if selectedTab != .toc {
+                        editToggleButton
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         isPresented = false
@@ -248,9 +307,86 @@ struct ReaderMenuView: View {
                     .accessibilityLabel(localized("完成"))
                 }
             }
+            .toolbar {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    if selectedTab != .toc, isEditing {
+                        Text(selectedCountText)
+                            .font(DSFont.subheadline)
+                            .foregroundStyle(DSColor.textSecondary)
+
+                        Spacer()
+
+                        Button {
+                            deleteSelected()
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .disabled(selection.isEmpty)
+                        .accessibilityLabel(localized("刪除"))
+                    }
+                }
+            }
             .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
             .pageBackgroundToolbar(for: .settings)
+            .environment(\.editMode, $editMode)
+            .onChange(of: selectedTab) {
+                selection.removeAll()
+                editMode = .inactive
+            }
+            .onChange(of: editMode) {
+                if !editMode.isEditing {
+                    selection.removeAll()
+                }
+            }
         }
+    }
+
+    // MARK: - 目錄分頁
+
+    @ViewBuilder
+    private var tocTab: some View {
+        VStack(spacing: 0) {
+            if tocLayoutMode == .verticalRTLColumns {
+                VerticalTOCView(
+                    chapters: chapters,
+                    currentIndex: currentIndex,
+                    currentChapterID: currentChapterID,
+                    pageOffsets: pageOffsets,
+                    showsPageNumbers: showsPageNumbers,
+                    onSelectChapter: { chapter in
+                        onSelectChapter(chapter)
+                        isPresented = false
+                    }
+                )
+            } else {
+                tocContent
+            }
+        }
+    }
+
+    // MARK: - 書籤／重點編輯
+
+    private var editToggleButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                editMode = editMode.isEditing ? .inactive : .active
+            }
+        } label: {
+            Image(systemName: isEditing ? "xmark" : "checklist")
+        }
+        .accessibilityLabel(localized(isEditing ? "完成" : "編輯"))
+    }
+
+    private var selectedCountText: String {
+        let noun = selectedTab == .bookmark ? localized("書籤") : localized("重點")
+        return String(format: localized("已選取 %1$d 個%2$@"), selection.count, noun)
+    }
+
+    private func deleteSelected() {
+        currentItems
+            .filter { selection.contains($0.id) }
+            .forEach(onDeleteBookmark)
+        selection.removeAll()
     }
 
     private func pageNumber(for chapter: BookChapter) -> Int {
@@ -300,6 +436,7 @@ struct ReaderMenuView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden, edges: chapter.id == chapters.first?.id ? .top : [])
                 .listRowSeparator(.visible, edges: .bottom)
@@ -307,6 +444,7 @@ struct ReaderMenuView: View {
                 .id(chapter.index)
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .contentMargins(.top, 0, for: .scrollContent)
             .onAppear {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -319,4 +457,44 @@ struct ReaderMenuView: View {
             }
         }
     }
+}
+
+#Preview {
+    @Previewable @State var tab: ReaderMenuView.Tab = .toc
+    ReaderMenuView(
+        chapters: [
+            BookChapter(index: 0, title: "第一章 序幕", content: ""),
+            BookChapter(index: 1, title: "第二章 啟程", content: ""),
+            BookChapter(index: 2, title: "第三章 抉擇", content: ""),
+        ],
+        coverImagePath: nil,
+        bookTitle: "範例書名",
+        currentPage: 1,
+        totalPages: 240,
+        tocLayoutMode: .horizontalList,
+        pageOffsets: [:],
+        showsPageNumbers: true,
+        currentIndex: 0,
+        currentChapterID: nil,
+        onSelectChapter: { _ in },
+        bookmarks: [
+            Bookmark(
+                chapterIndex: 0,
+                chapterTitle: "第一章 序幕",
+                position: CoreTextReadingPosition(spineIndex: 0, charOffset: 0)
+            ),
+            Bookmark(
+                chapterIndex: 1,
+                chapterTitle: "第二章 啟程",
+                position: CoreTextReadingPosition(spineIndex: 1, charOffset: 420),
+                kind: .highlight,
+                excerpt: "值得記住的一段話"
+            ),
+        ],
+        bookmarkPageNumber: { _ in 18 },
+        onSelectBookmark: { _ in },
+        onDeleteBookmark: { _ in },
+        isPresented: .constant(true),
+        selectedTab: $tab
+    )
 }

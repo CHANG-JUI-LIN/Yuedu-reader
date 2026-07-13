@@ -125,46 +125,14 @@ struct ReaderBookmarkListView: View {
 
     // MARK: - Content
 
-    @ViewBuilder
     private var content: some View {
-        switch segment {
-        case .bookmark:
-            if bookmarkItems.isEmpty {
-                ContentUnavailableView {
-                    Label(localized("沒有書籤"), systemImage: "bookmark")
-                } description: {
-                    Text(localized("點一下你要加入書籤的頁面，點一下選單圖像，然後點一下書籤按鈕。"))
-                }
-            } else {
-                table(items: bookmarkItems)
-            }
-        case .highlight:
-            if highlightItems.isEmpty {
-                ContentUnavailableView {
-                    Label(localized("沒有重點"), systemImage: "highlighter")
-                } description: {
-                    Text(localized("在閱讀時選取文字，加入底線或螢光筆即可在此查看。"))
-                }
-            } else {
-                table(items: highlightItems)
-            }
-        }
-    }
-
-    private func table(items: [Bookmark]) -> some View {
-        BookmarkSelectionList(
-            items: items,
-            selection: $selection,
-            primaryText: { bm in
-                segment == .bookmark
-                    ? bm.chapterTitle
-                    : (bm.excerpt.isEmpty ? bm.chapterTitle : bm.excerpt)
-            },
-            primaryLines: segment == .bookmark ? 1 : 2,
-            dateText: { Self.relativeDate($0.date) },
-            pageText: { pageNumber($0).map { String($0) } },
+        BookmarkListSection(
+            isBookmark: segment == .bookmark,
+            items: currentItems,
+            pageNumber: pageNumber,
             onSelect: onSelect,
-            onDelete: onDelete
+            onDelete: onDelete,
+            selection: $selection
         )
     }
 
@@ -180,6 +148,52 @@ struct ReaderBookmarkListView: View {
             .filter { selection.contains($0.id) }
             .forEach(onDelete)
         selection.removeAll()
+    }
+}
+
+/// 單一種類（書籤 或 重點）的清單內容 ＋ 空狀態，供閱讀器目錄面板的分頁與書籤面板共用。
+/// 不含外框（`NavigationStack`）、分頁切換與工具列——那些由容器負責。
+struct BookmarkListSection: View {
+    let isBookmark: Bool
+    let items: [Bookmark]
+    /// 標註在所屬章節內的頁碼（1-based）；無法解析時回傳 nil。
+    let pageNumber: (Bookmark) -> Int?
+    let onSelect: (Bookmark) -> Void
+    let onDelete: (Bookmark) -> Void
+
+    @Binding var selection: Set<UUID>
+
+    var body: some View {
+        if items.isEmpty {
+            if isBookmark {
+                ContentUnavailableView {
+                    Label(localized("沒有書籤"), systemImage: "bookmark")
+                } description: {
+                    Text(localized("點一下你要加入書籤的頁面，點一下選單圖像，然後點一下書籤按鈕。"))
+                }
+            } else {
+                ContentUnavailableView {
+                    Label(localized("沒有重點"), systemImage: "highlighter")
+                } description: {
+                    Text(localized("在閱讀時選取文字，加入底線或螢光筆即可在此查看。"))
+                }
+            }
+        } else {
+            BookmarkSelectionList(
+                items: items,
+                selection: $selection,
+                primaryText: { bm in
+                    isBookmark
+                        ? bm.chapterTitle
+                        : (bm.excerpt.isEmpty ? bm.chapterTitle : bm.excerpt)
+                },
+                primaryLines: isBookmark ? 1 : 2,
+                dateText: { Self.relativeDate($0.date) },
+                pageText: { pageNumber($0).map { String($0) } },
+                onSelect: onSelect,
+                onDelete: onDelete
+            )
+        }
     }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {

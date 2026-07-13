@@ -29,8 +29,10 @@ struct BookmarkSelectionList: View {
                     Label(localized("刪除"), systemImage: "trash")
                 }
             }
+            .listRowBackground(Color.clear)
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 }
 
