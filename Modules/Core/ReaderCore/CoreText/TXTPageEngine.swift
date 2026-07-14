@@ -109,7 +109,8 @@ final class TXTPageEngine: PageRenderingProvider {
                 textColor: textColor,
                 backgroundColor: backgroundColor,
                 readerBackgroundImage: readerBackgroundImage,
-                dialogueColor: renderSettings.dialogueHighlightColor
+                dialogueColor: renderSettings.dialogueHighlightColor,
+                dialogueBoxColor: renderSettings.dialogueBoxColor
             )
         }
         chapterSnapshots.removeAll()
@@ -298,7 +299,8 @@ final class TXTPageEngine: PageRenderingProvider {
             textColor: themeTextColor,
             backgroundColor: themeBackgroundColor,
             readerBackgroundImage: currentReaderBackgroundImage(),
-            dialogueColor: renderSettings.dialogueHighlightColor
+            dialogueColor: renderSettings.dialogueHighlightColor,
+            dialogueBoxColor: renderSettings.dialogueBoxColor
         )
         if let l = layouts[spineIndex], !l.pageRanges.isEmpty {
             chapterSnapshots[spineIndex] = renderImage(layout: l, pageIndex: 0)

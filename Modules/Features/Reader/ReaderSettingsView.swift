@@ -528,6 +528,24 @@ struct ReaderSettingsView: View {
                     selection: readerDialogueHighlightColorBinding,
                     supportsOpacity: false
                 )
+
+                Toggle(isOn: dialogueBoxBinding) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(localized("對話底色框"))
+                            .font(DSFont.body)
+                        Text(localized("為引號內的對話加上底色方塊。"))
+                            .font(DSFont.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if settings.readerDialogueBoxEnabled {
+                    ColorPicker(
+                        localized("底色框顏色"),
+                        selection: readerDialogueBoxColorBinding,
+                        supportsOpacity: false
+                    )
+                }
             }
         }
     }
@@ -686,6 +704,27 @@ struct ReaderSettingsView: View {
             set: {
                 settings.readerDialogueHighlightColorHex =
                     UIColor($0).rgbHex ?? GlobalSettings.defaultReaderDialogueHighlightColorHex
+            }
+        )
+    }
+
+    private var dialogueBoxBinding: Binding<Bool> {
+        Binding(
+            get: { settings.readerDialogueBoxEnabled },
+            set: { enabled in
+                settings.readerDialogueBoxEnabled = enabled
+            }
+        )
+    }
+
+    private var readerDialogueBoxColorBinding: Binding<Color> {
+        Binding(
+            get: {
+                Color(uiColor: GlobalSettings.uiColor(rgbHex: settings.readerDialogueBoxColorHex))
+            },
+            set: {
+                settings.readerDialogueBoxColorHex =
+                    UIColor($0).rgbHex ?? GlobalSettings.defaultReaderDialogueBoxColorHex
             }
         )
     }

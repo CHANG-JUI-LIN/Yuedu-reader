@@ -674,7 +674,8 @@ _layouts[spineIndex] == nil else { return }
             textColor: themeTextColor,
             backgroundColor: themeBackgroundColor,
             readerBackgroundImage: currentReaderBackgroundImage(),
-            dialogueColor: renderSettings.dialogueHighlightColor
+            dialogueColor: renderSettings.dialogueHighlightColor,
+            dialogueBoxColor: renderSettings.dialogueBoxColor
         )
         AppLogger.render("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
         generateSnapshot(for: spineIndex)
@@ -803,7 +804,8 @@ _layouts.removeAll()
                 textColor: textColor,
                 backgroundColor: backgroundColor,
                 readerBackgroundImage: readerBackgroundImage,
-                dialogueColor: renderSettings.dialogueHighlightColor
+                dialogueColor: renderSettings.dialogueHighlightColor,
+                dialogueBoxColor: renderSettings.dialogueBoxColor
             )
         }
         chapterSnapshots.removeAllObjects()

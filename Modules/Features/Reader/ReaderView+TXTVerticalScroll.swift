@@ -135,6 +135,9 @@ extension ReaderView {
             readerBackgroundImageURL: activeReaderBackgroundImageURL,
             dialogueHighlightColor: GlobalSettings.shared.readerDialogueHighlightEnabled
                 ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueHighlightColorHex)
+                : nil,
+            dialogueBoxColor: (GlobalSettings.shared.readerDialogueHighlightEnabled && GlobalSettings.shared.readerDialogueBoxEnabled)
+                ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueBoxColorHex)
                 : nil
         )
     }

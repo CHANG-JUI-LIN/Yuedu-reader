@@ -31,9 +31,9 @@ struct ReaderOverlayLayoutTests {
                     displayFormat: ReaderOverlayDisplayFormat.allCases[
                         index % ReaderOverlayDisplayFormat.allCases.count
                     ],
-                    customText: kind == .customText ? "Fixture" : nil,
+                    customText: kind == .customText ? "Fixture" : "",
                     batteryVisual: kind == .battery ? .importedSVG : .system,
-                    svgAssetID: kind == .battery ? "fixture-battery" : nil,
+                    svgAssetID: kind == .battery ? fixtureUUID(500) : nil,
                     showsBatteryPercentage: index.isMultiple(of: 2)
                 )
             )
@@ -48,6 +48,17 @@ struct ReaderOverlayLayoutTests {
         let decoded = try JSONDecoder().decode(ReaderOverlayLayout.self, from: data)
 
         #expect(decoded == fixture)
+    }
+
+    @Test("configuration decoding supplies evolvable defaults")
+    func configurationDecodingSuppliesDefaults() throws {
+        let decoded = try JSONDecoder().decode(
+            ReaderOverlayComponentConfiguration.self,
+            from: Data("{}".utf8)
+        )
+
+        #expect(decoded.customText == "")
+        #expect(decoded.svgAssetID == nil)
     }
 
     @Test("normalized points clamp both axes")

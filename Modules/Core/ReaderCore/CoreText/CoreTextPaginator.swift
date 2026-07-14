@@ -157,13 +157,15 @@ final class CoreTextPaginator {
         func withUpdatedColors(
             textColor: UIColor,
             backgroundColor: UIColor,
-            dialogueColor: UIColor? = nil
+            dialogueColor: UIColor? = nil,
+            dialogueBoxColor: UIColor? = nil
         ) -> ChapterLayout {
             withUpdatedAppearance(
                 textColor: textColor,
                 backgroundColor: backgroundColor,
                 readerBackgroundImage: readerBackgroundImage,
-                dialogueColor: dialogueColor
+                dialogueColor: dialogueColor,
+                dialogueBoxColor: dialogueBoxColor
             )
         }
 
@@ -174,7 +176,8 @@ final class CoreTextPaginator {
             textColor: UIColor,
             backgroundColor: UIColor,
             readerBackgroundImage: UIImage?,
-            dialogueColor: UIColor? = nil
+            dialogueColor: UIColor? = nil,
+            dialogueBoxColor: UIColor? = nil
         ) -> ChapterLayout {
             guard attributedString.length > 0 else { return self }
             let updated = NSMutableAttributedString(attributedString: attributedString)
@@ -196,8 +199,8 @@ final class CoreTextPaginator {
             // Re-tint quoted dialogue after the global recolor. The theme-swap path recolors an
             // already-paginated layout without re-running the renderer, so the "對話文字高亮"
             // decoration (applied at build time) would otherwise be wiped by the reset above.
-            if let dialogueColor {
-                DialogueHighlighter.apply(color: dialogueColor, to: updated)
+            if dialogueColor != nil || dialogueBoxColor != nil {
+                DialogueHighlighter.apply(textColor: dialogueColor, boxColor: dialogueBoxColor, to: updated)
             }
 
             // ── Background color ──

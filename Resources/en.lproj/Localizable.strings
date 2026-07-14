@@ -1233,6 +1233,9 @@
 "底線顏色" = "Underline Color";
 "高亮顏色" = "Highlight Color";
 "使用自訂顏色標示引號內的對話文字。" = "Use a custom color for dialogue inside quotation marks.";
+"對話底色框" = "Dialogue Background Box";
+"為引號內的對話加上底色方塊。" = "Add a colored box behind dialogue inside quotation marks.";
+"底色框顏色" = "Box Color";
 
 // MARK: - Launch Image (App Splash)
 "啟動圖" = "Launch Screen";

@@ -1488,6 +1488,12 @@ struct ReaderView: View {
         .onChanged(of: settings.readerDialogueHighlightColorHex) { _ in
             forceReaderRenderableContentRefresh()
         }
+        .onChanged(of: settings.readerDialogueBoxEnabled) { _ in
+            forceReaderRenderableContentRefresh()
+        }
+        .onChanged(of: settings.readerDialogueBoxColorHex) { _ in
+            forceReaderRenderableContentRefresh()
+        }
         .onChanged(of: settings.customAppearanceThemes) { _ in
             syncActiveThemePreset()
         }

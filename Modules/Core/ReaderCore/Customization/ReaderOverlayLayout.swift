@@ -178,16 +178,16 @@ enum ReaderBatteryVisualKind: String, Codable, Equatable, Sendable {
 
 struct ReaderOverlayComponentConfiguration: Codable, Equatable, Sendable {
     var displayFormat: ReaderOverlayDisplayFormat
-    var customText: String?
+    var customText: String
     var batteryVisual: ReaderBatteryVisualKind
-    var svgAssetID: String?
+    var svgAssetID: UUID?
     var showsBatteryPercentage: Bool
 
     init(
         displayFormat: ReaderOverlayDisplayFormat = .automatic,
-        customText: String? = nil,
+        customText: String = "",
         batteryVisual: ReaderBatteryVisualKind = .system,
-        svgAssetID: String? = nil,
+        svgAssetID: UUID? = nil,
         showsBatteryPercentage: Bool = false
     ) {
         self.displayFormat = displayFormat
@@ -219,10 +219,10 @@ struct ReaderOverlayComponentConfiguration: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         displayFormat = try container.decodeIfPresent(ReaderOverlayDisplayFormat.self, forKey: .displayFormat)
             ?? .automatic
-        customText = try container.decodeIfPresent(String.self, forKey: .customText)
+        customText = try container.decodeIfPresent(String.self, forKey: .customText) ?? ""
         batteryVisual = try container.decodeIfPresent(ReaderBatteryVisualKind.self, forKey: .batteryVisual)
             ?? .system
-        svgAssetID = try container.decodeIfPresent(String.self, forKey: .svgAssetID)
+        svgAssetID = try container.decodeIfPresent(UUID.self, forKey: .svgAssetID)
         showsBatteryPercentage = try container.decodeIfPresent(Bool.self, forKey: .showsBatteryPercentage)
             ?? false
     }
