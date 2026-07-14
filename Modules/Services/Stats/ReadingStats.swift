@@ -42,16 +42,15 @@ struct ReadingStatsSessionTracker {
         latestCharacterOffset = offset
     }
 
+    func currentMetrics(at date: Date = Date()) -> (elapsed: TimeInterval, charactersRead: Int) {
+        let rawElapsed = date.timeIntervalSince(startDate)
+        let elapsed = rawElapsed.isFinite ? max(0, rawElapsed) : 0
+        return (elapsed, currentCharactersRead)
+    }
+
     func finish(at endDate: Date = Date()) -> ReadingSession? {
         let duration = endDate.timeIntervalSince(startDate)
         guard duration > 0 else { return nil }
-
-        let charactersRead: Int
-        if let startCharacterOffset, let latestCharacterOffset {
-            charactersRead = max(0, latestCharacterOffset - startCharacterOffset)
-        } else {
-            charactersRead = 0
-        }
 
         return ReadingSession(
             id: UUID(),
@@ -59,8 +58,19 @@ struct ReadingStatsSessionTracker {
             bookTitle: bookTitle,
             startDate: startDate,
             duration: duration,
-            charactersRead: charactersRead
+            charactersRead: currentCharactersRead
         )
+    }
+
+    private var currentCharactersRead: Int {
+        guard let startCharacterOffset, let latestCharacterOffset else { return 0 }
+        let (difference, overflow) = latestCharacterOffset.subtractingReportingOverflow(
+            startCharacterOffset
+        )
+        if overflow {
+            return latestCharacterOffset >= startCharacterOffset ? .max : 0
+        }
+        return max(0, difference)
     }
 }
 

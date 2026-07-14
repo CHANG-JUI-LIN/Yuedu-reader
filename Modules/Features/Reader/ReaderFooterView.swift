@@ -7,13 +7,20 @@ import Combine
 final class ClockBatteryModel: ObservableObject {
     @Published private(set) var displayTime: String = ""
     @Published private(set) var batteryIcon: String = "battery.100"
+    @Published private(set) var now: Date = Date()
+    @Published private(set) var batteryLevel: Double?
+    @Published private(set) var isCharging = false
 
     private var timerCancellable: AnyCancellable?
     private var batteryLevelCancellable: AnyCancellable?
     private var batteryStateCancellable: AnyCancellable?
     private let formatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "HH:mm"
+        f.locale = .autoupdatingCurrent
+        f.calendar = .autoupdatingCurrent
+        f.timeZone = .autoupdatingCurrent
+        f.dateStyle = .none
+        f.timeStyle = .short
         return f
     }()
 
@@ -32,13 +39,29 @@ final class ClockBatteryModel: ObservableObject {
             .sink { [weak self] _ in self?.refreshBattery() }
     }
 
-    private func refreshTime() { displayTime = formatter.string(from: Date()) }
+    private func refreshTime() {
+        let current = Date()
+        now = current
+        displayTime = formatter.string(from: current)
+    }
 
     private func refreshBattery() {
-        let level = UIDevice.current.batteryLevel
+        let rawLevel = Double(UIDevice.current.batteryLevel)
+        let level = rawLevel.isFinite && rawLevel >= 0
+            ? min(max(rawLevel, 0), 1)
+            : nil
+        batteryLevel = level
+
         switch UIDevice.current.batteryState {
-        case .charging, .full: batteryIcon = "battery.100.bolt"
+        case .charging, .full:
+            isCharging = true
+            batteryIcon = "battery.100.bolt"
         default:
+            isCharging = false
+            guard let level else {
+                batteryIcon = "battery.0"
+                return
+            }
             if level > 0.75 { batteryIcon = "battery.100" }
             else if level > 0.5 { batteryIcon = "battery.75" }
             else if level > 0.25 { batteryIcon = "battery.50" }
