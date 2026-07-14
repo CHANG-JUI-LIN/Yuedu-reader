@@ -55,6 +55,7 @@ struct ReaderBatterySVGImportView: View {
                 } header: {
                     Text(localized("電量 SVG 模板"))
                 }
+                .listRowBackground(DSColor.surface)
 
                 Section {
                     Button {
@@ -66,7 +67,9 @@ struct ReaderBatterySVGImportView: View {
                 } footer: {
                     Text(localized("只會匯入通過安全驗證的 SVG，動態標記會保留供分享。"))
                 }
+                .listRowBackground(DSColor.surface)
             }
+            .listStyle(.insetGrouped)
             .themedAppSurface()
             .navigationTitle(localized("電量 SVG 模板"))
             .toolbarTitleDisplayMode(.inline)
@@ -298,7 +301,7 @@ private struct ReaderBatterySVGAssetRow: View {
                         assetSummary
                         Spacer(minLength: DSSpacing.sm)
                         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(isSelected ? DSColor.accent : DSColor.textTertiary)
+                            .foregroundStyle(isSelected ? DSColor.accent : DSColor.textSecondary)
                             .accessibilityHidden(true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -591,9 +594,11 @@ private enum ReaderBatterySVGPreviewState: String, CaseIterable, Identifiable {
 
     var localizedTitle: String {
         switch self {
-        case .quarter: "25%"
-        case .half: "50%"
-        case .threeQuarters: "75%"
+        case .quarter, .half, .threeQuarters:
+            String(
+                format: localized("ReaderOverlay.Format.Percent"),
+                Int((level * 100).rounded())
+            )
         case .charging: localized("充電中")
         }
     }
