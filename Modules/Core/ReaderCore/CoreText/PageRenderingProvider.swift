@@ -65,6 +65,21 @@ protocol ProgressResolving: AnyObject {
     func plainText(forPage page: Int) -> String
     func totalProgress(forSpine spineIndex: Int, charOffset: Int) -> Double
     func position(forProgress progress: Double) -> (spineIndex: Int, charOffset: Int)
+    func contentMetrics(
+        forSpine spineIndex: Int,
+        charOffset: Int,
+        currentChapterCharacterCount: Int?
+    ) -> ReaderContentMetrics?
+}
+
+extension ProgressResolving {
+    func contentMetrics(
+        forSpine spineIndex: Int,
+        charOffset: Int,
+        currentChapterCharacterCount: Int?
+    ) -> ReaderContentMetrics? {
+        nil
+    }
 }
 
 @MainActor

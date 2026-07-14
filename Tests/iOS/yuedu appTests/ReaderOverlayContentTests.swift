@@ -52,6 +52,18 @@ struct ReaderOverlayContentTests {
         #expect(value.text(for: .chapterPage, format: .compact, locale: locale, calendar: utcCalendar) == "3")
     }
 
+    @Test("chapter page localizes integer digits")
+    func chapterPageLocalizesDigits() {
+        let arabic = Locale(identifier: "ar_EG")
+
+        #expect(snapshot().text(
+            for: .chapterPage,
+            format: .fraction,
+            locale: arabic,
+            calendar: utcCalendar
+        ) == "٣/١٢")
+    }
+
     @Test("progress uses a localized percent and clamps invalid bounds")
     func progressFormatting() {
         #expect(snapshot().text(for: .totalProgressText, format: .percentage, locale: locale, calendar: utcCalendar) == "25.7%")
@@ -109,15 +121,88 @@ struct ReaderOverlayContentTests {
         #expect(snapshot().text(for: .weekday, format: .detailed, locale: locale, calendar: utcCalendar) == "Tuesday")
     }
 
-    @Test("duration formats are locale aware and nonempty")
+    @Test("duration formats apply compact and detailed unit rules")
     func durationFormats() {
         let compact = snapshot().text(for: .readingDuration, format: .compact, locale: locale, calendar: utcCalendar)
         let detailed = snapshot().text(for: .readingDuration, format: .detailed, locale: locale, calendar: utcCalendar)
 
-        #expect(!compact.isEmpty)
-        #expect(compact != "--")
-        #expect(!detailed.isEmpty)
-        #expect(detailed != "--")
+        #expect(compact == "1h 1m")
+        #expect(detailed == "1 hour, 1 minute, 1 second")
+    }
+
+    @Test("content metrics stay available for books larger than the layout cache")
+    func contentMetricsDoNotDependOnLayouts() throws {
+        let map = try #require(ReaderContentUnitMap(
+            chapterUnitCounts: Array(repeating: 100, count: 12)
+        ))
+
+        let metrics = try #require(map.metrics(
+            spineIndex: 10,
+            localCharacterOffset: 25,
+            currentChapterCharacterCount: 50
+        ))
+
+        #expect(metrics.currentUnitOffset == 1_050)
+        #expect(metrics.totalUnitCount == 1_200)
+        #expect(metrics.remainingUnitCount == 150)
+    }
+
+    @Test("content metrics reject unknown conversion and invalid metadata")
+    func contentMetricsRejectUnknownValues() throws {
+        #expect(ReaderContentUnitMap(chapterUnitCounts: [100, -1]) == nil)
+
+        let map = try #require(ReaderContentUnitMap(chapterUnitCounts: [100, 200]))
+        #expect(map.metrics(
+            spineIndex: 1,
+            localCharacterOffset: 10,
+            currentChapterCharacterCount: nil
+        ) == nil)
+    }
+
+    @Test("legacy page index computes offsets once and reads them in constant time")
+    func legacyPageIndex() {
+        let index = ReaderLegacyContentIndex(pages: [
+            .init(chapterIndex: 0, contentLength: 10),
+            .init(chapterIndex: 0, contentLength: 20),
+            .init(chapterIndex: 1, contentLength: 30),
+        ])
+
+        #expect(index.chapterPageCount(for: 0) == 2)
+        #expect(index.currentUnitOffset(forPageAt: 2) == 30)
+        #expect(index.remainingUnitCount(forPageAt: 2) == 30)
+    }
+
+    @Test("clock schedule aligns first refresh to the next whole minute")
+    func clockScheduleAlignment() {
+        let halfMinute = fixedDate.addingTimeInterval(30.25)
+
+        #expect(abs(ReaderClockSchedule.delayUntilNextMinute(
+            from: halfMinute,
+            calendar: utcCalendar
+        ) - 29.75) < 0.000_001)
+        #expect(ReaderClockSchedule.delayUntilNextMinute(
+            from: fixedDate,
+            calendar: utcCalendar
+        ) == 60)
+    }
+
+    @Test("battery resolver handles unavailable and full charging states")
+    func batteryResolver() {
+        let unavailable = ReaderBatteryValueResolver.resolve(
+            rawLevel: -1,
+            isCharging: false
+        )
+        #expect(unavailable.level == nil)
+        #expect(unavailable.isCharging == false)
+        #expect(unavailable.iconName == "battery.0")
+
+        let full = ReaderBatteryValueResolver.resolve(
+            rawLevel: 1,
+            isCharging: true
+        )
+        #expect(full.level == 1)
+        #expect(full.isCharging)
+        #expect(full.iconName == "battery.100.bolt")
     }
 
     @Test("every overlay component kind returns deterministic text")
@@ -135,8 +220,8 @@ struct ReaderOverlayContentTests {
         #expect(value.text(for: .customText, format: .automatic, locale: locale, calendar: utcCalendar) == "")
     }
 
-    @Test("reading statistics expose clamped current metrics without finishing")
-    func readingStatsCurrentMetrics() {
+    @Test("reading statistics accumulate adjacent forward movement")
+    func readingStatsAccumulateAdjacentMovement() {
         var tracker = ReadingStatsSessionTracker(
             bookId: "book-1",
             bookTitle: "Book",
@@ -149,9 +234,47 @@ struct ReaderOverlayContentTests {
         #expect(beforeStart.elapsed == 0)
         #expect(beforeStart.charactersRead == 0)
 
-        tracker.updateVisibleCharacterOffset(725)
+        tracker.updateVisibleCharacterOffset(475)
         let current = tracker.currentMetrics(at: Date(timeIntervalSince1970: 160))
         #expect(current.elapsed == 60)
-        #expect(current.charactersRead == 225)
+        #expect(current.charactersRead == 25)
+    }
+
+    @Test("relocation backward movement and abnormal jumps reset the baseline")
+    func readingStatsRelocationAndInvalidDeltas() {
+        var tracker = ReadingStatsSessionTracker(
+            bookId: "book-1",
+            bookTitle: "Book",
+            startCharacterOffset: 100
+        )
+
+        tracker.updateVisibleCharacterOffset(150)
+        tracker.relocate(to: 10_000)
+        tracker.updateVisibleCharacterOffset(10_020)
+        tracker.updateVisibleCharacterOffset(9_000)
+        tracker.updateVisibleCharacterOffset(9_030)
+        tracker.updateVisibleCharacterOffset(
+            9_030 + ReadingStatsSessionTracker.maximumContinuousAdvance + 1
+        )
+        tracker.updateVisibleCharacterOffset(
+            9_030 + ReadingStatsSessionTracker.maximumContinuousAdvance + 11
+        )
+
+        #expect(tracker.currentMetrics().charactersRead == 110)
+    }
+
+    @Test("scroll style repeated commits count each positive interval once")
+    func readingStatsRepeatedScrollUpdates() {
+        var tracker = ReadingStatsSessionTracker(
+            bookId: "book-1",
+            bookTitle: "Book",
+            startCharacterOffset: 1_000
+        )
+
+        for offset in [1_010, 1_010, 1_025, 1_040] {
+            tracker.updateVisibleCharacterOffset(offset)
+        }
+
+        #expect(tracker.currentMetrics().charactersRead == 40)
     }
 }

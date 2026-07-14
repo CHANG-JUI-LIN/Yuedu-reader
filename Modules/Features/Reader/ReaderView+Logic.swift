@@ -115,6 +115,22 @@ extension ReaderView {
         readingStatsTracker = tracker
     }
 
+    func recordReadingStatsPosition(
+        _ position: CoreTextReadingPosition,
+        source: ReaderLocation.Source
+    ) {
+        guard var tracker = readingStatsTracker else { return }
+        let offset = readingStatsContentOffset(for: position)
+
+        switch source {
+        case .settledPage, .scrollCommit:
+            tracker.updateVisibleCharacterOffset(offset)
+        case .internalLink, .jump, .modeSwitch, .restored, .placeholder:
+            tracker.relocate(to: offset)
+        }
+        readingStatsTracker = tracker
+    }
+
     func finishReadingStatsSession() {
         guard var tracker = readingStatsTracker else { return }
         tracker.updateVisibleCharacterOffset(currentReadingStatsCharacterOffset())
@@ -127,42 +143,61 @@ extension ReaderView {
     func currentReadingStatsCharacterOffset() -> Int? {
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             if effectiveScrollMode, let location = readerSessionCoordinator?.state.location {
-                return readingStatsCharacterOffset(
-                    spineIndex: location.spineIndex,
-                    charOffset: location.charOffset,
-                    layouts: engine.layouts
-                )
+                return readerContentMetrics(
+                    for: location.coreTextPosition,
+                    engine: engine
+                )?.currentUnitOffset
             }
 
             guard engine.totalPages > 0 else { return nil }
             let page = max(0, min(currentPage, engine.totalPages - 1))
             let position = engine.charOffset(forPage: page)
-            return readingStatsCharacterOffset(
-                spineIndex: position.spineIndex,
-                charOffset: position.charOffset,
-                layouts: engine.layouts
-            )
+            return readerContentMetrics(
+                for: CoreTextReadingPosition(
+                    spineIndex: position.spineIndex,
+                    charOffset: position.charOffset
+                ),
+                engine: engine
+            )?.currentUnitOffset
         }
 
         guard !allPages.isEmpty else { return nil }
         let page = max(0, min(currentPage, allPages.count - 1))
-        return allPages.prefix(page).reduce(0) { total, page in
-            total + page.content.count
-        }
+        return readerOverlayLegacyContentIndex.currentUnitOffset(forPageAt: page)
     }
 
-    func readingStatsCharacterOffset(
-        spineIndex: Int,
-        charOffset: Int,
-        layouts: [Int: CoreTextPaginator.ChapterLayout]
-    ) -> Int {
-        let previousLength = layouts.reduce(into: 0) { total, entry in
-            if entry.key < spineIndex {
-                total += entry.value.attributedString.length
-            }
+    func readingStatsContentOffset(for position: CoreTextReadingPosition) -> Int? {
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
+            return readerContentMetrics(for: position, engine: engine)?.currentUnitOffset
         }
-        let currentLength = layouts[spineIndex]?.attributedString.length ?? max(0, charOffset)
-        return previousLength + min(max(0, charOffset), currentLength)
+        guard !allPages.isEmpty else { return nil }
+        let page = max(0, min(currentPage, allPages.count - 1))
+        return readerOverlayLegacyContentIndex.currentUnitOffset(forPageAt: page)
+    }
+
+    func readerContentMetrics(
+        for position: CoreTextReadingPosition,
+        engine: any PagedReaderEngine
+    ) -> ReaderContentMetrics? {
+        let currentChapterCharacterCount = effectiveScrollMode
+            ? epubRenderer.scrollEngine?.characterCount(forChapter: position.spineIndex)
+            : nil
+        return engine.contentMetrics(
+            forSpine: position.spineIndex,
+            charOffset: position.charOffset,
+            currentChapterCharacterCount: currentChapterCharacterCount
+        )
+    }
+
+    func rebuildReaderOverlayLegacyContentIndex() {
+        readerOverlayLegacyContentIndex = ReaderLegacyContentIndex(
+            pages: allPages.map {
+                ReaderLegacyContentIndex.Page(
+                    chapterIndex: $0.chapterIndex,
+                    contentLength: $0.content.count
+                )
+            }
+        )
     }
 
     func autoSaveProgress(force: Bool = false) {

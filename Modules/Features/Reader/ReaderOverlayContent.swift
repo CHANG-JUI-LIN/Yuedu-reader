@@ -52,6 +52,111 @@ enum ReaderRemainingTimeEstimator {
     }
 }
 
+struct ReaderLegacyContentIndex: Equatable, Sendable {
+    struct Page: Equatable, Sendable {
+        let chapterIndex: Int
+        let contentLength: Int
+    }
+
+    static let empty = ReaderLegacyContentIndex(pages: [])
+
+    private let pageOffsets: [Int]
+    private let chapterPageCounts: [Int: Int]
+
+    init(pages: [Page]) {
+        var offsets = [0]
+        offsets.reserveCapacity(pages.count + 1)
+        var counts: [Int: Int] = [:]
+
+        for page in pages {
+            guard page.contentLength >= 0 else {
+                pageOffsets = []
+                chapterPageCounts = [:]
+                return
+            }
+            let (next, overflow) = offsets[offsets.count - 1]
+                .addingReportingOverflow(page.contentLength)
+            guard !overflow else {
+                pageOffsets = []
+                chapterPageCounts = [:]
+                return
+            }
+            offsets.append(next)
+            counts[page.chapterIndex, default: 0] += 1
+        }
+
+        pageOffsets = offsets
+        chapterPageCounts = counts
+    }
+
+    func chapterPageCount(for chapterIndex: Int) -> Int {
+        chapterPageCounts[chapterIndex] ?? 0
+    }
+
+    func currentUnitOffset(forPageAt pageIndex: Int) -> Int? {
+        guard pageIndex >= 0, pageIndex + 1 < pageOffsets.count else { return nil }
+        return pageOffsets[pageIndex]
+    }
+
+    func remainingUnitCount(forPageAt pageIndex: Int) -> Int? {
+        guard let currentUnitOffset = currentUnitOffset(forPageAt: pageIndex),
+              let totalUnitCount = pageOffsets.last
+        else {
+            return nil
+        }
+        return max(0, totalUnitCount - currentUnitOffset)
+    }
+}
+
+enum ReaderClockSchedule {
+    static func delayUntilNextMinute(
+        from date: Date,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> TimeInterval {
+        guard let nextMinute = calendar.dateInterval(of: .minute, for: date)?.end else {
+            return 60
+        }
+        let delay = nextMinute.timeIntervalSince(date)
+        guard delay.isFinite, delay > 0 else { return 60 }
+        return delay
+    }
+}
+
+struct ReaderResolvedBatteryValue: Equatable, Sendable {
+    let level: Double?
+    let isCharging: Bool
+    let iconName: String
+}
+
+enum ReaderBatteryValueResolver {
+    static func resolve(
+        rawLevel: Double,
+        isCharging: Bool
+    ) -> ReaderResolvedBatteryValue {
+        let level = rawLevel.isFinite && rawLevel >= 0
+            ? min(max(rawLevel, 0), 1)
+            : nil
+
+        let iconName: String
+        if isCharging {
+            iconName = "battery.100.bolt"
+        } else if let level {
+            if level > 0.75 { iconName = "battery.100" }
+            else if level > 0.5 { iconName = "battery.75" }
+            else if level > 0.25 { iconName = "battery.50" }
+            else { iconName = "battery.25" }
+        } else {
+            iconName = "battery.0"
+        }
+
+        return ReaderResolvedBatteryValue(
+            level: level,
+            isCharging: isCharging,
+            iconName: iconName
+        )
+    }
+}
+
 enum ReaderOverlayValueFormatter {
     private static let unavailable = "--"
 
@@ -71,7 +176,8 @@ enum ReaderOverlayValueFormatter {
             return chapterPage(
                 current: snapshot.chapterPage,
                 total: snapshot.chapterPageCount,
-                format: format
+                format: format,
+                locale: locale
             )
         case .totalProgressText, .progressBar:
             return percentage(snapshot.totalProgress, locale: locale)
@@ -114,13 +220,25 @@ enum ReaderOverlayValueFormatter {
     private static func chapterPage(
         current: Int,
         total: Int,
-        format: ReaderOverlayDisplayFormat
+        format: ReaderOverlayDisplayFormat,
+        locale: Locale
     ) -> String {
         guard current > 0, total > 0, current <= total else { return unavailable }
-        if format == .compact {
-            return String(current)
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = false
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 0
+        guard let currentText = formatter.string(from: NSNumber(value: current)),
+              let totalText = formatter.string(from: NSNumber(value: total))
+        else {
+            return unavailable
         }
-        return "\(current)/\(total)"
+        if format == .compact {
+            return currentText
+        }
+        return "\(currentText)/\(totalText)"
     }
 
     private static func percentage(_ value: Double, locale: Locale) -> String {

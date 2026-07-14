@@ -11,7 +11,7 @@ final class ClockBatteryModel: ObservableObject {
     @Published private(set) var batteryLevel: Double?
     @Published private(set) var isCharging = false
 
-    private var timerCancellable: AnyCancellable?
+    private var clockTimer: Timer?
     private var batteryLevelCancellable: AnyCancellable?
     private var batteryStateCancellable: AnyCancellable?
     private let formatter: DateFormatter = {
@@ -28,15 +28,30 @@ final class ClockBatteryModel: ObservableObject {
         UIDevice.current.isBatteryMonitoringEnabled = true
         refreshTime()
         refreshBattery()
-        timerCancellable = Timer.publish(every: 60, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in self?.refreshTime() }
+        scheduleClockTimer()
         batteryLevelCancellable = NotificationCenter.default
             .publisher(for: UIDevice.batteryLevelDidChangeNotification)
             .sink { [weak self] _ in self?.refreshBattery() }
         batteryStateCancellable = NotificationCenter.default
             .publisher(for: UIDevice.batteryStateDidChangeNotification)
             .sink { [weak self] _ in self?.refreshBattery() }
+    }
+
+    deinit {
+        clockTimer?.invalidate()
+    }
+
+    private func scheduleClockTimer() {
+        let current = Date()
+        let delay = ReaderClockSchedule.delayUntilNextMinute(from: current)
+        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshTime()
+            }
+        }
+        timer.fireDate = current.addingTimeInterval(delay)
+        RunLoop.main.add(timer, forMode: .common)
+        clockTimer = timer
     }
 
     private func refreshTime() {
@@ -46,27 +61,14 @@ final class ClockBatteryModel: ObservableObject {
     }
 
     private func refreshBattery() {
-        let rawLevel = Double(UIDevice.current.batteryLevel)
-        let level = rawLevel.isFinite && rawLevel >= 0
-            ? min(max(rawLevel, 0), 1)
-            : nil
-        batteryLevel = level
-
-        switch UIDevice.current.batteryState {
-        case .charging, .full:
-            isCharging = true
-            batteryIcon = "battery.100.bolt"
-        default:
-            isCharging = false
-            guard let level else {
-                batteryIcon = "battery.0"
-                return
-            }
-            if level > 0.75 { batteryIcon = "battery.100" }
-            else if level > 0.5 { batteryIcon = "battery.75" }
-            else if level > 0.25 { batteryIcon = "battery.50" }
-            else { batteryIcon = "battery.25" }
-        }
+        let state = UIDevice.current.batteryState
+        let value = ReaderBatteryValueResolver.resolve(
+            rawLevel: Double(UIDevice.current.batteryLevel),
+            isCharging: state == .charging || state == .full
+        )
+        batteryLevel = value.level
+        isCharging = value.isCharging
+        batteryIcon = value.iconName
     }
 }
 

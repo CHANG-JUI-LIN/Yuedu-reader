@@ -136,6 +136,9 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private var didLogProgressByteMode = false
     /// Raw data size (bytes) per chapter, used for global progress estimation
     private var chapterByteSizes: [Int] = []
+    /// Prefix-summed byte units for stable O(1) reading metrics. Unlike layouts,
+    /// this metadata is not evicted by the chapter LRU.
+    private var contentUnitMap: ReaderContentUnitMap?
 
     private(set) var isRelaying = false
 
@@ -278,6 +281,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         // 1. Background scan of all chapter data sizes (does not block the main open-book flow)
         chapterByteScanTask?.cancel()
         chapterByteSizes = []
+        contentUnitMap = nil
         startupTrace("byteScan launch mode=background")
         chapterByteScanTask = Task { [weak self] in
             guard let self else { return }
@@ -308,6 +312,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             guard !Task.isCancelled else { return }
             guard currentBookId == bookId else { return }
             chapterByteSizes = [Int](repeating: 0, count: attributedBuilder.chapterCount)
+            contentUnitMap = nil
             startupTrace("byteScan lazy chapters=\(attributedBuilder.chapterCount)")
             rebuildPageOffsets()
             onChapterReady?(nil)
@@ -326,6 +331,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
         guard !Task.isCancelled else { return }
         guard currentBookId == bookId else { return }
         chapterByteSizes = sizes
+        contentUnitMap = ReaderContentUnitMap(chapterUnitCounts: sizes)
         let totalBytes = sizes.reduce(0, +)
         startupTrace("byteScan done chapters=\(sizes.count) totalBytes=\(totalBytes)")
         rebuildPageOffsets()
@@ -354,6 +360,14 @@ final class CoreTextPageEngine: PageRenderingProvider {
             return min(1.0, (Double(clampedSpine) + chapterFraction) / Double(totalChapters))
         }
 
+        if let metrics = contentMetrics(
+            forSpine: clampedSpine,
+            charOffset: charOffset,
+            currentChapterCharacterCount: nil
+        ) {
+            return Double(metrics.currentUnitOffset) / Double(metrics.totalUnitCount)
+        }
+
         guard !chapterByteSizes.isEmpty else {
             if !didLogProgressFallback {
                 didLogProgressFallback = true
@@ -379,6 +393,25 @@ final class CoreTextPageEngine: PageRenderingProvider {
             scaledOffset = charOffset
         }
         return min(1.0, Double(prior + scaledOffset) / Double(total))
+    }
+
+    func contentMetrics(
+        forSpine spineIndex: Int,
+        charOffset: Int,
+        currentChapterCharacterCount: Int?
+    ) -> ReaderContentMetrics? {
+        guard !attributedBuilder.prefersLazyByteScan,
+              let contentUnitMap
+        else {
+            return nil
+        }
+        let characterCount = currentChapterCharacterCount
+            ?? _layouts[spineIndex]?.attributedString.length
+        return contentUnitMap.metrics(
+            spineIndex: spineIndex,
+            localCharacterOffset: charOffset,
+            currentChapterCharacterCount: characterCount
+        )
     }
 
     /// Maps global progress (0.0 ~ 1.0) to (spineIndex, charOffset)
@@ -621,6 +654,9 @@ _layouts[spineIndex] = nil
             chapterByteSizes[spineIndex] = size
         } else if chapterByteSizes.count == spineIndex {
             chapterByteSizes.append(size)
+        }
+        if !attributedBuilder.prefersLazyByteScan {
+            contentUnitMap = ReaderContentUnitMap(chapterUnitCounts: chapterByteSizes)
         }
 
         // 3. Reload the chapter (preloadChapter checks layouts[spineIndex] == nil before executing)

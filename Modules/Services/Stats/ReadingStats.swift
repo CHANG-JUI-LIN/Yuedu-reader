@@ -15,11 +15,13 @@ struct ReadingSession: Codable, Identifiable {
 // MARK: - ReadingStatsSessionTracker
 
 struct ReadingStatsSessionTracker {
+    static let maximumContinuousAdvance = 50_000
+
     let bookId: String
     let bookTitle: String
     let startDate: Date
-    private var startCharacterOffset: Int?
-    private var latestCharacterOffset: Int?
+    private var baselineCharacterOffset: Int?
+    private var accumulatedCharactersRead = 0
 
     init(
         bookId: String,
@@ -30,22 +32,45 @@ struct ReadingStatsSessionTracker {
         self.bookId = bookId
         self.bookTitle = bookTitle
         self.startDate = startDate
-        self.startCharacterOffset = startCharacterOffset
-        self.latestCharacterOffset = startCharacterOffset
+        self.baselineCharacterOffset = startCharacterOffset
     }
 
     mutating func updateVisibleCharacterOffset(_ offset: Int?) {
         guard let offset else { return }
-        if startCharacterOffset == nil {
-            startCharacterOffset = offset
+        guard offset >= 0 else {
+            baselineCharacterOffset = nil
+            return
         }
-        latestCharacterOffset = offset
+        guard let baselineCharacterOffset else {
+            self.baselineCharacterOffset = offset
+            return
+        }
+
+        self.baselineCharacterOffset = offset
+        let (delta, overflow) = offset.subtractingReportingOverflow(baselineCharacterOffset)
+        guard !overflow,
+              delta > 0,
+              delta <= Self.maximumContinuousAdvance
+        else {
+            return
+        }
+
+        let (total, totalOverflow) = accumulatedCharactersRead.addingReportingOverflow(delta)
+        accumulatedCharactersRead = totalOverflow ? .max : total
+    }
+
+    mutating func relocate(to offset: Int?) {
+        guard let offset, offset >= 0 else {
+            baselineCharacterOffset = nil
+            return
+        }
+        baselineCharacterOffset = offset
     }
 
     func currentMetrics(at date: Date = Date()) -> (elapsed: TimeInterval, charactersRead: Int) {
         let rawElapsed = date.timeIntervalSince(startDate)
         let elapsed = rawElapsed.isFinite ? max(0, rawElapsed) : 0
-        return (elapsed, currentCharactersRead)
+        return (elapsed, accumulatedCharactersRead)
     }
 
     func finish(at endDate: Date = Date()) -> ReadingSession? {
@@ -58,19 +83,8 @@ struct ReadingStatsSessionTracker {
             bookTitle: bookTitle,
             startDate: startDate,
             duration: duration,
-            charactersRead: currentCharactersRead
+            charactersRead: accumulatedCharactersRead
         )
-    }
-
-    private var currentCharactersRead: Int {
-        guard let startCharacterOffset, let latestCharacterOffset else { return 0 }
-        let (difference, overflow) = latestCharacterOffset.subtractingReportingOverflow(
-            startCharacterOffset
-        )
-        if overflow {
-            return latestCharacterOffset >= startCharacterOffset ? .max : 0
-        }
-        return max(0, difference)
     }
 }
 

@@ -25,6 +25,10 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     @Published private(set) var isReady: Bool = false
     @Published var textAnnotations: [CoreTextTextAnnotation] = []
 
+    /// UTF-16 character counts retained independently of rendered chunks so
+    /// scroll positions can be converted to stable book-wide content units.
+    private var chapterCharacterCounts: [Int: Int] = [:]
+
     /// Change event stream: VC subscribes to perform insertRows / contentOffset compensation
     enum Event {
         case reset
@@ -111,6 +115,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         self.imageContentWidth = resolvedImageContentWidth
         chunks = replacement.chunks
         chapterRanges = replacement.chapterRanges
+        chapterCharacterCounts = replacement.chapterCharacterCounts
         loadedChapters = replacement.loadedChapters
         slicingChapters = []
         pendingMissingChapters = replacement.pendingMissingChapters
@@ -151,6 +156,10 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
 
     func setTextAnnotations(_ annotations: [CoreTextTextAnnotation]) {
         textAnnotations = annotations
+    }
+
+    func characterCount(forChapter chapterIndex: Int) -> Int? {
+        chapterCharacterCounts[chapterIndex]
     }
 
     private func prepareAttributedString(_ raw: NSAttributedString) -> NSAttributedString {
@@ -227,6 +236,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                 themeBackgroundColor: renderSettings.backgroundColor
             )
             let attrStr = prepareAttributedString(result.attributedString)
+            chapterCharacterCounts[chapterIndex] = attrStr.length
             let width = contentWidth
             let cIdx = chapterIndex
             // A user-selected reader background has the same precedence in scroll mode as it

@@ -123,6 +123,7 @@ struct ReaderView: View {
 
     @State var readerSessionCoordinator: ReaderSessionCoordinator?
     @State var readingStatsTracker: ReadingStatsSessionTracker?
+    @State var readerOverlayLegacyContentIndex = ReaderLegacyContentIndex.empty
 
     @State var isRestoringPosition = true
     @State var savedCoreTextRestoreTarget: (chapterIndex: Int, charOffset: Int)?
@@ -707,6 +708,7 @@ struct ReaderView: View {
         shouldPersist: Bool = true
     ) {
         ensureReaderNavigator(initialPosition: position)
+        recordReadingStatsPosition(position, source: source)
         switch source {
         case .settledPage:
             readerSessionCoordinator?.send(.settlePage(
@@ -949,84 +951,26 @@ struct ReaderView: View {
         let page = allPages[pageIndex]
         return (
             page.pageInChapter + 1,
-            allPages.lazy.filter { $0.chapterIndex == page.chapterIndex }.count,
+            readerOverlayLegacyContentIndex.chapterPageCount(for: page.chapterIndex),
             Double(pageIndex) / Double(max(allPages.count - 1, 1))
         )
     }
 
     private var readerOverlayRemainingCharacters: Int? {
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            let layouts = engine.layouts
-            guard let chapterCount = readerOverlayCoreTextChapterCount,
-                  chapterCount > 0,
-                  layouts.count == chapterCount,
-                  (0..<chapterCount).allSatisfy({ layouts[$0] != nil })
-            else {
-                return nil
-            }
-
             let position = readerOverlayCoreTextPosition(in: engine)
-            var totalCharacters = 0
-            var currentCharacterOffset = 0
-
-            for spineIndex in 0..<chapterCount {
-                guard let chapterLength = layouts[spineIndex]?.attributedString.length else {
-                    return nil
-                }
-                let (nextTotal, totalOverflow) = totalCharacters.addingReportingOverflow(chapterLength)
-                guard !totalOverflow else { return nil }
-                totalCharacters = nextTotal
-
-                if spineIndex < position.spineIndex {
-                    let (nextOffset, offsetOverflow) = currentCharacterOffset.addingReportingOverflow(chapterLength)
-                    guard !offsetOverflow else { return nil }
-                    currentCharacterOffset = nextOffset
-                } else if spineIndex == position.spineIndex {
-                    let localOffset = min(max(position.charOffset, 0), chapterLength)
-                    let (nextOffset, offsetOverflow) = currentCharacterOffset.addingReportingOverflow(localOffset)
-                    guard !offsetOverflow else { return nil }
-                    currentCharacterOffset = nextOffset
-                }
-            }
-
-            return max(0, totalCharacters - currentCharacterOffset)
+            return readerContentMetrics(
+                for: CoreTextReadingPosition(
+                    spineIndex: position.spineIndex,
+                    charOffset: position.charOffset
+                ),
+                engine: engine
+            )?.remainingUnitCount
         }
 
         guard book?.isOnline != true, !allPages.isEmpty else { return nil }
-        var totalCharacters = 0
-        var currentCharacterOffset = 0
         let currentIndex = max(0, min(currentPage, allPages.count - 1))
-
-        for (index, page) in allPages.enumerated() {
-            let length = page.content.count
-            let (nextTotal, totalOverflow) = totalCharacters.addingReportingOverflow(length)
-            guard !totalOverflow else { return nil }
-            totalCharacters = nextTotal
-
-            if index < currentIndex {
-                let (nextOffset, offsetOverflow) = currentCharacterOffset.addingReportingOverflow(length)
-                guard !offsetOverflow else { return nil }
-                currentCharacterOffset = nextOffset
-            }
-        }
-
-        guard totalCharacters > 0 else { return nil }
-        return max(0, totalCharacters - currentCharacterOffset)
-    }
-
-    private var readerOverlayCoreTextChapterCount: Int? {
-        if let activePublicationSession {
-            return activePublicationSession.chapters.count
-        }
-        if book?.isOnline == true {
-            return book?.onlineChapters?.count
-        }
-
-        let indexes = Set(chapters.map(\.index))
-        guard let maximumIndex = indexes.max(), maximumIndex >= 0 else { return nil }
-        let expectedIndexes = Set(0...maximumIndex)
-        guard indexes == expectedIndexes else { return nil }
-        return maximumIndex + 1
+        return readerOverlayLegacyContentIndex.remainingUnitCount(forPageAt: currentIndex)
     }
 
     private func readerOverlayCoreTextPosition(
@@ -1478,6 +1422,7 @@ struct ReaderView: View {
                 snapshotBook = book
                 restoreReaderDisplayStateAfterResume()
             }
+            rebuildReaderOverlayLegacyContentIndex()
             beginReadingStatsSession()
             syncCoreTextTextAnnotations()
             systemBrightness = Double(UIScreen.main.brightness)
@@ -1940,6 +1885,7 @@ struct ReaderView: View {
             updateFixedLayoutOrientationPreference()
         }
         .onChanged(of: allPages.count) { _ in
+            rebuildReaderOverlayLegacyContentIndex()
             applyInitialProgressIfNeeded()
             updateReadingStatsPosition()
         }
