@@ -63,14 +63,14 @@ struct ReaderOverlayFontReference: Codable, Equatable, Sendable {
     }
 }
 
-enum ReaderOverlayFontWeight: String, Codable, Equatable, Sendable {
+enum ReaderOverlayFontWeight: String, Codable, Equatable, Hashable, Sendable {
     case regular
     case medium
     case semibold
     case bold
 }
 
-enum ReaderOverlayColorSource: String, Codable, Equatable, Sendable {
+enum ReaderOverlayColorSource: String, Codable, Equatable, Hashable, Sendable {
     case readerText
     case custom
 }
@@ -161,7 +161,7 @@ struct ReaderOverlayComponentStyle: Codable, Equatable, Sendable {
     }
 }
 
-enum ReaderOverlayDisplayFormat: String, CaseIterable, Codable, Equatable, Sendable {
+enum ReaderOverlayDisplayFormat: String, CaseIterable, Codable, Equatable, Hashable, Sendable {
     case automatic
     case compact
     case detailed
@@ -171,12 +171,14 @@ enum ReaderOverlayDisplayFormat: String, CaseIterable, Codable, Equatable, Senda
     case hourMinute12
 }
 
-enum ReaderBatteryVisualKind: String, Codable, Equatable, Sendable {
+enum ReaderBatteryVisualKind: String, Codable, Equatable, Hashable, Sendable {
     case system
     case importedSVG
 }
 
 struct ReaderOverlayComponentConfiguration: Codable, Equatable, Sendable {
+    static let maximumCustomTextLength = 120
+
     var displayFormat: ReaderOverlayDisplayFormat
     var customText: String
     var batteryVisual: ReaderBatteryVisualKind
@@ -200,7 +202,7 @@ struct ReaderOverlayComponentConfiguration: Codable, Equatable, Sendable {
     var normalized: ReaderOverlayComponentConfiguration {
         ReaderOverlayComponentConfiguration(
             displayFormat: displayFormat,
-            customText: customText,
+            customText: String(customText.prefix(Self.maximumCustomTextLength)),
             batteryVisual: batteryVisual,
             svgAssetID: batteryVisual == .importedSVG ? svgAssetID : nil,
             showsBatteryPercentage: showsBatteryPercentage

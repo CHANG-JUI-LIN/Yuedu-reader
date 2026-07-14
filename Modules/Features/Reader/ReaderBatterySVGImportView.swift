@@ -7,6 +7,8 @@ struct ReaderBatterySVGImportView: View {
 
     let store: ReaderOverlaySVGAssetStore
     let referencedAssetIDs: Set<UUID>
+    let selectedAssetID: UUID?
+    let onSelectAsset: ((ReaderOverlaySVGAsset) -> Void)?
 
     @State private var assets: [ReaderOverlaySVGAsset] = []
     @State private var isLoading = true
@@ -19,10 +21,14 @@ struct ReaderBatterySVGImportView: View {
 
     init(
         store: ReaderOverlaySVGAssetStore,
-        referencedAssetIDs: Set<UUID> = []
+        referencedAssetIDs: Set<UUID> = [],
+        selectedAssetID: UUID? = nil,
+        onSelectAsset: ((ReaderOverlaySVGAsset) -> Void)? = nil
     ) {
         self.store = store
         self.referencedAssetIDs = referencedAssetIDs
+        self.selectedAssetID = selectedAssetID
+        self.onSelectAsset = onSelectAsset
     }
 
     var body: some View {
@@ -61,6 +67,7 @@ struct ReaderBatterySVGImportView: View {
                     Text(localized("只會匯入通過安全驗證的 SVG，動態標記會保留供分享。"))
                 }
             }
+            .themedAppSurface()
             .navigationTitle(localized("電量 SVG 模板"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
@@ -155,6 +162,11 @@ struct ReaderBatterySVGImportView: View {
                 ReaderBatterySVGAssetRow(
                     asset: asset,
                     store: store,
+                    isSelected: selectedAssetID == asset.id,
+                    onSelect: onSelectAsset == nil ? nil : {
+                        onSelectAsset?(asset)
+                        dismiss()
+                    },
                     onRename: { beginRename(asset) },
                     onDelete: { assetPendingDeletion = asset },
                     onError: { issue = $0 }
@@ -198,13 +210,18 @@ struct ReaderBatterySVGImportView: View {
             isImporting = true
             issue = nil
             Task {
+                defer { isImporting = false }
                 do {
-                    _ = try await store.importSVG(from: url)
+                    let imported = try await store.importSVG(from: url)
+                    if let onSelectAsset {
+                        onSelectAsset(imported)
+                        dismiss()
+                        return
+                    }
                     await reload()
                 } catch {
                     issue = .importFailed
                 }
-                isImporting = false
             }
         case .failure:
             issue = .importFailed
@@ -263,6 +280,8 @@ private struct ReaderBatterySVGAssetRow: View {
 
     let asset: ReaderOverlaySVGAsset
     let store: ReaderOverlaySVGAssetStore
+    let isSelected: Bool
+    let onSelect: (() -> Void)?
     let onRename: () -> Void
     let onDelete: () -> Void
     let onError: (ReaderBatterySVGImportIssue) -> Void
@@ -273,23 +292,24 @@ private struct ReaderBatterySVGAssetRow: View {
 
     var body: some View {
         HStack(spacing: DSSpacing.md) {
-            preview
-
-            VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                Text(asset.displayName)
-                    .font(DSFont.body)
-                    .foregroundStyle(DSColor.textPrimary)
-                if usesFallbackPreview {
-                    Label(
-                        localized("模板無法載入，將使用系統電池。"),
-                        systemImage: "exclamationmark.triangle"
-                    )
-                    .font(DSFont.caption)
-                    .foregroundStyle(DSColor.textSecondary)
+            if let onSelect {
+                Button(action: onSelect) {
+                    HStack(spacing: DSSpacing.md) {
+                        assetSummary
+                        Spacer(minLength: DSSpacing.sm)
+                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(isSelected ? DSColor.accent : DSColor.textTertiary)
+                            .accessibilityHidden(true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            } else {
+                assetSummary
+                Spacer(minLength: DSSpacing.sm)
             }
-
-            Spacer(minLength: DSSpacing.sm)
 
             Menu {
                 Button(action: onRename) {
@@ -315,6 +335,26 @@ private struct ReaderBatterySVGAssetRow: View {
         }
         .task(id: previewTaskID) {
             await loadPreviewAndExport()
+        }
+    }
+
+    private var assetSummary: some View {
+        HStack(spacing: DSSpacing.md) {
+            preview
+
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                Text(asset.displayName)
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                if usesFallbackPreview {
+                    Label(
+                        localized("模板無法載入，將使用系統電池。"),
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+                }
+            }
         }
     }
 
@@ -399,6 +439,176 @@ private struct ReaderBatterySVGAssetRow: View {
             onError(.operationFailed)
         }
     }
+}
+
+struct ReaderBatterySVGStatePreviewStrip: View {
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.colorScheme) private var colorScheme
+
+    let assetID: UUID
+    let store: ReaderOverlaySVGAssetStore
+    let color: UIColor
+
+    @State private var images: [ReaderBatterySVGPreviewState: UIImage] = [:]
+    @State private var isLoading = true
+    @State private var didFail = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: DSSpacing.md) {
+                    ForEach(ReaderBatterySVGPreviewState.allCases) { state in
+                        VStack(spacing: DSSpacing.xs) {
+                            preview(for: state)
+                            Text(state.localizedTitle)
+                                .font(DSFont.caption2)
+                                .foregroundStyle(DSColor.textSecondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+
+            if didFail {
+                Label(
+                    localized("模板無法載入，將使用系統電池。"),
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(DSFont.caption)
+                .foregroundStyle(DSColor.warning)
+            }
+        }
+        .task(id: previewTaskID) {
+            await loadPreviews()
+        }
+    }
+
+    @ViewBuilder
+    private func preview(for state: ReaderBatterySVGPreviewState) -> some View {
+        ZStack {
+            if let image = images[state] {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                Image(systemName: state.systemImage)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(Color(uiColor: color))
+                    .padding(.horizontal, DSSpacing.xs)
+            }
+
+            if isLoading {
+                ProgressView()
+            }
+        }
+        .frame(
+            width: DSLayout.readerBatterySVGPreviewWidth,
+            height: DSLayout.readerBatterySVGPreviewHeight
+        )
+        .accessibilityHidden(true)
+    }
+
+    private var previewTaskID: String {
+        [
+            assetID.uuidString,
+            resolvedColorHex ?? "fallback",
+            String(Double(displayScale).bitPattern, radix: 16)
+        ].joined(separator: "|")
+    }
+
+    private var resolvedColorHex: String? {
+        ReaderOverlayPresentationResolver.rgbaHex(
+            color,
+            userInterfaceStyle: colorScheme == .dark ? .dark : .light
+        )
+    }
+
+    @MainActor
+    private func loadPreviews() async {
+        images = [:]
+        isLoading = true
+        didFail = false
+        defer { isLoading = false }
+
+        do {
+            try Task.checkCancellation()
+            let source = try await store.source(for: assetID)
+            let template = try ReaderBatterySVGTemplate(source: source)
+            guard let colorHex = resolvedColorHex,
+                  displayScale.isFinite,
+                  displayScale >= 0.5,
+                  displayScale <= 4 else {
+                throw ReaderBatterySVGStatePreviewError.invalidRenderInput
+            }
+            let pixelSize = CGSize(
+                width: DSLayout.readerBatterySVGPreviewWidth * displayScale,
+                height: DSLayout.readerBatterySVGPreviewHeight * displayScale
+            )
+            var rendered: [ReaderBatterySVGPreviewState: UIImage] = [:]
+            for state in ReaderBatterySVGPreviewState.allCases {
+                try Task.checkCancellation()
+                guard let image = try await SVGWebViewRasterizer.shared.renderBattery(
+                    template: template,
+                    level: state.level,
+                    isCharging: state.isCharging,
+                    colorHex: colorHex,
+                    pixelSize: pixelSize,
+                    displayScale: displayScale
+                ) else {
+                    throw ReaderBatterySVGStatePreviewError.renderFailed
+                }
+                rendered[state] = image
+            }
+            try Task.checkCancellation()
+            images = rendered
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled else { return }
+            didFail = true
+        }
+    }
+}
+
+private enum ReaderBatterySVGPreviewState: String, CaseIterable, Identifiable {
+    case quarter
+    case half
+    case threeQuarters
+    case charging
+
+    var id: String { rawValue }
+
+    var level: Double {
+        switch self {
+        case .quarter: 0.25
+        case .half: 0.5
+        case .threeQuarters, .charging: 0.75
+        }
+    }
+
+    var isCharging: Bool { self == .charging }
+
+    var localizedTitle: String {
+        switch self {
+        case .quarter: "25%"
+        case .half: "50%"
+        case .threeQuarters: "75%"
+        case .charging: localized("充電中")
+        }
+    }
+
+    var systemImage: String {
+        ReaderBatteryValueResolver.resolve(
+            rawLevel: level,
+            isCharging: isCharging
+        ).iconName
+    }
+}
+
+private enum ReaderBatterySVGStatePreviewError: Error {
+    case invalidRenderInput
+    case renderFailed
 }
 
 private enum ReaderBatterySVGImportIssue: Identifiable, Equatable {

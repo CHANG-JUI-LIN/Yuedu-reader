@@ -11,8 +11,7 @@ struct ReaderHeaderFooterEditorView: View {
     let readerStyle: ReaderOverlayReaderStyle
     let safeAreaInsets: EdgeInsets
     let svgAssetStore: ReaderOverlaySVGAssetStore
-    let onAddComponent: () -> Void
-    let onEditComponent: (ReaderOverlayComponent) -> Void
+    let importedFonts: [UserFontInfo]
     let onDismiss: () -> Void
 
     @State private var dragOrigin: CGPoint?
@@ -21,20 +20,26 @@ struct ReaderHeaderFooterEditorView: View {
     @State private var guideFeedbackState = ReaderOverlayGuideFeedbackState()
     @State private var measuredFrames: [UUID: CGRect] = [:]
     @State private var chromeFrames: [ReaderOverlayEditorChromeRegion: CGRect] = [:]
+    @State private var presentedSheet: ReaderOverlayEditorSheet?
+    @State private var chromeIsHidden = false
 
     var body: some View {
         GeometryReader { proxy in
             let canvas = CGRect(origin: .zero, size: proxy.size)
             let safeArea = safeAreaRect(in: canvas)
+            let topChromeFrame: CGRect? = chromeIsHidden ? .zero : chromeFrames[.top]
+            let bottomChromeFrame: CGRect? = chromeIsHidden ? .zero : chromeFrames[.bottom]
 
             ZStack {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        model.selectedComponentID = nil
+                        if chromeIsHidden {
+                            setChromeHidden(false)
+                        } else {
+                            model.selectedComponentID = nil
+                        }
                     }
-
-                editorChrome
 
                 ReaderOverlayCanvas(
                     layout: model.draft,
@@ -50,11 +55,16 @@ struct ReaderHeaderFooterEditorView: View {
 
                 ReaderOverlayAlignmentGuidesView(guides: activeGuides)
 
+                if !chromeIsHidden {
+                    editorChrome
+                        .transition(editorChromeTransition)
+                }
+
                 if draggingComponentID == nil,
                    let selectedID = model.selectedComponentID,
                    let selectedFrame = measuredFrames[selectedID],
-                   let topChromeFrame = chromeFrames[.top],
-                   let bottomChromeFrame = chromeFrames[.bottom] {
+                   let topChromeFrame,
+                   let bottomChromeFrame {
                     let actionMenuSafeArea = ReaderOverlayEditorGeometry.chromeAvoidingSafeArea(
                         safeArea: safeArea,
                         canvas: canvas,
@@ -88,10 +98,33 @@ struct ReaderHeaderFooterEditorView: View {
             .onPreferenceChange(ReaderOverlayEditorChromeFramePreferenceKey.self) {
                 chromeFrames = $0
             }
+            .accessibilityAction(
+                named: Text(
+                    localized(chromeIsHidden ? "顯示編輯控制" : "隱藏編輯控制")
+                )
+            ) {
+                setChromeHidden(!chromeIsHidden)
+            }
         }
         .ignoresSafeArea()
         .animation(editorAnimation, value: model.selectedComponentID)
         .animation(editorAnimation, value: model.lastDeleted?.component.id)
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .componentPicker:
+                ReaderOverlayComponentPickerView(onSelect: addComponent)
+            case .componentEditor(let id):
+                if let component = componentBinding(id: id) {
+                    ReaderOverlayComponentEditView(
+                        component: component,
+                        readerStyle: readerStyle,
+                        importedFonts: importedFonts,
+                        svgAssetStore: svgAssetStore,
+                        referencedAssetIDs: referencedSVGAssetIDs
+                    )
+                }
+            }
+        }
     }
 
     private var editorChrome: some View {
@@ -137,7 +170,9 @@ struct ReaderHeaderFooterEditorView: View {
                     .padding(.bottom, DSSpacing.sm)
                 }
 
-                Button(action: onAddComponent) {
+                Button {
+                    presentedSheet = .componentPicker
+                } label: {
                     Label(localized("新增組件"), systemImage: "plus")
                         .font(DSFont.headline)
                         .frame(maxWidth: .infinity)
@@ -166,13 +201,18 @@ struct ReaderHeaderFooterEditorView: View {
 
             Spacer(minLength: DSSpacing.xs)
 
-            Text(localized("頁首頁尾編輯"))
-                .font(DSFont.headline)
-                .lineLimit(1)
-                .padding(.horizontal, DSSpacing.md)
-                .frame(minHeight: DSLayout.readerOverlayActionMenuHeight)
-                .background(.regularMaterial, in: Capsule())
-                .accessibilityAddTraits(.isHeader)
+            Button {
+                setChromeHidden(true)
+            } label: {
+                Label(localized("頁首頁尾編輯"), systemImage: "chevron.up")
+                    .font(DSFont.headline)
+                    .lineLimit(1)
+                    .padding(.horizontal, DSSpacing.md)
+                    .frame(minHeight: DSLayout.readerOverlayActionMenuHeight)
+                    .background(.regularMaterial, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(localized("隱藏編輯控制"))
 
             Spacer(minLength: DSSpacing.xs)
 
@@ -313,9 +353,9 @@ struct ReaderHeaderFooterEditorView: View {
     }
 
     private func edit(_ id: UUID) {
-        guard let component = model.draft.components.first(where: { $0.id == id }) else { return }
+        guard model.draft.components.contains(where: { $0.id == id }) else { return }
         model.selectedComponentID = id
-        onEditComponent(component)
+        presentedSheet = .componentEditor(id)
     }
 
     private func delete(_ id: UUID) {
@@ -361,6 +401,62 @@ struct ReaderHeaderFooterEditorView: View {
 
     private var undoTransition: AnyTransition {
         reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity)
+    }
+
+    private var editorChromeTransition: AnyTransition {
+        reduceMotion ? .identity : .opacity
+    }
+
+    private func setChromeHidden(_ hidden: Bool) {
+        guard chromeIsHidden != hidden else { return }
+        chromeIsHidden = hidden
+        if hidden {
+            UIAccessibility.post(
+                notification: .announcement,
+                argument: localized("編輯控制已隱藏，點一下空白處可重新顯示。")
+            )
+        }
+    }
+
+    private func addComponent(_ kind: ReaderOverlayComponentKind) {
+        let position = ReaderOverlayDefaultPlacement.position(
+            existing: model.draft.components.map(\.position)
+        )
+        var component = ReaderOverlayComponent.make(kind: kind, position: position)
+        if kind == .customText {
+            component.configuration.customText = localized("自訂文字")
+        }
+        model.add(component)
+    }
+
+    private func componentBinding(
+        id: UUID
+    ) -> Binding<ReaderOverlayComponent>? {
+        guard let initial = model.draft.components.first(where: { $0.id == id }) else {
+            return nil
+        }
+        return Binding(
+            get: {
+                model.draft.components.first(where: { $0.id == id }) ?? initial
+            },
+            set: { model.update($0) }
+        )
+    }
+
+    private var referencedSVGAssetIDs: Set<UUID> {
+        Set(model.draft.components.compactMap(\.configuration.svgAssetID))
+    }
+}
+
+private enum ReaderOverlayEditorSheet: Identifiable {
+    case componentPicker
+    case componentEditor(UUID)
+
+    var id: String {
+        switch self {
+        case .componentPicker: "component-picker"
+        case .componentEditor(let id): "component-editor-\(id.uuidString)"
+        }
     }
 }
 
@@ -491,8 +587,7 @@ private struct ReaderHeaderFooterEditorPreviewHarness: View {
                 ),
                 safeAreaInsets: EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0),
                 svgAssetStore: store,
-                onAddComponent: {},
-                onEditComponent: { _ in },
+                importedFonts: [],
                 onDismiss: {}
             )
 

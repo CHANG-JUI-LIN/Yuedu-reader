@@ -1367,8 +1367,7 @@ struct ReaderView: View {
                     readerStyle: readerOverlayEditorReaderStyle,
                     safeAreaInsets: readerOverlayEditorSafeAreaInsets,
                     svgAssetStore: svgAssetStore,
-                    onAddComponent: {},
-                    onEditComponent: { _ in },
+                    importedFonts: settings.userFonts,
                     onDismiss: { readerHeaderFooterEditorModel = nil }
                 )
                 .transition(.opacity)
