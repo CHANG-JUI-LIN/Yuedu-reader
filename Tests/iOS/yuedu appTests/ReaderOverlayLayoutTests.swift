@@ -101,6 +101,65 @@ struct ReaderOverlayLayoutTests {
         #expect(layout.components.allSatisfy { (0...1).contains($0.position.y) })
     }
 
+    @Test("legacy migration produces deterministic distinct identities")
+    func legacyMigrationProducesDeterministicDistinctIdentities() {
+        let legacy = migrationFixture()
+
+        let first = ReaderOverlayLayoutMigration.migrate(legacy)
+        let second = ReaderOverlayLayoutMigration.migrate(legacy)
+
+        #expect(first == second)
+        #expect(Set(first.components.map(\.id)).count == first.components.count)
+        #expect(first.components[1].kind == .currentTime)
+        #expect(first.components[4].kind == .currentTime)
+        #expect(first.components[1].id != first.components[4].id)
+    }
+
+    @Test("component factory normalizes new component position")
+    func componentFactoryNormalizesPosition() {
+        let component = ReaderOverlayComponent.make(
+            kind: .customText,
+            position: ReaderOverlayNormalizedPoint(x: -10, y: 10)
+        )
+
+        #expect(component.position == ReaderOverlayNormalizedPoint(x: 0, y: 1))
+    }
+
+    @Test("extreme legacy paddings still produce normalized positions")
+    func extremeLegacyPaddingsProduceNormalizedPositions() {
+        let fixtures = [
+            ReaderLegacyOverlaySettings(
+                headerVisible: true,
+                footerVisible: true,
+                headerFieldPositions: ["chapterTitle": "left", "time": "right"],
+                headerTopPadding: -1_000_000,
+                headerHorizontalPadding: -1_000_000,
+                footerBottomPadding: -1_000_000,
+                footerHorizontalPadding: -1_000_000,
+                topContentReservation: -1_000_000,
+                bottomContentReservation: -1_000_000
+            ),
+            ReaderLegacyOverlaySettings(
+                headerVisible: true,
+                footerVisible: true,
+                headerFieldPositions: ["chapterTitle": "left", "time": "right"],
+                headerTopPadding: 1_000_000,
+                headerHorizontalPadding: 1_000_000,
+                footerBottomPadding: 1_000_000,
+                footerHorizontalPadding: 1_000_000,
+                topContentReservation: 1_000_000,
+                bottomContentReservation: 1_000_000
+            )
+        ]
+
+        for fixture in fixtures {
+            let layout = ReaderOverlayLayoutMigration.migrate(fixture)
+            #expect(layout.components.allSatisfy {
+                (0...1).contains($0.position.x) && (0...1).contains($0.position.y)
+            })
+        }
+    }
+
     @Test("a stored overlay wins and resolving it is idempotent")
     func storedOverlayWinsAndResolutionIsIdempotent() throws {
         let stored = ReaderOverlayLayout(
@@ -136,7 +195,61 @@ struct ReaderOverlayLayoutTests {
 
         #expect(first.layout == stored)
         #expect(first.corruptData == nil)
+        #expect(first.shouldPersistPrimary)
         #expect(second == first)
+    }
+
+    @Test("future stored layout remains untouched and is not persisted")
+    func futureStoredLayoutRemainsUntouched() throws {
+        let future = ReaderOverlayLayout(
+            version: ReaderOverlayLayout.currentVersion + 1,
+            components: [
+                ReaderOverlayComponent(
+                    id: fixtureUUID(700),
+                    kind: .customText,
+                    position: ReaderOverlayNormalizedPoint(x: -2, y: 3)
+                )
+            ],
+            contentReservations: ReaderOverlayContentReservations(top: -1, bottom: 999)
+        )
+        let originalData = try JSONEncoder().encode(future)
+
+        let resolution = ReaderOverlayLayoutMigration.resolve(
+            storedData: originalData,
+            legacy: migrationFixture()
+        )
+
+        #expect(resolution.layout == future)
+        #expect(resolution.layout.version == future.version)
+        #expect(resolution.layout.components[0].id == fixtureUUID(700))
+        #expect(resolution.corruptData == nil)
+        #expect(!resolution.shouldPersistPrimary)
+    }
+
+    @Test("known old layout upgrades and requests persistence")
+    func knownOldLayoutUpgradesAndRequestsPersistence() throws {
+        let old = ReaderOverlayLayout(
+            version: 0,
+            components: [
+                ReaderOverlayComponent(
+                    id: fixtureUUID(701),
+                    kind: .bookTitle,
+                    position: ReaderOverlayNormalizedPoint(x: -1, y: 2)
+                )
+            ],
+            contentReservations: ReaderOverlayContentReservations(top: -5, bottom: 500)
+        )
+
+        let resolution = ReaderOverlayLayoutMigration.resolve(
+            storedData: try JSONEncoder().encode(old),
+            legacy: migrationFixture()
+        )
+
+        #expect(resolution.shouldPersistPrimary)
+        #expect(resolution.layout.version == ReaderOverlayLayout.currentVersion)
+        #expect(resolution.layout.components[0].id == fixtureUUID(701))
+        #expect(resolution.layout.components[0].position == ReaderOverlayNormalizedPoint(x: 0, y: 1))
+        #expect(resolution.layout.contentReservations == ReaderOverlayContentReservations(top: 0, bottom: 120))
     }
 
     @Test("component style and reservations normalize into supported ranges")
@@ -192,12 +305,13 @@ struct ReaderOverlayLayoutTests {
         )
 
         #expect(resolution.corruptData == malformed)
+        #expect(resolution.shouldPersistPrimary)
         #expect(resolution.layout.components.isEmpty)
         #expect(resolution.layout.contentReservations == ReaderOverlayContentReservations(top: 24, bottom: 24))
     }
 
-    @Test("default layout contains the canonical five components")
-    func defaultLayoutContainsCanonicalComponents() {
+    @Test("default layout contains stable canonical component identities")
+    func defaultLayoutContainsStableCanonicalIdentities() {
         #expect(ReaderOverlayLayout.default == ReaderOverlayLayoutMigration.defaultLayout)
         #expect(ReaderOverlayLayout.default.components.map(\.kind) == [
             .chapterTitle,
@@ -206,9 +320,115 @@ struct ReaderOverlayLayoutTests {
             .chapterPage,
             .totalProgressText
         ])
+        #expect(ReaderOverlayLayout.default.components.map(\.id) == [
+            UUID(uuidString: "00000000-0000-0000-0000-000000000101")!,
+            UUID(uuidString: "00000000-0000-0000-0000-000000000102")!,
+            UUID(uuidString: "00000000-0000-0000-0000-000000000103")!,
+            UUID(uuidString: "00000000-0000-0000-0000-000000000104")!,
+            UUID(uuidString: "00000000-0000-0000-0000-000000000105")!
+        ])
+    }
+
+    @Test("persistence normalizes before writing")
+    func persistenceNormalizesBeforeWriting() throws {
+        let current = ReaderOverlayLayout.default
+        let proposed = ReaderOverlayLayout(
+            version: 0,
+            components: [
+                ReaderOverlayComponent(
+                    id: fixtureUUID(800),
+                    kind: .customText,
+                    position: ReaderOverlayNormalizedPoint(x: -4, y: 4),
+                    style: ReaderOverlayComponentStyle(fontSize: 1, opacity: 8)
+                )
+            ],
+            contentReservations: ReaderOverlayContentReservations(top: -5, bottom: 500)
+        )
+        var persistedData: Data?
+
+        let result = ReaderOverlayLayoutPersistence.save(
+            current: current,
+            proposed: proposed
+        ) { data in
+            persistedData = data
+            return true
+        }
+
+        #expect(result.didPersist)
+        #expect(result.layout.version == ReaderOverlayLayout.currentVersion)
+        #expect(result.layout.components[0].position == ReaderOverlayNormalizedPoint(x: 0, y: 1))
+        #expect(result.layout.components[0].style.fontSize == 8)
+        #expect(result.layout.components[0].style.opacity == 1)
+        #expect(result.layout.contentReservations == ReaderOverlayContentReservations(top: 0, bottom: 120))
+        let data = try #require(persistedData)
+        #expect(try JSONDecoder().decode(ReaderOverlayLayout.self, from: data) == result.layout)
+    }
+
+    @Test("persistence rejects future layouts without writing")
+    func persistenceRejectsFutureLayouts() {
+        let current = ReaderOverlayLayout.default
+        let future = ReaderOverlayLayout(
+            version: ReaderOverlayLayout.currentVersion + 1,
+            components: [],
+            contentReservations: ReaderOverlayContentReservations(top: 0, bottom: 0)
+        )
+        var didWrite = false
+
+        let result = ReaderOverlayLayoutPersistence.save(
+            current: current,
+            proposed: future
+        ) { _ in
+            didWrite = true
+            return true
+        }
+
+        #expect(!result.didPersist)
+        #expect(result.layout == current)
+        #expect(!didWrite)
+    }
+
+    @Test("persistence failure leaves the in-memory layout unchanged")
+    func persistenceFailureLeavesLayoutUnchanged() {
+        let current = ReaderOverlayLayout.default
+        let proposed = ReaderOverlayLayout(
+            components: [
+                ReaderOverlayComponent.make(
+                    kind: .customText,
+                    position: ReaderOverlayNormalizedPoint(x: 0.25, y: 0.75)
+                )
+            ],
+            contentReservations: ReaderOverlayContentReservations(top: 10, bottom: 20)
+        )
+
+        let result = ReaderOverlayLayoutPersistence.save(
+            current: current,
+            proposed: proposed,
+            persist: { _ in false }
+        )
+
+        #expect(!result.didPersist)
+        #expect(result.layout == current)
     }
 
     private func fixtureUUID(_ index: Int) -> UUID {
         UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index + 1))!
+    }
+
+    private func migrationFixture() -> ReaderLegacyOverlaySettings {
+        ReaderLegacyOverlaySettings(
+            headerVisible: true,
+            footerVisible: true,
+            headerFieldPositions: [
+                "chapterTitle": "left",
+                "time": "right",
+                "bookTitle": "hidden"
+            ],
+            headerTopPadding: 10,
+            headerHorizontalPadding: 20,
+            footerBottomPadding: 8,
+            footerHorizontalPadding: 24,
+            topContentReservation: 46,
+            bottomContentReservation: 36
+        )
     }
 }

@@ -133,6 +133,73 @@ struct OnlineReaderPipelineUnificationTests {
         #expect(lines == ["第一段。", "第二段。", "第三段。", "第四段。"], "actual=>>>\(result.attributedString.string)<<<")
     }
 
+    @Test("leading title review image joins the chapter heading")
+    func leadingTitleReviewImageJoinsChapterHeading() async throws {
+        let svg = ##"<svg width="850" height="850" xmlns="http://www.w3.org/2000/svg"><rect width="850" height="850" rx="180" fill="#A9A9A9"/><text x="425" y="425">2</text></svg>"##
+        let base64 = Data(svg.utf8).base64EncodedString()
+        let clickConfig = #"{"style":"text","type":"qd","click":"showCmt(123, 456, -1, 999, 'ios', '改版')"}"#
+        let titleBubble = "<img src=\"data:image/svg+xml;base64,\(base64),\(clickConfig)\">"
+        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: "第251章 找到剑虎兰龙雀的巫师剑买家！",
+            plainTextContent: "莫泊桑家族的小公主看着洛克从外面走廊走来。",
+            rawHTMLContent: "\(titleBubble)\n莫泊桑家族的小公主看着洛克从外面走廊走来。",
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "神魔小说",
+                sourceURL: "https://shenmoxs.top"
+            )
+        )
+
+        let h1Start = try #require(normalizedHTML.range(of: "<h1>"))
+        let h1End = try #require(normalizedHTML.range(of: "</h1>", range: h1Start.upperBound..<normalizedHTML.endIndex))
+        let headingHTML = String(normalizedHTML[h1Start.lowerBound..<h1End.upperBound])
+        let bodyHTML = String(normalizedHTML[h1End.upperBound...])
+
+        #expect(headingHTML.contains("第251章 找到剑虎兰龙雀的巫师剑买家！"))
+        #expect(headingHTML.contains(#"class="yd-review-image""#))
+        #expect(headingHTML.contains(#"data-yd-imgstyle="text""#))
+        #expect(!bodyHTML.contains(#"class="yd-review-image""#))
+        #expect(bodyHTML.contains("莫泊桑家族的小公主看着洛克从外面走廊走来。"))
+
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(
+                index: 0,
+                title: "第251章 找到剑虎兰龙雀的巫师剑买家！",
+                plainText: "莫泊桑家族的小公主看着洛克从外面走廊走来。",
+                body: .html(normalizedHTML),
+                sourceHref: "https://shenmoxs.top/chapter?bookId=123&chapterId=456"
+            )
+        ])
+        let rendered = try await OnlineProviderAttributedStringBuilder(
+            provider: provider,
+            renderSize: CGSize(width: 640, height: 480)
+        ).buildChapter(
+            at: 0,
+            settings: Self.settings,
+            themeTextColor: .label,
+            themeBackgroundColor: .systemBackground
+        ).attributedString
+        let renderedNSString = rendered.string as NSString
+        let titleRange = renderedNSString.range(of: "第251章 找到剑虎兰龙雀的巫师剑买家！")
+        let attachmentRange = renderedNSString.range(of: "\u{FFFC}")
+        try #require(titleRange.location != NSNotFound)
+        try #require(attachmentRange.location != NSNotFound)
+        let titleParagraphRange = renderedNSString.paragraphRange(for: titleRange)
+
+        #expect(NSLocationInRange(attachmentRange.location, titleParagraphRange))
+        let attachmentFont = try #require(
+            rendered.attribute(.font, at: attachmentRange.location, effectiveRange: nil) as? UIFont
+        )
+        #expect(abs(attachmentFont.pointSize - Self.settings.titleSize) < 0.5)
+        let reviewHref = try #require(
+            rendered.attribute(
+                HTMLAttributedStringBuilder.internalLinkAttribute,
+                at: attachmentRange.location,
+                effectiveRange: nil
+            ) as? String
+        )
+        #expect(ReaderHTMLUtilities.isTitleReviewHref(reviewHref))
+    }
+
     // MARK: - Provider cache miss becomes engine signal
 
     @Test("provider cache miss becomes engine contentNotCached")

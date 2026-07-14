@@ -236,7 +236,7 @@ struct ReaderOverlayComponent: Codable, Equatable, Identifiable, Sendable {
     var configuration: ReaderOverlayComponentConfiguration
 
     init(
-        id: UUID = UUID(),
+        id: UUID,
         kind: ReaderOverlayComponentKind,
         position: ReaderOverlayNormalizedPoint,
         style: ReaderOverlayComponentStyle = ReaderOverlayComponentStyle(),
@@ -253,7 +253,7 @@ struct ReaderOverlayComponent: Codable, Equatable, Identifiable, Sendable {
         kind: ReaderOverlayComponentKind,
         position: ReaderOverlayNormalizedPoint
     ) -> ReaderOverlayComponent {
-        ReaderOverlayComponent(kind: kind, position: position)
+        ReaderOverlayComponent(id: UUID(), kind: kind, position: position).normalized
     }
 
     var normalized: ReaderOverlayComponent {
@@ -276,7 +276,7 @@ struct ReaderOverlayComponent: Codable, Equatable, Identifiable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        id = try container.decode(UUID.self, forKey: .id)
         kind = try container.decode(ReaderOverlayComponentKind.self, forKey: .kind)
         position = try container.decodeIfPresent(ReaderOverlayNormalizedPoint.self, forKey: .position)
             ?? ReaderOverlayNormalizedPoint(x: 0.5, y: 0.5)
@@ -341,6 +341,14 @@ struct ReaderOverlayLayout: Codable, Equatable, Sendable {
         self.version = version
         self.components = components
         self.contentReservations = contentReservations
+    }
+
+    func normalized(preservingVersion: Bool = true) -> ReaderOverlayLayout {
+        ReaderOverlayLayout(
+            version: preservingVersion ? version : Self.currentVersion,
+            components: components.map(\.normalized),
+            contentReservations: contentReservations.normalized
+        )
     }
 
     private enum CodingKeys: String, CodingKey {

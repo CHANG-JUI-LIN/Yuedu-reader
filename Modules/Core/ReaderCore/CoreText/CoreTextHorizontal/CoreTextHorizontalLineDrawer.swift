@@ -131,6 +131,18 @@ enum CoreTextHorizontalLineDrawer {
                 nsString: nsString
             )
 
+            // Dialogue background box ("對話底色框"): filled behind the glyphs so the dialogue
+            // text (optionally tinted) sits on top.
+            drawDialogueBoxIfNeeded(
+                line: line,
+                origin: origin,
+                lineStart: lineStart,
+                lineLength: lineRange.length,
+                attrStr: attrStr,
+                stringLength: stringLength,
+                in: ctx
+            )
+
             // Inline border "chips" (e.g. page-number badges) are drawn behind the glyphs so the
             // text sits on top of any fill. Offsets are read from the original (un-justified) line;
             // chips occur on centered/short lines that are never justified.
@@ -307,6 +319,72 @@ enum CoreTextHorizontalLineDrawer {
                 }
                 ctx.strokePath()
             }
+            ctx.restoreGState()
+        }
+    }
+
+    // MARK: - Dialogue background box
+
+    /// Fills a rounded background box behind quoted dialogue marked with
+    /// `DialogueHighlighter.boxColorAttribute` (the "對話底色框" decoration). Drawn before the
+    /// glyphs so the (optionally tinted) dialogue text sits on top. Offsets are read from the
+    /// original line, matching `drawInlineBorderBoxes`; dialogue on a justified line may sit a
+    /// hair inside the stretched glyphs.
+    private static func drawDialogueBoxIfNeeded(
+        line: CTLine,
+        origin: CGPoint,
+        lineStart: Int,
+        lineLength: Int,
+        attrStr: NSAttributedString,
+        stringLength: Int,
+        in ctx: CGContext
+    ) {
+        guard lineStart >= 0, lineStart < stringLength else { return }
+        let length = min(max(0, lineLength), stringLength - lineStart)
+        guard length > 0 else { return }
+
+        var lineAscent: CGFloat = 0
+        var lineDescent: CGFloat = 0
+        CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
+
+        attrStr.enumerateAttribute(
+            DialogueHighlighter.boxColorAttribute,
+            in: NSRange(location: lineStart, length: length),
+            options: []
+        ) { value, range, _ in
+            guard let color = value as? UIColor, range.length > 0 else { return }
+
+            let startOffset = CTLineGetOffsetForStringIndex(line, range.location, nil)
+            let endOffset = CTLineGetOffsetForStringIndex(line, range.location + range.length, nil)
+            let x0 = origin.x + min(startOffset, endOffset)
+            let x1 = origin.x + max(startOffset, endOffset)
+            guard x1 > x0 else { return }
+
+            // Hug the dialogue run's own font box rather than the line's tallest glyph.
+            let ascent: CGFloat
+            let descent: CGFloat
+            if let runFont = attrStr.attribute(.font, at: range.location, effectiveRange: nil) as? UIFont {
+                ascent = runFont.ascender
+                descent = -runFont.descender
+            } else {
+                ascent = lineAscent
+                descent = lineDescent
+            }
+
+            let padH: CGFloat = 1.5
+            let padV: CGFloat = 1.0
+            let rect = CGRect(
+                x: x0 - padH,
+                y: origin.y - descent - padV,
+                width: (x1 - x0) + 2 * padH,
+                height: (ascent + descent) + 2 * padV
+            )
+            let radius = max(0, min(4, min(rect.width, rect.height) / 2))
+
+            ctx.saveGState()
+            ctx.setFillColor(color.cgColor)
+            ctx.addPath(UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath)
+            ctx.fillPath()
             ctx.restoreGState()
         }
     }

@@ -132,6 +132,29 @@ struct ParagraphReviewMarkerTests {
         #expect(marker.title == "起點段評")
     }
 
+    @Test("rewrites qidian title review image with a negative paragraph id")
+    func rewritesQidianTitleReviewImageWithNegativeParagraphID() throws {
+        let svg = ##"<svg width="850" height="850" xmlns="http://www.w3.org/2000/svg"><rect width="850" height="850" rx="180" fill="#A9A9A9"/><text x="425" y="425">2</text></svg>"##
+        let base64 = Data(svg.utf8).base64EncodedString()
+        let clickConfig = #"{"style":"text","type":"qd","click":"showCmt(123, 456, -1, 999, 'ios', '改版')"}"#
+        let raw = "<img src=\"data:image/svg+xml;base64,\(base64),\(clickConfig)\">"
+
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "神魔小说",
+                sourceURL: "https://shenmoxs.top"
+            )
+        )
+
+        #expect(cleaned.contains(#"class="yd-review-image""#))
+        #expect(cleaned.contains(#"data-yd-imgstyle="text""#))
+        let href = try #require(firstHref(in: cleaned))
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
+        #expect(marker.url == "https://shenmoxs.top/comments?bookId=123&chapterId=456&paragraphId=-1")
+        #expect(marker.title == "起點段評")
+    }
+
     @Test("paged adapter rewrites raw cached review markers before rendering")
     func pagedAdapterRewritesRawCachedReviewMarkers() async throws {
         let raw = #"""

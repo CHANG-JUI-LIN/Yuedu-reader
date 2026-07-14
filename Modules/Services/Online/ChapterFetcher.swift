@@ -119,15 +119,20 @@ struct ChapterFetcher {
         // then restore — keeps SwiftSoup's cleaning behavior without feeding it the bloat.
         // Run in a detached task to avoid blocking the cooperative thread pool.
         let (slimmedHTML, payloadRestore) = ReaderHTMLUtilities.extractDataURIPayloads(rawHTMLContent)
-        let bodyHTMLSlim = await Task.detached(priority: .userInitiated) {
+        let parsedBody = await Task.detached(priority: .userInitiated) { () -> (html: String, titleBubble: String?) in
             guard let document = try? SwiftSoup.parse(slimmedHTML),
-                  let body = document.body() else { return "" }
+                  let body = document.body() else { return ("", nil) }
             _ = try? body.select("script,noscript,iframe,object,embed").remove()
-            return ((try? body.html()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let titleBubble = Self.detachLeadingTitleReviewImage(from: body)
+            let html = ((try? body.html()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return (html, titleBubble)
         }.value
-        let bodyHTML = ReaderHTMLUtilities.restoreDataURIPayloads(bodyHTMLSlim, restore: payloadRestore)
+        let bodyHTML = ReaderHTMLUtilities.restoreDataURIPayloads(parsedBody.html, restore: payloadRestore)
+        let leadingTitleBubbleHTML = parsedBody.titleBubble.map {
+            ReaderHTMLUtilities.restoreDataURIPayloads($0, restore: payloadRestore)
+        }
 
-        guard !bodyHTML.isEmpty else {
+        guard !bodyHTML.isEmpty || leadingTitleBubbleHTML != nil else {
             return buildNormalizedHTML(title: title, content: plainTextContent)
         }
 
@@ -135,12 +140,13 @@ struct ChapterFetcher {
         // (起點: `titleRow = title + Bubble`). Split it off so the text becomes the heading and the
         // bubble is rendered as the source's image (text-sized, like body 段評), not literal text.
         let (titleTextPart, titleBubbleHTML) = Self.splitTitleBubble(title, reviewContext: reviewContext)
+        let resolvedTitleBubbleHTML = titleBubbleHTML ?? leadingTitleBubbleHTML
         let trimmedTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: titleTextPart)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let escapedTitle = ReaderHTMLUtilities.escapeHTML(trimmedTitle.isEmpty ? "Untitled" : trimmedTitle)
-        let heading = (trimmedTitle.isEmpty && titleBubbleHTML == nil)
+        let heading = (trimmedTitle.isEmpty && resolvedTitleBubbleHTML == nil)
             ? ""
-            : "<h1>\(ReaderHTMLUtilities.escapeHTML(trimmedTitle))\(titleBubbleHTML ?? "")</h1>\n"
+            : "<h1>\(ReaderHTMLUtilities.escapeHTML(trimmedTitle))\(resolvedTitleBubbleHTML ?? "")</h1>\n"
 
         return """
         <!DOCTYPE html>
@@ -177,6 +183,28 @@ struct ChapterFetcher {
             reviewContext: reviewContext
         ).trimmingCharacters(in: .whitespacesAndNewlines)
         return (textPart, sanitized.isEmpty ? nil : sanitized)
+    }
+
+    /// Removes a leading image-only title-review block from the chapter body and returns its
+    /// tappable anchor markup. Qidian represents title reviews as paragraph `-1`; placing that
+    /// attachment inside the generated `<h1>` makes it inherit the title font/baseline instead of
+    /// entering the standalone body-image centering path.
+    private static func detachLeadingTitleReviewImage(from body: Element) -> String? {
+        guard let firstElement = body.children().array().first else { return nil }
+        let anchors = (try? firstElement.select("a.yd-review-image[href]").array()) ?? []
+        let images = (try? firstElement.select("img").array()) ?? []
+        guard anchors.count == 1,
+              images.count == 1,
+              ((try? firstElement.text()) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty,
+              let href = try? anchors[0].attr("href"),
+              ReaderHTMLUtilities.isTitleReviewHref(href),
+              let anchorHTML = try? anchors[0].outerHtml()
+        else { return nil }
+
+        try? firstElement.remove()
+        return anchorHTML
     }
 
     private static func containsLikelyHTMLTags(_ text: String) -> Bool {

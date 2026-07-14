@@ -27,8 +27,8 @@ struct NodeAttributedStringRenderer {
         /// When non-nil, quoted dialogue is recolored with this tint (the "對話文字高亮"
         /// reading decoration). Applied as a `.foregroundColor` override on the final string.
         let dialogueTextColor: UIColor?
-        /// When non-nil, quoted dialogue gets this `.backgroundColor` box fill (the "對話底色框"
-        /// decoration), painted natively by CTLineDraw as a filled run rect.
+        /// When non-nil, quoted dialogue is marked with `DialogueHighlighter.boxColorAttribute`
+        /// so `CoreTextHorizontalLineDrawer` fills a rounded box behind it (the "對話底色框").
         let dialogueBoxColor: UIColor?
         // Chapter title (prepended <h1> by normalizedChapterHTML) — driven by the
         // reader's "顯示標題 / 標題大小 / 上距 / 下距" settings, not the generic

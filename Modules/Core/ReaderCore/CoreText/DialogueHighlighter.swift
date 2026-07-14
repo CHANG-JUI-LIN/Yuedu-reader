@@ -5,11 +5,11 @@ import UIKit
 /// (text tint) and "對話底色框" (background box) reading decorations.
 ///
 /// Runs as the final step of `NodeAttributedStringRenderer.render`, after all
-/// typography processing, so ranges are stable against the string it colors.
-/// Because it sets `.foregroundColor` / `.backgroundColor` on the built string
-/// (rather than drawing at line time), CoreText colors justified glyphs and paints
-/// the box run rect natively, in both horizontal and vertical writing modes.
-/// Copy/selection are unaffected — neither attribute carries text content.
+/// typography processing, so ranges are stable against the string it marks.
+/// The text tint (`.foregroundColor`) is painted natively by CoreText — justified
+/// glyphs and both writing modes for free. The box marker (`boxColorAttribute`) is
+/// custom-drawn behind the glyphs by `CoreTextHorizontalLineDrawer` (horizontal
+/// modes). Copy/selection are unaffected — neither attribute carries text content.
 enum DialogueHighlighter {
 
     /// Opening → closing quote characters treated as dialogue delimiters. Only
@@ -28,10 +28,16 @@ enum DialogueHighlighter {
         0x2019, // '
     ]
 
+    /// Attribute marking dialogue spans that get a background box (the "對話底色框").
+    /// A dedicated key — NOT `.backgroundColor`, which `CTLineDraw` does not paint in this
+    /// CoreText pipeline (inline backgrounds here are all custom-drawn). Consumed by
+    /// `CoreTextHorizontalLineDrawer`, which fills a rounded rect behind the dialogue glyphs.
+    /// Value is a `UIColor`.
+    static let boxColorAttribute = NSAttributedString.Key("YDDialogueBoxColor")
+
     /// Applies the dialogue decoration across every quoted span:
-    /// - `textColor` → `.foregroundColor` (the "對話文字高亮" tint).
-    /// - `boxColor` → `.backgroundColor`, which CTLineDraw paints as a filled run rect
-    ///   (the "對話底色框"), natively in both horizontal and vertical writing modes.
+    /// - `textColor` → `.foregroundColor` (the "對話文字高亮" tint), painted natively by CoreText.
+    /// - `boxColor` → `boxColorAttribute` (the "對話底色框"), custom-drawn behind the glyphs.
     /// Either color may be nil to skip that layer.
     static func apply(textColor: UIColor?, boxColor: UIColor?, to attr: NSMutableAttributedString) {
         guard textColor != nil || boxColor != nil else { return }
@@ -40,7 +46,7 @@ enum DialogueHighlighter {
                 attr.addAttribute(.foregroundColor, value: textColor, range: range)
             }
             if let boxColor {
-                attr.addAttribute(.backgroundColor, value: boxColor, range: range)
+                attr.addAttribute(boxColorAttribute, value: boxColor, range: range)
             }
         }
     }

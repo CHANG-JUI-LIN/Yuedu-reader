@@ -560,11 +560,7 @@ class GlobalSettings: ObservableObject {
     @Published var readerHeaderFieldPositions: [String: String] {
         didSet { UserDefaults.standard.set(readerHeaderFieldPositions, forKey: "yd_reader_header_positions") }
     }
-    @Published var readerOverlayLayout: ReaderOverlayLayout {
-        didSet {
-            Self.persistReaderOverlayLayout(readerOverlayLayout)
-        }
-    }
+    @Published private(set) var readerOverlayLayout: ReaderOverlayLayout
     @Published var pageTurnStyle: PageTurnStyle {
         didSet { UserDefaults.standard.set(pageTurnStyle.rawValue, forKey: "yd_page_turn_style") }
     }
@@ -1044,7 +1040,14 @@ class GlobalSettings: ObservableObject {
         if let corruptData = overlayResolution.corruptData {
             overlayDefaults.set(corruptData, forKey: Self.readerOverlayLayoutCorruptBackupKey)
         }
-        Self.persistReaderOverlayLayout(overlayResolution.layout, defaults: overlayDefaults)
+        if overlayResolution.shouldPersistPrimary {
+            _ = ReaderOverlayLayoutPersistence.save(
+                current: overlayResolution.layout,
+                proposed: overlayResolution.layout
+            ) { data in
+                Self.persistReaderOverlayLayoutData(data, defaults: overlayDefaults)
+            }
+        }
         let rawPageTurn = UserDefaults.standard.string(forKey: "yd_page_turn_style") ?? ""
         pageTurnStyle = PageTurnStyle(rawValue: rawPageTurn) ?? .slide
         let rawSpreadMode = UserDefaults.standard.string(forKey: "yd_reader_spread_mode") ?? ""
@@ -1285,11 +1288,22 @@ class GlobalSettings: ObservableObject {
     }
 
     @discardableResult
-    private static func persistReaderOverlayLayout(
-        _ layout: ReaderOverlayLayout,
+    func saveReaderOverlayLayout(_ proposedLayout: ReaderOverlayLayout) -> Bool {
+        let result = ReaderOverlayLayoutPersistence.save(
+            current: readerOverlayLayout,
+            proposed: proposedLayout
+        ) { data in
+            Self.persistReaderOverlayLayoutData(data)
+        }
+        guard result.didPersist else { return false }
+        readerOverlayLayout = result.layout
+        return true
+    }
+
+    private static func persistReaderOverlayLayoutData(
+        _ data: Data,
         defaults: UserDefaults = .standard
     ) -> Bool {
-        guard let data = try? JSONEncoder().encode(layout) else { return false }
         defaults.set(data, forKey: readerOverlayLayoutDataKey)
         guard defaults.data(forKey: readerOverlayLayoutDataKey) == data else { return false }
         defaults.set(

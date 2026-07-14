@@ -502,6 +502,18 @@ enum ReaderHTMLUtilities {
         return ReviewTarget(url: marker.url, title: marker.title)
     }
 
+    /// Title-level Qidian reviews use the sentinel paragraph ID `-1`. Recognizing the decoded
+    /// target lets the chapter normalizer move only that leading bubble into the `<h1>` while
+    /// leaving ordinary paragraph and chapter-card images in the body.
+    static func isTitleReviewHref(_ href: String) -> Bool {
+        guard let marker = decodeReviewHref(href),
+              let components = URLComponents(string: marker.url)
+        else { return false }
+        return components.queryItems?.contains {
+            $0.name.caseInsensitiveCompare("paragraphId") == .orderedSame && $0.value == "-1"
+        } == true
+    }
+
     /// One source paragraph paired with its optional paragraph-review anchor.
     /// `reviewHref` is the internal `ydreview://` href (decode it for count/title).
     struct ReviewParagraph: Equatable {
@@ -791,9 +803,9 @@ enum ReaderHTMLUtilities {
             }
             // 起點: showCmt(bookId, chapterId, paragraphId, …) → build the qidian review URL.
             if args.count >= 3,
-               isNumericLegadoArgument(args[0]),
-               isNumericLegadoArgument(args[1]),
-               isNumericLegadoArgument(args[2]) {
+               isIntegerLegadoArgument(args[0]),
+               isIntegerLegadoArgument(args[1]),
+               isIntegerLegadoArgument(args[2]) {
                 return qidianReviewTarget(
                     kind: .paragraph,
                     bookId: args[0],
@@ -827,8 +839,8 @@ enum ReaderHTMLUtilities {
                 return ReviewTarget(url: url, title: sources.isEmpty ? "本章討論" : "\(sources)本章討論")
             }
             if args.count >= 2,
-               isNumericLegadoArgument(args[0]),
-               isNumericLegadoArgument(args[1]) {
+               isIntegerLegadoArgument(args[0]),
+               isIntegerLegadoArgument(args[1]) {
                 return qidianReviewTarget(
                     kind: .chapter,
                     bookId: args[0],
@@ -1075,9 +1087,13 @@ enum ReaderHTMLUtilities {
         return (url.hasPrefix("http://") || url.hasPrefix("https://")) ? url : nil
     }
 
-    private static func isNumericLegadoArgument(_ value: String) -> Bool {
+    private static func isIntegerLegadoArgument(_ value: String) -> Bool {
         let cleaned = cleanLegadoArgument(value)
-        return !cleaned.isEmpty && cleaned.allSatisfy(\.isNumber)
+        guard !cleaned.isEmpty else { return false }
+        let digits = cleaned.first == "-" || cleaned.first == "+"
+            ? cleaned.dropFirst()
+            : cleaned[...]
+        return !digits.isEmpty && digits.allSatisfy(\.isNumber)
     }
 
     private static func sourceVariableValue(
