@@ -90,7 +90,7 @@ struct ReaderOverlayFooter: View {
                     .font(DSFont.fixed(size: 10).monospacedDigit())
                     .foregroundColor(textColor.opacity(0.4))
                 Spacer()
-                HStack(spacing: 4) {
+                HStack(spacing: DSSpacing.xs) {
                     Text(clock.displayTime).font(DSFont.fixed(size: 10).monospacedDigit())
                     Image(systemName: clock.batteryIcon).font(DSFont.fixed(size: 10))
                 }
@@ -101,6 +101,8 @@ struct ReaderOverlayFooter: View {
             .padding(.bottom, footerPadding)
         }
         .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(String(format: localized("第 %@ 頁，進度 %@，%@"), "\(pageInfo)", "\(progress)", clock.displayTime))
     }
 }
 
@@ -122,7 +124,7 @@ struct ReaderInlineFooter: View {
                     .font(DSFont.fixed(size: 10).monospacedDigit())
                     .foregroundColor(textColor.opacity(0.4))
                 Spacer()
-                HStack(spacing: 4) {
+                HStack(spacing: DSSpacing.xs) {
                     Text(clock.displayTime).font(DSFont.fixed(size: 10).monospacedDigit())
                     Image(systemName: clock.batteryIcon).font(DSFont.fixed(size: 10))
                 }

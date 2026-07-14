@@ -1223,6 +1223,14 @@
 "電量" = "Battery";
 "頁碼" = "Page";
 "進度" = "Progress";
+"本章頁碼" = "Chapter Page";
+"總進度" = "Overall Progress";
+"目前時間" = "Current Time";
+"目前日期" = "Current Date";
+"星期" = "Weekday";
+"本次閱讀時長" = "Reading Time";
+"預估剩餘時間" = "Estimated Time Remaining";
+"自訂文字" = "Custom Text";
 "隱藏" = "Hidden";
 "靠左" = "Left";
 "置中" = "Center";

@@ -27,7 +27,7 @@ enum UserFontStorageError: LocalizedError {
     }
 }
 
-final class UserFontStorageManager {
+final class UserFontStorageManager: @unchecked Sendable {
     static let shared = UserFontStorageManager()
 
     private let fileManager: FileManager
@@ -99,6 +99,27 @@ final class UserFontStorageManager {
 
     func fileURL(for font: UserFontInfo) throws -> URL {
         try fontsDirectoryURL().appendingPathComponent(font.fileName)
+    }
+
+    /// PostScript names backed by files in Yuedu's managed font directory.
+    /// Overlay styles use this list to distinguish a still-installed import from
+    /// an unavailable saved reference without rewriting the saved reference.
+    func availablePostScriptNames() -> Set<String> {
+        guard let directory = try? fontsDirectoryURL(),
+              let urls = try? fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+              ) else {
+            return []
+        }
+
+        return Set(urls.compactMap { url in
+            guard ["ttf", "otf"].contains(url.pathExtension.lowercased()) else {
+                return nil
+            }
+            return Self.fontMetadata(from: url)?.postScriptName
+        })
     }
 
     private func fontsDirectoryURL() throws -> URL {

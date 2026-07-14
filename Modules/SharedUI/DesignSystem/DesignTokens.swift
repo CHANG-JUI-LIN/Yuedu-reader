@@ -208,6 +208,18 @@ enum DSLayout {
     static let readerBatterySVGPreviewWidth: CGFloat = 72
     /// Height of a battery SVG preview in the template-management list.
     static let readerBatterySVGPreviewHeight: CGFloat = 32
+    /// Minimum editor hit target for a freely positioned reader overlay component.
+    static let readerOverlayEditorMinimumHitSize: CGFloat = 44
+    /// Selection outline width for the reader overlay editor.
+    static let readerOverlaySelectionLineWidth: CGFloat = 2
+    /// Minimum width of a total-progress overlay component.
+    static let readerOverlayProgressMinimumWidth: CGFloat = 72
+    /// Maximum width of a total-progress overlay component on compact reader canvases.
+    static let readerOverlayProgressMaximumWidth: CGFloat = 240
+    /// Progress width relative to the component font line height.
+    static let readerOverlayProgressWidthScale: CGFloat = 5
+    /// System and imported battery width relative to the component font line height.
+    static let readerOverlayBatteryAspectRatio: CGFloat = 2.25
     /// Wide management surfaces such as book-source lists.
     static let readableWideWidth: CGFloat = 980
     /// Extra horizontal inset applied to regular-width reader pages.
