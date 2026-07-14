@@ -1327,9 +1327,13 @@ struct ReaderView: View {
             if overlayVisibility.showsRuntimeCanvas,
                !chapters.isEmpty,
                let svgAssetStore = readerOverlaySVGAssetStore {
+                let overlayContent = readerOverlayContentSnapshot
                 ReaderOverlayCanvas(
                     layout: settings.readerOverlayLayout,
-                    content: readerOverlayContentSnapshot,
+                    scope: ReaderOverlayPageScope.resolve(
+                        chapterPage: overlayContent.chapterPage
+                    ),
+                    content: overlayContent,
                     readerStyle: readerOverlayEditorReaderStyle,
                     mode: .runtime,
                     svgAssetStore: svgAssetStore,

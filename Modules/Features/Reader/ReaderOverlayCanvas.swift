@@ -39,6 +39,7 @@ private struct ReaderOverlayComponentAnchorPreferenceKey: PreferenceKey {
 
 struct ReaderOverlayCanvas: View {
     let layout: ReaderOverlayLayout
+    let scope: ReaderOverlayPageScope
     let content: ReaderOverlayContentSnapshot
     let readerStyle: ReaderOverlayReaderStyle
     let mode: ReaderOverlayCanvasMode
@@ -48,7 +49,7 @@ struct ReaderOverlayCanvas: View {
     var body: some View {
         GeometryReader { proxy in
             ReaderOverlayPositionLayout {
-                ForEach(layout.components) { component in
+                ForEach(layout.components(for: scope)) { component in
                     interactiveComponent(component)
                     .readerOverlayPosition(component.position)
                     .anchorPreference(
@@ -296,6 +297,7 @@ private struct ReaderOverlayPositionLayout: Layout {
 #Preview("Reader Overlay Canvas") {
     ReaderOverlayCanvas(
         layout: .default,
+        scope: .chapterBody,
         content: ReaderOverlayContentSnapshot(
             bookTitle: "示例書名",
             chapterTitle: "第一章",

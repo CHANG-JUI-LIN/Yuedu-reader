@@ -43,6 +43,7 @@ struct ReaderHeaderFooterEditorView: View {
 
                 ReaderOverlayCanvas(
                     layout: model.draft,
+                    scope: .chapterBody,
                     content: content,
                     readerStyle: readerStyle,
                     mode: .editor(selectedID: model.selectedComponentID),

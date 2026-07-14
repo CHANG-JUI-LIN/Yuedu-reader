@@ -2,6 +2,13 @@ import Testing
 @testable import yuedu_app
 
 struct ReaderOverlayIntegrationTests {
+    @Test("Chapter page one selects opening overlays")
+    func firstChapterPageUsesOpeningScope() {
+        #expect(ReaderOverlayPageScope.resolve(chapterPage: 1) == .chapterOpening)
+        #expect(ReaderOverlayPageScope.resolve(chapterPage: 2) == .chapterBody)
+        #expect(ReaderOverlayPageScope.resolve(chapterPage: 0) == .chapterBody)
+    }
+
     @Test("Paged reading shows one runtime overlay canvas")
     func pagedReadingShowsRuntimeOverlay() {
         let visibility = ReaderOverlayPresentationPolicy.visibility(
