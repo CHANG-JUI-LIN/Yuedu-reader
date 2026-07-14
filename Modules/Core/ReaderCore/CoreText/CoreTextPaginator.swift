@@ -295,6 +295,7 @@ final class CoreTextPaginator {
         let fontSize: CGFloat
         let marginH: CGFloat
         let marginV: CGFloat
+        let bottomInset: CGFloat
         let lineSpacing: CGFloat
         let paragraphSpacing: CGFloat
         let letterSpacing: CGFloat
@@ -410,6 +411,7 @@ final class CoreTextPaginator {
                            fontSize: fontSize,
                            marginH: contentInsets.left,
                            marginV: contentInsets.top,
+                           bottomInset: contentInsets.bottom,
                            lineSpacing: lineSpacing,
                            paragraphSpacing: paragraphSpacing,
                            letterSpacing: letterSpacing,
@@ -1397,7 +1399,9 @@ final class CoreTextPaginator {
         lineSpacing: CGFloat,
         writingMode: ReaderWritingMode
     ) -> UIEdgeInsets {
-        guard !writingMode.isVertical else { return contentInsets }
+        guard !writingMode.isVertical, contentInsets.bottom > 0 else {
+            return contentInsets
+        }
         let rawHeight = renderSize.height - contentInsets.top - contentInsets.bottom
         let lineHeight = max(1, fontSize + lineSpacing)
         let lineCount = floor(rawHeight / lineHeight)

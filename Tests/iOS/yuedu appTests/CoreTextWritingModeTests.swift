@@ -6,6 +6,41 @@ import UIKit
 
 @Suite("CoreText writing mode", .serialized)
 struct CoreTextWritingModeTests {
+    @Test("horizontal zero bottom reservation reaches the content edge after a cached layout")
+    func zeroBottomReservationReachesContentEdge() async {
+        let font = UIFont.systemFont(ofSize: 18)
+        let text = String(repeating: "正文測試內容。", count: 200)
+        let attributed = NSAttributedString(string: text, attributes: [.font: font])
+        let paginator = CoreTextPaginator()
+        let renderSize = CGSize(width: 240, height: 320)
+
+        _ = await paginator.paginate(
+            spineIndex: 0,
+            attrStr: attributed,
+            renderSize: renderSize,
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 24, left: 20, bottom: 40, right: 20),
+            writingMode: .horizontal
+        )
+        let zeroBottom = await paginator.paginate(
+            spineIndex: 0,
+            attrStr: attributed,
+            renderSize: renderSize,
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 24, left: 20, bottom: 0, right: 20),
+            writingMode: .horizontal
+        )
+
+        #expect(zeroBottom.contentInsets.bottom == 0)
+        #expect(
+            CoreTextPaginator.uiContentRect(
+                renderSize: renderSize,
+                contentInsets: zeroBottom.contentInsets,
+                fontSize: 18,
+                writingMode: .horizontal
+            ).maxY == renderSize.height
+        )
+    }
 
     @Test("CoreText paginator handles long complex Unicode text")
     func coreTextPaginatorHandlesLongComplexUnicodeText() async throws {
