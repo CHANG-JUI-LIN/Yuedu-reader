@@ -1244,6 +1244,16 @@
 "這會取代目前的頁首頁尾組件、位置與正文保留空間。" = "This replaces the current header and footer components, positions, and body text reservations.";
 "套用" = "Apply";
 "ReaderOverlay.Format.Points" = "%d pt";
+"ReaderOverlay.Format.Percent" = "%d%%";
+"ReaderOverlay.Format.CountLimit" = "%d/%d";
+"頁面範圍" = "Page Scope";
+"章節首頁" = "Opening";
+"章節正文" = "Body";
+"退出編輯" = "Exit Editing";
+"儲存頁首頁尾變更？" = "Save Header and Footer Changes?";
+"儲存並退出" = "Save and Exit";
+"不儲存退出" = "Exit Without Saving";
+"繼續編輯" = "Keep Editing";
 "新增組件" = "Add Component";
 "已刪除組件" = "Component Deleted";
 "復原" = "Undo";

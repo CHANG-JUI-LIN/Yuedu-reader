@@ -15,11 +15,13 @@ struct ReaderOverlayFontPickerView: View {
                     reference: ReaderOverlayFontReference(kind: .system),
                     previewFont: DSFont.body
                 )
+                .listRowBackground(DSColor.surface)
                 fontRow(
                     title: localized("目前閱讀字體"),
                     reference: ReaderOverlayFontReference(kind: .reader),
                     previewFont: Font(readerFont)
                 )
+                .listRowBackground(DSColor.surface)
             }
 
             Section(localized("已匯入字體")) {
@@ -27,6 +29,7 @@ struct ReaderOverlayFontPickerView: View {
                     Text(localized("尚未匯入字體"))
                         .font(DSFont.subheadline)
                         .foregroundStyle(DSColor.textSecondary)
+                        .listRowBackground(DSColor.surface)
                 } else {
                     ForEach(importedFonts) { font in
                         fontRow(
@@ -37,6 +40,7 @@ struct ReaderOverlayFontPickerView: View {
                             ),
                             previewFont: previewFont(postScriptName: font.postScriptName)
                         )
+                        .listRowBackground(DSColor.surface)
                     }
                 }
             }
@@ -55,9 +59,11 @@ struct ReaderOverlayFontPickerView: View {
                     .font(DSFont.subheadline)
                     .foregroundStyle(DSColor.warning)
                     .accessibilityElement(children: .combine)
+                    .listRowBackground(DSColor.surface)
                 }
             }
         }
+        .listStyle(.insetGrouped)
         .navigationTitle(localized("字體"))
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface()

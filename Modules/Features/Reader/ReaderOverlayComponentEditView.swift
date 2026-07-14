@@ -1,38 +1,72 @@
 import SwiftUI
 import UIKit
 
+struct ReaderOverlayComponentDraft: Equatable {
+    let original: ReaderOverlayComponent
+    var value: ReaderOverlayComponent
+
+    init(_ component: ReaderOverlayComponent) {
+        original = component
+        value = component
+    }
+
+    func cancelled() -> ReaderOverlayComponent {
+        original
+    }
+
+    func committed() -> ReaderOverlayComponent {
+        value.normalized
+    }
+}
+
 struct ReaderOverlayComponentEditView: View {
     @Environment(\.dismiss) private var dismiss
 
-    @Binding var component: ReaderOverlayComponent
-
+    let originalComponent: ReaderOverlayComponent
     let readerStyle: ReaderOverlayReaderStyle
     let importedFonts: [UserFontInfo]
     let svgAssetStore: ReaderOverlaySVGAssetStore
     let referencedAssetIDs: Set<UUID>
+    let onSave: (ReaderOverlayComponent) -> Void
 
+    @State private var component: ReaderOverlayComponent
     @State private var customTextDraft: String
     @State private var svgAssets: [ReaderOverlaySVGAsset] = []
+    @State private var svgIsLoading = false
     @State private var svgLoadFailed = false
     @State private var showingSVGPicker = false
 
     init(
-        component: Binding<ReaderOverlayComponent>,
+        component: ReaderOverlayComponent,
         readerStyle: ReaderOverlayReaderStyle,
         importedFonts: [UserFontInfo],
         svgAssetStore: ReaderOverlaySVGAssetStore,
-        referencedAssetIDs: Set<UUID>
+        referencedAssetIDs: Set<UUID>,
+        onSave: @escaping (ReaderOverlayComponent) -> Void
     ) {
-        _component = component
+        originalComponent = component
         self.readerStyle = readerStyle
         self.importedFonts = importedFonts
         self.svgAssetStore = svgAssetStore
         self.referencedAssetIDs = referencedAssetIDs
+        self.onSave = onSave
 
-        let storedText = component.wrappedValue.configuration.customText
+        var initialComponent = component
+        let formats = ReaderOverlayComponentEditing.compatibleFormats(for: component.kind)
+        if !formats.isEmpty,
+           !formats.contains(initialComponent.configuration.displayFormat),
+           let fallback = formats.first {
+            initialComponent.configuration.displayFormat = fallback
+        }
+        let storedText = initialComponent.configuration.customText
         let initialText = storedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? localized("自訂文字")
             : storedText
+        if initialComponent.kind == .customText,
+           storedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            initialComponent.configuration.customText = initialText
+        }
+        _component = State(initialValue: initialComponent.normalized)
         _customTextDraft = State(initialValue: initialText)
     }
 
@@ -55,12 +89,22 @@ struct ReaderOverlayComponentEditView: View {
                     batterySection
                 }
             }
+            .formStyle(.grouped)
             .themedAppSurface()
             .navigationTitle(component.kind.localizedTitle)
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel(localized("取消"))
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(localized("完成")) { dismiss() }
+                    Button { saveAndDismiss() } label: {
+                        Image(systemName: "checkmark")
+                    }
+                    .accessibilityLabel(localized("儲存"))
                 }
             }
         }
@@ -94,7 +138,11 @@ struct ReaderOverlayComponentEditView: View {
         } footer: {
             VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 Text(
-                    "\(customTextDraft.count)/\(ReaderOverlayComponentConfiguration.maximumCustomTextLength)"
+                    String(
+                        format: localized("ReaderOverlay.Format.CountLimit"),
+                        customTextDraft.count,
+                        ReaderOverlayComponentConfiguration.maximumCustomTextLength
+                    )
                 )
                 if !customTextIsValid {
                     Text(localized("自訂文字不能為空白，將保留上一個有效內容。"))
@@ -103,6 +151,7 @@ struct ReaderOverlayComponentEditView: View {
             }
             .font(DSFont.caption)
         }
+        .listRowBackground(DSColor.surface)
     }
 
     private var fontSection: some View {
@@ -136,12 +185,12 @@ struct ReaderOverlayComponentEditView: View {
                 HStack {
                     Text(localized("字體大小"))
                     Spacer()
-                    Text("\(Int(component.style.fontSize.rounded())) pt")
+                    Text(pointsText)
                         .foregroundStyle(DSColor.textSecondary)
                 }
                 Slider(value: fontSizeBinding, in: 8...72, step: 1)
                     .accessibilityLabel(localized("字體大小"))
-                    .accessibilityValue("\(Int(component.style.fontSize.rounded())) pt")
+                    .accessibilityValue(pointsText)
             }
 
             Picker(localized("字重"), selection: fontWeightBinding) {
@@ -150,6 +199,7 @@ struct ReaderOverlayComponentEditView: View {
                 }
             }
         }
+        .listRowBackground(DSColor.surface)
     }
 
     private var colorSection: some View {
@@ -167,6 +217,7 @@ struct ReaderOverlayComponentEditView: View {
                 )
             }
         }
+        .listRowBackground(DSColor.surface)
     }
 
     private var opacitySection: some View {
@@ -175,14 +226,15 @@ struct ReaderOverlayComponentEditView: View {
                 HStack {
                     Text(localized("透明度"))
                     Spacer()
-                    Text("\(Int((component.style.opacity * 100).rounded()))%")
+                    Text(percentText)
                         .foregroundStyle(DSColor.textSecondary)
                 }
                 Slider(value: opacityBinding, in: 0.1...1, step: 0.05)
                     .accessibilityLabel(localized("透明度"))
-                    .accessibilityValue("\(Int((component.style.opacity * 100).rounded()))%")
+                    .accessibilityValue(percentText)
             }
         }
+        .listRowBackground(DSColor.surface)
     }
 
     private var formatSection: some View {
@@ -193,6 +245,7 @@ struct ReaderOverlayComponentEditView: View {
                 }
             }
         }
+        .listRowBackground(DSColor.surface)
     }
 
     private var batterySection: some View {
@@ -216,12 +269,20 @@ struct ReaderOverlayComponentEditView: View {
                             .lineLimit(1)
                         Image(systemName: "chevron.right")
                             .font(DSFont.caption)
-                            .foregroundStyle(DSColor.textTertiary)
+                            .foregroundStyle(DSColor.textSecondary)
                             .accessibilityHidden(true)
                     }
                 }
 
-                if svgLoadFailed {
+                if svgIsLoading {
+                    HStack(spacing: DSSpacing.sm) {
+                        ProgressView()
+                        Text(localized("正在載入 SVG 模板"))
+                            .font(DSFont.subheadline)
+                            .foregroundStyle(DSColor.textSecondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                } else if svgLoadFailed {
                     Label(localized("SVG 模板載入失敗。"), systemImage: "exclamationmark.triangle")
                         .font(DSFont.caption)
                         .foregroundStyle(DSColor.destructive)
@@ -238,6 +299,7 @@ struct ReaderOverlayComponentEditView: View {
                 }
             }
         }
+        .listRowBackground(DSColor.surface)
     }
 
     private var customTextBinding: Binding<String> {
@@ -308,6 +370,20 @@ struct ReaderOverlayComponentEditView: View {
         binding(\.style.opacity)
     }
 
+    private var pointsText: String {
+        String(
+            format: localized("ReaderOverlay.Format.Points"),
+            Int(component.style.fontSize.rounded())
+        )
+    }
+
+    private var percentText: String {
+        String(
+            format: localized("ReaderOverlay.Format.Percent"),
+            Int((component.style.opacity * 100).rounded())
+        )
+    }
+
     private var displayFormatBinding: Binding<ReaderOverlayDisplayFormat> {
         binding(\.configuration.displayFormat)
     }
@@ -337,6 +413,13 @@ struct ReaderOverlayComponentEditView: View {
         var updated = component
         update(&updated)
         component = updated.normalized
+    }
+
+    private func saveAndDismiss() {
+        var draft = ReaderOverlayComponentDraft(originalComponent)
+        draft.value = component
+        onSave(draft.committed())
+        dismiss()
     }
 
     private var compatibleFormats: [ReaderOverlayDisplayFormat] {
@@ -398,6 +481,8 @@ struct ReaderOverlayComponentEditView: View {
 
     @MainActor
     private func reloadSVGAssets() async {
+        svgIsLoading = true
+        defer { svgIsLoading = false }
         do {
             svgAssets = try await svgAssetStore.assets()
             svgLoadFailed = false

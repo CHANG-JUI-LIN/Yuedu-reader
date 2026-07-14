@@ -228,6 +228,8 @@ enum DSLayout {
     static let readerOverlayActionMenuGap: CGFloat = 8
     /// Maximum width of the bottom add-component action.
     static let readerOverlayEditorBottomActionMaxWidth: CGFloat = 320
+    /// Width of the centered reader-overlay editor control stack.
+    static let readerOverlayEditorControlStackWidth: CGFloat = 240
     /// Width reserved for leading/trailing actions in the editor toolbar.
     static let readerOverlayEditorToolbarActionWidth: CGFloat = 72
     /// Alignment guide stroke width.

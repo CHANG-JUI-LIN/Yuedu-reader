@@ -61,4 +61,32 @@ struct ReaderOverlayComponentEditingTests {
                 == ReaderOverlayComponentConfiguration.maximumCustomTextLength
         )
     }
+
+    @Test("component edit cancellation restores the original value")
+    func draftCancellationRestoresOriginal() {
+        let original = ReaderOverlayComponent.make(
+            kind: .bookTitle,
+            position: ReaderOverlayNormalizedPoint(x: 0.2, y: 0.3)
+        )
+        var draft = ReaderOverlayComponentDraft(original)
+        draft.value.position = ReaderOverlayNormalizedPoint(x: 0.8, y: 0.9)
+
+        #expect(draft.cancelled() == original)
+    }
+
+    @Test("component edit confirmation returns a normalized draft")
+    func draftConfirmationNormalizesChanges() {
+        let original = ReaderOverlayComponent.make(
+            kind: .customText,
+            position: ReaderOverlayNormalizedPoint(x: 0.5, y: 0.5)
+        )
+        var draft = ReaderOverlayComponentDraft(original)
+        draft.value.position = ReaderOverlayNormalizedPoint(x: 2, y: -1)
+        draft.value.style.fontSize = 200
+
+        let committed = draft.committed()
+
+        #expect(committed.position == ReaderOverlayNormalizedPoint(x: 1, y: 0))
+        #expect(committed.style.fontSize == 72)
+    }
 }

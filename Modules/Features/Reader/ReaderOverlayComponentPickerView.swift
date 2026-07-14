@@ -153,16 +153,21 @@ struct ReaderOverlayComponentPickerView: View {
                                     .foregroundStyle(DSColor.textPrimary)
                                     .frame(minHeight: DSLayout.readerAppleBooksControlSize)
                             }
+                            .listRowBackground(DSColor.surface)
                         }
                     }
                 }
             }
+            .listStyle(.insetGrouped)
             .themedAppSurface()
             .navigationTitle(localized("新增組件"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(localized("取消")) { dismiss() }
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel(localized("關閉"))
                 }
             }
         }
