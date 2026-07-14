@@ -22,6 +22,9 @@ struct ReaderSettingsView: View {
     @State private var fontImportError: FontImportError?
     @State private var layoutImportAlert: LayoutImportAlert?
     @State private var customLayoutEnabled = true
+    @State private var showingOverlayResetConfirmation = false
+    @State private var showingOverlayImportConfirmation = false
+    @State private var pendingLayoutPreset: ReaderLayoutPreset?
 
     private var supportsFontSize: Bool { capabilities.contains(.fontSize) }
     private var supportsUserFont: Bool { supportsFontSize && allowsUserSelectedReaderFont }
@@ -44,10 +47,6 @@ struct ReaderSettingsView: View {
     private let defaultParagraphSpacingMultiplier: CGFloat = 0.8
     private let defaultPageMarginH: CGFloat = 24
     private let defaultPageMarginV: CGFloat = 16
-    private let defaultFooterBottomPadding = ReaderLayoutMetrics.defaultFooterBottomPadding
-    private let defaultFooterTextGap = ReaderLayoutMetrics.defaultFooterTextGap
-    private let defaultHeaderTopPadding = ReaderLayoutMetrics.defaultHeaderTopPadding
-    private let defaultHeaderTextGap = ReaderLayoutMetrics.defaultHeaderTextGap
     private let defaultReaderTitleSize: CGFloat = 28
     private let defaultReaderTitleTopSpacing: CGFloat = 10
     private let defaultReaderTitleBottomSpacing: CGFloat = 20
@@ -131,6 +130,39 @@ struct ReaderSettingsView: View {
                 dismissButton: .default(Text(localized("確定")))
             )
         }
+        .confirmationDialog(
+            localized("重設頁首頁尾？"),
+            isPresented: $showingOverlayResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(localized("重設"), role: .destructive) {
+                resetReaderOverlayLayout()
+            }
+            Button(localized("取消"), role: .cancel) {}
+        } message: {
+            Text(localized("這會恢復預設組件、位置與正文保留空間。"))
+        }
+        .confirmationDialog(
+            localized("套用匯入的頁首頁尾？"),
+            isPresented: $showingOverlayImportConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(localized("套用")) {
+                guard let preset = pendingLayoutPreset else { return }
+                pendingLayoutPreset = nil
+                finishLayoutPresetImport(preset)
+            }
+            Button(localized("取消"), role: .cancel) {
+                pendingLayoutPreset = nil
+            }
+        } message: {
+            Text(localized("這會取代目前的頁首頁尾組件、位置與正文保留空間。"))
+        }
+        .onChanged(of: showingOverlayImportConfirmation) { isPresented in
+            if !isPresented {
+                pendingLayoutPreset = nil
+            }
+        }
         .onAppear {
             customLayoutEnabled = hasCustomLayoutOverrides
             if settings.followSystemBrightness {
@@ -159,13 +191,41 @@ struct ReaderSettingsView: View {
     }
 
     private var readerEditorSection: some View {
-        Section(header: Text(localized("閱讀工具"))) {
+        Section {
             if let onOpenHeaderFooterEditor {
                 Button {
                     dismiss()
                     DispatchQueue.main.async { onOpenHeaderFooterEditor() }
                 } label: {
                     Label(localized("頁首頁尾編輯"), systemImage: "rectangle.split.3x1")
+                }
+
+                ValueSliderRow(
+                    title: localized("正文頂部保留空間"),
+                    valueText: String(
+                        format: localized("ReaderOverlay.Format.Points"),
+                        Int(settings.readerOverlayLayout.contentReservations.top)
+                    ),
+                    value: overlayReservationBinding(\.top),
+                    range: 0...120,
+                    step: 1
+                )
+
+                ValueSliderRow(
+                    title: localized("正文底部保留空間"),
+                    valueText: String(
+                        format: localized("ReaderOverlay.Format.Points"),
+                        Int(settings.readerOverlayLayout.contentReservations.bottom)
+                    ),
+                    value: overlayReservationBinding(\.bottom),
+                    range: 0...120,
+                    step: 1
+                )
+
+                Button(role: .destructive) {
+                    showingOverlayResetConfirmation = true
+                } label: {
+                    Label(localized("重設頁首頁尾"), systemImage: "arrow.counterclockwise")
                 }
             }
 
@@ -178,6 +238,43 @@ struct ReaderSettingsView: View {
                     Label(localized("翻頁區塊編輯"), systemImage: "hand.tap")
                 }
             }
+        } header: {
+            Text(localized("閱讀工具"))
+        } footer: {
+            if onOpenHeaderFooterEditor != nil {
+                Text(localized("只影響正文排版，不會移動頁首頁尾組件。"))
+            }
+        }
+    }
+
+    private func overlayReservationBinding(
+        _ keyPath: WritableKeyPath<ReaderOverlayContentReservations, Double>
+    ) -> Binding<CGFloat> {
+        Binding(
+            get: {
+                CGFloat(settings.readerOverlayLayout.contentReservations[keyPath: keyPath])
+            },
+            set: { value in
+                var layout = settings.readerOverlayLayout
+                layout.contentReservations[keyPath: keyPath] = Double(value)
+                guard settings.saveReaderOverlayLayout(layout) else {
+                    layoutImportAlert = LayoutImportAlert(
+                        titleKey: "無法儲存頁首頁尾設定",
+                        message: localized("請稍後再試。")
+                    )
+                    return
+                }
+            }
+        )
+    }
+
+    private func resetReaderOverlayLayout() {
+        guard settings.saveReaderOverlayLayout(.default) else {
+            layoutImportAlert = LayoutImportAlert(
+                titleKey: "無法儲存頁首頁尾設定",
+                message: localized("請稍後再試。")
+            )
+            return
         }
     }
 
@@ -539,15 +636,6 @@ struct ReaderSettingsView: View {
             abs(readerConfig.paragraphSpacingMultiplier - defaultParagraphSpacingMultiplier) > 0.001 ||
             abs(readerConfig.pageMarginH - defaultPageMarginH) > 0.001 ||
             abs(readerConfig.pageMarginV - defaultPageMarginV) > 0.001 ||
-            abs(readerConfig.footerBottomPadding - defaultFooterBottomPadding) > 0.001 ||
-            abs(readerConfig.footerTextGap - defaultFooterTextGap) > 0.001 ||
-            abs(readerConfig.readerFooterHorizontalPadding - CGFloat(ReaderLayoutMetrics.defaultFooterHorizontalPadding)) > 0.001 ||
-            readerConfig.readerFooterVisible != true ||
-            readerConfig.readerHeaderVisible != true ||
-            abs(readerConfig.readerHeaderTopPadding - defaultHeaderTopPadding) > 0.001 ||
-            abs(readerConfig.readerHeaderTextGap - defaultHeaderTextGap) > 0.001 ||
-            abs(readerConfig.readerHeaderHorizontalPadding - CGFloat(ReaderLayoutMetrics.defaultHeaderHorizontalPadding)) > 0.001 ||
-            settings.readerHeaderFieldPositions != ReaderHeaderLayout.defaultFieldPositions ||
             readerConfig.readerTitleVisible != true ||
             abs(readerConfig.readerTitleSize - defaultReaderTitleSize) > 0.001 ||
             abs(readerConfig.readerTitleTopSpacing - defaultReaderTitleTopSpacing) > 0.001 ||
@@ -560,15 +648,6 @@ struct ReaderSettingsView: View {
         readerConfig.paragraphSpacingMultiplier = defaultParagraphSpacingMultiplier
         readerConfig.pageMarginH = defaultPageMarginH
         readerConfig.pageMarginV = defaultPageMarginV
-        readerConfig.footerBottomPadding = defaultFooterBottomPadding
-        readerConfig.footerTextGap = defaultFooterTextGap
-        readerConfig.readerFooterHorizontalPadding = CGFloat(ReaderLayoutMetrics.defaultFooterHorizontalPadding)
-        readerConfig.readerFooterVisible = true
-        readerConfig.readerHeaderVisible = true
-        readerConfig.readerHeaderTopPadding = defaultHeaderTopPadding
-        readerConfig.readerHeaderTextGap = defaultHeaderTextGap
-        readerConfig.readerHeaderHorizontalPadding = CGFloat(ReaderLayoutMetrics.defaultHeaderHorizontalPadding)
-        settings.readerHeaderFieldPositions = ReaderHeaderLayout.defaultFieldPositions
         readerConfig.readerTitleVisible = true
         readerConfig.readerTitleSize = defaultReaderTitleSize
         readerConfig.readerTitleTopSpacing = defaultReaderTitleTopSpacing
@@ -713,12 +792,12 @@ struct ReaderSettingsView: View {
                     }
                 }
                 let preset = try await ReaderLayoutPresetImporter.importPreset(from: url)
-                applyLayoutPreset(preset)
-                let importedName = preset.name?.trimmingCharacters(in: .whitespacesAndNewlines)
-                let message = importedName?.isEmpty == false
-                    ? String(format: localized("已匯入「%@」的排版參數"), importedName!)
-                    : localized("已匯入排版參數")
-                layoutImportAlert = LayoutImportAlert(titleKey: "排版匯入成功", message: message)
+                if preset.readerOverlayLayout != nil {
+                    pendingLayoutPreset = preset
+                    showingOverlayImportConfirmation = true
+                    return
+                }
+                finishLayoutPresetImport(preset)
             } catch {
                 layoutImportAlert = LayoutImportAlert(
                     titleKey: "排版匯入失敗",
@@ -728,7 +807,26 @@ struct ReaderSettingsView: View {
         }
     }
 
-    private func applyLayoutPreset(_ preset: ReaderLayoutPreset) {
+    private func finishLayoutPresetImport(_ preset: ReaderLayoutPreset) {
+        guard applyLayoutPreset(preset) else {
+            layoutImportAlert = LayoutImportAlert(
+                titleKey: "排版匯入失敗",
+                message: localized("無法儲存頁首頁尾設定")
+            )
+            return
+        }
+        let importedName = preset.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let message = importedName?.isEmpty == false
+            ? String(format: localized("已匯入「%@」的排版參數"), importedName!)
+            : localized("已匯入排版參數")
+        layoutImportAlert = LayoutImportAlert(titleKey: "排版匯入成功", message: message)
+    }
+
+    private func applyLayoutPreset(_ preset: ReaderLayoutPreset) -> Bool {
+        if let overlayLayout = preset.readerOverlayLayout,
+           !settings.saveReaderOverlayLayout(overlayLayout) {
+            return false
+        }
         customLayoutEnabled = true
         if let fontSize = preset.fontSize {
             self.fontSize = fontSize
@@ -751,12 +849,6 @@ struct ReaderSettingsView: View {
         if let pageMarginV = preset.pageMarginV {
             readerConfig.pageMarginV = pageMarginV
         }
-        if let footerBottomPadding = preset.footerBottomPadding {
-            readerConfig.footerBottomPadding = footerBottomPadding
-        }
-        if let footerTextGap = preset.footerTextGap {
-            readerConfig.footerTextGap = footerTextGap
-        }
         if let titleVisible = preset.titleVisible {
             readerConfig.readerTitleVisible = titleVisible
         }
@@ -776,6 +868,7 @@ struct ReaderSettingsView: View {
             settings.pageTurnStyle = pageTurnStyle
         }
         readerConfig.refresh.send(.layout)
+        return true
     }
 }
 

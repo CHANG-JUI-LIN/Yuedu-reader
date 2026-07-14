@@ -19,6 +19,7 @@ struct ReaderLayoutPreset {
     let titleBottomSpacing: CGFloat?
     let pageTurnStyle: PageTurnStyle?
     let scrollMode: Bool?
+    let readerOverlayLayout: ReaderOverlayLayout?
 }
 
 enum ReaderLayoutPresetImportError: LocalizedError {
@@ -64,10 +65,28 @@ enum ReaderLayoutPresetImporter {
     static func decode(data: Data) throws -> ReaderLayoutPreset {
         do {
             let config = try JSONDecoder().decode(LegadoReadConfig.self, from: data)
-            return config.readerLayoutPreset
+            let overlayLayout = validOverlayLayout(in: data) ?? config.migratedLegacyOverlayLayout
+            return config.readerLayoutPreset(overlayLayout: overlayLayout)
         } catch {
             throw ReaderLayoutPresetImportError.invalidReadConfig
         }
+    }
+
+    private static func validOverlayLayout(in data: Data) -> ReaderOverlayLayout? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let payload = root["readerOverlayLayout"] as? [String: Any],
+              let rawVersion = payload["version"] as? Int,
+              payload["components"] is [Any],
+              payload["contentReservations"] is [String: Any],
+              JSONSerialization.isValidJSONObject(payload),
+              let payloadData = try? JSONSerialization.data(withJSONObject: payload),
+              let layout = try? JSONDecoder().decode(ReaderOverlayLayout.self, from: payloadData),
+              layout.version == rawVersion,
+              (0...ReaderOverlayLayout.currentVersion).contains(layout.version),
+              Set(layout.components.map(\.id)).count == layout.components.count else {
+            return nil
+        }
+        return ReaderOverlayLayoutMigration.upgrade(layout)
     }
 
     private static func readConfigData(in archiveURL: URL) async throws -> Data {
@@ -118,7 +137,20 @@ private struct LegadoReadConfig: Decodable {
     let titleBottomSpacing: CGFloat?
     let pageAnim: Int?
 
-    var readerLayoutPreset: ReaderLayoutPreset {
+    // Yuedu's fixed header/footer schema, retained for importing older presets.
+    let readerHeaderVisible: Bool?
+    let readerFooterVisible: Bool?
+    let readerHeaderFieldPositions: [String: String]?
+    let readerHeaderTopPadding: CGFloat?
+    let readerHeaderTextGap: CGFloat?
+    let readerHeaderHorizontalPadding: CGFloat?
+    let footerBottomPadding: CGFloat?
+    let footerTextGap: CGFloat?
+    let readerFooterHorizontalPadding: CGFloat?
+    let topContentReservation: CGFloat?
+    let bottomContentReservation: CGFloat?
+
+    func readerLayoutPreset(overlayLayout: ReaderOverlayLayout?) -> ReaderLayoutPreset {
         let baseFontSize = sanitized(textSize ?? 18, range: 12...32)
         let fontSizeForRatio = max(baseFontSize, 1)
         let lineHeight = lineSpacingExtra.map { value in
@@ -157,8 +189,78 @@ private struct LegadoReadConfig: Decodable {
             titleTopSpacing: titleTopSpacing.map { sanitized($0, range: 0...28) },
             titleBottomSpacing: titleBottomSpacing.map { sanitized($0, range: 0...28) },
             pageTurnStyle: pageTurnStyle(from: pageAnim),
-            scrollMode: pageAnim.map { $0 == 3 }
+            scrollMode: pageAnim.map { $0 == 3 },
+            readerOverlayLayout: overlayLayout
         )
+    }
+
+    var migratedLegacyOverlayLayout: ReaderOverlayLayout? {
+        guard containsLegacyOverlayFields else { return nil }
+
+        let headerVisible = readerHeaderVisible ?? headerMode.map { $0 != 0 } ?? true
+        let footerVisible = readerFooterVisible ?? true
+        let headerTopPadding = Double(readerHeaderTopPadding ?? ReaderLayoutMetrics.defaultHeaderTopPadding)
+        let headerTextGap = Double(readerHeaderTextGap ?? ReaderLayoutMetrics.defaultHeaderTextGap)
+        let footerBottomPadding = Double(
+            self.footerBottomPadding
+                ?? self.footerPaddingBottom
+                ?? ReaderLayoutMetrics.defaultFooterBottomPadding
+        )
+        let footerTextGap = Double(
+            self.footerTextGap
+                ?? footerPaddingTop
+                ?? ReaderLayoutMetrics.defaultFooterTextGap
+        )
+        let topReservation = topContentReservation.map(Double.init) ?? Double(
+            ReaderLayoutMetrics.topInset(
+                safeTop: 0,
+                headerVisible: headerVisible,
+                headerTopPadding: CGFloat(headerTopPadding),
+                headerTextGap: CGFloat(headerTextGap)
+            )
+        )
+        let bottomReservation = bottomContentReservation.map(Double.init) ?? Double(
+            ReaderLayoutMetrics.bottomInset(
+                safeBottom: 0,
+                footerVisible: footerVisible,
+                footerBottomPadding: CGFloat(footerBottomPadding),
+                footerTextGap: CGFloat(footerTextGap)
+            )
+        )
+
+        return ReaderOverlayLayoutMigration.migrate(
+            ReaderLegacyOverlaySettings(
+                headerVisible: headerVisible,
+                footerVisible: footerVisible,
+                headerFieldPositions: readerHeaderFieldPositions ?? ["chapterTitle": "left"],
+                headerTopPadding: headerTopPadding,
+                headerHorizontalPadding: Double(
+                    readerHeaderHorizontalPadding ?? ReaderLayoutMetrics.defaultHeaderHorizontalPadding
+                ),
+                footerBottomPadding: footerBottomPadding,
+                footerHorizontalPadding: Double(
+                    readerFooterHorizontalPadding ?? ReaderLayoutMetrics.defaultFooterHorizontalPadding
+                ),
+                topContentReservation: topReservation,
+                bottomContentReservation: bottomReservation
+            )
+        )
+    }
+
+    private var containsLegacyOverlayFields: Bool {
+        readerHeaderVisible != nil
+            || readerFooterVisible != nil
+            || readerHeaderFieldPositions != nil
+            || readerHeaderTopPadding != nil
+            || readerHeaderTextGap != nil
+            || readerHeaderHorizontalPadding != nil
+            || footerBottomPadding != nil
+            || footerTextGap != nil
+            || footerPaddingBottom != nil
+            || footerPaddingTop != nil
+            || readerFooterHorizontalPadding != nil
+            || topContentReservation != nil
+            || bottomContentReservation != nil
     }
 
     private func pageTurnStyle(from value: Int?) -> PageTurnStyle? {
