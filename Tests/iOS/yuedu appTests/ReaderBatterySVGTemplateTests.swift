@@ -22,6 +22,48 @@ struct ReaderBatterySVGTemplateTests {
         #expect(template.validatedSource.contains(#"fill="currentColor""#))
     }
 
+    @Test("Documentation horizontal and vertical examples pass production validation")
+    func documentationExamplesAreValid() throws {
+        let horizontal = """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 48">
+          <title>Horizontal battery</title>
+          <rect x="2" y="2" width="104" height="44" rx="8"
+                fill="none" stroke="currentColor" stroke-width="4"/>
+          <rect x="108" y="15" width="10" height="18" rx="3" fill="currentColor"/>
+          <rect data-yuedu-role="battery-level" data-yuedu-direction="left-to-right"
+                x="8" y="8" width="92" height="32" rx="4" fill="currentColor"/>
+          <text data-yuedu-role="battery-percent" x="54" y="31"
+                fill="currentColor" font-size="14" text-anchor="middle">0%</text>
+          <path data-yuedu-visible="charging" d="M58 7 L45 25 H56 L51 41 L73 19 H62 Z"
+                fill="currentColor"/>
+        </svg>
+        """
+        let vertical = """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 120">
+          <title>Vertical battery</title>
+          <rect x="2" y="12" width="44" height="106" rx="8"
+                fill="none" stroke="currentColor" stroke-width="4"/>
+          <rect x="15" y="2" width="18" height="8" rx="3" fill="currentColor"/>
+          <rect data-yuedu-role="battery-level" data-yuedu-direction="bottom-to-top"
+                x="8" y="18" width="32" height="92" rx="4" fill="currentColor"/>
+          <text data-yuedu-role="battery-percent" x="24" y="67"
+                fill="currentColor" font-size="12" text-anchor="middle">0%</text>
+        </svg>
+        """
+
+        for source in [horizontal, vertical] {
+            let template = try ReaderBatterySVGTemplate(source: source)
+            let rendered = try template.render(
+                level: 0.72,
+                isCharging: true,
+                colorHex: "#112233FF"
+            )
+
+            #expect(rendered.contains(">72%</text>"))
+            #expect(rendered.contains("color=\"#112233FF\""))
+        }
+    }
+
     @Test("Injects a stable viewBox from positive pixel dimensions")
     func injectsViewBoxFromDimensions() throws {
         let template = try ReaderBatterySVGTemplate(
