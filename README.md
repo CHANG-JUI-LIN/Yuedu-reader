@@ -71,6 +71,18 @@ open Yuedu-Reader.xcodeproj
 
 Then select a simulator (or your device) and run.
 
+## Documentation
+
+### User guides
+
+- **Battery SVG templates:** [English](docs/reader-overlay/BatterySVG.en.md) · [简体中文](docs/reader-overlay/BatterySVG.zh-Hans.md) · [繁體中文](docs/reader-overlay/BatterySVG.zh-Hant.md) — template format, dynamic markers, supported SVG subset, and import troubleshooting.
+
+### Developer reference
+
+- [CoreText documentation](docs/coretext/README.md) — reader architecture, rendering pipeline, interaction, and vertical writing.
+- [EPUB compatibility checklist](docs/epub-compatibility-checklist.md) — implementation and regression checklist.
+- [Project architecture](Technotes/Architecture.md) — modules, data flow, and technical boundaries.
+
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for conventions and the PR process.

@@ -71,6 +71,18 @@ open Yuedu-Reader.xcodeproj
 
 接著選擇模擬器（或實機）執行。
 
+## 文件
+
+### 使用指南
+
+- **電量 SVG 模板：** [繁體中文](docs/reader-overlay/BatterySVG.zh-Hant.md) · [简体中文](docs/reader-overlay/BatterySVG.zh-Hans.md) · [English](docs/reader-overlay/BatterySVG.en.md) — 模板格式、動態標記、支援的 SVG 子集與匯入疑難排解。
+
+### 開發者參考
+
+- [CoreText 文件](docs/coretext/README.md) — 閱讀器架構、渲染流程、互動與直排。
+- [EPUB 相容性檢查清單](docs/epub-compatibility-checklist.md) — 實作與回歸測試檢查項目。
+- [專案架構](Technotes/Architecture.md) — 模組、資料流與技術邊界。
+
 ## 貢獻
 
 歡迎貢獻 —— 慣例與 PR 流程請見 [CONTRIBUTING.md](CONTRIBUTING.md)。
