@@ -16,16 +16,16 @@ struct ReaderOverlayComponentEditingTests {
         #expect(Set(catalogKinds).count == catalogKinds.count)
     }
 
-    @Test("new component placement starts at center and avoids occupied candidates")
+    @Test("new component placement starts below the chrome and avoids occupied candidates")
     func collisionAwarePlacement() {
-        let center = ReaderOverlayNormalizedPoint(x: 0.5, y: 0.5)
-        let top = ReaderOverlayNormalizedPoint(x: 0.5, y: 0.36)
+        let first = ReaderOverlayNormalizedPoint(x: 0.5, y: 0.68)
+        let second = ReaderOverlayNormalizedPoint(x: 0.5, y: 0.5)
+        let third = ReaderOverlayNormalizedPoint(x: 0.5, y: 0.36)
 
-        #expect(ReaderOverlayDefaultPlacement.position(existing: []) == center)
-        #expect(ReaderOverlayDefaultPlacement.position(existing: [center]) == top)
+        #expect(ReaderOverlayDefaultPlacement.position(existing: []) == first)
+        #expect(ReaderOverlayDefaultPlacement.position(existing: [first]) == second)
         #expect(
-            ReaderOverlayDefaultPlacement.position(existing: [center, top])
-                == ReaderOverlayNormalizedPoint(x: 0.5, y: 0.64)
+            ReaderOverlayDefaultPlacement.position(existing: [first, second]) == third
         )
     }
 

@@ -1335,6 +1335,7 @@
 "樣式" = "Style";
 "純色塊" = "Solid";
 "漸層膠囊" = "Gradient Pill";
+"組件類型" = "Component Type";
 
 // MARK: - Launch Image (App Splash)
 "啟動圖" = "Launch Screen";

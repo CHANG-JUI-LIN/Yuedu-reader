@@ -73,6 +73,8 @@ struct ReaderOverlayComponentEditView: View {
     var body: some View {
         NavigationStack {
             Form {
+                kindSection
+
                 if component.kind == .customText {
                     customTextSection
                 }
@@ -129,6 +131,49 @@ struct ReaderOverlayComponentEditView: View {
                 }
             )
         }
+    }
+
+    private var kindSection: some View {
+        Section(localized("組件類型")) {
+            Picker(localized("組件類型"), selection: kindBinding) {
+                ForEach(ReaderOverlayComponentKind.allCases, id: \.rawValue) { kind in
+                    Text(kind.localizedTitle).tag(kind)
+                }
+            }
+            .pickerStyle(.menu)
+        }
+        .listRowBackground(DSColor.surface)
+    }
+
+    private var kindBinding: Binding<ReaderOverlayComponentKind> {
+        Binding(
+            get: { component.kind },
+            set: { newKind in
+                updateComponent { component in
+                    component.kind = newKind
+                    let formats = ReaderOverlayComponentEditing.compatibleFormats(for: newKind)
+                    if !formats.isEmpty,
+                       !formats.contains(component.configuration.displayFormat),
+                       let fallback = formats.first {
+                        component.configuration.displayFormat = fallback
+                    }
+                    if newKind == .customText,
+                       component.configuration.customText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        component.configuration.customText = localized("自訂文字")
+                    }
+                    if newKind != .battery {
+                        component.configuration.batteryVisual = .system
+                        component.configuration.svgAssetID = nil
+                    }
+                }
+                if newKind == .customText,
+                   customTextDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    customTextDraft = localized("自訂文字")
+                } else if newKind != .customText {
+                    customTextDraft = component.configuration.customText
+                }
+            }
+        )
     }
 
     private var customTextSection: some View {

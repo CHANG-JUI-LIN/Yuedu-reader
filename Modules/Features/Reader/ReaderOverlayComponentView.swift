@@ -238,6 +238,14 @@ struct ReaderOverlayComponentView: View {
     @Environment(\.displayScale) private var displayScale
     @State private var loadedBattery: LoadedBattery?
 
+    private var frameAlignment: Alignment {
+        switch ReaderOverlayHorizontalAnchor.resolve(forNormalizedX: component.position.x) {
+        case .leading: .leading
+        case .center: .center
+        case .trailing: .trailing
+        }
+    }
+
     private var resolvedStyle: ReaderOverlayResolvedStyle {
         ReaderOverlayPresentationResolver.resolveStyle(
             component.style,
@@ -266,7 +274,8 @@ struct ReaderOverlayComponentView: View {
             .padding(DSSpacing.xs)
             .frame(
                 minWidth: DSLayout.readerOverlayEditorMinimumHitSize,
-                minHeight: DSLayout.readerOverlayEditorMinimumHitSize
+                minHeight: DSLayout.readerOverlayEditorMinimumHitSize,
+                alignment: frameAlignment
             )
             .contentShape(Rectangle())
             .overlay {

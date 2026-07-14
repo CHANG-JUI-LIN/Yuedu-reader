@@ -166,7 +166,13 @@ private struct ReaderOverlayEditorInteractionModifier: ViewModifier {
                 actions.select(componentID)
             }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                // Measure translation in the fixed editor canvas space, never the default `.local`:
+                // moving the component moves its own local space and would flip the translation sign,
+                // making it oscillate between two positions (a self-sustaining feedback loop).
+                DragGesture(
+                    minimumDistance: 1,
+                    coordinateSpace: .named(readerOverlayEditorCoordinateSpaceName)
+                )
                     .onChanged { value in
                         actions.dragChanged(componentID, value.translation)
                     }
@@ -276,20 +282,25 @@ private struct ReaderOverlayPositionLayout: Layout {
                 height: max(bounds.height, 0)
             )
             let size = subview.sizeThatFits(fittingProposal)
-            let candidate = ReaderOverlayGeometry.denormalize(
-                subview[ReaderOverlayPositionLayoutValueKey.self],
+            let position = subview[ReaderOverlayPositionLayoutValueKey.self]
+            let placement = ReaderOverlayGeometry.anchoredPlacement(
+                normalizedPoint: position,
+                size: size,
                 in: bounds
             )
-            let center = ReaderOverlayGeometry.clamp(
-                center: candidate,
-                size: size,
-                to: bounds
-            )
             subview.place(
-                at: center,
-                anchor: .center,
+                at: placement.point,
+                anchor: unitPoint(for: placement.anchor),
                 proposal: ProposedViewSize(size)
             )
+        }
+    }
+
+    private func unitPoint(for anchor: ReaderOverlayHorizontalAnchor) -> UnitPoint {
+        switch anchor {
+        case .leading: .leading
+        case .center: .center
+        case .trailing: .trailing
         }
     }
 }

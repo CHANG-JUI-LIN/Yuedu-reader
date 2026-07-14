@@ -1,7 +1,11 @@
 import SwiftUI
 import UIKit
 
-private let readerOverlayEditorCoordinateSpaceName = "ReaderOverlayEditorCanvas"
+// Fixed coordinate space for the editor canvas. The component drag gesture MUST measure its
+// translation in this space (not the default `.local`): dragging moves the component, which moves
+// its own local space, which would flip `translation` sign and make the component oscillate between
+// two positions forever. Keep this shared with `ReaderOverlayEditorInteractionModifier`.
+let readerOverlayEditorCoordinateSpaceName = "ReaderOverlayEditorCanvas"
 
 struct ReaderHeaderFooterEditorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -22,6 +26,8 @@ struct ReaderHeaderFooterEditorView: View {
     @State private var measuredFrames: [UUID: CGRect] = [:]
     @State private var presentedSheet: ReaderOverlayEditorSheet?
     @State private var showingExitConfirmation = false
+    @State private var hapticGenerator = UIImpactFeedbackGenerator(style: .light)
+    @State private var lastGuidesWereActive = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -246,6 +252,7 @@ struct ReaderHeaderFooterEditorView: View {
             draggingComponentID = id
             dragOrigin = CGPoint(x: frame.midX, y: frame.midY)
             model.selectedComponentID = id
+            hapticGenerator.prepare()
         }
         guard let dragOrigin else { return }
 
@@ -273,14 +280,26 @@ struct ReaderHeaderFooterEditorView: View {
             acquireDistance: ReaderOverlayEditorGeometry.snapAcquireDistance,
             releaseDistance: ReaderOverlayEditorGeometry.snapReleaseDistance
         )
+        // Use the snapped center (already clamped inside the engine) so the component actually
+        // sticks to the alignment guides we show — not the raw finger position.
+        let anchorPoint = ReaderOverlayGeometry.centerToAnchorPoint(
+            center: result.center,
+            componentSize: frame.size,
+            canvasWidth: canvas.width
+        )
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            model.move(id: id, to: ReaderOverlayGeometry.normalize(result.center, in: canvas))
+            model.move(id: id, to: ReaderOverlayGeometry.normalize(anchorPoint.point, in: canvas))
             if activeGuides != result.guides {
                 activeGuides = result.guides
             }
         }
+        let guidesNowActive = !result.guides.isEmpty
+        if guidesNowActive, !lastGuidesWereActive {
+            hapticGenerator.impactOccurred()
+        }
+        lastGuidesWereActive = guidesNowActive
     }
 
     private func dragEnded() {
@@ -288,6 +307,7 @@ struct ReaderHeaderFooterEditorView: View {
         draggingComponentID = nil
         setActiveGuides([])
         snapSession.reset()
+        lastGuidesWereActive = false
     }
 
     private func setActiveGuides(_ guides: [ReaderOverlayGuide]) {

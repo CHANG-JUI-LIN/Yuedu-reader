@@ -32,19 +32,19 @@ struct ReaderOverlayComponentPickerSection: Identifiable, Equatable {
 
 enum ReaderOverlayDefaultPlacement {
     private static let candidates: [ReaderOverlayNormalizedPoint] = [
+        ReaderOverlayNormalizedPoint(x: 0.5, y: 0.68),
         ReaderOverlayNormalizedPoint(x: 0.5, y: 0.5),
         ReaderOverlayNormalizedPoint(x: 0.5, y: 0.36),
-        ReaderOverlayNormalizedPoint(x: 0.5, y: 0.64),
+        ReaderOverlayNormalizedPoint(x: 0.5, y: 0.82),
         ReaderOverlayNormalizedPoint(x: 0.36, y: 0.5),
         ReaderOverlayNormalizedPoint(x: 0.64, y: 0.5),
         ReaderOverlayNormalizedPoint(x: 0.36, y: 0.36),
         ReaderOverlayNormalizedPoint(x: 0.64, y: 0.36),
-        ReaderOverlayNormalizedPoint(x: 0.36, y: 0.64),
-        ReaderOverlayNormalizedPoint(x: 0.64, y: 0.64),
-        ReaderOverlayNormalizedPoint(x: 0.5, y: 0.22),
-        ReaderOverlayNormalizedPoint(x: 0.5, y: 0.78),
+        ReaderOverlayNormalizedPoint(x: 0.36, y: 0.68),
+        ReaderOverlayNormalizedPoint(x: 0.64, y: 0.68),
         ReaderOverlayNormalizedPoint(x: 0.22, y: 0.5),
-        ReaderOverlayNormalizedPoint(x: 0.78, y: 0.5)
+        ReaderOverlayNormalizedPoint(x: 0.78, y: 0.5),
+        ReaderOverlayNormalizedPoint(x: 0.5, y: 0.22)
     ]
     private static let minimumDistance = 0.1
 
