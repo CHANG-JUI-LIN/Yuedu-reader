@@ -56,12 +56,27 @@ extension ReaderView {
             initial: settings.readerOverlayLayout,
             activeScope: ReaderOverlayPageScope.resolve(
                 chapterPage: readerOverlayContentSnapshot.chapterPage
-            )
-        ) { layout in
-            guard settings.saveReaderOverlayLayout(layout) else {
-                throw ReaderOverlayEditorPersistenceError.writeFailed
+            ),
+            onScopeChange: { scope in
+                guard scope == .chapterOpening else { return }
+                jumpToReaderOverlayChapterOpening()
+            },
+            onSave: { layout in
+                guard settings.saveReaderOverlayLayout(layout) else {
+                    throw ReaderOverlayEditorPersistenceError.writeFailed
+                }
             }
-        }
+        )
         showBars = false
+    }
+
+    private func jumpToReaderOverlayChapterOpening() {
+        jumpToChapter(currentChapterIndex, charOffset: 0)
+        pageTurnVersion &+= 1
+        pageTurnCommand = ReaderPageTurnCommand(
+            target: currentPage,
+            animated: false,
+            version: pageTurnVersion
+        )
     }
 }

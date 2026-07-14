@@ -236,10 +236,10 @@ enum DSLayout {
     static let readerOverlayGuideLineWidth: CGFloat = 1
     /// Alignment guide dash length.
     static let readerOverlayGuideDashLength: CGFloat = 5
-    /// Distance at which a dragged overlay component acquires an alignment guide.
-    static let readerOverlaySnapAcquireDistance: CGFloat = 6
+    /// Precise distance at which a dragged overlay component acquires an alignment guide.
+    static let readerOverlaySnapAcquireDistance: CGFloat = 3
     /// Distance at which a dragged overlay component releases its current guide.
-    static let readerOverlaySnapReleaseDistance: CGFloat = 12
+    static let readerOverlaySnapReleaseDistance: CGFloat = 6
     /// Wide management surfaces such as book-source lists.
     static let readableWideWidth: CGFloat = 980
     /// Extra horizontal inset applied to regular-width reader pages.

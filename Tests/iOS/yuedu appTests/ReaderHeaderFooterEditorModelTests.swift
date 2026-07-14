@@ -75,6 +75,22 @@ struct ReaderHeaderFooterEditorModelTests {
         #expect(model.activeComponents == model.draft.components(for: .chapterBody))
     }
 
+    @Test("switching to chapter opening notifies reader navigation")
+    func switchingToChapterOpeningNotifiesNavigation() {
+        var selectedScopes: [ReaderOverlayPageScope] = []
+        let model = ReaderHeaderFooterEditorModel(
+            initial: .default,
+            activeScope: .chapterBody,
+            onScopeChange: { selectedScopes.append($0) },
+            onSave: { _ in }
+        )
+
+        model.activeScope = .chapterOpening
+        model.activeScope = .chapterOpening
+
+        #expect(selectedScopes == [.chapterOpening])
+    }
+
     @Test("duplicate component IDs are not added")
     func duplicateAddIsIgnored() {
         let original = ReaderOverlayLayout.default

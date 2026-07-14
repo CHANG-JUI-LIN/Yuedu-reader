@@ -14,6 +14,7 @@ final class ReaderHeaderFooterEditorModel: ObservableObject {
             guard activeScope != oldValue else { return }
             selectedComponentID = nil
             lastDeleted = nil
+            onScopeChange(activeScope)
         }
     }
     @Published var selectedComponentID: UUID?
@@ -28,16 +29,19 @@ final class ReaderHeaderFooterEditorModel: ObservableObject {
     let original: ReaderOverlayLayout
 
     private let onSave: (ReaderOverlayLayout) throws -> Void
+    private let onScopeChange: (ReaderOverlayPageScope) -> Void
     private var isSaving = false
 
     init(
         initial: ReaderOverlayLayout,
         activeScope: ReaderOverlayPageScope = .chapterBody,
+        onScopeChange: @escaping (ReaderOverlayPageScope) -> Void = { _ in },
         onSave: @escaping (ReaderOverlayLayout) throws -> Void
     ) {
         original = initial
         draft = initial
         self.activeScope = activeScope
+        self.onScopeChange = onScopeChange
         self.onSave = onSave
     }
 

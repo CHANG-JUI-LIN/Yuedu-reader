@@ -31,6 +31,10 @@ struct ReaderOverlayAlignmentGuidesView: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
     }
 }
 

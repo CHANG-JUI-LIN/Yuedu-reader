@@ -273,15 +273,30 @@ struct ReaderHeaderFooterEditorView: View {
             acquireDistance: ReaderOverlayEditorGeometry.snapAcquireDistance,
             releaseDistance: ReaderOverlayEditorGeometry.snapReleaseDistance
         )
-        model.move(id: id, to: ReaderOverlayGeometry.normalize(result.center, in: canvas))
-        activeGuides = result.guides
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            model.move(id: id, to: ReaderOverlayGeometry.normalize(result.center, in: canvas))
+            if activeGuides != result.guides {
+                activeGuides = result.guides
+            }
+        }
     }
 
     private func dragEnded() {
         dragOrigin = nil
         draggingComponentID = nil
-        activeGuides = []
+        setActiveGuides([])
         snapSession.reset()
+    }
+
+    private func setActiveGuides(_ guides: [ReaderOverlayGuide]) {
+        guard activeGuides != guides else { return }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            activeGuides = guides
+        }
     }
 
     private func nudge(id: UUID, direction: ReaderOverlayNudgeDirection) {

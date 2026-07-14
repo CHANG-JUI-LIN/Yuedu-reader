@@ -272,6 +272,47 @@ struct ReaderOverlaySnapEngineTests {
         #expect(result.guides.isEmpty)
     }
 
+    @Test("default snapping ignores a target four points away")
+    func defaultSnappingRequiresPreciseProximity() {
+        var session = ReaderOverlaySnapSession()
+        let result = ReaderOverlaySnapEngine.resolve(
+            proposedCenter: CGPoint(x: bodyFrame.minX + 4, y: 100),
+            componentSize: .zero,
+            canvas: canvas,
+            bodyFrame: bodyFrame,
+            peers: [],
+            session: &session
+        )
+
+        #expect(result.center.x == bodyFrame.minX + 4)
+        #expect(result.guides.isEmpty)
+    }
+
+    @Test("default latch releases after six points")
+    func defaultLatchReleasesPromptly() {
+        var session = ReaderOverlaySnapSession()
+        _ = ReaderOverlaySnapEngine.resolve(
+            proposedCenter: CGPoint(x: bodyFrame.minX, y: 100),
+            componentSize: .zero,
+            canvas: canvas,
+            bodyFrame: bodyFrame,
+            peers: [],
+            session: &session
+        )
+
+        let result = ReaderOverlaySnapEngine.resolve(
+            proposedCenter: CGPoint(x: bodyFrame.minX + 7, y: 100),
+            componentSize: .zero,
+            canvas: canvas,
+            bodyFrame: bodyFrame,
+            peers: [],
+            session: &session
+        )
+
+        #expect(result.center.x == bodyFrame.minX + 7)
+        #expect(result.guides.isEmpty)
+    }
+
     @Test("invalid geometry never produces nonfinite output")
     func invalidGeometryIsSafe() {
         var session = ReaderOverlaySnapSession()

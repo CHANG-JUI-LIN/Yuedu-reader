@@ -60,8 +60,8 @@ enum ReaderOverlayBodyFramePolicy {
 }
 
 enum ReaderOverlaySnapEngine {
-    static let defaultAcquireDistance: CGFloat = 6
-    static let defaultReleaseDistance: CGFloat = 12
+    static let defaultAcquireDistance: CGFloat = 3
+    static let defaultReleaseDistance: CGFloat = 6
 
     static func resolve(
         proposedCenter: CGPoint,

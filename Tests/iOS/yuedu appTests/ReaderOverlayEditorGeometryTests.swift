@@ -9,8 +9,8 @@ struct ReaderOverlayEditorGeometryTests {
 
     @Test("editor snapping uses separate acquire and release distances")
     func snapHysteresis() {
-        #expect(ReaderOverlayEditorGeometry.snapAcquireDistance == 6)
-        #expect(ReaderOverlayEditorGeometry.snapReleaseDistance == 12)
+        #expect(ReaderOverlayEditorGeometry.snapAcquireDistance == 3)
+        #expect(ReaderOverlayEditorGeometry.snapReleaseDistance == 6)
     }
 
     @Test("anchored menu appears below when safe space is available")
