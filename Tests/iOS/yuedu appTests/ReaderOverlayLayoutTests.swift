@@ -199,8 +199,8 @@ struct ReaderOverlayLayoutTests {
         #expect(second == first)
     }
 
-    @Test("future stored layout remains untouched and is not persisted")
-    func futureStoredLayoutRemainsUntouched() throws {
+    @Test("future stored layout uses deterministic fallback and is not persisted")
+    func futureStoredLayoutUsesDeterministicFallback() throws {
         let future = ReaderOverlayLayout(
             version: ReaderOverlayLayout.currentVersion + 1,
             components: [
@@ -219,11 +219,44 @@ struct ReaderOverlayLayoutTests {
             legacy: migrationFixture()
         )
 
-        #expect(resolution.layout == future)
-        #expect(resolution.layout.version == future.version)
-        #expect(resolution.layout.components[0].id == fixtureUUID(700))
+        #expect(resolution.layout == ReaderOverlayLayoutMigration.migrate(migrationFixture()))
         #expect(resolution.corruptData == nil)
         #expect(!resolution.shouldPersistPrimary)
+    }
+
+    @Test("future unknown values preserve primary bytes without corrupt fallback")
+    func futureUnknownValuesPreservePrimaryBytes() throws {
+        let rawFutureData = Data(
+            """
+            {
+              "version": 999,
+              "components": [
+                {
+                  "id": "00000000-0000-0000-0000-000000000999",
+                  "kind": "futureComponentKind",
+                  "position": { "x": 0.25, "y": 0.75 },
+                  "configuration": { "displayFormat": "futureDisplayFormat" }
+                }
+              ],
+              "contentReservations": { "top": 40, "bottom": 40 }
+            }
+            """.utf8
+        )
+        let legacy = migrationFixture()
+
+        let resolution = ReaderOverlayLayoutMigration.resolve(
+            storedData: rawFutureData,
+            legacy: legacy
+        )
+        var retainedPrimaryData = rawFutureData
+        if resolution.shouldPersistPrimary {
+            retainedPrimaryData = try JSONEncoder().encode(resolution.layout)
+        }
+
+        #expect(resolution.layout == ReaderOverlayLayoutMigration.migrate(legacy))
+        #expect(resolution.corruptData == nil)
+        #expect(!resolution.shouldPersistPrimary)
+        #expect(retainedPrimaryData == rawFutureData)
     }
 
     @Test("known old layout upgrades and requests persistence")

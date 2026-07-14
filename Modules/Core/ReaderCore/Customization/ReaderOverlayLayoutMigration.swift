@@ -93,11 +93,21 @@ enum ReaderOverlayLayoutMigration {
             )
         }
 
+        let decoder = JSONDecoder()
+        if let envelope = try? decoder.decode(LayoutVersionEnvelope.self, from: storedData),
+           envelope.version > ReaderOverlayLayout.currentVersion {
+            return ReaderOverlayLayoutResolution(
+                layout: migrate(legacy),
+                corruptData: nil,
+                shouldPersistPrimary: false
+            )
+        }
+
         do {
-            let storedLayout = try JSONDecoder().decode(ReaderOverlayLayout.self, from: storedData)
+            let storedLayout = try decoder.decode(ReaderOverlayLayout.self, from: storedData)
             guard storedLayout.version <= ReaderOverlayLayout.currentVersion else {
                 return ReaderOverlayLayoutResolution(
-                    layout: storedLayout,
+                    layout: migrate(legacy),
                     corruptData: nil,
                     shouldPersistPrimary: false
                 )
@@ -231,6 +241,19 @@ enum ReaderOverlayLayoutMigration {
         case left
         case center
         case right
+    }
+
+    private struct LayoutVersionEnvelope: Decodable {
+        var version: Int
+
+        private enum CodingKeys: String, CodingKey {
+            case version
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 0
+        }
     }
 
     private enum ComponentID {

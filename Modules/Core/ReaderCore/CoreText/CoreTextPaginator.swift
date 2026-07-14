@@ -151,9 +151,9 @@ final class CoreTextPaginator {
 
         /// Updates only text colors without repaginating (color does not affect line wrapping).
         /// Ranges with explicitly CSS-specified foreground colors (marked with cssSpecifiedForegroundColorAttribute) retain their original color.
-        /// No theme-wide `.backgroundColor` is applied to runs — CTLineDraw would paint it as a
-        /// filled rect over page background images and box decorations; the page fill alone
-        /// carries the theme color.
+        /// No theme-wide `.backgroundColor` is applied to runs: CoreText's CTLineDraw / CTFrameDraw
+        /// do not paint `.backgroundColor` at all (inline backgrounds here are custom-drawn), and
+        /// the page fill alone carries the theme color.
         func withUpdatedColors(
             textColor: UIColor,
             backgroundColor: UIColor,
@@ -204,12 +204,12 @@ final class CoreTextPaginator {
             }
 
             // ── Background color ──
-            // CTLineDraw paints `.backgroundColor` as a filled run rect. A theme-wide run
-            // background (the old approach here) is invisible on plain pages (run fill == page
-            // fill) but occludes page background images, box textures, and decoration frames —
-            // the page fill already paints the theme color, so no per-run theme background is
-            // applied at all. Only stale paints from earlier recolor passes are stripped;
-            // authored (CSS) inline backgrounds keep their distinct colors.
+            // A run's `.backgroundColor` is not painted by this pipeline — CoreText's CTLineDraw /
+            // CTFrameDraw ignore it, and inline backgrounds here are all custom-drawn
+            // (blockBackgroundColorAttribute / inlineBorderBoxAttribute / DialogueHighlighter's box).
+            // The page fill alone carries the theme color, so no per-run theme background is applied.
+            // This only clears stale theme-colored `.backgroundColor` left on runs by an earlier
+            // approach; distinct (CSS-authored) inline backgrounds keep their colors.
             updated.enumerateAttribute(.backgroundColor, in: fullRange, options: []) { value, effectiveRange, _ in
                 if let color = value as? UIColor,
                    CoreTextPaginator.colorsApproximatelyEqual(color, oldBackgroundColor) {
