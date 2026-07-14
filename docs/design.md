@@ -182,6 +182,29 @@ iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共
 
 設定頁一律 **iOS Settings 風格**（`Form` / `List` `.insetGrouped` 分組 + section header），不要做成網頁表單。
 
+### 4.1 主題背景與 List/Form 背景連續性
+
+- `.scrollContentBackground(.hidden)` 只會隱藏 `List` / `Form` 的捲動容器背景，**不會自動清除每個 row / section 的系統背景**。如果外層已繪製 `PageBackgroundView`、`themedAppSurface` 或其他主題背景，保留預設 row 背景會形成上方有色、下方純白等意外色塊斷裂。
+- 頁面背景應連續透出時，所有內容列、section、空狀態、載入狀態與錯誤狀態都必須明確使用 `.listRowBackground(Color.clear)`；不能只處理正常資料列。
+- 若產品刻意讓 row 與頁面背景形成層級，必須明確使用 `DSColor.surface` / `DSColor.surfaceTertiary` 等語意 token。禁止依賴未指定的系統白色或只在目前 Light Mode 看起來剛好一致。
+- Review 時必須同時檢查 navigation bar、固定摘要區、scroll content 與所有 row 的背景是否屬於同一套語意層級，並在 Light、Dark、自訂主題與頁面背景圖片下驗證。
+
+```swift
+List(items) { item in
+    ItemRow(item: item)
+        .listRowBackground(Color.clear) // 讓 PageBackgroundView 連續透出
+}
+.scrollContentBackground(.hidden)
+.background(PageBackgroundView(scope: .settings))
+```
+
+若 row 應為卡片層級，則改用明確語意色：
+
+```swift
+ItemRow(item: item)
+    .listRowBackground(DSColor.surface)
+```
+
 ---
 
 ## 5. 排版與字級

@@ -420,6 +420,7 @@ struct ReaderQuickThemePanelView: View {
             }
             .frame(height: DSLayout.readerQuickPanelReadingBackgroundTileHeight)
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous)
                     .stroke(
@@ -458,6 +459,7 @@ struct ReaderQuickThemePanelView: View {
                 .frame(height: DSLayout.readerQuickPanelReadingBackgroundTileHeight)
                 .clipped()
                 .accessibilityHidden(true)
+                .allowsHitTesting(false)
         }
     }
 

@@ -691,7 +691,15 @@ class BookStore: ObservableObject, BookProvider {
         if let offlineDownloadTask {
             books[idx].offlineDownloadTask = offlineDownloadTask
         }
-        saveMeta()
+        // Download terminal states must survive an immediate app suspension or
+        // termination. Progress updates remain debounced to avoid rewriting the
+        // full library metadata once per chapter.
+        switch state {
+        case .available, .paused, .failed:
+            saveMetaImmediately()
+        case .none, .downloading:
+            saveMeta()
+        }
     }
 
     func clearOfflineDownloadTask(bookId: UUID) {
@@ -1161,7 +1169,9 @@ class BookStore: ObservableObject, BookProvider {
         books[idx].offlineDownloadState = .none
         books[idx].downloadedChapterCount = 0
         books[idx].offlineDownloadTask = nil
-        saveMeta()
+        // The cache was already removed from disk; persist the matching state
+        // now so a quick relaunch cannot resurrect a stale completed download.
+        saveMetaImmediately()
     }
 
     // MARK: Update Online Book TOC (called after progressive TOC load completes)

@@ -185,6 +185,13 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             ))
         }
         actions.append(UIAction(
+            title: localized("替換（淨化）"),
+            image: UIImage(systemName: "eraser"),
+            handler: { [weak self] _ in
+                self?.requestReplaceRule()
+            }
+        ))
+        actions.append(UIAction(
             title: localized("重點"),
             image: UIImage(systemName: "highlighter"),
             handler: { [weak self] _ in
@@ -814,6 +821,16 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
     @objc private func underlineSelection(_ sender: Any?) {
         toggleUnderlineSelection(removesExistingUnderline: selectedRangeHasExactUnderline())
+    }
+
+    private func requestReplaceRule() {
+        guard let selectedText = interactor.selectedTextForCopy, !selectedText.isEmpty else { return }
+        NotificationCenter.default.post(
+            name: .coreTextReplaceSelectionRequested,
+            object: self,
+            userInfo: ["request": CoreTextReplaceSelectionRequest(selectedText: selectedText)]
+        )
+        clearSelection()
     }
 
     private func toggleUnderlineSelection(removesExistingUnderline: Bool, style: AnnotationStyle = .underline, color: AnnotationColor = .yellow) {

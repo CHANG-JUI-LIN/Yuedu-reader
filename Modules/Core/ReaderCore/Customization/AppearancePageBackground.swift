@@ -399,6 +399,11 @@ struct AppearancePageBackgroundLayerView: View {
             }
         }
         .accessibilityHidden(true)
+        // This view is always decorative and is frequently installed as a
+        // full-screen background. Keep its image/GeometryReader subtree out of
+        // hit testing so unusually tall images cannot intercept foreground
+        // controls such as sliders and menus.
+        .allowsHitTesting(false)
     }
 }
 

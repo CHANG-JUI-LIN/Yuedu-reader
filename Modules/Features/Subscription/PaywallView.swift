@@ -145,9 +145,14 @@ struct PaywallView: View {
                     }
                 }
                 Spacer(minLength: 0)
-                Text(priceText(for: pro, product: product))
-                    .font(DSFont.bodyBold)
-                    .foregroundColor(DSColor.textPrimary)
+                if let product {
+                    Text(priceText(for: pro, product: product))
+                        .font(DSFont.bodyBold)
+                        .foregroundColor(DSColor.textPrimary)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                }
             }
             .padding(DSSpacing.lg)
             .background(DSColor.surface)
@@ -158,6 +163,7 @@ struct PaywallView: View {
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
         }
         .buttonStyle(.plain)
+        .disabled(product == nil)
     }
 
     private func planTitle(_ pro: SubscriptionStore.ProProduct) -> String {
@@ -167,18 +173,11 @@ struct PaywallView: View {
         }
     }
 
-    private func priceText(for pro: SubscriptionStore.ProProduct, product: Product?) -> String {
-        if let product {
-            if pro == .lifetime {
-                return product.displayPrice
-            }
-            return product.displayPrice + localized("／月")
+    private func priceText(for pro: SubscriptionStore.ProProduct, product: Product) -> String {
+        if pro == .lifetime {
+            return product.displayPrice
         }
-        // Fallback while products load / in previews.
-        switch pro {
-        case .lifetime: return "US$14.99"
-        case .monthly: return "US$1.99" + localized("／月")
-        }
+        return product.displayPrice + localized("／月")
     }
 
     // MARK: - Subscribe
@@ -208,7 +207,7 @@ struct PaywallView: View {
                 .frame(minHeight: 44)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(store.isPurchasing)
+            .disabled(store.isPurchasing || store.product(for: selectedProduct) == nil)
 
             if let error = store.lastErrorMessage {
                 Text(error)

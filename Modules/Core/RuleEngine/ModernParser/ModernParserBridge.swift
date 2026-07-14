@@ -689,13 +689,37 @@ class ModernParserBridge {
 
     private func aggregateSearchPlan(fromHexBody body: String) -> AggregateSearchPlan? {
         guard var params = Self.jsonDictionaryFromHexBody(body),
-              let selectedSource = params["sourcesKey"] as? String,
-              selectedSource.trimmingCharacters(in: .whitespacesAndNewlines) == "全部",
-              let tab = params["tab"] as? String,
-              !tab.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              var key = params["key"] as? String,
+              var tab = params["tab"] as? String,
+              var selectedSource = params["sourcesKey"] as? String
         else {
             return nil
         }
+
+        let prefix = key.prefix(2).lowercased()
+        let mediaByPrefix = ["x:": "小说", "t:": "听书", "m:": "漫画", "d:": "短剧",
+                             "x：": "小说", "t：": "听书", "m：": "漫画", "d：": "短剧"]
+        var isQualified = false
+        if let media = mediaByPrefix[prefix] {
+            isQualified = true
+            tab = media
+            key.removeFirst(min(2, key.count))
+        }
+        if let at = key.firstIndex(of: "@") {
+            isQualified = true
+            let source = String(key[key.index(after: at)...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            key = String(key[..<at]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !source.isEmpty { selectedSource = source }
+        }
+        params["key"] = key
+        params["tab"] = tab
+        params["sourcesKey"] = selectedSource
+
+        if selectedSource != "全部" {
+            return isQualified ? AggregateSearchPlan(params: params, sourceKeys: [selectedSource]) : nil
+        }
+        guard !tab.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
 
         let sourceKeys = configuredAggregateSourceKeys(for: tab)
         guard sourceKeys.count > 1 else { return nil }

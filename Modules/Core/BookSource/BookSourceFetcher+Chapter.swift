@@ -231,6 +231,7 @@ extension BookSourceFetcher {
             initialURL: url,
             initialBaseURL: url.absoluteString,
             replaceRules: source.ruleContent.replaceRegex,
+            replaceRuleScope: source.bookSourceUrl,
             reviewContext: source.legadoReviewContext,
             parsePage: parsePage,
             extractNextURLs: extractNextPages

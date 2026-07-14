@@ -71,6 +71,7 @@ struct ReaderOverlayFooter: View {
                 }
                 .foregroundColor(textColor.opacity(0.4))
             }
+            .frame(height: ReaderLayoutMetrics.footerHeight)
             .padding(.horizontal, horizontalPadding)
             .padding(.bottom, footerPadding)
         }
@@ -102,6 +103,7 @@ struct ReaderInlineFooter: View {
                 }
                 .foregroundColor(textColor.opacity(0.4))
             }
+            .frame(height: ReaderLayoutMetrics.footerHeight)
             .padding(.horizontal, horizontalPadding)
             .padding(.bottom, footerPadding)
         }

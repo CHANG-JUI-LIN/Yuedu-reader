@@ -226,6 +226,9 @@ struct ReplaceRuleEditView: View {
                 Section(header: Text(localized("作用範圍"))) {
                     Picker(localized("範圍"), selection: $rule.scope) {
                         Text(localized("全局")).tag("global")
+                        if rule.scope != "global" {
+                            Text(rule.scope).tag(rule.scope)
+                        }
                     }
                     .pickerStyle(.inline)
                 }

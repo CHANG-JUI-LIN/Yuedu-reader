@@ -134,6 +134,7 @@ struct ReaderView: View {
 
     // Source change
     @State var showChangeSourceSheet = false
+    @State private var replaceRuleDraft: ReplaceRule?
     @State var reviewTarget: ReaderHTMLUtilities.ReviewTarget?
     @State var footnoteItem: ReaderFootnoteItem?
     @State private var coreTextExternalTargetVersion: UInt = 0
@@ -320,6 +321,32 @@ struct ReaderView: View {
 
     var systemVerticalPadding: CGFloat {
         ReaderLayoutMetrics.minimumVerticalPadding
+    }
+
+    /// Extra offset that CoreText paginator's grid alignment adds to the bottom
+    /// content inset. Footer overlay must shift up by this amount so the visual
+    /// gap matches `footerTextGap + footerBottomPadding`.
+    var gridAdjustment: CGFloat {
+        let topInset = ReaderLayoutMetrics.topInset(
+            safeTop: effectiveReaderSafeTop,
+            headerVisible: readerConfig.readerHeaderVisible && !effectiveScrollMode,
+            headerTopPadding: readerConfig.readerHeaderTopPadding,
+            headerTextGap: readerConfig.readerHeaderTextGap
+        )
+        let footerVisible = readerConfig.readerFooterVisible && !effectiveScrollMode
+        let bottomInset = ReaderLayoutMetrics.bottomInset(
+            safeBottom: footerVisible ? 0 : windowSafeBottom,
+            footerVisible: footerVisible,
+            footerBottomPadding: readerConfig.footerBottomPadding,
+            footerTextGap: readerConfig.footerTextGap
+        )
+        return ReaderLayoutMetrics.gridAdjustment(
+            viewHeight: currentReaderRenderSize.height,
+            topInset: topInset,
+            bottomInset: bottomInset,
+            fontSize: readerConfig.fontSize,
+            lineSpacing: readerConfig.lineSpacing
+        )
     }
 
     // ── Derived Properties ──
@@ -1200,6 +1227,7 @@ struct ReaderView: View {
                         Spacer()
                         bottomFooter
                     }
+                    .padding(.bottom, gridAdjustment)
                     .ignoresSafeArea(.all, edges: .bottom)
                     .transition(.opacity.animation(.easeOut(duration: 0.2)))
                 }
@@ -1481,6 +1509,17 @@ struct ReaderView: View {
             guard let request = notification.userInfo?["request"] as? CoreTextUnderlineSelectionRequest else { return }
             addUnderlineBookmark(request)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .coreTextReplaceSelectionRequested)) { notification in
+            guard let request = notification.userInfo?["request"] as? CoreTextReplaceSelectionRequest else { return }
+            let currentBook = book ?? snapshotBook
+            let sourceURL = currentBook?.bookSourceId.flatMap { sourceID in
+                BookSourceStore.shared.sources.first(where: { $0.id == sourceID })?.bookSourceUrl
+            }
+            replaceRuleDraft = ReplaceSelectionDraft.makeRule(
+                selectedText: request.selectedText,
+                scope: sourceURL ?? "global"
+            )
+        }
         .onReceive(readerViewModel.$chapterStates) { states in
             handleChapterStateChanges(states)
         }
@@ -1710,6 +1749,14 @@ struct ReaderView: View {
         .sheet(isPresented: $showChangeSourceSheet) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableExpandedWidth) {
                 changeSourceSheetContent
+            }
+        }
+        .sheet(item: $replaceRuleDraft) { rule in
+            AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
+                ReplaceRuleEditView(rule: rule) { savedRule in
+                    ReplaceRuleStore.shared.add(savedRule)
+                    refreshCurrentChapter()
+                }
             }
         }
         .sheet(item: $reviewTarget) { target in

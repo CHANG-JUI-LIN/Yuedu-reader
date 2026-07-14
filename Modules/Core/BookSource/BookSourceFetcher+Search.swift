@@ -1,5 +1,24 @@
 import Foundation
 
+/// Legado aggregate sources accept qualified searches such as
+/// `m:book name@source`. The full expression must reach the source's search JS,
+/// while local result matching must compare against the book-name portion only.
+enum LegadoSearchKeyword {
+    static func matchingTitle(from rawQuery: String) -> String {
+        var value = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.count >= 2 {
+            let prefix = value.prefix(2).lowercased()
+            if ["x:", "t:", "m:", "d:", "x：", "t：", "m：", "d："].contains(prefix) {
+                value.removeFirst(2)
+            }
+        }
+        if let separator = value.firstIndex(of: "@") {
+            value = String(value[..<separator])
+        }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 // MARK: - Search Books
 
 extension BookSourceFetcher {
@@ -139,7 +158,7 @@ extension BookSourceFetcher {
         _ books: [OnlineBook], query: String, checkKeyWord: String
     ) -> [OnlineBook] {
         guard !checkKeyWord.isEmpty, !query.isEmpty else { return books }
-        let key = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let key = LegadoSearchKeyword.matchingTitle(from: query).lowercased()
         guard !key.isEmpty else { return books }
         return books.filter { book in
             book.name.localizedCaseInsensitiveContains(key)

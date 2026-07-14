@@ -34,6 +34,7 @@ Resolve conflicts in this order: **Apple platform behavior and accessibility > e
 7. Support Dynamic Type through accessibility sizes, logical VoiceOver order and announced outcomes, Light/Dark and Increase Contrast, Reduce Motion, and state cues that do not rely on color alone.
 8. Every data-backed screen needs empty, loading, and error states.
 9. Protect reading comfort: decoration, density, transparency, motion, and backgrounds must not reduce body-text legibility.
+10. Preserve background continuity in themed `List`/`Form` screens. `.scrollContentBackground(.hidden)` hides only the scroll container background, not row backgrounds. When a page background should remain continuous, give every row/section `.listRowBackground(Color.clear)`; when rows intentionally need contrast, use an explicit `DSColor.surface*` token. Never leave accidental system-white rows against a themed page background. Check content, empty, loading, and error rows.
 
 ## Sheet Rules
 

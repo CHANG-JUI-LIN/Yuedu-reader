@@ -178,6 +178,13 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
 
         var actions = suggestedActions
         actions.append(UIAction(
+            title: localized("替換（淨化）"),
+            image: UIImage(systemName: "eraser"),
+            handler: { [weak self] _ in
+                self?.requestReplaceRule()
+            }
+        ))
+        actions.append(UIAction(
             title: localized("重點"),
             image: UIImage(systemName: "highlighter"),
             handler: { [weak self] _ in
@@ -232,6 +239,16 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
 
     @objc private func underlineSelection(_ sender: Any?) {
         requestUnderline(style: .underline, color: .yellow)
+    }
+
+    private func requestReplaceRule() {
+        guard let selectedText, !selectedText.isEmpty else { return }
+        NotificationCenter.default.post(
+            name: .coreTextReplaceSelectionRequested,
+            object: self,
+            userInfo: ["request": CoreTextReplaceSelectionRequest(selectedText: selectedText)]
+        )
+        clearSelection()
     }
 
     private func requestUnderline(style: AnnotationStyle, color: AnnotationColor) {

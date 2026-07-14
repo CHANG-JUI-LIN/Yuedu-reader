@@ -275,6 +275,7 @@ struct ChapterFetcher {
         initialURL: URL,
         initialBaseURL: String,
         replaceRules: String,
+        replaceRuleScope: String = "",
         reviewContext: ReaderHTMLUtilities.LegadoReviewContext? = nil,
         parsePage: @escaping @Sendable (String, String) async throws -> ChapterParsePayload,
         extractNextURLs: @escaping @Sendable (String, String) async -> [String],
@@ -304,7 +305,10 @@ struct ChapterFetcher {
         let content = await resolveContent(
             parsed: parsed,
             replaceRules: replaceRules,
-            sourceUrl: sourceURL,
+            sourceUrl: ReplaceRuleScope.resolve(
+                chapterURL: sourceURL,
+                bookSourceURL: replaceRuleScope
+            ),
             fetchViaJS: fetchViaJS,
             fetchBySelectors: fetchBySelectors
         )

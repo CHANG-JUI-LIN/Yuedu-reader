@@ -690,6 +690,10 @@ struct ReaderRenderSettings: Equatable {
     /// dialogue is recolored with this color as the attributed string is built.
     /// Kept in render settings so a change re-triggers pagination via the dedup check.
     var dialogueHighlightColor: UIColor? = nil
+    /// Fill color for the "對話底色框" decoration (nil = disabled). When set, quoted dialogue
+    /// gets a `.backgroundColor` run rect, which CTLineDraw paints natively in both writing
+    /// modes. Kept in render settings so a change re-triggers pagination via the dedup check.
+    var dialogueBoxColor: UIColor? = nil
 }
 
 enum ReaderWritingMode: String, CaseIterable, Codable {
@@ -728,8 +732,8 @@ enum ReaderLayoutMetrics {
     static let defaultHeaderTextGap: CGFloat = 12
     static let defaultHeaderHorizontalPadding: CGFloat = 16
 
-    /// Extra space below the footer text to the screen bottom edge.
-    /// Text area bottom = safeBottom + footerBottomPadding + footerHeight + footerTextGap.
+    /// Text area bottom = footerHeight + footerBottomPadding + footerTextGap
+    /// (when footer visible). Grid alignment may add extra.
     static let footerPadding: CGFloat = defaultFooterBottomPadding
     static let minimumVerticalPadding: CGFloat = 24
     static let topSafeAreaExtra: CGFloat = 10
@@ -745,7 +749,24 @@ enum ReaderLayoutMetrics {
         headerTextGap: CGFloat = defaultHeaderTextGap
     ) -> CGFloat {
         guard headerVisible else { return topInset(safeTop: safeTop) }
-        return max(minimumVerticalPadding, headerTopPadding + headerTextGap)
+        return headerTopPadding + headerHeight + headerTextGap
+    }
+
+    /// Returns the extra bottom padding CoreText's grid alignment will inject
+    /// so the content area snaps to whole line heights. The footer overlay must
+    /// shift up by this amount so the visual gap equals `footerTextGap`.
+    static func gridAdjustment(
+        viewHeight: CGFloat,
+        topInset: CGFloat,
+        bottomInset: CGFloat,
+        fontSize: CGFloat,
+        lineSpacing: CGFloat
+    ) -> CGFloat {
+        let lineHeight = max(1, fontSize + lineSpacing)
+        let rawHeight = viewHeight - topInset - bottomInset
+        let lineCount = floor(rawHeight / lineHeight)
+        guard lineCount >= 1 else { return 0 }
+        return rawHeight - lineCount * lineHeight
     }
 
     static func bottomInset(
@@ -760,7 +781,7 @@ enum ReaderLayoutMetrics {
         guard footerVisible else {
             return max(minimumVerticalPadding, safeBottom)
         }
-        return footerBottomPadding + footerTextGap
+        return footerHeight + footerBottomPadding + footerTextGap
     }
 }
 

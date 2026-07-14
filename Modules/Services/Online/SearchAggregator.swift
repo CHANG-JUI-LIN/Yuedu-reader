@@ -514,7 +514,7 @@ class SearchAggregator: ObservableObject {
         guard policy.isEnabled else { return false }
         // Normalize the query the same way `sortResults` does, otherwise an exact
         // title (in a different case/width) is scored as fuzzy and undercounts.
-        let normalizedQuery = Self.normalizedSearchText(query)
+        let normalizedQuery = Self.normalizedSearchQuery(query)
         var exactCount = 0
         var fuzzyCount = 0
         // Count source hits (origins), not deduplicated titles. A single-title
@@ -541,7 +541,7 @@ class SearchAggregator: ObservableObject {
     // 4. Does not exist → create new SearchBook
 
     private func mergeBatch(_ books: [OnlineBook], query: String) async {
-        let q = Self.normalizedSearchText(query)
+        let q = Self.normalizedSearchQuery(query)
         for book in books {
             if Task.isCancelled { break }
             guard mergeBook(book, normalizedQuery: q) else { continue }
@@ -608,6 +608,10 @@ class SearchAggregator: ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: " ", with: "")
             ?? text.lowercased()
+    }
+
+    private static func normalizedSearchQuery(_ query: String) -> String {
+        normalizedSearchText(LegadoSearchKeyword.matchingTitle(from: query))
     }
 
     // MARK: - Three-tier Sorting

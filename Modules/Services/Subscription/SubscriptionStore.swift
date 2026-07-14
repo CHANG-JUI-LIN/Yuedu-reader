@@ -67,8 +67,9 @@ final class SubscriptionStore: ObservableObject {
     // MARK: - Product loading
 
     func loadProducts() async {
-        guard products.isEmpty, !isLoadingProducts else { return }
+        guard products.count < ProProduct.allCases.count, !isLoadingProducts else { return }
         isLoadingProducts = true
+        lastErrorMessage = nil
         defer { isLoadingProducts = false }
         do {
             let ids = ProProduct.allCases.map(\.rawValue)
@@ -76,6 +77,9 @@ final class SubscriptionStore: ObservableObject {
             // Preserve the ProProduct.allCases display order.
             products = ProProduct.allCases.compactMap { pp in
                 loaded.first { $0.id == pp.rawValue }
+            }
+            if products.count != ProProduct.allCases.count {
+                lastErrorMessage = localized("無法載入訂閱項目，請稍後再試")
             }
         } catch {
             lastErrorMessage = localized("無法載入訂閱項目，請稍後再試")

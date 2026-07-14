@@ -413,9 +413,14 @@ class GlobalSettings: ObservableObject {
     private static let readerTextUnderlineDecorationColorHexKey = "yd_reader_text_underline_decoration_color_hex"
     private static let readerDialogueHighlightKey = "yd_reader_dialogue_highlight"
     private static let readerDialogueHighlightColorHexKey = "yd_reader_dialogue_highlight_color_hex"
+    private static let readerDialogueBoxKey = "yd_reader_dialogue_box"
+    private static let readerDialogueBoxColorHexKey = "yd_reader_dialogue_box_color_hex"
     private static let readerCustomBackgroundModeKey = "yd_reader_custom_background_mode"
     private static let readerCustomBackgroundColorHexKey = "yd_reader_custom_background_color_hex"
     private static let readerCustomBackgroundImageFileNameKey = "yd_reader_custom_background_image_file_name"
+    private static let readerOverlayLayoutDataKey = "yd_reader_overlay_layout_data"
+    private static let readerOverlayLayoutMigrationVersionKey = "yd_reader_overlay_layout_migration_version"
+    private static let readerOverlayLayoutCorruptBackupKey = "yd_reader_overlay_layout_corrupt_backup"
     private static let launchImageEnabledKey = "yd_launch_image_enabled"
     private static let launchImageLightFileNameKey = "yd_launch_image_light_file_name"
     private static let launchImageDarkFileNameKey = "yd_launch_image_dark_file_name"
@@ -429,6 +434,7 @@ class GlobalSettings: ObservableObject {
     static let defaultCommentBubbleTextScale = 0.4
     static let defaultReaderUnderlineColorHex: UInt32 = 0x8E8E93
     static let defaultReaderDialogueHighlightColorHex: UInt32 = 0xFF6B3A
+    static let defaultReaderDialogueBoxColorHex: UInt32 = 0xFFF0C0
 
     static func uiColor(rgbHex: UInt32) -> UIColor {
         UIColor(
@@ -554,6 +560,11 @@ class GlobalSettings: ObservableObject {
     @Published var readerHeaderFieldPositions: [String: String] {
         didSet { UserDefaults.standard.set(readerHeaderFieldPositions, forKey: "yd_reader_header_positions") }
     }
+    @Published var readerOverlayLayout: ReaderOverlayLayout {
+        didSet {
+            Self.persistReaderOverlayLayout(readerOverlayLayout)
+        }
+    }
     @Published var pageTurnStyle: PageTurnStyle {
         didSet { UserDefaults.standard.set(pageTurnStyle.rawValue, forKey: "yd_page_turn_style") }
     }
@@ -602,6 +613,17 @@ class GlobalSettings: ObservableObject {
     @Published var readerDialogueHighlightColorHex: UInt32 {
         didSet {
             UserDefaults.standard.set(Int(readerDialogueHighlightColorHex), forKey: Self.readerDialogueHighlightColorHexKey)
+        }
+    }
+    /// Draws a `.backgroundColor` box behind quoted dialogue (nested under 對話文字高亮).
+    @Published var readerDialogueBoxEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(readerDialogueBoxEnabled, forKey: Self.readerDialogueBoxKey)
+        }
+    }
+    @Published var readerDialogueBoxColorHex: UInt32 {
+        didSet {
+            UserDefaults.standard.set(Int(readerDialogueBoxColorHex), forKey: Self.readerDialogueBoxColorHexKey)
         }
     }
     @Published var commentBubbleFollowsSourceSVG: Bool {
@@ -946,12 +968,14 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_page_margin_h") as? Double) ?? 24.0
         pageMarginV =
             (UserDefaults.standard.object(forKey: "yd_page_margin_v") as? Double) ?? 16.0
-        footerBottomPadding =
+        let loadedFooterBottomPadding =
             (UserDefaults.standard.object(forKey: "yd_footer_bottom_padding") as? Double)
             ?? Double(ReaderLayoutMetrics.defaultFooterBottomPadding)
-        footerTextGap =
+        footerBottomPadding = loadedFooterBottomPadding
+        let loadedFooterTextGap =
             (UserDefaults.standard.object(forKey: "yd_footer_text_gap") as? Double)
             ?? Double(ReaderLayoutMetrics.defaultFooterTextGap)
+        footerTextGap = loadedFooterTextGap
         readerTitleVisible =
             (UserDefaults.standard.object(forKey: "yd_reader_title_visible") as? Bool) ?? true
         readerTitleSize =
@@ -960,25 +984,67 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_reader_title_top_spacing") as? Double) ?? 10.0
         readerTitleBottomSpacing =
             (UserDefaults.standard.object(forKey: "yd_reader_title_bottom_spacing") as? Double) ?? 20.0
-        readerHeaderVisible =
+        let loadedReaderHeaderVisible =
             (UserDefaults.standard.object(forKey: "yd_reader_header_visible") as? Bool) ?? true
-        readerHeaderTopPadding =
+        readerHeaderVisible = loadedReaderHeaderVisible
+        let loadedReaderHeaderTopPadding =
             (UserDefaults.standard.object(forKey: "yd_reader_header_top_padding") as? Double)
             ?? Double(ReaderLayoutMetrics.defaultHeaderTopPadding)
-        readerHeaderTextGap =
+        readerHeaderTopPadding = loadedReaderHeaderTopPadding
+        let loadedReaderHeaderTextGap =
             (UserDefaults.standard.object(forKey: "yd_reader_header_text_gap") as? Double)
             ?? Double(ReaderLayoutMetrics.defaultHeaderTextGap)
-        readerFooterVisible =
+        readerHeaderTextGap = loadedReaderHeaderTextGap
+        let loadedReaderFooterVisible =
             (UserDefaults.standard.object(forKey: "yd_reader_footer_visible") as? Bool) ?? true
-        readerHeaderHorizontalPadding =
+        readerFooterVisible = loadedReaderFooterVisible
+        let loadedReaderHeaderHorizontalPadding =
             (UserDefaults.standard.object(forKey: "yd_reader_header_h_padding") as? Double)
             ?? Double(ReaderLayoutMetrics.defaultHeaderHorizontalPadding)
-        readerFooterHorizontalPadding =
+        readerHeaderHorizontalPadding = loadedReaderHeaderHorizontalPadding
+        let loadedReaderFooterHorizontalPadding =
             (UserDefaults.standard.object(forKey: "yd_reader_footer_h_padding") as? Double)
             ?? Double(ReaderLayoutMetrics.defaultFooterHorizontalPadding)
-        readerHeaderFieldPositions =
+        readerFooterHorizontalPadding = loadedReaderFooterHorizontalPadding
+        let loadedReaderHeaderFieldPositions =
             (UserDefaults.standard.dictionary(forKey: "yd_reader_header_positions") as? [String: String])
             ?? ReaderHeaderLayout.defaultFieldPositions
+        readerHeaderFieldPositions = loadedReaderHeaderFieldPositions
+        let legacyOverlaySettings = ReaderLegacyOverlaySettings(
+            headerVisible: loadedReaderHeaderVisible,
+            footerVisible: loadedReaderFooterVisible,
+            headerFieldPositions: loadedReaderHeaderFieldPositions,
+            headerTopPadding: loadedReaderHeaderTopPadding,
+            headerHorizontalPadding: loadedReaderHeaderHorizontalPadding,
+            footerBottomPadding: loadedFooterBottomPadding,
+            footerHorizontalPadding: loadedReaderFooterHorizontalPadding,
+            topContentReservation: Double(
+                ReaderLayoutMetrics.topInset(
+                    safeTop: 0,
+                    headerVisible: loadedReaderHeaderVisible,
+                    headerTopPadding: CGFloat(loadedReaderHeaderTopPadding),
+                    headerTextGap: CGFloat(loadedReaderHeaderTextGap)
+                )
+            ),
+            bottomContentReservation: Double(
+                ReaderLayoutMetrics.bottomInset(
+                    safeBottom: 0,
+                    footerVisible: loadedReaderFooterVisible,
+                    footerBottomPadding: CGFloat(loadedFooterBottomPadding),
+                    footerTextGap: CGFloat(loadedFooterTextGap)
+                )
+            )
+        )
+        let overlayDefaults = UserDefaults.standard
+        let overlayResolution = ReaderOverlayLayoutMigration.resolve(
+            storedData: overlayDefaults.data(forKey: Self.readerOverlayLayoutDataKey),
+            legacy: legacyOverlaySettings
+        )
+        readerOverlayLayout = overlayResolution.layout
+        if let corruptData = overlayResolution.corruptData {
+            overlayDefaults.set(corruptData, forKey: Self.readerOverlayLayoutCorruptBackupKey)
+        }
+        Self.persistReaderOverlayLayout(overlayResolution.layout, defaults: overlayDefaults)
         let rawPageTurn = UserDefaults.standard.string(forKey: "yd_page_turn_style") ?? ""
         pageTurnStyle = PageTurnStyle(rawValue: rawPageTurn) ?? .slide
         let rawSpreadMode = UserDefaults.standard.string(forKey: "yd_reader_spread_mode") ?? ""
@@ -1002,6 +1068,11 @@ class GlobalSettings: ObservableObject {
         readerDialogueHighlightColorHex = UInt32(clamping:
             (UserDefaults.standard.object(forKey: Self.readerDialogueHighlightColorHexKey) as? Int)
                 ?? Int(Self.defaultReaderDialogueHighlightColorHex)
+        )
+        readerDialogueBoxEnabled = UserDefaults.standard.bool(forKey: Self.readerDialogueBoxKey)
+        readerDialogueBoxColorHex = UInt32(clamping:
+            (UserDefaults.standard.object(forKey: Self.readerDialogueBoxColorHexKey) as? Int)
+                ?? Int(Self.defaultReaderDialogueBoxColorHex)
         )
         if UserDefaults.standard.object(forKey: Self.commentBubbleFollowsSourceSVGKey) == nil {
             commentBubbleFollowsSourceSVG = true
@@ -1213,6 +1284,21 @@ class GlobalSettings: ObservableObject {
         }
     }
 
+    @discardableResult
+    private static func persistReaderOverlayLayout(
+        _ layout: ReaderOverlayLayout,
+        defaults: UserDefaults = .standard
+    ) -> Bool {
+        guard let data = try? JSONEncoder().encode(layout) else { return false }
+        defaults.set(data, forKey: readerOverlayLayoutDataKey)
+        guard defaults.data(forKey: readerOverlayLayoutDataKey) == data else { return false }
+        defaults.set(
+            ReaderOverlayLayout.currentVersion,
+            forKey: readerOverlayLayoutMigrationVersionKey
+        )
+        return true
+    }
+
     static func sanitizedCommentBubbleScale(_ value: Double) -> Double {
         min(max(value, commentBubbleScaleRange.lowerBound), commentBubbleScaleRange.upperBound)
     }
@@ -1286,6 +1372,14 @@ class GlobalSettings: ObservableObject {
             appearanceThemeID = preset.id
         }
         applyPageBackgroundsFromCustomTheme(id: preset.id)
+        // Sync the DSColor-facing global in the same turn as the selection.
+        // `activeAppTheme` is otherwise refreshed only in ContentView.body, which
+        // SwiftUI may run *after* re-rendering the themed screen that triggered
+        // this — so surfaces would read last frame's theme and only catch up on
+        // the next tap (the "switch takes two taps" bug). Matches ContentView's
+        // resolvedAppTheme rule: presets retint only in light appearance.
+        AppearanceThemePreset.activeAppTheme =
+            (colorScheme == .light && !preset.isClassic) ? preset : nil
     }
 
     @discardableResult

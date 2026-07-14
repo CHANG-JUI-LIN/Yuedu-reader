@@ -95,8 +95,13 @@ struct CoreTextUnderlineSelectionRequest {
     }
 }
 
+struct CoreTextReplaceSelectionRequest {
+    let selectedText: String
+}
+
 extension Notification.Name {
     static let coreTextUnderlineSelectionRequested = Notification.Name("coreTextUnderlineSelectionRequested")
+    static let coreTextReplaceSelectionRequested = Notification.Name("coreTextReplaceSelectionRequested")
 }
 
 // MARK: - Annotation Edit Result

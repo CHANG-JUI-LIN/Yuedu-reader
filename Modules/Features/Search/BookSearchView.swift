@@ -236,8 +236,10 @@ struct BookSearchView: View {
             }
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+            .listRowBackground(Color.clear)
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     // MARK: Empty State
@@ -449,6 +451,7 @@ struct SourcePickerSheet: View {
                         .padding(.vertical, 4)
                     }
                     .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)

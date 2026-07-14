@@ -69,6 +69,47 @@ struct AggregateSearchStreamingTests {
         #expect(Set(outcome.books.map(\.name)) == ["Alpha Book", "Beta Book"])
         #expect(Set(requestedSources) == ["Alpha", "Beta"])
     }
+
+    @Test("qualified gysearch targets requested media and source")
+    func qualifiedGysearchTargetsRequestedMediaAndSource() async throws {
+        AggregateSearchStreamingURLProtocol.reset()
+        URLProtocol.registerClass(AggregateSearchStreamingURLProtocol.self)
+        defer {
+            URLProtocol.unregisterClass(AggregateSearchStreamingURLProtocol.self)
+            AggregateSearchStreamingURLProtocol.reset()
+        }
+
+        var source = BookSource()
+        source.bookSourceName = "Streaming Aggregate"
+        source.bookSourceUrl = "aggregate-qualified-\(UUID().uuidString)"
+        source.jsLib = """
+        function BaseUrl() { return 'https://aggregate-streaming.test'; }
+        function request(url) { return java.ajax(BaseUrl() + url + ',{"method":"GET"}'); }
+        """
+        source.searchUrl = """
+        <js>
+        let payload = java.base64Encode(JSON.stringify({key:key,tab:'小说',sourcesKey:'全部',page:page}));
+        `data:;base64,${payload},{"type":"gysearch"}`;
+        </js>
+        """
+        source.ruleSearch.bookList = """
+        <js>
+        const res = JSON.parse(java.hexDecodeToString(result));
+        request(`/search?title=${res.key}&tab=${res.tab}&source=${res.sourcesKey}&page=${res.page}`);
+        </js>
+        $.data
+        """
+        source.ruleSearch.name = "$.book_name"
+        source.ruleSearch.author = "$.author"
+        source.ruleSearch.bookUrl = "$.book_url"
+
+        _ = try await ModernParserBridge(source: source)
+            .searchBooksStreaming(keyword: "m:十日終焉@番茄", page: 1) { _ in }
+
+        #expect(AggregateSearchStreamingURLProtocol.requestedSources == ["番茄"])
+        #expect(AggregateSearchStreamingURLProtocol.requestedTitles == ["十日終焉"])
+        #expect(AggregateSearchStreamingURLProtocol.requestedTabs == ["漫画"])
+    }
 }
 
 private actor StreamBatchRecorder {
@@ -86,6 +127,8 @@ private actor StreamBatchRecorder {
 private final class AggregateSearchStreamingURLProtocol: URLProtocol {
     private static let lock = NSLock()
     private static var sources: [String] = []
+    private static var titles: [String] = []
+    private static var tabs: [String] = []
 
     static var requestedSources: [String] {
         lock.lock()
@@ -93,9 +136,23 @@ private final class AggregateSearchStreamingURLProtocol: URLProtocol {
         return sources
     }
 
+    static var requestedTitles: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return titles
+    }
+
+    static var requestedTabs: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return tabs
+    }
+
     static func reset() {
         lock.lock()
         sources.removeAll()
+        titles.removeAll()
+        tabs.removeAll()
         lock.unlock()
     }
 
@@ -108,13 +165,15 @@ private final class AggregateSearchStreamingURLProtocol: URLProtocol {
     }
 
     override func startLoading() {
-        let source = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
-            .queryItems?
-            .first(where: { $0.name == "source" })?
-            .value ?? "unknown"
+        let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let source = items.first(where: { $0.name == "source" })?.value ?? "unknown"
+        let title = items.first(where: { $0.name == "title" })?.value ?? ""
+        let tab = items.first(where: { $0.name == "tab" })?.value ?? ""
 
         Self.lock.lock()
         Self.sources.append(source)
+        Self.titles.append(title)
+        Self.tabs.append(tab)
         Self.lock.unlock()
 
         let payload = """
