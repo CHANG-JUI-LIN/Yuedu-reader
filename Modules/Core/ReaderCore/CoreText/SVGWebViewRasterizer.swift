@@ -2,6 +2,10 @@ import UIKit
 import WebKit
 import CryptoKit
 
+enum ReaderBatterySVGRasterizerError: Error, Equatable, Sendable {
+    case invalidRenderSize
+}
+
 @MainActor
 final class SVGWebViewRasterizer: NSObject {
 
@@ -23,6 +27,7 @@ final class SVGWebViewRasterizer: NSObject {
 
     private var workers: [Worker] = []
     private let cache = NSCache<NSString, UIImage>()
+    private let readerBatteryCache = NSCache<NSString, UIImage>()
     private var pendingItems: [SVGWorkItem] = []
 
     /// Number of concurrent rasterization lanes. Four parallel WKWebViews drain a 100-bubble
@@ -58,6 +63,7 @@ final class SVGWebViewRasterizer: NSObject {
         // A 段評-heavy 起点 chapter can carry 100+ bubble SVGs; 64 thrashed within a single
         // chapter (re-rasterizing on every page turn). Hold a whole chapter's worth.
         cache.countLimit = 1024
+        readerBatteryCache.countLimit = 256
     }
 
     private var isDraining: Bool { activeCount > 0 }
@@ -86,6 +92,66 @@ final class SVGWebViewRasterizer: NSObject {
             ))
             dispatchToIdleWorkers()
         }
+    }
+
+    /// Rasterizes only a previously validated reader-battery template. Imported source must pass
+    /// through `ReaderBatterySVGTemplate.init(source:)` before it can reach this entry point, so
+    /// raw file contents are never forwarded to WKWebView by the overlay feature.
+    func renderBattery(
+        template: ReaderBatterySVGTemplate,
+        level: Double,
+        isCharging: Bool,
+        colorHex: String,
+        pixelSize: CGSize,
+        displayScale: CGFloat
+    ) async throws -> UIImage? {
+        guard level.isFinite else {
+            throw ReaderBatterySVGError.invalidLevel
+        }
+        guard displayScale.isFinite, displayScale > 0,
+              pixelSize.width.isFinite, pixelSize.width > 0,
+              pixelSize.height.isFinite, pixelSize.height > 0 else {
+            throw ReaderBatterySVGRasterizerError.invalidRenderSize
+        }
+
+        let levelBucket = Int((min(max(level, 0), 1) * 100).rounded())
+        // `render` performs the authoritative finite-level and RGBA color validation. Rendering
+        // the bucket rather than the raw value keeps both the SVG and cache semantics identical.
+        let normalizedColor = colorHex.uppercased()
+        let assetHash = SHA256.hash(data: Data(template.validatedSource.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let normalizedPixelSize = CGSize(
+            width: max(1, pixelSize.width.rounded(.toNearestOrAwayFromZero)),
+            height: max(1, pixelSize.height.rounded(.toNearestOrAwayFromZero))
+        )
+        let batteryKey = readerBatteryCacheKey(
+            assetHash: assetHash,
+            levelBucket: levelBucket,
+            isCharging: isCharging,
+            colorHex: normalizedColor,
+            pixelSize: normalizedPixelSize,
+            displayScale: displayScale
+        )
+        if let cached = readerBatteryCache.object(forKey: batteryKey) {
+            return cached
+        }
+
+        let sanitizedSVG = try template.render(
+            level: Double(levelBucket) / 100,
+            isCharging: isCharging,
+            colorHex: normalizedColor
+        )
+        let pointSize = CGSize(
+            width: normalizedPixelSize.width / displayScale,
+            height: normalizedPixelSize.height / displayScale
+        )
+        guard let image = await render(svgString: sanitizedSVG, size: pointSize) else {
+            return nil
+        }
+        let scaledImage = image.resized(to: pointSize, displayScale: displayScale)
+        readerBatteryCache.setObject(scaledImage, forKey: batteryKey)
+        return scaledImage
     }
 
     func resolveSVGSize(
@@ -298,6 +364,25 @@ final class SVGWebViewRasterizer: NSObject {
         return hash.compactMap { String(format: "%02x", $0) }.joined() as NSString
     }
 
+    private func readerBatteryCacheKey(
+        assetHash: String,
+        levelBucket: Int,
+        isCharging: Bool,
+        colorHex: String,
+        pixelSize: CGSize,
+        displayScale: CGFloat
+    ) -> NSString {
+        let input = [
+            assetHash,
+            String(levelBucket),
+            isCharging ? "1" : "0",
+            colorHex,
+            String(format: "%.0fx%.0f", pixelSize.width, pixelSize.height),
+            String(format: "%.4f", displayScale)
+        ].joined(separator: "|")
+        return input as NSString
+    }
+
     private func logDrainIfFinished() {
         guard pendingItems.isEmpty, activeCount == 0, let start = drainStart else { return }
         let ms = Int(Date().timeIntervalSince(start) * 1000)
@@ -312,6 +397,17 @@ final class SVGWebViewRasterizer: NSObject {
         drainProcessed = 0
         drainTimeouts = 0
         drainCacheHits = 0
+    }
+}
+
+private extension UIImage {
+    func resized(to pointSize: CGSize, displayScale: CGFloat) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = displayScale
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: pointSize, format: format).image { _ in
+            draw(in: CGRect(origin: .zero, size: pointSize))
+        }
     }
 }
 

@@ -1289,3 +1289,22 @@
 "%@，進度 %@" = "%@, progress %@";
 "點兩下顯示閱讀進度" = "Double-tap to show reading progress";
 "點兩下展開閱讀工具" = "Double-tap to expand reading tools";
+
+// MARK: - Reader Battery SVG Templates
+"電量 SVG 模板" = "Battery SVG Templates";
+"尚無電量 SVG 模板" = "No Battery SVG Templates";
+"匯入 SVG 模板後，可用於閱讀頁的電量元件。" = "Import an SVG template to use it with the battery component in the reader.";
+"只會匯入通過安全驗證的 SVG，動態標記會保留供分享。" = "Only safety-validated SVGs are imported. Dynamic markers are preserved when sharing.";
+"正在載入 SVG 模板" = "Loading SVG templates";
+"正在驗證 SVG 模板" = "Validating SVG template";
+"模板無法載入，將使用系統電池。" = "The template can’t be loaded. The system battery will be used.";
+"模板名稱" = "Template Name";
+"分享 SVG" = "Share SVG";
+"刪除 SVG 模板？" = "Delete SVG Template?";
+"此模板仍被頁首頁尾使用。刪除後會自動改用系統電池圖示。" = "This template is still used by a header or footer. Deleting it will automatically use the system battery icon.";
+"此模板會被永久刪除。" = "This template will be permanently deleted.";
+"SVG 模板匯入失敗。請確認檔案是安全且有效的 SVG。" = "The SVG template couldn’t be imported. Make sure the file is a safe, valid SVG.";
+"SVG 模板載入失敗。" = "The SVG templates couldn’t be loaded.";
+"模板名稱不能為空白。" = "The template name can’t be blank.";
+"SVG 模板操作失敗。" = "The SVG template operation failed.";
+"更多操作" = "More Actions";

@@ -204,6 +204,10 @@ enum DSLayout {
     static let readerBubblePreviewTileWidth: CGFloat = 64
     /// Minimum height of a paragraph-comment bubble preview tile.
     static let readerBubblePreviewHeight: CGFloat = 64
+    /// Width of a battery SVG preview in the template-management list.
+    static let readerBatterySVGPreviewWidth: CGFloat = 72
+    /// Height of a battery SVG preview in the template-management list.
+    static let readerBatterySVGPreviewHeight: CGFloat = 32
     /// Wide management surfaces such as book-source lists.
     static let readableWideWidth: CGFloat = 980
     /// Extra horizontal inset applied to regular-width reader pages.
