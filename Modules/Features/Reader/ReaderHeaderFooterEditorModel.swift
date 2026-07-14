@@ -9,10 +9,18 @@ enum ReaderHeaderFooterEditorValidationError: Error, Equatable, Sendable {
 @MainActor
 final class ReaderHeaderFooterEditorModel: ObservableObject {
     @Published private(set) var draft: ReaderOverlayLayout
+    @Published var activeScope: ReaderOverlayPageScope {
+        didSet {
+            guard activeScope != oldValue else { return }
+            selectedComponentID = nil
+            lastDeleted = nil
+        }
+    }
     @Published var selectedComponentID: UUID?
     @Published private(set) var lastDeleted: (
         component: ReaderOverlayComponent,
-        index: Int
+        index: Int,
+        scope: ReaderOverlayPageScope
     )?
     @Published private(set) var saveError: Error?
     @Published private(set) var isFinished = false
@@ -24,19 +32,27 @@ final class ReaderHeaderFooterEditorModel: ObservableObject {
 
     init(
         initial: ReaderOverlayLayout,
+        activeScope: ReaderOverlayPageScope = .chapterBody,
         onSave: @escaping (ReaderOverlayLayout) throws -> Void
     ) {
         original = initial
         draft = initial
+        self.activeScope = activeScope
         self.onSave = onSave
+    }
+
+    var activeComponents: [ReaderOverlayComponent] {
+        draft.components(for: activeScope)
     }
 
     func add(_ component: ReaderOverlayComponent) {
         guard canEdit,
-              !draft.components.contains(where: { $0.id == component.id }) else {
+              !activeComponents.contains(where: { $0.id == component.id }) else {
             return
         }
-        draft.components.append(component.normalized)
+        var components = activeComponents
+        components.append(component.normalized)
+        replaceActiveComponents(components)
         if lastDeleted?.component.id == component.id {
             lastDeleted = nil
         }
@@ -46,29 +62,35 @@ final class ReaderHeaderFooterEditorModel: ObservableObject {
 
     func update(_ component: ReaderOverlayComponent) {
         guard canEdit,
-              let index = draft.components.firstIndex(where: { $0.id == component.id }) else {
+              let index = activeComponents.firstIndex(where: { $0.id == component.id }) else {
             return
         }
-        draft.components[index] = component.normalized
+        var components = activeComponents
+        components[index] = component.normalized
+        replaceActiveComponents(components)
         didEdit()
     }
 
     func move(id: UUID, to position: ReaderOverlayNormalizedPoint) {
         guard canEdit,
-              let index = draft.components.firstIndex(where: { $0.id == id }) else {
+              let index = activeComponents.firstIndex(where: { $0.id == id }) else {
             return
         }
-        draft.components[index].position = position.clamped
+        var components = activeComponents
+        components[index].position = position.clamped
+        replaceActiveComponents(components)
         didEdit()
     }
 
     func delete(id: UUID) {
         guard canEdit,
-              let index = draft.components.firstIndex(where: { $0.id == id }) else {
+              let index = activeComponents.firstIndex(where: { $0.id == id }) else {
             return
         }
-        let component = draft.components.remove(at: index)
-        lastDeleted = (component: component, index: index)
+        var components = activeComponents
+        let component = components.remove(at: index)
+        replaceActiveComponents(components)
+        lastDeleted = (component: component, index: index, scope: activeScope)
         if selectedComponentID == id {
             selectedComponentID = nil
         }
@@ -76,13 +98,17 @@ final class ReaderHeaderFooterEditorModel: ObservableObject {
     }
 
     func undoDelete() {
-        guard canEdit, let deletion = lastDeleted else { return }
-        guard !draft.components.contains(where: { $0.id == deletion.component.id }) else {
+        guard canEdit,
+              let deletion = lastDeleted,
+              deletion.scope == activeScope else { return }
+        guard !activeComponents.contains(where: { $0.id == deletion.component.id }) else {
             lastDeleted = nil
             return
         }
-        let index = min(max(deletion.index, 0), draft.components.count)
-        draft.components.insert(deletion.component, at: index)
+        var components = activeComponents
+        let index = min(max(deletion.index, 0), components.count)
+        components.insert(deletion.component, at: index)
+        replaceActiveComponents(components)
         lastDeleted = nil
         selectedComponentID = deletion.component.id
         didEdit()
@@ -131,6 +157,12 @@ final class ReaderHeaderFooterEditorModel: ObservableObject {
         saveError = nil
     }
 
+    private func replaceActiveComponents(_ components: [ReaderOverlayComponent]) {
+        var next = draft
+        next.replaceComponents(components, for: activeScope)
+        draft = next
+    }
+
     private func validationError(
         for layout: ReaderOverlayLayout
     ) -> ReaderHeaderFooterEditorValidationError? {
@@ -138,9 +170,12 @@ final class ReaderHeaderFooterEditorModel: ObservableObject {
             return .unsupportedLayoutVersion(layout.version)
         }
 
-        var componentIDs: Set<UUID> = []
-        for component in layout.components where !componentIDs.insert(component.id).inserted {
-            return .duplicateComponentID(component.id)
+        for scope in ReaderOverlayPageScope.allCases {
+            var componentIDs: Set<UUID> = []
+            for component in layout.components(for: scope)
+            where !componentIDs.insert(component.id).inserted {
+                return .duplicateComponentID(component.id)
+            }
         }
         return nil
     }

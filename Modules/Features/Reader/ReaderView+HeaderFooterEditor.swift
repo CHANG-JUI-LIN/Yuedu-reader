@@ -53,7 +53,10 @@ extension ReaderView {
         }
 
         readerHeaderFooterEditorModel = ReaderHeaderFooterEditorModel(
-            initial: settings.readerOverlayLayout
+            initial: settings.readerOverlayLayout,
+            activeScope: ReaderOverlayPageScope.resolve(
+                chapterPage: readerOverlayContentSnapshot.chapterPage
+            )
         ) { layout in
             guard settings.saveReaderOverlayLayout(layout) else {
                 throw ReaderOverlayEditorPersistenceError.writeFailed

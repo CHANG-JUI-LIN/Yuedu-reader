@@ -44,7 +44,7 @@ struct ReaderHeaderFooterEditorView: View {
 
                 ReaderOverlayCanvas(
                     layout: model.draft,
-                    scope: .chapterBody,
+                    scope: model.activeScope,
                     content: content,
                     readerStyle: readerStyle,
                     mode: .editor(selectedID: model.selectedComponentID),
@@ -99,6 +99,10 @@ struct ReaderHeaderFooterEditorView: View {
             .coordinateSpace(name: readerOverlayEditorCoordinateSpaceName)
             .onPreferenceChange(ReaderOverlayEditorChromeFramePreferenceKey.self) {
                 chromeFrames = $0
+            }
+            .onChange(of: model.activeScope) { _, _ in
+                dragEnded()
+                measuredFrames = [:]
             }
             .accessibilityAction(
                 named: Text(
@@ -309,7 +313,7 @@ struct ReaderHeaderFooterEditorView: View {
     }
 
     private func nudge(id: UUID, direction: ReaderOverlayNudgeDirection) {
-        guard let component = model.draft.components.first(where: { $0.id == id }) else { return }
+        guard let component = model.activeComponents.first(where: { $0.id == id }) else { return }
         let step = 0.01
         var position = component.position
         switch direction {
@@ -325,7 +329,7 @@ struct ReaderHeaderFooterEditorView: View {
         id: UUID,
         to position: ReaderOverlayNormalizedPoint
     ) {
-        guard let current = model.draft.components.first(where: { $0.id == id })?.position else {
+        guard let current = model.activeComponents.first(where: { $0.id == id })?.position else {
             return
         }
         let next = position.clamped
@@ -342,7 +346,7 @@ struct ReaderHeaderFooterEditorView: View {
     }
 
     private func edit(_ id: UUID) {
-        guard model.draft.components.contains(where: { $0.id == id }) else { return }
+        guard model.activeComponents.contains(where: { $0.id == id }) else { return }
         model.selectedComponentID = id
         presentedSheet = .componentEditor(id)
     }
@@ -409,7 +413,7 @@ struct ReaderHeaderFooterEditorView: View {
 
     private func addComponent(_ kind: ReaderOverlayComponentKind) {
         let position = ReaderOverlayDefaultPlacement.position(
-            existing: model.draft.components.map(\.position)
+            existing: model.activeComponents.map(\.position)
         )
         var component = ReaderOverlayComponent.make(kind: kind, position: position)
         if kind == .customText {
@@ -421,19 +425,23 @@ struct ReaderHeaderFooterEditorView: View {
     private func componentBinding(
         id: UUID
     ) -> Binding<ReaderOverlayComponent>? {
-        guard let initial = model.draft.components.first(where: { $0.id == id }) else {
+        guard let initial = model.activeComponents.first(where: { $0.id == id }) else {
             return nil
         }
         return Binding(
             get: {
-                model.draft.components.first(where: { $0.id == id }) ?? initial
+                model.activeComponents.first(where: { $0.id == id }) ?? initial
             },
             set: { model.update($0) }
         )
     }
 
     private var referencedSVGAssetIDs: Set<UUID> {
-        Set(model.draft.components.compactMap(\.configuration.svgAssetID))
+        Set(
+            ReaderOverlayPageScope.allCases
+                .flatMap { model.draft.components(for: $0) }
+                .compactMap(\.configuration.svgAssetID)
+        )
     }
 }
 

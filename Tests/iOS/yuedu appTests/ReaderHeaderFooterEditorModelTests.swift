@@ -21,6 +21,60 @@ struct ReaderHeaderFooterEditorModelTests {
         #expect(model.selectedComponentID == component.id)
     }
 
+    @Test("all mutations stay inside the active page scope")
+    func mutationsAreScopeLocal() throws {
+        let opening = ReaderOverlayComponent.make(
+            kind: .bookTitle,
+            position: ReaderOverlayNormalizedPoint(x: 0.2, y: 0.2)
+        )
+        let body = ReaderOverlayComponent.make(
+            kind: .chapterPage,
+            position: ReaderOverlayNormalizedPoint(x: 0.8, y: 0.8)
+        )
+        let initial = ReaderOverlayLayout(
+            components: [body],
+            chapterOpeningComponents: [opening],
+            contentReservations: ReaderOverlayContentReservations(top: 34, bottom: 32)
+        )
+        let model = makeModel(initial: initial, activeScope: .chapterOpening)
+        let added = ReaderOverlayComponent.make(
+            kind: .customText,
+            position: ReaderOverlayNormalizedPoint(x: 0.5, y: 0.5)
+        )
+
+        model.add(added)
+        var updated = added
+        updated.configuration.customText = "Opening only"
+        model.update(updated)
+        model.move(
+            id: opening.id,
+            to: ReaderOverlayNormalizedPoint(x: 0.3, y: 0.4)
+        )
+        model.delete(id: added.id)
+        model.undoDelete()
+
+        let openingResult = model.draft.components(for: .chapterOpening)
+        #expect(openingResult.count == 2)
+        #expect(openingResult.first?.position == ReaderOverlayNormalizedPoint(x: 0.3, y: 0.4))
+        #expect(openingResult.last?.configuration.customText == "Opening only")
+        #expect(model.draft.components(for: .chapterBody) == [body])
+    }
+
+    @Test("switching page scope clears selection and scoped undo")
+    func switchingScopeClearsTransientState() throws {
+        let model = makeModel(activeScope: .chapterOpening)
+        let opening = try #require(model.activeComponents.first)
+        model.selectedComponentID = opening.id
+        model.delete(id: opening.id)
+        #expect(model.lastDeleted != nil)
+
+        model.activeScope = .chapterBody
+
+        #expect(model.selectedComponentID == nil)
+        #expect(model.lastDeleted == nil)
+        #expect(model.activeComponents == model.draft.components(for: .chapterBody))
+    }
+
     @Test("duplicate component IDs are not added")
     func duplicateAddIsIgnored() {
         let original = ReaderOverlayLayout.default
@@ -186,6 +240,38 @@ struct ReaderHeaderFooterEditorModelTests {
         #expect(model.isFinished == false)
     }
 
+    @Test("the same component ID is valid in different scopes")
+    func matchingIDsAcrossScopesAreValid() {
+        let component = ReaderOverlayLayout.default.components[0]
+        let initial = ReaderOverlayLayout(
+            components: [component],
+            chapterOpeningComponents: [component],
+            contentReservations: ReaderOverlayContentReservations(top: 0, bottom: 0)
+        )
+        var saved: [ReaderOverlayLayout] = []
+        let model = ReaderHeaderFooterEditorModel(initial: initial) { saved.append($0) }
+
+        #expect(model.done())
+        #expect(saved.count == 1)
+    }
+
+    @Test("duplicate IDs inside the opening scope are rejected")
+    func duplicateOpeningIDsAreRejected() throws {
+        let component = ReaderOverlayLayout.default.components[0]
+        let initial = ReaderOverlayLayout(
+            components: [],
+            chapterOpeningComponents: [component, component],
+            contentReservations: ReaderOverlayContentReservations(top: 0, bottom: 0)
+        )
+        let model = makeModel(initial: initial, activeScope: .chapterOpening)
+
+        #expect(model.done() == false)
+        #expect(
+            model.saveError as? ReaderHeaderFooterEditorValidationError
+                == .duplicateComponentID(component.id)
+        )
+    }
+
     @Test("future layout versions are never overwritten")
     func futureVersionIsRejected() throws {
         var initial = ReaderOverlayLayout.default
@@ -221,8 +307,9 @@ struct ReaderHeaderFooterEditorModelTests {
     }
 
     private func makeModel(
-        initial: ReaderOverlayLayout = .default
+        initial: ReaderOverlayLayout = .default,
+        activeScope: ReaderOverlayPageScope = .chapterBody
     ) -> ReaderHeaderFooterEditorModel {
-        ReaderHeaderFooterEditorModel(initial: initial) { _ in }
+        ReaderHeaderFooterEditorModel(initial: initial, activeScope: activeScope) { _ in }
     }
 }
