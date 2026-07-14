@@ -10,6 +10,7 @@ struct ReaderHeaderFooterEditorView: View {
     let content: ReaderOverlayContentSnapshot
     let readerStyle: ReaderOverlayReaderStyle
     let safeAreaInsets: EdgeInsets
+    let horizontalPageMargin: CGFloat
     let svgAssetStore: ReaderOverlaySVGAssetStore
     let importedFonts: [UserFontInfo]
     let onDismiss: () -> Void
@@ -17,7 +18,7 @@ struct ReaderHeaderFooterEditorView: View {
     @State private var dragOrigin: CGPoint?
     @State private var draggingComponentID: UUID?
     @State private var activeGuides: [ReaderOverlayGuide] = []
-    @State private var guideFeedbackState = ReaderOverlayGuideFeedbackState()
+    @State private var snapSession = ReaderOverlaySnapSession()
     @State private var measuredFrames: [UUID: CGRect] = [:]
     @State private var chromeFrames: [ReaderOverlayEditorChromeRegion: CGRect] = [:]
     @State private var presentedSheet: ReaderOverlayEditorSheet?
@@ -48,7 +49,7 @@ struct ReaderHeaderFooterEditorView: View {
                     readerStyle: readerStyle,
                     mode: .editor(selectedID: model.selectedComponentID),
                     svgAssetStore: svgAssetStore,
-                    editorActions: editorActions(canvas: canvas, safeArea: safeArea)
+                    editorActions: editorActions(canvas: canvas)
                 )
                 .onPreferenceChange(ReaderOverlayComponentFramePreferenceKey.self) {
                     measuredFrames = $0
@@ -231,15 +232,14 @@ struct ReaderHeaderFooterEditorView: View {
     }
 
     private func editorActions(
-        canvas: CGRect,
-        safeArea: CGRect
+        canvas: CGRect
     ) -> ReaderOverlayCanvasEditorActions {
         ReaderOverlayCanvasEditorActions(
             select: { id in
                 model.selectedComponentID = id
             },
             dragChanged: { id, translation in
-                dragChanged(id: id, translation: translation, canvas: canvas, safeArea: safeArea)
+                dragChanged(id: id, translation: translation, canvas: canvas)
             },
             dragEnded: { _ in
                 dragEnded()
@@ -262,11 +262,11 @@ struct ReaderHeaderFooterEditorView: View {
     private func dragChanged(
         id: UUID,
         translation: CGSize,
-        canvas: CGRect,
-        safeArea: CGRect
+        canvas: CGRect
     ) {
         guard let frame = measuredFrames[id], canvas.width > 0, canvas.height > 0 else { return }
         if draggingComponentID != id || dragOrigin == nil {
+            snapSession.reset()
             draggingComponentID = id
             dragOrigin = CGPoint(x: frame.midX, y: frame.midY)
             model.selectedComponentID = id
@@ -280,44 +280,32 @@ struct ReaderHeaderFooterEditorView: View {
             x: dragOrigin.x + translation.width,
             y: dragOrigin.y + translation.height
         )
+        let reservations = model.draft.contentReservations.normalized
+        let bodyFrame = ReaderOverlayBodyFramePolicy.frame(
+            in: canvas,
+            horizontalPageMargin: horizontalPageMargin,
+            topReservation: CGFloat(reservations.top),
+            bottomReservation: CGFloat(reservations.bottom)
+        )
         let result = ReaderOverlaySnapEngine.resolve(
             proposedCenter: proposedCenter,
             componentSize: frame.size,
             canvas: canvas,
-            safeArea: safeArea,
+            bodyFrame: bodyFrame,
             peers: peers,
-            threshold: ReaderOverlayEditorGeometry.snapThreshold
+            session: &snapSession,
+            acquireDistance: ReaderOverlayEditorGeometry.snapAcquireDistance,
+            releaseDistance: ReaderOverlayEditorGeometry.snapReleaseDistance
         )
         model.move(id: id, to: ReaderOverlayGeometry.normalize(result.center, in: canvas))
-        updateGuides(result.guides)
+        activeGuides = result.guides
     }
 
     private func dragEnded() {
         dragOrigin = nil
         draggingComponentID = nil
         activeGuides = []
-        guideFeedbackState.reset()
-    }
-
-    private func updateGuides(_ guides: [ReaderOverlayGuide]) {
-        activeGuides = guides
-        let transition = guideFeedbackState.update(guides: guides)
-        guard transition.hasEnteredGuide else { return }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        UIAccessibility.post(
-            notification: .announcement,
-            argument: guideAnnouncement(transition)
-        )
-    }
-
-    private func guideAnnouncement(
-        _ transition: ReaderOverlayGuideFeedbackTransition
-    ) -> String {
-        if transition.enteredVertical && transition.enteredHorizontal {
-            return localized("已對齊水平與垂直基準線")
-        }
-        if transition.enteredVertical { return localized("已對齊垂直基準線") }
-        return localized("已對齊水平基準線")
+        snapSession.reset()
     }
 
     private func nudge(id: UUID, direction: ReaderOverlayNudgeDirection) {
@@ -587,6 +575,7 @@ private struct ReaderHeaderFooterEditorPreviewHarness: View {
                     availablePostScriptNames: []
                 ),
                 safeAreaInsets: EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0),
+                horizontalPageMargin: DSSpacing.xl,
                 svgAssetStore: store,
                 importedFonts: [],
                 onDismiss: {}

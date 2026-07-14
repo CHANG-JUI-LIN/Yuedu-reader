@@ -34,47 +34,9 @@ struct ReaderOverlayAlignmentGuidesView: View {
     }
 }
 
-struct ReaderOverlayGuideFeedbackTransition: Equatable {
-    let enteredVertical: Bool
-    let enteredHorizontal: Bool
-
-    var hasEnteredGuide: Bool {
-        enteredVertical || enteredHorizontal
-    }
-}
-
-struct ReaderOverlayGuideFeedbackState: Equatable {
-    private(set) var verticalTarget: Double?
-    private(set) var horizontalTarget: Double?
-
-    mutating func update(
-        guides: [ReaderOverlayGuide]
-    ) -> ReaderOverlayGuideFeedbackTransition {
-        let nextVertical = guides.lazy.compactMap { guide -> Double? in
-            if case .vertical(let x) = guide { return x }
-            return nil
-        }.first
-        let nextHorizontal = guides.lazy.compactMap { guide -> Double? in
-            if case .horizontal(let y) = guide { return y }
-            return nil
-        }.first
-        let transition = ReaderOverlayGuideFeedbackTransition(
-            enteredVertical: nextVertical != nil && nextVertical != verticalTarget,
-            enteredHorizontal: nextHorizontal != nil && nextHorizontal != horizontalTarget
-        )
-        verticalTarget = nextVertical
-        horizontalTarget = nextHorizontal
-        return transition
-    }
-
-    mutating func reset() {
-        verticalTarget = nil
-        horizontalTarget = nil
-    }
-}
-
 enum ReaderOverlayEditorGeometry {
-    static let snapThreshold: CGFloat = 6
+    static let snapAcquireDistance = DSLayout.readerOverlaySnapAcquireDistance
+    static let snapReleaseDistance = DSLayout.readerOverlaySnapReleaseDistance
 
     static func chromeAvoidingSafeArea(
         safeArea: CGRect,

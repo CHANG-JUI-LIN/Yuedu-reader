@@ -1383,6 +1383,7 @@ struct ReaderView: View {
                     content: readerOverlayContentSnapshot,
                     readerStyle: readerOverlayEditorReaderStyle,
                     safeAreaInsets: readerOverlayEditorSafeAreaInsets,
+                    horizontalPageMargin: effectivePageMarginH,
                     svgAssetStore: svgAssetStore,
                     importedFonts: settings.userFonts,
                     onDismiss: { readerHeaderFooterEditorModel = nil }

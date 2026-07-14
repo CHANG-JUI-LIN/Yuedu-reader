@@ -98,101 +98,55 @@ struct ReaderOverlayGeometryTests {
 @Suite("Reader overlay snap engine")
 struct ReaderOverlaySnapEngineTests {
     private let canvas = CGRect(x: 0, y: 0, width: 390, height: 844)
+    private let bodyFrame = CGRect(x: 24, y: 34, width: 342, height: 778)
 
-    @Test("screen center snapping resolves axes independently")
-    func screenCenterSnappingResolvesAxesIndependently() {
-        let vertical = resolve(
-            proposedCenter: CGPoint(x: 194, y: 410),
-            componentSize: CGSize(width: 80, height: 24)
-        )
-        let horizontal = resolve(
-            proposedCenter: CGPoint(x: 120, y: 421),
-            componentSize: CGSize(width: 80, height: 24)
-        )
-
-        #expect(vertical.center == CGPoint(x: 195, y: 410))
-        #expect(vertical.guides == [.vertical(x: 195), .horizontal(y: 422)])
-        #expect(horizontal.center == CGPoint(x: 120, y: 422))
-        #expect(horizontal.guides == [.horizontal(y: 422)])
-    }
-
-    @Test("canvas minimum and maximum edges accept component edge alignment")
-    func canvasMinAndMaxEdgesSnap() {
+    @Test("body text boundaries snap component edges")
+    func bodyBoundariesSnapComponentEdges() {
+        var minimumSession = ReaderOverlaySnapSession()
         let minimum = resolve(
-            proposedCenter: CGPoint(x: 42, y: 34),
-            componentSize: CGSize(width: 80, height: 64),
-            threshold: 3
-        )
-        let maximum = resolve(
-            proposedCenter: CGPoint(x: 348, y: 810),
-            componentSize: CGSize(width: 80, height: 64),
-            threshold: 3
-        )
-
-        #expect(minimum.center == CGPoint(x: 40, y: 32))
-        #expect(minimum.guides == [.vertical(x: 0), .horizontal(y: 0)])
-        #expect(maximum.center == CGPoint(x: 350, y: 812))
-        #expect(maximum.guides == [.vertical(x: 390), .horizontal(y: 844)])
-    }
-
-    @Test("safe area minimum and maximum edges use the canvas intersection")
-    func safeAreaEdgesUseCanvasIntersection() {
-        let safeArea = CGRect(x: 20, y: 44, width: 350, height: 766)
-        let minimum = resolve(
-            proposedCenter: CGPoint(x: 42, y: 56),
+            proposedCenter: CGPoint(x: 45, y: 47),
             componentSize: CGSize(width: 40, height: 20),
-            safeArea: safeArea,
-            threshold: 3
+            session: &minimumSession
         )
+        var maximumSession = ReaderOverlaySnapSession()
         let maximum = resolve(
-            proposedCenter: CGPoint(x: 348, y: 798),
+            proposedCenter: CGPoint(x: 345, y: 799),
             componentSize: CGSize(width: 40, height: 20),
-            safeArea: safeArea,
-            threshold: 3
+            session: &maximumSession
         )
 
-        #expect(minimum.center == CGPoint(x: 40, y: 54))
-        #expect(minimum.guides == [.vertical(x: 20), .horizontal(y: 44)])
-        #expect(maximum.center == CGPoint(x: 350, y: 800))
-        #expect(maximum.guides == [.vertical(x: 370), .horizontal(y: 810)])
+        #expect(minimum.center == CGPoint(x: 44, y: 44))
+        #expect(minimum.guides == [.vertical(x: 24), .horizontal(y: 34)])
+        #expect(maximum.center == CGPoint(x: 346, y: 802))
+        #expect(maximum.guides == [.vertical(x: 366), .horizontal(y: 812)])
     }
 
-    @Test("safe area targets are calculated after clipping to the canvas")
-    func safeAreaTargetsUseClippedRect() {
-        let result = resolve(
-            proposedCenter: CGPoint(x: 39, y: 100),
-            componentSize: .zero,
-            safeArea: CGRect(x: -20, y: 80, width: 100, height: 100),
-            threshold: 2
-        )
-
-        #expect(result.center == CGPoint(x: 40, y: 100))
-        #expect(result.guides == [.vertical(x: 40)])
-    }
-
-    @Test("peer minimum midpoint and maximum lines snap both component axes")
-    func peerLinesSnapBothAxes() {
+    @Test("peer minimum midpoint and maximum lines match like alignments")
+    func peerLinesMatchLikeAlignments() {
         let peer = ReaderOverlayPeerFrame(
             id: fixtureUUID(1),
             frame: CGRect(x: 100, y: 200, width: 100, height: 80)
         )
+        var minimumSession = ReaderOverlaySnapSession()
         let minimum = resolve(
             proposedCenter: CGPoint(x: 121, y: 211),
             componentSize: CGSize(width: 40, height: 20),
             peers: [peer],
-            threshold: 3
+            session: &minimumSession
         )
+        var midpointSession = ReaderOverlaySnapSession()
         let midpoint = resolve(
             proposedCenter: CGPoint(x: 149, y: 239),
             componentSize: CGSize(width: 40, height: 20),
             peers: [peer],
-            threshold: 3
+            session: &midpointSession
         )
+        var maximumSession = ReaderOverlaySnapSession()
         let maximum = resolve(
             proposedCenter: CGPoint(x: 179, y: 269),
             componentSize: CGSize(width: 40, height: 20),
             peers: [peer],
-            threshold: 3
+            session: &maximumSession
         )
 
         #expect(minimum.center == CGPoint(x: 120, y: 210))
@@ -203,313 +157,173 @@ struct ReaderOverlaySnapEngineTests {
         #expect(maximum.guides == [.vertical(x: 200), .horizontal(y: 280)])
     }
 
-    @Test("candidates outside the threshold do not snap")
-    func candidatesOutsideThresholdDoNotSnap() {
+    @Test("canvas and screen center are not standalone snap targets")
+    func canvasAndScreenCenterAreNotTargets() {
+        var session = ReaderOverlaySnapSession()
         let result = resolve(
-            proposedCenter: CGPoint(x: 100, y: 100),
-            componentSize: CGSize(width: 40, height: 20),
-            threshold: 1
+            proposedCenter: CGPoint(x: canvas.midX, y: canvas.midY),
+            componentSize: .zero,
+            session: &session
         )
 
-        #expect(result.center == CGPoint(x: 100, y: 100))
+        #expect(result.center == CGPoint(x: canvas.midX, y: canvas.midY))
         #expect(result.guides.isEmpty)
     }
 
-    @Test("fractional candidates on the mathematical threshold snap")
-    func fractionalCandidateOnThresholdSnaps() {
-        let result = ReaderOverlaySnapEngine.resolve(
-            proposedCenter: CGPoint(x: 0.3, y: 0.2),
-            componentSize: CGSize(width: 0.06, height: 0),
-            canvas: CGRect(x: 0, y: 0, width: 1, height: 1),
-            safeArea: .null,
-            peers: [
-                ReaderOverlayPeerFrame(
-                    id: fixtureUUID(1),
-                    frame: CGRect(x: 0.43, y: 0.8, width: 0.02, height: 0.1)
-                )
-            ],
-            threshold: 0.1
-        )
-
-        #expect(abs(result.center.x - 0.4) < 0.000_000_000_001)
-        #expect(verticalGuides(in: result) == [.vertical(x: 0.43)])
-    }
-
-    @Test("the nearest candidate wins before priority tie breakers")
-    func nearestCandidateWins() {
-        let result = resolve(
-            proposedCenter: CGPoint(x: 134, y: 33),
-            componentSize: CGSize(width: 20, height: 0),
-            peers: [
-                ReaderOverlayPeerFrame(
-                    id: fixtureUUID(1),
-                    frame: CGRect(x: 100, y: 150, width: 60, height: 20)
-                ),
-                ReaderOverlayPeerFrame(
-                    id: fixtureUUID(2),
-                    frame: CGRect(x: 135, y: 150, width: 50, height: 20)
-                )
-            ],
-            threshold: 10
-        )
-
-        #expect(result.center.x == 135)
-        #expect(verticalGuides(in: result) == [.vertical(x: 135)])
-    }
-
-    @Test("exact source ties prefer peer then safe area then canvas")
-    func sourceTiePriorityIsDeterministic() {
-        let canvas = CGRect(x: 0, y: 0, width: 200, height: 200)
-        let safeArea = CGRect(x: 20, y: 20, width: 180, height: 160)
-        let safeOverCanvas = ReaderOverlaySnapEngine.resolve(
-            proposedCenter: CGPoint(x: 105, y: 33),
-            componentSize: .zero,
-            canvas: canvas,
-            safeArea: safeArea,
-            peers: [],
-            threshold: 5
-        )
-        let peerOverSafe = ReaderOverlaySnapEngine.resolve(
-            proposedCenter: CGPoint(x: 105, y: 33),
-            componentSize: .zero,
-            canvas: canvas,
-            safeArea: safeArea,
-            peers: [
-                ReaderOverlayPeerFrame(
-                    id: fixtureUUID(1),
-                    frame: CGRect(x: 90, y: 150, width: 10, height: 20)
-                )
-            ],
-            threshold: 5
-        )
-
-        #expect(verticalGuides(in: safeOverCanvas) == [.vertical(x: 110)])
-        #expect(verticalGuides(in: peerOverSafe) == [.vertical(x: 100)])
-    }
-
-    @Test("fractional mathematical ties reach source and line priorities")
-    func fractionalMathematicalTiesUsePriorities() {
-        let result = ReaderOverlaySnapEngine.resolve(
-            proposedCenter: CGPoint(x: 0.2, y: 0.73),
-            componentSize: .zero,
-            canvas: CGRect(x: 0, y: 0, width: 0.6, height: 1),
-            safeArea: CGRect(x: 0.1, y: 0.1, width: 0.4, height: 0.2),
-            peers: [],
-            threshold: 0.11
-        )
-
-        #expect(verticalGuides(in: result) == [.vertical(x: 0.1)])
-    }
-
-    @Test("exact dragged alignment ties prefer center then minimum then maximum edge")
-    func draggedAlignmentTiePriorityIsDeterministic() {
-        let centerWins = resolve(
-            proposedCenter: CGPoint(x: 100, y: 33),
-            componentSize: CGSize(width: 20, height: 0),
-            peers: [
-                ReaderOverlayPeerFrame(
-                    id: fixtureUUID(1),
-                    frame: CGRect(x: 85, y: 150, width: 20, height: 20)
-                )
-            ],
-            threshold: 5
-        )
-        let minimumWins = resolve(
-            proposedCenter: CGPoint(x: 100, y: 33),
-            componentSize: CGSize(width: 20, height: 0),
-            peers: [
-                ReaderOverlayPeerFrame(
-                    id: fixtureUUID(2),
-                    frame: CGRect(x: 65, y: 150, width: 20, height: 20)
-                ),
-                ReaderOverlayPeerFrame(
-                    id: fixtureUUID(1),
-                    frame: CGRect(x: 115, y: 150, width: 20, height: 20)
-                )
-            ],
-            threshold: 5
-        )
-
-        #expect(verticalGuides(in: centerWins) == [.vertical(x: 95)])
-        #expect(verticalGuides(in: minimumWins) == [.vertical(x: 85)])
-    }
-
-    @Test("exact target line ties use minimum midpoint maximum ordering")
-    func targetLineTiePriorityIsStable() {
-        let result = resolve(
-            proposedCenter: CGPoint(x: 100, y: 33),
-            componentSize: .zero,
-            peers: [
-                ReaderOverlayPeerFrame(
-                    id: fixtureUUID(1),
-                    frame: CGRect(x: 85, y: 150, width: 20, height: 20)
-                )
-            ],
-            threshold: 5
-        )
-
-        #expect(verticalGuides(in: result) == [.vertical(x: 95)])
-    }
-
-    @Test("minimum target line wins an exact tie with midpoint")
-    func minimumTargetLineWinsMidpointTie() {
-        let result = resolve(
-            proposedCenter: CGPoint(x: 90, y: 33),
-            componentSize: .zero,
-            peers: [
-                ReaderOverlayPeerFrame(
-                    id: fixtureUUID(1),
-                    frame: CGRect(x: 85, y: 150, width: 20, height: 20)
-                )
-            ],
-            threshold: 5
-        )
-
-        #expect(verticalGuides(in: result) == [.vertical(x: 85)])
-    }
-
-    @Test("peer UUID ordering makes exact ties independent of input order")
-    func peerUUIDOrderingIsDeterministic() {
-        let lowerIDPeer = ReaderOverlayPeerFrame(
+    @Test("a latched body guide remains stable while a peer becomes closer")
+    func latchPreventsGuideTwitch() {
+        let peer = ReaderOverlayPeerFrame(
             id: fixtureUUID(1),
-            frame: CGRect(x: 60, y: 150, width: 100, height: 20)
+            frame: CGRect(x: 31, y: 200, width: 20, height: 20)
         )
-        let higherIDPeer = ReaderOverlayPeerFrame(
-            id: fixtureUUID(2),
-            frame: CGRect(x: 40, y: 150, width: 100, height: 20)
-        )
-        let forward = resolve(
-            proposedCenter: CGPoint(x: 100, y: 33),
+        var session = ReaderOverlaySnapSession()
+
+        let acquired = resolve(
+            proposedCenter: CGPoint(x: 24, y: 100),
             componentSize: .zero,
-            peers: [lowerIDPeer, higherIDPeer],
-            threshold: 10
+            peers: [peer],
+            session: &session
         )
-        let reversed = resolve(
-            proposedCenter: CGPoint(x: 100, y: 33),
+        let retained = resolve(
+            proposedCenter: CGPoint(x: 31, y: 100),
             componentSize: .zero,
-            peers: [higherIDPeer, lowerIDPeer],
-            threshold: 10
+            peers: [peer],
+            session: &session
         )
 
-        #expect(verticalGuides(in: forward) == [.vertical(x: 110)])
-        #expect(reversed == forward)
+        #expect(acquired.center.x == 24)
+        #expect(retained.center.x == 24)
+        #expect(retained.guides == [.vertical(x: 24)])
     }
 
-    @Test("snapping always returns a fully visible component frame")
-    func snappingReturnsFullyVisibleFrame() {
-        let size = CGSize(width: 80, height: 64)
+    @Test("a latch releases beyond hysteresis then acquires the nearest guide")
+    func latchReleasesThenReacquires() {
+        let peer = ReaderOverlayPeerFrame(
+            id: fixtureUUID(1),
+            frame: CGRect(x: 40, y: 200, width: 20, height: 20)
+        )
+        var session = ReaderOverlaySnapSession()
+        _ = resolve(
+            proposedCenter: CGPoint(x: 24, y: 100),
+            componentSize: .zero,
+            peers: [peer],
+            session: &session
+        )
+
         let result = resolve(
-            proposedCenter: CGPoint(x: 194, y: 421),
-            componentSize: size
-        )
-        let frame = CGRect(
-            x: result.center.x - size.width / 2,
-            y: result.center.y - size.height / 2,
-            width: size.width,
-            height: size.height
+            proposedCenter: CGPoint(x: 40, y: 100),
+            componentSize: .zero,
+            peers: [peer],
+            session: &session
         )
 
-        #expect(canvas.contains(frame))
+        #expect(result.center.x == 40)
+        #expect(result.guides == [.vertical(x: 40)])
     }
 
-    @Test("clamping removes an impossible snapped guide")
-    func clampingRemovesImpossibleGuide() {
-        let result = ReaderOverlaySnapEngine.resolve(
-            proposedCenter: CGPoint(x: 5, y: 47),
-            componentSize: CGSize(width: 80, height: 20),
-            canvas: CGRect(x: 0, y: 0, width: 100, height: 100),
-            safeArea: .null,
-            peers: [
-                ReaderOverlayPeerFrame(
-                    id: fixtureUUID(1),
-                    frame: CGRect(x: 5, y: 70, width: 10, height: 10)
-                )
-            ],
-            threshold: 0
+    @Test("body boundaries win an equal-distance acquisition tie")
+    func bodyBoundaryWinsTie() {
+        let peer = ReaderOverlayPeerFrame(
+            id: fixtureUUID(1),
+            frame: CGRect(x: 30, y: 200, width: 20, height: 20)
+        )
+        var session = ReaderOverlaySnapSession()
+        let result = resolve(
+            proposedCenter: CGPoint(x: 27, y: 100),
+            componentSize: .zero,
+            peers: [peer],
+            session: &session
         )
 
-        #expect(result.center == CGPoint(x: 40, y: 47))
+        #expect(result.center.x == 24)
+        #expect(result.guides == [.vertical(x: 24)])
+    }
+
+    @Test("horizontal and vertical latches resolve independently")
+    func axesResolveIndependently() {
+        var session = ReaderOverlaySnapSession()
+        let result = resolve(
+            proposedCenter: CGPoint(x: 25, y: 36),
+            componentSize: .zero,
+            session: &session
+        )
+
+        #expect(result.center == CGPoint(x: 24, y: 34))
+        #expect(result.guides == [.vertical(x: 24), .horizontal(y: 34)])
+    }
+
+    @Test("resetting a session removes the retained guide")
+    func resetRemovesLatch() {
+        var session = ReaderOverlaySnapSession()
+        _ = resolve(
+            proposedCenter: CGPoint(x: 24, y: 100),
+            componentSize: .zero,
+            session: &session
+        )
+        session.reset()
+
+        let result = resolve(
+            proposedCenter: CGPoint(x: 31, y: 100),
+            componentSize: .zero,
+            session: &session
+        )
+
+        #expect(result.center.x == 31)
         #expect(result.guides.isEmpty)
     }
 
-    @Test("guides are limited to one per axis in vertical horizontal order")
-    func guideCountAndOrderAreStable() {
-        let result = resolve(
-            proposedCenter: CGPoint(x: 194, y: 421),
-            componentSize: CGSize(width: 40, height: 20)
-        )
-
-        #expect(result.guides == [.vertical(x: 195), .horizontal(y: 422)])
-        #expect(result.guides.count == 2)
-    }
-
-    @Test("invalid frames and thresholds are ignored without nonfinite output")
-    func invalidInputsAreIgnoredSafely() {
-        let invalidPeer = ReaderOverlayPeerFrame(
-            id: fixtureUUID(1),
-            frame: CGRect(x: CGFloat.nan, y: 0, width: 20, height: 20)
-        )
+    @Test("invalid geometry never produces nonfinite output")
+    func invalidGeometryIsSafe() {
+        var session = ReaderOverlaySnapSession()
         let result = ReaderOverlaySnapEngine.resolve(
             proposedCenter: CGPoint(x: CGFloat.nan, y: CGFloat.infinity),
             componentSize: CGSize(width: -10, height: CGFloat.nan),
             canvas: CGRect(x: 0, y: 0, width: -100, height: 0),
-            safeArea: CGRect(x: 0, y: 0, width: CGFloat.infinity, height: 100),
-            peers: [invalidPeer],
-            threshold: CGFloat.infinity
+            bodyFrame: CGRect(x: CGFloat.nan, y: 0, width: 20, height: 20),
+            peers: [
+                ReaderOverlayPeerFrame(
+                    id: fixtureUUID(1),
+                    frame: CGRect(x: CGFloat.nan, y: 0, width: 20, height: 20)
+                )
+            ],
+            session: &session,
+            acquireDistance: CGFloat.infinity,
+            releaseDistance: CGFloat.nan
         )
 
         #expect(result.center.x.isFinite)
         #expect(result.center.y.isFinite)
         #expect(result.guides.isEmpty)
-
-        let nonfiniteThreshold = resolve(
-            proposedCenter: CGPoint(x: 194, y: 409),
-            componentSize: CGSize(width: 80, height: 24),
-            threshold: CGFloat.nan
-        )
-        #expect(nonfiniteThreshold.center == CGPoint(x: 194, y: 409))
-        #expect(nonfiniteThreshold.guides.isEmpty)
     }
 
-    @Test("negative thresholds behave as zero")
-    func negativeThresholdBehavesAsZero() {
-        let exact = resolve(
-            proposedCenter: CGPoint(x: 195, y: 409),
-            componentSize: CGSize(width: 80, height: 24),
-            threshold: -8
-        )
-        let inexact = resolve(
-            proposedCenter: CGPoint(x: 194, y: 409),
-            componentSize: CGSize(width: 80, height: 24),
-            threshold: -8
+    @Test("body frame policy combines page margins and content reservations")
+    func bodyFramePolicyUsesLayoutInsets() {
+        let result = ReaderOverlayBodyFramePolicy.frame(
+            in: canvas,
+            horizontalPageMargin: 24,
+            topReservation: 34,
+            bottomReservation: 32
         )
 
-        #expect(exact.guides == [.vertical(x: 195)])
-        #expect(inexact.guides.isEmpty)
+        #expect(result == bodyFrame)
     }
 
     private func resolve(
         proposedCenter: CGPoint,
         componentSize: CGSize,
-        safeArea: CGRect = .null,
         peers: [ReaderOverlayPeerFrame] = [],
-        threshold: CGFloat = 8
+        session: inout ReaderOverlaySnapSession
     ) -> ReaderOverlaySnapResult {
         ReaderOverlaySnapEngine.resolve(
             proposedCenter: proposedCenter,
             componentSize: componentSize,
             canvas: canvas,
-            safeArea: safeArea,
+            bodyFrame: bodyFrame,
             peers: peers,
-            threshold: threshold
+            session: &session,
+            acquireDistance: 6,
+            releaseDistance: 12
         )
-    }
-
-    private func verticalGuides(in result: ReaderOverlaySnapResult) -> [ReaderOverlayGuide] {
-        result.guides.filter {
-            if case .vertical = $0 { return true }
-            return false
-        }
     }
 
     private func fixtureUUID(_ value: Int) -> UUID {

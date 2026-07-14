@@ -7,9 +7,10 @@ struct ReaderOverlayEditorGeometryTests {
     private let safeArea = CGRect(x: 0, y: 59, width: 390, height: 751)
     private let menuSize = CGSize(width: 156, height: 48)
 
-    @Test("editor snapping uses the six-point interaction threshold")
-    func snapThreshold() {
-        #expect(ReaderOverlayEditorGeometry.snapThreshold == 6)
+    @Test("editor snapping uses separate acquire and release distances")
+    func snapHysteresis() {
+        #expect(ReaderOverlayEditorGeometry.snapAcquireDistance == 6)
+        #expect(ReaderOverlayEditorGeometry.snapReleaseDistance == 12)
     }
 
     @Test("anchored menu appears below when safe space is available")
@@ -133,37 +134,4 @@ struct ReaderOverlayEditorGeometryTests {
         #expect(menuSafeArea.maxY == tallBottomChrome.minY - 8)
     }
 
-    @Test("guide feedback only reports newly entered axes")
-    func guideFeedbackDeduplicatesEachAxis() {
-        var state = ReaderOverlayGuideFeedbackState()
-
-        let enteredBoth = state.update(guides: [
-            .vertical(x: 195),
-            .horizontal(y: 422)
-        ])
-        let leftHorizontal = state.update(guides: [.vertical(x: 195)])
-        let switchedVertical = state.update(guides: [.vertical(x: 200)])
-
-        #expect(enteredBoth == ReaderOverlayGuideFeedbackTransition(
-            enteredVertical: true,
-            enteredHorizontal: true
-        ))
-        #expect(leftHorizontal.hasEnteredGuide == false)
-        #expect(switchedVertical == ReaderOverlayGuideFeedbackTransition(
-            enteredVertical: true,
-            enteredHorizontal: false
-        ))
-    }
-
-    @Test("leaving and re-entering a guide reports a new transition")
-    func guideFeedbackReportsReentry() {
-        var state = ReaderOverlayGuideFeedbackState()
-
-        _ = state.update(guides: [.vertical(x: 195)])
-        _ = state.update(guides: [])
-        let reentered = state.update(guides: [.vertical(x: 195)])
-
-        #expect(reentered.enteredVertical)
-        #expect(reentered.enteredHorizontal == false)
-    }
 }
