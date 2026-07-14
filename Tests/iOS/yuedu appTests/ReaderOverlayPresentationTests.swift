@@ -71,6 +71,65 @@ struct ReaderOverlayPresentationTests {
         #expect(style.font == reference)
     }
 
+    @Test("reader font keeps its family at the requested size")
+    func readerFontResolution() throws {
+        let readerFont = try #require(UIFont(name: "Georgia", size: 21))
+        let resolved = ReaderOverlayPresentationResolver.resolveStyle(
+            ReaderOverlayComponentStyle(
+                font: ReaderOverlayFontReference(kind: .reader),
+                fontSize: 16,
+                fontWeight: .regular
+            ),
+            readerFont: readerFont,
+            readerTextColor: .label,
+            availablePostScriptNames: []
+        )
+
+        #expect(resolved.font.familyName == readerFont.familyName)
+        #expect(resolved.font.pointSize == 16)
+    }
+
+    @Test("managed imported font is used when its PostScript name is available")
+    func managedImportedFontResolution() throws {
+        let imported = try #require(UIFont(name: "Courier", size: 17))
+        let resolved = ReaderOverlayPresentationResolver.resolveStyle(
+            ReaderOverlayComponentStyle(
+                font: ReaderOverlayFontReference(
+                    kind: .imported,
+                    postScriptName: imported.fontName
+                ),
+                fontSize: 14,
+                fontWeight: .regular
+            ),
+            readerFont: UIFont.systemFont(ofSize: 17),
+            readerTextColor: .label,
+            availablePostScriptNames: [imported.fontName]
+        )
+
+        #expect(resolved.font.familyName == imported.familyName)
+        #expect(resolved.font.pointSize == 14)
+    }
+
+    @Test("registered font outside the managed set still falls back")
+    func unmanagedRegisteredFontFallback() throws {
+        let registered = try #require(UIFont(name: "Courier", size: 17))
+        let resolved = ReaderOverlayPresentationResolver.resolveStyle(
+            ReaderOverlayComponentStyle(
+                font: ReaderOverlayFontReference(
+                    kind: .imported,
+                    postScriptName: registered.fontName
+                ),
+                fontSize: 14,
+                fontWeight: .regular
+            ),
+            readerFont: UIFont.systemFont(ofSize: 17),
+            readerTextColor: .label,
+            availablePostScriptNames: []
+        )
+
+        #expect(resolved.font.familyName == UIFont.systemFont(ofSize: 14).familyName)
+    }
+
     @Test("custom RGBA color resolves and invalid custom storage falls back to reader text")
     func colorResolutionAndFallback() throws {
         let readerColor = UIColor(red: 0.1, green: 0.2, blue: 0.3, alpha: 0.9)
@@ -130,6 +189,34 @@ struct ReaderOverlayPresentationTests {
 
         #expect(presentation.content == .systemBattery(
             iconName: "battery.75",
+            percentage: "64%"
+        ))
+    }
+
+    @Test("available imported battery SVG resolves to imported content")
+    func availableSVGResolution() {
+        let assetID = UUID()
+        let component = ReaderOverlayComponent(
+            id: UUID(),
+            kind: .battery,
+            position: ReaderOverlayNormalizedPoint(x: 0.5, y: 0.5),
+            configuration: ReaderOverlayComponentConfiguration(
+                batteryVisual: .importedSVG,
+                svgAssetID: assetID,
+                showsBatteryPercentage: true
+            )
+        )
+
+        let presentation = ReaderOverlayPresentationResolver.resolve(
+            component: component,
+            snapshot: snapshot,
+            availableSVGAssetIDs: [assetID],
+            locale: locale,
+            calendar: calendar
+        )
+
+        #expect(presentation.content == .importedBattery(
+            assetID: assetID,
             percentage: "64%"
         ))
     }

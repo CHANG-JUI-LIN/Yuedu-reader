@@ -15,12 +15,11 @@ struct ReaderOverlayReaderStyle: Equatable {
     init(
         font: UIFont,
         textColor: UIColor,
-        availablePostScriptNames: Set<String>? = nil
+        availablePostScriptNames: Set<String>
     ) {
         self.font = font
         self.textColor = textColor
         self.availablePostScriptNames = availablePostScriptNames
-            ?? UserFontStorageManager.shared.availablePostScriptNames()
     }
 }
 
@@ -236,8 +235,7 @@ struct ReaderOverlayComponentView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
-    @State private var importedBatteryImage: UIImage?
-    @State private var resolvedSVGAssetID: UUID?
+    @State private var loadedBattery: LoadedBattery?
 
     private var resolvedStyle: ReaderOverlayResolvedStyle {
         ReaderOverlayPresentationResolver.resolveStyle(
@@ -252,7 +250,9 @@ struct ReaderOverlayComponentView: View {
         ReaderOverlayPresentationResolver.resolve(
             component: component,
             snapshot: content,
-            availableSVGAssetIDs: Set([resolvedSVGAssetID].compactMap { $0 })
+            availableSVGAssetIDs: loadedBattery?.key == batteryRenderKey
+                ? Set([loadedBattery?.key.assetID].compactMap { $0 })
+                : []
         )
     }
 
@@ -260,22 +260,28 @@ struct ReaderOverlayComponentView: View {
         renderedContent
             .foregroundStyle(Color(uiColor: resolvedStyle.color))
             .opacity(resolvedStyle.opacity)
-            .padding(isEditing ? DSSpacing.xs : 0)
+            // Runtime and editor must use identical layout geometry. The invisible 44pt frame
+            // keeps edge clamping stable; only interaction and selection chrome vary by mode.
+            .padding(DSSpacing.xs)
             .frame(
-                minWidth: isEditing ? DSLayout.readerOverlayEditorMinimumHitSize : nil,
-                minHeight: isEditing ? DSLayout.readerOverlayEditorMinimumHitSize : nil
+                minWidth: DSLayout.readerOverlayEditorMinimumHitSize,
+                minHeight: DSLayout.readerOverlayEditorMinimumHitSize
             )
             .contentShape(Rectangle())
             .overlay {
                 if isEditing && isSelected {
                     RoundedRectangle(cornerRadius: DSRadius.sm)
-                        .stroke(DSColor.accent, lineWidth: DSLayout.readerOverlaySelectionLineWidth)
+                        .strokeBorder(
+                            DSColor.accent,
+                            lineWidth: DSLayout.readerOverlaySelectionLineWidth
+                        )
                         .accessibilityHidden(true)
                 }
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(presentation.accessibilityLabel)
             .accessibilityValue(presentation.accessibilityValue)
+            .accessibilityAddTraits(isEditing && isSelected ? .isSelected : [])
             .task(id: batteryRenderKey) {
                 await loadImportedBattery()
             }
@@ -296,8 +302,9 @@ struct ReaderOverlayComponentView: View {
         case .systemBattery(let iconName, let percentage):
             batteryLabel(image: Image(systemName: iconName), percentage: percentage)
         case .importedBattery(_, let percentage):
-            if let importedBatteryImage {
-                batteryLabel(image: Image(uiImage: importedBatteryImage), percentage: percentage)
+            if let loadedBattery,
+               loadedBattery.key == batteryRenderKey {
+                batteryLabel(image: Image(uiImage: loadedBattery.image), percentage: percentage)
             } else {
                 let fallback = ReaderBatteryValueResolver.resolve(
                     rawLevel: content.batteryLevel ?? -1,
@@ -383,8 +390,7 @@ struct ReaderOverlayComponentView: View {
 
     @MainActor
     private func loadImportedBattery() async {
-        importedBatteryImage = nil
-        resolvedSVGAssetID = nil
+        loadedBattery = nil
         guard let key = batteryRenderKey else { return }
 
         do {
@@ -397,18 +403,22 @@ struct ReaderOverlayComponentView: View {
                 isCharging: key.isCharging,
                 colorHex: key.colorHex,
                 pixelSize: CGSize(width: key.pixelWidth, height: key.pixelHeight),
-                displayScale: displayScale
+                displayScale: CGFloat(Double(bitPattern: key.displayScaleBits))
             )
             try Task.checkCancellation()
-            guard let image else { return }
-            importedBatteryImage = image
-            resolvedSVGAssetID = key.assetID
+            guard let image, key == batteryRenderKey else { return }
+            loadedBattery = LoadedBattery(key: key, image: image)
         } catch is CancellationError {
             return
         } catch {
             // Missing, corrupt, or unrenderable templates deliberately use the system battery.
         }
     }
+}
+
+private struct LoadedBattery {
+    let key: BatteryRenderKey
+    let image: UIImage
 }
 
 private struct BatteryRenderKey: Hashable {

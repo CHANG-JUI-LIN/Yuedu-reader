@@ -146,7 +146,8 @@ private struct ReaderOverlayPositionLayout: Layout {
         ),
         readerStyle: ReaderOverlayReaderStyle(
             font: UIFont.preferredFont(forTextStyle: .caption1),
-            textColor: .label
+            textColor: .label,
+            availablePostScriptNames: []
         ),
         mode: .editor(selectedID: ReaderOverlayLayout.default.components.first?.id),
         svgAssetStore: ReaderOverlaySVGAssetStore(

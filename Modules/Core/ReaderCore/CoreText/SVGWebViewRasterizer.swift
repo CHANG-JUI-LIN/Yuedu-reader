@@ -142,15 +142,27 @@ final class SVGWebViewRasterizer: NSObject {
             if isDraining { drainCacheHits += 1 }
             return cached
         }
-        return await withCheckedContinuation { continuation in
-            pendingItems.append(SVGWorkItem(
-                svgString: svgString,
-                size: size,
-                baseURL: baseURL,
-                cacheKey: key,
-                continuation: continuation
-            ))
-            dispatchToIdleWorkers()
+        let requestID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                pendingItems.append(SVGWorkItem(
+                    id: requestID,
+                    svgString: svgString,
+                    size: size,
+                    baseURL: baseURL,
+                    cacheKey: key,
+                    continuation: continuation
+                ))
+                dispatchToIdleWorkers()
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelWorkItem(id: requestID)
+            }
         }
     }
 
@@ -344,6 +356,28 @@ final class SVGWebViewRasterizer: NSObject {
         }
     }
 
+    /// Cancels a queued or active render and resumes its caller exactly once. Active WebKit work
+    /// is stopped before the lane is released so rapidly changing overlay previews do not leave
+    /// stale renders blocking the newest request at the back of the queue.
+    private func cancelWorkItem(id: UUID) {
+        if let index = pendingItems.firstIndex(where: { $0.id == id }) {
+            let item = pendingItems.remove(at: index)
+            guard !item.finished else { return }
+            item.finished = true
+            item.continuation.resume(returning: nil)
+            logDrainIfFinished()
+            return
+        }
+
+        guard let worker = workers.first(where: { $0.currentItem?.id == id }),
+              let item = worker.currentItem,
+              !item.finished else {
+            return
+        }
+        worker.webView.stopLoading()
+        finishItem(item, on: worker, image: nil)
+    }
+
     private func startNext(on worker: Worker) {
         guard !pendingItems.isEmpty else { return }
         if drainStart == nil { drainStart = Date() }
@@ -498,6 +532,7 @@ extension SVGWebViewRasterizer: WKNavigationDelegate {
 }
 
 private final class SVGWorkItem {
+    let id: UUID
     let svgString: String
     let size: CGSize
     let baseURL: URL?
@@ -506,7 +541,15 @@ private final class SVGWorkItem {
     /// Set once the item's continuation has been resumed (by snapshot, failure, or watchdog).
     var finished = false
 
-    init(svgString: String, size: CGSize, baseURL: URL?, cacheKey: NSString, continuation: CheckedContinuation<UIImage?, Never>) {
+    init(
+        id: UUID,
+        svgString: String,
+        size: CGSize,
+        baseURL: URL?,
+        cacheKey: NSString,
+        continuation: CheckedContinuation<UIImage?, Never>
+    ) {
+        self.id = id
         self.svgString = svgString
         self.size = size
         self.baseURL = baseURL
