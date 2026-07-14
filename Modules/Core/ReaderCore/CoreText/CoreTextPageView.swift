@@ -350,6 +350,14 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         // Horizontal: line-by-line drawing with CJK justification,
         // paragraph gap distribution, and HR divider lines.
         if layout.writingMode.isVertical {
+            CoreTextDialogueBox.drawVertical(
+                frame: frame,
+                attrStr: layout.attributedString,
+                contentOffset: CGPoint(x: contentPathRect.minX, y: contentPathRect.minY),
+                layoutHeight: layoutSize.height,
+                writingMode: layout.writingMode,
+                in: ctx
+            )
             drawVerticalFrame(frame, in: ctx)
         } else {
             drawHorizontalFrame(

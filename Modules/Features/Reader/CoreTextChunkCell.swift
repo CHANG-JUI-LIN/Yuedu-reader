@@ -100,6 +100,14 @@ final class CoreTextChunkDrawView: UIView {
         ctx.scaleBy(x: 1.0, y: -1.0)
 
         if chunk.writingMode.isVertical {
+            CoreTextDialogueBox.drawVertical(
+                frame: frame,
+                attrStr: chunk.attributedString,
+                contentOffset: .zero,
+                layoutHeight: bounds.height,
+                writingMode: chunk.writingMode,
+                in: ctx
+            )
             CTFrameDraw(frame, ctx)
         } else {
             let suppressedRanges = chunk.blockRenderables
