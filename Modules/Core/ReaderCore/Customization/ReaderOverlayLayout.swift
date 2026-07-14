@@ -64,6 +64,7 @@ struct ReaderOverlayFontReference: Codable, Equatable, Sendable {
 }
 
 enum ReaderOverlayFontWeight: String, Codable, Equatable, Hashable, Sendable {
+    case light
     case regular
     case medium
     case semibold

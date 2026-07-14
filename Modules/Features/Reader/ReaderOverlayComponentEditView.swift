@@ -502,6 +502,7 @@ struct ReaderOverlayComponentEditView: View {
 
 private extension ReaderOverlayFontWeight {
     static let allCasesForEditor: [ReaderOverlayFontWeight] = [
+        .light,
         .regular,
         .medium,
         .semibold,
@@ -510,6 +511,7 @@ private extension ReaderOverlayFontWeight {
 
     var localizedTitle: String {
         switch self {
+        case .light: localized("細體")
         case .regular: localized("一般")
         case .medium: localized("中等")
         case .semibold: localized("半粗體")

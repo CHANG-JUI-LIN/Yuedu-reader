@@ -1290,6 +1290,7 @@
 "未指定" = "Not Specified";
 "字重" = "Font Weight";
 "一般" = "Regular";
+"細體" = "Light";
 "中等" = "Medium";
 "半粗體" = "Semibold";
 "顏色" = "Color";

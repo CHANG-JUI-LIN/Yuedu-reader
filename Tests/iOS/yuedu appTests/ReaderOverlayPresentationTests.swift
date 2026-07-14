@@ -47,6 +47,27 @@ struct ReaderOverlayPresentationTests {
         #expect(resolved.font.fontDescriptor.symbolicTraits.contains(.traitBold))
     }
 
+    @Test("light overlay text resolves to a negative system font weight")
+    func lightFontStyle() throws {
+        let resolved = ReaderOverlayPresentationResolver.resolveStyle(
+            ReaderOverlayComponentStyle(
+                font: ReaderOverlayFontReference(kind: .system),
+                fontSize: 19,
+                fontWeight: .light
+            ),
+            readerFont: UIFont.systemFont(ofSize: 17),
+            readerTextColor: .label,
+            availablePostScriptNames: []
+        )
+        let traits = try #require(
+            resolved.font.fontDescriptor.object(forKey: .traits)
+                as? [UIFontDescriptor.TraitKey: Any]
+        )
+        let weight = try #require(traits[.weight] as? NSNumber)
+
+        #expect(weight.doubleValue < 0)
+    }
+
     @Test("missing imported font falls back without mutating the requested style")
     func missingImportedFontFallback() {
         let reference = ReaderOverlayFontReference(

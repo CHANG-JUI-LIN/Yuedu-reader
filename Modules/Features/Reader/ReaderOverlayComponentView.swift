@@ -188,6 +188,7 @@ enum ReaderOverlayPresentationResolver {
 
     private static func uiFontWeight(_ value: ReaderOverlayFontWeight) -> UIFont.Weight {
         switch value {
+        case .light: .light
         case .regular: .regular
         case .medium: .medium
         case .semibold: .semibold
