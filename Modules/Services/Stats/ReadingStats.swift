@@ -14,63 +14,117 @@ struct ReadingSession: Codable, Identifiable {
 
 // MARK: - ReadingStatsSessionTracker
 
+struct ReadingStatsTrackingPosition: Equatable, Sendable {
+    enum CharacterScope: Equatable, Sendable {
+        case global
+        case spine(Int)
+    }
+
+    let characterScope: CharacterScope
+    let characterOffset: Int
+    let globalContentUnitOffset: Int?
+
+    static func spine(
+        _ spineIndex: Int,
+        characterOffset: Int,
+        globalContentUnitOffset: Int? = nil
+    ) -> Self {
+        Self(
+            characterScope: .spine(spineIndex),
+            characterOffset: characterOffset,
+            globalContentUnitOffset: globalContentUnitOffset
+        )
+    }
+
+    static func global(
+        characterOffset: Int,
+        globalContentUnitOffset: Int? = nil
+    ) -> Self {
+        Self(
+            characterScope: .global,
+            characterOffset: characterOffset,
+            globalContentUnitOffset: globalContentUnitOffset
+        )
+    }
+}
+
 struct ReadingStatsSessionTracker {
     static let maximumContinuousAdvance = 50_000
 
     let bookId: String
     let bookTitle: String
     let startDate: Date
-    private var baselineCharacterOffset: Int?
+    private var baselinePosition: ReadingStatsTrackingPosition?
+    private var baselineContentUnitOffset: Int?
     private var accumulatedCharactersRead = 0
+    private var accumulatedContentUnitsRead = 0
 
     init(
         bookId: String,
         bookTitle: String,
         startDate: Date = Date(),
-        startCharacterOffset: Int? = nil
+        startPosition: ReadingStatsTrackingPosition? = nil
     ) {
         self.bookId = bookId
         self.bookTitle = bookTitle
         self.startDate = startDate
-        self.baselineCharacterOffset = startCharacterOffset
+        self.baselinePosition = startPosition
+        self.baselineContentUnitOffset = startPosition?.globalContentUnitOffset
     }
 
-    mutating func updateVisibleCharacterOffset(_ offset: Int?) {
-        guard let offset else { return }
-        guard offset >= 0 else {
-            baselineCharacterOffset = nil
-            return
-        }
-        guard let baselineCharacterOffset else {
-            self.baselineCharacterOffset = offset
+    mutating func updateVisiblePosition(_ position: ReadingStatsTrackingPosition?) {
+        guard let position else { return }
+        guard position.characterOffset >= 0 else {
+            baselinePosition = nil
+            baselineContentUnitOffset = nil
             return
         }
 
-        self.baselineCharacterOffset = offset
-        let (delta, overflow) = offset.subtractingReportingOverflow(baselineCharacterOffset)
-        guard !overflow,
-              delta > 0,
-              delta <= Self.maximumContinuousAdvance
-        else {
-            return
+        let priorPosition = baselinePosition
+        baselinePosition = position
+        if let priorPosition,
+           priorPosition.characterScope == position.characterScope {
+            accumulatedCharactersRead = Self.accumulating(
+                from: priorPosition.characterOffset,
+                to: position.characterOffset,
+                onto: accumulatedCharactersRead
+            )
         }
 
-        let (total, totalOverflow) = accumulatedCharactersRead.addingReportingOverflow(delta)
-        accumulatedCharactersRead = totalOverflow ? .max : total
+        let priorContentUnitOffset = baselineContentUnitOffset
+        baselineContentUnitOffset = position.globalContentUnitOffset
+        if let priorContentUnitOffset,
+           let contentUnitOffset = position.globalContentUnitOffset {
+            accumulatedContentUnitsRead = Self.accumulating(
+                from: priorContentUnitOffset,
+                to: contentUnitOffset,
+                onto: accumulatedContentUnitsRead
+            )
+        }
     }
 
-    mutating func relocate(to offset: Int?) {
-        guard let offset, offset >= 0 else {
-            baselineCharacterOffset = nil
+    mutating func relocate(to position: ReadingStatsTrackingPosition?) {
+        guard let position, position.characterOffset >= 0 else {
+            baselinePosition = nil
+            baselineContentUnitOffset = nil
             return
         }
-        baselineCharacterOffset = offset
+        baselinePosition = position
+        baselineContentUnitOffset = position.globalContentUnitOffset
     }
 
     func currentMetrics(at date: Date = Date()) -> (elapsed: TimeInterval, charactersRead: Int) {
         let rawElapsed = date.timeIntervalSince(startDate)
         let elapsed = rawElapsed.isFinite ? max(0, rawElapsed) : 0
         return (elapsed, accumulatedCharactersRead)
+    }
+
+    func currentPaceMetrics(
+        at date: Date = Date()
+    ) -> (elapsed: TimeInterval, contentUnitsRead: Int) {
+        let rawElapsed = date.timeIntervalSince(startDate)
+        let elapsed = rawElapsed.isFinite ? max(0, rawElapsed) : 0
+        return (elapsed, accumulatedContentUnitsRead)
     }
 
     func finish(at endDate: Date = Date()) -> ReadingSession? {
@@ -85,6 +139,23 @@ struct ReadingStatsSessionTracker {
             duration: duration,
             charactersRead: accumulatedCharactersRead
         )
+    }
+
+    private static func accumulating(
+        from baseline: Int,
+        to offset: Int,
+        onto total: Int
+    ) -> Int {
+        let (delta, overflow) = offset.subtractingReportingOverflow(baseline)
+        guard !overflow,
+              delta > 0,
+              delta <= Self.maximumContinuousAdvance
+        else {
+            return total
+        }
+
+        let (next, totalOverflow) = total.addingReportingOverflow(delta)
+        return totalOverflow ? .max : next
     }
 }
 

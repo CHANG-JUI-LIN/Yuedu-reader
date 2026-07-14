@@ -9,10 +9,10 @@ struct ReadingStatsStoreTests {
             bookId: "book-1",
             bookTitle: "Test Book",
             startDate: Date(timeIntervalSince1970: 100),
-            startCharacterOffset: 20
+            startPosition: .global(characterOffset: 20)
         )
 
-        tracker.updateVisibleCharacterOffset(95)
+        tracker.updateVisiblePosition(.global(characterOffset: 95))
 
         let session = try #require(
             tracker.finish(at: Date(timeIntervalSince1970: 160))

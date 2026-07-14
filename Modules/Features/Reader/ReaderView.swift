@@ -904,10 +904,11 @@ struct ReaderView: View {
         let now = readerOverlayClock.now
         let pageMetrics = readerOverlayPageMetrics
         let readingMetrics = readingStatsTracker?.currentMetrics(at: now) ?? (elapsed: 0, charactersRead: 0)
+        let paceMetrics = readingStatsTracker?.currentPaceMetrics(at: now) ?? (elapsed: 0, contentUnitsRead: 0)
         let estimatedRemainingTime = ReaderRemainingTimeEstimator.estimate(
-            elapsed: readingMetrics.elapsed,
-            charactersRead: readingMetrics.charactersRead,
-            remainingCharacters: readerOverlayRemainingCharacters
+            elapsed: paceMetrics.elapsed,
+            contentUnitsRead: paceMetrics.contentUnitsRead,
+            remainingContentUnits: readerOverlayRemainingContentUnits
         )
 
         return ReaderOverlayContentSnapshot(
@@ -956,7 +957,7 @@ struct ReaderView: View {
         )
     }
 
-    private var readerOverlayRemainingCharacters: Int? {
+    private var readerOverlayRemainingContentUnits: Int? {
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let position = readerOverlayCoreTextPosition(in: engine)
             return readerContentMetrics(
@@ -1649,7 +1650,6 @@ struct ReaderView: View {
             handleReaderPositionChangedForTTS()
         }
         .onChanged(of: currentPage) { _ in
-            updateReadingStatsPosition()
             handleReaderPositionChangedForTTS()
         }
         .onChanged(of: ttsCoordinator.currentSegmentIndex) { _ in
@@ -1878,7 +1878,7 @@ struct ReaderView: View {
                 }
                 syncCoreTextTextAnnotations()
                 applyInitialProgressIfNeeded()
-                updateReadingStatsPosition()
+                relocateReadingStatsPosition()
             }
         }
         .onChanged(of: epubRenderer.fixedLayoutOrientation) { _ in
@@ -1887,7 +1887,7 @@ struct ReaderView: View {
         .onChanged(of: allPages.count) { _ in
             rebuildReaderOverlayLegacyContentIndex()
             applyInitialProgressIfNeeded()
-            updateReadingStatsPosition()
+            relocateReadingStatsPosition()
         }
         .onChanged(of: chapters.count) { _ in
             applyInitialProgressIfNeeded()

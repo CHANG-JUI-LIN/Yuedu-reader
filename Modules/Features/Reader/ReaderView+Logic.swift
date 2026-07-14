@@ -105,13 +105,13 @@ extension ReaderView {
         readingStatsTracker = ReadingStatsSessionTracker(
             bookId: currentBook.id.uuidString,
             bookTitle: currentBook.title,
-            startCharacterOffset: currentReadingStatsCharacterOffset()
+            startPosition: currentReadingStatsPosition()
         )
     }
 
-    func updateReadingStatsPosition() {
+    func relocateReadingStatsPosition() {
         guard var tracker = readingStatsTracker else { return }
-        tracker.updateVisibleCharacterOffset(currentReadingStatsCharacterOffset())
+        tracker.relocate(to: currentReadingStatsPosition())
         readingStatsTracker = tracker
     }
 
@@ -120,59 +120,86 @@ extension ReaderView {
         source: ReaderLocation.Source
     ) {
         guard var tracker = readingStatsTracker else { return }
-        let offset = readingStatsContentOffset(for: position)
+        let trackingPosition = readingStatsTrackingPosition(for: position)
 
         switch source {
         case .settledPage, .scrollCommit:
-            tracker.updateVisibleCharacterOffset(offset)
+            tracker.updateVisiblePosition(trackingPosition)
         case .internalLink, .jump, .modeSwitch, .restored, .placeholder:
-            tracker.relocate(to: offset)
+            tracker.relocate(to: trackingPosition)
         }
         readingStatsTracker = tracker
     }
 
     func finishReadingStatsSession() {
-        guard var tracker = readingStatsTracker else { return }
-        tracker.updateVisibleCharacterOffset(currentReadingStatsCharacterOffset())
+        guard let tracker = readingStatsTracker else { return }
         if let session = tracker.finish() {
             ReadingStatsStore.shared.recordSession(session)
         }
         readingStatsTracker = nil
     }
 
-    func currentReadingStatsCharacterOffset() -> Int? {
+    func currentReadingStatsPosition() -> ReadingStatsTrackingPosition? {
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            if effectiveScrollMode, let location = readerSessionCoordinator?.state.location {
-                return readerContentMetrics(
+            if let location = readerSessionCoordinator?.state.location {
+                return readingStatsTrackingPosition(
                     for: location.coreTextPosition,
                     engine: engine
-                )?.currentUnitOffset
+                )
             }
 
             guard engine.totalPages > 0 else { return nil }
             let page = max(0, min(currentPage, engine.totalPages - 1))
             let position = engine.charOffset(forPage: page)
-            return readerContentMetrics(
+            return readingStatsTrackingPosition(
                 for: CoreTextReadingPosition(
                     spineIndex: position.spineIndex,
                     charOffset: position.charOffset
                 ),
                 engine: engine
-            )?.currentUnitOffset
+            )
         }
 
         guard !allPages.isEmpty else { return nil }
         let page = max(0, min(currentPage, allPages.count - 1))
-        return readerOverlayLegacyContentIndex.currentUnitOffset(forPageAt: page)
+        guard let offset = readerOverlayLegacyContentIndex.currentUnitOffset(forPageAt: page) else {
+            return nil
+        }
+        return .global(
+            characterOffset: offset,
+            globalContentUnitOffset: offset
+        )
     }
 
-    func readingStatsContentOffset(for position: CoreTextReadingPosition) -> Int? {
+    func readingStatsTrackingPosition(
+        for position: CoreTextReadingPosition
+    ) -> ReadingStatsTrackingPosition? {
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            return readerContentMetrics(for: position, engine: engine)?.currentUnitOffset
+            return readingStatsTrackingPosition(for: position, engine: engine)
         }
         guard !allPages.isEmpty else { return nil }
         let page = max(0, min(currentPage, allPages.count - 1))
-        return readerOverlayLegacyContentIndex.currentUnitOffset(forPageAt: page)
+        guard let offset = readerOverlayLegacyContentIndex.currentUnitOffset(forPageAt: page) else {
+            return nil
+        }
+        return .global(
+            characterOffset: offset,
+            globalContentUnitOffset: offset
+        )
+    }
+
+    func readingStatsTrackingPosition(
+        for position: CoreTextReadingPosition,
+        engine: any PagedReaderEngine
+    ) -> ReadingStatsTrackingPosition {
+        .spine(
+            position.spineIndex,
+            characterOffset: max(0, position.charOffset),
+            globalContentUnitOffset: readerContentMetrics(
+                for: position,
+                engine: engine
+            )?.currentUnitOffset
+        )
     }
 
     func readerContentMetrics(

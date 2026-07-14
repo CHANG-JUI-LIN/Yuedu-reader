@@ -31,22 +31,22 @@ struct ReaderOverlayContentSnapshot: Equatable, Sendable {
 enum ReaderRemainingTimeEstimator {
     static func estimate(
         elapsed: TimeInterval,
-        charactersRead: Int,
-        remainingCharacters: Int?
+        contentUnitsRead: Int,
+        remainingContentUnits: Int?
     ) -> TimeInterval? {
         guard elapsed.isFinite,
               elapsed >= 120,
-              charactersRead >= 200,
-              let remainingCharacters,
-              remainingCharacters >= 0
+              contentUnitsRead >= 200,
+              let remainingContentUnits,
+              remainingContentUnits >= 0
         else {
             return nil
         }
 
-        let speed = Double(charactersRead) / elapsed
+        let speed = Double(contentUnitsRead) / elapsed
         guard speed.isFinite, speed > 0 else { return nil }
 
-        let estimate = Double(remainingCharacters) / speed
+        let estimate = Double(remainingContentUnits) / speed
         guard estimate.isFinite, estimate >= 0 else { return nil }
         return estimate
     }

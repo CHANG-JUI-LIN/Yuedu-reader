@@ -73,23 +73,23 @@ struct ReaderOverlayContentTests {
 
     @Test("remaining time estimator requires a stable reading sample")
     func remainingTimeEstimatorThresholds() {
-        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: 30, charactersRead: 80, remainingCharacters: 3_000) == nil)
-        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: 600, charactersRead: 6_000, remainingCharacters: 3_000) == 300)
-        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: 600, charactersRead: 6_000, remainingCharacters: 0) == 0)
+        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: 30, contentUnitsRead: 80, remainingContentUnits: 3_000) == nil)
+        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: 600, contentUnitsRead: 6_000, remainingContentUnits: 3_000) == 300)
+        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: 600, contentUnitsRead: 6_000, remainingContentUnits: 0) == 0)
     }
 
     @Test("remaining time estimator rejects unknown and pathological inputs")
     func remainingTimeEstimatorInvalidInputs() {
-        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: 600, charactersRead: 6_000, remainingCharacters: nil) == nil)
-        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: -1, charactersRead: 6_000, remainingCharacters: 3_000) == nil)
-        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: .nan, charactersRead: 6_000, remainingCharacters: 3_000) == nil)
-        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: .infinity, charactersRead: 6_000, remainingCharacters: 3_000) == nil)
-        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: 600, charactersRead: -1, remainingCharacters: 3_000) == nil)
-        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: 600, charactersRead: 6_000, remainingCharacters: -1) == nil)
+        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: 600, contentUnitsRead: 6_000, remainingContentUnits: nil) == nil)
+        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: -1, contentUnitsRead: 6_000, remainingContentUnits: 3_000) == nil)
+        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: .nan, contentUnitsRead: 6_000, remainingContentUnits: 3_000) == nil)
+        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: .infinity, contentUnitsRead: 6_000, remainingContentUnits: 3_000) == nil)
+        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: 600, contentUnitsRead: -1, remainingContentUnits: 3_000) == nil)
+        #expect(ReaderRemainingTimeEstimator.estimate(elapsed: 600, contentUnitsRead: 6_000, remainingContentUnits: -1) == nil)
         #expect(ReaderRemainingTimeEstimator.estimate(
             elapsed: .greatestFiniteMagnitude,
-            charactersRead: 200,
-            remainingCharacters: .max
+            contentUnitsRead: 200,
+            remainingContentUnits: .max
         ) == nil)
     }
 
@@ -226,15 +226,15 @@ struct ReaderOverlayContentTests {
             bookId: "book-1",
             bookTitle: "Book",
             startDate: Date(timeIntervalSince1970: 100),
-            startCharacterOffset: 500
+            startPosition: .global(characterOffset: 500)
         )
-        tracker.updateVisibleCharacterOffset(450)
+        tracker.updateVisiblePosition(.global(characterOffset: 450))
 
         let beforeStart = tracker.currentMetrics(at: Date(timeIntervalSince1970: 90))
         #expect(beforeStart.elapsed == 0)
         #expect(beforeStart.charactersRead == 0)
 
-        tracker.updateVisibleCharacterOffset(475)
+        tracker.updateVisiblePosition(.global(characterOffset: 475))
         let current = tracker.currentMetrics(at: Date(timeIntervalSince1970: 160))
         #expect(current.elapsed == 60)
         #expect(current.charactersRead == 25)
@@ -245,20 +245,20 @@ struct ReaderOverlayContentTests {
         var tracker = ReadingStatsSessionTracker(
             bookId: "book-1",
             bookTitle: "Book",
-            startCharacterOffset: 100
+            startPosition: .global(characterOffset: 100)
         )
 
-        tracker.updateVisibleCharacterOffset(150)
-        tracker.relocate(to: 10_000)
-        tracker.updateVisibleCharacterOffset(10_020)
-        tracker.updateVisibleCharacterOffset(9_000)
-        tracker.updateVisibleCharacterOffset(9_030)
-        tracker.updateVisibleCharacterOffset(
-            9_030 + ReadingStatsSessionTracker.maximumContinuousAdvance + 1
-        )
-        tracker.updateVisibleCharacterOffset(
-            9_030 + ReadingStatsSessionTracker.maximumContinuousAdvance + 11
-        )
+        tracker.updateVisiblePosition(.global(characterOffset: 150))
+        tracker.relocate(to: .global(characterOffset: 10_000))
+        tracker.updateVisiblePosition(.global(characterOffset: 10_020))
+        tracker.updateVisiblePosition(.global(characterOffset: 9_000))
+        tracker.updateVisiblePosition(.global(characterOffset: 9_030))
+        tracker.updateVisiblePosition(.global(
+            characterOffset: 9_030 + ReadingStatsSessionTracker.maximumContinuousAdvance + 1
+        ))
+        tracker.updateVisiblePosition(.global(
+            characterOffset: 9_030 + ReadingStatsSessionTracker.maximumContinuousAdvance + 11
+        ))
 
         #expect(tracker.currentMetrics().charactersRead == 110)
     }
@@ -268,13 +268,88 @@ struct ReaderOverlayContentTests {
         var tracker = ReadingStatsSessionTracker(
             bookId: "book-1",
             bookTitle: "Book",
-            startCharacterOffset: 1_000
+            startPosition: .global(characterOffset: 1_000)
         )
 
         for offset in [1_010, 1_010, 1_025, 1_040] {
-            tracker.updateVisibleCharacterOffset(offset)
+            tracker.updateVisiblePosition(.global(characterOffset: offset))
         }
 
         #expect(tracker.currentMetrics().charactersRead == 40)
+    }
+
+    @Test("persisted characters stay separate from global content-unit pace")
+    func readingStatsSeparateCharactersFromContentUnits() throws {
+        var tracker = ReadingStatsSessionTracker(
+            bookId: "book-1",
+            bookTitle: "Book",
+            startPosition: .spine(
+                2,
+                characterOffset: 100,
+                globalContentUnitOffset: 1_000
+            )
+        )
+
+        tracker.updateVisiblePosition(.spine(
+            2,
+            characterOffset: 150,
+            globalContentUnitOffset: 1_400
+        ))
+
+        #expect(tracker.currentMetrics().charactersRead == 50)
+        #expect(tracker.currentPaceMetrics().contentUnitsRead == 400)
+        let session = try #require(
+            tracker.finish(at: Date().addingTimeInterval(1))
+        )
+        #expect(session.charactersRead == 50)
+    }
+
+    @Test("online positions accumulate rendered characters within one spine")
+    func onlineReadingStatsAccumulateWithinSpine() {
+        var tracker = ReadingStatsSessionTracker(
+            bookId: "book-1",
+            bookTitle: "Book",
+            startPosition: .spine(4, characterOffset: 200)
+        )
+
+        tracker.updateVisiblePosition(.spine(4, characterOffset: 275))
+
+        #expect(tracker.currentMetrics().charactersRead == 75)
+        #expect(tracker.currentPaceMetrics().contentUnitsRead == 0)
+    }
+
+    @Test("online positions reset rendered-character baseline across spines")
+    func onlineReadingStatsResetAcrossSpines() {
+        var tracker = ReadingStatsSessionTracker(
+            bookId: "book-1",
+            bookTitle: "Book",
+            startPosition: .spine(1, characterOffset: 100)
+        )
+
+        tracker.updateVisiblePosition(.spine(1, characterOffset: 150))
+        tracker.updateVisiblePosition(.spine(2, characterOffset: 1_000))
+        tracker.updateVisiblePosition(.spine(2, characterOffset: 1_030))
+
+        #expect(tracker.currentMetrics().charactersRead == 80)
+    }
+
+    @Test("unresolved jump and generic relocation do not accumulate bookmark distance")
+    func unresolvedJumpRelocationDoesNotAccumulate() {
+        let bookmark = ReadingStatsTrackingPosition.spine(
+            3,
+            characterOffset: 1_200
+        )
+        var tracker = ReadingStatsSessionTracker(
+            bookId: "book-1",
+            bookTitle: "Book",
+            startPosition: .spine(3, characterOffset: 0)
+        )
+
+        tracker.relocate(to: bookmark)
+        tracker.relocate(to: bookmark)
+        tracker.updateVisiblePosition(bookmark)
+
+        #expect(tracker.currentMetrics().charactersRead == 0)
+        #expect(tracker.currentPaceMetrics().contentUnitsRead == 0)
     }
 }
