@@ -313,9 +313,19 @@ private struct ReaderBatterySVGAssetRow: View {
             }
             .accessibilityLabel(localized("更多操作"))
         }
-        .task(id: asset) {
+        .task(id: previewTaskID) {
             await loadPreviewAndExport()
         }
+    }
+
+    private var previewTaskID: String {
+        [
+            asset.id.uuidString,
+            asset.contentHash,
+            asset.displayName,
+            colorScheme == .dark ? "dark" : "light",
+            String(Double(displayScale).bitPattern, radix: 16)
+        ].joined(separator: "|")
     }
 
     @ViewBuilder
@@ -343,15 +353,19 @@ private struct ReaderBatterySVGAssetRow: View {
 
     @MainActor
     private func loadPreviewAndExport() async {
+        guard !Task.isCancelled else { return }
+        exportURL = nil
         do {
+            try Task.checkCancellation()
             let source = try await store.source(for: asset.id)
+            try Task.checkCancellation()
             let template = try ReaderBatterySVGTemplate(source: source)
             let rgbaHex = try UIColor(DSColor.textPrimary).rgbaHex(for: colorScheme)
             let pixelSize = CGSize(
                 width: DSLayout.readerBatterySVGPreviewWidth * displayScale,
                 height: DSLayout.readerBatterySVGPreviewHeight * displayScale
             )
-            previewImage = try await SVGWebViewRasterizer.shared.renderBattery(
+            let renderedPreview = try await SVGWebViewRasterizer.shared.renderBattery(
                 template: template,
                 level: 0.72,
                 isCharging: false,
@@ -359,17 +373,28 @@ private struct ReaderBatterySVGAssetRow: View {
                 pixelSize: pixelSize,
                 displayScale: displayScale
             )
-            usesFallbackPreview = previewImage == nil
+            try Task.checkCancellation()
+            previewImage = renderedPreview
+            usesFallbackPreview = renderedPreview == nil
+        } catch is CancellationError {
+            return
         } catch {
+            guard !Task.isCancelled else { return }
             previewImage = nil
             usesFallbackPreview = true
         }
 
         do {
+            try Task.checkCancellation()
             let exportDirectory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("ReaderOverlaySVGExports", isDirectory: true)
-            exportURL = try await store.exportURL(for: asset.id, in: exportDirectory)
+            let preparedExportURL = try await store.exportURL(for: asset.id, in: exportDirectory)
+            try Task.checkCancellation()
+            exportURL = preparedExportURL
+        } catch is CancellationError {
+            return
         } catch {
+            guard !Task.isCancelled else { return }
             exportURL = nil
             onError(.operationFailed)
         }

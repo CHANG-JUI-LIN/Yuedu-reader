@@ -6,6 +6,66 @@ enum ReaderBatterySVGRasterizerError: Error, Equatable, Sendable {
     case invalidRenderSize
 }
 
+struct ReaderBatterySVGRasterRequest: Equatable, Sendable {
+    let pixelSize: CGSize
+    let pointSize: CGSize
+    let displayScale: CGFloat
+    let displayScaleCacheKey: UInt64
+}
+
+enum ReaderBatterySVGRasterRequestValidator {
+    private static let minimumDisplayScale: CGFloat = 0.5
+    private static let maximumDisplayScale: CGFloat = 4
+    private static let maximumDimension: CGFloat = 4_096
+    private static let maximumArea: CGFloat = 8_388_608
+
+    static func validate(
+        pixelSize: CGSize,
+        displayScale: CGFloat
+    ) throws -> ReaderBatterySVGRasterRequest {
+        guard displayScale.isFinite,
+              displayScale >= minimumDisplayScale,
+              displayScale <= maximumDisplayScale,
+              pixelSize.width.isFinite,
+              pixelSize.width > 0,
+              pixelSize.height.isFinite,
+              pixelSize.height > 0 else {
+            throw ReaderBatterySVGRasterizerError.invalidRenderSize
+        }
+
+        let normalizedPixelSize = CGSize(
+            width: max(1, pixelSize.width.rounded(.toNearestOrAwayFromZero)),
+            height: max(1, pixelSize.height.rounded(.toNearestOrAwayFromZero))
+        )
+        guard normalizedPixelSize.width <= maximumDimension,
+              normalizedPixelSize.height <= maximumDimension,
+              normalizedPixelSize.width * normalizedPixelSize.height <= maximumArea else {
+            throw ReaderBatterySVGRasterizerError.invalidRenderSize
+        }
+
+        let pointSize = CGSize(
+            width: normalizedPixelSize.width / displayScale,
+            height: normalizedPixelSize.height / displayScale
+        )
+        guard pointSize.width.isFinite,
+              pointSize.width > 0,
+              pointSize.width <= maximumDimension,
+              pointSize.height.isFinite,
+              pointSize.height > 0,
+              pointSize.height <= maximumDimension,
+              pointSize.width * pointSize.height <= maximumArea else {
+            throw ReaderBatterySVGRasterizerError.invalidRenderSize
+        }
+
+        return ReaderBatterySVGRasterRequest(
+            pixelSize: normalizedPixelSize,
+            pointSize: pointSize,
+            displayScale: displayScale,
+            displayScaleCacheKey: Double(displayScale).bitPattern
+        )
+    }
+}
+
 @MainActor
 final class SVGWebViewRasterizer: NSObject {
 
@@ -108,11 +168,10 @@ final class SVGWebViewRasterizer: NSObject {
         guard level.isFinite else {
             throw ReaderBatterySVGError.invalidLevel
         }
-        guard displayScale.isFinite, displayScale > 0,
-              pixelSize.width.isFinite, pixelSize.width > 0,
-              pixelSize.height.isFinite, pixelSize.height > 0 else {
-            throw ReaderBatterySVGRasterizerError.invalidRenderSize
-        }
+        let request = try ReaderBatterySVGRasterRequestValidator.validate(
+            pixelSize: pixelSize,
+            displayScale: displayScale
+        )
 
         let levelBucket = Int((min(max(level, 0), 1) * 100).rounded())
         // `render` performs the authoritative finite-level and RGBA color validation. Rendering
@@ -121,17 +180,13 @@ final class SVGWebViewRasterizer: NSObject {
         let assetHash = SHA256.hash(data: Data(template.validatedSource.utf8))
             .map { String(format: "%02x", $0) }
             .joined()
-        let normalizedPixelSize = CGSize(
-            width: max(1, pixelSize.width.rounded(.toNearestOrAwayFromZero)),
-            height: max(1, pixelSize.height.rounded(.toNearestOrAwayFromZero))
-        )
         let batteryKey = readerBatteryCacheKey(
             assetHash: assetHash,
             levelBucket: levelBucket,
             isCharging: isCharging,
             colorHex: normalizedColor,
-            pixelSize: normalizedPixelSize,
-            displayScale: displayScale
+            pixelSize: request.pixelSize,
+            displayScaleCacheKey: request.displayScaleCacheKey
         )
         if let cached = readerBatteryCache.object(forKey: batteryKey) {
             return cached
@@ -142,14 +197,10 @@ final class SVGWebViewRasterizer: NSObject {
             isCharging: isCharging,
             colorHex: normalizedColor
         )
-        let pointSize = CGSize(
-            width: normalizedPixelSize.width / displayScale,
-            height: normalizedPixelSize.height / displayScale
-        )
-        guard let image = await render(svgString: sanitizedSVG, size: pointSize) else {
+        guard let image = await render(svgString: sanitizedSVG, size: request.pointSize) else {
             return nil
         }
-        let scaledImage = image.resized(to: pointSize, displayScale: displayScale)
+        let scaledImage = image.resized(to: request.pointSize, displayScale: request.displayScale)
         readerBatteryCache.setObject(scaledImage, forKey: batteryKey)
         return scaledImage
     }
@@ -370,7 +421,7 @@ final class SVGWebViewRasterizer: NSObject {
         isCharging: Bool,
         colorHex: String,
         pixelSize: CGSize,
-        displayScale: CGFloat
+        displayScaleCacheKey: UInt64
     ) -> NSString {
         let input = [
             assetHash,
@@ -378,7 +429,7 @@ final class SVGWebViewRasterizer: NSObject {
             isCharging ? "1" : "0",
             colorHex,
             String(format: "%.0fx%.0f", pixelSize.width, pixelSize.height),
-            String(format: "%.4f", displayScale)
+            String(displayScaleCacheKey, radix: 16)
         ].joined(separator: "|")
         return input as NSString
     }

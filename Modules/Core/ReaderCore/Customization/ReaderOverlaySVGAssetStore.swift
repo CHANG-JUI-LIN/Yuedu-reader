@@ -27,6 +27,10 @@ enum ReaderOverlaySVGAssetStoreError: Error, Equatable, Sendable {
 actor ReaderOverlaySVGAssetStore {
     static let metadataVersion = 1
 
+    typealias OrphanRemover = @Sendable (URL) throws -> Void
+
+    private static let transactionCoordinator = ReaderOverlaySVGAssetTransactionCoordinator()
+
     private struct Manifest: Codable, Sendable {
         var version: Int
         var assets: [ReaderOverlaySVGAsset]
@@ -34,11 +38,16 @@ actor ReaderOverlaySVGAssetStore {
 
     private let rootDirectory: URL
     private let fileManager: FileManager
-    private var cachedAssets: [ReaderOverlaySVGAsset]?
+    private let orphanRemover: OrphanRemover
 
-    init(rootDirectory: URL, fileManager: FileManager = .default) {
+    init(
+        rootDirectory: URL,
+        fileManager: FileManager = .default,
+        orphanRemover: @escaping OrphanRemover = { try FileManager.default.removeItem(at: $0) }
+    ) {
         self.rootDirectory = rootDirectory.standardizedFileURL
         self.fileManager = fileManager
+        self.orphanRemover = orphanRemover
     }
 
     static func live() throws -> ReaderOverlaySVGAssetStore {
@@ -59,7 +68,9 @@ actor ReaderOverlaySVGAssetStore {
     }
 
     func assets() throws -> [ReaderOverlaySVGAsset] {
-        try loadAssets().sorted(by: Self.assetSort)
+        try Self.transactionCoordinator.withLock {
+            try loadAssets().sorted(by: Self.assetSort)
+        }
     }
 
     func importSVG(from url: URL) throws -> ReaderOverlaySVGAsset {
@@ -70,7 +81,7 @@ actor ReaderOverlaySVGAssetStore {
             }
         }
 
-        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        let data = try boundedData(from: url)
         guard let source = String(data: data, encoding: .utf8) else {
             throw ReaderBatterySVGError.malformedXML
         }
@@ -79,81 +90,87 @@ actor ReaderOverlaySVGAssetStore {
         // unsafe import cannot mutate the store in any way.
         let template = try ReaderBatterySVGTemplate(source: source)
         let validatedSource = template.validatedSource
-        let contentHash = Self.sha256(validatedSource)
-        var currentAssets = try loadAssets()
-
-        if let duplicateIndex = currentAssets.firstIndex(where: { $0.contentHash == contentHash }) {
-            var duplicate = currentAssets[duplicateIndex]
-            // Repair a missing same-content file from the newly validated import without creating
-            // a second logical asset. Reimport also upgrades equal canonical content to the latest
-            // validation contract, so a future validation-version bump cannot return an asset that
-            // immediately resolves as corrupt.
-            if duplicate.validationVersion != ReaderBatterySVGTemplate.validationVersion
-                || (try? validatedSourceForAsset(duplicate)) == nil {
-                try ensureRootDirectory()
-                try writeValidatedSource(validatedSource, for: duplicate)
-            }
-            if duplicate.validationVersion != ReaderBatterySVGTemplate.validationVersion {
-                duplicate.validationVersion = ReaderBatterySVGTemplate.validationVersion
-                currentAssets[duplicateIndex] = duplicate
-                try persist(currentAssets)
-                cachedAssets = currentAssets
-            }
-            return duplicate
+        guard validatedSource.utf8.count <= ReaderBatterySVGTemplate.maximumSourceSize else {
+            throw ReaderBatterySVGError.sourceTooLarge
         }
+        let contentHash = Self.sha256(validatedSource)
 
-        try ensureRootDirectory()
-        let asset = ReaderOverlaySVGAsset(
-            id: UUID(),
-            displayName: Self.sanitizedDisplayName(
-                url.deletingPathExtension().lastPathComponent,
-                fallbackHash: contentHash
-            ),
-            fileName: "\(contentHash).svg",
-            contentHash: contentHash,
-            validationVersion: ReaderBatterySVGTemplate.validationVersion,
-            createdAt: Date()
-        )
-        let fileURL = try sourceFileURL(for: asset, mustExist: false)
-        let createdContentFile = !fileManager.fileExists(atPath: fileURL.path)
+        return try Self.transactionCoordinator.withLock {
+            var currentAssets = try loadAssets()
 
-        do {
-            if createdContentFile {
-                try Data(validatedSource.utf8).write(to: fileURL, options: .atomic)
+            if let duplicateIndex = currentAssets.firstIndex(where: { $0.contentHash == contentHash }) {
+                var duplicate = currentAssets[duplicateIndex]
+                // Repair a missing same-content file from the newly validated import without
+                // creating a second logical asset. Reimport also upgrades equal canonical content
+                // to the latest validation contract.
+                if duplicate.validationVersion != ReaderBatterySVGTemplate.validationVersion
+                    || (try? validatedSourceForAsset(duplicate)) == nil {
+                    try ensureRootDirectory()
+                    try writeValidatedSource(validatedSource, for: duplicate)
+                }
+                if duplicate.validationVersion != ReaderBatterySVGTemplate.validationVersion {
+                    duplicate.validationVersion = ReaderBatterySVGTemplate.validationVersion
+                    currentAssets[duplicateIndex] = duplicate
+                    try persist(currentAssets)
+                }
+                return duplicate
             }
-            currentAssets.append(asset)
-            try persist(currentAssets)
-            cachedAssets = currentAssets
-            return asset
-        } catch {
-            if createdContentFile {
-                try? fileManager.removeItem(at: fileURL)
+
+            try ensureRootDirectory()
+            let asset = ReaderOverlaySVGAsset(
+                id: UUID(),
+                displayName: Self.sanitizedDisplayName(
+                    url.deletingPathExtension().lastPathComponent,
+                    fallbackHash: contentHash
+                ),
+                fileName: "\(contentHash).svg",
+                contentHash: contentHash,
+                validationVersion: ReaderBatterySVGTemplate.validationVersion,
+                createdAt: Date()
+            )
+            let fileURL = try sourceFileURL(for: asset, mustExist: false)
+            let createdContentFile = !fileManager.fileExists(atPath: fileURL.path)
+
+            do {
+                if createdContentFile {
+                    try Data(validatedSource.utf8).write(to: fileURL, options: .atomic)
+                }
+                currentAssets.append(asset)
+                try persist(currentAssets)
+                return asset
+            } catch {
+                if createdContentFile {
+                    try? fileManager.removeItem(at: fileURL)
+                }
+                throw error
             }
-            throw error
         }
     }
 
     func rename(id: UUID, displayName: String) throws -> ReaderOverlaySVGAsset {
-        var currentAssets = try loadAssets()
-        guard let index = currentAssets.firstIndex(where: { $0.id == id }) else {
-            throw ReaderOverlaySVGAssetStoreError.assetNotFound
+        try Self.transactionCoordinator.withLock {
+            var currentAssets = try loadAssets()
+            guard let index = currentAssets.firstIndex(where: { $0.id == id }) else {
+                throw ReaderOverlaySVGAssetStoreError.assetNotFound
+            }
+            let sanitized = Self.sanitizedDisplayName(displayName, fallbackHash: "")
+            guard !sanitized.isEmpty else {
+                throw ReaderOverlaySVGAssetStoreError.invalidDisplayName
+            }
+            currentAssets[index].displayName = sanitized
+            try persist(currentAssets)
+            return currentAssets[index]
         }
-        let sanitized = Self.sanitizedDisplayName(displayName, fallbackHash: "")
-        guard !sanitized.isEmpty else {
-            throw ReaderOverlaySVGAssetStoreError.invalidDisplayName
-        }
-        currentAssets[index].displayName = sanitized
-        try persist(currentAssets)
-        cachedAssets = currentAssets
-        return currentAssets[index]
     }
 
     func source(for id: UUID) throws -> String {
-        let currentAssets = try loadAssets()
-        guard let asset = currentAssets.first(where: { $0.id == id }) else {
-            throw ReaderOverlaySVGAssetStoreError.assetNotFound
+        try Self.transactionCoordinator.withLock {
+            let currentAssets = try loadAssets()
+            guard let asset = currentAssets.first(where: { $0.id == id }) else {
+                throw ReaderOverlaySVGAssetStoreError.assetNotFound
+            }
+            return try validatedSourceForAsset(asset)
         }
-        return try validatedSourceForAsset(asset)
     }
 
     func resolveTemplate(for id: UUID?) throws -> ReaderOverlaySVGAssetResolution {
@@ -166,37 +183,39 @@ actor ReaderOverlaySVGAssetStore {
     }
 
     func exportURL(for id: UUID, in directory: URL) throws -> URL {
-        let currentAssets = try loadAssets()
-        guard let asset = currentAssets.first(where: { $0.id == id }) else {
-            throw ReaderOverlaySVGAssetStoreError.assetNotFound
-        }
-        let source = try validatedSourceForAsset(asset)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Self.transactionCoordinator.withLock {
+            let currentAssets = try loadAssets()
+            guard let asset = currentAssets.first(where: { $0.id == id }) else {
+                throw ReaderOverlaySVGAssetStoreError.assetNotFound
+            }
+            let source = try validatedSourceForAsset(asset)
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        let safeName = Self.sanitizedDisplayName(asset.displayName, fallbackHash: asset.contentHash)
-        let suffix = asset.id.uuidString.prefix(8).lowercased()
-        let destination = directory
-            .appendingPathComponent("\(safeName)-\(suffix)")
-            .appendingPathExtension("svg")
-        try Data(source.utf8).write(to: destination, options: .atomic)
-        return destination
+            let safeName = Self.sanitizedDisplayName(asset.displayName, fallbackHash: asset.contentHash)
+            let suffix = asset.id.uuidString.prefix(8).lowercased()
+            let destination = directory
+                .appendingPathComponent("\(safeName)-\(suffix)")
+                .appendingPathExtension("svg")
+            try Data(source.utf8).write(to: destination, options: .atomic)
+            return destination
+        }
     }
 
     func delete(id: UUID) throws {
-        var currentAssets = try loadAssets()
-        guard let index = currentAssets.firstIndex(where: { $0.id == id }) else {
-            throw ReaderOverlaySVGAssetStoreError.assetNotFound
-        }
-        let removed = currentAssets.remove(at: index)
+        try Self.transactionCoordinator.withLock {
+            var currentAssets = try loadAssets()
+            guard let index = currentAssets.firstIndex(where: { $0.id == id }) else {
+                throw ReaderOverlaySVGAssetStoreError.assetNotFound
+            }
+            let removed = currentAssets.remove(at: index)
 
-        // Commit metadata first. If removing the content file fails afterward, the result is only
-        // an unreachable orphan rather than a manifest entry that resolves to a missing file.
-        try persist(currentAssets)
-        cachedAssets = currentAssets
-        if !currentAssets.contains(where: { $0.contentHash == removed.contentHash }) {
-            let fileURL = try sourceFileURL(for: removed, mustExist: false)
-            if fileManager.fileExists(atPath: fileURL.path) {
-                try fileManager.removeItem(at: fileURL)
+            // Metadata is the logical transaction. Orphan cleanup is deliberately best-effort so
+            // a filesystem cleanup failure cannot make UI state contradict the committed delete.
+            try persist(currentAssets)
+            if !currentAssets.contains(where: { $0.contentHash == removed.contentHash }),
+               let fileURL = try? sourceFileURL(for: removed, mustExist: false),
+               fileManager.fileExists(atPath: fileURL.path) {
+                try? orphanRemover(fileURL)
             }
         }
     }
@@ -206,9 +225,7 @@ actor ReaderOverlaySVGAssetStore {
     }
 
     private func loadAssets() throws -> [ReaderOverlaySVGAsset] {
-        if let cachedAssets { return cachedAssets }
         guard fileManager.fileExists(atPath: manifestURL.path) else {
-            cachedAssets = []
             return []
         }
 
@@ -228,7 +245,6 @@ actor ReaderOverlaySVGAssetStore {
         for asset in manifest.assets {
             try validateMetadata(asset)
         }
-        cachedAssets = manifest.assets
         return manifest.assets
     }
 
@@ -242,7 +258,12 @@ actor ReaderOverlaySVGAssetStore {
 
     private func validatedSourceForAsset(_ asset: ReaderOverlaySVGAsset) throws -> String {
         let fileURL = try sourceFileURL(for: asset, mustExist: true)
-        let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+        let data: Data
+        do {
+            data = try boundedData(from: fileURL)
+        } catch ReaderBatterySVGError.sourceTooLarge {
+            throw ReaderOverlaySVGAssetStoreError.corruptAsset
+        }
         guard let source = String(data: data, encoding: .utf8) else {
             throw ReaderOverlaySVGAssetStoreError.corruptAsset
         }
@@ -305,6 +326,31 @@ actor ReaderOverlaySVGAssetStore {
         try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
     }
 
+    private func boundedData(from url: URL) throws -> Data {
+        let maximumSize = ReaderBatterySVGTemplate.maximumSourceSize
+        if let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+           fileSize > maximumSize {
+            throw ReaderBatterySVGError.sourceTooLarge
+        }
+
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var result = Data()
+        while result.count <= maximumSize {
+            let remaining = maximumSize + 1 - result.count
+            guard remaining > 0,
+                  let chunk = try handle.read(upToCount: min(remaining, 64 * 1_024)),
+                  !chunk.isEmpty else {
+                break
+            }
+            result.append(chunk)
+        }
+        guard result.count <= maximumSize else {
+            throw ReaderBatterySVGError.sourceTooLarge
+        }
+        return result
+    }
+
     private static func sha256(_ source: String) -> String {
         SHA256.hash(data: Data(source.utf8))
             .map { String(format: "%02x", $0) }
@@ -331,5 +377,15 @@ actor ReaderOverlaySVGAssetStore {
     private static func assetSort(_ lhs: ReaderOverlaySVGAsset, _ rhs: ReaderOverlaySVGAsset) -> Bool {
         if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
         return lhs.id.uuidString < rhs.id.uuidString
+    }
+}
+
+private final class ReaderOverlaySVGAssetTransactionCoordinator: @unchecked Sendable {
+    private let lock = NSRecursiveLock()
+
+    func withLock<Result>(_ operation: () throws -> Result) rethrows -> Result {
+        lock.lock()
+        defer { lock.unlock() }
+        return try operation()
     }
 }

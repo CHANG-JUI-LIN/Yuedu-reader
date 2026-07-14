@@ -140,6 +140,69 @@ struct ReaderOverlaySVGAssetStoreTests {
         #expect(try await store.resolveTemplate(for: UUID()) == .systemBattery)
     }
 
+    @Test("Different store actors coordinate concurrent import rename and delete transactions")
+    func differentStoresDoNotLoseUpdates() async throws {
+        let fixture = try Fixture()
+        let firstURL = try fixture.writeImport(name: "First.svg", source: Self.safeSVG)
+        let secondURL = try fixture.writeImport(name: "Second.svg", source: Self.alternateSafeSVG)
+        let firstStore = ReaderOverlaySVGAssetStore(rootDirectory: fixture.storeURL)
+        let secondStore = ReaderOverlaySVGAssetStore(rootDirectory: fixture.storeURL)
+
+        async let firstImport = firstStore.importSVG(from: firstURL)
+        async let secondImport = secondStore.importSVG(from: secondURL)
+        let (first, second) = try await (firstImport, secondImport)
+        #expect(try await firstStore.assets().count == 2)
+        #expect(try await secondStore.assets().count == 2)
+
+        async let renamed = firstStore.rename(id: first.id, displayName: "Renamed")
+        async let deleted: Void = secondStore.delete(id: second.id)
+        let renamedAsset = try await renamed
+        try await deleted
+
+        let finalAssets = try await ReaderOverlaySVGAssetStore(rootDirectory: fixture.storeURL).assets()
+        #expect(finalAssets == [renamedAsset])
+    }
+
+    @Test("Oversized imports write nothing and oversized stored sources fall back")
+    func boundedReadsRejectOversizedSources() async throws {
+        let fixture = try Fixture()
+        let oversized = Data(repeating: 0x20, count: ReaderBatterySVGTemplate.maximumSourceSize + 1)
+        let oversizedURL = fixture.importURL.appendingPathComponent("Oversized.svg")
+        try oversized.write(to: oversizedURL)
+        let store = ReaderOverlaySVGAssetStore(rootDirectory: fixture.storeURL)
+
+        await #expect(throws: ReaderBatterySVGError.sourceTooLarge) {
+            try await store.importSVG(from: oversizedURL)
+        }
+        #expect(try await store.assets().isEmpty)
+        let filesAfterReject = try FileManager.default.contentsOfDirectory(
+            at: fixture.storeURL,
+            includingPropertiesForKeys: nil
+        )
+        #expect(filesAfterReject.filter { $0.pathExtension == "svg" }.isEmpty)
+
+        let validURL = try fixture.writeImport(name: "Valid.svg", source: Self.safeSVG)
+        let asset = try await store.importSVG(from: validURL)
+        try oversized.write(to: fixture.storeURL.appendingPathComponent(asset.fileName), options: .atomic)
+        #expect(try await store.resolveTemplate(for: asset.id) == .systemBattery)
+    }
+
+    @Test("An orphan cleanup failure does not undo or report a logical delete failure")
+    func deleteIgnoresOrphanCleanupFailure() async throws {
+        let fixture = try Fixture()
+        let importURL = try fixture.writeImport(name: "Battery.svg", source: Self.safeSVG)
+        let store = ReaderOverlaySVGAssetStore(
+            rootDirectory: fixture.storeURL,
+            orphanRemover: { _ in throw CleanupFailure.expected }
+        )
+        let asset = try await store.importSVG(from: importURL)
+
+        try await store.delete(id: asset.id)
+
+        #expect(try await store.assets().isEmpty)
+        #expect(FileManager.default.fileExists(atPath: fixture.storeURL.appendingPathComponent(asset.fileName).path))
+    }
+
     private static let safeSVG = """
     <svg xmlns="http://www.w3.org/2000/svg" width="100" height="40">
       <rect data-yuedu-role="battery-level" fill="currentColor" width="100" height="40"/>
@@ -153,6 +216,57 @@ struct ReaderOverlaySVGAssetStoreTests {
       <rect data-yuedu-role="battery-level" width="80" height="32"/>
     </svg>
     """
+}
+
+@Suite("Reader battery SVG raster requests")
+struct ReaderBatterySVGRasterRequestTests {
+    @Test("Rejects huge pixel buffers and extreme display scales before rasterization")
+    func rejectsUnsafeRasterRequests() {
+        #expect(throws: ReaderBatterySVGRasterizerError.invalidRenderSize) {
+            try ReaderBatterySVGRasterRequestValidator.validate(
+                pixelSize: CGSize(width: 4_096, height: 4_096),
+                displayScale: 2
+            )
+        }
+        #expect(throws: ReaderBatterySVGRasterizerError.invalidRenderSize) {
+            try ReaderBatterySVGRasterRequestValidator.validate(
+                pixelSize: CGSize(width: 200, height: 100),
+                displayScale: 0.000_1
+            )
+        }
+        #expect(throws: ReaderBatterySVGRasterizerError.invalidRenderSize) {
+            try ReaderBatterySVGRasterRequestValidator.validate(
+                pixelSize: CGSize(width: 200, height: 100),
+                displayScale: 100
+            )
+        }
+        #expect(throws: ReaderBatterySVGRasterizerError.invalidRenderSize) {
+            try ReaderBatterySVGRasterRequestValidator.validate(
+                pixelSize: CGSize(width: 4_096, height: 1),
+                displayScale: 0.5
+            )
+        }
+    }
+
+    @Test("Valid requests retain exact display-scale cache identity")
+    func retainsExactDisplayScaleIdentity() throws {
+        let first = try ReaderBatterySVGRasterRequestValidator.validate(
+            pixelSize: CGSize(width: 216, height: 96),
+            displayScale: 2.000_01
+        )
+        let second = try ReaderBatterySVGRasterRequestValidator.validate(
+            pixelSize: CGSize(width: 216, height: 96),
+            displayScale: 2.000_02
+        )
+
+        #expect(first.pointSize.width > 0)
+        #expect(first.pointSize.height > 0)
+        #expect(first.displayScaleCacheKey != second.displayScaleCacheKey)
+    }
+}
+
+private enum CleanupFailure: Error {
+    case expected
 }
 
 private struct Fixture {

@@ -24,6 +24,7 @@ enum ReaderBatterySVGError: Error, Equatable, Sendable {
 
 struct ReaderBatterySVGTemplate: Equatable, Sendable {
     static let validationVersion = 1
+    static let maximumSourceSize = 256 * 1_024
 
     let validatedSource: String
 
@@ -32,7 +33,7 @@ struct ReaderBatterySVGTemplate: Equatable, Sendable {
     private let direction: BatteryFillDirection
 
     init(source: String) throws {
-        guard source.utf8.count <= SVGParserDelegate.maximumSourceSize else {
+        guard source.utf8.count <= Self.maximumSourceSize else {
             throw ReaderBatterySVGError.sourceTooLarge
         }
         guard !Self.containsDocumentTypeOrEntity(in: source) else {
@@ -414,7 +415,6 @@ private indirect enum SVGNode: Equatable, Sendable {
 }
 
 private final class SVGParserDelegate: NSObject, XMLParserDelegate {
-    static let maximumSourceSize = 256 * 1_024
     static let maximumDepth = 64
     static let maximumNodeCount = 10_000
 
