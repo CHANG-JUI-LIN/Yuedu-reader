@@ -50,6 +50,70 @@ struct ReaderOverlayLayoutTests {
         #expect(decoded == fixture)
     }
 
+    @Test("version one layouts clone body components into chapter opening")
+    func versionOneClonesOpeningComponents() throws {
+        let data = Data(
+            """
+            {
+              "version": 1,
+              "components": [{
+                "id": "00000000-0000-0000-0000-000000000901",
+                "kind": "chapterTitle",
+                "position": { "x": 0.1, "y": 0.2 }
+              }],
+              "contentReservations": { "top": 34, "bottom": 32 }
+            }
+            """.utf8
+        )
+
+        let decoded = try JSONDecoder().decode(ReaderOverlayLayout.self, from: data)
+
+        #expect(decoded.components(for: .chapterOpening) == decoded.components(for: .chapterBody))
+        #expect(decoded.components(for: .chapterOpening).map(\.kind) == [.chapterTitle])
+    }
+
+    @Test("version two preserves independent page scopes")
+    func versionTwoPreservesIndependentPageScopes() throws {
+        let opening = ReaderOverlayComponent.make(
+            kind: .bookTitle,
+            position: ReaderOverlayNormalizedPoint(x: 0.2, y: 0.1)
+        )
+        let body = ReaderOverlayComponent.make(
+            kind: .chapterPage,
+            position: ReaderOverlayNormalizedPoint(x: 0.8, y: 0.9)
+        )
+        let fixture = ReaderOverlayLayout(
+            components: [body],
+            chapterOpeningComponents: [opening],
+            contentReservations: ReaderOverlayContentReservations(top: 34, bottom: 32)
+        )
+
+        let decoded = try JSONDecoder().decode(
+            ReaderOverlayLayout.self,
+            from: JSONEncoder().encode(fixture)
+        )
+
+        #expect(decoded.components(for: .chapterOpening) == [opening])
+        #expect(decoded.components(for: .chapterBody) == [body])
+    }
+
+    @Test("scope replacement changes only the selected page scope")
+    func scopeReplacementIsIsolated() {
+        var layout = ReaderOverlayLayout.default
+        let originalBody = layout.components(for: .chapterBody)
+        let replacement = [
+            ReaderOverlayComponent.make(
+                kind: .customText,
+                position: ReaderOverlayNormalizedPoint(x: 0.5, y: 0.5)
+            )
+        ]
+
+        layout.replaceComponents(replacement, for: .chapterOpening)
+
+        #expect(layout.components(for: .chapterOpening) == replacement)
+        #expect(layout.components(for: .chapterBody) == originalBody)
+    }
+
     @Test("configuration decoding supplies evolvable defaults")
     func configurationDecodingSuppliesDefaults() throws {
         let decoded = try JSONDecoder().decode(
@@ -99,6 +163,7 @@ struct ReaderOverlayLayoutTests {
         #expect(layout.contentReservations == ReaderOverlayContentReservations(top: 46, bottom: 36))
         #expect(layout.components.allSatisfy { (0...1).contains($0.position.x) })
         #expect(layout.components.allSatisfy { (0...1).contains($0.position.y) })
+        #expect(layout.components(for: .chapterOpening) == layout.components(for: .chapterBody))
     }
 
     @Test("legacy migration produces deterministic distinct identities")

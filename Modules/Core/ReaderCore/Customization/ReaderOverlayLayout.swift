@@ -324,11 +324,22 @@ struct ReaderOverlayContentReservations: Codable, Equatable, Sendable {
     }
 }
 
+enum ReaderOverlayPageScope: String, CaseIterable, Equatable, Sendable {
+    case chapterOpening
+    case chapterBody
+
+    static func resolve(chapterPage: Int) -> ReaderOverlayPageScope {
+        chapterPage == 1 ? .chapterOpening : .chapterBody
+    }
+}
+
 struct ReaderOverlayLayout: Codable, Equatable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     var version: Int
+    /// Compatibility storage for version-1 JSON. This is the chapter-body scope.
     var components: [ReaderOverlayComponent]
+    var chapterOpeningComponents: [ReaderOverlayComponent]
     var contentReservations: ReaderOverlayContentReservations
 
     static var `default`: ReaderOverlayLayout {
@@ -338,17 +349,41 @@ struct ReaderOverlayLayout: Codable, Equatable, Sendable {
     init(
         version: Int = ReaderOverlayLayout.currentVersion,
         components: [ReaderOverlayComponent],
+        chapterOpeningComponents: [ReaderOverlayComponent]? = nil,
         contentReservations: ReaderOverlayContentReservations
     ) {
         self.version = version
         self.components = components
+        self.chapterOpeningComponents = chapterOpeningComponents ?? components
         self.contentReservations = contentReservations
+    }
+
+    func components(for scope: ReaderOverlayPageScope) -> [ReaderOverlayComponent] {
+        switch scope {
+        case .chapterOpening:
+            chapterOpeningComponents
+        case .chapterBody:
+            components
+        }
+    }
+
+    mutating func replaceComponents(
+        _ components: [ReaderOverlayComponent],
+        for scope: ReaderOverlayPageScope
+    ) {
+        switch scope {
+        case .chapterOpening:
+            chapterOpeningComponents = components
+        case .chapterBody:
+            self.components = components
+        }
     }
 
     func normalized(preservingVersion: Bool = true) -> ReaderOverlayLayout {
         ReaderOverlayLayout(
             version: preservingVersion ? version : Self.currentVersion,
             components: components.map(\.normalized),
+            chapterOpeningComponents: chapterOpeningComponents.map(\.normalized),
             contentReservations: contentReservations.normalized
         )
     }
@@ -356,6 +391,7 @@ struct ReaderOverlayLayout: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case version
         case components
+        case chapterOpeningComponents
         case contentReservations
     }
 
@@ -363,6 +399,14 @@ struct ReaderOverlayLayout: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 0
         components = try container.decodeIfPresent([ReaderOverlayComponent].self, forKey: .components) ?? []
+        if version >= 2 {
+            chapterOpeningComponents = try container.decode(
+                [ReaderOverlayComponent].self,
+                forKey: .chapterOpeningComponents
+            )
+        } else {
+            chapterOpeningComponents = components
+        }
         contentReservations = try container.decodeIfPresent(
             ReaderOverlayContentReservations.self,
             forKey: .contentReservations

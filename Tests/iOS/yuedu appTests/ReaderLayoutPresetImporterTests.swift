@@ -222,6 +222,29 @@ struct ReaderLayoutPresetImporterTests {
         #expect(layout.components.first?.kind == .chapterPage)
     }
 
+    @Test("version two without opening components falls back to legacy fields")
+    func incompleteVersionTwoOverlayFallsBackToLegacy() throws {
+        let data = Data(
+            """
+            {
+              "readerHeaderVisible": true,
+              "readerHeaderFieldPositions": { "chapterTitle": "center" },
+              "readerOverlayLayout": {
+                "version": 2,
+                "components": [],
+                "contentReservations": { "top": 20, "bottom": 20 }
+              }
+            }
+            """.utf8
+        )
+
+        let preset = try ReaderLayoutPresetImporter.decode(data: data)
+        let layout = try #require(preset.readerOverlayLayout)
+
+        #expect(layout.components(for: .chapterOpening).map(\.kind) == [.chapterTitle])
+        #expect(layout.components(for: .chapterBody).map(\.kind) == [.chapterTitle])
+    }
+
     @Test("leaves the current overlay untouched when a preset has no overlay fields")
     func noOverlayFieldsProducesNoOverlayReplacement() throws {
         let data = Data(#"{ "textSize": 18 }"#.utf8)

@@ -77,6 +77,7 @@ enum ReaderLayoutPresetImporter {
               let payload = root["readerOverlayLayout"] as? [String: Any],
               let rawVersion = payload["version"] as? Int,
               payload["components"] is [Any],
+              rawVersion < 2 || payload["chapterOpeningComponents"] is [Any],
               payload["contentReservations"] is [String: Any],
               JSONSerialization.isValidJSONObject(payload),
               let payloadData = try? JSONSerialization.data(withJSONObject: payload),
