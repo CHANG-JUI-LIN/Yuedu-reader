@@ -573,7 +573,7 @@ private struct ReaderOverlayComponentEditPreviewHarness: View {
 
     var body: some View {
         ReaderOverlayComponentEditView(
-            component: $component,
+            component: component,
             readerStyle: ReaderOverlayReaderStyle(
                 font: UIFont.preferredFont(forTextStyle: .body),
                 textColor: .label,
@@ -581,7 +581,8 @@ private struct ReaderOverlayComponentEditPreviewHarness: View {
             ),
             importedFonts: [],
             svgAssetStore: store,
-            referencedAssetIDs: []
+            referencedAssetIDs: [],
+            onSave: { component = $0 }
         )
     }
 }
