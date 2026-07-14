@@ -415,6 +415,7 @@ class GlobalSettings: ObservableObject {
     private static let readerDialogueHighlightColorHexKey = "yd_reader_dialogue_highlight_color_hex"
     private static let readerDialogueBoxKey = "yd_reader_dialogue_box"
     private static let readerDialogueBoxColorHexKey = "yd_reader_dialogue_box_color_hex"
+    private static let readerDialogueBoxStyleKey = "yd_reader_dialogue_box_style"
     private static let readerCustomBackgroundModeKey = "yd_reader_custom_background_mode"
     private static let readerCustomBackgroundColorHexKey = "yd_reader_custom_background_color_hex"
     private static let readerCustomBackgroundImageFileNameKey = "yd_reader_custom_background_image_file_name"
@@ -434,7 +435,11 @@ class GlobalSettings: ObservableObject {
     static let defaultCommentBubbleTextScale = 0.4
     static let defaultReaderUnderlineColorHex: UInt32 = 0x8E8E93
     static let defaultReaderDialogueHighlightColorHex: UInt32 = 0xFF6B3A
-    static let defaultReaderDialogueBoxColorHex: UInt32 = 0xFFF0C0
+    /// Default box tint = the shared reference lavender rgb(195,185,225); the gradient-pill
+    /// style derives its two translucent stops from this base.
+    static let defaultReaderDialogueBoxColorHex: UInt32 = 0xC3B9E1
+    /// Box style: 0 = solid block, 1 = translucent gradient pill (default).
+    static let defaultReaderDialogueBoxStyle: Int = 1
 
     static func uiColor(rgbHex: UInt32) -> UIColor {
         UIColor(
@@ -620,6 +625,12 @@ class GlobalSettings: ObservableObject {
     @Published var readerDialogueBoxColorHex: UInt32 {
         didSet {
             UserDefaults.standard.set(Int(readerDialogueBoxColorHex), forKey: Self.readerDialogueBoxColorHexKey)
+        }
+    }
+    /// 0 = solid block, 1 = gradient pill. See `CoreTextDialogueBox.Style`.
+    @Published var readerDialogueBoxStyleRaw: Int {
+        didSet {
+            UserDefaults.standard.set(readerDialogueBoxStyleRaw, forKey: Self.readerDialogueBoxStyleKey)
         }
     }
     @Published var commentBubbleFollowsSourceSVG: Bool {
@@ -1077,6 +1088,9 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: Self.readerDialogueBoxColorHexKey) as? Int)
                 ?? Int(Self.defaultReaderDialogueBoxColorHex)
         )
+        readerDialogueBoxStyleRaw =
+            (UserDefaults.standard.object(forKey: Self.readerDialogueBoxStyleKey) as? Int)
+            ?? Self.defaultReaderDialogueBoxStyle
         if UserDefaults.standard.object(forKey: Self.commentBubbleFollowsSourceSVGKey) == nil {
             commentBubbleFollowsSourceSVG = true
         } else {

@@ -1629,6 +1629,9 @@ struct ReaderView: View {
         .onChanged(of: settings.readerDialogueBoxColorHex) { _ in
             forceReaderRenderableContentRefresh()
         }
+        .onChanged(of: settings.readerDialogueBoxStyleRaw) { _ in
+            forceReaderRenderableContentRefresh()
+        }
         .onChanged(
             of: ReaderOverlayPaginationPolicy.insets(for: settings.readerOverlayLayout)
         ) { _ in

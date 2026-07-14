@@ -490,8 +490,8 @@ struct ReaderSettingsView: View {
                         icon: .pageMargin,
                         valueText: "\(Int(readerConfig.pageMarginH))",
                         value: $readerConfig.pageMarginH,
-                        range: 8...50,
-                        step: 2
+                        range: 0...50,
+                        step: 1
                     )
 
                     Toggle(localized("顯示標題"), isOn: $readerConfig.readerTitleVisible)
@@ -583,6 +583,12 @@ struct ReaderSettingsView: View {
                 }
 
                 if settings.readerDialogueBoxEnabled {
+                    Picker(localized("樣式"), selection: dialogueBoxStyleBinding) {
+                        Text(localized("純色塊")).tag(0)
+                        Text(localized("漸層膠囊")).tag(1)
+                    }
+                    .pickerStyle(.segmented)
+
                     ColorPicker(
                         localized("底色框顏色"),
                         selection: readerDialogueBoxColorBinding,
@@ -741,6 +747,13 @@ struct ReaderSettingsView: View {
                 settings.readerDialogueBoxColorHex =
                     UIColor($0).rgbHex ?? GlobalSettings.defaultReaderDialogueBoxColorHex
             }
+        )
+    }
+
+    private var dialogueBoxStyleBinding: Binding<Int> {
+        Binding(
+            get: { settings.readerDialogueBoxStyleRaw },
+            set: { settings.readerDialogueBoxStyleRaw = $0 }
         )
     }
 

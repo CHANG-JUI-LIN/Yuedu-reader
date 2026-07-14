@@ -238,7 +238,7 @@
 "替換規則 JSON 解析失敗" = "Failed to parse replace-rule JSON";
 "替換規則匯入失敗：%@" = "Replace-rule import failed: %@";
 "替換規則" = "Replace Rules";
-"替換（淨化）" = "Replace (Clean Up)";
+"替換" = "Replace";
 "替換規則每行格式：regex@@@replacement（空 replacement 表示刪除）" = "Format per line: regex@@@replacement (empty replacement = delete)";
 "已匯入 %d 條替換規則" = "Imported %d replace rules";
 "匯入替換規則 JSON" = "Import Replace Rule JSON";
@@ -1332,6 +1332,9 @@
 "對話底色框" = "Dialogue Background Box";
 "為引號內的對話加上底色方塊。" = "Add a colored box behind dialogue inside quotation marks.";
 "底色框顏色" = "Box Color";
+"樣式" = "Style";
+"純色塊" = "Solid";
+"漸層膠囊" = "Gradient Pill";
 
 // MARK: - Launch Image (App Splash)
 "啟動圖" = "Launch Screen";

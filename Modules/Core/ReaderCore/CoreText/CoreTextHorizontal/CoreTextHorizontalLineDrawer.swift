@@ -347,6 +347,8 @@ enum CoreTextHorizontalLineDrawer {
         var lineDescent: CGFloat = 0
         CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
 
+        let boxStyle = CoreTextDialogueBox.currentStyle
+
         attrStr.enumerateAttribute(
             DialogueHighlighter.boxColorAttribute,
             in: NSRange(location: lineStart, length: length),
@@ -379,13 +381,7 @@ enum CoreTextHorizontalLineDrawer {
                 width: (x1 - x0) + 2 * padH,
                 height: (ascent + descent) + 2 * padV
             )
-            let radius = max(0, min(4, min(rect.width, rect.height) / 2))
-
-            ctx.saveGState()
-            ctx.setFillColor(color.cgColor)
-            ctx.addPath(UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath)
-            ctx.fillPath()
-            ctx.restoreGState()
+            CoreTextDialogueBox.fill(rect: rect, baseColor: color, style: boxStyle, in: ctx)
         }
     }
 

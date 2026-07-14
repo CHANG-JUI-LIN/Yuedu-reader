@@ -178,7 +178,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
 
         var actions = suggestedActions
         actions.append(UIAction(
-            title: localized("替換（淨化）"),
+            title: localized("替換"),
             image: UIImage(systemName: "eraser"),
             handler: { [weak self] _ in
                 self?.requestReplaceRule()
