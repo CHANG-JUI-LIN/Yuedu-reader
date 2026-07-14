@@ -119,7 +119,7 @@ struct ReaderOverlayComponentEditView: View {
         }) {
             ReaderBatterySVGImportView(
                 store: svgAssetStore,
-                referencedAssetIDs: referencedAssetIDs,
+                referencedAssetIDs: allReferencedAssetIDs,
                 selectedAssetID: component.configuration.svgAssetID,
                 onSelectAsset: { asset in
                     updateComponent { component in
@@ -456,6 +456,13 @@ struct ReaderOverlayComponentEditView: View {
     private var selectedSVGAsset: ReaderOverlaySVGAsset? {
         guard let id = component.configuration.svgAssetID else { return nil }
         return svgAssets.first { $0.id == id }
+    }
+
+    private var allReferencedAssetIDs: Set<UUID> {
+        guard let selectedID = component.configuration.svgAssetID else {
+            return referencedAssetIDs
+        }
+        return referencedAssetIDs.union([selectedID])
     }
 
     private var resolvedStyle: ReaderOverlayResolvedStyle {

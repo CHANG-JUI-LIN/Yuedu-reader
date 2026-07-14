@@ -132,6 +132,12 @@ struct ReaderHeaderFooterEditorView: View {
                 .padding(.horizontal, DSSpacing.lg)
                 .frame(minHeight: DSLayout.readerOverlayActionMenuHeight)
                 .background(.regularMaterial, in: Capsule())
+                .overlay {
+                    Capsule().strokeBorder(
+                        DSColor.border,
+                        lineWidth: DSLayout.readerOverlayGuideLineWidth
+                    )
+                }
                 .transition(undoTransition)
             }
 
@@ -140,8 +146,16 @@ struct ReaderHeaderFooterEditorView: View {
                 Text(localized("章節正文")).tag(ReaderOverlayPageScope.chapterBody)
             }
             .pickerStyle(.segmented)
+            .font(DSFont.callout)
+            .tint(DSColor.accent)
             .padding(DSSpacing.xs)
             .background(.regularMaterial, in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(
+                    DSColor.border,
+                    lineWidth: DSLayout.readerOverlayGuideLineWidth
+                )
+            }
 
             editorChromeButton(localized("新增組件"), systemImage: "plus") {
                 presentedSheet = .componentPicker
@@ -158,6 +172,12 @@ struct ReaderHeaderFooterEditorView: View {
                     .padding(.horizontal, DSSpacing.md)
                     .frame(minHeight: DSLayout.readerOverlayActionMenuHeight)
                     .background(.regularMaterial, in: Capsule())
+                    .overlay {
+                        Capsule().strokeBorder(
+                            DSColor.border,
+                            lineWidth: DSLayout.readerOverlayGuideLineWidth
+                        )
+                    }
                     .accessibilityElement(children: .combine)
             }
         }
@@ -173,11 +193,18 @@ struct ReaderHeaderFooterEditorView: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(DSFont.headline)
+                .foregroundStyle(DSColor.textPrimary)
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: DSLayout.readerOverlayActionMenuHeight)
         }
         .buttonStyle(.plain)
         .background(.regularMaterial, in: Capsule())
+        .overlay {
+            Capsule().strokeBorder(
+                DSColor.border,
+                lineWidth: DSLayout.readerOverlayGuideLineWidth
+            )
+        }
     }
 
     private func editorActions(
