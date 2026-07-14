@@ -220,6 +220,20 @@ enum DSLayout {
     static let readerOverlayProgressWidthScale: CGFloat = 5
     /// System and imported battery width relative to the component font line height.
     static let readerOverlayBatteryAspectRatio: CGFloat = 2.25
+    /// Width of the anchored edit/delete menu beside a selected reader overlay component.
+    static let readerOverlayActionMenuWidth: CGFloat = 156
+    /// Height of anchored editor menus and compact floating controls.
+    static let readerOverlayActionMenuHeight: CGFloat = 48
+    /// Gap between a selected component and its anchored action menu.
+    static let readerOverlayActionMenuGap: CGFloat = 8
+    /// Maximum width of the bottom add-component action.
+    static let readerOverlayEditorBottomActionMaxWidth: CGFloat = 320
+    /// Width reserved for leading/trailing actions in the editor toolbar.
+    static let readerOverlayEditorToolbarActionWidth: CGFloat = 72
+    /// Alignment guide stroke width.
+    static let readerOverlayGuideLineWidth: CGFloat = 1
+    /// Alignment guide dash length.
+    static let readerOverlayGuideDashLength: CGFloat = 5
     /// Wide management surfaces such as book-source lists.
     static let readableWideWidth: CGFloat = 980
     /// Extra horizontal inset applied to regular-width reader pages.

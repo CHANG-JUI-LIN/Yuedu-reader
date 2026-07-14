@@ -61,6 +61,8 @@ struct ReaderView: View {
     @State var showTOC = false
     @State var readerMenuTab: ReaderMenuView.Tab = .toc
     @State var showTouchZoneEditor = false
+    @State var readerHeaderFooterEditorModel: ReaderHeaderFooterEditorModel?
+    @State var readerOverlaySVGAssetStore: ReaderOverlaySVGAssetStore?
 
     // Online chapter lazy loading
     @StateObject var readerViewModel = ReaderViewModel()
@@ -1308,7 +1310,10 @@ struct ReaderView: View {
             //   }
 
             // Top/Bottom bars
-            if !showBars && !effectiveScrollMode && !chapters.isEmpty {
+            if !showBars,
+               !effectiveScrollMode,
+               !chapters.isEmpty,
+               readerHeaderFooterEditorModel == nil {
                 if readerConfig.readerFooterVisible {
                     VStack {
                         Spacer()
@@ -1353,6 +1358,22 @@ struct ReaderView: View {
                 )
                 .zIndex(100)
             }
+
+            if let editorModel = readerHeaderFooterEditorModel,
+               let svgAssetStore = readerOverlaySVGAssetStore {
+                ReaderHeaderFooterEditorView(
+                    model: editorModel,
+                    content: readerOverlayContentSnapshot,
+                    readerStyle: readerOverlayEditorReaderStyle,
+                    safeAreaInsets: readerOverlayEditorSafeAreaInsets,
+                    svgAssetStore: svgAssetStore,
+                    onAddComponent: {},
+                    onEditComponent: { _ in },
+                    onDismiss: { readerHeaderFooterEditorModel = nil }
+                )
+                .transition(.opacity)
+                .zIndex(110)
+            }
         }
         .background(
             GeometryReader { g in
@@ -1377,7 +1398,7 @@ struct ReaderView: View {
             applyRotatedViewportIfNeeded()
         }
         .animation(.easeInOut(duration: 0.25), value: chapters.isEmpty)
-        .statusBarHidden(!showBars)
+        .statusBarHidden(!showBars && readerHeaderFooterEditorModel == nil)
         .animation(.easeInOut(duration: 0.25), value: showBars)
         .modifier(HideTabBarModifier())
         .alert(String(format: localized("將「%@」加入書架？"), snapshotBook?.title ?? ""), isPresented: $showAddToShelfAlert) {
