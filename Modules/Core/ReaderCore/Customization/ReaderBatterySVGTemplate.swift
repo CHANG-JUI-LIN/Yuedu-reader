@@ -238,7 +238,7 @@ struct ReaderBatterySVGTemplate: Equatable, Sendable {
 
     private static func uniqueClipID(in root: SVGElement) -> String {
         var identifiers: Set<String> = []
-        collectIdentifiers(in: root, into: &identifiers)
+        collectReservedClipIdentifiers(in: root, into: &identifiers)
         let base = "yuedu-battery-level-clip"
         guard identifiers.contains(base) else { return base }
 
@@ -249,13 +249,23 @@ struct ReaderBatterySVGTemplate: Equatable, Sendable {
         return "\(base)-\(suffix)"
     }
 
-    private static func collectIdentifiers(in element: SVGElement, into identifiers: inout Set<String>) {
+    private static func collectReservedClipIdentifiers(
+        in element: SVGElement,
+        into identifiers: inout Set<String>
+    ) {
         if let identifier = element.attributes["id"] {
             identifiers.insert(identifier)
         }
+        for (name, value) in element.attributes {
+            if (name == "href" || name == "xlink:href"),
+               let target = SVGValidation.internalFragmentIdentifier(value) {
+                identifiers.insert(target)
+            }
+            identifiers.formUnion(SVGValidation.internalURLFragmentIdentifiers(in: value))
+        }
         for child in element.children {
             if case let .element(childElement) = child {
-                collectIdentifiers(in: childElement, into: &identifiers)
+                collectReservedClipIdentifiers(in: childElement, into: &identifiers)
             }
         }
     }
@@ -367,7 +377,9 @@ private struct SVGViewBox: Equatable, Sendable {
         guard values.count == components.count,
               values.allSatisfy(\.isFinite),
               values[2] > 0,
-              values[3] > 0 else {
+              values[3] > 0,
+              (values[0] + values[2]).isFinite,
+              (values[1] + values[3]).isFinite else {
             return nil
         }
         self.init(minX: values[0], minY: values[1], width: values[2], height: values[3])
@@ -735,11 +747,37 @@ private enum SVGValidation {
     }
 
     private static func isInternalFragment<S: StringProtocol>(_ value: S) -> Bool {
+        internalFragmentIdentifier(value) != nil
+    }
+
+    static func internalFragmentIdentifier<S: StringProtocol>(_ value: S) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.first == "#", trimmed.count > 1 else { return false }
-        return trimmed.dropFirst().unicodeScalars.allSatisfy {
+        guard trimmed.first == "#", trimmed.count > 1,
+              trimmed.dropFirst().unicodeScalars.allSatisfy({
             CharacterSet.alphanumerics.contains($0) || "_-.:".unicodeScalars.contains($0)
+        }) else {
+            return nil
         }
+        return String(trimmed.dropFirst())
+    }
+
+    static func internalURLFragmentIdentifiers(in value: String) -> Set<String> {
+        var identifiers: Set<String> = []
+        var searchStart = value.startIndex
+        while let range = value.range(of: "url(", options: .caseInsensitive, range: searchStart..<value.endIndex),
+              let close = value[range.upperBound...].firstIndex(of: ")") {
+            var target = value[range.upperBound..<close].trimmingCharacters(in: .whitespacesAndNewlines)
+            if target.count >= 2,
+               (target.first == "\"" && target.last == "\"" || target.first == "'" && target.last == "'") {
+                target.removeFirst()
+                target.removeLast()
+            }
+            if let identifier = internalFragmentIdentifier(target) {
+                identifiers.insert(identifier)
+            }
+            searchStart = value.index(after: close)
+        }
+        return identifiers
     }
 }
 

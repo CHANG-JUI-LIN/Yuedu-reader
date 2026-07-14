@@ -126,6 +126,26 @@ struct ReaderBatterySVGTemplateTests {
         }
     }
 
+    @Test("Rejects coordinate systems whose clip arithmetic would overflow")
+    func rejectsOverflowingCoordinateSystems() throws {
+        let source = """
+        <svg viewBox="1.7e308 1.7e308 1.7e308 1.7e308">
+          <rect data-yuedu-role="battery-level" data-yuedu-direction="right-to-left"/>
+        </svg>
+        """
+
+        #expect(throws: ReaderBatterySVGError.invalidViewBox) {
+            try ReaderBatterySVGTemplate(source: source)
+        }
+
+        let stable = try ReaderBatterySVGTemplate(
+            source: #"<svg viewBox="-1.7e308 0 1.7e308 40"><rect data-yuedu-role="battery-level" data-yuedu-direction="right-to-left"/></svg>"#
+        )
+        let rendered = try stable.render(level: 0.37, isCharging: false, colorHex: "#112233FF").lowercased()
+        #expect(!rendered.contains("inf"))
+        #expect(!rendered.contains("nan"))
+    }
+
     @Test("Rejects every undocumented direction")
     func rejectsInvalidDirection() {
         #expect(throws: ReaderBatterySVGError.invalidDirection("rtl")) {
@@ -226,6 +246,27 @@ struct ReaderBatterySVGTemplateTests {
         let rendered = try template.render(level: 0.5, isCharging: false, colorHex: "#112233FF")
 
         #expect(rendered.contains(#"<g clip-path="url(#yuedu-battery-level-clip)"><path clip-path="url(#artwork)""#))
+    }
+
+    @Test("Generated clip IDs avoid dangling internal reference targets")
+    func generatedClipIDAvoidsDanglingReferences() throws {
+        let source = """
+        <svg viewBox="0 0 100 40">
+          <defs><linearGradient href="#yuedu-battery-level-clip-2" id="gradient"/></defs>
+          <rect clip-path="url(#yuedu-battery-level-clip)" width="100" height="40"/>
+          <rect data-yuedu-role="battery-level" width="100" height="40"/>
+        </svg>
+        """
+        let template = try ReaderBatterySVGTemplate(source: source)
+
+        let rendered = try template.render(level: 0.5, isCharging: false, colorHex: "#112233FF")
+
+        #expect(rendered.contains(#"<clipPath id="yuedu-battery-level-clip-3">"#))
+        #expect(rendered.contains(#"<g clip-path="url(#yuedu-battery-level-clip-3)">"#))
+        #expect(rendered.contains(#"clip-path="url(#yuedu-battery-level-clip)""#))
+        #expect(rendered.contains("href=\"#yuedu-battery-level-clip-2\""))
+        #expect(!rendered.contains(#"id="yuedu-battery-level-clip""#))
+        #expect(!rendered.contains(#"id="yuedu-battery-level-clip-2""#))
     }
 
     @Test("Serialization is deterministic and escapes XML")
