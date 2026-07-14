@@ -23,6 +23,7 @@ scripts/logs/*.txt
 scripts/logs/*.html
 
 docs/superpowers/
+.superpowers/
 
 # OAuth / credentials
 *.plist
