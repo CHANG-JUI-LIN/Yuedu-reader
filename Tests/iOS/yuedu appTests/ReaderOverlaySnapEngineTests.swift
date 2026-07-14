@@ -267,6 +267,20 @@ struct ReaderOverlaySnapEngineTests {
         #expect(verticalGuides(in: peerOverSafe) == [.vertical(x: 100)])
     }
 
+    @Test("fractional mathematical ties reach source and line priorities")
+    func fractionalMathematicalTiesUsePriorities() {
+        let result = ReaderOverlaySnapEngine.resolve(
+            proposedCenter: CGPoint(x: 0.2, y: 0.73),
+            componentSize: .zero,
+            canvas: CGRect(x: 0, y: 0, width: 0.6, height: 1),
+            safeArea: CGRect(x: 0.1, y: 0.1, width: 0.4, height: 0.2),
+            peers: [],
+            threshold: 0.11
+        )
+
+        #expect(verticalGuides(in: result) == [.vertical(x: 0.1)])
+    }
+
     @Test("exact dragged alignment ties prefer center then minimum then maximum edge")
     func draggedAlignmentTiePriorityIsDeterministic() {
         let centerWins = resolve(
@@ -315,6 +329,23 @@ struct ReaderOverlaySnapEngineTests {
         )
 
         #expect(verticalGuides(in: result) == [.vertical(x: 95)])
+    }
+
+    @Test("minimum target line wins an exact tie with midpoint")
+    func minimumTargetLineWinsMidpointTie() {
+        let result = resolve(
+            proposedCenter: CGPoint(x: 90, y: 33),
+            componentSize: .zero,
+            peers: [
+                ReaderOverlayPeerFrame(
+                    id: fixtureUUID(1),
+                    frame: CGRect(x: 85, y: 150, width: 20, height: 20)
+                )
+            ],
+            threshold: 5
+        )
+
+        #expect(verticalGuides(in: result) == [.vertical(x: 85)])
     }
 
     @Test("peer UUID ordering makes exact ties independent of input order")
