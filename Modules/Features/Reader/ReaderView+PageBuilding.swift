@@ -5,24 +5,18 @@ extension ReaderView {
 
     // MARK: - Loading & Page Building
     func currentRenderSettings(marginH: CGFloat) -> ReaderRenderSettings {
-        // The header band only exists in paged mode; scroll mode keeps the
-        // plain top inset so its slices don't reserve a band nobody draws.
-        let topInset = ReaderLayoutMetrics.topInset(
-            safeTop: effectiveReaderSafeTop,
-            headerVisible: readerConfig.readerHeaderVisible && !effectiveScrollMode,
-            headerTopPadding: readerConfig.readerHeaderTopPadding,
-            headerTextGap: readerConfig.readerHeaderTextGap
+        let reservations = ReaderOverlayPaginationPolicy.insets(
+            for: settings.readerOverlayLayout
         )
-        // Footer only draws in paged mode. When it's hidden (or scroll mode
-        // reserves its own band), pass the real safe bottom so the text still
-        // clears the home indicator instead of the footer band standing in for it.
-        let footerVisible = readerConfig.readerFooterVisible && !effectiveScrollMode
-        let bottomInset = ReaderLayoutMetrics.bottomInset(
-            safeBottom: footerVisible ? 0 : windowSafeBottom,
-            footerVisible: footerVisible,
-            footerBottomPadding: readerConfig.footerBottomPadding,
-            footerTextGap: readerConfig.footerTextGap
-        )
+        // Fixed overlays are a paged-reading feature. Their coordinates, size,
+        // style, and count never enter render settings; only these explicit body
+        // reservations can change pagination geometry.
+        let topInset = effectiveScrollMode
+            ? ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
+            : CGFloat(reservations.top)
+        let bottomInset = effectiveScrollMode
+            ? ReaderLayoutMetrics.bottomInset(safeBottom: windowSafeBottom, footerVisible: false)
+            : CGFloat(reservations.bottom)
         let lineHeightMultiple = max(1.0, readerConfig.lineHeightMultiple)
         return ReaderRenderSettings(
             theme: readerTheme.epubJSName,

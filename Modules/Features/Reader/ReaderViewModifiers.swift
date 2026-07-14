@@ -34,6 +34,24 @@ struct HideTabBarModifier: ViewModifier {
     }
 }
 
+// MARK: - Reader interaction isolation
+
+private struct ReaderContentInteractionModifier: ViewModifier {
+    let isOverlayEditorActive: Bool
+
+    func body(content: Content) -> some View {
+        content.allowsHitTesting(!isOverlayEditorActive)
+    }
+}
+
+extension View {
+    func disablesReaderContentInteraction(
+        whileOverlayEditorIsActive isActive: Bool
+    ) -> some View {
+        modifier(ReaderContentInteractionModifier(isOverlayEditorActive: isActive))
+    }
+}
+
 // MARK: - onChange helper
 
 extension View {

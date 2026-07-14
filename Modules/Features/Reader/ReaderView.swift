@@ -63,6 +63,8 @@ struct ReaderView: View {
     @State var showTouchZoneEditor = false
     @State var readerHeaderFooterEditorModel: ReaderHeaderFooterEditorModel?
     @State var readerOverlaySVGAssetStore: ReaderOverlaySVGAssetStore?
+    @State var readerOverlaySVGAssetStoreIsPersistent = false
+    @State var showReaderOverlaySVGStoreError = false
 
     // Online chapter lazy loading
     @StateObject var readerViewModel = ReaderViewModel()
@@ -1209,7 +1211,11 @@ struct ReaderView: View {
     }
 
     private func buildBody() -> AnyView {
-        AnyView(
+        let overlayVisibility = ReaderOverlayPresentationPolicy.visibility(
+            isScrolling: effectiveScrollMode,
+            isEditing: readerHeaderFooterEditorModel != nil
+        )
+        return AnyView(
             ZStack(alignment: .top) {
             readerSurfaceBackground
                 .animation(.easeInOut(duration: uiFeedbackDuration), value: readerTheme)
@@ -1244,6 +1250,9 @@ struct ReaderView: View {
                 )
                 .id(readerPageViewIdentity)
                 .ignoresSafeArea()
+                .disablesReaderContentInteraction(
+                    whileOverlayEditorIsActive: readerHeaderFooterEditorModel != nil
+                )
                 .transition(.opacity.animation(.easeOut(duration: 0.25)))
             } else if effectiveScrollMode {
                 // scrollBody must stay mounted so the collection host drives the
@@ -1257,6 +1266,9 @@ struct ReaderView: View {
                             .transition(.opacity)
                     }
                 }
+                .disablesReaderContentInteraction(
+                    whileOverlayEditorIsActive: readerHeaderFooterEditorModel != nil
+                )
                 .transition(.opacity.animation(.easeOut(duration: 0.25)))
                 .animation(.easeOut(duration: 0.2), value: epubRenderer.scrollEngineReady)
             } else if let ctEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
@@ -1288,6 +1300,9 @@ struct ReaderView: View {
                 )
                 .id(readerPageViewIdentity)
                 .ignoresSafeArea()
+                .disablesReaderContentInteraction(
+                    whileOverlayEditorIsActive: readerHeaderFooterEditorModel != nil
+                )
                 .transition(.opacity.animation(.easeOut(duration: 0.25)))
             } else if usesCoreTextEPUB {
                 VStack {
@@ -1309,22 +1324,19 @@ struct ReaderView: View {
             //       }
             //   }
 
-            // Top/Bottom bars
-            if !showBars,
-               !effectiveScrollMode,
+            if overlayVisibility.showsRuntimeCanvas,
                !chapters.isEmpty,
-               readerHeaderFooterEditorModel == nil {
-                if readerConfig.readerFooterVisible {
-                    VStack {
-                        Spacer()
-                        bottomFooter
-                    }
-                    .padding(.bottom, gridAdjustment)
-                    .ignoresSafeArea(.all, edges: .bottom)
-                    .transition(.opacity.animation(.easeOut(duration: 0.2)))
-                }
-                topHeader
-                    .transition(.opacity.animation(.easeOut(duration: 0.2)))
+               let svgAssetStore = readerOverlaySVGAssetStore {
+                ReaderOverlayCanvas(
+                    layout: settings.readerOverlayLayout,
+                    content: readerOverlayContentSnapshot,
+                    readerStyle: readerOverlayEditorReaderStyle,
+                    mode: .runtime,
+                    svgAssetStore: svgAssetStore,
+                    editorActions: nil
+                )
+                .ignoresSafeArea()
+                .transition(.opacity.animation(.easeOut(duration: 0.2)))
             }
             if showBars { readerChrome }
             if showBars,
@@ -1359,7 +1371,8 @@ struct ReaderView: View {
                 .zIndex(100)
             }
 
-            if let editorModel = readerHeaderFooterEditorModel,
+            if overlayVisibility.showsEditorCanvas,
+               let editorModel = readerHeaderFooterEditorModel,
                let svgAssetStore = readerOverlaySVGAssetStore {
                 ReaderHeaderFooterEditorView(
                     model: editorModel,
@@ -1400,6 +1413,14 @@ struct ReaderView: View {
         .statusBarHidden(!showBars && readerHeaderFooterEditorModel == nil)
         .animation(.easeInOut(duration: 0.25), value: showBars)
         .modifier(HideTabBarModifier())
+        .alert(
+            localized("頁首頁尾編輯"),
+            isPresented: $showReaderOverlaySVGStoreError
+        ) {
+            Button(localized("確定"), role: .cancel) {}
+        } message: {
+            Text(localized("無法建立頁首頁尾資產儲存空間，請稍後再試。"))
+        }
         .alert(String(format: localized("將「%@」加入書架？"), snapshotBook?.title ?? ""), isPresented: $showAddToShelfAlert) {
             Button(localized("加入書架")) {
                 if let snap = snapshotBook {
@@ -1421,6 +1442,7 @@ struct ReaderView: View {
             }
         }
         .onAppear {
+            ensureReaderOverlaySVGAssetStore()
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             readerViewModel.configure(chapterFetcher: dependencies.chapterFetcher)
             ReaderTelemetry.shared.log(
@@ -1602,6 +1624,11 @@ struct ReaderView: View {
         .onChanged(of: settings.readerDialogueBoxColorHex) { _ in
             forceReaderRenderableContentRefresh()
         }
+        .onChanged(
+            of: ReaderOverlayPaginationPolicy.insets(for: settings.readerOverlayLayout)
+        ) { _ in
+            handleReaderConfigRefresh(.layout)
+        }
         .onChanged(of: settings.customAppearanceThemes) { _ in
             syncActiveThemePreset()
         }
@@ -1646,6 +1673,10 @@ struct ReaderView: View {
             }
         }
         .onChanged(of: settings.scrollMode) { enabled in
+            if enabled, let editorModel = readerHeaderFooterEditorModel {
+                editorModel.cancel()
+                readerHeaderFooterEditorModel = nil
+            }
             handleScrollModeChanged(enabled)
         }
         .onChanged(of: settings.readerWritingMode) { writingMode in
@@ -1701,6 +1732,10 @@ struct ReaderView: View {
                     allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
                     isVerticalWritingMode: effectiveWritingMode.isVertical,
                     hasParagraphReviews: currentBookHasParagraphReviews,
+                    onOpenHeaderFooterEditor: {
+                        guard !effectiveScrollMode else { return }
+                        presentReaderHeaderFooterEditor()
+                    },
                     onOpenTouchZoneEditor: {
                         guard subscriptionStore.isProActive, !effectiveScrollMode else { return }
                         showBars = false

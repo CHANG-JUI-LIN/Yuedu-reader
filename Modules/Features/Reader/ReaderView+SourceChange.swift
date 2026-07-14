@@ -274,7 +274,8 @@ extension ReaderView {
     }
 
     func alignReaderToTTSAnchorIfNeeded() {
-        guard let anchor = ttsPlaybackAnchor,
+        guard readerHeaderFooterEditorModel == nil,
+              let anchor = ttsPlaybackAnchor,
               chapters.indices.contains(anchor.spineIndex),
               !isReaderAtTTSAnchor(anchor)
         else { return }
@@ -295,7 +296,8 @@ extension ReaderView {
     /// turns the page only when that text now sits on a different page. Paged CoreText
     /// mode only — scroll mode and the "jump back to TTS" browse state are left alone.
     func followTTSPlaybackHighlight() {
-        guard ttsCoordinator.playbackState == .playing,
+        guard readerHeaderFooterEditorModel == nil,
+              ttsCoordinator.playbackState == .playing,
               !showTTSJumpPrompt,            // user navigated away — let them browse
               !effectiveScrollMode,
               let engine = epubRenderer.engine, usesCoreTextEPUB
@@ -401,12 +403,13 @@ extension ReaderView {
     @discardableResult
     func startTTSChapter(_ chapterIndex: Int, syncReader: Bool) -> Bool {
         guard chapters.indices.contains(chapterIndex) else { return false }
+        let shouldSyncReader = syncReader && readerHeaderFooterEditorModel == nil
         mediaOverlayCoordinator.stop()
         let narration = narrationForTTSChapter(chapterIndex)
         let text = narration.text
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             AppLogger.render("[TTS][Reader] startTTSChapter ignored empty chapter=\(chapterIndex)")
-            if syncReader {
+            if shouldSyncReader {
                 jumpToChapter(chapterIndex)
             }
             ensureChapterReady(chapterIndex: chapterIndex, priority: .jump)
@@ -414,7 +417,7 @@ extension ReaderView {
         }
 
         ttsChapterIndex = chapterIndex
-        setActiveTTSAnchor(.chapterStart(chapterIndex), alignReader: true)
+        setActiveTTSAnchor(.chapterStart(chapterIndex), alignReader: shouldSyncReader)
         ensureChapterReady(chapterIndex: chapterIndex, priority: .jump)
         ttsCoordinator.speak(
             text: text,
@@ -450,7 +453,10 @@ extension ReaderView {
             return nil
         }
         ttsChapterIndex = target
-        setActiveTTSAnchor(.chapterStart(target), alignReader: true)
+        setActiveTTSAnchor(
+            .chapterStart(target),
+            alignReader: readerHeaderFooterEditorModel == nil
+        )
         ttsCoordinator.updateNowPlayingChapter(title: chapters[target].title, text: text)
         return narration
     }

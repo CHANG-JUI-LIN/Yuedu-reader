@@ -242,6 +242,7 @@ extension ReaderView {
     /// rapid-tap bursts — but the executor no longer treats binding drift as an
     /// instruction, so this write can never trigger a correction transition.
     func issuePageTurn(to targetPage: Int) {
+        guard readerHeaderFooterEditorModel == nil else { return }
         currentPage = targetPage
         pageTurnVersion &+= 1
         pageTurnCommand = ReaderPageTurnCommand(

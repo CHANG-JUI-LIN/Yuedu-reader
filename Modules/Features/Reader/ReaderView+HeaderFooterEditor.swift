@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 private enum ReaderOverlayEditorPersistenceError: Error {
@@ -23,12 +24,33 @@ extension ReaderView {
         )
     }
 
+    func ensureReaderOverlaySVGAssetStore() {
+        guard readerOverlaySVGAssetStore == nil
+                || !readerOverlaySVGAssetStoreIsPersistent
+        else { return }
+        do {
+            readerOverlaySVGAssetStore = try ReaderOverlaySVGAssetStore.live()
+            readerOverlaySVGAssetStoreIsPersistent = true
+        } catch {
+            // Runtime text/system-battery components must still render. The editor is
+            // blocked below so this disposable store can never create persisted IDs.
+            if readerOverlaySVGAssetStore == nil {
+                readerOverlaySVGAssetStore = ReaderOverlaySVGAssetStore(
+                    rootDirectory: FileManager.default.temporaryDirectory
+                        .appendingPathComponent("ReaderOverlayFallback", isDirectory: true)
+                )
+            }
+            readerOverlaySVGAssetStoreIsPersistent = false
+        }
+    }
+
     func presentReaderHeaderFooterEditor() {
         guard !effectiveScrollMode else { return }
-        if readerOverlaySVGAssetStore == nil {
-            readerOverlaySVGAssetStore = try? ReaderOverlaySVGAssetStore.live()
+        ensureReaderOverlaySVGAssetStore()
+        guard readerOverlaySVGAssetStoreIsPersistent else {
+            showReaderOverlaySVGStoreError = true
+            return
         }
-        guard readerOverlaySVGAssetStore != nil else { return }
 
         readerHeaderFooterEditorModel = ReaderHeaderFooterEditorModel(
             initial: settings.readerOverlayLayout

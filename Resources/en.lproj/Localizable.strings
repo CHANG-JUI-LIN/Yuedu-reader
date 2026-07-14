@@ -1257,6 +1257,7 @@
 "組件資料重複，無法儲存" = "Duplicate component data. Unable to save.";
 "此頁首頁尾設定來自較新版本，無法覆寫" = "This header and footer layout was created by a newer version and cannot be overwritten.";
 "無法儲存頁首頁尾設定" = "Unable to save header and footer settings.";
+"無法建立頁首頁尾資產儲存空間，請稍後再試。" = "Unable to create storage for header and footer assets. Please try again later.";
 "統計" = "Statistics";
 "總進度文字" = "Total Progress Text";
 "進度條" = "Progress Bar";

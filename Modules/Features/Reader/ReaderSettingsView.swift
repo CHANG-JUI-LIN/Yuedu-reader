@@ -10,6 +10,7 @@ struct ReaderSettingsView: View {
     var allowsUserSelectedReaderFont = false
     var isVerticalWritingMode = false
     var hasParagraphReviews = false
+    var onOpenHeaderFooterEditor: (() -> Void)?
     var onOpenTouchZoneEditor: (() -> Void)?
 
     @StateObject private var readerConfig = ReaderConfig.shared
@@ -60,6 +61,10 @@ struct ReaderSettingsView: View {
                 Form {
                     if supportsUserFont || supportsFontSize {
                         textStyleSection
+                    }
+
+                    if showsReaderEditorSection {
+                        readerEditorSection
                     }
 
                     if supportsSpacing || supportsLineHeight {
@@ -145,6 +150,35 @@ struct ReaderSettingsView: View {
 
     private var showsCommentBubbleSettings: Bool {
         premiumVisibility.showsCommentBubbleSettings(hasParagraphReviews: hasParagraphReviews)
+    }
+
+    private var showsReaderEditorSection: Bool {
+        guard !settings.scrollMode else { return false }
+        return onOpenHeaderFooterEditor != nil
+            || (premiumVisibility.showsTouchZoneEditor && onOpenTouchZoneEditor != nil)
+    }
+
+    private var readerEditorSection: some View {
+        Section(header: Text(localized("閱讀工具"))) {
+            if let onOpenHeaderFooterEditor {
+                Button {
+                    dismiss()
+                    DispatchQueue.main.async { onOpenHeaderFooterEditor() }
+                } label: {
+                    Label(localized("頁首頁尾編輯"), systemImage: "rectangle.split.3x1")
+                }
+            }
+
+            if premiumVisibility.showsTouchZoneEditor,
+               let onOpenTouchZoneEditor {
+                Button {
+                    dismiss()
+                    DispatchQueue.main.async { onOpenTouchZoneEditor() }
+                } label: {
+                    Label(localized("翻頁區塊編輯"), systemImage: "hand.tap")
+                }
+            }
+        }
     }
 
     private var pageDisplaySection: some View {
@@ -307,16 +341,6 @@ struct ReaderSettingsView: View {
             }
 
             if !settings.scrollMode {
-                if premiumVisibility.showsTouchZoneEditor,
-                   let onOpenTouchZoneEditor {
-                    Button {
-                        dismiss()
-                        DispatchQueue.main.async { onOpenTouchZoneEditor() }
-                    } label: {
-                        Label(localized("翻頁區塊編輯"), systemImage: "hand.tap")
-                    }
-                }
-
                 ToggleRow(
                     title: localized("全局翻頁"),
                     subtitle: localized("開啟後，點畫面左右兩側都翻到下一頁；中間仍呼出選單"),
@@ -372,84 +396,6 @@ struct ReaderSettingsView: View {
                         range: 8...50,
                         step: 2
                     )
-
-                    if !settings.scrollMode {
-                        Toggle(localized("顯示頁腳"), isOn: $readerConfig.readerFooterVisible)
-                            .font(DSFont.body)
-
-                        if readerConfig.readerFooterVisible {
-                            LayoutSliderRow(
-                                title: localized("頁腳離底"),
-                                icon: .footerBottom,
-                                valueText: "\(Int(readerConfig.footerBottomPadding)) pt",
-                                value: $readerConfig.footerBottomPadding,
-                                range: 0...100,
-                                step: 1
-                            )
-
-                            LayoutSliderRow(
-                                title: localized("正文到頁腳"),
-                                icon: .footerTextGap,
-                                valueText: "\(Int(readerConfig.footerTextGap)) pt",
-                                value: $readerConfig.footerTextGap,
-                                range: 0...100,
-                                step: 1
-                            )
-
-                            LayoutSliderRow(
-                                title: localized("頁腳邊距"),
-                                icon: .footerHorizontal,
-                                valueText: "\(Int(readerConfig.readerFooterHorizontalPadding)) pt",
-                                value: $readerConfig.readerFooterHorizontalPadding,
-                                range: 0...50,
-                                step: 1
-                            )
-                        }
-
-                        Toggle(localized("顯示頁眉"), isOn: $readerConfig.readerHeaderVisible)
-                            .font(DSFont.body)
-
-                        if readerConfig.readerHeaderVisible {
-                            ForEach(ReaderHeaderField.allCases) { field in
-                                Picker(selection: headerFieldPositionBinding(for: field)) {
-                                    ForEach(ReaderHeaderFieldPosition.allCases) { position in
-                                        Text(position.displayName).tag(position)
-                                    }
-                                } label: {
-                                    Text(field.displayName)
-                                        .font(DSFont.body)
-                                        .foregroundStyle(DSColor.textSecondary)
-                                }
-                            }
-
-                            LayoutSliderRow(
-                                title: localized("頁眉離頂"),
-                                icon: .headerTop,
-                                valueText: "\(Int(readerConfig.readerHeaderTopPadding)) pt",
-                                value: $readerConfig.readerHeaderTopPadding,
-                                range: 0...100,
-                                step: 1
-                            )
-
-                            LayoutSliderRow(
-                                title: localized("正文到頁眉"),
-                                icon: .headerTextGap,
-                                valueText: "\(Int(readerConfig.readerHeaderTextGap)) pt",
-                                value: $readerConfig.readerHeaderTextGap,
-                                range: 0...100,
-                                step: 1
-                            )
-
-                            LayoutSliderRow(
-                                title: localized("頁眉邊距"),
-                                icon: .headerHorizontal,
-                                valueText: "\(Int(readerConfig.readerHeaderHorizontalPadding)) pt",
-                                value: $readerConfig.readerHeaderHorizontalPadding,
-                                range: 0...48,
-                                step: 1
-                            )
-                        }
-                    }
 
                     Toggle(localized("顯示標題"), isOn: $readerConfig.readerTitleVisible)
                         .font(DSFont.body)
@@ -627,16 +573,6 @@ struct ReaderSettingsView: View {
         readerConfig.readerTitleSize = defaultReaderTitleSize
         readerConfig.readerTitleTopSpacing = defaultReaderTitleTopSpacing
         readerConfig.readerTitleBottomSpacing = defaultReaderTitleBottomSpacing
-    }
-
-    private func headerFieldPositionBinding(for field: ReaderHeaderField) -> Binding<ReaderHeaderFieldPosition> {
-        Binding(
-            get: {
-                let raw = settings.readerHeaderFieldPositions[field.rawValue] ?? ""
-                return ReaderHeaderFieldPosition(rawValue: raw) ?? .hidden
-            },
-            set: { settings.readerHeaderFieldPositions[field.rawValue] = $0.rawValue }
-        )
     }
 
     private var followSystemBrightnessBinding: Binding<Bool> {
