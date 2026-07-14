@@ -82,6 +82,10 @@ final class SVGWebViewRasterizer: NSObject {
         /// Identifies the navigation kicked off for `currentItem`, so a stale `didFinish` from a
         /// timed-out item can't snapshot the wrong (next) item's webView.
         var currentNavigation: WKNavigation?
+        /// A snapshot may outlive `didFinish`. Keep it cancellable so this WebView is never reused
+        /// by the next item while an abandoned capture/retry loop is still touching it.
+        var captureTask: Task<Void, Never>?
+        var captureID: UUID?
         init(webView: WKWebView) { self.webView = webView }
     }
 
@@ -374,12 +378,14 @@ final class SVGWebViewRasterizer: NSObject {
               !item.finished else {
             return
         }
+        cancelCapture(on: worker)
         worker.webView.stopLoading()
         finishItem(item, on: worker, image: nil)
     }
 
     private func startNext(on worker: Worker) {
         guard !pendingItems.isEmpty else { return }
+        cancelCapture(on: worker)
         if drainStart == nil { drainStart = Date() }
         let item = pendingItems.removeFirst()
         worker.currentItem = item
@@ -426,21 +432,70 @@ final class SVGWebViewRasterizer: NSObject {
     /// blank — so retrying the real snapshot is the reliable path.)
     @MainActor
     private func captureSnapshot(_ webView: WKWebView, rect: CGRect, retriesLeft: Int) async -> UIImage? {
+        guard !Task.isCancelled else { return nil }
         let config = WKSnapshotConfiguration()
         config.rect = rect
         do {
-            return try await webView.takeSnapshot(configuration: config)
+            let image = try await webView.takeSnapshot(configuration: config)
+            return Task.isCancelled ? nil : image
+        } catch is CancellationError {
+            return nil
         } catch {
-            guard retriesLeft > 0 else {
+            guard !Task.isCancelled, retriesLeft > 0 else {
+                if Task.isCancelled { return nil }
                 AppLogger.render("⟐ svgRaster snapshot-fail", context: [
                     "size": "\(Int(rect.width))x\(Int(rect.height))",
                     "err": String(describing: error).prefix(80)
                 ])
                 return nil
             }
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            do {
+                try await Task.sleep(nanoseconds: 150_000_000)
+            } catch {
+                return nil
+            }
             return await captureSnapshot(webView, rect: rect, retriesLeft: retriesLeft - 1)
         }
+    }
+
+    private func beginCapture(
+        webView: WKWebView,
+        navigation: WKNavigation?
+    ) {
+        guard let worker = workers.first(where: { $0.webView === webView }),
+              let item = worker.currentItem,
+              navigation == worker.currentNavigation,
+              !item.finished else {
+            return
+        }
+
+        cancelCapture(on: worker)
+        let captureID = UUID()
+        worker.captureID = captureID
+        worker.captureTask = Task { @MainActor [weak self, weak worker, weak item] in
+            guard let self, let worker, let item else { return }
+            let image = await self.captureSnapshot(
+                webView,
+                rect: CGRect(origin: .zero, size: item.size),
+                retriesLeft: 2
+            )
+            guard !Task.isCancelled,
+                  !item.finished,
+                  worker.currentItem === item,
+                  worker.currentNavigation == navigation,
+                  worker.captureID == captureID else {
+                return
+            }
+            worker.captureTask = nil
+            worker.captureID = nil
+            self.finishItem(item, on: worker, image: image)
+        }
+    }
+
+    private func cancelCapture(on worker: Worker) {
+        worker.captureTask?.cancel()
+        worker.captureTask = nil
+        worker.captureID = nil
     }
 
     private func cacheKey(svgString: String, size: CGSize) -> NSString {
@@ -499,22 +554,7 @@ private extension UIImage {
 extension SVGWebViewRasterizer: WKNavigationDelegate {
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Task { @MainActor in
-            // Locate the lane that owns this webView, and ignore a stale callback whose navigation
-            // no longer matches the in-flight item (e.g. a watchdog already timed it out).
-            guard let worker = self.workers.first(where: { $0.webView === webView }),
-                  let item = worker.currentItem,
-                  navigation == worker.currentNavigation,
-                  !item.finished else {
-                return
-            }
-            let image = await self.captureSnapshot(
-                webView,
-                rect: CGRect(origin: .zero, size: item.size),
-                retriesLeft: 2
-            )
-            // A retry may have spanned the watchdog firing for this item — don't double-finish.
-            guard !item.finished else { return }
-            self.finishItem(item, on: worker, image: image)
+            self.beginCapture(webView: webView, navigation: navigation)
         }
     }
 
@@ -563,6 +603,7 @@ private extension SVGWebViewRasterizer {
         // Guard against double-finish: the watchdog and a late didFinish can both fire.
         guard !item.finished else { return }
         item.finished = true
+        cancelCapture(on: worker)
         if worker.currentItem === item {
             worker.currentItem = nil
             worker.currentNavigation = nil

@@ -6,7 +6,7 @@ import UIKit
 struct ReaderOverlayRasterCancellationTests {
     @Test("cancelling an active raster request resumes without a stale image")
     @MainActor
-    func activeRasterCancellation() async {
+    func activeRasterCancellation() async throws {
         let unique = UUID().uuidString
         let svg = """
         <svg width="80" height="40" xmlns="http://www.w3.org/2000/svg">
@@ -28,5 +28,19 @@ struct ReaderOverlayRasterCancellationTests {
 
         let result = await task.value
         #expect(result == nil)
+
+        let nextSVG = """
+        <svg width="80" height="40" xmlns="http://www.w3.org/2000/svg">
+          <rect width="80" height="40" fill="#12C76A"/>
+          <!-- \(UUID().uuidString) -->
+        </svg>
+        """
+        let nextImage = await SVGWebViewRasterizer.shared.render(
+            svgString: nextSVG,
+            size: CGSize(width: 80, height: 40)
+        )
+        let rendered = try #require(nextImage)
+        #expect(rendered.size.width == 80)
+        #expect(rendered.size.height == 40)
     }
 }
