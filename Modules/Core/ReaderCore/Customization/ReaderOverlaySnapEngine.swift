@@ -18,6 +18,7 @@ struct ReaderOverlaySnapResult: Equatable, Sendable {
 
 enum ReaderOverlaySnapEngine {
     static let defaultThreshold: CGFloat = 8
+    private static let comparisonULPFactor: CGFloat = 8
 
     static func resolve(
         proposedCenter: CGPoint,
@@ -172,7 +173,18 @@ enum ReaderOverlaySnapEngine {
                 )
                 guard requiredCenter.isFinite else { continue }
                 let distance = abs(requiredCenter - proposed)
-                guard distance <= threshold else { continue }
+                let thresholdTolerance = scaledULPTolerance(
+                    proposed,
+                    requiredCenter,
+                    target.value,
+                    distance,
+                    threshold
+                )
+                let thresholdLimit = addingTolerance(
+                    thresholdTolerance,
+                    to: threshold
+                )
+                guard distance <= thresholdLimit else { continue }
 
                 let candidate = Candidate(
                     requiredCenter: requiredCenter,
@@ -187,6 +199,27 @@ enum ReaderOverlaySnapEngine {
         }
 
         return best
+    }
+
+    private static func scaledULPTolerance(_ values: CGFloat...) -> CGFloat {
+        let scale = values.reduce(CGFloat(1)) { currentScale, value in
+            guard value.isFinite else { return currentScale }
+            return max(currentScale, abs(value))
+        }
+        let tolerance = scale.ulp * comparisonULPFactor
+        return tolerance.isFinite ? tolerance : 0
+    }
+
+    private static func addingTolerance(
+        _ tolerance: CGFloat,
+        to value: CGFloat
+    ) -> CGFloat {
+        guard tolerance > 0,
+              tolerance.isFinite,
+              value <= CGFloat.greatestFiniteMagnitude - tolerance else {
+            return value
+        }
+        return value + tolerance
     }
 
     private static func sanitizedExtent(_ value: CGFloat) -> CGFloat {
@@ -258,7 +291,6 @@ enum ReaderOverlaySnapEngine {
 
     private struct Candidate {
         private static let alignmentTolerance: CGFloat = 0.001
-        private static let distanceTieULPFactor: CGFloat = 8
 
         let requiredCenter: CGFloat
         let distance: CGFloat
@@ -267,7 +299,15 @@ enum ReaderOverlaySnapEngine {
 
         func isPreferred(over other: Candidate) -> Bool {
             let distanceDifference = abs(distance - other.distance)
-            if distanceDifference > distanceTieTolerance(comparedTo: other) {
+            let distanceTolerance = ReaderOverlaySnapEngine.scaledULPTolerance(
+                requiredCenter,
+                target.value,
+                distance,
+                other.requiredCenter,
+                other.target.value,
+                other.distance
+            )
+            if distanceDifference > distanceTolerance {
                 return distance < other.distance
             }
             if target.source != other.target.source {
@@ -285,18 +325,6 @@ enum ReaderOverlaySnapEngine {
             if peerID != otherPeerID { return peerID < otherPeerID }
             if target.value != other.target.value { return target.value < other.target.value }
             return requiredCenter < other.requiredCenter
-        }
-
-        private func distanceTieTolerance(comparedTo other: Candidate) -> CGFloat {
-            let ownScale = max(
-                1,
-                max(abs(requiredCenter), max(abs(target.value), distance))
-            )
-            let otherScale = max(
-                1,
-                max(abs(other.requiredCenter), max(abs(other.target.value), other.distance))
-            )
-            return max(ownScale, otherScale).ulp * Self.distanceTieULPFactor
         }
 
         func remainsAligned(center: CGFloat, componentExtent: CGFloat) -> Bool {

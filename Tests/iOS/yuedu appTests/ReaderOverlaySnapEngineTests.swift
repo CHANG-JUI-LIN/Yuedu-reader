@@ -215,6 +215,26 @@ struct ReaderOverlaySnapEngineTests {
         #expect(result.guides.isEmpty)
     }
 
+    @Test("fractional candidates on the mathematical threshold snap")
+    func fractionalCandidateOnThresholdSnaps() {
+        let result = ReaderOverlaySnapEngine.resolve(
+            proposedCenter: CGPoint(x: 0.3, y: 0.2),
+            componentSize: CGSize(width: 0.06, height: 0),
+            canvas: CGRect(x: 0, y: 0, width: 1, height: 1),
+            safeArea: .null,
+            peers: [
+                ReaderOverlayPeerFrame(
+                    id: fixtureUUID(1),
+                    frame: CGRect(x: 0.43, y: 0.8, width: 0.02, height: 0.1)
+                )
+            ],
+            threshold: 0.1
+        )
+
+        #expect(abs(result.center.x - 0.4) < 0.000_000_000_001)
+        #expect(verticalGuides(in: result) == [.vertical(x: 0.43)])
+    }
+
     @Test("the nearest candidate wins before priority tie breakers")
     func nearestCandidateWins() {
         let result = resolve(
