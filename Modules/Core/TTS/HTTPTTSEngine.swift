@@ -35,6 +35,14 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// instead of replaying the whole ~5s sentence from its start.
     private var resumePlaybackTime: TimeInterval = 0
 
+    /// Looped-silence player that keeps the audio session emitting samples during the gap
+    /// between one chunk finishing and the next being downloaded/ready. Without it the
+    /// `AVAudioPlayer` is `nil`, there is no active audio output, and iOS may suspend the
+    /// app while backgrounded / locked — manifesting as playback stalling mid-book with the
+    /// mini-player still showing "playing" until the device is unlocked. The silence is
+    /// looped until a real chunk playback starts, which stops it.
+    private var silencePlayer: AVAudioPlayer?
+
     private let preloadWindow = 3
     private let maxConcurrentDownloads = 2
     private let maxDownloadRetries = 2
@@ -94,6 +102,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         ttsLog("[TTS][HTTPEngine] pause requested isPlaying=\(isPlaying) index=\(currentIndex) playerPlaying=\(audioPlayer?.isPlaying ?? false)")
         guard isPlaying else { return }
         audioPlayer?.pause()
+        stopSilence()
         resumePlaybackTime = audioPlayer?.currentTime ?? 0
         isPaused = true
         isPlaying = false
@@ -227,6 +236,11 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             playAudioData(data, index: index, token: token)
             return
         }
+
+        // Cache miss: real audio won't emit until the download lands. Start the silence
+        // keep-alive so the audio session keeps producing samples and iOS doesn't suspend
+        // the app while locked (the "locks after a while, resumes on unlock" bug).
+        startSilence()
 
         if activeTasks[index] != nil {
             pendingPlaybackIndex = index
@@ -388,6 +402,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         do {
             audioPlayer?.delegate = nil
             audioPlayer?.stop()
+            stopSilence()   // real audio is about to play; stop the keep-alive silence
 
             let player = try AVAudioPlayer(data: data)
             player.delegate = self
@@ -421,6 +436,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         do {
             audioPlayer?.delegate = nil
             audioPlayer?.stop()
+            stopSilence()   // real audio is about to play; stop the keep-alive silence
 
             let player = try AVAudioPlayer(data: data)
             player.delegate = self
@@ -508,6 +524,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         audioPlayer?.delegate = nil
         audioPlayer?.stop()
         audioPlayer = nil
+        stopSilence()
         endBackgroundTask()
     }
 
@@ -515,6 +532,67 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     private func splitText(_ text: String) -> [String] {
         TTSTextChunker.split(text, targetChunkLength: targetChunkLength)
+    }
+
+    // MARK: - Silence keep-alive
+
+    /// PCM silence data (1 second, mono 16-bit 44.1kHz) wrapped in a minimal WAV container.
+    /// Built once; the silence player loops it for as long as the engine is "playing" but
+    /// has no real audio to emit (chunk download gaps).
+    private static let silenceWAV: Data = {
+        let sampleRate: UInt32 = 44_100
+        let numChannels: UInt16 = 1
+        let bitsPerSample: UInt16 = 16
+        let blockAlign: UInt16 = numChannels * (bitsPerSample / 8)
+        let byteRate: UInt32 = sampleRate * UInt32(blockAlign)
+        let frames: UInt32 = sampleRate // 1 second
+        let dataSize: UInt32 = frames * UInt32(blockAlign)
+
+        var d = Data()
+        func u32(_ v: UInt32) {
+            var le = v.littleEndian
+            withUnsafeBytes(of: &le) { d.append(contentsOf: $0) }
+        }
+        func u16(_ v: UInt16) {
+            var le = v.littleEndian
+            withUnsafeBytes(of: &le) { d.append(contentsOf: $0) }
+        }
+        func tag(_ s: String) {
+            s.utf8.forEach { d.append($0) }
+        }
+        tag("RIFF"); u32(36 + dataSize); tag("WAVE")
+        tag("fmt "); u32(16); u16(1) // PCM
+        u16(numChannels); u32(sampleRate); u32(byteRate); u16(blockAlign); u16(bitsPerSample)
+        tag("data"); u32(dataSize)
+        d.append(Data(repeating: 0, count: Int(dataSize)))
+        return d
+    }()
+
+    private func ensureSilencePlayer() {
+        if silencePlayer != nil { return }
+        guard let p = try? AVAudioPlayer(data: Self.silenceWAV) else {
+            ttsLog("[TTS][HTTPEngine] silence player init failed — chunk-gap keep-alive disabled")
+            return
+        }
+        p.numberOfLoops = -1
+        p.volume = 0.0
+        p.prepareToPlay()
+        silencePlayer = p
+    }
+
+    /// Start emitting looped silence so the audio session has active output while waiting
+    /// for the next chunk to download. Idempotent and only while not paused.
+    private func startSilence() {
+        guard !isPaused else { return }
+        ensureSilencePlayer()
+        if silencePlayer?.isPlaying == false {
+            _ = silencePlayer?.play()
+        }
+    }
+
+    /// Stop the keep-alive silence. Called when real chunk playback begins, on pause, stop, and reset.
+    private func stopSilence() {
+        silencePlayer?.pause()
     }
 
     // MARK: - Background task
