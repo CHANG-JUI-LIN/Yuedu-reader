@@ -130,8 +130,18 @@ git worktree remove "$BASELINE_WT"
 Both captures used an iPhone 17 Pro Max simulator on iOS 27.0. Each recorded
 run enumerated 43 tests with 29 passed, 14 failed, and 0 skipped; the 42
 sample-level statuses were identical between baseline and current. Both static
-scans passed all 42 samples. The eight representative manual reviews remain
-pending, so their manual cells and final outcomes remain `not-run`.
+scans passed all 42 samples. A first current-branch UI capture exercised all
+eight representative books. Accessible EPUB 3, Children's Literature, Linear
+Algebra, and Moby-Dick exposed the same TOC-dismissal stall; Kusamakura also
+exposed a non-hittable vertical TOC target on top of its automated resource
+failure. Israel Sailing and Waste Land OTF reached their selected checkpoint,
+but unobserved checklist items remain `not-run`. The first Page Blanche direct
+seed used the wrong general EPUB route and was excluded. A focused rerun then
+matched formal import semantics (`fixedPage` plus all 10 spine refs): the cover
+and Page 3 rendered, TOC selection worked, and rotation preserved Page 3. The
+spread checkpoint and unvisited pages remain `not-run`, while the hosted smoke
+probe still cannot observe WebKit visual evidence. Raw UI captures remain in
+the ignored results directory.
 
 The 14 production compatibility failures make `xcodebuild` exit with status
 65. For this triage suite, exit 65 is evidence rather than a harness failure

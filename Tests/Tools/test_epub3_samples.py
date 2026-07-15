@@ -1964,6 +1964,297 @@ class FetchResultTests(unittest.TestCase):
         self.assertIs(get_type_hints(epub3_samples.FetchResult)["path"], Path)
 
 
+class EPUB3SamplesMatrixTests(unittest.TestCase):
+    headers = (
+        "Sample",
+        "SHA-256",
+        "Features",
+        "B static",
+        "B open",
+        "B render",
+        "B paged",
+        "B scroll",
+        "B manual",
+        "C static",
+        "C open",
+        "C render",
+        "C paged",
+        "C scroll",
+        "C manual",
+        "Final outcome",
+        "Issue",
+        "Evidence",
+        "Test",
+        "Commit",
+    )
+
+    def _manifest_entry(self, sample_id="sample-book", sha256=None):
+        return {
+            "id": sample_id,
+            "title": sample_id,
+            "source_url": f"https://example.com/{sample_id}.epub",
+            "catalog_url": "https://example.com/catalog",
+            "filename": f"{sample_id}.epub",
+            "sha256": sha256 or "a" * 64,
+            "license": "Test fixture",
+            "features": ["reflowable"],
+            "smoke_targets": [
+                {
+                    "chapter_index": 0,
+                    "text_probes": ["Fixture"],
+                    "expects_image_page": False,
+                    "expects_fallback": False,
+                }
+            ],
+            "manual": False,
+            "manual_checkpoints": [],
+        }
+
+    def _row(
+        self,
+        sample_id="sample-book",
+        *,
+        sha256=None,
+        outcome="baseline-supported",
+        issue="n/a",
+        evidence="n/a",
+        test="IDPFEPUB3SampleSmokeTests",
+        commit="dd62d80",
+    ):
+        values = [
+            f"`{sample_id}`",
+            f"`{sha256 or 'a' * 64}`",
+            "`reflowable`",
+            "pass",
+            "pass",
+            "pass",
+            "pass",
+            "pass",
+            "n/a",
+            "pass",
+            "pass",
+            "pass",
+            "pass",
+            "pass",
+            "n/a",
+            outcome,
+            issue,
+            evidence,
+            test,
+            commit,
+        ]
+        return "| " + " | ".join(values) + " |"
+
+    def _write_fixture(self, root, *, entries=None, rows=None):
+        manifest_path = root / "sample-manifest.json"
+        matrix_path = root / "compatibility-matrix.md"
+        evidence_root = root / "evidence"
+        evidence_root.mkdir()
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "samples": entries or [self._manifest_entry()],
+                }
+            ),
+            encoding="utf-8",
+        )
+        matrix_path.write_text(
+            "# Matrix\n\n"
+            + "| "
+            + " | ".join(self.headers)
+            + " |\n| "
+            + " | ".join("---" for _ in self.headers)
+            + " |\n"
+            + "\n".join(rows or [self._row()])
+            + "\n",
+            encoding="utf-8",
+        )
+        return manifest_path, matrix_path, evidence_root
+
+    def _write_evidence(self, evidence_root, evidence_id="BW-EPUB3-001"):
+        directory = evidence_root / evidence_id
+        directory.mkdir()
+        (directory / "before.png").write_bytes(b"before")
+        (directory / "after.png").write_bytes(b"after")
+        (directory / "README.md").write_text(
+            "# Evidence\n\n"
+            "- Sample/checkpoint: sample-book / chapter 1\n"
+            f"- Sample checksum: {'a' * 64}\n"
+            "- Baseline commit: dd62d80\n"
+            "- After commit: abcdef0\n"
+            "- Fixture: EPUBTestFixtures+Sample.swift\n"
+            "- Test command: xcodebuild test -only-testing:SampleTests\n"
+            "- Device/iOS/settings: iPhone 17 Pro Max / iOS 27.0 / light, paged\n"
+            "- Expected behavior: visible body text\n"
+            "- Observed behavior: visible body text after the fix\n"
+            "- Official content visible: no\n",
+            encoding="utf-8",
+        )
+        return directory
+
+    def _checker(self):
+        checker = getattr(epub3_samples, "check_compatibility_matrix", None)
+        self.assertTrue(callable(checker), "matrix checker must be implemented")
+        return checker
+
+    def test_accepts_each_of_the_six_design_outcomes(self):
+        outcomes = (
+            "baseline-supported",
+            "build-week-fixed",
+            "readable-fallback",
+            "unsupported-safe",
+            "failing",
+            "not-run",
+        )
+        for outcome in outcomes:
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                issue = evidence = "n/a"
+                commit = "dd62d80"
+                if outcome == "build-week-fixed":
+                    issue = evidence = "BW-EPUB3-001"
+                    commit = "abcdef0"
+                paths = self._write_fixture(
+                    root,
+                    rows=[
+                        self._row(
+                            outcome=outcome,
+                            issue=issue,
+                            evidence=evidence,
+                            commit=commit,
+                        )
+                    ],
+                )
+                if outcome == "build-week-fixed":
+                    self._write_evidence(paths[2])
+
+                result = self._checker()(*paths)
+
+                self.assertEqual(result.sample_count, 1)
+
+    def test_rejects_missing_duplicate_and_unknown_manifest_ids(self):
+        cases = {
+            "missing manifest sample ID": (
+                [self._manifest_entry(), self._manifest_entry("other-book")],
+                [self._row()],
+            ),
+            "duplicate matrix sample ID": (
+                [self._manifest_entry()],
+                [self._row(), self._row()],
+            ),
+            "unknown matrix sample ID": (
+                [self._manifest_entry()],
+                [self._row(), self._row("unknown-book")],
+            ),
+        }
+        for expected, (entries, rows) in cases.items():
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as directory:
+                paths = self._write_fixture(Path(directory), entries=entries, rows=rows)
+
+                with self.assertRaisesRegex(Exception, expected):
+                    self._checker()(*paths)
+
+    def test_rejects_outcome_outside_the_design_set(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._write_fixture(
+                Path(directory), rows=[self._row(outcome="partial")]
+            )
+
+            with self.assertRaisesRegex(Exception, "invalid final outcome.*partial"):
+                self._checker()(*paths)
+
+    def test_build_week_fixed_requires_issue_test_and_commit_links(self):
+        cases = {
+            "Issue": {"issue": "n/a"},
+            "Test": {"test": "not-run"},
+            "Commit": {"commit": "n/a"},
+        }
+        for field, override in cases.items():
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                values = {
+                    "outcome": "build-week-fixed",
+                    "issue": "BW-EPUB3-001",
+                    "evidence": "BW-EPUB3-001",
+                    "test": "SampleRegressionTests",
+                    "commit": "abcdef0",
+                }
+                values.update(override)
+                paths = self._write_fixture(root, rows=[self._row(**values)])
+                self._write_evidence(paths[2])
+
+                with self.assertRaisesRegex(Exception, f"build-week-fixed.*{field}"):
+                    self._checker()(*paths)
+
+    def test_build_week_fixed_issue_and_evidence_ids_must_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = self._write_fixture(
+                root,
+                rows=[
+                    self._row(
+                        outcome="build-week-fixed",
+                        issue="BW-EPUB3-001",
+                        evidence="BW-EPUB3-002",
+                        test="SampleRegressionTests",
+                        commit="abcdef0",
+                    )
+                ],
+            )
+            self._write_evidence(paths[2], evidence_id="BW-EPUB3-002")
+
+            with self.assertRaisesRegex(Exception, "same evidence ID"):
+                self._checker()(*paths)
+
+    def test_referenced_evidence_directory_must_exist(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._write_fixture(
+                Path(directory),
+                rows=[self._row(evidence="BW-EPUB3-001")],
+            )
+
+            with self.assertRaisesRegex(Exception, "evidence directory.*BW-EPUB3-001"):
+                self._checker()(*paths)
+
+    def test_evidence_package_requires_files_fields_and_valid_ids(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = self._write_fixture(
+                root, rows=[self._row(evidence="BW-EPUB3-001")]
+            )
+            evidence = self._write_evidence(paths[2])
+            (evidence / "after.png").unlink()
+
+            with self.assertRaisesRegex(Exception, "after.png"):
+                self._checker()(*paths)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = self._write_fixture(
+                root, rows=[self._row(evidence="BW-EPUB3-001")]
+            )
+            evidence = self._write_evidence(paths[2])
+            readme = evidence / "README.md"
+            readme.write_text(
+                readme.read_text(encoding="utf-8").replace(
+                    "- Expected behavior: visible body text\n", ""
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(Exception, "Expected behavior"):
+                self._checker()(*paths)
+
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._write_fixture(
+                Path(directory), rows=[self._row(evidence="BW-EPUB3-12")]
+            )
+
+            with self.assertRaisesRegex(Exception, "invalid evidence ID.*BW-EPUB3-12"):
+                self._checker()(*paths)
+
+
 class EPUB3SamplesCLITests(unittest.TestCase):
     def _run_main(self, arguments):
         stdout = io.StringIO()
@@ -1971,6 +2262,39 @@ class EPUB3SamplesCLITests(unittest.TestCase):
         with redirect_stdout(stdout), redirect_stderr(stderr):
             exit_code = epub3_samples.main(arguments)
         return exit_code, stdout.getvalue(), stderr.getvalue()
+
+    def test_matrix_check_routes_paths_and_prints_summary(self):
+        captured = []
+
+        def capture(manifest, matrix, evidence_root):
+            captured.append((manifest, matrix, evidence_root))
+            return 0
+
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            epub3_samples, "_matrix_check", side_effect=capture
+        ):
+            root = Path(directory)
+            arguments = [
+                "matrix-check",
+                "--manifest",
+                str(root / "manifest.json"),
+                "--matrix",
+                str(root / "matrix.md"),
+                "--evidence-root",
+                str(root / "evidence"),
+            ]
+            try:
+                exit_code, stdout, stderr = self._run_main(arguments)
+            except SystemExit as error:
+                self.fail(f"matrix-check subcommand is missing: {error}")
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            captured,
+            [(root / "manifest.json", root / "matrix.md", root / "evidence")],
+        )
+        self.assertEqual(stdout, "")
+        self.assertEqual(stderr, "")
 
     def test_duplicate_sample_with_force_is_fetched_once(self):
         captured = []

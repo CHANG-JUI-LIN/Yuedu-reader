@@ -42,6 +42,20 @@ DEFAULT_SCAN_RESULTS = (
     / "results"
     / "scan-results.json"
 )
+DEFAULT_MATRIX = (
+    Path(__file__).resolve().parents[1]
+    / "docs"
+    / "build-week"
+    / "epub3"
+    / "compatibility-matrix.md"
+)
+DEFAULT_EVIDENCE_ROOT = (
+    Path(__file__).resolve().parents[1]
+    / "docs"
+    / "build-week"
+    / "epub3"
+    / "evidence"
+)
 ZIP_SIGNATURES = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
 EPUB_MIMETYPE = b"application/epub+zip"
 OPF_MEDIA_TYPE = "application/oebps-package+xml"
@@ -58,6 +72,54 @@ MAX_TOTAL_UNCOMPRESSED = 512 * 1024 * 1024
 MAX_ENTRY_UNCOMPRESSED = 128 * 1024 * 1024
 MAX_COMPRESSION_RATIO = 200
 MAX_PARSED_RESOURCE_BYTES = 32 * 1024 * 1024
+EVIDENCE_ID_PATTERN = re.compile(r"BW-EPUB3-[0-9]{3}\Z")
+EVIDENCE_REFERENCE_PATTERN = re.compile(r"\bBW-EPUB3-[A-Za-z0-9-]+\b")
+COMMIT_REFERENCE_PATTERN = re.compile(r"\b[0-9a-f]{7,40}\b")
+ALLOWED_MATRIX_OUTCOMES = frozenset(
+    {
+        "baseline-supported",
+        "build-week-fixed",
+        "readable-fallback",
+        "unsupported-safe",
+        "failing",
+        "not-run",
+    }
+)
+MATRIX_HEADERS = (
+    "Sample",
+    "SHA-256",
+    "Features",
+    "B static",
+    "B open",
+    "B render",
+    "B paged",
+    "B scroll",
+    "B manual",
+    "C static",
+    "C open",
+    "C render",
+    "C paged",
+    "C scroll",
+    "C manual",
+    "Final outcome",
+    "Issue",
+    "Evidence",
+    "Test",
+    "Commit",
+)
+REQUIRED_EVIDENCE_FIELDS = {
+    "sample/checkpoint": "Sample/checkpoint",
+    "sample checksum": "Sample checksum",
+    "baseline commit": "Baseline commit",
+    "after commit": "After commit",
+    "fixture": "Fixture",
+    "test command": "Test command",
+    "device/ios/settings": "Device/iOS/settings",
+    "expected behavior": "Expected behavior",
+    "observed behavior": "Observed behavior",
+    "official content visible": "Official content visible",
+}
+MATRIX_PLACEHOLDERS = frozenset({"", "-", "n/a", "none", "not-run", "pending"})
 
 
 def _urlopen_with_system_ca(url: str, *, timeout: int):
@@ -75,6 +137,10 @@ def _urlopen_with_system_ca(url: str, *, timeout: int):
 
 class ManifestError(ValueError):
     """Raised when an EPUB sample manifest violates its schema."""
+
+
+class MatrixError(ValueError):
+    """Raised when the committed compatibility matrix is incomplete or invalid."""
 
 
 @dataclass(frozen=True)
@@ -136,6 +202,12 @@ class ScanResult:
     @property
     def ok(self) -> bool:
         return self.status == "passed"
+
+
+@dataclass(frozen=True)
+class MatrixCheckResult:
+    sample_count: int
+    evidence_count: int
 
 
 def _error(sample_id: str, field: str, detail: str) -> ManifestError:
@@ -1684,6 +1756,183 @@ def write_scan_report(
     return report_path
 
 
+def _matrix_cells(line: str) -> tuple[str, ...]:
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return ()
+    return tuple(cell.strip() for cell in stripped[1:-1].split("|"))
+
+
+def _plain_matrix_cell(cell: str) -> str:
+    value = cell.strip()
+    if len(value) >= 2 and value.startswith("`") and value.endswith("`"):
+        value = value[1:-1].strip()
+    return value
+
+
+def _read_matrix_rows(path: Path) -> tuple[dict[str, str], ...]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        raise MatrixError(f"cannot read matrix {path}: {error}") from error
+
+    header_index = None
+    for index, line in enumerate(lines):
+        if _matrix_cells(line) == MATRIX_HEADERS:
+            header_index = index
+            break
+    if header_index is None:
+        raise MatrixError("matrix header is missing or does not match the required schema")
+    if header_index + 1 >= len(lines):
+        raise MatrixError("matrix delimiter row is missing")
+    delimiter = _matrix_cells(lines[header_index + 1])
+    if len(delimiter) != len(MATRIX_HEADERS) or any(
+        re.fullmatch(r":?-{3,}:?", cell) is None for cell in delimiter
+    ):
+        raise MatrixError("matrix delimiter row is invalid")
+
+    rows: list[dict[str, str]] = []
+    for line_number, line in enumerate(lines[header_index + 2 :], start=header_index + 3):
+        if not line.strip():
+            if rows:
+                break
+            continue
+        cells = _matrix_cells(line)
+        if not cells:
+            if rows:
+                break
+            raise MatrixError(f"matrix row {line_number} is not a Markdown table row")
+        if len(cells) != len(MATRIX_HEADERS):
+            raise MatrixError(
+                f"matrix row {line_number} has {len(cells)} columns; "
+                f"expected {len(MATRIX_HEADERS)}"
+            )
+        rows.append(dict(zip(MATRIX_HEADERS, cells)))
+    if not rows:
+        raise MatrixError("matrix contains no sample rows")
+    return tuple(rows)
+
+
+def _is_matrix_placeholder(cell: str) -> bool:
+    return _plain_matrix_cell(cell).lower() in MATRIX_PLACEHOLDERS
+
+
+def _evidence_references(cell: str) -> tuple[str, ...]:
+    references = tuple(dict.fromkeys(EVIDENCE_REFERENCE_PATTERN.findall(cell)))
+    for evidence_id in references:
+        if EVIDENCE_ID_PATTERN.fullmatch(evidence_id) is None:
+            raise MatrixError(f"invalid evidence ID {evidence_id!r}")
+    return references
+
+
+def _read_evidence_fields(readme_path: Path) -> dict[str, str]:
+    try:
+        text = readme_path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise MatrixError(f"cannot read evidence README {readme_path}: {error}") from error
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        match = re.match(r"\s*-\s+([^:]+):\s*(.*?)\s*\Z", line)
+        if match is None:
+            continue
+        fields[match.group(1).strip().lower()] = match.group(2).strip()
+    return fields
+
+
+def _validate_evidence_directory(evidence_id: str, evidence_root: Path) -> None:
+    directory = evidence_root / evidence_id
+    if not directory.is_dir():
+        raise MatrixError(f"evidence directory missing for {evidence_id}: {directory}")
+    for filename in ("README.md", "before.png", "after.png"):
+        path = directory / filename
+        if not path.is_file():
+            raise MatrixError(f"evidence {evidence_id} is missing {filename}")
+
+    fields = _read_evidence_fields(directory / "README.md")
+    for key, label in REQUIRED_EVIDENCE_FIELDS.items():
+        if not fields.get(key):
+            raise MatrixError(f"evidence {evidence_id} README is missing {label}")
+    checksum = fields["sample checksum"]
+    if SHA256_PATTERN.fullmatch(checksum) is None:
+        raise MatrixError(f"evidence {evidence_id} has invalid Sample checksum")
+    official_content_visible = fields["official content visible"].lower()
+    if official_content_visible not in {"yes", "no"}:
+        raise MatrixError(
+            f"evidence {evidence_id} Official content visible must be yes or no"
+        )
+    if official_content_visible == "yes" and not fields.get("license attribution"):
+        raise MatrixError(f"evidence {evidence_id} README is missing License attribution")
+
+
+def check_compatibility_matrix(
+    manifest_path: str | Path = DEFAULT_MANIFEST,
+    matrix_path: str | Path = DEFAULT_MATRIX,
+    evidence_root: str | Path = DEFAULT_EVIDENCE_ROOT,
+) -> MatrixCheckResult:
+    """Validate manifest coverage, final outcomes, and linked evidence packages."""
+
+    manifest = load_manifest(manifest_path)
+    rows = _read_matrix_rows(Path(matrix_path))
+    manifest_by_id = {sample.id: sample for sample in manifest.samples}
+    rows_by_id: dict[str, dict[str, str]] = {}
+    for row in rows:
+        sample_id = _plain_matrix_cell(row["Sample"])
+        if sample_id in rows_by_id:
+            raise MatrixError(f"duplicate matrix sample ID: {sample_id}")
+        rows_by_id[sample_id] = row
+
+    unknown_ids = sorted(set(rows_by_id) - set(manifest_by_id))
+    if unknown_ids:
+        raise MatrixError(f"unknown matrix sample ID(s): {', '.join(unknown_ids)}")
+    missing_ids = sorted(set(manifest_by_id) - set(rows_by_id))
+    if missing_ids:
+        raise MatrixError(f"missing manifest sample ID(s): {', '.join(missing_ids)}")
+
+    referenced_evidence: set[str] = set()
+    for sample_id, row in rows_by_id.items():
+        recorded_sha256 = _plain_matrix_cell(row["SHA-256"])
+        if recorded_sha256 != manifest_by_id[sample_id].sha256:
+            raise MatrixError(f"matrix sample {sample_id} SHA-256 does not match manifest")
+        outcome = _plain_matrix_cell(row["Final outcome"])
+        if outcome not in ALLOWED_MATRIX_OUTCOMES:
+            raise MatrixError(
+                f"matrix sample {sample_id} has invalid final outcome {outcome!r}"
+            )
+
+        issue_references = _evidence_references(row["Issue"])
+        evidence_references = _evidence_references(row["Evidence"])
+        referenced_evidence.update(evidence_references)
+        if outcome == "build-week-fixed":
+            if not issue_references:
+                raise MatrixError(
+                    f"build-week-fixed sample {sample_id} requires an Issue link"
+                )
+            if _is_matrix_placeholder(row["Test"]):
+                raise MatrixError(
+                    f"build-week-fixed sample {sample_id} requires a Test link"
+                )
+            if COMMIT_REFERENCE_PATTERN.search(row["Commit"]) is None:
+                raise MatrixError(
+                    f"build-week-fixed sample {sample_id} requires a Commit link"
+                )
+            if not evidence_references:
+                raise MatrixError(
+                    f"build-week-fixed sample {sample_id} requires an Evidence link"
+                )
+            if set(issue_references) != set(evidence_references):
+                raise MatrixError(
+                    f"build-week-fixed sample {sample_id} must use the same evidence ID "
+                    "in Issue and Evidence"
+                )
+
+    evidence_path = Path(evidence_root)
+    for evidence_id in sorted(referenced_evidence):
+        _validate_evidence_directory(evidence_id, evidence_path)
+    return MatrixCheckResult(
+        sample_count=len(rows_by_id), evidence_count=len(referenced_evidence)
+    )
+
+
 def _manifest_check(path: Path) -> int:
     manifest = load_manifest(path)
     manual_count = sum(sample.manual for sample in manifest.samples)
@@ -1694,6 +1943,14 @@ def _manifest_check(path: Path) -> int:
     print(
         f"manifest OK: total={len(manifest.samples)} "
         f"manual={manual_count} automated={len(manifest.samples) - manual_count}"
+    )
+    return 0
+
+
+def _matrix_check(manifest_path: Path, matrix_path: Path, evidence_root: Path) -> int:
+    result = check_compatibility_matrix(manifest_path, matrix_path, evidence_root)
+    print(
+        f"matrix OK: samples={result.sample_count} evidence={result.evidence_count}"
     )
     return 0
 
@@ -1780,6 +2037,21 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     check_parser = subparsers.add_parser("manifest-check", help="validate the manifest")
     check_parser.add_argument("path", nargs="?", type=Path, default=DEFAULT_MANIFEST)
+    matrix_parser = subparsers.add_parser(
+        "matrix-check", help="validate compatibility matrix and evidence links"
+    )
+    matrix_parser.add_argument(
+        "--manifest", type=Path, default=DEFAULT_MANIFEST, help=argparse.SUPPRESS
+    )
+    matrix_parser.add_argument(
+        "--matrix", type=Path, default=DEFAULT_MATRIX, help=argparse.SUPPRESS
+    )
+    matrix_parser.add_argument(
+        "--evidence-root",
+        type=Path,
+        default=DEFAULT_EVIDENCE_ROOT,
+        help=argparse.SUPPRESS,
+    )
     fetch_parser = subparsers.add_parser("fetch", help="download verified EPUB samples")
     fetch_parser.add_argument(
         "--sample",
@@ -1813,6 +2085,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if arguments.command == "manifest-check":
             return _manifest_check(arguments.path)
+        if arguments.command == "matrix-check":
+            return _matrix_check(
+                arguments.manifest, arguments.matrix, arguments.evidence_root
+            )
         if arguments.command == "fetch":
             return _fetch_samples(
                 arguments.sample_ids, arguments.books_dir, arguments.force
@@ -1823,6 +2099,8 @@ def main(argv: list[str] | None = None) -> int:
             )
     except ManifestError as error:
         parser.exit(1, f"manifest error: {error}\n")
+    except MatrixError as error:
+        parser.exit(1, f"matrix error: {error}\n")
     raise AssertionError("unreachable")
 
 
