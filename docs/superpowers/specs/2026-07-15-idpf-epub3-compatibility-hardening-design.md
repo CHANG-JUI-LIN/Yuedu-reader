@@ -84,8 +84,10 @@ scripts/
 
 .build-week/epub3-samples/       # ignored; official EPUB binaries and generated local reports
 
-Tests/iOS/yuedu appTests/
+Tests/BuildWeek/IDPFEPUB3CorpusTests/
   IDPFEPUB3SampleSmokeTests.swift
+
+Tests/iOS/yuedu appTests/
   EPUBTestFixtures+EnglishHyphenation.swift  # one small extension per defect family
   EnglishEPUBTypographyTests.swift            # one focused suite per defect family
 ```
@@ -146,10 +148,14 @@ It writes machine-readable results under `.build-week/epub3-samples/results/`. T
 
 `IDPFEPUB3SampleSmokeTests` is opt-in because the external binaries are not committed. It runs only when `YUEDU_RUN_EPUB3_CORPUS=1` is set and reads the corpus directory from `YUEDU_EPUB3_CORPUS_DIR`. With the opt-in flag enabled, a missing corpus, checksum mismatch, or incomplete manifest is a test failure rather than a skip.
 
+The suite lives in the dedicated hosted unit-test target `IDPFEPUB3CorpusTests`, exposed by the shared `Yuedu-Reader EPUB3 Corpus` scheme. This isolates corpus triage from unrelated compile debt in the monolithic `yuedu appTests` target while preserving `@testable import yuedu_app`; focused synthetic regression fixtures discovered by the corpus still belong to the normal test target.
+
 Each parameterized sample test uses production components:
 
 ```text
-official EPUB
+Yuedu-Reader EPUB3 Corpus scheme
+→ IDPFEPUB3CorpusTests hosted target
+→ official EPUB
 → PublicationSession.open
 → manifest/spine/navigation/resource resolution
 → EPUBAttributedStringBuilder
@@ -167,6 +173,7 @@ The checks assert, as applicable:
 - the rendered result has visible text, an image page, or an expected explicit fallback;
 - text probes from fallback children remain present;
 - paged layout produces at least one valid page range;
+- paged ranges cover the attributed string continuously except for ranges fully marked with the production `pageBreakAttribute`; no other gap or any overlap is allowed;
 - scroll layout produces at least one valid chunk when the format supports scroll mode;
 - no range exceeds its attributed-string bounds;
 - fixed-layout and image-in-spine samples use their capability-specific path instead of being forced through reflow assertions.
@@ -372,9 +379,9 @@ Long Xcode builds/tests are provided to the user rather than run directly. The i
 ```bash
 xcodebuild test \
   -project Yuedu-Reader.xcodeproj \
-  -scheme Yuedu-Reader \
+  -scheme 'Yuedu-Reader EPUB3 Corpus' \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
-  -only-testing:'yuedu appTests/IDPFEPUB3SampleSmokeTests' \
+  -only-testing:'IDPFEPUB3CorpusTests/IDPFEPUB3SampleSmokeTests' \
   -parallel-testing-enabled NO
 
 xcodebuild test \
@@ -386,7 +393,7 @@ xcodebuild test \
   -parallel-testing-enabled NO
 ```
 
-The full-corpus command additionally sets `YUEDU_RUN_EPUB3_CORPUS=1` and `YUEDU_EPUB3_CORPUS_DIR` to the ignored books directory. The exact shell invocation is documented in `docs/build-week/epub3/README.md` when the harness exists.
+The full-corpus command sets `TEST_RUNNER_YUEDU_RUN_EPUB3_CORPUS=1` and `TEST_RUNNER_YUEDU_EPUB3_CORPUS_DIR` to the ignored books directory; `xcodebuild` strips the `TEST_RUNNER_` prefix when forwarding them to the hosted test process. The exact shell invocation is documented in `docs/build-week/epub3/README.md`.
 
 ## Acceptance Criteria
 

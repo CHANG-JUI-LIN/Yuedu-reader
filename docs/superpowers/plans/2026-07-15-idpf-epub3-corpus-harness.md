@@ -4,7 +4,7 @@
 
 **Goal:** Build a reproducible, Git-safe workflow that downloads every official IDPF EPUB 3 sample, performs structural and production-pipeline smoke checks, captures the `build-week-baseline` result, and produces the initial compatibility matrix used to select later fixes.
 
-**Architecture:** A standard-library Python CLI owns manifest validation, atomic downloads, checksum verification, package scanning, and matrix referential checks. Official binaries and generated results remain under ignored `.build-week/`; an opt-in Swift Testing suite reads the committed manifest and exercises `PublicationSession`, `EPUBAttributedStringBuilder`, `CoreTextPaginator`, and `CoreTextChunkSlicer`. The harness is committed before renderer fixes so the same harness commit can be applied to a detached baseline worktree.
+**Architecture:** A standard-library Python CLI owns manifest validation, atomic downloads, checksum verification, package scanning, and matrix referential checks. Official binaries and generated results remain under ignored `.build-week/`; an opt-in Swift Testing suite in the dedicated hosted `IDPFEPUB3CorpusTests` target reads the committed manifest and exercises `PublicationSession`, `EPUBAttributedStringBuilder`, `CoreTextPaginator`, and `CoreTextChunkSlicer`. Its shared scheme excludes the monolithic `yuedu appTests` target so unrelated legacy compile debt cannot block corpus triage. The harness is committed before renderer fixes so the same harness commit can be applied to a detached baseline worktree.
 
 **Tech Stack:** Python 3 standard library, Swift 6, Swift Testing, Foundation XML/JSON/ZIP APIs, Readium-backed `PublicationSession`, CoreText paginator and chunk slicer, Markdown evidence files.
 
@@ -30,7 +30,9 @@ git rev-parse HEAD > .build-week/epub3-samples/results/harness-base.txt
 - `docs/build-week/epub3/compatibility-matrix.md`: one row per manifest sample and explicit baseline/current outcomes.
 - `docs/build-week/epub3/README.md`: exact fetch, scan, baseline, current-branch, and manual-review commands.
 - `docs/build-week/epub3/evidence/README.md`: evidence naming, attribution, screenshot, and commit-link contract.
-- `Tests/iOS/yuedu appTests/IDPFEPUB3SampleSmokeTests.swift`: opt-in production-pipeline smoke suite for external corpus files.
+- `Tests/BuildWeek/IDPFEPUB3CorpusTests/IDPFEPUB3SampleSmokeTests.swift`: self-contained opt-in production-pipeline smoke suite for external corpus files; it does not depend on normal-target `EPUBTestFixtures`.
+- `Yuedu-Reader.xcodeproj/project.pbxproj`: dedicated hosted `IDPFEPUB3CorpusTests` target, app dependency, and synchronized source group.
+- `Yuedu-Reader.xcodeproj/xcshareddata/xcschemes/Yuedu-Reader EPUB3 Corpus.xcscheme`: corpus-only test action with the production app as host.
 
 ### Task 1: Define and validate the committed manifest
 
@@ -245,12 +247,16 @@ git commit -m "test: scan official EPUB sample packages"
 ### Task 4: Add opt-in production-pipeline smoke tests
 
 **Files:**
-- Create: `Tests/iOS/yuedu appTests/IDPFEPUB3SampleSmokeTests.swift`
+- Create: `Tests/BuildWeek/IDPFEPUB3CorpusTests/IDPFEPUB3SampleSmokeTests.swift`
+- Modify: `Yuedu-Reader.xcodeproj/project.pbxproj`
+- Create: `Yuedu-Reader.xcodeproj/xcshareddata/xcschemes/Yuedu-Reader EPUB3 Corpus.xcscheme`
 - Modify: `docs/build-week/epub3/README.md`
+- Modify: `docs/build-week/epub3/sample-manifest.json`
+- Modify: `docs/superpowers/specs/2026-07-15-idpf-epub3-compatibility-hardening-design.md`
 
 - [ ] **Step 1: Write the opt-in test loader and failing assertions**
 
-Define Codable manifest types inside the test file. `isEnabled` reads `YUEDU_RUN_EPUB3_CORPUS`; when disabled, use Swift Testing's runtime skip. When enabled, require `YUEDU_EPUB3_CORPUS_DIR`, verify every checksum, and parameterize over all samples. Resolve each smoke target by `spine_href` first, then `chapter_index`.
+Define Codable manifest types and a minimal `ReaderRenderSettings` helper inside the test file, without importing normal-target `EPUBTestFixtures`. `isEnabled` reads `YUEDU_RUN_EPUB3_CORPUS`; when disabled, use Swift Testing's runtime skip. When enabled, require `YUEDU_EPUB3_CORPUS_DIR`, verify every checksum, and parameterize over all samples. Resolve each smoke target by `spine_href` first, then `chapter_index`.
 
 ```swift
 @Suite("Official IDPF EPUB 3 corpus", .serialized)
@@ -275,7 +281,7 @@ struct IDPFEPUB3SampleSmokeTests {
                 renderSize: CGSize(width: 390, height: 844)
             ).buildChapter(
                 at: index,
-                settings: EPUBTestFixtures.renderSettings(),
+                settings: makeRenderSettings(writingMode: .horizontal),
                 themeTextColor: .black,
                 themeBackgroundColor: .white
             )
@@ -286,16 +292,17 @@ struct IDPFEPUB3SampleSmokeTests {
 }
 ```
 
-`Corpus.loadCasesFromEnvironment()` is nonthrowing: it returns `[]` while the suite is disabled, but records an issue and returns `[]` when the suite is enabled and configuration is invalid. The separate configuration test therefore reports a runtime skip instead of silently passing when disabled. `assertPagedAndScrollSmoke` calls `CoreTextPaginator.paginate` with the result's image/background/anchors and asserts nonempty in-bounds `pageRanges`. For reflowable samples it calls `CoreTextChunkSlicer.slice` and asserts continuous chunk ranges ending at the attributed-string length. Fixed-layout/image-in-spine targets assert `imagePage` or the fixed-layout capability path instead of forcing reflow.
+`Corpus.loadCasesFromEnvironment()` is nonthrowing: it returns `[]` while the suite is disabled, but records an issue and returns `[]` when the suite is enabled and configuration is invalid. The separate configuration test therefore reports a runtime skip instead of silently passing when disabled. The test-local `makeRenderSettings` helper constructs only the production `ReaderRenderSettings` values needed by the harness. `assertPagedAndScrollSmoke` calls `CoreTextPaginator.paginate` with the result's image/background/anchors and asserts nonempty in-bounds `pageRanges`. Page ranges must cover the attributed string continuously except for ranges whose every UTF-16 location carries the production `HTMLAttributedStringBuilder.pageBreakAttribute`; no other gap or any overlap is allowed. For reflowable samples it calls `CoreTextChunkSlicer.slice` and asserts continuous chunk ranges ending at the attributed-string length. Fixed-layout/image-in-spine targets assert `imagePage` or the fixed-layout capability path instead of forcing reflow.
 
 - [ ] **Step 2: Ask the user to run the RED corpus suite**
 
 ```bash
-YUEDU_RUN_EPUB3_CORPUS=1 \
-YUEDU_EPUB3_CORPUS_DIR="$PWD/.build-week/epub3-samples/books" \
-xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader \
+TEST_RUNNER_YUEDU_RUN_EPUB3_CORPUS=1 \
+TEST_RUNNER_YUEDU_EPUB3_CORPUS_DIR="$PWD/.build-week/epub3-samples/books" \
+xcodebuild test -project Yuedu-Reader.xcodeproj \
+  -scheme 'Yuedu-Reader EPUB3 Corpus' \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
-  -only-testing:'yuedu appTests/IDPFEPUB3SampleSmokeTests' \
+  -only-testing:'IDPFEPUB3CorpusTests/IDPFEPUB3SampleSmokeTests' \
   -parallel-testing-enabled NO
 ```
 
@@ -307,12 +314,18 @@ Correct manifest target selection or test capability branching if the harness mi
 
 - [ ] **Step 4: Re-run fast checks and have the user rerun the suite**
 
-Run `xcrun swiftc -parse` on the new test, Python tests, `manifest-check`, and `git diff --check`. Provide the same `xcodebuild` command. Expected: harness compiles; production failures remain accurately reported.
+Run `xcrun swiftc -parse Tests/BuildWeek/IDPFEPUB3CorpusTests/IDPFEPUB3SampleSmokeTests.swift`, Python tests, `manifest-check`, and `git diff --check`. Run the same dedicated-scheme `xcodebuild` command. Expected: the isolated harness target compiles without building `yuedu appTests`; production failures remain accurately reported.
 
 - [ ] **Step 5: Commit the harness before any renderer fix**
 
 ```bash
-git add 'Tests/iOS/yuedu appTests/IDPFEPUB3SampleSmokeTests.swift' docs/build-week/epub3/README.md
+git add 'Tests/BuildWeek/IDPFEPUB3CorpusTests/IDPFEPUB3SampleSmokeTests.swift' \
+  Yuedu-Reader.xcodeproj/project.pbxproj \
+  'Yuedu-Reader.xcodeproj/xcshareddata/xcschemes/Yuedu-Reader EPUB3 Corpus.xcscheme' \
+  docs/build-week/epub3/README.md \
+  docs/build-week/epub3/sample-manifest.json \
+  docs/superpowers/specs/2026-07-15-idpf-epub3-compatibility-hardening-design.md \
+  docs/superpowers/plans/2026-07-15-idpf-epub3-corpus-harness.md
 git commit -m "test: smoke test official EPUB samples"
 ```
 
@@ -345,10 +358,12 @@ Expected: the detached worktree starts at `dd62d80`; every commit after `HARNESS
 ```bash
 CORPUS_DIR="$PWD/.build-week/epub3-samples/books"
 cd "$BASELINE_WT"
-YUEDU_RUN_EPUB3_CORPUS=1 YUEDU_EPUB3_CORPUS_DIR="$CORPUS_DIR" \
-xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader \
+TEST_RUNNER_YUEDU_RUN_EPUB3_CORPUS=1 \
+TEST_RUNNER_YUEDU_EPUB3_CORPUS_DIR="$CORPUS_DIR" \
+xcodebuild test -project Yuedu-Reader.xcodeproj \
+  -scheme 'Yuedu-Reader EPUB3 Corpus' \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
-  -only-testing:'yuedu appTests/IDPFEPUB3SampleSmokeTests' \
+  -only-testing:'IDPFEPUB3CorpusTests/IDPFEPUB3SampleSmokeTests' \
   -parallel-testing-enabled NO
 ```
 

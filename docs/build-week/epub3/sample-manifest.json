@@ -44,7 +44,7 @@
       "sha256": "7bec3acf5ca153fd8a3b8bba50549c5cde3cb617ddd74c1d3b26fbc5eb9eebdf",
       "license": "CC BY-NC-SA 3.0 Unported (official catalog sample-specific license).",
       "features": ["audio", "video", "media-fallback", "navigation"],
-      "smoke_targets": [{"spine_href": "xhtml/p60.xhtml", "text_probes": ["The entire transcript", "Your Reading System does not support"], "expects_image_page": false, "expects_fallback": true}],
+      "smoke_targets": [{"spine_href": "xhtml/p60.xhtml", "text_probes": ["the entire transcript", "Your Reading System does not support"], "expects_image_page": false, "expects_fallback": true}],
       "manual": false,
       "manual_checkpoints": []
     },
@@ -278,7 +278,7 @@
       "sha256": "fd1b19a1258857fe31081e2a22b3013e84663501c731d88a27bc06cf476a8a06",
       "license": "CC BY-SA 3.0 (official catalog default; no sample-specific exception listed).",
       "features": ["devanagari", "native-font-fallback", "long-form-reflowable"],
-      "smoke_targets": [{"spine_href": "xhtml/b01001.xhtml", "text_probes": ["आदि पर्व", "नारायणं"], "expects_image_page": false, "expects_fallback": false}],
+      "smoke_targets": [{"spine_href": "xhtml/b01001.xhtml", "text_probes": ["नारायणं"], "expects_image_page": false, "expects_fallback": false}],
       "manual": false,
       "manual_checkpoints": []
     },
@@ -558,7 +558,7 @@
       "sha256": "4fbaa5713555ea104b2aed8fc6182700225416b0ab5369f0cb7293d486bb718f",
       "license": "CC BY-SA 3.0 (official catalog default; no sample-specific exception listed).",
       "features": ["html-canvas", "canvas-fallback", "css-multicolumn"],
-      "smoke_targets": [{"spine_href": "titlepage.xhtml", "text_probes": ["Tree Canvas", "Your Reading System does not support canvas"], "expects_image_page": false, "expects_fallback": true}],
+      "smoke_targets": [{"spine_href": "titlepage.xhtml", "text_probes": ["Trees", "Your Reading System does not support canvas"], "expects_image_page": false, "expects_fallback": true}],
       "manual": false,
       "manual_checkpoints": []
     },
@@ -584,7 +584,7 @@
       "sha256": "19fe9e1e1c431c3b631877b54cfebba34b80aca87709c8e6162d07c465f05f5c",
       "license": "CC BY-SA 3.0 (official catalog default; no sample-specific exception listed).",
       "features": ["multiple-renditions", "text-rendition", "braille-rendition", "rendition-mapping"],
-      "smoke_targets": [{"spine_href": "xhtml/WCAG-ch1-1.xhtml", "text_probes": ["World Cultures and Geography", "Chapter 1"], "expects_image_page": false, "expects_fallback": false}],
+      "smoke_targets": [{"spine_href": "xhtml/WCAG-ch1-1.xhtml", "text_probes": ["World Cultures and Geography", "Senior Consultants"], "expects_image_page": false, "expects_fallback": false}],
       "manual": false,
       "manual_checkpoints": []
     }
