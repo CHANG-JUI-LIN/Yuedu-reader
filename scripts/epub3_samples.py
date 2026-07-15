@@ -4,11 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import re
+import ssl
+import sys
+import tempfile
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Iterable
 from urllib.parse import urlparse
 
 
@@ -20,6 +26,26 @@ DEFAULT_MANIFEST = (
     / "epub3"
     / "sample-manifest.json"
 )
+DEFAULT_BOOKS_DIR = (
+    Path(__file__).resolve().parents[1]
+    / ".build-week"
+    / "epub3-samples"
+    / "books"
+)
+ZIP_SIGNATURES = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
+
+
+def _urlopen_with_system_ca(url: str, *, timeout: int):
+    verify_paths = ssl.get_default_verify_paths()
+    context = None
+    system_ca_file = Path("/etc/ssl/cert.pem")
+    if (
+        verify_paths.cafile is None
+        and verify_paths.capath is None
+        and system_ca_file.is_file()
+    ):
+        context = ssl.create_default_context(cafile=system_ca_file)
+    return urllib.request.urlopen(url, timeout=timeout, context=context)
 
 
 class ManifestError(ValueError):
@@ -56,8 +82,34 @@ class Manifest:
     samples: tuple[Sample, ...]
 
 
+@dataclass(frozen=True)
+class FetchResult:
+    sample_id: str
+    status: str
+    message: str
+    path: Path
+
+    @property
+    def ok(self) -> bool:
+        return self.status in {"downloaded", "cached"}
+
+
 def _error(sample_id: str, field: str, detail: str) -> ManifestError:
     return ManifestError(f"sample {sample_id!r} field {field!r}: {detail}")
+
+
+def _require_safe_filename(sample_id: str, filename: str) -> str:
+    if (
+        not isinstance(filename, str)
+        or not filename.strip()
+        or filename in {".", ".."}
+        or Path(filename).is_absolute()
+        or "/" in filename
+        or "\\" in filename
+        or Path(filename).name != filename
+    ):
+        raise _error(sample_id, "filename", "must be a single safe basename")
+    return filename
 
 
 def _require_object(value: Any, sample_id: str, field: str) -> dict[str, Any]:
@@ -176,7 +228,9 @@ def _parse_sample(value: Any, index: int) -> Sample:
     title = _require_string(entry, sample_id, "title")
     source_url = _require_string(entry, sample_id, "source_url")
     catalog_url = _require_string(entry, sample_id, "catalog_url")
-    filename = _require_string(entry, sample_id, "filename")
+    filename = _require_safe_filename(
+        sample_id, _require_string(entry, sample_id, "filename")
+    )
     sha256 = _require_string(entry, sample_id, "sha256")
     license_note = _require_string(entry, sample_id, "license")
     features = _require_string_list(entry, sample_id, "features", nonempty=True)
@@ -268,6 +322,131 @@ def load_manifest(path: str | Path) -> Manifest:
     return manifest
 
 
+def sha256_file(path: str | Path) -> str:
+    """Return the lowercase SHA-256 digest for a file."""
+
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def has_zip_signature(path: str | Path) -> bool:
+    """Return whether a file starts with a recognized ZIP signature."""
+
+    with Path(path).open("rb") as file:
+        return file.read(4) in ZIP_SIGNATURES
+
+
+def fetch_sample(
+    sample: Sample,
+    books_dir: str | Path,
+    *,
+    force: bool = False,
+    opener: Callable[..., Any] = _urlopen_with_system_ca,
+) -> FetchResult:
+    """Download and verify one EPUB without exposing partial content."""
+
+    books_path = Path(books_dir)
+    destination = (
+        books_path / sample.filename
+        if isinstance(sample.filename, str)
+        else books_path
+    )
+    part_path: Path | None = None
+
+    try:
+        filename = _require_safe_filename(sample.id, sample.filename)
+        books_path.mkdir(parents=True, exist_ok=True)
+        resolved_books_path = books_path.resolve(strict=True)
+        if not resolved_books_path.is_dir():
+            raise NotADirectoryError(f"books path is not a directory: {books_path}")
+        destination = resolved_books_path / filename
+        resolved_destination = destination.resolve(strict=False)
+        if resolved_destination.parent != resolved_books_path:
+            raise _error(
+                sample.id,
+                "filename",
+                "must resolve directly inside the books directory",
+            )
+    except (OSError, RuntimeError, ValueError) as error:
+        return FetchResult(
+            sample_id=sample.id,
+            status="failed",
+            message=str(error),
+            path=destination,
+        )
+
+    if not force and destination.is_file():
+        try:
+            if (
+                has_zip_signature(destination)
+                and sha256_file(destination) == sample.sha256
+            ):
+                return FetchResult(
+                    sample_id=sample.id,
+                    status="cached",
+                    message="verified cache",
+                    path=destination,
+                )
+        except OSError:
+            pass
+
+    try:
+        descriptor, part_name = tempfile.mkstemp(
+            prefix=f".{filename}.", suffix=".part", dir=resolved_books_path
+        )
+        part_path = Path(part_name)
+        with os.fdopen(descriptor, "wb") as output:
+            with opener(sample.source_url, timeout=60) as response:
+                while chunk := response.read(1024 * 1024):
+                    output.write(chunk)
+
+        if not has_zip_signature(part_path):
+            raise ValueError("download does not have a ZIP signature")
+        actual_sha256 = sha256_file(part_path)
+        if actual_sha256 != sample.sha256:
+            raise ValueError(
+                f"checksum mismatch: expected {sample.sha256}, got {actual_sha256}"
+            )
+        os.replace(part_path, destination)
+        return FetchResult(
+            sample_id=sample.id,
+            status="downloaded",
+            message="downloaded and verified",
+            path=destination,
+        )
+    except Exception as error:
+        return FetchResult(
+            sample_id=sample.id,
+            status="failed",
+            message=str(error),
+            path=destination,
+        )
+    finally:
+        if part_path is not None:
+            try:
+                part_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def fetch_all(
+    samples: Iterable[Sample],
+    books_dir: str | Path,
+    *,
+    force: bool = False,
+    opener: Callable[..., Any] = _urlopen_with_system_ca,
+) -> tuple[FetchResult, ...]:
+    """Fetch every sample, retaining an individual result for every attempt."""
+
+    return tuple(
+        fetch_sample(sample, books_dir, force=force, opener=opener)
+        for sample in samples
+    )
+
+
 def _manifest_check(path: Path) -> int:
     manifest = load_manifest(path)
     manual_count = sum(sample.manual for sample in manifest.samples)
@@ -282,16 +461,60 @@ def _manifest_check(path: Path) -> int:
     return 0
 
 
+def _fetch_samples(sample_ids: list[str] | None, books_dir: Path, force: bool) -> int:
+    manifest = load_manifest(DEFAULT_MANIFEST)
+    samples_by_id = {sample.id: sample for sample in manifest.samples}
+    if sample_ids:
+        unique_sample_ids = tuple(dict.fromkeys(sample_ids))
+        unknown_ids = sorted(set(unique_sample_ids) - samples_by_id.keys())
+        if unknown_ids:
+            print(
+                f"fetch error: unknown sample ID(s): {', '.join(unknown_ids)}",
+                file=sys.stderr,
+            )
+            return 1
+        selected_samples = tuple(
+            samples_by_id[sample_id] for sample_id in unique_sample_ids
+        )
+    else:
+        selected_samples = manifest.samples
+
+    results = fetch_all(selected_samples, books_dir, force=force)
+    for result in results:
+        detail = str(result.path) if result.ok else result.message
+        output = sys.stdout if result.ok else sys.stderr
+        print(f"{result.status}: {result.sample_id}: {detail}", file=output)
+    return int(any(not result.ok for result in results))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     check_parser = subparsers.add_parser("manifest-check", help="validate the manifest")
     check_parser.add_argument("path", nargs="?", type=Path, default=DEFAULT_MANIFEST)
+    fetch_parser = subparsers.add_parser("fetch", help="download verified EPUB samples")
+    fetch_parser.add_argument(
+        "--sample",
+        action="append",
+        dest="sample_ids",
+        metavar="ID",
+        help="fetch only this sample ID (repeatable)",
+    )
+    fetch_parser.add_argument(
+        "--force", action="store_true", help="replace valid cached files"
+    )
+    fetch_parser.add_argument(
+        "--books-dir", type=Path, default=DEFAULT_BOOKS_DIR, help=argparse.SUPPRESS
+    )
     arguments = parser.parse_args(argv)
 
     try:
         if arguments.command == "manifest-check":
             return _manifest_check(arguments.path)
+        if arguments.command == "fetch":
+            return _fetch_samples(
+                arguments.sample_ids, arguments.books_dir, arguments.force
+            )
     except ManifestError as error:
         parser.exit(1, f"manifest error: {error}\n")
     raise AssertionError("unreachable")
