@@ -10,7 +10,7 @@ import urllib.request
 import zipfile
 from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import get_type_hints
@@ -32,6 +32,66 @@ def _epub_bytes(label):
         archive.writestr("mimetype", "application/epub+zip")
         archive.writestr("EPUB/content.xhtml", label)
     return output.getvalue()
+
+
+CONTAINER_XML = """\
+<?xml version="1.0"?>
+<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">
+  <rootfiles>
+    <rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>
+"""
+
+VALID_OPF = """\
+<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="uid">urn:test</dc:identifier>
+    <dc:title>Scanner fixture</dc:title>
+    <dc:language>en</dc:language>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine><itemref idref="chapter"/></spine>
+</package>
+"""
+
+NAV_XHTML = """\
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:epub="http://www.idpf.org/2007/ops">
+  <body><nav epub:type="toc"><ol><li><a href="chapter.xhtml#start">Chapter</a></li></ol></nav></body>
+</html>
+"""
+
+CHAPTER_XHTML = """\
+<html xmlns="http://www.w3.org/1999/xhtml"><body><p id="start">Text</p></body></html>
+"""
+
+
+def _structural_entries(*, opf=VALID_OPF, container=CONTAINER_XML):
+    entries = [
+        ("mimetype", b"application/epub+zip", zipfile.ZIP_STORED),
+        ("META-INF/container.xml", container.encode(), zipfile.ZIP_DEFLATED),
+        ("OPS/package.opf", opf.encode(), zipfile.ZIP_DEFLATED),
+        ("OPS/nav.xhtml", NAV_XHTML.encode(), zipfile.ZIP_DEFLATED),
+        ("OPS/chapter.xhtml", CHAPTER_XHTML.encode(), zipfile.ZIP_DEFLATED),
+    ]
+    return entries
+
+
+def _write_epub(path, entries):
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, payload, compression in entries:
+            archive.writestr(name, payload, compress_type=compression)
+
+
+def _replace_entry(entries, name, payload, compression=zipfile.ZIP_DEFLATED):
+    return [entry for entry in entries if entry[0] != name] + [
+        (name, payload, compression)
+    ]
 
 
 class LocalHTTPServer:
@@ -637,6 +697,1249 @@ class EPUB3SampleDownloadTests(unittest.TestCase):
                 self.assertEqual(server.requests["/book.epub"], 1)
 
 
+class EPUB3PackageScannerTests(unittest.TestCase):
+    def _scan(self, entries=None, *, sample_id="fixture"):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.epub"
+            _write_epub(
+                path,
+                entries if entries is not None else _structural_entries(),
+            )
+            return epub3_samples.scan_epub(path, sample_id=sample_id)
+
+    def test_empty_zip_is_not_replaced_by_default_fixture(self):
+        result = self._scan([])
+
+        self.assertFalse(result.ok)
+        self.assertTrue(any("mimetype missing" in error for error in result.errors))
+
+    def test_valid_package_reports_structural_facts(self):
+        result = self._scan()
+
+        self.assertTrue(result.ok, result.errors)
+        self.assertEqual(result.status, "passed")
+        self.assertEqual(result.sample_id, "fixture")
+        self.assertEqual(result.rootfile, "OPS/package.opf")
+        self.assertEqual(result.version, "3.0")
+        self.assertEqual(result.manifest_count, 2)
+        self.assertEqual(result.spine_count, 1)
+        self.assertEqual(result.nav, "OPS/nav.xhtml")
+        self.assertEqual(result.detected_features, ())
+        self.assertEqual(result.errors, ())
+
+    def test_mimetype_must_be_first_stored_and_exact(self):
+        valid = _structural_entries()
+        cases = {
+            "first": [valid[1], valid[0], *valid[2:]],
+            "stored": [
+                ("mimetype", b"application/epub+zip", zipfile.ZIP_DEFLATED),
+                *valid[1:],
+            ],
+            "content": [
+                ("mimetype", b"application/epub+zip\n", zipfile.ZIP_STORED),
+                *valid[1:],
+            ],
+            "missing": valid[1:],
+        }
+
+        for expected, entries in cases.items():
+            with self.subTest(expected=expected):
+                result = self._scan(entries)
+                self.assertFalse(result.ok)
+                self.assertTrue(
+                    any("mimetype" in error and expected in error for error in result.errors),
+                    result.errors,
+                )
+
+    def test_container_rootfile_and_opf_failures_are_sample_scoped(self):
+        invalid_container = "<container>"
+        missing_rootfile = (
+            '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            "<rootfiles/></container>"
+        )
+        rootfile_without_path = (
+            '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            "<rootfiles><rootfile/></rootfiles></container>"
+        )
+        cases = {
+            "container.xml missing": [
+                entry for entry in _structural_entries() if entry[0] != "META-INF/container.xml"
+            ],
+            "container.xml XML": _structural_entries(container=invalid_container),
+            "rootfile missing": _structural_entries(container=missing_rootfile),
+            "rootfile full-path": _structural_entries(container=rootfile_without_path),
+            "rootfile resource": _structural_entries(
+                container=CONTAINER_XML.replace("OPS/package.opf", "OPS/missing.opf")
+            ),
+            "OPF XML": _structural_entries(opf="<package>"),
+        }
+
+        for expected, entries in cases.items():
+            with self.subTest(expected=expected):
+                result = self._scan(entries, sample_id="broken-book")
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+                self.assertTrue(all("broken-book" in error for error in result.errors))
+
+    def test_container_requires_direct_container_rootfiles_hierarchy(self):
+        rootfile = (
+            '<rootfile full-path="OPS/package.opf" '
+            'media-type="application/oebps-package+xml"/>'
+        )
+        cases = {
+            "container root element": f"<wrong><rootfiles>{rootfile}</rootfiles></wrong>",
+            "direct rootfiles": (
+                '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+                f"<wrapper><rootfiles>{rootfile}</rootfiles></wrapper></container>"
+            ),
+            "direct rootfile": (
+                '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+                f"<rootfiles><wrapper>{rootfile}</wrapper></rootfiles></container>"
+            ),
+        }
+
+        for expected, container in cases.items():
+            with self.subTest(expected=expected):
+                result = self._scan(_structural_entries(container=container))
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_container_and_package_require_exact_vocabulary_namespaces(self):
+        cases = {
+            "OCF namespace": _structural_entries(
+                container=CONTAINER_XML.replace(
+                    "urn:oasis:names:tc:opendocument:xmlns:container",
+                    "urn:wrong:container",
+                )
+            ),
+            "OPF package namespace": _structural_entries(
+                opf=VALID_OPF.replace(
+                    "http://www.idpf.org/2007/opf", "urn:wrong:opf"
+                )
+            ),
+            "OPF direct child namespace": _structural_entries(
+                opf=VALID_OPF.replace(
+                    "<manifest>", '<foreign:manifest xmlns:foreign="urn:wrong:opf">'
+                ).replace("</manifest>", "</foreign:manifest>")
+            ),
+        }
+
+        for expected, entries in cases.items():
+            with self.subTest(expected=expected):
+                result = self._scan(entries)
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_container_foreign_rootfiles_and_rootfile_are_never_valid(self):
+        foreign_rootfiles = CONTAINER_XML.replace(
+            "<rootfiles>", '<f:rootfiles xmlns:f="urn:foreign">'
+        ).replace("</rootfiles>", "</f:rootfiles>")
+        foreign_rootfile = CONTAINER_XML.replace(
+            "<rootfile ", '<f:rootfile xmlns:f="urn:foreign" '
+        )
+        for container in (foreign_rootfiles, foreign_rootfile):
+            with self.subTest(container=container):
+                result = self._scan(_structural_entries(container=container))
+
+                self.assertFalse(result.ok)
+                self.assertTrue(
+                    any("namespace" in error for error in result.errors),
+                    result.errors,
+                )
+
+    def test_rootfile_requires_nonblank_path_and_supported_media_type(self):
+        cases = {
+            "rootfile full-path": (
+                '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+                '<rootfiles><rootfile full-path="   " '
+                'media-type="application/oebps-package+xml"/></rootfiles></container>'
+            ),
+            "rootfile media-type": (
+                '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+                '<rootfiles><rootfile full-path="OPS/package.opf"/>'
+                "</rootfiles></container>"
+            ),
+            "unsupported rootfile media-type": (
+                '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+                '<rootfiles><rootfile full-path="OPS/package.opf" '
+                'media-type="application/xml"/></rootfiles></container>'
+            ),
+        }
+
+        for expected, container in cases.items():
+            with self.subTest(expected=expected):
+                result = self._scan(_structural_entries(container=container))
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_selects_first_supported_rootfile_from_direct_candidates(self):
+        container = """\
+<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="legacy.opf" media-type="application/x-legacy-package"/>
+    <rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>
+"""
+
+        result = self._scan(_structural_entries(container=container))
+
+        self.assertTrue(result.ok, result.errors)
+        self.assertEqual(result.rootfile, "OPS/package.opf")
+
+    def test_corrupt_and_missing_epubs_return_failed_results(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            missing = epub3_samples.scan_epub(root / "missing.epub", sample_id="missing")
+            corrupt_path = root / "corrupt.epub"
+            corrupt_path.write_bytes(b"not a zip")
+            corrupt = epub3_samples.scan_epub(corrupt_path, sample_id="corrupt")
+
+        self.assertFalse(missing.ok)
+        self.assertIn("missing", " ".join(missing.errors))
+        self.assertFalse(corrupt.ok)
+        self.assertIn("corrupt", " ".join(corrupt.errors))
+
+    def test_manifest_spine_and_nav_references_must_exist(self):
+        missing_manifest_resource = [
+            entry for entry in _structural_entries() if entry[0] != "OPS/chapter.xhtml"
+        ]
+        missing_spine_id = _structural_entries(
+            opf=VALID_OPF.replace('idref="chapter"', 'idref="unknown"')
+        )
+        missing_spine_resource = _structural_entries(
+            opf=VALID_OPF.replace('href="chapter.xhtml"', 'href="missing.xhtml"', 1)
+        )
+        missing_nav_resource = [
+            entry for entry in _structural_entries() if entry[0] != "OPS/nav.xhtml"
+        ]
+        cases = {
+            "manifest resource": missing_manifest_resource,
+            "spine idref": missing_spine_id,
+            "spine resource": missing_spine_resource,
+            "nav resource": missing_nav_resource,
+        }
+
+        for expected, entries in cases.items():
+            with self.subTest(expected=expected):
+                result = self._scan(entries)
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_duplicate_manifest_ids_fail(self):
+        duplicate = VALID_OPF.replace(
+            '<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>',
+            '<item id="nav" href="chapter.xhtml" media-type="application/xhtml+xml"/>',
+        )
+
+        result = self._scan(_structural_entries(opf=duplicate))
+
+        self.assertFalse(result.ok)
+        self.assertTrue(any("duplicate manifest ID" in error for error in result.errors))
+
+    def test_package_requires_nonblank_unique_identifier_and_matching_identifier(self):
+        cases = {
+            "unique-identifier missing": VALID_OPF.replace(' unique-identifier="uid"', ""),
+            "unique-identifier blank": VALID_OPF.replace('unique-identifier="uid"', 'unique-identifier="   "'),
+            "unique-identifier target": VALID_OPF.replace('unique-identifier="uid"', 'unique-identifier="missing"'),
+            "unique-identifier target blank": VALID_OPF.replace(
+                '<dc:identifier id="uid">urn:test</dc:identifier>',
+                '<dc:identifier id="uid">   </dc:identifier>\n'
+                '    <dc:identifier>urn:fallback</dc:identifier>',
+            ),
+        }
+
+        for expected, opf in cases.items():
+            with self.subTest(expected=expected):
+                result = self._scan(_structural_entries(opf=opf))
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_package_version_must_be_exactly_epub_3_0(self):
+        for version in ("banana", "3.1", "2.0"):
+            with self.subTest(version=version):
+                opf = VALID_OPF.replace('version="3.0"', f'version="{version}"')
+                result = self._scan(_structural_entries(opf=opf))
+                self.assertFalse(result.ok)
+                self.assertTrue(
+                    any("unsupported package version" in error for error in result.errors),
+                    result.errors,
+                )
+
+    def test_spine_requires_at_least_one_direct_itemref(self):
+        opf = VALID_OPF.replace(
+            '<spine><itemref idref="chapter"/></spine>', "<spine/>"
+        )
+
+        result = self._scan(_structural_entries(opf=opf))
+
+        self.assertFalse(result.ok)
+        self.assertTrue(
+            any("spine must contain at least one direct itemref" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_package_requires_direct_metadata_manifest_and_spine(self):
+        metadata_start = '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        cases = {
+            "direct metadata": VALID_OPF.replace(
+                metadata_start, f"<wrapper>{metadata_start}"
+            ).replace("</metadata>", "</metadata></wrapper>", 1),
+            "direct manifest": VALID_OPF.replace(
+                "<manifest>", "<wrapper><manifest>", 1
+            ).replace("</manifest>", "</manifest></wrapper>", 1),
+            "direct spine": VALID_OPF.replace(
+                "<spine>", "<wrapper><spine>", 1
+            ).replace("</spine>", "</spine></wrapper>", 1),
+        }
+
+        for expected, opf in cases.items():
+            with self.subTest(expected=expected):
+                result = self._scan(_structural_entries(opf=opf))
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_metadata_requires_identifier_title_and_language(self):
+        cases = {
+            "dc:identifier": VALID_OPF.replace(
+                '    <dc:identifier id="uid">urn:test</dc:identifier>\n', ""
+            ),
+            "dc:title": VALID_OPF.replace(
+                "    <dc:title>Scanner fixture</dc:title>\n", ""
+            ),
+            "dc:language": VALID_OPF.replace("    <dc:language>en</dc:language>\n", ""),
+        }
+
+        for expected, opf in cases.items():
+            with self.subTest(expected=expected):
+                result = self._scan(_structural_entries(opf=opf))
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_manifest_items_require_nonblank_id_href_and_media_type(self):
+        cases = {
+            "manifest item ID": VALID_OPF.replace('id="chapter"', 'id="   "', 1),
+            "manifest item href": VALID_OPF.replace('href="chapter.xhtml"', 'href="   "', 1),
+            "manifest item media-type": VALID_OPF.replace(
+                'media-type="application/xhtml+xml"/>\n  </manifest>',
+                'media-type="   "/>\n  </manifest>',
+            ),
+        }
+
+        for expected, opf in cases.items():
+            with self.subTest(expected=expected):
+                result = self._scan(_structural_entries(opf=opf))
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_nav_item_requires_xhtml_media_type(self):
+        opf = VALID_OPF.replace(
+            'id="nav" href="nav.xhtml" media-type="application/xhtml+xml"',
+            'id="nav" href="nav.xhtml" media-type="application/xml"',
+        )
+
+        result = self._scan(_structural_entries(opf=opf))
+
+        self.assertFalse(result.ok)
+        self.assertTrue(any("nav media-type" in error for error in result.errors), result.errors)
+
+    def test_manifest_requires_exactly_one_nav_item(self):
+        opf = VALID_OPF.replace(
+            "</manifest>",
+            '<item id="nav-two" href="nav-two.xhtml" media-type="application/xhtml+xml" '
+            'properties="nav"/>\n  </manifest>',
+        )
+        entries = [
+            *_structural_entries(opf=opf),
+            ("OPS/nav-two.xhtml", NAV_XHTML.encode(), zipfile.ZIP_DEFLATED),
+        ]
+
+        result = self._scan(entries)
+
+        self.assertFalse(result.ok)
+        self.assertTrue(
+            any("exactly one nav manifest item" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_nav_target_requires_html_root_and_epub_toc_nav(self):
+        cases = {
+            "nav XHTML html root": b"<svg xmlns='http://www.w3.org/2000/svg'/>",
+            "nav epub:type toc": b"<html xmlns='http://www.w3.org/1999/xhtml'><body/></html>",
+            "nav epub:type namespace": NAV_XHTML.replace(
+                'epub:type="toc"', 'type="toc"'
+            ).encode(),
+        }
+
+        for expected, nav_payload in cases.items():
+            with self.subTest(expected=expected):
+                entries = _replace_entry(
+                    _structural_entries(), "OPS/nav.xhtml", nav_payload
+                )
+                result = self._scan(entries)
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_nav_toc_element_must_be_in_xhtml_namespace(self):
+        nav = NAV_XHTML.replace(
+            '<nav epub:type="toc">',
+            '<foreign:nav xmlns:foreign="urn:wrong:xhtml" epub:type="toc">',
+        ).replace("</nav>", "</foreign:nav>")
+
+        result = self._scan(
+            _replace_entry(_structural_entries(), "OPS/nav.xhtml", nav.encode())
+        )
+
+        self.assertFalse(result.ok)
+        self.assertTrue(any("XHTML toc nav" in error for error in result.errors), result.errors)
+
+    def test_nav_target_requires_exactly_one_toc_nav(self):
+        duplicate_toc = NAV_XHTML.replace(
+            "</body>",
+            '<nav epub:type="toc"><ol><li><a href="chapter.xhtml">Again</a></li></ol></nav></body>',
+        )
+
+        result = self._scan(
+            _replace_entry(
+                _structural_entries(), "OPS/nav.xhtml", duplicate_toc.encode()
+            )
+        )
+
+        self.assertFalse(result.ok)
+        self.assertTrue(
+            any("exactly one nav epub:type toc" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_nav_toc_epub_type_accepts_additional_tokens(self):
+        nav = NAV_XHTML.replace('epub:type="toc"', 'epub:type="landmarks toc"')
+
+        result = self._scan(
+            _replace_entry(_structural_entries(), "OPS/nav.xhtml", nav.encode())
+        )
+
+        self.assertTrue(result.ok, result.errors)
+
+    def test_media_overlay_reference_requires_existing_smil_item(self):
+        dangling = VALID_OPF.replace(
+            'id="chapter" href="chapter.xhtml"',
+            'id="chapter" href="chapter.xhtml" media-overlay="missing"',
+        )
+        wrong_type = VALID_OPF.replace(
+            'id="chapter" href="chapter.xhtml"',
+            'id="chapter" href="chapter.xhtml" media-overlay="overlay"',
+        ).replace(
+            "</manifest>",
+            '<item id="overlay" href="overlay.xhtml" media-type="application/xhtml+xml"/>\n  </manifest>',
+        )
+        cases = {
+            "media-overlay IDREF blank": _structural_entries(
+                opf=VALID_OPF.replace(
+                    'id="chapter" href="chapter.xhtml"',
+                    'id="chapter" href="chapter.xhtml" media-overlay="   "',
+                )
+            ),
+            "media-overlay IDREF": _structural_entries(opf=dangling),
+            "media-overlay SMIL": [
+                *_structural_entries(opf=wrong_type),
+                ("OPS/overlay.xhtml", CHAPTER_XHTML.encode(), zipfile.ZIP_DEFLATED),
+            ],
+        }
+
+        for expected, entries in cases.items():
+            with self.subTest(expected=expected):
+                result = self._scan(entries)
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_media_overlay_requires_content_source_and_valid_local_smil_document(self):
+        valid_opf = VALID_OPF.replace(
+            'id="chapter" href="chapter.xhtml"',
+            'id="chapter" href="chapter.xhtml" media-overlay="overlay"',
+        ).replace(
+            "</manifest>",
+            '<item id="overlay" href="overlay.smil" media-type="application/smil+xml"/>\n  </manifest>',
+        )
+        valid_smil = b"<smil xmlns='http://www.w3.org/ns/SMIL' version='3.0'><body/></smil>"
+        cases = {
+            "media-overlay source Content Document": (
+                valid_opf.replace(
+                    'id="chapter" href="chapter.xhtml" media-overlay="overlay" media-type="application/xhtml+xml"',
+                    'id="chapter" href="chapter.xhtml" media-overlay="overlay" media-type="text/plain"',
+                ),
+                valid_smil,
+            ),
+            "media-overlay target local": (
+                valid_opf.replace('href="overlay.smil"', 'href="https://example.com/overlay.smil"'),
+                None,
+            ),
+            "SMIL namespace": (
+                valid_opf,
+                b"<smil xmlns='urn:wrong:smil' version='3.0'><body/></smil>",
+            ),
+            "SMIL root": (
+                valid_opf,
+                b"<seq xmlns='http://www.w3.org/ns/SMIL' version='3.0'><body/></seq>",
+            ),
+            "SMIL version": (
+                valid_opf,
+                b"<smil xmlns='http://www.w3.org/ns/SMIL' version='2.0'><body/></smil>",
+            ),
+            "SMIL direct body": (
+                valid_opf,
+                b"<smil xmlns='http://www.w3.org/ns/SMIL' version='3.0'><head/></smil>",
+            ),
+        }
+        for expected, (opf, smil) in cases.items():
+            with self.subTest(expected=expected):
+                entries = _structural_entries(opf=opf)
+                if smil is not None:
+                    entries.append(
+                        ("OPS/overlay.smil", smil, zipfile.ZIP_DEFLATED)
+                    )
+                result = self._scan(entries)
+                self.assertFalse(result.ok)
+                self.assertNotIn("media-overlay", result.detected_features)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_zip_entry_names_reject_unsafe_or_ambiguous_paths(self):
+        cases = {
+            "absolute": "/absolute.xhtml",
+            "parent traversal": "OPS/../escape.xhtml",
+            "backslash": "OPS\\ambiguous.xhtml",
+            "ambiguous": "OPS//ambiguous.xhtml",
+        }
+        for expected, unsafe_name in cases.items():
+            with self.subTest(expected=expected):
+                entries = [
+                    *_structural_entries(),
+                    (unsafe_name, b"unsafe", zipfile.ZIP_STORED),
+                ]
+                result = self._scan(entries)
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_archive_budget_constants_have_required_headroom(self):
+        expected = {
+            "MAX_ARCHIVE_ENTRIES": 10_000,
+            "MAX_TOTAL_UNCOMPRESSED": 512 * 1024 * 1024,
+            "MAX_ENTRY_UNCOMPRESSED": 128 * 1024 * 1024,
+            "MAX_COMPRESSION_RATIO": 200,
+            "MAX_PARSED_RESOURCE_BYTES": 32 * 1024 * 1024,
+        }
+        for name, value in expected.items():
+            with self.subTest(name=name):
+                self.assertEqual(getattr(epub3_samples, name, None), value)
+
+    def test_archive_entry_count_total_single_and_ratio_limits(self):
+        ratio_entries = [
+            *_structural_entries(),
+            ("OPS/compressed.bin", b"A" * 10_000, zipfile.ZIP_DEFLATED),
+        ]
+        cases = (
+            ("entry count", _structural_entries(), "MAX_ARCHIVE_ENTRIES", 4),
+            ("total uncompressed", _structural_entries(), "MAX_TOTAL_UNCOMPRESSED", 100),
+            ("entry uncompressed", _structural_entries(), "MAX_ENTRY_UNCOMPRESSED", 10),
+            ("compression ratio", ratio_entries, "MAX_COMPRESSION_RATIO", 2),
+        )
+        for expected, entries, constant, limit in cases:
+            with self.subTest(expected=expected):
+                with mock.patch.object(
+                    epub3_samples, constant, limit, create=True
+                ):
+                    result = self._scan(entries, sample_id="budget-book")
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+                self.assertTrue(all("budget-book" in error for error in result.errors))
+
+    def test_parsed_resource_streaming_cap_fails_scan(self):
+        with mock.patch.object(
+            epub3_samples, "MAX_PARSED_RESOURCE_BYTES", 40, create=True
+        ):
+            result = self._scan(sample_id="capped-book")
+
+        self.assertFalse(result.ok)
+        self.assertTrue(any("parsed resource byte limit" in error for error in result.errors), result.errors)
+
+    def test_normalized_zip_entry_name_collisions_fail(self):
+        entries = [
+            *_structural_entries(),
+            ("OPS/a/../chapter.xhtml", b"collision", zipfile.ZIP_STORED),
+        ]
+
+        result = self._scan(entries)
+
+        self.assertFalse(result.ok)
+        self.assertTrue(
+            any("normalized-name collision" in error for error in result.errors),
+            result.errors,
+        )
+
+    def test_internal_hrefs_are_url_decoded_and_external_uris_are_not_zip_resources(self):
+        opf = VALID_OPF.replace(
+            'href="chapter.xhtml" media-type="application/xhtml+xml"',
+            'href="chapter%2Exhtml?edition=test#start" media-type="application/xhtml+xml"',
+        ).replace(
+            "</manifest>",
+            '<item id="remote" href="https://example.com/remote.xhtml" '
+            'media-type="application/xhtml+xml"/>\n  </manifest>',
+        )
+
+        result = self._scan(_structural_entries(opf=opf))
+
+        self.assertTrue(result.ok, result.errors)
+
+    def test_internal_href_cannot_escape_opf_directory(self):
+        opf = VALID_OPF.replace('href="chapter.xhtml"', 'href="../../escape.xhtml"', 1)
+
+        result = self._scan(_structural_entries(opf=opf))
+
+        self.assertFalse(result.ok)
+        self.assertTrue(any("manifest href" in error and "escape" in error for error in result.errors))
+
+    def test_detects_features_from_package_and_resource_content(self):
+        feature_opf = """\
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="uid">urn:features</dc:identifier>
+    <dc:title>Feature fixture</dc:title>
+    <dc:language>en</dc:language>
+    <meta property="rendition:layout">pre-paginated</meta>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml" media-overlay="audio"/>
+    <item id="audio" href="overlay.smil" media-type="application/smil+xml"/>
+    <item id="figure" href="figure.svg" media-type="image/svg+xml"/>
+    <item id="handler" href="handler.xhtml" media-type="application/xhtml+xml" properties="scripted"/>
+  </manifest>
+  <spine page-progression-direction="rtl"><itemref idref="chapter"/></spine>
+  <bindings><mediaType media-type="application/x-demo" handler="handler"/></bindings>
+</package>
+"""
+        feature_chapter = """\
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:m="http://www.w3.org/1998/Math/MathML"
+      dir="rtl"><body style="writing-mode: vertical-rl">
+  <ruby>漢<rt>かん</rt></ruby><m:math><m:mi>x</m:mi></m:math>
+  <svg xmlns="http://www.w3.org/2000/svg"><circle r="2"/></svg>
+</body></html>
+"""
+        entries = _structural_entries(opf=feature_opf)
+        entries = [entry for entry in entries if entry[0] != "OPS/chapter.xhtml"]
+        entries.extend(
+            (
+                ("OPS/chapter.xhtml", feature_chapter.encode(), zipfile.ZIP_DEFLATED),
+                (
+                    "OPS/overlay.smil",
+                    b"<smil xmlns='http://www.w3.org/ns/SMIL' version='3.0'><body/></smil>",
+                    zipfile.ZIP_DEFLATED,
+                ),
+                ("OPS/figure.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>", zipfile.ZIP_DEFLATED),
+                ("OPS/handler.xhtml", CHAPTER_XHTML.encode(), zipfile.ZIP_DEFLATED),
+            )
+        )
+
+        result = self._scan(entries)
+
+        self.assertTrue(result.ok, result.errors)
+        self.assertEqual(
+            set(result.detected_features),
+            {
+                "bindings",
+                "fixed-layout",
+                "mathml",
+                "media-overlay",
+                "page-progression",
+                "rtl",
+                "ruby",
+                "svg",
+                "vertical-writing",
+            },
+        )
+
+    def test_foreign_vocabulary_elements_do_not_trigger_features(self):
+        chapter = b"""\
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:f="urn:foreign">
+  <body><f:math/><f:ruby/><f:svg/><f:box dir="rtl" style="writing-mode:vertical-rl"/></body>
+</html>
+"""
+        result = self._scan(
+            _replace_entry(_structural_entries(), "OPS/chapter.xhtml", chapter)
+        )
+
+        self.assertTrue(result.ok, result.errors)
+        for feature in ("mathml", "ruby", "svg", "rtl", "vertical-writing"):
+            self.assertNotIn(feature, result.detected_features)
+
+    def test_only_unqualified_xhtml_dir_and_style_attributes_trigger_features(self):
+        foreign_attributes = b"""\
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:f="urn:foreign">
+  <body f:dir="rtl" f:style="writing-mode:vertical-rl"/>
+</html>
+"""
+        unqualified_attributes = b"""\
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <body dir="rtl" style="writing-mode:vertical-rl"/>
+</html>
+"""
+
+        foreign_result = self._scan(
+            _replace_entry(
+                _structural_entries(), "OPS/chapter.xhtml", foreign_attributes
+            )
+        )
+        unqualified_result = self._scan(
+            _replace_entry(
+                _structural_entries(), "OPS/chapter.xhtml", unqualified_attributes
+            )
+        )
+
+        self.assertTrue(foreign_result.ok, foreign_result.errors)
+        self.assertNotIn("rtl", foreign_result.detected_features)
+        self.assertNotIn("vertical-writing", foreign_result.detected_features)
+        self.assertTrue(unqualified_result.ok, unqualified_result.errors)
+        self.assertIn("rtl", unqualified_result.detected_features)
+        self.assertIn("vertical-writing", unqualified_result.detected_features)
+
+    def test_valid_binding_is_detected(self):
+        opf = VALID_OPF.replace(
+            "</manifest>",
+            '<item id="handler" href="handler.xhtml" media-type="application/xhtml+xml" '
+            'properties="scripted"/>\n'
+            '<item id="widget" href="widget.xml" media-type="application/x-demo"/>\n  </manifest>',
+        ).replace(
+            "</package>",
+            '<bindings><mediaType media-type="application/x-demo" handler="handler"/></bindings>\n'
+            "</package>",
+        )
+        entries = [
+            *_structural_entries(opf=opf),
+            ("OPS/handler.xhtml", CHAPTER_XHTML.encode(), zipfile.ZIP_DEFLATED),
+            ("OPS/widget.xml", b"<widget/>", zipfile.ZIP_DEFLATED),
+        ]
+
+        result = self._scan(entries)
+
+        self.assertTrue(result.ok, result.errors)
+        self.assertIn("bindings", result.detected_features)
+        self.assertEqual(result.warnings, ())
+
+    def test_bindings_require_valid_media_type_and_scripted_xhtml_handler(self):
+        valid_opf = VALID_OPF.replace(
+            "</manifest>",
+            '<item id="handler" href="handler.xhtml" media-type="application/xhtml+xml" '
+            'properties="scripted"/>\n  </manifest>',
+        ).replace(
+            "</package>",
+            '<bindings><mediaType media-type="application/x-demo" handler="handler"/></bindings>\n'
+            "</package>",
+        )
+        cases = {
+            "bindings must contain": valid_opf.replace(
+                '<bindings><mediaType media-type="application/x-demo" handler="handler"/></bindings>',
+                "<bindings/>",
+            ),
+            "binding media-type missing": valid_opf.replace(
+                ' media-type="application/x-demo"', ""
+            ),
+            "binding media-type blank": valid_opf.replace(
+                'media-type="application/x-demo"', 'media-type="   "'
+            ),
+            "binding handler missing": valid_opf.replace(' handler="handler"', ""),
+            "binding handler blank": valid_opf.replace(
+                'handler="handler"', 'handler="   "'
+            ),
+            "binding handler ID": valid_opf.replace(
+                'handler="handler"', 'handler="missing"'
+            ),
+            "binding handler XHTML": valid_opf.replace(
+                'id="handler" href="handler.xhtml" media-type="application/xhtml+xml"',
+                'id="handler" href="handler.xhtml" media-type="application/xml"',
+            ),
+            "binding handler scripted": valid_opf.replace(
+                ' properties="scripted"/>\n  </manifest>', "/>\n  </manifest>"
+            ),
+        }
+
+        for expected, opf in cases.items():
+            with self.subTest(expected=expected):
+                entries = [
+                    *_structural_entries(opf=opf),
+                    (
+                        "OPS/handler.xhtml",
+                        CHAPTER_XHTML.encode(),
+                        zipfile.ZIP_DEFLATED,
+                    ),
+                ]
+                result = self._scan(entries)
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_binding_handler_requires_local_xhtml_document_with_direct_body(self):
+        valid_opf = VALID_OPF.replace(
+            "</manifest>",
+            '<item id="handler" href="handler.xhtml" media-type="application/xhtml+xml" '
+            'properties="scripted"/>\n  </manifest>',
+        ).replace(
+            "</package>",
+            '<bindings><mediaType media-type="application/x-demo" handler="handler"/></bindings>\n'
+            "</package>",
+        )
+        cases = {
+            "binding handler local": (
+                valid_opf.replace(
+                    'href="handler.xhtml"', 'href="https://example.com/handler.xhtml"'
+                ),
+                None,
+            ),
+            "binding handler XHTML root": (valid_opf, b"<garbage/>"),
+            "binding handler direct body": (
+                valid_opf,
+                b'<html xmlns="http://www.w3.org/1999/xhtml"><head/></html>',
+            ),
+        }
+        for expected, (opf, handler_payload) in cases.items():
+            with self.subTest(expected=expected):
+                entries = _structural_entries(opf=opf)
+                if handler_payload is not None:
+                    entries.append(
+                        (
+                            "OPS/handler.xhtml",
+                            handler_payload,
+                            zipfile.ZIP_DEFLATED,
+                        )
+                    )
+                result = self._scan(entries)
+                self.assertFalse(result.ok)
+                self.assertNotIn("bindings", result.detected_features)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_css_comments_do_not_trigger_writing_features(self):
+        opf = VALID_OPF.replace(
+            "</manifest>",
+            '<item id="css" href="styles.css" media-type="text/css"/>\n  </manifest>',
+        )
+        entries = [
+            *_structural_entries(opf=opf),
+            (
+                "OPS/styles.css",
+                b"/* writing-mode: vertical-rl; direction: rtl; */",
+                zipfile.ZIP_DEFLATED,
+            ),
+        ]
+
+        result = self._scan(entries)
+
+        self.assertTrue(result.ok, result.errors)
+        self.assertNotIn("vertical-writing", result.detected_features)
+        self.assertNotIn("rtl", result.detected_features)
+
+    def test_css_property_names_and_quoted_values_do_not_trigger_features(self):
+        opf = VALID_OPF.replace(
+            "</manifest>",
+            '<item id="css" href="styles.css" media-type="text/css"/>\n  </manifest>',
+        )
+        false_positive_styles = (
+            "body { --reading-direction: rtl; --preferred-writing-mode: vertical-rl; }",
+            'body::before { content: "direction:rtl; writing-mode:vertical-rl"; }',
+            "body::before { content: 'direction:rtl; writing-mode:vertical-rl'; }",
+        )
+        for stylesheet in false_positive_styles:
+            with self.subTest(stylesheet=stylesheet):
+                entries = [
+                    *_structural_entries(opf=opf),
+                    (
+                        "OPS/styles.css",
+                        stylesheet.encode(),
+                        zipfile.ZIP_DEFLATED,
+                    ),
+                ]
+                result = self._scan(entries)
+                self.assertTrue(result.ok, result.errors)
+                self.assertNotIn("vertical-writing", result.detected_features)
+                self.assertNotIn("rtl", result.detected_features)
+
+    def test_css_function_arguments_do_not_trigger_writing_features(self):
+        opf = VALID_OPF.replace(
+            "</manifest>",
+            '<item id="css" href="styles.css" media-type="text/css"/>\n  </manifest>',
+        )
+        stylesheets = (
+            "body { background:url(data:text/plain,direction:rtl;writing-mode:vertical-rl); }",
+            'body { background:url("data:text/plain,direction:rtl;writing-mode:vertical-rl"); }',
+            "body { value:outer(inner(direction:rtl;writing-mode:vertical-rl)); }",
+        )
+        for stylesheet in stylesheets:
+            with self.subTest(stylesheet=stylesheet):
+                entries = [
+                    *_structural_entries(opf=opf),
+                    ("OPS/styles.css", stylesheet.encode(), zipfile.ZIP_DEFLATED),
+                ]
+                result = self._scan(entries)
+                self.assertTrue(result.ok, result.errors)
+                self.assertNotIn("vertical-writing", result.detected_features)
+                self.assertNotIn("rtl", result.detected_features)
+
+    def test_css_lexer_preserves_real_declarations_after_string_comment_marker(self):
+        opf = VALID_OPF.replace(
+            "</manifest>",
+            '<item id="css" href="styles.css" media-type="text/css"/>\n  </manifest>',
+        )
+        entries = [
+            *_structural_entries(opf=opf),
+            (
+                "OPS/styles.css",
+                b'body { content:"/*"; direction:rtl; writing-mode:vertical-rl; }',
+                zipfile.ZIP_DEFLATED,
+            ),
+        ]
+
+        result = self._scan(entries)
+
+        self.assertTrue(result.ok, result.errors)
+        self.assertIn("rtl", result.detected_features)
+        self.assertIn("vertical-writing", result.detected_features)
+
+    def test_css_lexer_keeps_escaped_function_closers_and_strings_masked(self):
+        opf = VALID_OPF.replace(
+            "</manifest>",
+            '<item id="css" href="styles.css" media-type="text/css"/>\n  </manifest>',
+        )
+        stylesheets = (
+            r"body { background:url(foo\);direction:rtl); }",
+            r"body { background:url(foo\);writing-mode:vertical-rl); }",
+            r'body { content:"escaped \" direction:rtl; writing-mode:vertical-rl"; }',
+            r"body { content:'escaped \' direction:rtl; writing-mode:vertical-rl'; }",
+            "body { /* direction:rtl; */ value:outer(inner(writing-mode:vertical-rl)); }",
+        )
+        for stylesheet in stylesheets:
+            with self.subTest(stylesheet=stylesheet):
+                entries = [
+                    *_structural_entries(opf=opf),
+                    ("OPS/styles.css", stylesheet.encode(), zipfile.ZIP_DEFLATED),
+                ]
+
+                result = self._scan(entries)
+
+                self.assertTrue(result.ok, result.errors)
+                self.assertNotIn("rtl", result.detected_features)
+                self.assertNotIn("vertical-writing", result.detected_features)
+
+    def test_css_exact_writing_property_names_are_detected(self):
+        opf = VALID_OPF.replace(
+            "</manifest>",
+            '<item id="css" href="styles.css" media-type="text/css"/>\n  </manifest>',
+        )
+        entries = [
+            *_structural_entries(opf=opf),
+            (
+                "OPS/styles.css",
+                b"body { direction:rtl; writing-mode:vertical-rl; }",
+                zipfile.ZIP_DEFLATED,
+            ),
+        ]
+
+        result = self._scan(entries)
+
+        self.assertTrue(result.ok, result.errors)
+        self.assertIn("vertical-writing", result.detected_features)
+        self.assertIn("rtl", result.detected_features)
+
+    def test_xhtml_prose_does_not_trigger_writing_features(self):
+        chapter = b"""\
+<html xmlns="http://www.w3.org/1999/xhtml"><body>
+  <p>The examples writing-mode: vertical-rl and direction: rtl are prose.</p>
+</body></html>
+"""
+        entries = _replace_entry(
+            _structural_entries(), "OPS/chapter.xhtml", chapter
+        )
+
+        result = self._scan(entries)
+
+        self.assertTrue(result.ok, result.errors)
+        self.assertNotIn("vertical-writing", result.detected_features)
+        self.assertNotIn("rtl", result.detected_features)
+
+    def test_detects_writing_features_only_in_css_contexts(self):
+        opf_with_css = VALID_OPF.replace(
+            "</manifest>",
+            '<item id="css" href="styles.css" media-type="text/css"/>\n  </manifest>',
+        )
+        cases = {
+            "style attribute": (
+                _structural_entries(),
+                b'<html xmlns="http://www.w3.org/1999/xhtml"><body '
+                b'style="writing-mode: vertical-rl; direction: rtl"/></html>',
+                None,
+            ),
+            "style element": (
+                _structural_entries(),
+                b'<html xmlns="http://www.w3.org/1999/xhtml"><head><style>'
+                b'body { writing-mode: vertical-rl; direction: rtl; }'
+                b'</style></head><body/></html>',
+                None,
+            ),
+            "manifest CSS": (
+                _structural_entries(opf=opf_with_css),
+                CHAPTER_XHTML.encode(),
+                b'body { writing-mode: vertical-rl; direction: rtl; }',
+            ),
+        }
+
+        for context, (base_entries, chapter, stylesheet) in cases.items():
+            with self.subTest(context=context):
+                entries = _replace_entry(
+                    base_entries, "OPS/chapter.xhtml", chapter
+                )
+                if stylesheet is not None:
+                    entries.append(
+                        ("OPS/styles.css", stylesheet, zipfile.ZIP_DEFLATED)
+                    )
+                result = self._scan(entries)
+                self.assertTrue(result.ok, result.errors)
+                self.assertIn("vertical-writing", result.detected_features)
+                self.assertIn("rtl", result.detected_features)
+
+    def test_invalid_page_progression_direction_fails_without_detection(self):
+        opf = VALID_OPF.replace(
+            "<spine>", '<spine page-progression-direction="garbage">'
+        )
+
+        result = self._scan(_structural_entries(opf=opf))
+
+        self.assertFalse(result.ok)
+        self.assertTrue(
+            any("page-progression-direction" in error for error in result.errors),
+            result.errors,
+        )
+        self.assertNotIn("page-progression", result.detected_features)
+
+    def test_valid_page_progression_directions_are_detected(self):
+        for direction in ("ltr", "rtl"):
+            with self.subTest(direction=direction):
+                opf = VALID_OPF.replace(
+                    "<spine>",
+                    f'<spine page-progression-direction="{direction}">',
+                )
+                result = self._scan(_structural_entries(opf=opf))
+                self.assertTrue(result.ok, result.errors)
+                self.assertIn("page-progression", result.detected_features)
+                self.assertEqual("rtl" in result.detected_features, direction == "rtl")
+
+    def test_itemref_fixed_layout_property_is_detected(self):
+        opf = VALID_OPF.replace(
+            '<itemref idref="chapter"/>',
+            '<itemref idref="chapter" properties="rendition:layout-pre-paginated"/>',
+        )
+
+        result = self._scan(_structural_entries(opf=opf))
+
+        self.assertTrue(result.ok, result.errors)
+        self.assertIn("fixed-layout", result.detected_features)
+
+    def test_invalid_package_direction_and_rendition_layout_fail(self):
+        invalid_direction = VALID_OPF.replace(
+            'unique-identifier="uid">',
+            'unique-identifier="uid" dir="garbage">',
+        )
+        invalid_layout = VALID_OPF.replace(
+            "  </metadata>",
+            '    <meta property="rendition:layout">garbage</meta>\n  </metadata>',
+        )
+        cases = {
+            "package dir": invalid_direction,
+            "rendition:layout": invalid_layout,
+        }
+
+        for expected, opf in cases.items():
+            with self.subTest(expected=expected):
+                result = self._scan(_structural_entries(opf=opf))
+                self.assertFalse(result.ok)
+                self.assertTrue(any(expected in error for error in result.errors), result.errors)
+
+    def test_manifest_feature_claims_without_content_are_not_detected(self):
+        claimed_opf = VALID_OPF.replace(
+            'id="chapter" href="chapter.xhtml"',
+            'id="chapter" href="chapter.xhtml" properties="mathml svg scripted"',
+        )
+
+        result = self._scan(_structural_entries(opf=claimed_opf))
+
+        self.assertTrue(result.ok, result.errors)
+        self.assertNotIn("mathml", result.detected_features)
+        self.assertNotIn("svg", result.detected_features)
+        self.assertNotIn("scripted", result.detected_features)
+
+    def test_known_uninspected_media_types_do_not_warn(self):
+        resources = (
+            ("lexicon.pls", "application/pls+xml"),
+            ("captions.vtt", "text/vtt"),
+            ("captions.xml", "application/ttml+xml"),
+            ("page.xpgt", "application/adobe-page-template+xml"),
+            ("font.woff", "application/font-woff"),
+        )
+        declarations = "\n".join(
+            f'<item id="known-{index}" href="{href}" media-type="{media_type}"/>'
+            for index, (href, media_type) in enumerate(resources)
+        )
+        opf = VALID_OPF.replace("</manifest>", f"{declarations}\n  </manifest>")
+        entries = _structural_entries(opf=opf)
+        entries.extend(
+            (f"OPS/{href}", b"fixture", zipfile.ZIP_STORED)
+            for href, _ in resources
+        )
+
+        result = self._scan(entries)
+
+        self.assertTrue(result.ok, result.errors)
+        self.assertEqual(result.warnings, ())
+
+
+class EPUB3PackageAggregateTests(unittest.TestCase):
+    def test_scan_all_continues_after_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            books_dir = Path(directory)
+            first = Sample(
+                id="broken",
+                title="Broken",
+                source_url="https://example.com/broken.epub",
+                catalog_url="https://example.com",
+                filename="broken.epub",
+                sha256="a" * 64,
+                license="fixture",
+                features=("fixture",),
+                smoke_targets=(),
+                manual=False,
+                manual_checkpoints=(),
+            )
+            second = replace(first, id="valid", title="Valid", filename="valid.epub")
+            (books_dir / first.filename).write_bytes(b"corrupt")
+            _write_epub(books_dir / second.filename, _structural_entries())
+
+            results = epub3_samples.scan_all((first, second), books_dir)
+
+        self.assertEqual([result.sample_id for result in results], ["broken", "valid"])
+        self.assertEqual([result.status for result in results], ["failed", "passed"])
+
+    def test_stable_report_sorts_samples_and_serializes_each_once(self):
+        results = (
+            epub3_samples.ScanResult(
+                sample_id="z-book",
+                path=Path("z.epub"),
+                status="passed",
+                rootfile="OPS/package.opf",
+                version="3.0",
+                manifest_count=2,
+                spine_count=1,
+                nav="OPS/nav.xhtml",
+                detected_features=("ruby", "mathml"),
+                warnings=(),
+                errors=(),
+            ),
+            epub3_samples.ScanResult(
+                sample_id="a-book",
+                path=Path("a.epub"),
+                status="failed",
+                rootfile=None,
+                version=None,
+                manifest_count=0,
+                spine_count=0,
+                nav=None,
+                detected_features=(),
+                warnings=(),
+                errors=("a-book: corrupt ZIP",),
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "scan-results.json"
+            epub3_samples.write_scan_report(results, report)
+            first_bytes = report.read_bytes()
+            epub3_samples.write_scan_report(reversed(results), report)
+            second_bytes = report.read_bytes()
+            payload = json.loads(second_bytes)
+
+        self.assertEqual(first_bytes, second_bytes)
+        self.assertEqual([entry["sample_id"] for entry in payload["results"]], ["a-book", "z-book"])
+        self.assertEqual(len(payload["results"]), 2)
+        self.assertEqual(payload["results"][1]["detected_features"], ["mathml", "ruby"])
+
+    def test_report_rejects_duplicate_sample_ids_in_any_order(self):
+        passed = epub3_samples.ScanResult(
+            sample_id="duplicate",
+            path=Path("passed.epub"),
+            status="passed",
+            rootfile="OPS/package.opf",
+            version="3.0",
+            manifest_count=1,
+            spine_count=1,
+            nav="OPS/nav.xhtml",
+            detected_features=(),
+            warnings=(),
+            errors=(),
+        )
+        failed = replace(
+            passed,
+            path=Path("failed.epub"),
+            status="failed",
+            errors=("duplicate: failure",),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "scan-results.json"
+            for ordered in ((passed, failed), (failed, passed)):
+                with self.subTest(first=ordered[0].status):
+                    with self.assertRaisesRegex(ValueError, "duplicate sample ID"):
+                        epub3_samples.write_scan_report(ordered, report)
+
+    def test_atomic_report_replace_failure_preserves_old_report_and_cleans_temp(self):
+        result = epub3_samples.ScanResult(
+            sample_id="sample",
+            path=Path("sample.epub"),
+            status="passed",
+            rootfile="OPS/package.opf",
+            version="3.0",
+            manifest_count=1,
+            spine_count=1,
+            nav="OPS/nav.xhtml",
+            detected_features=(),
+            warnings=(),
+            errors=(),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "scan-results.json"
+            report.write_bytes(b"old report")
+            with mock.patch.object(
+                epub3_samples.os,
+                "replace",
+                side_effect=OSError("injected report replace failure"),
+            ):
+                with self.assertRaisesRegex(OSError, "injected report replace failure"):
+                    epub3_samples.write_scan_report((result,), report)
+            self.assertEqual(report.read_bytes(), b"old report")
+            self.assertEqual(list(report.parent.glob("*.tmp")), [])
+
+
+class ScanResultTests(unittest.TestCase):
+    def test_ok_is_derived_from_status_and_result_is_frozen(self):
+        result = epub3_samples.ScanResult(
+            sample_id="sample",
+            path=Path("sample.epub"),
+            status="passed",
+            rootfile="OPS/package.opf",
+            version="3.0",
+            manifest_count=1,
+            spine_count=1,
+            nav=None,
+            detected_features=(),
+            warnings=(),
+            errors=(),
+        )
+
+        self.assertTrue(result.ok)
+        with self.assertRaises((AttributeError, FrozenInstanceError)):
+            result.status = "failed"
+
+
 class FetchResultTests(unittest.TestCase):
     def test_ok_is_derived_from_status_and_read_only(self):
         path = Path("sample.epub")
@@ -768,6 +2071,127 @@ class EPUB3SamplesCLITests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertEqual(stdout, "")
         self.assertIn("failed: linear-algebra: injected download failure", stderr)
+
+    def test_scan_deduplicates_selection_writes_report_and_routes_summaries(self):
+        template = Sample(
+            id="broken",
+            title="Broken",
+            source_url="https://example.com/broken.epub",
+            catalog_url="https://example.com",
+            filename="broken.epub",
+            sha256="a" * 64,
+            license="fixture",
+            features=("fixture",),
+            smoke_targets=(),
+            manual=False,
+            manual_checkpoints=(),
+        )
+        valid_sample = replace(template, id="valid", title="Valid", filename="valid.epub")
+        manifest = epub3_samples.Manifest(schema_version=1, samples=(template, valid_sample))
+        captured = []
+
+        def capture_scan(samples, books_dir):
+            captured.append(tuple(sample.id for sample in samples))
+            return (
+                epub3_samples.ScanResult(
+                    sample_id="broken",
+                    path=Path(books_dir) / "broken.epub",
+                    status="failed",
+                    rootfile=None,
+                    version=None,
+                    manifest_count=0,
+                    spine_count=0,
+                    nav=None,
+                    detected_features=(),
+                    warnings=(),
+                    errors=("broken: corrupt ZIP",),
+                ),
+                epub3_samples.ScanResult(
+                    sample_id="valid",
+                    path=Path(books_dir) / "valid.epub",
+                    status="passed",
+                    rootfile="OPS/package.opf",
+                    version="3.0",
+                    manifest_count=2,
+                    spine_count=1,
+                    nav="OPS/nav.xhtml",
+                    detected_features=(),
+                    warnings=(),
+                    errors=(),
+                ),
+            )
+
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            epub3_samples, "load_manifest", return_value=manifest
+        ), mock.patch.object(epub3_samples, "scan_all", side_effect=capture_scan):
+            report = Path(directory) / "results" / "scan-results.json"
+            exit_code, stdout, stderr = self._run_main(
+                [
+                    "scan",
+                    "--sample",
+                    "broken",
+                    "--sample",
+                    "valid",
+                    "--sample",
+                    "broken",
+                    "--books-dir",
+                    directory,
+                    "--results",
+                    str(report),
+                ]
+            )
+            payload = json.loads(report.read_text(encoding="utf-8"))
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(captured, [("broken", "valid")])
+        self.assertEqual([entry["sample_id"] for entry in payload["results"]], ["broken", "valid"])
+        self.assertIn("passed: valid:", stdout)
+        self.assertNotIn("broken", stdout)
+        self.assertIn("failed: broken: corrupt ZIP", stderr)
+
+    def test_scan_unknown_sample_fails_without_scanning(self):
+        with mock.patch.object(epub3_samples, "scan_all") as scan_all:
+            exit_code, stdout, stderr = self._run_main(
+                ["scan", "--sample", "unknown-sample"]
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn("unknown sample ID(s): unknown-sample", stderr)
+        scan_all.assert_not_called()
+
+    def test_scan_report_oserror_is_one_line_stderr_failure(self):
+        result = epub3_samples.ScanResult(
+            sample_id="linear-algebra",
+            path=Path("linear-algebra.epub"),
+            status="passed",
+            rootfile="EPUB/package.opf",
+            version="3.0",
+            manifest_count=1,
+            spine_count=1,
+            nav="EPUB/nav.xhtml",
+            detected_features=(),
+            warnings=(),
+            errors=(),
+        )
+        with mock.patch.object(
+            epub3_samples, "scan_all", return_value=(result,)
+        ), mock.patch.object(
+            epub3_samples,
+            "write_scan_report",
+            side_effect=OSError("report filesystem failure"),
+        ):
+            try:
+                exit_code, stdout, stderr = self._run_main(
+                    ["scan", "--sample", "linear-algebra"]
+                )
+            except OSError as error:
+                self.fail(f"CLI leaked OSError traceback path: {error}")
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(stdout, "")
+        self.assertEqual(stderr.count("\n"), 1)
+        self.assertIn("scan error: report filesystem failure", stderr)
 
 
 if __name__ == "__main__":
