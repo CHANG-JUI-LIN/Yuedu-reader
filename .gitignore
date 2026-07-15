@@ -3,6 +3,7 @@
 xcuserdata/
 DerivedData/
 .build/
+.build-week/
 .worktrees/
 build/
 
