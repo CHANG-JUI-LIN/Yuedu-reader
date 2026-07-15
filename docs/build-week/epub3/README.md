@@ -2,7 +2,8 @@
 
 This harness reproducibly selects, downloads, and scans the official EPUB 3
 samples described by `sample-manifest.json`, then optionally exercises them
-through Yuedu's production reading pipeline.
+through Yuedu's production reading pipeline. The recorded sample-level results
+are in `compatibility-matrix.md`.
 
 Validate the committed manifest:
 
@@ -34,17 +35,108 @@ Scan one or more exact samples while developing the harness:
 python3 scripts/epub3_samples.py scan --sample linear-algebra --sample moby-dick
 ```
 
-Run the opt-in production-pipeline smoke suite after fetching the full corpus:
+## Current-branch corpus capture
+
+Run the opt-in production-pipeline smoke suite after fetching the full corpus.
+Keep result bundles and DerivedData under the ignored `.build-week/` tree:
 
 ```bash
+ROOT=$(git rev-parse --show-toplevel)
+CORPUS_DIR="$ROOT/.build-week/epub3-samples/books"
+RESULTS_DIR="$ROOT/.build-week/epub3-samples/results"
+CAPTURE="current-rerun-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$RESULTS_DIR/derived-data"
+
 TEST_RUNNER_YUEDU_RUN_EPUB3_CORPUS=1 \
-TEST_RUNNER_YUEDU_EPUB3_CORPUS_DIR="$PWD/.build-week/epub3-samples/books" \
+TEST_RUNNER_YUEDU_EPUB3_CORPUS_DIR="$CORPUS_DIR" \
 xcodebuild test -project Yuedu-Reader.xcodeproj \
   -scheme 'Yuedu-Reader EPUB3 Corpus' \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
   -only-testing:'IDPFEPUB3CorpusTests/IDPFEPUB3SampleSmokeTests' \
+  -resultBundlePath "$RESULTS_DIR/$CAPTURE.xcresult" \
+  -derivedDataPath "$RESULTS_DIR/derived-data/$CAPTURE" \
   -parallel-testing-enabled NO
 ```
+
+## Baseline corpus capture
+
+The recorded baseline uses production tag `build-week-baseline` (`dd62d80`)
+with harness commit `fa95f83`. To reproduce it without introducing later
+production changes, create a detached worktree and replay the four harness
+commits after harness base `3ab61cd`:
+
+```bash
+ROOT=$(git rev-parse --show-toplevel)
+CORPUS_DIR="$ROOT/.build-week/epub3-samples/books"
+RESULTS_DIR="$ROOT/.build-week/epub3-samples/results"
+BASELINE_WT=$(mktemp -d /private/tmp/yuedu-build-week-baseline.XXXXXX)
+
+git worktree add --detach "$BASELINE_WT" build-week-baseline
+git -C "$BASELINE_WT" cherry-pick 3ab61cd..fa95f83
+```
+
+The final `fa95f83` cherry-pick has exactly two expected modify/delete
+conflicts because these Build Week planning documents do not exist at the
+baseline tag. Keep both files deleted and continue:
+
+```bash
+git -C "$BASELINE_WT" rm \
+  docs/superpowers/plans/2026-07-15-idpf-epub3-corpus-harness.md \
+  docs/superpowers/specs/2026-07-15-idpf-epub3-compatibility-hardening-design.md
+git -C "$BASELINE_WT" cherry-pick --continue
+git -C "$BASELINE_WT" diff --name-only dd62d80
+```
+
+The final diff inspection must contain only harness, test, documentation, and
+ignore files—never renderer production files. The app target also references a
+local, ignored `GoogleService-Info.plist`. Copy the current worktree's local
+file when it exists, and never stage or commit it:
+
+```bash
+if [ -f "$ROOT/GoogleService-Info.plist" ]; then
+  cp "$ROOT/GoogleService-Info.plist" "$BASELINE_WT/GoogleService-Info.plist"
+  git -C "$BASELINE_WT" check-ignore GoogleService-Info.plist
+fi
+```
+
+Run the baseline suite from that worktree with its output still directed to the
+current repository's ignored results directory:
+
+```bash
+CAPTURE="baseline-rerun-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$RESULTS_DIR/derived-data"
+cd "$BASELINE_WT"
+
+TEST_RUNNER_YUEDU_RUN_EPUB3_CORPUS=1 \
+TEST_RUNNER_YUEDU_EPUB3_CORPUS_DIR="$CORPUS_DIR" \
+xcodebuild test -project Yuedu-Reader.xcodeproj \
+  -scheme 'Yuedu-Reader EPUB3 Corpus' \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
+  -only-testing:'IDPFEPUB3CorpusTests/IDPFEPUB3SampleSmokeTests' \
+  -resultBundlePath "$RESULTS_DIR/$CAPTURE.xcresult" \
+  -derivedDataPath "$RESULTS_DIR/derived-data/$CAPTURE" \
+  -parallel-testing-enabled NO
+```
+
+Remove the detached worktree after the result bundle has been captured:
+
+```bash
+cd "$ROOT"
+git worktree remove "$BASELINE_WT"
+```
+
+## Recorded result and interpretation
+
+Both captures used an iPhone 17 Pro Max simulator on iOS 27.0. Each recorded
+run enumerated 43 tests with 29 passed, 14 failed, and 0 skipped; the 42
+sample-level statuses were identical between baseline and current. Both static
+scans passed all 42 samples. The eight representative manual reviews remain
+pending, so their manual cells and final outcomes remain `not-run`.
+
+The 14 production compatibility failures make `xcodebuild` exit with status
+65. For this triage suite, exit 65 is evidence rather than a harness failure
+when the result bundle shows all 43 runs and 0 skips. A capture with missing or
+skipped samples is invalid even if the shell command exits successfully.
 
 `xcodebuild` strips the documented `TEST_RUNNER_` prefix when forwarding both
 variables to the hosted test process. Without `YUEDU_RUN_EPUB3_CORPUS=1` in
