@@ -53,6 +53,38 @@ struct ReaderOverlayIntegrationTests {
         #expect(!visibility.showsEditorCanvas)
     }
 
+    @Test("Overlay editor always hides the system status bar")
+    func overlayEditorHidesSystemStatusBar() {
+        #expect(
+            ReaderOverlayPresentationPolicy.hidesStatusBar(
+                showsReaderChrome: true,
+                isEditing: true
+            )
+        )
+        #expect(
+            ReaderOverlayPresentationPolicy.hidesStatusBar(
+                showsReaderChrome: false,
+                isEditing: true
+            )
+        )
+    }
+
+    @Test("Reader chrome controls status bar outside the editor")
+    func readerChromeControlsSystemStatusBar() {
+        #expect(
+            !ReaderOverlayPresentationPolicy.hidesStatusBar(
+                showsReaderChrome: true,
+                isEditing: false
+            )
+        )
+        #expect(
+            ReaderOverlayPresentationPolicy.hidesStatusBar(
+                showsReaderChrome: false,
+                isEditing: false
+            )
+        )
+    }
+
     @Test("Component movement never changes content reservations")
     func movementDoesNotReflow() {
         var layout = ReaderOverlayLayout.default

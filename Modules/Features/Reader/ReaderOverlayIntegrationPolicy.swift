@@ -15,6 +15,13 @@ enum ReaderOverlayPresentationPolicy {
             showsEditorCanvas: !isScrolling && isEditing
         )
     }
+
+    static func hidesStatusBar(
+        showsReaderChrome: Bool,
+        isEditing: Bool
+    ) -> Bool {
+        isEditing || !showsReaderChrome
+    }
 }
 
 enum ReaderOverlayPaginationPolicy {

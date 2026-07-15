@@ -1415,7 +1415,12 @@ struct ReaderView: View {
             applyRotatedViewportIfNeeded()
         }
         .animation(.easeInOut(duration: 0.25), value: chapters.isEmpty)
-        .statusBarHidden(!showBars && readerHeaderFooterEditorModel == nil)
+        .statusBarHidden(
+            ReaderOverlayPresentationPolicy.hidesStatusBar(
+                showsReaderChrome: showBars,
+                isEditing: readerHeaderFooterEditorModel != nil
+            )
+        )
         .animation(.easeInOut(duration: 0.25), value: showBars)
         .modifier(HideTabBarModifier())
         .alert(
