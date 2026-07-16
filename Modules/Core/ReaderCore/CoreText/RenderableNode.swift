@@ -64,7 +64,8 @@ public indirect enum RenderableNode: Sendable {
     case image(src: String, alt: String, style: RenderStyle = .none, svgContent: String? = nil)
 
     /// MathML converted to LaTeX and rasterized with iosMath into a CoreText attachment.
-    case mathML(latex: String, alt: String, style: RenderStyle = .none, displayMode: MathDisplayMode = .inline)
+    /// A nil conversion remains an explicit node so useful authored fallback text is not lost.
+    case mathML(MathMLPayload, style: RenderStyle = .none)
 
     /// Rasterized HTML table. Keeps row/cell semantics intact until the final renderer stage.
     case table(HTMLTableModel, style: RenderStyle = .none)
@@ -321,6 +322,18 @@ public enum RenderFloatSide: Sendable {
 public enum MathDisplayMode: Sendable {
     case inline
     case block
+}
+
+public struct MathMLPayload: Sendable {
+    public let latex: String?
+    public let alt: String?
+    public let displayMode: MathDisplayMode
+
+    public init(latex: String?, alt: String?, displayMode: MathDisplayMode) {
+        self.latex = latex
+        self.alt = alt
+        self.displayMode = displayMode
+    }
 }
 
 // MARK: - RenderColor (UIKit-independent color type)

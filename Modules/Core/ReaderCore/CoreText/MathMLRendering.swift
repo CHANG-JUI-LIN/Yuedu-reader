@@ -36,11 +36,9 @@ enum MathMLLatexConverter {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func fallbackText(alt: String?, latex: String) -> String {
+    static func fallbackText(alt: String?, latex: String?) -> String {
         let trimmedAlt = alt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let trimmedLatex = latex.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedAlt.isEmpty,
-           trimmedAlt != trimmedLatex,
            trimmedAlt.range(of: "alternative text not available", options: .caseInsensitive) == nil,
            trimmedAlt.count <= 80 {
             return "[\(trimmedAlt)]"

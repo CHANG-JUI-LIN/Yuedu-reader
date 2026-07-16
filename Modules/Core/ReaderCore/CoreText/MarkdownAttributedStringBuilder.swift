@@ -240,8 +240,8 @@ enum MarkdownRenderableNodeConverter {
             return topLevelText(for: child)
         case .image(_, let alt, _, _):
             return alt
-        case .mathML(_, let alt, _, _):
-            return alt
+        case .mathML(let payload, _):
+            return payload.alt ?? ""
         case .table(let table, _):
             return table.accessibilityText
         case .media(let media, _):

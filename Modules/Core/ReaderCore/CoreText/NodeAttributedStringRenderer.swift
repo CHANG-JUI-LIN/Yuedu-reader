@@ -215,8 +215,8 @@ struct NodeAttributedStringRenderer {
         case .image(let src, let alt, let style, let svgContent):
             return await renderInlineImage(src: src, alt: alt, style: style, svgContent: svgContent, ctx: ctx)
 
-        case .mathML(let latex, let alt, let style, let displayMode):
-            return await renderMathML(latex: latex, alt: alt, style: style, displayMode: displayMode, ctx: ctx)
+        case .mathML(let payload, let style):
+            return await renderMathML(payload: payload, style: style, ctx: ctx)
 
         case .table(let table, let style):
             return await renderTable(table, style: style, ctx: ctx)
@@ -1234,14 +1234,15 @@ struct NodeAttributedStringRenderer {
     }
 
     private func renderMathML(
-        latex: String,
-        alt: String,
+        payload: MathMLPayload,
         style: RenderStyle,
-        displayMode: MathDisplayMode,
         ctx: RenderContext
     ) async -> NSAttributedString {
         let mathCtx = applyInlineStyle(style, to: ctx)
-        let runMode: ImageRunInfo.DisplayMode = displayMode == .block ? .block : .inline
+        guard let latex = payload.latex else {
+            return mathFallback(payload: payload, ctx: mathCtx)
+        }
+        let runMode: ImageRunInfo.DisplayMode = payload.displayMode == .block ? .block : .inline
         let maxWidth = max(1, config.renderWidth ?? 320)
         let rendered = await MathMLImageRenderer.render(
             latex: latex,
@@ -1251,12 +1252,7 @@ struct NodeAttributedStringRenderer {
             maxWidth: maxWidth
         )
         guard let rendered else {
-            var attrs = mathCtx.baseAttributes
-            attrs[.foregroundColor] = UIColor.secondaryLabel
-            return NSAttributedString(
-                string: MathMLLatexConverter.fallbackText(alt: alt, latex: latex),
-                attributes: attrs
-            )
+            return mathFallback(payload: payload, ctx: mathCtx)
         }
         let image = rendered.image
 
@@ -1273,7 +1269,7 @@ struct NodeAttributedStringRenderer {
                 style: style,
                 ctx: mathCtx,
                 imageSource: "mathml:",
-                imageAlt: alt,
+                imageAlt: payload.alt ?? "math",
                 displayMode: runMode,
                 precomputedMetrics: metrics
             )
@@ -1286,6 +1282,22 @@ struct NodeAttributedStringRenderer {
             )
         }
         return placeholder
+    }
+
+    private func mathFallback(
+        payload: MathMLPayload,
+        ctx: RenderContext
+    ) -> NSAttributedString {
+        var attrs = ctx.baseAttributes
+        attrs[.foregroundColor] = UIColor.secondaryLabel
+        attrs[HTMLAttributedStringBuilder.semanticTagAttribute] = "math"
+        return NSAttributedString(
+            string: MathMLLatexConverter.fallbackText(
+                alt: payload.alt,
+                latex: payload.latex
+            ),
+            attributes: attrs
+        )
     }
 
     private func renderImageOnlyBlock(
