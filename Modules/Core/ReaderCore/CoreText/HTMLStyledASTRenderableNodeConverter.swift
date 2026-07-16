@@ -186,9 +186,11 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             if let media = mediaAttachment {
                 node = .media(media, style: style)
             } else {
-                // No player surfaced (controls-less background audio, or no source). Render nothing —
-                // never fall back to the element's `<div class="errmsg">` "unsupported" children.
-                node = .text("")
+                // No player surfaced (for example controls-less background audio). The native
+                // reader cannot provide that behavior, so retain the author's static fallback
+                // children instead of silently dropping both the media and its replacement text.
+                style.sourceElementTag = "reader-fallback"
+                node = .block(tag: "reader-fallback", children: mappedChildren, style: style)
             }
 
         case "object":
