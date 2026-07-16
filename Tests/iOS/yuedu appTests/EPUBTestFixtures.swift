@@ -367,7 +367,8 @@ extension HTMLAttributedStringBuilder {
             },
             imageLoader: imageLoader,
             mediaURLResolver: mediaURLResolver,
-            baseWritingDirection: config.baseWritingDirection
+            baseWritingDirection: config.baseWritingDirection,
+            documentLanguage: config.documentLanguage
         )
         let attributed = NSMutableAttributedString(
             attributedString: await NodeAttributedStringRenderer(config: rendererConfig).render(nodes)

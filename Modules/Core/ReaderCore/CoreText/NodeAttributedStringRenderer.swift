@@ -48,6 +48,7 @@ struct NodeAttributedStringRenderer {
         let mediaURLResolver: ((String) -> String?)?
         let writingMode: ReaderWritingMode
         let baseWritingDirection: NSWritingDirection
+        let documentLanguage: String?
         let isBold: Bool
         /// Center standalone block images that carry no explicit horizontal alignment. Online
         /// web-novel sources (起点/Legado) emit chapter illustrations & 版权页 author photos as bare
@@ -65,6 +66,7 @@ struct NodeAttributedStringRenderer {
             imageLoader: ((String) async -> UIImage?)? = nil,
             mediaURLResolver: ((String) -> String?)? = nil,
             baseWritingDirection: NSWritingDirection = .natural,
+            documentLanguage: String? = nil,
             centerStandaloneImages: Bool = false
         ) {
             self.baseFontSize = settings.fontSize
@@ -87,6 +89,7 @@ struct NodeAttributedStringRenderer {
             self.mediaURLResolver = mediaURLResolver
             self.writingMode = settings.writingMode
             self.baseWritingDirection = baseWritingDirection
+            self.documentLanguage = EPUBLanguageTypography.normalizedLanguage(documentLanguage)
             self.isBold = settings.isBold
             self.centerStandaloneImages = centerStandaloneImages
         }
@@ -796,6 +799,8 @@ struct NodeAttributedStringRenderer {
 
         // ── Color ──
         if let c = style.color { newCtx.textColor = c.uiColor; newCtx.hasCSSColor = true }
+        newCtx.language = style.language ?? ctx.language
+        newCtx.sourceElementTag = style.sourceElementTag ?? ctx.sourceElementTag
 
         // ── Paragraph Style ──
         let para = NSMutableParagraphStyle()
@@ -897,7 +902,8 @@ struct NodeAttributedStringRenderer {
     private func applyInlineStyle(_ style: RenderStyle, to ctx: RenderContext) -> RenderContext {
         guard style.bold || style.italic || style.color != nil || !style.fontFamilies.isEmpty
                 || style.underline || style.strikethrough || style.fontSizeMultiplier != 1.0
-                || style.ssmlIPA != nil else { return ctx }
+                || style.ssmlIPA != nil || style.language != ctx.language
+                || style.sourceElementTag != ctx.sourceElementTag else { return ctx }
         var newCtx = ctx
         let families = style.fontFamilies.isEmpty ? ctx.fontFamilies : style.fontFamilies
         let bold = style.bold || ctx.font.isBold
@@ -912,6 +918,8 @@ struct NodeAttributedStringRenderer {
         if style.underline { newCtx.underline = true }
         if style.strikethrough { newCtx.strikethrough = true }
         if let ipa = style.ssmlIPA { newCtx.ipaPronunciation = ipa }
+        newCtx.language = style.language ?? ctx.language
+        newCtx.sourceElementTag = style.sourceElementTag ?? ctx.sourceElementTag
         return newCtx
     }
 
@@ -2733,6 +2741,8 @@ struct NodeAttributedStringRenderer {
         var ipaPronunciation: String?
         var underline: Bool
         var strikethrough: Bool
+        var language: String?
+        var sourceElementTag: String?
         var inheritedBlockMarginLeft: CGFloat
         var inheritedBlockMarginRight: CGFloat
         /// Inside a chat thread (`div.tk` of message bubbles): suppress the reader's body
@@ -2756,6 +2766,12 @@ struct NodeAttributedStringRenderer {
             ]
             if hasCSSColor {
                 attrs[HTMLAttributedStringBuilder.cssSpecifiedForegroundColorAttribute] = textColor
+            }
+            if let language {
+                attrs[EPUBLanguageTypography.languageAttribute] = language
+            }
+            if let sourceElementTag {
+                attrs[EPUBLanguageTypography.sourceElementTagAttribute] = sourceElementTag
             }
             if let href = linkHref {
                 // Tappable. Default link tint is applied in the `.anchor` case (only for links the
@@ -2802,6 +2818,8 @@ struct NodeAttributedStringRenderer {
                 lineHeightMultiple: config.lineHeightMultiple,
                 underline: false,
                 strikethrough: false,
+                language: config.documentLanguage,
+                sourceElementTag: nil,
                 inheritedBlockMarginLeft: 0,
                 inheritedBlockMarginRight: 0,
                 baseSize: config.baseFontSize

@@ -82,6 +82,7 @@ final class HTMLAttributedStringBuilder {
         var renderWidth: CGFloat
         var writingMode: ReaderWritingMode = .horizontal
         var baseWritingDirection: NSWritingDirection = .natural
+        var documentLanguage: String? = nil
         var firstLetterRules: [CSSRule] = []
     }
 
@@ -159,6 +160,7 @@ final class HTMLAttributedStringBuilder {
         var textColor: UIColor
         var textAlign: NSTextAlignment
         var baseWritingDirection: NSWritingDirection
+        var language: String? = nil
         var textIndent: CGFloat
         var lineHeight: CGFloat
         /// Whether CSS explicitly specifies line-height (true = skip clamping)
@@ -1081,6 +1083,7 @@ final class HTMLAttributedStringBuilder {
         config: Config
     ) -> ResolvedStyle {
         var style = inheritedStyle(from: parent, tag: element.tagName().lowercased())
+        applyHTMLLanguageAttribute(from: element, to: &style)
         let pct = config.renderWidth
         apply(
             declarations: userAgentDeclarations(for: element.tagName().lowercased(), config: parent),
@@ -1272,6 +1275,19 @@ final class HTMLAttributedStringBuilder {
         }
     }
 
+    private func applyHTMLLanguageAttribute(
+        from element: Element,
+        to style: inout ResolvedStyle
+    ) {
+        for key in ["xml:lang", "lang"] where element.hasAttr(key) {
+            let raw = (try? element.attr(key)) ?? ""
+            if let language = EPUBLanguageTypography.normalizedLanguage(raw) {
+                style.language = language
+                return
+            }
+        }
+    }
+
     private func inheritedStyle(from parent: ResolvedStyle, tag: String) -> ResolvedStyle {
         ResolvedStyle(
             fontSize: parent.fontSize,
@@ -1281,6 +1297,7 @@ final class HTMLAttributedStringBuilder {
             textColor: parent.textColor,
             textAlign: parent.textAlign,
             baseWritingDirection: parent.baseWritingDirection,
+            language: parent.language,
             textIndent: parent.textIndent,
             lineHeight: parent.lineHeight,
             lineHeightExplicit: parent.lineHeightExplicit,
@@ -1347,6 +1364,7 @@ final class HTMLAttributedStringBuilder {
             textColor: config.textColor,
             textAlign: .natural,
             baseWritingDirection: config.baseWritingDirection,
+            language: EPUBLanguageTypography.normalizedLanguage(config.documentLanguage),
             textIndent: config.firstLineIndent,
             lineHeight: defaultLineHeight,
             lineHeightExplicit: false,
@@ -2368,7 +2386,7 @@ final class HTMLAttributedStringBuilder {
             "id", "class", "style", "src", "href", "xlink:href", "width", "height",
             "alt", "alttext", "display", "data", "title", "aria-label", "poster", "type",
             "controls", "colspan", "rowspan", "scope", "ssml:ph", "ssml:alphabet",
-            "data-yd-imgstyle"
+            "data-yd-imgstyle", "lang", "xml:lang"
         ] {
             let value = (try? element.attr(key)) ?? ""
             if !value.isEmpty {

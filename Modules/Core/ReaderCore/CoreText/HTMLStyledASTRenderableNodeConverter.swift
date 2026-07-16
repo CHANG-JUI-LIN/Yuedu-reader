@@ -146,6 +146,7 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             whitespacePolicy: whitespacePolicy
         )
         var style = RenderStyle.from(resolvedStyle: resolvedStyle, parentFontSize: parentFontSize)
+        style.sourceElementTag = tag
         if containsFloatDescendant || classes.contains("tk") {
             style.compactChildBlockSpacing = true
         }
@@ -248,6 +249,7 @@ private extension HTMLAttributedStringBuilder.ElementNode {
                 let anchorStylesOwnText = style.bold || style.italic || style.color != nil
                     || !style.fontFamilies.isEmpty || style.underline || style.strikethrough
                     || style.fontSizeMultiplier != 1.0
+                    || attributes["xml:lang"] != nil || attributes["lang"] != nil
                 node = .anchor(
                     href: href,
                     children: anchorStylesOwnText
@@ -422,6 +424,7 @@ private extension RenderStyle {
             textIndent: s.textIndent,
             textAlign: .from(nsTextAlignment: s.textAlign),
             baseWritingDirection: s.baseWritingDirection,
+            language: s.language,
             lineHeightMultiplier: s.lineHeightExplicit
                 ? max(1.0, s.lineHeight / max(s.fontSize, 1))
                 : 1.0,

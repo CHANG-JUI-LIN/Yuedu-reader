@@ -83,4 +83,62 @@ struct EnglishEPUBTypographyTests {
         }
         #expect(EnglishLineJustificationPolicy.shouldJustify(base))
     }
+
+    @Test @MainActor func elementLanguageOverridesPackageWithoutChangingTextRanges() async throws {
+        let attributed = try await Self.render(EPUBTestFixtures.englishLanguagePrecedence())
+
+        #expect(Self.language(in: attributed, near: "colour") == "en-GB")
+        #expect(Self.language(in: attributed, near: "français") == "fr")
+        #expect(Self.language(in: attributed, near: "fallback language") == "en-GB")
+        #expect(Self.sourceTag(in: attributed, near: "colour") == "p")
+        #expect(Self.sourceTag(in: attributed, near: "français") == "span")
+        #expect(Self.sourceTag(in: attributed, near: "sample code") == "code")
+
+        let string = attributed.string as NSString
+        let colour = string.range(of: "colour")
+        let french = string.range(of: "français")
+        let fallback = string.range(of: "fallback language")
+        #expect(colour.location != NSNotFound)
+        #expect(french.location > colour.location)
+        #expect(fallback.location > french.location)
+    }
+
+    @Test @MainActor func packageLanguageProvidesDocumentFallback() async throws {
+        let attributed = try await Self.render(EPUBTestFixtures.englishPackageLanguageOnly())
+        #expect(Self.language(in: attributed, near: "package language") == "en-US")
+        #expect(Self.sourceTag(in: attributed, near: "package language") == "p")
+    }
+
+    @MainActor
+    private static func render(_ sample: EPUBTestFixtures.Sample) async throws -> NSAttributedString {
+        let epubURL = try await EPUBTestFixtures.makeArchive(entries: sample.entries)
+        let session = try await PublicationSession.open(sourceURL: epubURL)
+        return try await EPUBAttributedStringBuilder(
+            session: session,
+            renderSize: CGSize(width: 320, height: 640)
+        ).buildChapter(
+            at: 0,
+            settings: EPUBTestFixtures.renderSettings(),
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        ).attributedString
+    }
+
+    private static func language(in attributed: NSAttributedString, near text: String) -> String? {
+        attribute(EPUBLanguageTypography.languageAttribute, in: attributed, near: text) as? String
+    }
+
+    private static func sourceTag(in attributed: NSAttributedString, near text: String) -> String? {
+        attribute(EPUBLanguageTypography.sourceElementTagAttribute, in: attributed, near: text) as? String
+    }
+
+    private static func attribute(
+        _ key: NSAttributedString.Key,
+        in attributed: NSAttributedString,
+        near text: String
+    ) -> Any? {
+        let range = (attributed.string as NSString).range(of: text)
+        guard range.location != NSNotFound else { return nil }
+        return attributed.attribute(key, at: range.location, effectiveRange: nil)
+    }
 }

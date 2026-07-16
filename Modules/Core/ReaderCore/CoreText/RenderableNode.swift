@@ -107,6 +107,8 @@ public struct RenderStyle: Sendable {
     public var textIndent: CGFloat
     public var textAlign: RenderTextAlignment
     public var baseWritingDirection: NSWritingDirection
+    public var language: String?
+    public var sourceElementTag: String?
     public var lineHeightMultiplier: CGFloat
     /// CSS margin-left (blockquote, list indent)
     public var marginLeft: CGFloat
@@ -192,6 +194,8 @@ public struct RenderStyle: Sendable {
         textIndent: CGFloat = 0,
         textAlign: RenderTextAlignment = .natural,
         baseWritingDirection: NSWritingDirection = .natural,
+        language: String? = nil,
+        sourceElementTag: String? = nil,
         lineHeightMultiplier: CGFloat = 1.0,
         marginLeft: CGFloat = 0,
         marginRight: CGFloat = 0,
@@ -249,6 +253,8 @@ public struct RenderStyle: Sendable {
         self.textIndent = textIndent
         self.textAlign = textAlign
         self.baseWritingDirection = baseWritingDirection
+        self.language = language
+        self.sourceElementTag = sourceElementTag
         self.lineHeightMultiplier = lineHeightMultiplier
         self.marginLeft = marginLeft
         self.marginRight = marginRight
