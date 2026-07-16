@@ -124,10 +124,14 @@ struct DahuilangAudioTests {
         defer { try? FileManager.default.removeItem(at: metadataURL) }
         let store = BookStore(metadataFileURL: metadataURL)
 
-        var book = ReadingBook(title: "大圣归来", author: "天命蜉蝣", contentFilename: "")
-        book.isOnline = true
-        book.contentPipelineKind = .html
-        store.addBook(book)
+        let book = store.addOnlineBook(
+            name: "大圣归来",
+            author: "天命蜉蝣",
+            sourceId: UUID(),
+            bookInfoURL: "https://example.com/book",
+            contentKind: .text,
+            chapters: []
+        )
 
         let audioURL = "https://v5-ex-novelapp.fqnovelvod.com/a?mime_type=audio_mpeg\n"
         let promoted = store.upgradeToAudioIfDetected(bookId: book.id, content: audioURL)
@@ -144,10 +148,14 @@ struct DahuilangAudioTests {
         defer { try? FileManager.default.removeItem(at: metadataURL) }
         let store = BookStore(metadataFileURL: metadataURL)
 
-        var book = ReadingBook(title: "大圣归来", author: "天命蜉蝣", contentFilename: "")
-        book.isOnline = true
-        book.contentPipelineKind = .html
-        store.addBook(book)
+        let book = store.addOnlineBook(
+            name: "大圣归来",
+            author: "天命蜉蝣",
+            sourceId: UUID(),
+            bookInfoURL: "https://example.com/book",
+            contentKind: .text,
+            chapters: []
+        )
 
         let prose = "第一章 江流儿\n长安城外的山道上，一个少年快步前行。"
         let promoted = store.upgradeToAudioIfDetected(bookId: book.id, content: prose)

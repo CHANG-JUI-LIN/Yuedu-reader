@@ -1,4 +1,5 @@
 import Testing
+@testable import yuedu_app
 
 @Suite("Reader Touch Action Routing")
 struct ReaderTouchActionRoutingTests {

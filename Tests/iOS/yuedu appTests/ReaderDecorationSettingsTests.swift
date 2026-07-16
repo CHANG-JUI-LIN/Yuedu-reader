@@ -1,5 +1,6 @@
 import Testing
 import UIKit
+@testable import yuedu_app
 
 @Suite("Reader Decoration Settings")
 struct ReaderDecorationSettingsTests {

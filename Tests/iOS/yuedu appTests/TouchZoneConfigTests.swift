@@ -1,5 +1,7 @@
 import Foundation
 import Testing
+import CoreGraphics
+@testable import yuedu_app
 
 @Suite("Touch Zone Config")
 struct TouchZoneConfigTests {

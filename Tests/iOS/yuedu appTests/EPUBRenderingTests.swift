@@ -450,7 +450,8 @@ struct EPUBRenderingTests {
 
     // MARK: - Obfuscated-filename TOC links (洪武大帝 idiom, self-contained)
 
-    @Test func obfuscatedFilenameTOCTableLinksResolveAndCarryTapTargets() async throws {
+    @Test @MainActor
+    func obfuscatedFilenameTOCTableLinksResolveAndCarryTapTargets() async throws {
         let chapterName = "_**::ch:one*::.html"
         let epubURL = try await makeEPUBArchive(entries: [
             "mimetype": Data("application/epub+zip".utf8),

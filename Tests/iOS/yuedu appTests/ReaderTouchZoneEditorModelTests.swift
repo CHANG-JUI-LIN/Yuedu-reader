@@ -1,4 +1,5 @@
 import Testing
+@testable import yuedu_app
 
 @Suite("Reader Touch Zone Editor Model")
 @MainActor
@@ -17,7 +18,7 @@ struct ReaderTouchZoneEditorModelTests {
         #expect(saved == nil)
 
         #expect(model.save(isProActive: true))
-        #expect(saved?.zones[0] == .none)
+        #expect(saved?.zones[0] == .some(.none))
         #expect(disabledGlobalPaging)
     }
 

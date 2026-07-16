@@ -68,6 +68,22 @@ private enum ReadingBackgroundGridItem: Identifiable {
     }
 }
 
+struct ReaderQuickThemePanelNavigationState: Equatable {
+    private(set) var isShowingCustomBackgroundOptions = false
+
+    mutating func showCustomBackgroundOptions() {
+        isShowingCustomBackgroundOptions = true
+    }
+
+    mutating func setCustomBackgroundOptionsPresented(_ isPresented: Bool) {
+        isShowingCustomBackgroundOptions = isPresented
+    }
+
+    mutating func completeBackgroundImageImport() {
+        isShowingCustomBackgroundOptions = false
+    }
+}
+
 struct ReaderQuickThemePanelView: View {
     @Binding var fontSize: CGFloat
     @Binding var readerTheme: ReaderTheme
@@ -81,7 +97,7 @@ struct ReaderQuickThemePanelView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var showsFontSizeScale = false
     @State private var fontScaleToken = 0
-    @State private var showCustomBackgroundOptions = false
+    @State private var navigationState = ReaderQuickThemePanelNavigationState()
     @State private var customBackgroundColor = Color(uiColor: ReaderTheme.white.uiBackgroundColor)
 
     private let minFontSize: CGFloat = 12
@@ -135,12 +151,15 @@ struct ReaderQuickThemePanelView: View {
             .navigationTitle(localized("Themes & Settings"))
             .toolbarTitleDisplayMode(.inline)
             .navigationDestination(
-                isPresented: $showCustomBackgroundOptions
+                isPresented: Binding(
+                    get: { navigationState.isShowingCustomBackgroundOptions },
+                    set: { navigationState.setCustomBackgroundOptionsPresented($0) }
+                )
             ) {
                 ReaderCustomBackgroundOptionsView(
                     color: $customBackgroundColor,
                     onImageImported: {
-                        showCustomBackgroundOptions = false
+                        navigationState.completeBackgroundImageImport()
                     }
                 )
             }
@@ -393,7 +412,7 @@ struct ReaderQuickThemePanelView: View {
         let selected = settings.readerCustomBackgroundMode != .none
         return Button {
             customBackgroundColor = Color(uiColor: customColorEditorInitialUIColor)
-            showCustomBackgroundOptions = true
+            navigationState.showCustomBackgroundOptions()
         } label: {
             ZStack(alignment: .topTrailing) {
                 RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous)

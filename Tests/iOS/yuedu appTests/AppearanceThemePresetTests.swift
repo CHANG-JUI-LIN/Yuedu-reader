@@ -1,4 +1,6 @@
+import CoreGraphics
 import Testing
+import UIKit
 @testable import yuedu_app
 
 @Suite("Appearance theme presets", .serialized)
