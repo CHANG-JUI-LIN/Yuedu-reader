@@ -159,8 +159,8 @@ private enum MathMLTableLatexConverter {
         }
         guard !rows.isEmpty else { return nil }
 
-        if rows.count == 1, let row = rows.first {
-            return row.joined(separator: #" \quad "#)
+        if rows.count == 1 {
+            return environment("matrix", rows: rows)
         }
 
         let columnCounts = Set(rows.map(\.count))
@@ -174,8 +174,16 @@ private enum MathMLTableLatexConverter {
             return environment("eqnarray", rows: rows)
         }
 
-        let flattenedRows = rows.map { [$0.joined(separator: #" \quad "#)] }
-        return environment("displaylines", rows: flattenedRows)
+        if columnCounts.count == 1 {
+            return environment("matrix", rows: rows)
+        }
+
+        // Preserve every MathML cell as its own iosMath table cell. Flattening cells with `\quad`
+        // lets an explicit spacing atom hide a relation from iosMath's unary-sign classifier; a
+        // leading minus in the next cell then remains binary and iosMath aborts while spacing it.
+        // One nested matrix per uneven row keeps the source boundaries without inventing cells.
+        let rowMatrices = rows.map { [environment("matrix", rows: [$0])] }
+        return environment("displaylines", rows: rowMatrices)
     }
 
     private static func environment(_ name: String, rows: [[String]]) -> String {

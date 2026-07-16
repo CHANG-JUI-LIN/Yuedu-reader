@@ -188,6 +188,27 @@ struct MathMLBaselineTests {
         #expect(abs(secondAttachment.rect.width - 120) <= 0.5)
     }
 
+    @Test @MainActor func tableCellLeadingNegativeRendersWithoutIosMathAssertion() async throws {
+        let epubURL = try await EPUBTestFixtures.makeArchive(
+            entries: EPUBTestFixtures.mathMLUnarySignAfterTableCell().entries
+        )
+        let session = try await PublicationSession.open(sourceURL: epubURL)
+        let result = try await EPUBAttributedStringBuilder(
+            session: session,
+            renderSize: CGSize(width: 390, height: 640)
+        ).buildChapter(
+            at: 0,
+            settings: EPUBTestFixtures.renderSettings(),
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+
+        let mathRuns = EPUBTestFixtures.imageRunInfos(in: result.attributedString)
+            .filter { $0.info.source == "mathml:" }
+        #expect(mathRuns.count == 1)
+        #expect(!result.attributedString.string.contains("[implies negative two]"))
+    }
+
     @MainActor
     private static func buildMathTypography(width: CGFloat) async throws -> AttributedChapterBuildResult {
         let epubURL = try await EPUBTestFixtures.makeArchive(

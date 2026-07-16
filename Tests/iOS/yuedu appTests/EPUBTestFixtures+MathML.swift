@@ -28,4 +28,28 @@ extension EPUBTestFixtures {
             extraEntries: [:]
         ))
     }
+
+    /// Reduced from IDPF `linear-algebra.epub`, chapter `fcla-xml-2.30li18.xhtml`,
+    /// formula 479. The source table keeps the relation and the leading negative value in
+    /// separate cells; flattening those cells must not turn the minus into an invalid binary atom.
+    static func mathMLUnarySignAfterTableCell() -> Sample {
+        Sample(entries: makeBaseEntries(
+            title: "MathML Table Cell Unary Sign",
+            language: "en",
+            body: """
+            <p id="proof">
+              <math display="block" alttext="implies negative two">
+                <mtable>
+                  <mtr>
+                    <mtd><mo>⇒</mo></mtd>
+                    <mtd><mo>−</mo><mn>2</mn></mtd>
+                  </mtr>
+                </mtable>
+              </math>
+            </p>
+            """,
+            extraManifest: "",
+            extraEntries: [:]
+        ))
+    }
 }
