@@ -240,19 +240,27 @@ struct IDPFEPUB3SampleSmokeTests {
                     renderSize: renderSize,
                     settings: settings
                 )
-                guard let fixedEngine = renderer.engine as? FixedLayoutPageEngine else {
+                guard let engine = renderer.engine else {
                     Issue.record(
-                        "\(sample.id): production EPUBPageRenderer routed fixed target \(chapter.href) through \(String(describing: type(of: renderer.engine)))"
+                        "\(sample.id): production EPUBPageRenderer created no engine for fixed target \(chapter.href)"
                     )
                     continue
                 }
+                for _ in 0..<400 {
+                    if renderer.isCoreTextReady { break }
+                    try await Task.sleep(for: .milliseconds(5))
+                }
+                #expect(
+                    renderer.isCoreTextReady,
+                    "\(sample.id): production EPUBPageRenderer did not finish mixed-layout startup"
+                )
                 try await assertFixedLayoutSmoke(
                     target: target,
                     sample: sample,
                     chapterIndex: chapterIndex,
                     chapter: chapter,
                     session: session,
-                    engine: fixedEngine
+                    engine: engine
                 )
                 continue
             }
@@ -346,17 +354,25 @@ private extension IDPFEPUB3SampleSmokeTests {
         chapterIndex: Int,
         chapter: PublicationChapterDescriptor,
         session: PublicationSession,
-        engine: FixedLayoutPageEngine
+        engine: any PageRenderingProvider
     ) async throws {
-        await engine.start(renderSize: renderSize, bookId: "idpf-corpus-\(sample.id)")
-        #expect(engine.totalPages == session.chapters.count, "\(sample.id): fixed engine lost spine pages")
+        #expect(engine.totalPages >= session.chapters.count, "\(sample.id): engine lost spine pages")
+        let globalPage = try #require(
+            engine.pageIndex(for: .chapterStart(chapterIndex))
+                ?? engine.estimatedGlobalPage(for: .chapterStart(chapterIndex)),
+            "\(sample.id): engine cannot map fixed spine to a global page"
+        )
         #expect(
-            engine.readingPosition(forPage: chapterIndex)?.spineIndex == chapterIndex,
+            engine.readingPosition(forPage: globalPage)?.spineIndex == chapterIndex,
             "\(sample.id): fixed engine cannot address target page"
         )
         await engine.preloadChapter(at: chapterIndex)
 
-        let pageViewController = engine.pageViewController(at: chapterIndex)
+        let pageViewController = engine.pageViewController(at: globalPage)
+        #expect(
+            pageViewController is FixedLayoutPageViewController,
+            "\(sample.id): fixed target was not vended by FixedLayoutPageViewController"
+        )
         pageViewController.loadViewIfNeeded()
         pageViewController.view.frame = CGRect(origin: .zero, size: renderSize)
         pageViewController.view.layoutIfNeeded()
