@@ -59,6 +59,7 @@ struct ReaderView: View {
     @State var showQuickThemePanel = false
     @State var showReaderSearch = false
     @State var showTOC = false
+    @State var pendingTOCSelection: BookChapter?
     @State var readerMenuTab: ReaderMenuView.Tab = .toc
     @State var showTouchZoneEditor = false
     @State var readerHeaderFooterEditorModel: ReaderHeaderFooterEditorModel?
@@ -1836,7 +1837,11 @@ struct ReaderView: View {
                 }
             }
         }
-        .sheet(isPresented: $showTOC) {
+        .sheet(isPresented: $showTOC, onDismiss: {
+            guard let chapter = pendingTOCSelection else { return }
+            pendingTOCSelection = nil
+            jumpToTOCEntry(chapter)
+        }) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 ReaderMenuView(
                     chapters: chapters,
@@ -1849,7 +1854,7 @@ struct ReaderView: View {
                     showsPageNumbers: book?.isOnline != true,
                     currentIndex: currentChapterIndex,
                     currentChapterID: currentTOCChapterID,
-                    onSelectChapter: { jumpToTOCEntry($0) },
+                    onSelectChapter: { pendingTOCSelection = $0 },
                     bookmarks: book?.bookmarks ?? [],
                     bookmarkPageNumber: { inChapterPageNumber(for: $0) },
                     onSelectBookmark: { bm in

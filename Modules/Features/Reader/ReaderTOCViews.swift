@@ -3,17 +3,13 @@ import UIKit
 
 @MainActor
 enum ReaderTOCSelectionAction {
-    @discardableResult
     static func perform(
         chapter: BookChapter,
         dismiss: @MainActor () -> Void,
-        navigate: @MainActor @escaping (BookChapter) -> Void
-    ) -> Task<Void, Never> {
+        stage: @MainActor (BookChapter) -> Void
+    ) {
+        stage(chapter)
         dismiss()
-        return Task { @MainActor in
-            await Task.yield()
-            navigate(chapter)
-        }
     }
 }
 
@@ -153,6 +149,7 @@ private struct VerticalTOCColumn: View {
                     style: .continuous
                 )
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -372,7 +369,7 @@ struct ReaderMenuView: View {
                         ReaderTOCSelectionAction.perform(
                             chapter: chapter,
                             dismiss: { isPresented = false },
-                            navigate: onSelectChapter
+                            stage: onSelectChapter
                         )
                     }
                 )
@@ -421,7 +418,7 @@ struct ReaderMenuView: View {
                     ReaderTOCSelectionAction.perform(
                         chapter: chapter,
                         dismiss: { isPresented = false },
-                        navigate: onSelectChapter
+                        stage: onSelectChapter
                     )
                 } label: {
                     HStack(spacing: 0) {
@@ -449,6 +446,7 @@ struct ReaderMenuView: View {
                     }
                     .frame(height: 48)
                     .padding(.horizontal, 30)
+                    .contentShape(Rectangle())
                     .background {
                         if chapter.id == currentChapterID {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)

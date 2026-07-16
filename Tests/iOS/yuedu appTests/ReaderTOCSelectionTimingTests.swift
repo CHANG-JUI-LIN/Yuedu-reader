@@ -16,24 +16,29 @@ struct ReaderTOCSelectionTimingTests {
         var isPresented = true
         var events: [String] = []
 
-        await confirmation("deferred navigation runs once") { navigated in
-            let navigationTask = ReaderTOCSelectionAction.perform(
-                chapter: target,
-                dismiss: {
-                    isPresented = false
-                    events.append("dismiss")
-                },
-                navigate: { selected in
-                    events.append("navigate:\(selected.index)")
-                    navigated()
-                }
-            )
+        var pendingSelection: BookChapter?
+        ReaderTOCSelectionAction.perform(
+            chapter: target,
+            dismiss: {
+                isPresented = false
+                events.append("dismiss")
+            },
+            stage: { selected in
+                pendingSelection = selected
+                events.append("stage:\(selected.index)")
+            }
+        )
 
-            #expect(isPresented == false)
-            #expect(events == ["dismiss"])
-            await navigationTask.value
+        #expect(isPresented == false)
+        #expect(events == ["stage:\(target.index)", "dismiss"])
+        #expect(pendingSelection?.index == target.index)
+
+        if let selected = pendingSelection {
+            pendingSelection = nil
+            events.append("navigate:\(selected.index)")
         }
 
-        #expect(events == ["dismiss", "navigate:\(target.index)"])
+        #expect(events == ["stage:\(target.index)", "dismiss", "navigate:\(target.index)"])
+        #expect(pendingSelection == nil)
     }
 }
