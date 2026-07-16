@@ -961,7 +961,19 @@ final class PublicationSession {
     private func readiumURLs(for href: String) -> [AnyURL] {
         let trimmed = href.trimmingCharacters(in: .whitespacesAndNewlines)
         let basePath = trimmed.hasPrefix("/") ? String(trimmed.dropFirst()) : trimmed
-        let candidates = [trimmed, basePath, "/\(basePath)"]
+        let decodedPath = basePath.removingPercentEncoding ?? basePath
+        let encodedPath = decodedPath.addingPercentEncoding(
+            withAllowedCharacters: .urlPathAllowed
+        ) ?? decodedPath
+        let candidates = [
+            trimmed,
+            basePath,
+            "/\(basePath)",
+            decodedPath,
+            "/\(decodedPath)",
+            encodedPath,
+            "/\(encodedPath)",
+        ]
         var seen = Set<String>()
         return candidates.compactMap { candidate in
             guard let url = AnyURL(legacyHREF: candidate) else {
