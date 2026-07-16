@@ -286,7 +286,7 @@ No account or hosted service credentials are required for the compatibility harn
 Run:
 
 ```bash
-rg -n 'TBD|TODO|example\.com|youtube\.com/watch\?v=|Session ID: [A-Za-z0-9-]+' docs/build-week/devpost-submission.md
+rg -n 'TBD|TODO|example\.com|youtube\.com/watch\?v=|Session ID: [0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}' docs/build-week/devpost-submission.md
 git diff --check
 ```
 
