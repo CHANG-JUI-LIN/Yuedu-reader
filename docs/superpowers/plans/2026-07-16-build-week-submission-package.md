@@ -391,8 +391,9 @@ from pathlib import Path
 
 text = Path("docs/build-week/demo-script.md").read_text()
 voice = text.split("<!-- VOICEOVER-START -->", 1)[1].split("<!-- VOICEOVER-END -->", 1)[0]
-words = len(voice.replace(">", " ").split())
-assert 320 <= words <= 390, words
+spoken = " ".join(line[2:] for line in voice.splitlines() if line.startswith("> "))
+words = len(spoken.split())
+assert 250 <= words <= 310, words
 assert "complete EPUB 3 support" in text
 assert "all forty-three checks" in voice
 assert "Codex" in voice and "GPT-5.6" in voice
@@ -401,7 +402,7 @@ PY
 git diff --check
 ```
 
-Expected: the word count is between 320 and 390 and both commands exit 0.
+Expected: the spoken word count is between 250 and 310 and both commands exit 0. At a deliberate 100–110 words per minute, this leaves the complete video within the 2:30–2:50 target while preserving time for visual pauses.
 
 - [ ] **Step 5: Commit the demo script**
 
