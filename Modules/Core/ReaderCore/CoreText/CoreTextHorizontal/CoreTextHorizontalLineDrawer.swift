@@ -449,9 +449,9 @@ enum CoreTextHorizontalLineDrawer {
         return true
     }
 
-    // MARK: - CJK justification
+    // MARK: - Line justification
 
-    private static func resolveJustifiedLine(
+    static func resolveJustifiedLine(
         line: CTLine,
         lineStart: Int,
         lineRange: CFRange,
@@ -492,9 +492,38 @@ enum CoreTextHorizontalLineDrawer {
 
         if shouldUseCJKJustify {
             return CTLineCreateJustifiedLine(naturalLine, 1.0, Double(availableWidth)) ?? naturalLine
-        } else {
+        }
+
+        let attributeIndex = min(max(0, lineStart), max(0, attrStr.length - 1))
+        let paragraphStyle = attrStr.length > 0
+            ? attrStr.attribute(.paragraphStyle, at: attributeIndex, effectiveRange: nil)
+                as? NSParagraphStyle
+            : nil
+        let input = EnglishLineJustificationInput(
+            text: lineText,
+            coverage: CGFloat(coverage),
+            isParagraphLastLine: isParagraphLastLine,
+            alignment: paragraphStyle?.alignment ?? (isJustified ? .justified : .natural),
+            baseWritingDirection: paragraphStyle?.baseWritingDirection ?? .natural,
+            sourceElementTag: attrStr.length > 0
+                ? attrStr.attribute(
+                    EPUBLanguageTypography.sourceElementTagAttribute,
+                    at: attributeIndex,
+                    effectiveRange: nil
+                ) as? String
+                : nil,
+            language: attrStr.length > 0
+                ? attrStr.attribute(
+                    EPUBLanguageTypography.languageAttribute,
+                    at: attributeIndex,
+                    effectiveRange: nil
+                ) as? String
+                : nil
+        )
+        guard EnglishLineJustificationPolicy.shouldJustify(input) else {
             return naturalLine
         }
+        return CTLineCreateJustifiedLine(naturalLine, 1.0, Double(availableWidth)) ?? naturalLine
     }
 
     /// Returns true when the text is predominantly CJK (Chinese / Japanese / Korean),

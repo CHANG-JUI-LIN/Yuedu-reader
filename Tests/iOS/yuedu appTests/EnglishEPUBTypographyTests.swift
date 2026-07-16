@@ -267,6 +267,62 @@ struct EnglishEPUBTypographyTests {
         #expect(paragraph.hyphenationFactor == 0)
     }
 
+    @Test func guardedEnglishLinesJustifyToTheParagraphEdge() throws {
+        for availableWidth: CGFloat in [280, 320, 390] {
+            let attributed = try #require(Self.eligibleEnglishLine(for: availableWidth))
+            let natural = CTLineCreateWithAttributedString(attributed)
+            let resolved = CoreTextHorizontalLineDrawer.resolveJustifiedLine(
+                line: natural,
+                lineStart: 0,
+                lineRange: CFRange(location: 0, length: attributed.length),
+                isJustified: true,
+                isParagraphLastLine: false,
+                availableWidth: availableWidth,
+                attrStr: attributed,
+                nsString: attributed.string as NSString
+            )
+            #expect(abs(Self.lineWidth(resolved) - availableWidth) <= 1)
+
+            let finalLine = CoreTextHorizontalLineDrawer.resolveJustifiedLine(
+                line: natural,
+                lineStart: 0,
+                lineRange: CFRange(location: 0, length: attributed.length),
+                isJustified: true,
+                isParagraphLastLine: true,
+                availableWidth: availableWidth,
+                attrStr: attributed,
+                nsString: attributed.string as NSString
+            )
+            #expect(abs(Self.lineWidth(finalLine) - Self.lineWidth(natural)) <= 0.5)
+        }
+    }
+
+    @Test func EnglishJustificationKeepsQualityAndSemanticGuards() throws {
+        let availableWidth: CGFloat = 390
+        let short = Self.justificationLine("Short line words", tag: "p")
+        #expect(Self.resolvedWidth(short, availableWidth: availableWidth) == Self.lineWidth(short))
+
+        let eligible = try #require(Self.eligibleEnglishLine(for: availableWidth))
+        for tag in ["h1", "pre", "code", "math"] {
+            let excluded = NSMutableAttributedString(attributedString: eligible)
+            excluded.addAttribute(
+                EPUBLanguageTypography.sourceElementTagAttribute,
+                value: tag,
+                range: NSRange(location: 0, length: excluded.length)
+            )
+            #expect(
+                abs(Self.resolvedWidth(excluded, availableWidth: availableWidth)
+                    - Self.lineWidth(excluded)) <= 0.5
+            )
+        }
+    }
+
+    @Test func existingCJKJustificationStillReachesTheParagraphEdge() throws {
+        let availableWidth: CGFloat = 320
+        let attributed = try #require(Self.eligibleCJKLine(for: availableWidth))
+        #expect(abs(Self.resolvedWidth(attributed, availableWidth: availableWidth) - availableWidth) <= 1)
+    }
+
     @MainActor
     private static func render(_ sample: EPUBTestFixtures.Sample) async throws -> NSAttributedString {
         let epubURL = try await EPUBTestFixtures.makeArchive(entries: sample.entries)
@@ -336,6 +392,77 @@ struct EnglishEPUBTypographyTests {
             let range = CTLineGetStringRange($0)
             return range.location + range.length
         }
+    }
+
+    private static func eligibleEnglishLine(for availableWidth: CGFloat) -> NSAttributedString? {
+        let words = ["a", "to", "in", "we", "go"]
+        var text = ""
+        for index in 0..<80 {
+            text += text.isEmpty ? words[index % words.count] : " " + words[index % words.count]
+            let attributed = justificationLine(text, tag: "p")
+            let coverage = lineWidth(attributed) / availableWidth
+            if coverage >= 0.84, coverage <= 0.97 { return attributed }
+            if coverage > 0.97 { return nil }
+        }
+        return nil
+    }
+
+    private static func eligibleCJKLine(for availableWidth: CGFloat) -> NSAttributedString? {
+        var text = ""
+        for _ in 0..<80 {
+            text += "文"
+            let attributed = justificationLine(text, tag: "p", language: "zh-Hant")
+            let coverage = lineWidth(attributed) / availableWidth
+            if coverage > 0.86, coverage <= 0.97 { return attributed }
+            if coverage > 0.97 { return nil }
+        }
+        return nil
+    }
+
+    private static func justificationLine(
+        _ text: String,
+        tag: String,
+        language: String = "en-US"
+    ) -> NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .justified
+        paragraph.baseWritingDirection = .leftToRight
+        return NSAttributedString(
+            string: text,
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 17),
+                .paragraphStyle: paragraph,
+                EPUBLanguageTypography.languageAttribute: language,
+                EPUBLanguageTypography.sourceElementTagAttribute: tag,
+            ]
+        )
+    }
+
+    private static func resolvedWidth(
+        _ attributed: NSAttributedString,
+        availableWidth: CGFloat
+    ) -> CGFloat {
+        let line = CTLineCreateWithAttributedString(attributed)
+        let resolved = CoreTextHorizontalLineDrawer.resolveJustifiedLine(
+            line: line,
+            lineStart: 0,
+            lineRange: CFRange(location: 0, length: attributed.length),
+            isJustified: true,
+            isParagraphLastLine: false,
+            availableWidth: availableWidth,
+            attrStr: attributed,
+            nsString: attributed.string as NSString
+        )
+        return lineWidth(resolved)
+    }
+
+    private static func lineWidth(_ line: CTLine) -> CGFloat {
+        CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+            - CGFloat(CTLineGetTrailingWhitespaceWidth(line))
+    }
+
+    private static func lineWidth(_ attributed: NSAttributedString) -> CGFloat {
+        lineWidth(CTLineCreateWithAttributedString(attributed))
     }
 
     private static func attribute(
