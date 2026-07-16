@@ -185,12 +185,10 @@ final class FixedLayoutPageEngine: PageRenderingProvider, FixedLayoutSpreadPairi
                 for: spineIndex,
                 resourceProvider: resourceProvider
             )
-            let html = (try? await resourceProvider.chapterHTML(at: spineIndex)) ?? ""
-            let chapterHref = session.chapters[spineIndex].href
-            let preparedHTML = await FixedLayoutEPUBHTMLInliner(
+            let preparedHTML = await FixedLayoutEPUBHTMLInliner.preparedHTML(
                 resourceProvider: resourceProvider,
-                chapterHref: chapterHref
-            ).inlinedHTML(html)
+                chapterIndex: spineIndex
+            )
             controller.load(
                 html: preparedHTML,
                 baseURL: nil,

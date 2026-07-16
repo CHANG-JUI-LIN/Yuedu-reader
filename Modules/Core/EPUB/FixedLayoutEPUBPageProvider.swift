@@ -62,12 +62,10 @@ enum FixedLayoutEPUBPageProvider {
             pageViewports: session.fixedLayoutViewport?.pageViewports ?? [:]
         )
         let pageSize = await resolver.viewport(for: chapterIndex, resourceProvider: adapter)
-        let chapter = session.chapters[chapterIndex]
-        let html = try await session.chapterHTML(at: chapterIndex)
-        let preparedHTML = await FixedLayoutEPUBHTMLInliner(
+        let preparedHTML = await FixedLayoutEPUBHTMLInliner.preparedHTML(
             resourceProvider: adapter,
-            chapterHref: chapter.href
-        ).inlinedHTML(html)
+            chapterIndex: chapterIndex
+        )
 
         guard let image = await renderer.render(html: preparedHTML, pageSize: pageSize) else {
             throw FixedLayoutEPUBPageProviderError.renderFailed(chapterIndex)
@@ -151,6 +149,42 @@ private final class FixedLayoutEPUBPageRasterizer: NSObject, WKNavigationDelegat
 struct FixedLayoutEPUBHTMLInliner {
     let resourceProvider: BookResourceProvider
     let chapterHref: String
+
+    static func preparedHTML(
+        resourceProvider: BookResourceProvider,
+        chapterIndex: Int
+    ) async -> String {
+        guard resourceProvider.chapters.indices.contains(chapterIndex) else { return "" }
+        let chapter = resourceProvider.chapters[chapterIndex]
+        if let response = try? await resourceProvider.response(
+            for: resourceProvider.resourceURL(for: chapter.href)
+        ), response.mimeType.lowercased().hasPrefix("image/") {
+            let dataURL = "data:\(response.mimeType);base64,\(response.data.base64EncodedString())"
+            return imageDocument(dataURL: dataURL)
+        }
+
+        let html = (try? await resourceProvider.chapterHTML(at: chapterIndex)) ?? ""
+        return await Self(
+            resourceProvider: resourceProvider,
+            chapterHref: chapter.href
+        ).inlinedHTML(html)
+    }
+
+    private static func imageDocument(dataURL: String) -> String {
+        """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <style>
+              html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+              img { display: block; width: 100%; height: 100%; object-fit: contain; }
+            </style>
+          </head>
+          <body><img src="\(dataURL)" alt="" /></body>
+        </html>
+        """
+    }
 
     func inlinedHTML(_ html: String) async -> String {
         let withStyles = await inlineStylesheets(in: html)
