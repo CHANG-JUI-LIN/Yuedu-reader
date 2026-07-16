@@ -1198,6 +1198,28 @@ struct EPUBRenderingTests {
         #expect(foundMathAttachment)
     }
 
+    @Test func emptyMathPreservesUsefulAltInsteadOfDisappearing() async {
+        let attributed = await EPUBTestFixtures.renderIR(
+            html: #"<p>Before <math alttext="quadratic expression"></math> after.</p>"#,
+            config: EPUBTestFixtures.htmlConfig(renderWidth: 220)
+        )
+
+        #expect(attributed.string.contains("Before"))
+        #expect(attributed.string.contains("[quadratic expression]"))
+        #expect(attributed.string.contains("after"))
+    }
+
+    @Test func emptyMathWithoutUsefulAltUsesReadableGenericFallback() async {
+        let attributed = await EPUBTestFixtures.renderIR(
+            html: #"<p>Before <math alttext="Alternative text not available"></math> after.</p>"#,
+            config: EPUBTestFixtures.htmlConfig(renderWidth: 220)
+        )
+
+        #expect(attributed.string.contains("Before"))
+        #expect(attributed.string.contains("[math]"))
+        #expect(attributed.string.contains("after"))
+    }
+
     @Test func decoratedPhoneContainersFollowFlowPositions() async throws {
         let topBar = UIGraphicsImageRenderer(size: CGSize(width: 1000, height: 78)).image { context in
             UIColor.darkGray.setFill()

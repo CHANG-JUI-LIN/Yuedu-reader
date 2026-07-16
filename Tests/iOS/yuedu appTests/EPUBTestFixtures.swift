@@ -123,7 +123,7 @@ enum EPUBTestFixtures {
     }
 
     static func linearAlgebra() -> Sample {
-        Sample(entries: baseEntries(
+        Sample(entries: makeBaseEntries(
             title: "Linear Algebra",
             language: "en",
             body: """
@@ -140,7 +140,7 @@ enum EPUBTestFixtures {
 
     @MainActor
     static func israelSailing() -> Sample {
-        Sample(entries: baseEntries(
+        Sample(entries: makeBaseEntries(
             title: "מפליגים בישראל",
             language: "he",
             pageProgression: "rtl",
@@ -158,7 +158,7 @@ enum EPUBTestFixtures {
     }
 
     static func georgia() -> Sample {
-        var entries = baseEntries(
+        var entries = makeBaseEntries(
             title: "Georgia",
             language: "en",
             body: """
@@ -214,7 +214,7 @@ enum EPUBTestFixtures {
     }
 
     static func quizBindings() -> Sample {
-        Sample(entries: baseEntries(
+        Sample(entries: makeBaseEntries(
             title: "Quiz",
             language: "en",
             body: """
@@ -233,7 +233,7 @@ enum EPUBTestFixtures {
     }
 
     static func proseSmoke() -> Sample {
-        Sample(entries: baseEntries(
+        Sample(entries: makeBaseEntries(
             title: "Prose",
             language: "en",
             body: "<h1>Start</h1><p id=\"p1\">Simple prose paragraph.</p>",
@@ -242,7 +242,7 @@ enum EPUBTestFixtures {
         ))
     }
 
-    private static func baseEntries(
+    static func makeBaseEntries(
         title: String,
         language: String,
         pageProgression: String = "ltr",

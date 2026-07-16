@@ -86,6 +86,32 @@ struct MathMLBaselineTests {
         #expect(abs((ascent + descent) - imageHeight) <= 1)
     }
 
+    @Test @MainActor func formulaRasterUsesDecoratedParagraphWidthExactlyOnce() async throws {
+        let epubURL = try await EPUBTestFixtures.makeArchive(
+            entries: EPUBTestFixtures.mathMLTypography().entries
+        )
+        let session = try await PublicationSession.open(sourceURL: epubURL)
+        let result = try await EPUBAttributedStringBuilder(
+            session: session,
+            renderSize: CGSize(width: 220, height: 640)
+        ).buildChapter(
+            at: 0,
+            settings: EPUBTestFixtures.renderSettings(),
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+        let runs = EPUBTestFixtures.imageRunInfos(in: result.attributedString)
+            .filter { $0.info.source == "mathml:" }
+        #expect(!runs.isEmpty)
+        for run in runs {
+            let info = run.info
+            #expect(info.drawWidth <= 172.5)
+            #expect(abs(info.ascent + info.descent - info.drawHeight) <= 1)
+            #expect(abs((info.image?.size.width ?? 0) - info.drawWidth) <= 0.5)
+            #expect(abs((info.image?.size.height ?? 0) - info.drawHeight) <= 0.5)
+        }
+    }
+
     private static func inkBounds(in image: UIImage) -> CGRect? {
         guard let cgImage = image.cgImage else { return nil }
         let width = cgImage.width
