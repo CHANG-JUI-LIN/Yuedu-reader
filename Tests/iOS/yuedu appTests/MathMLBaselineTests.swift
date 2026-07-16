@@ -146,6 +146,105 @@ struct MathMLBaselineTests {
         }
     }
 
+    @Test @MainActor func formulaRasterRetainsDeviceScaleAtNarrowAndWideWidths() async throws {
+        for width: CGFloat in [220, 390] {
+            let result = try await Self.buildMathTypography(width: width)
+            let runs = EPUBTestFixtures.imageRunInfos(in: result.attributedString)
+                .map(\.info)
+                .filter { $0.source == "mathml:" }
+
+            #expect(!runs.isEmpty)
+            for info in runs {
+                let image = try #require(info.image)
+                let cgImage = try #require(image.cgImage)
+                #expect(CGFloat(cgImage.width) + 1 >= info.drawWidth * image.scale)
+                #expect(CGFloat(cgImage.height) + 1 >= info.drawHeight * image.scale)
+            }
+        }
+    }
+
+    @Test @MainActor func changedMathWidthInvalidatesPaginatorCache() async throws {
+        let paginator = CoreTextPaginator()
+        let narrow = Self.cacheProbeFormula(width: 80)
+        let wide = Self.cacheProbeFormula(width: 120)
+
+        let first = await paginator.paginate(
+            spineIndex: 17,
+            attrStr: narrow,
+            renderSize: CGSize(width: 240, height: 320),
+            fontSize: 17
+        )
+        let second = await paginator.paginate(
+            spineIndex: 17,
+            attrStr: wide,
+            renderSize: CGSize(width: 240, height: 320),
+            fontSize: 17
+        )
+        let firstAttachment = try #require(Self.mathAttachments(in: first).first)
+        let secondAttachment = try #require(Self.mathAttachments(in: second).first)
+
+        #expect(first.attributedString.string == second.attributedString.string)
+        #expect(abs(firstAttachment.rect.width - 80) <= 0.5)
+        #expect(abs(secondAttachment.rect.width - 120) <= 0.5)
+    }
+
+    @MainActor
+    private static func buildMathTypography(width: CGFloat) async throws -> AttributedChapterBuildResult {
+        let epubURL = try await EPUBTestFixtures.makeArchive(
+            entries: EPUBTestFixtures.mathMLTypography().entries
+        )
+        let session = try await PublicationSession.open(sourceURL: epubURL)
+        return try await EPUBAttributedStringBuilder(
+            session: session,
+            renderSize: CGSize(width: width, height: 640)
+        ).buildChapter(
+            at: 0,
+            settings: EPUBTestFixtures.renderSettings(),
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+    }
+
+    @MainActor
+    private static func cacheProbeFormula(width: CGFloat) -> NSAttributedString {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 120, height: 24)).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 120, height: 24))
+        }
+        let text = NSMutableAttributedString(
+            string: "Before ",
+            attributes: [.font: UIFont.systemFont(ofSize: 17)]
+        )
+        text.append(RunDelegateProvider.makeImagePlaceholder(
+            image: image,
+            font: UIFont.systemFont(ofSize: 17),
+            textColor: .black,
+            totalWidth: width,
+            drawWidth: width,
+            drawHeight: 24,
+            ascent: 18,
+            descent: 6,
+            paddingLeft: 0,
+            paddingRight: 0,
+            imageSource: "mathml:cache-probe",
+            displayMode: .inline,
+            opacity: 1
+        ))
+        text.append(NSAttributedString(
+            string: " after.",
+            attributes: [.font: UIFont.systemFont(ofSize: 17)]
+        ))
+        return text
+    }
+
+    private static func mathAttachments(
+        in layout: CoreTextPaginator.ChapterLayout
+    ) -> [CoreTextPaginator.RenderedAttachment] {
+        (layout.inlineAttachments.values.flatMap { $0 }
+            + layout.blockAttachments.values.flatMap { $0 })
+            .filter { $0.sourceHref?.hasPrefix("mathml:") == true }
+    }
+
     private static func inkBounds(in image: UIImage) -> CGRect? {
         guard let cgImage = image.cgImage else { return nil }
         let width = cgImage.width

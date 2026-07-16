@@ -382,6 +382,56 @@ struct CoreTextScrollTests {
         }
     }
 
+    @Test("MathML attachments keep the same paged and scroll geometry")
+    @MainActor
+    func mathMLAttachmentsKeepTheSamePagedAndScrollGeometry() async throws {
+        for width: CGFloat in [220, 390] {
+            let epubURL = try await EPUBTestFixtures.makeArchive(
+                entries: EPUBTestFixtures.mathMLTypography().entries
+            )
+            let session = try await PublicationSession.open(sourceURL: epubURL)
+            let result = try await EPUBAttributedStringBuilder(
+                session: session,
+                renderSize: CGSize(width: width, height: 640)
+            ).buildChapter(
+                at: 0,
+                settings: EPUBTestFixtures.renderSettings(),
+                themeTextColor: .black,
+                themeBackgroundColor: .white
+            )
+            let expectedSizes = EPUBTestFixtures.imageRunInfos(in: result.attributedString)
+                .map(\.info)
+                .filter { $0.source == "mathml:" }
+                .map { CGSize(width: $0.drawWidth, height: $0.drawHeight) }
+            let paged = await CoreTextPaginator().paginate(
+                spineIndex: 0,
+                attrStr: result.attributedString,
+                imagePage: result.imagePage,
+                pageBackgroundImage: result.pageBackgroundImage,
+                anchorOffsets: result.anchorOffsets,
+                renderSize: CGSize(width: width, height: 640),
+                fontSize: EPUBTestFixtures.renderSettings().fontSize
+            )
+            let pagedSizes = (paged.inlineAttachments.values.flatMap { $0 }
+                + paged.blockAttachments.values.flatMap { $0 })
+                .filter { $0.sourceHref == "mathml:" }
+                .map { $0.rect.size }
+            let scroll = CoreTextChunkSlicer.slice(
+                attributedString: result.attributedString,
+                chapterIndex: 0,
+                contentWidth: width,
+                heightCap: 2_000
+            )
+            let scrollSizes = scroll.chunks
+                .flatMap(\.attachments)
+                .filter { $0.sourceHref == "mathml:" }
+                .map { $0.rect.size }
+
+            Self.expectSameSizes(expectedSizes, pagedSizes)
+            Self.expectSameSizes(expectedSizes, scrollSizes)
+        }
+    }
+
     @Test("scroll engine carries the chapter backdrop into sliced chunks")
     @MainActor
     func scrollEngineCarriesChapterBackdropIntoSlicedChunks() async throws {
@@ -720,6 +770,20 @@ struct CoreTextScrollTests {
         }
         if let last = chunks.last {
             #expect(last.charRange.location + last.charRange.length == totalLength)
+        }
+    }
+
+    private static func expectSameSizes(_ expected: [CGSize], _ actual: [CGSize]) {
+        let expected = expected.sorted {
+            $0.width == $1.width ? $0.height < $1.height : $0.width < $1.width
+        }
+        let actual = actual.sorted {
+            $0.width == $1.width ? $0.height < $1.height : $0.width < $1.width
+        }
+        #expect(actual.count == expected.count)
+        for (expectedSize, actualSize) in zip(expected, actual) {
+            #expect(abs(actualSize.width - expectedSize.width) <= 0.5)
+            #expect(abs(actualSize.height - expectedSize.height) <= 0.5)
         }
     }
 
