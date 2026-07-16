@@ -148,7 +148,7 @@ private final class FixedLayoutEPUBPageRasterizer: NSObject, WKNavigationDelegat
 }
 
 @MainActor
-private struct FixedLayoutEPUBHTMLInliner {
+struct FixedLayoutEPUBHTMLInliner {
     let resourceProvider: BookResourceProvider
     let chapterHref: String
 

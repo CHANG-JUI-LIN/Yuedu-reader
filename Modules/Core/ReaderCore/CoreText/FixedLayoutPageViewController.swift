@@ -113,7 +113,7 @@ final class FixedLayoutPageViewController: UIViewController, PageIndexProviding 
 
     func load(
         html: String,
-        baseURL: URL,
+        baseURL: URL?,
         pageSize: CGSize,
         availableSize: CGSize
     ) {
