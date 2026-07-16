@@ -1,6 +1,21 @@
 import SwiftUI
 import UIKit
 
+@MainActor
+enum ReaderTOCSelectionAction {
+    @discardableResult
+    static func perform(
+        chapter: BookChapter,
+        dismiss: @MainActor () -> Void,
+        navigate: @MainActor @escaping (BookChapter) -> Void
+    ) -> Task<Void, Never> {
+        dismiss()
+        return Task { @MainActor in
+            await Task.yield()
+            navigate(chapter)
+        }
+    }
+}
 
 
 // MARK: - Combined Bookmarks & TOC Panel
@@ -354,8 +369,11 @@ struct ReaderMenuView: View {
                     pageOffsets: pageOffsets,
                     showsPageNumbers: showsPageNumbers,
                     onSelectChapter: { chapter in
-                        onSelectChapter(chapter)
-                        isPresented = false
+                        ReaderTOCSelectionAction.perform(
+                            chapter: chapter,
+                            dismiss: { isPresented = false },
+                            navigate: onSelectChapter
+                        )
                     }
                 )
             } else {
@@ -400,8 +418,11 @@ struct ReaderMenuView: View {
         ScrollViewReader { proxy in
             List(chapters) { chapter in
                 Button {
-                    onSelectChapter(chapter)
-                    isPresented = false
+                    ReaderTOCSelectionAction.perform(
+                        chapter: chapter,
+                        dismiss: { isPresented = false },
+                        navigate: onSelectChapter
+                    )
                 } label: {
                     HStack(spacing: 0) {
                         if chapter.level > 0 {
