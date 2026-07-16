@@ -1,10 +1,15 @@
 # Official EPUB 3 gap ranking
 
-This ranking turns the first official-corpus capture and the eight-book manual
-pass into bounded follow-up work. It is not a support claim. Baseline and
-current automated results are identical: 14 of 42 samples fail the production
-smoke checkpoint. Manual review added one shared navigation failure family in
-four otherwise-readable representative books.
+This ranking records the initial official-corpus capture and eight-book manual
+pass that selected bounded follow-up work. It is historical triage, not a
+current support claim. At selection time, 14 of 42 samples failed the
+production smoke checkpoint and manual review added one shared navigation
+failure family in four otherwise-readable representative books.
+
+Final Build Week status: 13 of those 14 automated failures now pass;
+`cc-shared-culture` remains failing because its exact static media-fallback
+probe is absent. The compatibility matrix and six linked evidence packages are
+the current source of truth.
 
 Scores are intentionally small and comparative:
 
@@ -89,5 +94,7 @@ adds a composite page map rather than weakening the smoke assertion:
 
 - [Mixed-layout routing implementation plan](../../superpowers/plans/2026-07-15-epub3-mixed-layout-routing.md)
 
-No selected plan changes MathML, English hyphenation/justification, Media
-Overlay, audio/video, RTL/Bidi, Ruby, CFI, or PLS/SSML support claims.
+The three selected gap plans do not change MathML, English typography, Media
+Overlay, audio/video, RTL/Bidi, Ruby, CFI, or PLS/SSML support claims. MathML
+and English were implemented and evidenced in their separate approved
+workstreams.

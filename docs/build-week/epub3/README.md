@@ -127,26 +127,25 @@ git worktree remove "$BASELINE_WT"
 
 ## Recorded result and interpretation
 
-Both captures used an iPhone 17 Pro Max simulator on iOS 27.0. Each recorded
-run enumerated 43 tests with 29 passed, 14 failed, and 0 skipped; the 42
-sample-level statuses were identical between baseline and current. Both static
-scans passed all 42 samples. A first current-branch UI capture exercised all
-eight representative books. Accessible EPUB 3, Children's Literature, Linear
-Algebra, and Moby-Dick exposed the same TOC-dismissal stall; Kusamakura also
-exposed a non-hittable vertical TOC target on top of its automated resource
-failure. Israel Sailing and Waste Land OTF reached their selected checkpoint,
-but unobserved checklist items remain `not-run`. The first Page Blanche direct
-seed used the wrong general EPUB route and was excluded. A focused rerun then
-matched formal import semantics (`fixedPage` plus all 10 spine refs): the cover
-and Page 3 rendered, TOC selection worked, and rotation preserved Page 3. The
-spread checkpoint and unvisited pages remain `not-run`, while the hosted smoke
-probe still cannot observe WebKit visual evidence. Raw UI captures remain in
-the ignored results directory.
+Both captures used an iPhone 17 Pro Max simulator on iOS 27.0. The baseline
+enumerated 43 runs with 29 passed, 14 failed, and 0 skipped. The final branch
+enumerated the same 43 runs with 42 passed, 1 failed, and 0 skipped: 13 formerly
+failing sample checks now pass. Both static scans pass all 42 samples.
 
-The 14 production compatibility failures make `xcodebuild` exit with status
-65. For this triage suite, exit 65 is evidence rather than a harness failure
-when the result bundle shows all 43 runs and 0 skips. A capture with missing or
-skipped samples is invalid even if the shell command exits successfully.
+The remaining failure is `cc-shared-culture`. Its transcript body survives,
+but the exact static media-fallback probe `Your Reading System does not support`
+is absent. This is recorded as a failure and is not presented as complete media
+support. The final `xcodebuild` exit status is therefore 65; for this triage
+suite that is valid evidence only when the result bundle contains all 43 runs
+and no skips. A missing or skipped sample invalidates a capture regardless of
+the shell exit status.
+
+The six committed evidence packages cover TOC dismissal, non-ASCII resource
+IRIs, mixed-layout dispatch, MathML attachment quality and safety, English
+typography, and fixed-layout direct image spines. Each package links a minimal
+fixture and focused test. Unvisited representative-book checklist items remain
+`not-run`; a package proves only its named failure family. Raw `.xcresult` and
+UI captures remain in the ignored results directory.
 
 `xcodebuild` strips the documented `TEST_RUNNER_` prefix when forwarding both
 variables to the hosted test process. Without `YUEDU_RUN_EPUB3_CORPUS=1` in
