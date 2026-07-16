@@ -315,7 +315,10 @@ final class ICloudSyncManager: ObservableObject {
         let remote = try await downloadRecords(recordName, as: T.self, id: id, fallbackUpdatedAt: fallbackUpdatedAt)
         var shadow = SyncShadowStore.load(shadowKey)
         let loadedShadow = shadow
-        let localIDs = Set(local.map(id))
+        var localIDs = Set<String>(minimumCapacity: local.count)
+        for v in local {
+            localIDs.insert(id(v))
+        }
         let now = Date()
         // Local deletions: an id we synced before but no longer have locally was
         // deleted on this device → tombstone it (newer than the remote copy) so the
@@ -391,7 +394,10 @@ final class ICloudSyncManager: ObservableObject {
         id: (T) -> String,
         remotePayloadHash: String?
     ) async throws -> Bool {
-        let valuesByID = Dictionary(values.map { (id($0), $0) }, uniquingKeysWith: { first, _ in first })
+        var valuesByID: [String: T] = .init(minimumCapacity: values.count)
+        for v in values {
+            valuesByID[id(v)] = v
+        }
         let records: [CloudSyncRecord<T>] = shadow.map { sid, entry in
             CloudSyncRecord(
                 id: sid,

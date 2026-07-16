@@ -243,13 +243,23 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
-            guard let url = navigationAction.request.url,
-                  url.scheme?.lowercased() == "yuedu" else {
+            // Intercept book-source import deep links so WKWebView doesn't try to
+            // navigate to them (an unhandled custom scheme fails as "unsupported URL").
+            // We handle our own `yuedu://` scheme plus Legado's `legado://import/...`,
+            // which most 書源 update pages emit (e.g. the 更新書源 download button).
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+            let scheme = url.scheme?.lowercased()
+            let isImportDeepLink = scheme == "yuedu"
+                || (scheme == "legado" && url.host?.lowercased() == "import")
+            guard isImportDeepLink else {
                 decisionHandler(.allow)
                 return
             }
 
-            handleYueduURL(url, webView: webView)
+            handleImportURL(url, webView: webView)
             decisionHandler(.cancel)
         }
 
@@ -297,7 +307,8 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            // Ignore the benign "cancelled" that follows decidePolicy(.cancel) for yuedu:// links.
+            // Ignore the benign "cancelled" that follows decidePolicy(.cancel) for
+            // intercepted yuedu:// / legado:// import links.
             if (error as NSError).code == NSURLErrorCancelled { return }
             setPhase(.failed, error: error.localizedDescription)
         }
@@ -326,7 +337,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             }
         }
 
-        private func handleYueduURL(_ url: URL, webView: WKWebView) {
+        private func handleImportURL(_ url: URL, webView: WKWebView) {
             guard let sourceURL = Self.onlineImportSourceURL(from: url) else {
                 presentImportResult(localized("無效的書源導入連結"), in: webView)
                 return
@@ -365,12 +376,22 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         }
 
         static func onlineImportSourceURL(from url: URL) -> URL? {
-            guard url.scheme?.lowercased() == "yuedu",
-                  url.host?.lowercased() == "booksource",
-                  url.path.lowercased() == "/importonline",
+            guard let scheme = url.scheme?.lowercased() else { return nil }
+            let host = url.host?.lowercased()
+
+            // Our own scheme: yuedu://booksource/importOnline?src=URL
+            let isYueduImport = scheme == "yuedu"
+                && host == "booksource"
+                && url.path.lowercased() == "/importonline"
+            // Legado deep link: legado://import/{auto,bookSource,bookSourceUrl,…}?src=URL
+            // The 更新書源 download button on 書源 sites emits this form.
+            let isLegadoImport = scheme == "legado" && host == "import"
+
+            guard isYueduImport || isLegadoImport,
                   let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
                   let sourceString = components.queryItems?.first(where: {
-                      $0.name == "src" || $0.name == "url"
+                      let name = $0.name.lowercased()
+                      return name == "src" || name == "url"
                   })?.value else {
                 return nil
             }

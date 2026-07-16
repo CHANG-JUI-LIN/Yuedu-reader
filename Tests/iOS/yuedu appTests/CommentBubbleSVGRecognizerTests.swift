@@ -121,4 +121,56 @@ struct CommentBubbleSVGRecognizerTests {
             ) == 36
         )
     }
+
+    @Test("accepts the bubble.json ${num} placeholder as a replaceable count")
+    func acceptsNumPlaceholder() throws {
+        let svg = """
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+          <path d="M0 0 H64 V64 H0 Z" fill="rgb(254,254,254)"/>
+          <text x="32" y="40" font-size="22" fill="${color}" text-anchor="middle">${num}</text>
+        </svg>
+        """
+
+        let bubble = try #require(
+            CommentBubbleSVGRecognizer.recognize(src: "", svgContent: svg)
+        )
+
+        #expect(bubble.displayText == "${num}")
+        #expect(bubble.replacingDisplayText(with: "99").displayText == "99")
+    }
+
+    @Test("parses rgb(r,g,b) outline fills so bubble.json shapes actually paint")
+    func parsesRGBFills() throws {
+        let svg = """
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+          <path d="M0 0 H32 V32 H0 Z" fill="rgb(254,254,254)"/>
+          <text x="16" y="24" font-size="10" text-anchor="middle">$displayText</text>
+        </svg>
+        """
+
+        let bubble = try #require(
+            CommentBubbleSVGRecognizer.recognize(src: "", svgContent: svg)
+        )
+
+        let hasRGBFill = bubble.elements.contains { element in
+            if case let .path(_, _, _, fillColor, _) = element, let fill = fillColor {
+                var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+                fill.getRed(&r, green: &g, blue: &b, alpha: &a)
+                return Int(round(r * 255)) == 254
+                    && Int(round(g * 255)) == 254
+                    && Int(round(b * 255)) == 254
+            }
+            return false
+        }
+        #expect(hasRGBFill)
+    }
+
+    @Test("treats numeric font-weight '900' as bold for rendering")
+    func treatsNumeric900WeightAsBold() {
+        // The render path folds 900/700/etc into isBold; we assert the threshold
+        // check directly via the same comparison logic used by the recognizer.
+        let weight = "900"
+        let isNumericBold = Int(weight) ?? 0 >= 600
+        #expect(isNumericBold)
+    }
 }

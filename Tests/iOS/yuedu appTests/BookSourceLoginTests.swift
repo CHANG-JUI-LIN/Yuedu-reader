@@ -257,6 +257,20 @@ struct BookSourceLoginTests {
         #expect(sourceURL.path.contains("光遇聚合.json"))
     }
 
+    @Test("WebView 導入按鈕解析 Legado legado://import/auto")
+    func parseLegadoImportDeepLink() throws {
+        // 更新書源 頁面的下載按鈕發出的 Legado 導入連結（src 內含二次編碼的中文檔名）。
+        let url = try #require(URL(
+            string: "legado://import/auto?src=https%3A%2F%2Fqd.doubi.tk%2Fsource%2Fapi%2Fdownload%2F%25E5%25AE%2589%25E5%258D%2593.json%3Fkey%3DKsJR74bFLwC8chgi"
+        ))
+        let sourceURL = try #require(JsBridgeBrowserRepresentable.Coordinator.onlineImportSourceURL(from: url))
+
+        #expect(sourceURL.scheme == "https")
+        #expect(sourceURL.host == "qd.doubi.tk")
+        #expect(sourceURL.path.contains("安卓.json"))
+        #expect(sourceURL.query == "key=KsJR74bFLwC8chgi")
+    }
+
     @Test("WebView 載入前可取得同域名登入 cookie")
     func browserInitialLoadUsesStoredCookies() throws {
         let url = try #require(URL(string: "https://v1.gyks.cf/user"))

@@ -1,7 +1,10 @@
 import Foundation
+import os
 import SwiftUI
 import UIKit
 import WebKit
+
+private let cfResumeLock = OSAllocatedUnfairLock()
 
 @MainActor
 enum CloudflareChallengePresenter {
@@ -60,7 +63,7 @@ enum CloudflareChallengePresenter {
 
     private static func _present(url: URL) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
-            var resumed = false
+            let resumed = ResumptionFlag()
 
             guard
                 let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -75,16 +78,14 @@ enum CloudflareChallengePresenter {
             let challengeView = CloudflareChallengeView(
                 targetURL: url,
                 onChallengePassed: { html in
-                    guard !resumed else { return }
-                    resumed = true
+                    guard resumed.trySet() else { return }
                     hostVCRef?.dismiss(animated: true) {
                         hostVCRef = nil
                         continuation.resume(returning: html)
                     }
                 },
                 onCancel: {
-                    guard !resumed else { return }
-                    resumed = true
+                    guard resumed.trySet() else { return }
                     hostVCRef?.dismiss(animated: true) {
                         hostVCRef = nil
                         continuation.resume(throwing: FetchError.httpError(503))
@@ -102,5 +103,20 @@ enum CloudflareChallengePresenter {
             }
             topVC.present(hostVC, animated: true)
         }
+    }
+}
+
+private final class ResumptionFlag: @unchecked Sendable {
+    private var _value = false
+
+    func trySet() -> Bool {
+        cfResumeLock.lock()
+        if _value {
+            cfResumeLock.unlock()
+            return false
+        }
+        _value = true
+        cfResumeLock.unlock()
+        return true
     }
 }

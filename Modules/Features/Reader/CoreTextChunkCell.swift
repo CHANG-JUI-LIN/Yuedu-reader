@@ -282,11 +282,21 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
     }
 
     func applyPlaybackHighlight(text: String?) {
+        let s = GlobalSettings.shared
+        guard s.ttsHighlightEnabled else {
+            playbackOverlay.clearSelection()
+            playbackOverlay.boxStyle = nil
+            playbackOverlay.boxColor = nil
+            playbackOverlay.fillColor = .clear
+            playbackOverlay.isHidden = true
+            return
+        }
         guard let text, !text.isEmpty,
               let chunk = currentChunk,
               chunk.chapterIndex >= 0
         else {
             playbackOverlay.clearSelection()
+            playbackOverlay.isHidden = false
             return
         }
 
@@ -295,16 +305,19 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
                                   length: min(chunk.charRange.length, chunk.attributedString.length - chunk.charRange.location))
         guard searchRange.length > 0 else {
             playbackOverlay.clearSelection()
+            playbackOverlay.isHidden = false
             return
         }
 
         let found = nsString.range(of: text, options: [.caseInsensitive, .diacriticInsensitive], range: searchRange)
         guard found.location != NSNotFound, found.length > 0 else {
             playbackOverlay.clearSelection()
+            playbackOverlay.isHidden = false
             return
         }
 
         let rects = renderRects(for: found)
+        CoreTextPageView.applyTTSPlaybackStyle(to: playbackOverlay)
         playbackOverlay.selectionRects = rects
         playbackOverlay.startHandlePoint = nil
         playbackOverlay.endHandlePoint = nil

@@ -109,19 +109,22 @@ final class TextSelectionInteractor {
         var range = nsString.paragraphRange(
             for: NSRange(location: min(max(index, 0), attributedString.length - 1), length: 0)
         )
+        // `character(at:)` yields one UTF-16 code unit; a lone surrogate half (emoji / non-BMP
+        // glyph) maps to nil via `UnicodeScalar(_:)`. A surrogate half is never whitespace, so a
+        // failed conversion means "stop trimming" — never force-unwrap it into a crash.
         while range.length > 0 {
             let first = nsString.character(at: range.location)
-            if CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(first)!) {
-                range.location += 1
-                range.length -= 1
-            } else { break }
+            guard let scalar = UnicodeScalar(first),
+                  CharacterSet.whitespacesAndNewlines.contains(scalar) else { break }
+            range.location += 1
+            range.length -= 1
         }
         while range.length > 0 {
             let lastIdx = range.location + range.length - 1
             let last = nsString.character(at: lastIdx)
-            if CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(last)!) {
-                range.length -= 1
-            } else { break }
+            guard let scalar = UnicodeScalar(last),
+                  CharacterSet.whitespacesAndNewlines.contains(scalar) else { break }
+            range.length -= 1
         }
         if range.length > 0 { return range }
         return NSRange(location: min(max(index, 0), attributedString.length - 1), length: 1)

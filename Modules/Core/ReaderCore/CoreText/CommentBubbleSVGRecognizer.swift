@@ -167,10 +167,25 @@ struct CommentBubbleSVGRecognizer {
         }
 
         let bubbleText = sourceBubble.displayText ?? "0"
-        let templateSource = templateSVG(
+        var templateSource = templateSVG(
             for: settings.commentBubblePresetMode,
             customSVG: settings.commentBubbleSelectedCustomStyle?.svg ?? ""
         )
+        // bubble.json-imported styles keep a literal `${color}` placeholder in
+        // their text fill (`fill="${color}"`). The parser can only resolve real
+        // hex/rgb colours, so we substitute the JSON's day/night + normal/emphasis
+        // hex into the raw SVG string *before* recognition. Styles authored in
+        // the legacy SVG editor (no `${color}` token) are untouched.
+        if let style = settings.commentBubbleSelectedCustomStyle, style.usesColorTemplate {
+            let hex = style.resolvedColorHex(
+                forCount: bubbleText,
+                isNight: isNightTheme(themeTextColor: themeTextColor)
+            )
+            templateSource = materializeColorTemplate(
+                templateSource,
+                colorHex: hex
+            )
+        }
         let template = recognize(src: "", svgContent: templateSource)
             ?? recognize(src: "", svgContent: builtinBubbleSVG)
 
@@ -184,6 +199,26 @@ struct CommentBubbleSVGRecognizer {
             overallScale: CGFloat(settings.commentBubbleScale),
             textScaleRatio: CGFloat(settings.commentBubbleTextScale)
         )
+    }
+
+    /// Substitutes the `${color}` placeholder (case-insensitive) inside an SVG
+    /// template with a concrete hex string, leaving every other token intact.
+    /// Used by both render-time materialization and the settings preview.
+    static func materializeColorTemplate(_ svg: String, colorHex: String) -> String {
+        svg.replacingOccurrences(of: "${color}", with: colorHex)
+            .replacingOccurrences(of: "${Color}", with: colorHex)
+    }
+
+    /// Infers whether the reader is in night mode from the body text colour the
+    /// paginator already resolved. The night theme renders text on a dark
+    /// background, so the body text luminance is high; day themes sit well below
+    /// 0.5. This avoids plumbing a separate isNight flag through every render
+    /// call site.
+    static func isNightTheme(themeTextColor: UIColor) -> Bool {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        themeTextColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let luminance = 0.299 * r + 0.587 * g + 0.114 * b
+        return luminance > 0.5
     }
     
     private static func getSVGString(src: String, svgContent: String?) -> String? {
@@ -375,10 +410,12 @@ struct CommentBubbleSVGRecognizer {
                     .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 
-                // Accept count format (e.g., 99+), or the template placeholder $displayText
+                // Accept count format (e.g., 99+), or the template placeholders
+                // $displayText (legacy SVG) / ${num} (bubble.json convention).
                 let isCount = (try? NSRegularExpression(pattern: #"^[0-9]+[+]?$"#))
                     .map { $0.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil } ?? false
-                let isPlaceholder = text.trimmingCharacters(in: .whitespacesAndNewlines) == "$displayText"
+                let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let isPlaceholder = trimmedText == "$displayText" || trimmedText == "${num}"
                 if isCount || isPlaceholder {
                     let x = parseCoordinate(extractAttribute("x", in: tag), viewBoxSize: viewBox.width)
                     let y = parseCoordinate(extractAttribute("y", in: tag), viewBoxSize: viewBox.height)
@@ -551,7 +588,29 @@ struct CommentBubbleSVGRecognizer {
         guard let val else { return nil }
         let clean = val.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if clean == "none" || clean == "transparent" { return nil }
+        if clean.hasPrefix("rgb(") && clean.hasSuffix(")") {
+            return parseRGBColor(clean)
+        }
         return parseHexColor(clean)
+    }
+
+    /// Parses a CSS `rgb(r, g, b)` colour (0–255 integer channels). bubble.json
+    /// SVG templates emit outline fills as e.g. `fill="rgb(254,254,254)"`;
+    /// without this, every such shape painted transparent and the bubble body
+    /// vanished entirely (the recognizer kept returning a valid bubble, but the
+    /// drawing pass skipped the nil-fill paths).
+    private static func parseRGBColor(_ val: String) -> UIColor? {
+        let inner = val.dropFirst("rgb(".count).dropLast()
+        let parts = inner.split(separator: ",").compactMap { component -> Double? in
+            Double(component.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        guard parts.count >= 3 else { return nil }
+        return UIColor(
+            red: CGFloat(parts[0]) / 255.0,
+            green: CGFloat(parts[1]) / 255.0,
+            blue: CGFloat(parts[2]) / 255.0,
+            alpha: 1.0
+        )
     }
 
     /// Reads one CSS declaration (e.g. `stroke`, `fill`, `stroke-width`, `color`) from a tag's
@@ -754,7 +813,8 @@ extension CommentBubbleSVGRecognizer {
                     canvasFontSize = sourceFontSize
                 }
                 let textColor = color ?? themeTextColor
-                let isSVGBold = (fontWeight?.lowercased().contains("bold") ?? false) || fontWeight == "600"
+                let isSVGBold = (fontWeight?.lowercased().contains("bold") ?? false)
+                    || (Int((fontWeight ?? "").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) >= 600
                 let isBold = isSVGBold || GlobalSettings.shared.readerFontBold
                 let font = UserReaderFontResolver.bodyFont(size: canvasFontSize, isBold: isBold)
                 let textAttrs: [NSAttributedString.Key: Any] = [

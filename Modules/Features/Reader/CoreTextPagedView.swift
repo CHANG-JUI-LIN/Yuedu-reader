@@ -316,6 +316,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private var hasDeferredChapterReady = false
         private var lastCurlBeginTime: CFAbsoluteTime = 0
         private static let curlWatchdogTimeout: CFAbsoluteTime = 2.5
+        /// Set during `willTransitionTo`/`didFinishAnimating`. When true,
+        /// `handleChapterReady` defers its `setViewControllers` call to avoid
+        /// corrupting UIPageViewController's internal gesture state.
+        private var isGestureInProgress = false
 
         // Cover animation overlay components
         private let coverOverlayView = UIView()
@@ -451,6 +455,13 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if shouldRefresh {
                 handleChapterReady(on: pageViewController)
             }
+        }
+
+        private func replayDeferredChapterReadyIfNeeded(on pageViewController: UIPageViewController) {
+            guard hasDeferredChapterReady else { return }
+            guard !isGestureInProgress else { return }
+            hasDeferredChapterReady = false
+            handleChapterReady(on: pageViewController)
         }
 
         /// The single non-animated stack writer. Every code path that places a page
@@ -764,6 +775,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         private func handleChapterReady(on pageViewController: UIPageViewController) {
             guard !deferChapterReadyIfCurlIsAnimating() else { return }
+            guard !isGestureInProgress else {
+                hasDeferredChapterReady = true
+                AppLogger.render("[CurlTrace] defer handleChapterReady during interactive gesture")
+                return
+            }
             let engine = currentEngine
             let fallbackPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
             let freshVC: UIViewController
@@ -1272,6 +1288,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             _ pvc: UIPageViewController,
             willTransitionTo pendingViewControllers: [UIViewController]
         ) {
+            isGestureInProgress = true
             sessionCoordinator?.beginInteractivePageTransition()
             beginCurlTransitionIfNeeded()
         }
@@ -1282,10 +1299,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             previousViewControllers: [UIViewController],
             transitionCompleted completed: Bool
         ) {
+            isGestureInProgress = false
             AppLogger.render("[CurlTrace] didFinish completed=\(completed) visible=\((pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1) binding=\(currentPage)")
 
             defer {
                 finishCurlTransitionIfNeeded(on: pvc)
+                replayDeferredChapterReadyIfNeeded(on: pvc)
             }
 
             guard completed else {

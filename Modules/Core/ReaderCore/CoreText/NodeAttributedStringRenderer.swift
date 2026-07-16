@@ -871,7 +871,15 @@ struct NodeAttributedStringRenderer {
             para.tailIndent = rightInset > 0 ? -rightInset : 0
         }
 
-        para.alignment = nsTextAlignment(from: style.textAlign)
+        // Unspecified CSS text-align (.natural) now defaults to full justification, so both margins
+        // align for CJK + Latin alike — the same thing Readest / Apple Books do by force-injecting
+        // `text-align: justify`. Explicit CSS left/center/right/justify still win. RTL "natural"
+        // keeps the right-alignment resolved just above (other scripts come later). Single-line and
+        // paragraph-last lines are never stretched — that's enforced in the horizontal line drawer —
+        // so headings, captions and hard-wrapped code stay ragged automatically.
+        para.alignment = (style.textAlign == .natural && !rtlRightAligned)
+            ? .justified
+            : nsTextAlignment(from: style.textAlign)
         para.baseWritingDirection = style.baseWritingDirection
         newCtx.paragraphStyle = para
         newCtx.baselineOffset = ReaderTypographyCorrection.baselineOffset(

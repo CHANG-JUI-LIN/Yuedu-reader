@@ -5,6 +5,17 @@ final class InteractionOverlayView: UIView {
         didSet { setNeedsDisplay() }
     }
 
+    /// When non-nil, each selection rect is drawn as a styled dialogue box (solid block
+    /// or gradient pill) instead of a plain `fillColor` fill. Used by the TTS playback
+    /// highlight to reuse the reader's box styles.
+    var boxStyle: CoreTextDialogueBox.Style? {
+        didSet { setNeedsDisplay() }
+    }
+    /// Base color for the styled box (only used when `boxStyle != nil`).
+    var boxColor: UIColor? {
+        didSet { setNeedsDisplay() }
+    }
+
     var handleColor: UIColor = .systemBlue {
         didSet { setNeedsDisplay() }
     }
@@ -51,9 +62,15 @@ final class InteractionOverlayView: UIView {
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
 
-        ctx.setFillColor(fillColor.cgColor)
-        for selectionRect in selectionRects {
-            ctx.fill(selectionRect)
+        if let boxStyle, let boxColor {
+            for selectionRect in selectionRects {
+                CoreTextDialogueBox.fill(rect: selectionRect, baseColor: boxColor, style: boxStyle, in: ctx)
+            }
+        } else {
+            ctx.setFillColor(fillColor.cgColor)
+            for selectionRect in selectionRects {
+                ctx.fill(selectionRect)
+            }
         }
 
         if !underlineRects.isEmpty {

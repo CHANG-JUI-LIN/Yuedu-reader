@@ -225,6 +225,58 @@ struct ReaderCommentBubbleCustomStyleTests {
         #expect(decoded.svg == original.svg)
     }
 
+    @Test("imports a bubble.json package into a comment bubble custom style")
+    func importsBubblePackage() throws {
+        let json = """
+        {
+          "name": "月薪喵",
+          "dirName": "自定义段评气泡",
+          "dayEmphasisColor": "#FF0000",
+          "dayNormalColor": "#808080",
+          "nightEmphasisColor": "#FF0000",
+          "nightNormalColor": "#808080",
+          "sizeScale": 1.0,
+          "svgTemplate": "<svg viewBox=\\"0 0 32 32\\"><text x=\\"16\\" y=\\"24\\">${num}</text></svg>"
+        }
+        """
+        let style = try #require(
+            ReaderCommentBubbleCustomStyle.fromBubblePackage(Data(json.utf8))
+        )
+
+        #expect(style.name == "月薪喵")
+        #expect(style.dayNormalColor == "#808080")
+        #expect(style.nightEmphasisColor == "#FF0000")
+        #expect(style.sizeScale == 1.0)
+        #expect(style.usesColorTemplate)
+    }
+
+    @Test("resolves the ${color} hex using day/night and emphasis/no-emphasis")
+    func resolvesColorHexByThemeAndEmphasis() {
+        let style = ReaderCommentBubbleCustomStyle(
+            name: "pkg",
+            svg: "<svg><text>${num}</text></svg>",
+            dayEmphasisColor: "#FF0000",
+            dayNormalColor: "#808080",
+            nightEmphasisColor: "#FFFF00",
+            nightNormalColor: "#404040"
+        )
+
+        #expect(style.resolvedColorHex(forCount: "5", isNight: false) == "#808080")
+        #expect(style.resolvedColorHex(forCount: "99+", isNight: false) == "#FF0000")
+        #expect(style.resolvedColorHex(forCount: "120", isNight: false) == "#FF0000")
+        #expect(style.resolvedColorHex(forCount: "5", isNight: true) == "#404040")
+        #expect(style.resolvedColorHex(forCount: "99+", isNight: true) == "#FFFF00")
+    }
+
+    @Test("does not flag a legacy SVG as a color-template style")
+    func detectsColorTemplateForLegacySVG() {
+        let legacy = ReaderCommentBubbleCustomStyle(
+            name: "legacy",
+            svg: "<svg><text x=\"16\" y=\"24\">$displayText</text></svg>"
+        )
+        #expect(!legacy.usesColorTemplate)
+    }
+
     private func makeStyle(name: String, svg: String) -> ReaderCommentBubbleCustomStyle {
         ReaderCommentBubbleCustomStyle(id: UUID(), name: name, svg: svg)
     }

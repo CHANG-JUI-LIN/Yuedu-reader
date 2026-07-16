@@ -26,6 +26,116 @@ struct BookSourceCheckPolicy: Equatable {
     static let slowOptionsMs = [3000, 5000, 8000, 10000]
 }
 
+// MARK: - Four-stage validation model
+
+/// The four independent probes run against every source, in run order.
+enum ValidationStage: Int, CaseIterable, Identifiable {
+    case connectivity = 0
+    case booklist
+    case detail
+    case content
+
+    var id: Int { rawValue }
+
+    /// Short label under the stage dot in a result row.
+    var title: String {
+        switch self {
+        case .connectivity: return localized("連通")
+        case .booklist:     return localized("分類")
+        case .detail:       return localized("詳情")
+        case .content:      return localized("正文")
+        }
+    }
+
+    /// Full stage name shown on the prepare page.
+    var longTitle: String {
+        switch self {
+        case .connectivity: return localized("網絡連通性")
+        case .booklist:     return localized("發現分類")
+        case .detail:       return localized("書籍詳情")
+        case .content:      return localized("正文內容")
+        }
+    }
+
+    var explanation: String {
+        switch self {
+        case .connectivity: return localized("檢測是否能訪問書源主域名")
+        case .booklist:     return localized("解析發現頁第一個分類的書單")
+        case .detail:       return localized("解析書單第一本書的詳情頁")
+        case .content:      return localized("獲取第一章正文內容")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .connectivity: return "antenna.radiowaves.left.and.right"
+        case .booklist:     return "safari"
+        case .detail:       return "book"
+        case .content:      return "text.alignleft"
+        }
+    }
+}
+
+enum StageStatus: Equatable { case pending, running, pass, fail, skipped }
+
+/// Why a source failed — `.emptyRule` means the site responded but a rule parsed out
+/// empty (書單/目錄/正文為空), `.other` covers network, timeout and runtime errors.
+enum FailureCategory: Equatable { case emptyRule, other }
+
+struct StageOutcome: Equatable {
+    var status: StageStatus = .pending
+    var summary: String = ""
+}
+
+/// Overall verdict per source, shown as the badge in the source list.
+enum SourceHealth: Equatable {
+    case passed        // all four stages passed → 驗證通過
+    case fetchError    // stage 1–3 failed → 抓取異常
+    case contentError  // only stage 4 failed → 正文異常
+}
+
+/// Persisted per-source outcome so the source list can badge rows after a run,
+/// even once the results sheet is closed.
+struct SourceValidationSummary: Equatable {
+    var health: SourceHealth
+    var responseMs: Int64
+}
+
+/// Legacy single-state view of an item, kept so old call sites keep compiling.
+enum CheckStatus: Equatable { case pending, testing, pass, fail }
+
+struct BookSourceCheckItem: Identifiable {
+    let id = UUID()
+    let source: BookSource
+    var stages: [StageOutcome] = ValidationStage.allCases.map { _ in StageOutcome() }
+    var responseTime: Int64 = 0
+    var failureCategory: FailureCategory? = nil
+
+    func outcome(_ stage: ValidationStage) -> StageOutcome { stages[stage.rawValue] }
+
+    var isFinished: Bool { !stages.contains { $0.status == .pending || $0.status == .running } }
+    var overallPass: Bool { stages.allSatisfy { $0.status == .pass } }
+
+    var health: SourceHealth? {
+        guard isFinished else { return nil }
+        if overallPass { return .passed }
+        if outcome(.content).status == .fail,
+           outcome(.connectivity).status == .pass,
+           outcome(.booklist).status == .pass,
+           outcome(.detail).status == .pass {
+            return .contentError
+        }
+        return .fetchError
+    }
+
+    /// Legacy overall status mapping.
+    var status: CheckStatus {
+        if stages.contains(where: { $0.status == .running }) { return .testing }
+        guard isFinished else { return .pending }
+        return overallPass ? .pass : .fail
+    }
+}
+
 @MainActor
 final class BookSourceHealthChecker: ObservableObject {
     /// Shared so a run keeps going after the user leaves the book-source screen (background check).
@@ -35,17 +145,19 @@ final class BookSourceHealthChecker: ObservableObject {
     @Published var isRunning = false
     /// One-line summary of the actions applied after the last completed run (disabled / deleted).
     @Published var lastSummary: String?
+    /// Last finished verdict per source id — drives the badges in the source list.
+    @Published var healthById: [UUID: SourceValidationSummary] = [:]
 
     /// The user-chosen handling for bad/slow sources, set before `runAll()`.
     var policy = BookSourceCheckPolicy()
 
-    /// At most this many sources are probed at once. Unbounded concurrency made every source
-    /// contend for the network, inflating response times and making "too slow" detection useless;
-    /// a small window keeps timings meaningful and is gentler on the sites.
+    /// At most this many sources are probed at once, keeping timings meaningful.
     private static let maxConcurrent = 6
 
     private var cancelled = false
     private let fetcher = BookSourceFetcher.shared
+
+    var finishedCount: Int { items.filter(\.isFinished).count }
 
     func prepare(sources: [BookSource]) {
         cancelled = false
@@ -85,9 +197,9 @@ final class BookSourceHealthChecker: ObservableObject {
         isRunning = false
     }
 
-    /// True when a *passing* source's response time exceeds the configured "too slow" threshold.
+    /// True when a *passing* source's total time exceeds the configured "too slow" threshold.
     func isSlow(_ item: BookSourceCheckItem) -> Bool {
-        item.status == .pass && item.responseTime > Int64(policy.slowThresholdMs)
+        item.overallPass && item.responseTime > Int64(policy.slowThresholdMs)
     }
 
     // MARK: - Apply Actions
@@ -99,7 +211,7 @@ final class BookSourceHealthChecker: ObservableObject {
         var deleteIds: Set<UUID> = []
 
         for item in items {
-            if item.status == .fail {
+            if item.isFinished, !item.overallPass {
                 switch policy.badAction {
                 case .markOnly: break
                 case .disable:  disableIds.insert(item.source.id)
@@ -120,56 +232,129 @@ final class BookSourceHealthChecker: ObservableObject {
         lastSummary = parts.isEmpty ? nil : parts.joined(separator: "，")
     }
 
-    // MARK: - Single Source Check
+    // MARK: - Per-source four-stage run
+
+    private func setStage(
+        _ index: Int, _ stage: ValidationStage, _ status: StageStatus, _ summary: String = ""
+    ) {
+        guard items.indices.contains(index) else { return }
+        items[index].stages[stage.rawValue] = StageOutcome(status: status, summary: summary)
+    }
+
+    private func skipRemaining(after stage: ValidationStage, at index: Int) {
+        guard items.indices.contains(index) else { return }
+        for s in ValidationStage.allCases where s.rawValue > stage.rawValue {
+            items[index].stages[s.rawValue] = StageOutcome(status: .skipped, summary: "—")
+        }
+    }
+
+    private func finishItem(at index: Int, startedAt t0: CFAbsoluteTime) {
+        guard items.indices.contains(index) else { return }
+        items[index].responseTime = Int64((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        if let health = items[index].health {
+            healthById[items[index].source.id] = SourceValidationSummary(
+                health: health, responseMs: items[index].responseTime
+            )
+        }
+    }
+
+    private enum ProbeResult<T> {
+        case success(T, String)
+        case failure(FailureCategory, String)
+    }
 
     private func checkItem(at index: Int) async {
         guard items.indices.contains(index), !cancelled else { return }
-        items[index].status = .testing
-        items[index].detail = nil
-
         let source = items[index].source
         let t0 = CFAbsoluteTimeGetCurrent()
 
-        let result = await probe(source: source)
-        let elapsed = Int64((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        // Stage 1 — connectivity
+        setStage(index, .connectivity, .running)
+        let conn = await probeConnectivity(source)
         guard items.indices.contains(index), !cancelled else { return }
-        items[index].status = result.pass ? .pass : .fail
-        items[index].responseTime = elapsed
-        items[index].detail = result.message
-    }
-
-    /// A source is "good" when a reader can actually reach a book through it — via the
-    /// discover page *or* via search. Either path is enough; we only fail when neither
-    /// works. Discover is tried first (it's the Explore tab the user sees), but a
-    /// discover failure no longer condemns the source: plenty of sources have a quirky
-    /// or login-gated discover page yet search and read perfectly.
-    private func probe(source: BookSource) async -> (pass: Bool, message: String) {
-        let hasDiscover = source.enabledExplore
-            && !source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasSearch = !source.searchUrl.isEmpty
-
-        if hasDiscover {
-            let discover = await checkDiscover(source: source)
-            if discover.pass || cancelled { return discover }
-            // Discover didn't work — fall back to search before giving up.
-            guard hasSearch else { return discover }
-            return await checkSearch(source: source)
+        setStage(index, .connectivity, conn.ok ? .pass : .fail, conn.message)
+        if !conn.ok {
+            items[index].failureCategory = .other
+            skipRemaining(after: .connectivity, at: index)
+            finishItem(at: index, startedAt: t0)
+            return
         }
 
-        if hasSearch {
-            return await checkSearch(source: source)
+        // Stage 2 — first booklist (discover first, falling back to search)
+        setStage(index, .booklist, .running)
+        let listResult = await probeBooklist(source)
+        guard items.indices.contains(index), !cancelled else { return }
+        let book: OnlineBook
+        switch listResult {
+        case .failure(let category, let message):
+            setStage(index, .booklist, .fail, message)
+            items[index].failureCategory = category
+            skipRemaining(after: .booklist, at: index)
+            finishItem(at: index, startedAt: t0)
+            return
+        case .success(let found, let message):
+            setStage(index, .booklist, .pass, message)
+            book = found
         }
 
-        // No discover and no search — minimal connectivity check.
-        return await checkConnectivity(url: source.bookSourceUrl)
+        // Stage 3 — book detail
+        setStage(index, .detail, .running)
+        let detailResult = await probeDetail(book: book, source: source)
+        guard items.indices.contains(index), !cancelled else { return }
+        let info: OnlineBook
+        switch detailResult {
+        case .failure(let category, let message):
+            setStage(index, .detail, .fail, message)
+            items[index].failureCategory = category
+            skipRemaining(after: .detail, at: index)
+            finishItem(at: index, startedAt: t0)
+            return
+        case .success(let fetched, let message):
+            setStage(index, .detail, .pass, message)
+            info = fetched
+        }
+
+        // Stage 4 — first chapter body
+        setStage(index, .content, .running)
+        let contentResult = await probeContent(book: book, info: info, source: source)
+        guard items.indices.contains(index), !cancelled else { return }
+        switch contentResult {
+        case .failure(let category, let message):
+            setStage(index, .content, .fail, message)
+            items[index].failureCategory = category
+        case .success(_, let message):
+            setStage(index, .content, .pass, message)
+            items[index].failureCategory = nil
+        }
+        finishItem(at: index, startedAt: t0)
     }
 
-    // MARK: - Discover Checking
+    // MARK: - Stage probes
+
+    private func probeConnectivity(_ source: BookSource) async -> (ok: Bool, message: String) {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let urlString = source.bookSourceUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !urlString.isEmpty, let url = safeURL(string: urlString) else {
+            return (false, localized("無效的 URL"))
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 15
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard response is HTTPURLResponse else {
+                return (false, localized("非 HTTP 響應"))
+            }
+            // Any HTTP status counts as reachable — plenty of sites reject HEAD yet serve pages.
+            let ms = Int64((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+            return (true, "\(ms)ms")
+        } catch {
+            return (false, error.localizedDescription)
+        }
+    }
 
     /// Discover entries usable as actual *content* — excludes `select` filter dropdowns
-    /// and `java.startBrowser(...)` login actions. The live Explore page skips these too
-    /// (see `DiscoverViewModel.mapItem`); without this, an aggregator whose first entry is
-    /// a login link gets wrongly failed even though its real categories work fine.
+    /// and `java.startBrowser(...)` login actions, mirroring the live Explore page.
     private func contentSections(
         _ sections: [ModernParserBridge.DiscoverItem]
     ) -> [ModernParserBridge.DiscoverItem] {
@@ -180,112 +365,80 @@ final class BookSourceHealthChecker: ObservableObject {
         }
     }
 
-    /// Fetch discover categories → first usable section → get books → fetch a book's
-    /// detail. A single broken category doesn't fail the source: we try the first few
-    /// content sections and pass as soon as one of them responds.
-    private func checkDiscover(source: BookSource) async -> (pass: Bool, message: String) {
-        let sections = await fetcher.discoverItems(page: 1, in: source)
-        guard !cancelled else { return (false, localized("已取消")) }
+    private func probeBooklist(_ source: BookSource) async -> ProbeResult<OnlineBook> {
+        let hasDiscover = source.enabledExplore
+            && !source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasSearch = !source.searchUrl.isEmpty
 
-        let usable = contentSections(sections)
-        guard !usable.isEmpty else {
-            return (false, localized("發現頁無內容"))
+        var lastFailure: ProbeResult<OnlineBook> = .failure(.emptyRule, localized("發現頁無內容"))
+
+        if hasDiscover {
+            let sections = contentSections(await fetcher.discoverItems(page: 1, in: source))
+            for section in sections.prefix(3) {
+                guard !cancelled else { return lastFailure }
+                do {
+                    let books = try await fetcher.discoverBooks(from: section, page: 1, in: source)
+                    if let book = books.first(where: {
+                        !$0.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    }) {
+                        let title = section.title ?? localized("發現")
+                        return .success(book, "「\(title)」\(books.count) \(localized("本"))")
+                    }
+                    lastFailure = .failure(.emptyRule, localized("書單為空"))
+                } catch {
+                    lastFailure = .failure(.other, error.localizedDescription)
+                }
+            }
+            if !hasSearch { return lastFailure }
         }
 
-        var lastError = localized("發現頁無內容")
-        for section in usable.prefix(3) {
-            guard !cancelled else { return (false, localized("已取消")) }
-
-            let books: [OnlineBook]
-            do {
-                books = try await fetcher.discoverBooks(from: section, page: 1, in: source)
-            } catch {
-                lastError = "\(localized("發現頁請求失敗")): \(error.localizedDescription)"
-                continue
-            }
-
-            // Section responded but is empty (e.g. a personal shelf when not logged in).
-            // The endpoint works, so the source is reachable — count it as a pass.
-            guard let firstBook = books.first(where: {
+        guard hasSearch else { return lastFailure }
+        do {
+            let books = try await fetcher.search(query: "我的", in: source)
+            guard let book = books.first(where: {
                 !$0.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }) else {
-                return (true, "\(section.title ?? localized("發現")) \(localized("無可讀取書籍"))")
+                return .failure(.emptyRule, localized("搜索無結果"))
             }
-
-            // Verify a book opens; a flaky detail page just moves us to the next section.
-            do {
-                let bookInfo = try await fetcher.fetchBookInfo(url: firstBook.bookUrl, source: source)
-                guard !cancelled else { return (false, localized("已取消")) }
-                let name = bookInfo.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                return (true, name.isEmpty
-                    ? "\(firstBook.name) — \(localized("詳情為空"))"
-                    : "《\(name)》\(bookInfo.author)")
-            } catch {
-                lastError = "\(firstBook.name): \(error.localizedDescription)"
-                continue
-            }
-        }
-
-        return (false, lastError)
-    }
-
-    // MARK: - Search Checking
-
-    private func checkSearch(source: BookSource) async -> (pass: Bool, message: String) {
-        do {
-            let books = try await fetcher.search(query: "的", in: source)
-            guard !cancelled else { return (false, localized("已取消")) }
-            if books.isEmpty {
-                return (false, localized("搜索無結果"))
-            }
-            let names = books.prefix(3).map { "《\($0.name)》" }.joined(separator: "、")
-            return (true, "\(books.count) \(localized("個結果"))（\(names)）")
+            return .success(book, "\(localized("搜索")) \(books.count) \(localized("本"))")
         } catch {
-            return (false, "\(localized("搜索失敗")): \(error.localizedDescription)")
+            return .failure(.other, error.localizedDescription)
         }
     }
 
-    // MARK: - Fallback Connectivity
-
-    private func checkConnectivity(url: String) async -> (pass: Bool, message: String) {
-        guard !url.isEmpty else {
-            return (false, localized("書源地址為空"))
-        }
-        guard let parsed = safeURL(string: url) else {
-            return (false, localized("無效的 URL"))
-        }
+    private func probeDetail(book: OnlineBook, source: BookSource) async -> ProbeResult<OnlineBook> {
         do {
-            var req = URLRequest(url: parsed)
-            req.httpMethod = "HEAD"
-            let (_, resp) = try await URLSession.shared.data(for: req)
-            guard let http = resp as? HTTPURLResponse else {
-                return (false, localized("非 HTTP 響應"))
-            }
-            if (200..<400).contains(http.statusCode) {
-                return (true, "HTTP \(http.statusCode)")
-            }
-            return (false, "HTTP \(http.statusCode)")
+            let info = try await fetcher.fetchBookInfo(url: book.bookUrl, source: source)
+            let name = info.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return .failure(.emptyRule, localized("詳情為空")) }
+            return .success(info, "《\(name)》")
         } catch {
-            return (false, error.localizedDescription)
+            return .failure(.other, error.localizedDescription)
         }
     }
-}
 
-// MARK: - Health Check Item
-
-struct BookSourceCheckItem: Identifiable {
-    let id = UUID()
-    let source: BookSource
-    var status: CheckStatus = .pending
-    var responseTime: Int64 = 0
-    var detail: String?
-
-    var overallPass: Bool { status == .pass }
-}
-
-enum CheckStatus: Equatable {
-    case pending
-    case testing
-    case pass
-    case fail
+    private func probeContent(
+        book: OnlineBook, info: OnlineBook, source: BookSource
+    ) async -> ProbeResult<Int> {
+        let tocUrl: String = {
+            let fromInfo = info.tocUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !fromInfo.isEmpty { return fromInfo }
+            let fromBook = book.tocUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+            return fromBook.isEmpty ? book.bookUrl : fromBook
+        }()
+        do {
+            let chapters = try await fetcher.fetchTOC(tocUrl: tocUrl, source: source)
+            guard let first = chapters.first(where: {
+                !$0.shouldRenderAsVolumeSeparator && $0.hasLoadableContentURL
+            }) else {
+                return .failure(.emptyRule, localized("目錄為空"))
+            }
+            let text = try await fetcher.fetchChapter(ref: first, bookId: UUID(), source: source)
+            let count = text.trimmingCharacters(in: .whitespacesAndNewlines).count
+            guard count > 0 else { return .failure(.emptyRule, localized("正文為空")) }
+            return .success(count, "\(localized("抓取")) \(count) \(localized("字"))")
+        } catch {
+            return .failure(.other, error.localizedDescription)
+        }
+    }
 }

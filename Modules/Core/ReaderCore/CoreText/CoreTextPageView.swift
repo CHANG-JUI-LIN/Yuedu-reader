@@ -1210,23 +1210,23 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         guard attributedString.length > 0 else { return NSRange(location: 0, length: 0) }
         let nsString = attributedString.string as NSString
         var range = nsString.paragraphRange(for: NSRange(location: min(max(index, 0), attributedString.length - 1), length: 0))
+        // `character(at:)` returns a single UTF-16 code unit; for an emoji or non-BMP glyph
+        // that is a lone surrogate half (0xD800–0xDFFF), which `UnicodeScalar(_:)` maps to nil.
+        // A surrogate half is never whitespace, so treat a failed conversion as "stop trimming"
+        // rather than force-unwrapping into a crash.
         while range.length > 0 {
             let first = nsString.character(at: range.location)
-            if CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(first)!) {
-                range.location += 1
-                range.length -= 1
-            } else {
-                break
-            }
+            guard let scalar = UnicodeScalar(first),
+                  CharacterSet.whitespacesAndNewlines.contains(scalar) else { break }
+            range.location += 1
+            range.length -= 1
         }
         while range.length > 0 {
             let lastIndex = range.location + range.length - 1
             let last = nsString.character(at: lastIndex)
-            if CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(last)!) {
-                range.length -= 1
-            } else {
-                break
-            }
+            guard let scalar = UnicodeScalar(last),
+                  CharacterSet.whitespacesAndNewlines.contains(scalar) else { break }
+            range.length -= 1
         }
         if range.length > 0 { return range }
         return NSRange(location: min(max(index, 0), attributedString.length - 1), length: 1)
@@ -1595,12 +1595,22 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     }
 
     private func updatePlaybackHighlightOverlay() {
+        let s = GlobalSettings.shared
+        guard s.ttsHighlightEnabled else {
+            playbackOverlay.clearSelection()
+            playbackOverlay.boxStyle = nil
+            playbackOverlay.boxColor = nil
+            playbackOverlay.fillColor = .clear
+            playbackOverlay.isHidden = true
+            return
+        }
         guard let layout,
               let text = playbackHighlightText,
               !text.isEmpty,
               localPageIndex < layout.pageRanges.count
         else {
             playbackOverlay.clearSelection()
+            playbackOverlay.isHidden = false
             return
         }
 
@@ -1611,6 +1621,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
               pageRange.location + pageRange.length <= layout.attributedString.length
         else {
             playbackOverlay.clearSelection()
+            playbackOverlay.isHidden = false
             return
         }
 
@@ -1618,18 +1629,44 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         let found = (pageText as NSString).range(of: text, options: [.caseInsensitive, .diacriticInsensitive])
         guard found.location != NSNotFound, found.length > 0 else {
             playbackOverlay.clearSelection()
+            playbackOverlay.isHidden = false
             return
         }
 
         guard let context = makeInteractionContext() else {
             playbackOverlay.clearSelection()
+            playbackOverlay.isHidden = false
             return
         }
         let chapterRange = NSRange(location: pageRange.location + found.location, length: found.length)
         let rects = selectionRects(for: chapterRange, in: context)
+        Self.applyTTSPlaybackStyle(to: playbackOverlay)
         playbackOverlay.selectionRects = rects
         playbackOverlay.startHandlePoint = nil
         playbackOverlay.endHandlePoint = nil
+    }
+
+    /// Reads the TTS-highlight GlobalSettings and configures an overlay's fill/box style,
+    /// or clears + hides it when the TTS highlight is disabled.
+    static func applyTTSPlaybackStyle(to overlay: InteractionOverlayView) {
+        let s = GlobalSettings.shared
+        guard s.ttsHighlightEnabled else {
+            overlay.boxStyle = nil
+            overlay.boxColor = nil
+            overlay.fillColor = .clear
+            overlay.isHidden = true
+            return
+        }
+        overlay.isHidden = false
+        if s.ttsHighlightBoxEnabled {
+            overlay.boxStyle = CoreTextDialogueBox.Style(rawValue: s.ttsHighlightBoxStyleRaw) ?? .gradientPill
+            overlay.boxColor = GlobalSettings.uiColor(rgbHex: s.ttsHighlightBoxColorHex)
+            overlay.fillColor = GlobalSettings.uiColor(rgbHex: s.ttsHighlightColorHex).withAlphaComponent(0.28)
+        } else {
+            overlay.boxStyle = nil
+            overlay.boxColor = nil
+            overlay.fillColor = GlobalSettings.uiColor(rgbHex: s.ttsHighlightColorHex).withAlphaComponent(0.28)
+        }
     }
 
     private func selectionRects(for range: NSRange, in context: InteractionContext) -> [CGRect] {

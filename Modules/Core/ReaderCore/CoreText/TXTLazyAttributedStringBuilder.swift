@@ -98,7 +98,7 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         titleParaStyle.paragraphSpacing = settings.titleBottomSpacing
 
         let bodyParaStyle = NSMutableParagraphStyle()
-        bodyParaStyle.alignment = .natural
+        bodyParaStyle.alignment = .justified // full justification: both margins align, CJK + Latin alike
         bodyParaStyle.lineBreakMode = .byWordWrapping
         bodyParaStyle.minimumLineHeight = bodyTargetLineHeight
         bodyParaStyle.maximumLineHeight = bodyTargetLineHeight

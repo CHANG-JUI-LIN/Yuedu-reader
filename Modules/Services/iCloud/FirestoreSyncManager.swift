@@ -617,8 +617,9 @@ enum FirestoreSyncMerge {
         fallbackUpdatedAt: (Value) -> Date
     ) -> (values: [Value], shadow: [String: SyncShadowEntry]) {
         var orderedIDs: [String] = []
-        var valuesByID: [String: Value] = [:]
-        var newShadow: [String: SyncShadowEntry] = [:]
+        let totalCount = max(local.count, shadow.count)
+        var valuesByID: [String: Value] = .init(minimumCapacity: totalCount)
+        var newShadow: [String: SyncShadowEntry] = .init(minimumCapacity: max(totalCount, remote.count))
 
         // Carry forward tombstones we already know about (local deletions, possibly not pushed yet).
         for (sid, entry) in shadow where entry.deleted {

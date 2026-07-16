@@ -484,17 +484,18 @@ enum CoreTextHorizontalLineDrawer {
         let coverage = naturalWidth / Double(availableWidth)
 
         if coverage < 0.7 {
-            return naturalLine // skip justification for short lines
+            return naturalLine // skip justification for very short lines (e.g. a <br>-clipped tail)
         }
 
-        let lineText = nsString.substring(with: lineNSRange)
-        let shouldUseCJKJustify = isCJKDominant(lineText) && coverage > 0.85
-
-        if shouldUseCJKJustify {
-            return CTLineCreateJustifiedLine(naturalLine, 1.0, Double(availableWidth)) ?? naturalLine
-        } else {
-            return naturalLine
-        }
+        // Justify EVERY qualifying line — CJK, Latin, and mixed alike. CTLineCreateJustifiedLine is
+        // CoreText's own justification engine: it spreads the residual width across the line's
+        // justification opportunities (inter-character for CJK ideographs, inter-word for Latin
+        // spaces), which is exactly the residual-distribution Legado does by hand. We used to gate
+        // this to CJK-dominant lines (`isCJKDominant && coverage > 0.85`), leaving Latin and mixed
+        // lines ragged on the right edge. The gate is gone: both margins now align regardless of
+        // script. Any residual per-glyph .kern (letter spacing) stays as the baseline; justification
+        // stacks on top of it, matching how the width was measured above.
+        return CTLineCreateJustifiedLine(naturalLine, 1.0, Double(availableWidth)) ?? naturalLine
     }
 
     /// Returns true when the text is predominantly CJK (Chinese / Japanese / Korean),

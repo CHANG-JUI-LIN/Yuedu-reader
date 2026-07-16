@@ -204,24 +204,68 @@ struct TTSPanelView: View {
                 }
 
                 Section(header: Text(localized("定時停止"))) {
-                    ForEach([0, 15, 30, 60, 90], id: \.self) { min in
-                        Button {
-                            tts.setSleepTimer(minutes: min)
-                        } label: {
-                            HStack {
-                                Text(min == 0 ? localized("不定時") : "\(min) \(localized("分鐘"))")
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                if tts.sleepMinutes == min {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.accentColor)
+                    Menu {
+                        Button(localized("不定時")) { tts.setSleepTimer(minutes: 0) }
+                        ForEach([15, 30, 60, 90], id: \.self) { min in
+                            Button("\(min) \(localized("分鐘"))") { tts.setSleepTimer(minutes: min) }
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "moon.zzz")
+                                .foregroundColor(DSColor.textSecondary)
+                            Text(localized("定時停止"))
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Text(sleepTimerLabel)
+                                .foregroundColor(DSColor.textSecondary)
+                                .font(DSFont.caption)
+                        }
+                    }
                 }
-            }
-            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
-            .pageBackgroundToolbar(for: .settings)
-        }
-    }
-}
+
+                Section(header: Text(localized("高亮"))) {
+                    Toggle(isOn: ttsHighlightEnabledBinding) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(localized("朗讀高亮"))
+                                .font(DSFont.body)
+                            Text(localized("朗讀時高亮目前正在唸的文字。"))
+                                .font(DSFont.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if gs.ttsHighlightEnabled {
+                        ColorPicker(
+                            localized("高亮顏色"),
+                            selection: ttsHighlightColorBinding,
+                            supportsOpacity: false
+                        )
+
+                        Toggle(isOn: ttsHighlightBoxEnabledBinding) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(localized("朗讀底色框"))
+                                    .font(DSFont.body)
+                                Text(localized("為正在朗讀的文字加上底色方塊。"))
+                                    .font(DSFont.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        if gs.ttsHighlightBoxEnabled {
+                            Picker(localized("底色框樣式"), selection: ttsHighlightBoxStyleBinding) {
+                                Text(localized("純色塊")).tag(0)
+                                Text(localized("漸層膠囊")).tag(1)
+                            }
+                            .pickerStyle(.segmented)
+
+                            ColorPicker(
+                                localized("底色框顏色"),
+                                selection: ttsHighlightBoxColorBinding,
+                                supportsOpacity: false
+                            )
+                        }
+                    }
+                }
             }
             .scrollContentBackground(.hidden)
             .navigationTitle(localized("語音朗讀"))
@@ -282,7 +326,39 @@ struct TTSPanelView: View {
     }
 }
 
-// MARK: - Auto Read Control Panel
+// MARK: - TTS Highlight bindings + sleep label
+
+private extension TTSPanelView {
+    var sleepTimerLabel: String {
+        tts.sleepMinutes == 0 ? localized("不定時") : "\(tts.sleepMinutes) \(localized("分鐘"))"
+    }
+
+    var ttsHighlightEnabledBinding: Binding<Bool> {
+        Binding(get: { gs.ttsHighlightEnabled }, set: { gs.ttsHighlightEnabled = $0 })
+    }
+
+    var ttsHighlightColorBinding: Binding<Color> {
+        Binding(
+            get: { Color(uiColor: GlobalSettings.uiColor(rgbHex: gs.ttsHighlightColorHex)) },
+            set: { gs.ttsHighlightColorHex = UIColor($0).rgbHex ?? GlobalSettings.defaultTTSHighlightColorHex }
+        )
+    }
+
+    var ttsHighlightBoxEnabledBinding: Binding<Bool> {
+        Binding(get: { gs.ttsHighlightBoxEnabled }, set: { gs.ttsHighlightBoxEnabled = $0 })
+    }
+
+    var ttsHighlightBoxColorBinding: Binding<Color> {
+        Binding(
+            get: { Color(uiColor: GlobalSettings.uiColor(rgbHex: gs.ttsHighlightBoxColorHex)) },
+            set: { gs.ttsHighlightBoxColorHex = UIColor($0).rgbHex ?? GlobalSettings.defaultTTSHighlightBoxColorHex }
+        )
+    }
+
+    var ttsHighlightBoxStyleBinding: Binding<Int> {
+        Binding(get: { gs.ttsHighlightBoxStyleRaw }, set: { gs.ttsHighlightBoxStyleRaw = $0 })
+    }
+}
 
 struct AutoReadPanelView: View {
     @ObservedObject var autoReader: AutoReadController

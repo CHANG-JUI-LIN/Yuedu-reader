@@ -30,12 +30,25 @@ struct BookSourceListView: View {
     // Shared instance so a check keeps running in the background after this screen is dismissed.
     @ObservedObject private var healthChecker = BookSourceHealthChecker.shared
     @State private var checkToast: String? = nil
+    @State private var validationFilter: ValidationListFilter = .all
+    @State private var showDisclaimer = false
 
     private var checkSources: [BookSource] {
         if !selectedIds.isEmpty {
             store.sources.filter { selectedIds.contains($0.id) }
         } else {
             store.sources.filter { $0.enabled }
+        }
+    }
+
+    private var displayedSources: [BookSource] {
+        switch validationFilter {
+        case .all:
+            return filteredSources
+        case .fetchError:
+            return filteredSources.filter { healthChecker.healthById[$0.id]?.health == .fetchError }
+        case .contentError:
+            return filteredSources.filter { healthChecker.healthById[$0.id]?.health == .contentError }
         }
     }
 
@@ -127,7 +140,7 @@ struct BookSourceListView: View {
                         Button {
                             presentCheckOptions()
                         } label: {
-                            Label(localized("書源檢測"), systemImage: "stethoscope")
+                            Label(localized("書源驗證"), systemImage: "stethoscope")
                         }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -229,7 +242,7 @@ struct BookSourceListView: View {
                 if healthChecker.isRunning {
                     HStack(spacing: DSSpacing.sm) {
                         ProgressView().scaleEffect(0.8)
-                        Text(localized("正在檢測…"))
+                        Text(localized("驗證中…"))
                             .font(DSFont.caption)
                             .foregroundColor(.white)
                     }
@@ -241,6 +254,17 @@ struct BookSourceListView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
+            .fullScreenCover(isPresented: $showDisclaimer) {
+                SourceDisclaimerView {
+                    gs.sourceDisclaimerAccepted = true
+                    showDisclaimer = false
+                }
+            }
+            .onAppear {
+                if !gs.sourceDisclaimerAccepted {
+                    showDisclaimer = true
+                }
+            }
             .onChange(of: store.sources.map(\.id)) { _, sourceIds in
                 selectedIds.formIntersection(Set(sourceIds))
             }
@@ -250,7 +274,16 @@ struct BookSourceListView: View {
     // MARK: - Source List
     private var sourceList: some View {
         List {
-            ForEach(filteredSources) { source in
+            Section {
+                SourceValidationListHeader(
+                    sources: store.sources,
+                    healthById: healthChecker.healthById,
+                    filter: $validationFilter
+                )
+            }
+            .listRowSeparator(.hidden)
+
+            ForEach(displayedSources) { source in
                 sourceRow(source: source)
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                     .listRowSeparator(.visible)
@@ -298,6 +331,7 @@ struct BookSourceListView: View {
                         .foregroundColor(DSColor.textSecondary.opacity(0.6))
                         .lineLimit(1)
                 }
+                SourceValidationBadge(summary: healthChecker.healthById[source.id])
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -447,7 +481,7 @@ struct BookSourceListView: View {
                 Button {
                     presentCheckOptions()
                 } label: {
-                    Label(localized("書源檢測"), systemImage: "stethoscope")
+                    Label(localized("書源驗證"), systemImage: "stethoscope")
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -528,7 +562,7 @@ struct BookSourceListView: View {
             await healthChecker.runAll()
             if !showSourceCheck {
                 let passed = healthChecker.items.filter { $0.overallPass }.count
-                var msg = "\(localized("檢測完成"))：\(passed)/\(healthChecker.items.count) \(localized("通過"))"
+                var msg = "\(localized("驗證完成"))：\(passed)/\(healthChecker.items.count) \(localized("通過"))"
                 if let summary = healthChecker.lastSummary {
                     msg += "，\(summary)"
                 }

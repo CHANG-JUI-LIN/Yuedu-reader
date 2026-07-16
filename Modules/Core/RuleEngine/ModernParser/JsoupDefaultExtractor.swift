@@ -1,6 +1,17 @@
 import Foundation
 import SwiftSoup
 
+private let maxHtmlLengthForParsing = 4_194_304
+
+extension String {
+    func truncatedForSwiftSoup() -> String {
+        if count > maxHtmlLengthForParsing {
+            return String(prefix(maxHtmlLengthForParsing))
+        }
+        return self
+    }
+}
+
 // MARK: - JsoupDefaultExtractor
 
 /// Complete implementation of Legado's custom JSOUP-like syntax — the DEFAULT
@@ -41,7 +52,7 @@ struct JsoupDefaultExtractor: RuleExtractor {
 
     func extractList(from content: String, rule: String, baseURL: String) throws -> [String] {
         guard !rule.isEmpty else { return [] }
-        let doc = try SwiftSoup.parse(content, baseURL)
+        let doc = try SwiftSoup.parse(content.truncatedForSwiftSoup(), baseURL)
         if shouldExtractValuesForList(rule: rule) {
             return try getStringList(from: doc, rule: rule, baseURL: baseURL)
         }
@@ -54,7 +65,7 @@ struct JsoupDefaultExtractor: RuleExtractor {
 
     func extractValue(from content: String, rule: String, baseURL: String) throws -> String {
         guard !rule.isEmpty else { return "" }
-        let doc = try SwiftSoup.parse(content, baseURL)
+        let doc = try SwiftSoup.parse(content.truncatedForSwiftSoup(), baseURL)
         let results = try getStringList(from: doc, rule: rule, baseURL: baseURL)
         if results.isEmpty { return "" }
         return results[0]

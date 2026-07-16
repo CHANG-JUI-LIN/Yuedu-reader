@@ -176,9 +176,23 @@ struct ReaderCommentBubbleSettingsView: View {
         let isSelected = settings.commentBubblePresetMode == .custom
             && settings.commentBubbleSelectedCustomStyleID == style.id
 
+        // For bubble.json styles, substitute the literal `${color}` so the picker
+        // preview reflects the actual rendered look (day normal colour for "99").
+        // Legacy SVG previews render unchanged.
+        let previewSVG: String
+        if style.usesColorTemplate {
+            let hex = style.resolvedColorHex(forCount: "99", isNight: false)
+            previewSVG = CommentBubbleSVGRecognizer.materializeColorTemplate(
+                style.svg,
+                colorHex: hex
+            )
+        } else {
+            previewSVG = style.svg
+        }
+
         return styleButton(
             title: title,
-            svg: style.svg,
+            svg: previewSVG,
             isSelected: isSelected
         ) {
             settings.selectCommentBubbleCustomStyle(id: style.id)
@@ -380,7 +394,31 @@ struct ReaderCommentBubbleSettingsView: View {
                     url.stopAccessingSecurityScopedResource()
                 }
             }
-            guard let svg = String(data: try Data(contentsOf: url), encoding: .utf8) else {
+            let data = try Data(contentsOf: url)
+
+            //分流一：bubble.json 包裝的氣泡。把 svgTemplate（含 ${num} / ${color}
+            //占位符）原樣存進 custom style，附帶日/夜 × 一般/強調四檔顏色與 sizeScale。
+            if let style = ReaderCommentBubbleCustomStyle.fromBubblePackage(data) {
+                let trimmedSVGForValidation = style.svg
+                if let validationMessage = validationMessage(for: trimmedSVGForValidation) {
+                    showInvalidSVGAlert(message: validationMessage)
+                    return
+                }
+                settings.upsertCommentBubbleCustomStyle(style)
+                if let scale = style.sizeScale {
+                    settings.commentBubbleScale = GlobalSettings.sanitizedCommentBubbleScale(scale)
+                }
+                settings.commentBubbleFollowsSourceSVG = false
+                notifyReaderLayoutChanged()
+                importAlert = BubbleImportAlert(
+                    titleKey: "SVG 匯入成功",
+                    message: localized("已套用自訂段評氣泡 SVG。")
+                )
+                return
+            }
+
+            // 分流二：純 SVG 文字。
+            guard let svg = String(data: data, encoding: .utf8) else {
                 showInvalidSVGAlert(message: localized("檔案不是可讀取的 SVG。"))
                 return
             }

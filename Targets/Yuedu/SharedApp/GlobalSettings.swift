@@ -416,6 +416,12 @@ class GlobalSettings: ObservableObject {
     private static let readerDialogueBoxKey = "yd_reader_dialogue_box"
     private static let readerDialogueBoxColorHexKey = "yd_reader_dialogue_box_color_hex"
     private static let readerDialogueBoxStyleKey = "yd_reader_dialogue_box_style"
+    // TTS playback highlight — independent from the reader dialogue decoration.
+    private static let ttsHighlightEnabledKey = "yd_tts_highlight_enabled"
+    private static let ttsHighlightColorHexKey = "yd_tts_highlight_color_hex"
+    private static let ttsHighlightBoxEnabledKey = "yd_tts_highlight_box_enabled"
+    private static let ttsHighlightBoxColorHexKey = "yd_tts_highlight_box_color_hex"
+    private static let ttsHighlightBoxStyleKey = "yd_tts_highlight_box_style"
     private static let readerCustomBackgroundModeKey = "yd_reader_custom_background_mode"
     private static let readerCustomBackgroundColorHexKey = "yd_reader_custom_background_color_hex"
     private static let readerCustomBackgroundImageFileNameKey = "yd_reader_custom_background_image_file_name"
@@ -440,6 +446,11 @@ class GlobalSettings: ObservableObject {
     static let defaultReaderDialogueBoxColorHex: UInt32 = 0xC3B9E1
     /// Box style: 0 = solid block, 1 = translucent gradient pill (default).
     static let defaultReaderDialogueBoxStyle: Int = 1
+
+    /// Defaults for TTS playback highlight (independent from reader dialogue decoration).
+    static let defaultTTSHighlightColorHex: UInt32 = 0xFFD60A        // system yellow-ish
+    static let defaultTTSHighlightBoxColorHex: UInt32 = 0xC3B9E1
+    static let defaultTTSHighlightBoxStyle: Int = 1                  // gradient pill
 
     static func uiColor(rgbHex: UInt32) -> UIColor {
         UIColor(
@@ -633,6 +644,25 @@ class GlobalSettings: ObservableObject {
             UserDefaults.standard.set(readerDialogueBoxStyleRaw, forKey: Self.readerDialogueBoxStyleKey)
         }
     }
+
+    // MARK: - TTS playback highlight (independent from reader dialogue decoration)
+    @Published var ttsHighlightEnabled: Bool {
+        didSet { UserDefaults.standard.set(ttsHighlightEnabled, forKey: Self.ttsHighlightEnabledKey) }
+    }
+    @Published var ttsHighlightColorHex: UInt32 {
+        didSet { UserDefaults.standard.set(Int(ttsHighlightColorHex), forKey: Self.ttsHighlightColorHexKey) }
+    }
+    @Published var ttsHighlightBoxEnabled: Bool {
+        didSet { UserDefaults.standard.set(ttsHighlightBoxEnabled, forKey: Self.ttsHighlightBoxEnabledKey) }
+    }
+    @Published var ttsHighlightBoxColorHex: UInt32 {
+        didSet { UserDefaults.standard.set(Int(ttsHighlightBoxColorHex), forKey: Self.ttsHighlightBoxColorHexKey) }
+    }
+    /// 0 = solid block, 1 = gradient pill. See `CoreTextDialogueBox.Style`.
+    @Published var ttsHighlightBoxStyleRaw: Int {
+        didSet { UserDefaults.standard.set(ttsHighlightBoxStyleRaw, forKey: Self.ttsHighlightBoxStyleKey) }
+    }
+
     @Published var commentBubbleFollowsSourceSVG: Bool {
         didSet {
             UserDefaults.standard.set(commentBubbleFollowsSourceSVG, forKey: Self.commentBubbleFollowsSourceSVGKey)
@@ -920,6 +950,9 @@ class GlobalSettings: ObservableObject {
     @Published var ttsSystemVoiceIdentifier: String {
         didSet { UserDefaults.standard.set(ttsSystemVoiceIdentifier, forKey: "yd_tts_system_voice_id") }
     }
+    @Published var sourceDisclaimerAccepted: Bool {
+        didSet { UserDefaults.standard.set(sourceDisclaimerAccepted, forKey: "yd_source_disclaimer_accepted") }
+    }
 
     /// The currently active TTS source, derived from matching `httpTtsUrlTemplate` against imported sources.
     var activeTTSSource: ImportedTTSSource? {
@@ -1091,6 +1124,25 @@ class GlobalSettings: ObservableObject {
         readerDialogueBoxStyleRaw =
             (UserDefaults.standard.object(forKey: Self.readerDialogueBoxStyleKey) as? Int)
             ?? Self.defaultReaderDialogueBoxStyle
+
+        // TTS playback highlight
+        if UserDefaults.standard.object(forKey: Self.ttsHighlightEnabledKey) == nil {
+            ttsHighlightEnabled = true   // default ON: keeps existing playback highlight behavior
+        } else {
+            ttsHighlightEnabled = UserDefaults.standard.bool(forKey: Self.ttsHighlightEnabledKey)
+        }
+        ttsHighlightColorHex = UInt32(clamping:
+            (UserDefaults.standard.object(forKey: Self.ttsHighlightColorHexKey) as? Int)
+                ?? Int(Self.defaultTTSHighlightColorHex)
+        )
+        ttsHighlightBoxEnabled = UserDefaults.standard.bool(forKey: Self.ttsHighlightBoxEnabledKey)
+        ttsHighlightBoxColorHex = UInt32(clamping:
+            (UserDefaults.standard.object(forKey: Self.ttsHighlightBoxColorHexKey) as? Int)
+                ?? Int(Self.defaultTTSHighlightBoxColorHex)
+        )
+        ttsHighlightBoxStyleRaw =
+            (UserDefaults.standard.object(forKey: Self.ttsHighlightBoxStyleKey) as? Int)
+            ?? Self.defaultTTSHighlightBoxStyle
         if UserDefaults.standard.object(forKey: Self.commentBubbleFollowsSourceSVGKey) == nil {
             commentBubbleFollowsSourceSVG = true
         } else {
@@ -1236,6 +1288,7 @@ class GlobalSettings: ObservableObject {
         importedTTSSources = Self.loadImportedTTSSources()
         ttsUseSystemVoice = UserDefaults.standard.bool(forKey: "yd_tts_use_system_voice")
         ttsSystemVoiceIdentifier = UserDefaults.standard.string(forKey: "yd_tts_system_voice_id") ?? ""
+        sourceDisclaimerAccepted = UserDefaults.standard.bool(forKey: "yd_source_disclaimer_accepted")
     }
 
     func selectCommentBubbleBuiltinStyle() {

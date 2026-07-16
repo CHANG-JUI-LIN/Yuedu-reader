@@ -22,13 +22,24 @@ class BookSourceStore: ObservableObject {
     // MARK: CRUD
 
     func add(_ source: BookSource) {
-        sources.insert(source, at: 0)
+        var stamped = source
+        // Stamp the local-modification clock so this creation wins the iCloud sync merge
+        // (see importSources for why lastUpdateTime doubles as the last-write-wins clock).
+        stamped.lastUpdateTime = Self.currentMillis()
+        sources.insert(stamped, at: 0)
         save()
     }
 
     func update(_ source: BookSource) {
         if let idx = sources.firstIndex(where: { $0.id == source.id }) {
-            sources[idx] = source
+            var updated = source
+            // Advance the sync clock so an in-app edit wins the last-write-wins merge and isn't
+            // resurrected to the cloud copy on the next sync. Skip when only the clock would move,
+            // so re-saving an unchanged source doesn't churn the sync.
+            updated.lastUpdateTime = Self.sourceContentDiffers(updated, sources[idx])
+                ? Self.currentMillis()
+                : sources[idx].lastUpdateTime
+            sources[idx] = updated
             save()
         }
     }
@@ -53,12 +64,16 @@ class BookSourceStore: ObservableObject {
     func toggle(id: UUID) {
         if let idx = sources.firstIndex(where: { $0.id == id }) {
             sources[idx].enabled.toggle()
+            // The user's enable/disable must win the iCloud sync merge (advance the clock).
+            sources[idx].lastUpdateTime = Self.currentMillis()
             save()
         }
     }
 
     /// Sets a source's enabled flag to an explicit value (no-op if already set). Used by the
     /// health checker to disable bad/slow sources without risk of accidentally re-enabling.
+    /// Deliberately does NOT advance `lastUpdateTime`: an automated, possibly-transient disable
+    /// shouldn't win the sync merge and propagate to other devices (unlike a user toggle above).
     func setEnabled(id: UUID, enabled: Bool) {
         if let idx = sources.firstIndex(where: { $0.id == id }), sources[idx].enabled != enabled {
             sources[idx].enabled = enabled
@@ -140,17 +155,77 @@ class BookSourceStore: ObservableObject {
     @discardableResult
     private func importSources(_ imported: [BookSource]) throws -> Int {
         guard !imported.isEmpty else { throw ImportError.parseError }
+        // iCloud/Firestore sync merges book sources last-write-wins, using `lastUpdateTime` as
+        // the per-item clock (ties/older-remote win). A source's author-declared `lastUpdateTime`
+        // is baked into the JSON — it is NOT a "modified locally now" time — so a freshly imported
+        // version whose `lastUpdateTime` happens to be ≤ the cloud copy's would be silently
+        // resurrected to the OLD version on the next sync (reported: import a new 大灰狼 source, it
+        // reverts after one read). Stamp the import moment onto `lastUpdateTime` so the deliberate
+        // local import wins the merge. Only bump when content actually changed, so re-importing an
+        // identical list doesn't churn the sync. `lastUpdateTime` is otherwise only a sync clock /
+        // cache key / display value — nothing compares it against a remote source to gate updates.
+        let nowMillis = Self.currentMillis()
         for src in imported {
             if let idx = sources.firstIndex(where: { $0.bookSourceUrl == src.bookSourceUrl }) {
                 var updated = src
                 updated.id = sources[idx].id
+                updated.lastUpdateTime = Self.sourceContentDiffers(updated, sources[idx])
+                    ? nowMillis
+                    : sources[idx].lastUpdateTime
                 sources[idx] = updated
             } else {
-                sources.append(src)
+                var added = src
+                added.lastUpdateTime = nowMillis
+                sources.append(added)
             }
         }
         save()
         return imported.count
+    }
+
+    /// Current wall-clock time in milliseconds — the unit `BookSource.lastUpdateTime` (and the
+    /// iCloud/Firestore sync last-write-wins merge clock) is expressed in.
+    private static func currentMillis() -> Int64 {
+        Int64(Date().timeIntervalSince1970 * 1000)
+    }
+
+    /// Compares two sources ignoring their `lastUpdateTime` sync clock, so re-importing byte-for-byte
+    /// identical rules is detected as "no change" and doesn't advance the merge timestamp.
+    private static func sourceContentDiffers(_ lhs: BookSource, _ rhs: BookSource) -> Bool {
+        var a = lhs
+        var b = rhs
+        a.lastUpdateTime = 0
+        b.lastUpdateTime = 0
+        let encoder = JSONEncoder()
+        return (try? encoder.encode(a)) != (try? encoder.encode(b))
+    }
+
+    /// Collapses sources sharing a `bookSourceUrl` to one newest entry. Legado source JSON carries
+    /// no stable `id`, so each device decodes an imported source under a fresh random UUID; the
+    /// iCloud merge keys on that UUID and can't tell two devices' copies of the *same* source apart,
+    /// letting the cloud's older copy resurface — read by the user as a version revert / duplicate.
+    /// `bookSourceUrl` is the real identity (importSources already dedupes on it), so normalize
+    /// merged- and loaded-in source lists the same way, keeping the most recently updated copy.
+    static func dedupedByURL(_ input: [BookSource]) -> [BookSource] {
+        var indexByURL: [String: Int] = .init(minimumCapacity: input.count)
+        var result: [BookSource] = []
+        result.reserveCapacity(input.count)
+        for source in input {
+            let key = source.bookSourceUrl
+            guard !key.isEmpty else {
+                result.append(source)   // no URL to key on — keep as-is
+                continue
+            }
+            if let idx = indexByURL[key] {
+                if source.lastUpdateTime > result[idx].lastUpdateTime {
+                    result[idx] = source   // keep the newer copy in the earlier slot
+                }
+            } else {
+                indexByURL[key] = result.count
+                result.append(source)
+            }
+        }
+        return result
     }
 
     // MARK: YDS (.yds) Format Parsing
@@ -284,7 +359,9 @@ class BookSourceStore: ObservableObject {
     }
 
     func replaceSourcesFromSync(_ syncedSources: [BookSource]) {
-        sources = syncedSources
+        // Collapse any cross-device duplicates (same bookSourceUrl, different random id) the merge
+        // couldn't unify, so an old cloud copy can't resurface next to a freshly imported one.
+        sources = Self.dedupedByURL(syncedSources)
         save()
     }
 
@@ -306,7 +383,8 @@ class BookSourceStore: ObservableObject {
         guard let data = try? Data(contentsOf: fileURL),
               let decoded = try? JSONDecoder().decode([BookSource].self, from: data)
         else { return }
-        sources = decoded
+        // Clean up any duplicates a previous buggy sync may have persisted to disk.
+        sources = Self.dedupedByURL(decoded)
     }
 
     // MARK: Errors
