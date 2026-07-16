@@ -6,10 +6,11 @@ current support claim. At selection time, 14 of 42 samples failed the
 production smoke checkpoint and manual review added one shared navigation
 failure family in four otherwise-readable representative books.
 
-Final Build Week status: 13 of those 14 automated failures now pass;
-`cc-shared-culture` remains failing because its exact static media-fallback
-probe is absent. The compatibility matrix and six linked evidence packages are
-the current source of truth.
+Final Build Week status: all 14 initial automated failures now pass. The final
+acceptance follow-up preserves `cc-shared-culture`'s authored static media
+fallback without expanding scope into a full interactive audio/video system.
+The compatibility matrix and seven linked evidence packages are the current
+source of truth.
 
 Scores are intentionally small and comparative:
 
@@ -41,7 +42,7 @@ systems are not eligible as newly-added Build Week features.
 | `kusamakura-preview` | Percent-encoded non-ASCII spine href cannot be read | 3 | 2 | 2 | 2 | **9** | Covered by `BW-EPUB3-002` |
 | `kusamakura-preview-embedded` | Percent-encoded non-ASCII spine href cannot be read | 3 | 2 | 2 | 2 | **9** | Covered by `BW-EPUB3-002` |
 | `the-voyage-of-life` | Item-level pre-paginated spine entry is routed through the reflowable engine | 3 | 2 | 2 | 2 | **9** | Select as `BW-EPUB3-003` |
-| `cc-shared-culture` | Static media fallback probe is absent, although the transcript body survives | 2 | 2 | 2 | 2 | **8** | Next candidate; do not expand into full interactive audio/video support |
+| `cc-shared-culture` | Static media fallback probe is absent, although the transcript body survives | 2 | 2 | 2 | 2 | **8** | Resolved as `BW-EPUB3-007`; interactive audio/video remains out of scope |
 | `haruko` | Hosted fixed-layout smoke sees no observable WebKit pixels within three seconds | 2 | 2 | 2 | 1 | **7** | Hold pending route-specific fixed-reader diagnosis |
 | `haruko-ahl` | Hosted fixed-layout smoke sees no observable WebKit pixels within three seconds | 2 | 2 | 2 | 1 | **7** | Same fixed-layout family |
 | `haruko-jpeg` | Hosted fixed-layout smoke sees no observable WebKit pixels within three seconds | 2 | 2 | 2 | 1 | **7** | Same fixed-layout family |
@@ -97,4 +98,6 @@ adds a composite page map rather than weakening the smoke assertion:
 The three selected gap plans do not change MathML, English typography, Media
 Overlay, audio/video, RTL/Bidi, Ruby, CFI, or PLS/SSML support claims. MathML
 and English were implemented and evidenced in their separate approved
-workstreams.
+workstreams. `BW-EPUB3-007` is a bounded acceptance follow-up: it retains
+authored fallback children only when no native media player is surfaced, and
+does not add or claim a new interactive media system.

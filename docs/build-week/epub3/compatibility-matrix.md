@@ -7,15 +7,15 @@ complete EPUB 3 support.
 Capture identity:
 
 - Baseline production: `build-week-baseline` at `dd62d80`.
-- Current production capture: `codex/openai-build-week` at `7736203`; harness lineage starts at `fa95f83`.
+- Current production capture: `codex/openai-build-week` at `df45d95`; harness lineage starts at `fa95f83`.
 - Device: iPhone 17 Pro Max simulator, iOS 27.0.
 - Baseline: 43 runs, 29 passed, 14 failed, 0 skipped.
-- Current: 43 runs, 42 passed, 1 failed, 0 skipped. Thirteen formerly failing
-  sample-level smoke checks now pass; `cc-shared-culture` remains failing.
+- Current: 43 runs, 43 passed, 0 failed, 0 skipped. All fourteen initially
+  failing sample-level smoke checks now pass.
 - Static scan: 42 passed in both captures.
 - Manual/evidence review: committed before/after packages cover TOC dismissal,
   non-ASCII IRI loading, mixed-layout dispatch, MathML, English typography, and
-  direct-image fixed layout. Unvisited representative-book checklist items
+  direct-image fixed layout, and static media fallback. Unvisited representative-book checklist items
   remain `not-run`; a package proves only its linked failure family.
 
 `B` columns are baseline and `C` columns are current. Stage values are
@@ -30,7 +30,7 @@ are not committed.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `accessible-epub3` | `67f75b8e3cd1abe4bb143d91d5424191d5af3115c9d26ff029a38e19f8d16feb` | `accessibility`, `semantic-structure`, `navigation`, `alternate-content` | pass | pass | pass | pass | pass | not-run | pass | pass | pass | pass | pass | pass | build-week-fixed | [BW-EPUB3-001](evidence/BW-EPUB3-001/) TOC dismissal ordering | [BW-EPUB3-001](evidence/BW-EPUB3-001/) | `ReaderTOCSelectionTimingTests`; `IDPFEPUB3SampleSmokeTests` | `c84b3e6` + `84e8a34` |
 | `childrens-literature` | `191d14d07bcaefde647e494256f73d789f265c8edc46c404320641b23c86b76a` | `navigation-span-headings`, `toc-in-spine`, `hidden-page-list`, `css` | pass | pass | pass | pass | pass | not-run | pass | pass | pass | pass | pass | not-run | build-week-fixed | [BW-EPUB3-001](evidence/BW-EPUB3-001/) TOC dismissal ordering | [BW-EPUB3-001](evidence/BW-EPUB3-001/) | `ReaderTOCSelectionTimingTests`; `IDPFEPUB3SampleSmokeTests` | `c84b3e6` + `84e8a34` |
-| `cc-shared-culture` | `7bec3acf5ca153fd8a3b8bba50549c5cde3cb617ddd74c1d3b26fbc5eb9eebdf` | `audio`, `video`, `media-fallback`, `navigation` | pass | pass | fail | pass | pass | not-run | pass | pass | fail | pass | pass | not-run | failing | media fallback probe missing from rendered output | `baseline/current-scan-results.json` + `baseline/current-sample-results.json` (ignored) | `IDPFEPUB3SampleSmokeTests` | `dd62d80` production + `fa95f83` harness |
+| `cc-shared-culture` | `7bec3acf5ca153fd8a3b8bba50549c5cde3cb617ddd74c1d3b26fbc5eb9eebdf` | `audio`, `video`, `media-fallback`, `navigation` | pass | pass | fail | pass | pass | not-run | pass | pass | pass | pass | pass | pass | build-week-fixed | [BW-EPUB3-007](evidence/BW-EPUB3-007/) controls-less media fallback | [BW-EPUB3-007](evidence/BW-EPUB3-007/) | `EPUBMediaFallbackTests`; `IDPFEPUB3SampleSmokeTests` | `df45d95` |
 | `epub30-spec` | `def6a7a1d2302689c77d7c04585f9eb2da825a7ef546888cfe2f5fbba92d51ce` | `long-form-reflowable`, `internal-links`, `semantic-structure` | pass | pass | pass | pass | pass | not-run | pass | pass | pass | pass | pass | not-run | baseline-supported | n/a | `baseline/current-scan-results.json` + `baseline/current-sample-results.json` (ignored) | `IDPFEPUB3SampleSmokeTests` | `dd62d80` production + `fa95f83` harness |
 | `figure-gallery` | `2cfbf16c36e814052db66dd203a66c45fa6b3922389c13aba40390ef23061b2b` | `bindings`, `html-figure`, `fallback` | pass | pass | pass | pass | pass | not-run | pass | pass | pass | pass | pass | not-run | readable-fallback | n/a | `baseline/current-scan-results.json` + `baseline/current-sample-results.json` (ignored) | `IDPFEPUB3SampleSmokeTests` | `dd62d80` production + `fa95f83` harness |
 | `georgia` | `1247a5dbd2f123b62f4185ad74bfcda69123540ca1145c74ba77158d0847130a` | `pls-lexicon`, `ssml`, `tts`, `page-list` | pass | pass | pass | pass | pass | not-run | pass | pass | pass | pass | pass | not-run | baseline-supported | n/a | `baseline/current-scan-results.json` + `baseline/current-sample-results.json` (ignored) | `IDPFEPUB3SampleSmokeTests` | `dd62d80` production + `fa95f83` harness |

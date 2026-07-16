@@ -128,24 +128,20 @@ git worktree remove "$BASELINE_WT"
 ## Recorded result and interpretation
 
 Both captures used an iPhone 17 Pro Max simulator on iOS 27.0. The baseline
-enumerated 43 runs with 29 passed, 14 failed, and 0 skipped. The final branch
-enumerated the same 43 runs with 42 passed, 1 failed, and 0 skipped: 13 formerly
-failing sample checks now pass. Both static scans pass all 42 samples.
+enumerated 43 runs with 29 passed, 14 failed, and 0 skipped. At production
+commit `df45d95`, the final branch enumerated the same 43 runs with 43 passed,
+0 failed, and 0 skipped: all 14 initially failing sample checks now pass. Both
+static scans pass all 42 samples. A missing or skipped sample invalidates a
+capture regardless of the shell exit status.
 
-The remaining failure is `cc-shared-culture`. Its transcript body survives,
-but the exact static media-fallback probe `Your Reading System does not support`
-is absent. This is recorded as a failure and is not presented as complete media
-support. The final `xcodebuild` exit status is therefore 65; for this triage
-suite that is valid evidence only when the result bundle contains all 43 runs
-and no skips. A missing or skipped sample invalidates a capture regardless of
-the shell exit status.
-
-The six committed evidence packages cover TOC dismissal, non-ASCII resource
+The seven committed evidence packages cover TOC dismissal, non-ASCII resource
 IRIs, mixed-layout dispatch, MathML attachment quality and safety, English
-typography, and fixed-layout direct image spines. Each package links a minimal
-fixture and focused test. Unvisited representative-book checklist items remain
-`not-run`; a package proves only its named failure family. Raw `.xcresult` and
-UI captures remain in the ignored results directory.
+typography, fixed-layout direct image spines, and the authored static fallback
+for unsupported controls-less media. The last result does not claim complete
+interactive audio/video support. Each package links a minimal fixture and
+focused test. Unvisited representative-book checklist items remain `not-run`;
+a package proves only its named failure family. Raw `.xcresult` and UI captures
+remain in the ignored results directory.
 
 `xcodebuild` strips the documented `TEST_RUNNER_` prefix when forwarding both
 variables to the hosted test process. Without `YUEDU_RUN_EPUB3_CORPUS=1` in
