@@ -442,8 +442,8 @@ matrix OK: samples=42 evidence=7
 Run:
 
 ```bash
-git diff --stat 905bb87..HEAD
-git diff --name-only 905bb87..HEAD
+git diff --stat 77a3dea..HEAD -- README.md docs/build-week/devpost-submission.md docs/build-week/demo-script.md
+git diff --name-only 77a3dea..HEAD -- README.md docs/build-week/devpost-submission.md docs/build-week/demo-script.md
 rg -n 'complete EPUB 3 support|29/43|43/43|GPT-5\.6|Codex' README.md docs/build-week/devpost-submission.md docs/build-week/demo-script.md
 ```
 
