@@ -163,8 +163,10 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     }
 
     private func prepareAttributedString(_ raw: NSAttributedString) -> NSAttributedString {
-        guard renderSettings.writingMode.isVertical, raw.length > 0 else { return raw }
-        let advance = max(renderSettings.fontSize * 4, contentWidth - renderSettings.fontSize * 2)
+        guard raw.length > 0 else { return raw }
+        let advance = renderSettings.writingMode.isVertical
+            ? max(renderSettings.fontSize * 4, contentWidth - renderSettings.fontSize * 2)
+            : nil
 
         return CoreTextPaginator.preparedAttributedString(
             raw,

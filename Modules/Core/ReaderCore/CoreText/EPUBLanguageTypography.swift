@@ -57,6 +57,36 @@ enum EPUBLanguageTypography {
         guard let primary = primaryLanguage(raw) else { return false }
         return ["en", "fr", "de", "es", "it", "pt", "nl"].contains(primary)
     }
+
+    static func sourceText(in attributedString: NSAttributedString, range: NSRange) -> String {
+        guard range.location != NSNotFound,
+              range.location >= 0,
+              range.length >= 0,
+              range.location + range.length <= attributedString.length
+        else { return "" }
+        let source = NSMutableAttributedString(
+            attributedString: attributedString.attributedSubstring(from: range)
+        )
+        guard source.length > 0 else { return "" }
+
+        let fullRange = NSRange(location: 0, length: source.length)
+        var restoredIndexes: [Int] = []
+        source.enumerateAttribute(originalSoftHyphenAttribute, in: fullRange) { value, markedRange, _ in
+            guard value as? Bool == true else { return }
+            let end = markedRange.location + markedRange.length
+            for index in markedRange.location..<end
+            where (source.string as NSString).character(at: index) == 0x2060 {
+                restoredIndexes.append(index)
+            }
+        }
+        for index in restoredIndexes.reversed() {
+            source.mutableString.replaceCharacters(
+                in: NSRange(location: index, length: 1),
+                with: "\u{00AD}"
+            )
+        }
+        return source.string
+    }
 }
 
 struct EnglishLineJustificationInput {

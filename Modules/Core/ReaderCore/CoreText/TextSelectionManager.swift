@@ -72,7 +72,7 @@ final class TextSelectionManager {
         else {
             return nil
         }
-        return (attributedString.string as NSString).substring(with: range)
+        return EPUBLanguageTypography.sourceText(in: attributedString, range: range)
     }
 
     private func clamp(_ index: Int, maxLength: Int) -> Int {

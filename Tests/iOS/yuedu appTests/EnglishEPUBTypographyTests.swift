@@ -1,3 +1,4 @@
+import CoreText
 import Testing
 import UIKit
 @testable import yuedu_app
@@ -165,6 +166,107 @@ struct EnglishEPUBTypographyTests {
         #expect(Self.hyphenationFactor(in: attributed, near: "unsupported auto") == 0)
     }
 
+    @Test func noneSuppressesSoftHyphenBreakWithoutChangingSourceOffsets() throws {
+        let authored = "extra\u{00AD}ordinary marker"
+        let manual = Self.softHyphenProbe(policy: .manual, language: "en-US")
+        let none = Self.softHyphenProbe(policy: .none, language: "en-US")
+        let manualPrepared = CoreTextPaginator.preparedAttributedString(
+            manual,
+            writingMode: .horizontal,
+            fontSize: 17,
+            maxInlineAnnotationAdvance: nil
+        )
+        let nonePrepared = CoreTextPaginator.preparedAttributedString(
+            none,
+            writingMode: .horizontal,
+            fontSize: 17,
+            maxInlineAnnotationAdvance: nil
+        )
+        let authoredString = authored as NSString
+        let softHyphenLocation = authoredString.range(of: "\u{00AD}").location
+        let markerLocation = authoredString.range(of: "marker").location
+
+        #expect(manualPrepared.string == authored)
+        #expect(nonePrepared.length == authoredString.length)
+        #expect((nonePrepared.string as NSString).range(of: "marker").location == markerLocation)
+        #expect((nonePrepared.string as NSString).character(at: softHyphenLocation) == 0x2060)
+        #expect(
+            nonePrepared.attribute(
+                EPUBLanguageTypography.originalSoftHyphenAttribute,
+                at: softHyphenLocation,
+                effectiveRange: nil
+            ) as? Bool == true
+        )
+        #expect(
+            EPUBLanguageTypography.sourceText(
+                in: nonePrepared,
+                range: NSRange(location: 0, length: nonePrepared.length)
+            ) == authored
+        )
+
+        let softHyphenLineEnd = softHyphenLocation + 1
+        #expect(Self.lineEndOffsets(in: manualPrepared, width: 48).contains(softHyphenLineEnd))
+        #expect(!Self.lineEndOffsets(in: nonePrepared, width: 48).contains(softHyphenLineEnd))
+
+        let selection = TextSelectionManager()
+        selection.setSelection(
+            range: NSRange(location: 0, length: nonePrepared.length),
+            maxLength: nonePrepared.length
+        )
+        #expect(selection.selectedText(in: nonePrepared) == authored)
+    }
+
+    @Test @MainActor func hyphenationPolicyAndLanguageInvalidatePaginatorCache() async throws {
+        let paginator = CoreTextPaginator()
+        let manual = Self.softHyphenProbe(policy: .manual, language: "en-US")
+        let none = Self.softHyphenProbe(policy: .none, language: "en-US")
+        _ = await paginator.paginate(
+            spineIndex: 31,
+            attrStr: manual,
+            renderSize: CGSize(width: 96, height: 320),
+            fontSize: 17
+        )
+        let noneLayout = await paginator.paginate(
+            spineIndex: 31,
+            attrStr: none,
+            renderSize: CGSize(width: 96, height: 320),
+            fontSize: 17
+        )
+        let softHyphenLocation = (none.string as NSString).range(of: "\u{00AD}").location
+        #expect((noneLayout.attributedString.string as NSString).character(at: softHyphenLocation) == 0x2060)
+
+        let languagePaginator = CoreTextPaginator()
+        let english = Self.softHyphenProbe(policy: .auto, language: "en-US")
+        let unsupported = Self.softHyphenProbe(policy: .auto, language: "zh-Hant")
+        _ = await languagePaginator.paginate(
+            spineIndex: 32,
+            attrStr: english,
+            renderSize: CGSize(width: 96, height: 320),
+            fontSize: 17
+        )
+        let unsupportedLayout = await languagePaginator.paginate(
+            spineIndex: 32,
+            attrStr: unsupported,
+            renderSize: CGSize(width: 96, height: 320),
+            fontSize: 17
+        )
+        #expect(
+            unsupportedLayout.attributedString.attribute(
+                EPUBLanguageTypography.languageAttribute,
+                at: 0,
+                effectiveRange: nil
+            ) as? String == "zh-Hant"
+        )
+        let paragraph = try #require(
+            unsupportedLayout.attributedString.attribute(
+                .paragraphStyle,
+                at: 0,
+                effectiveRange: nil
+            ) as? NSParagraphStyle
+        )
+        #expect(paragraph.hyphenationFactor == 0)
+    }
+
     @MainActor
     private static func render(_ sample: EPUBTestFixtures.Sample) async throws -> NSAttributedString {
         let epubURL = try await EPUBTestFixtures.makeArchive(entries: sample.entries)
@@ -202,6 +304,38 @@ struct EnglishEPUBTypographyTests {
 
     private static func hyphenationFactor(in attributed: NSAttributedString, near text: String) -> Float? {
         (attribute(.paragraphStyle, in: attributed, near: text) as? NSParagraphStyle)?.hyphenationFactor
+    }
+
+    private static func softHyphenProbe(
+        policy: EPUBHyphenationPolicy,
+        language: String
+    ) -> NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.hyphenationFactor = policy == .auto && language.hasPrefix("en") ? 1 : 0
+        return NSAttributedString(
+            string: "extra\u{00AD}ordinary marker",
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 17),
+                .paragraphStyle: paragraph,
+                EPUBLanguageTypography.languageAttribute: language,
+                EPUBLanguageTypography.hyphenationPolicyAttribute: policy.rawValue,
+            ]
+        )
+    }
+
+    private static func lineEndOffsets(in attributed: NSAttributedString, width: CGFloat) -> [Int] {
+        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
+        let path = CGPath(rect: CGRect(x: 0, y: 0, width: width, height: 500), transform: nil)
+        let frame = CTFramesetterCreateFrame(
+            framesetter,
+            CFRange(location: 0, length: attributed.length),
+            path,
+            nil
+        )
+        return (CTFrameGetLines(frame) as! [CTLine]).map {
+            let range = CTLineGetStringRange($0)
+            return range.location + range.length
+        }
     }
 
     private static func attribute(

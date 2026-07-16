@@ -358,7 +358,15 @@ final class CoreTextPaginator {
                 hasher.combine(Double(paragraphStyle.minimumLineHeight))
                 hasher.combine(Double(paragraphStyle.maximumLineHeight))
                 hasher.combine(paragraphStyle.alignment.rawValue)
+                hasher.combine(Double(paragraphStyle.hyphenationFactor))
             }
+
+            hasher.combine(
+                EPUBLanguageTypography.normalizedLanguage(
+                    attrs[EPUBLanguageTypography.languageAttribute] as? String
+                )
+            )
+            hasher.combine(attrs[EPUBLanguageTypography.hyphenationPolicyAttribute] as? String)
 
             hasher.combine(attrs[HTMLAttributedStringBuilder.spacerRunAttribute] != nil)
             hasher.combine(attrs[HTMLAttributedStringBuilder.inlineAnnotationRunAttribute] != nil)
@@ -1040,23 +1048,26 @@ final class CoreTextPaginator {
         return nil
     }
 
-    /// Vertical mode: glyph-aware normalization → font cascade → paragraph style → vertical forms → ASCII exceptions.
-    /// Horizontal mode: returns unchanged.
+    /// All modes first suppress authored soft-hyphen breaks in `hyphens:none` ranges with a
+    /// one-code-unit layout substitution. Vertical mode then performs its glyph normalization.
     static func preparedAttributedString(
         _ attrStr: NSAttributedString,
         writingMode: ReaderWritingMode,
         fontSize: CGFloat,
         maxInlineAnnotationAdvance: CGFloat?
     ) -> NSAttributedString {
-        guard writingMode.isVertical, attrStr.length > 0 else { return attrStr }
-        let mutable = NSMutableAttributedString(attributedString: attrStr)
+        guard attrStr.length > 0 else { return attrStr }
+        let breakPrepared = suppressSoftHyphensForNonePolicy(in: attrStr)
+        guard writingMode.isVertical else { return breakPrepared }
+        let mutable = NSMutableAttributedString(attributedString: breakPrepared)
         let fullRange = NSRange(location: 0, length: mutable.length)
         debugVerticalLog("prepare.begin len=\(mutable.length) rawPrefix=\"\(debugTextPreview(mutable.string, limit: 80))\"", verbose: true)
         debugAttributedPrefix(mutable, label: "prepare.before", limit: 18)
 
         // Step 1: Build per-font vertical substitution map from the primary font.
         //         Only substitutes characters the font truly lacks vert alternates for.
-        let primaryFont = (attrStr.attribute(.font, at: 0, effectiveRange: nil) as? UIFont) ?? UIFont.systemFont(ofSize: fontSize)
+        let primaryFont = (breakPrepared.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)
+            ?? UIFont.systemFont(ofSize: fontSize)
         let verticalConfig = VerticalLayoutConfig(font: primaryFont as CTFont)
         let verticalMap = verticalConfig.substitutionMap
 
@@ -1152,6 +1163,42 @@ final class CoreTextPaginator {
             debugVerticalLog("prepare.latinRuns count=\(matches.count)", verbose: true)
         }
         debugAttributedPrefix(mutable, label: "prepare.final", limit: 24)
+        return mutable
+    }
+
+    private static func suppressSoftHyphensForNonePolicy(
+        in attributedString: NSAttributedString
+    ) -> NSAttributedString {
+        let fullRange = NSRange(location: 0, length: attributedString.length)
+        let source = attributedString.string as NSString
+        var indexes: [Int] = []
+        attributedString.enumerateAttribute(
+            EPUBLanguageTypography.hyphenationPolicyAttribute,
+            in: fullRange
+        ) { value, policyRange, _ in
+            guard value as? String == EPUBHyphenationPolicy.none.rawValue else { return }
+            var searchRange = policyRange
+            while searchRange.length > 0 {
+                let match = source.range(of: "\u{00AD}", options: [], range: searchRange)
+                guard match.location != NSNotFound else { break }
+                indexes.append(match.location)
+                let next = match.location + match.length
+                let end = policyRange.location + policyRange.length
+                searchRange = NSRange(location: next, length: max(0, end - next))
+            }
+        }
+        guard !indexes.isEmpty else { return attributedString }
+
+        let mutable = NSMutableAttributedString(attributedString: attributedString)
+        for index in indexes.reversed() {
+            let range = NSRange(location: index, length: 1)
+            mutable.mutableString.replaceCharacters(in: range, with: "\u{2060}")
+            mutable.addAttribute(
+                EPUBLanguageTypography.originalSoftHyphenAttribute,
+                value: true,
+                range: range
+            )
+        }
         return mutable
     }
 
