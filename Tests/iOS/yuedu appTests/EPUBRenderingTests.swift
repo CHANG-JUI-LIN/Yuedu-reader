@@ -7,6 +7,82 @@ import UIKit
 
 struct EPUBRenderingTests {
 
+    @Test @MainActor func englishSpineChaptersKeepIndependentContinuousRanges() async throws {
+        let epubURL = try await EPUBTestFixtures.makeArchive(
+            entries: EPUBTestFixtures.englishTypographyChapters().entries
+        )
+        let session = try await PublicationSession.open(sourceURL: epubURL)
+        let settings = EPUBTestFixtures.renderSettings()
+        let builder = EPUBAttributedStringBuilder(
+            session: session,
+            renderSize: CGSize(width: 220, height: 180)
+        )
+        #expect(session.chapters.count == 2)
+
+        for chapterIndex in 0..<2 {
+            let result = try await builder.buildChapter(
+                at: chapterIndex,
+                settings: settings,
+                themeTextColor: .black,
+                themeBackgroundColor: .white
+            )
+            let attributed = result.attributedString
+            let firstRange = (attributed.string as NSString).rangeOfCharacter(
+                from: CharacterSet.whitespacesAndNewlines.inverted
+            )
+            let firstText = try #require(
+                firstRange.location == NSNotFound ? nil : firstRange.location
+            )
+            #expect(attributed.length > 0)
+            #expect(
+                attributed.attribute(
+                    EPUBLanguageTypography.languageAttribute,
+                    at: firstText,
+                    effectiveRange: nil
+                ) as? String == "en-US"
+            )
+
+            let paged = await CoreTextPaginator().paginate(
+                spineIndex: chapterIndex,
+                attrStr: attributed,
+                anchorOffsets: result.anchorOffsets,
+                renderSize: CGSize(width: 220, height: 180),
+                fontSize: settings.fontSize
+            )
+            let prepared = CoreTextPaginator.preparedAttributedString(
+                attributed,
+                writingMode: .horizontal,
+                fontSize: settings.fontSize,
+                maxInlineAnnotationAdvance: nil
+            )
+            let scroll = CoreTextChunkSlicer.slice(
+                attributedString: prepared,
+                chapterIndex: chapterIndex,
+                contentWidth: 220,
+                heightCap: 100
+            )
+
+            Self.expectContinuousRanges(paged.pageRanges, totalLength: attributed.length)
+            Self.expectContinuousRanges(
+                scroll.chunks.map(\.charRange),
+                totalLength: attributed.length
+            )
+            #expect(paged.pageRanges.first?.location == 0)
+            #expect(scroll.chunks.first?.chapterIndex == chapterIndex)
+        }
+    }
+
+    private static func expectContinuousRanges(_ ranges: [CFRange], totalLength: Int) {
+        #expect(!ranges.isEmpty)
+        var expectedStart = 0
+        for range in ranges {
+            #expect(range.location == expectedStart)
+            #expect(range.length > 0)
+            expectedStart = range.location + range.length
+        }
+        #expect(expectedStart == totalLength)
+    }
+
     // MARK: - HR divider has correct attribute
 
     @Test func hrDividerCarriesAttribute() {

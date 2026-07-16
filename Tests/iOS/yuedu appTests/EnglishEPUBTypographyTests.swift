@@ -323,6 +323,59 @@ struct EnglishEPUBTypographyTests {
         #expect(abs(Self.resolvedWidth(attributed, availableWidth: availableWidth) - availableWidth) <= 1)
     }
 
+    @Test @MainActor func fullPipelineKeepsEnglishInteractionOffsetsStable() async throws {
+        let epubURL = try await EPUBTestFixtures.makeArchive(
+            entries: EPUBTestFixtures.englishTypography().entries
+        )
+        let session = try await PublicationSession.open(sourceURL: epubURL)
+        let settings = EPUBTestFixtures.renderSettings()
+        let result = try await EPUBAttributedStringBuilder(
+            session: session,
+            renderSize: CGSize(width: 220, height: 320)
+        ).buildChapter(
+            at: 0,
+            settings: settings,
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+        let source = result.attributedString.string as NSString
+        let linkRange = try #require(Self.range(of: "linked words", in: source))
+        let authoredProbe = "extra\u{00AD}ordinary marker after"
+        let probeRange = try #require(Self.range(of: authoredProbe, in: source))
+        let softHyphenOffset = probeRange.location + (authoredProbe as NSString).range(of: "\u{00AD}").location
+        let markerOffset = try #require(Self.range(of: "marker", in: source)).location
+        let targetOffset = try #require(Self.range(of: "Anchor target", in: source)).location
+
+        #expect(Self.language(in: result.attributedString, near: "marker") == "en-US")
+        #expect(Self.hyphenationPolicy(in: result.attributedString, near: "marker") == .some(.none))
+        #expect(HTMLAttributedStringBuilder.linkHref(
+            at: linkRange.location,
+            in: result.attributedString
+        ) == "#target")
+        #expect(result.anchorOffsets["target"] == targetOffset)
+
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: result.attributedString,
+            anchorOffsets: result.anchorOffsets,
+            renderSize: CGSize(width: 220, height: 320),
+            fontSize: settings.fontSize
+        )
+        let paged = layout.attributedString
+        #expect(paged.length == result.attributedString.length)
+        #expect((paged.string as NSString).character(at: softHyphenOffset) == 0x2060)
+        #expect((paged.string as NSString).range(of: "marker").location == markerOffset)
+        #expect(HTMLAttributedStringBuilder.linkHref(at: linkRange.location, in: paged) == "#target")
+        #expect(layout.anchorOffsets["target"] == targetOffset)
+        #expect(Self.language(in: paged, near: "marker") == "en-US")
+        #expect(Self.hyphenationPolicy(in: paged, near: "marker") == .some(.none))
+
+        let selection = TextSelectionManager()
+        selection.setSelection(range: probeRange, maxLength: paged.length)
+        #expect(selection.selectedText(in: paged) == authoredProbe)
+        #expect(EPUBLanguageTypography.sourceText(in: paged, range: probeRange) == authoredProbe)
+    }
+
     @MainActor
     private static func render(_ sample: EPUBTestFixtures.Sample) async throws -> NSAttributedString {
         let epubURL = try await EPUBTestFixtures.makeArchive(entries: sample.entries)
@@ -473,5 +526,10 @@ struct EnglishEPUBTypographyTests {
         let range = (attributed.string as NSString).range(of: text)
         guard range.location != NSNotFound else { return nil }
         return attributed.attribute(key, at: range.location, effectiveRange: nil)
+    }
+
+    private static func range(of text: String, in string: NSString) -> NSRange? {
+        let range = string.range(of: text)
+        return range.location == NSNotFound ? nil : range
     }
 }

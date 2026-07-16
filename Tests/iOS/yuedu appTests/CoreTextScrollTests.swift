@@ -432,6 +432,78 @@ struct CoreTextScrollTests {
         }
     }
 
+    @Test("English EPUB attributes and offsets survive scroll slicing")
+    @MainActor
+    func englishEPUBAttributesAndOffsetsSurviveScrollSlicing() async throws {
+        let epubURL = try await EPUBTestFixtures.makeArchive(
+            entries: EPUBTestFixtures.englishTypography().entries
+        )
+        let session = try await PublicationSession.open(sourceURL: epubURL)
+        let settings = EPUBTestFixtures.renderSettings()
+        let result = try await EPUBAttributedStringBuilder(
+            session: session,
+            renderSize: CGSize(width: 220, height: 320)
+        ).buildChapter(
+            at: 0,
+            settings: settings,
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+        let source = result.attributedString.string as NSString
+        let markerRange = source.range(of: "marker")
+        let softHyphenOffset = source.range(of: "\u{00AD}").location
+        let prepared = CoreTextPaginator.preparedAttributedString(
+            result.attributedString,
+            writingMode: .horizontal,
+            fontSize: settings.fontSize,
+            maxInlineAnnotationAdvance: nil
+        )
+        let output = CoreTextChunkSlicer.slice(
+            attributedString: prepared,
+            chapterIndex: 0,
+            contentWidth: 220,
+            heightCap: 120
+        )
+
+        try #require(markerRange.location != NSNotFound)
+        try #require(softHyphenOffset != NSNotFound)
+        try #require(output.chunks.count > 1)
+        #expect(output.attributedString.length == result.attributedString.length)
+        #expect((output.attributedString.string as NSString).character(at: softHyphenOffset) == 0x2060)
+        #expect((output.attributedString.string as NSString).range(of: "marker").location == markerRange.location)
+        #expect(
+            output.attributedString.attribute(
+                EPUBLanguageTypography.languageAttribute,
+                at: markerRange.location,
+                effectiveRange: nil
+            ) as? String == "en-US"
+        )
+        #expect(
+            output.attributedString.attribute(
+                EPUBLanguageTypography.hyphenationPolicyAttribute,
+                at: markerRange.location,
+                effectiveRange: nil
+            ) as? String == EPUBHyphenationPolicy.none.rawValue
+        )
+        #expect(HTMLAttributedStringBuilder.linkHref(
+            at: source.range(of: "linked words").location,
+            in: output.attributedString
+        ) == "#target")
+
+        var expectedStart = 0
+        for chunk in output.chunks {
+            #expect(chunk.charRange.location == expectedStart)
+            expectedStart = chunk.charRange.location + chunk.charRange.length
+        }
+        #expect(expectedStart == output.attributedString.length)
+        #expect(output.chunks.contains { chunk in
+            NSLocationInRange(markerRange.location, NSRange(
+                location: chunk.charRange.location,
+                length: chunk.charRange.length
+            ))
+        })
+    }
+
     @Test("scroll engine carries the chapter backdrop into sliced chunks")
     @MainActor
     func scrollEngineCarriesChapterBackdropIntoSlicedChunks() async throws {
