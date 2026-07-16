@@ -1243,25 +1243,38 @@ struct NodeAttributedStringRenderer {
             return mathFallback(payload: payload, ctx: mathCtx)
         }
         let runMode: ImageRunInfo.DisplayMode = payload.displayMode == .block ? .block : .inline
-        let maxWidth = max(1, config.renderWidth ?? 320)
+        let availableWidth = max(
+            1,
+            availableImageWidth(in: mathCtx) ?? config.renderWidth ?? 320
+        )
+        let horizontalPadding = max(0, style.paddingLeft) + max(0, style.paddingRight)
+        let targetWidth = max(1, availableWidth - horizontalPadding)
         let rendered = await MathMLImageRenderer.render(
             latex: latex,
             fontSize: mathCtx.font.pointSize,
             textColor: mathCtx.textColor,
             displayMode: runMode,
-            maxWidth: maxWidth
+            targetWidth: targetWidth
         )
         guard let rendered else {
             return mathFallback(payload: payload, ctx: mathCtx)
         }
         let image = rendered.image
-
-        let metrics = await resolvedMathImageMetrics(
-            image: image,
-            style: style,
-            font: mathCtx.font,
-            displayMode: runMode,
-            mathDescent: rendered.descent
+        guard let mathMetrics = MathMLAttachmentMetrics.resolve(
+            naturalSize: image.size,
+            naturalAscent: rendered.ascent,
+            naturalDescent: rendered.descent,
+            availableWidth: availableWidth,
+            horizontalPadding: horizontalPadding
+        ) else {
+            return mathFallback(payload: payload, ctx: mathCtx)
+        }
+        let metrics = ImageMetrics(
+            drawWidth: mathMetrics.drawWidth,
+            drawHeight: mathMetrics.drawHeight,
+            totalWidth: mathMetrics.totalWidth,
+            ascent: mathMetrics.ascent,
+            descent: mathMetrics.descent
         )
         let placeholder = NSMutableAttributedString(
             attributedString: await makeImagePlaceholder(
@@ -2127,36 +2140,6 @@ struct NodeAttributedStringRenderer {
             drawHeight: drawHeight,
             totalWidth: totalWidth,
             ascent: ascent,
-            descent: descent
-        )
-    }
-
-    private func resolvedMathImageMetrics(
-        image: UIImage,
-        style: RenderStyle,
-        font: UIFont,
-        displayMode: ImageRunInfo.DisplayMode,
-        mathDescent: CGFloat
-    ) async -> ImageMetrics {
-        let metrics = await resolvedImageMetrics(
-            image: image,
-            style: style,
-            font: font,
-            displayMode: displayMode
-        )
-        guard displayMode == .inline, !isVertical(style) else {
-            return metrics
-        }
-        // Place the math baseline on the surrounding text baseline, instead of guessing a descent
-        // from the font metrics. The renderer reports absolute baseline metrics for the bitmap; if
-        // resolvedImageMetrics rescaled the bitmap (width clamp), rescale the descent with it.
-        let rescale = image.size.height > 0 ? metrics.drawHeight / image.size.height : 1
-        let descent = max(0, min(metrics.drawHeight, mathDescent * rescale))
-        return ImageMetrics(
-            drawWidth: metrics.drawWidth,
-            drawHeight: metrics.drawHeight,
-            totalWidth: metrics.totalWidth,
-            ascent: max(1, metrics.drawHeight - descent),
             descent: descent
         )
     }

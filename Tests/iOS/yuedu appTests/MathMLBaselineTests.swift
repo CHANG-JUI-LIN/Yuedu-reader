@@ -5,13 +5,47 @@ import UIKit
 
 @Suite("MathML baseline raster metrics", .serialized)
 struct MathMLBaselineTests {
+    @Test func overWideFormulaScalesWidthHeightAndBaselineTogether() throws {
+        let metrics = try #require(MathMLAttachmentMetrics.resolve(
+            naturalSize: CGSize(width: 600, height: 120),
+            naturalAscent: 90,
+            naturalDescent: 30,
+            availableWidth: 240,
+            horizontalPadding: 0
+        ))
+
+        #expect(metrics.drawWidth == 240)
+        #expect(metrics.drawHeight == 48)
+        #expect(metrics.ascent == 36)
+        #expect(metrics.descent == 12)
+        #expect(metrics.totalWidth == 240)
+        #expect(metrics.logicalScale == 0.4)
+    }
+
+    @Test func formulaMetricPolicyRejectsInvalidGeometry() {
+        #expect(MathMLAttachmentMetrics.resolve(
+            naturalSize: .zero,
+            naturalAscent: 0,
+            naturalDescent: 0,
+            availableWidth: 240,
+            horizontalPadding: 0
+        ) == nil)
+        #expect(MathMLAttachmentMetrics.resolve(
+            naturalSize: CGSize(width: 100, height: 20),
+            naturalAscent: 15,
+            naturalDescent: 5,
+            availableWidth: .infinity,
+            horizontalPadding: 0
+        ) == nil)
+    }
+
     @Test @MainActor func inlineIdentifierBaselineTracksInkBottom() throws {
         let rendered = try #require(MathMLImageRenderer.render(
             latex: "x",
             fontSize: 24,
             textColor: .black,
             displayMode: .inline,
-            maxWidth: 320
+            targetWidth: 320
         ))
         let bounds = try #require(Self.inkBounds(in: rendered.image))
         let height = CGFloat(rendered.image.cgImage?.height ?? 0)
@@ -75,7 +109,7 @@ struct MathMLBaselineTests {
             fontSize: 24,
             textColor: .black,
             displayMode: .inline,
-            maxWidth: 320
+            targetWidth: 320
         ))
         let imageHeight = CGFloat(rendered.image.cgImage?.height ?? 0)
         let descent = rendered.descentFraction * imageHeight

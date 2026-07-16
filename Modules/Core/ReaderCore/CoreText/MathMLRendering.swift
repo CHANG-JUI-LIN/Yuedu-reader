@@ -307,10 +307,10 @@ enum MathMLImageRenderer {
         fontSize: CGFloat,
         textColor: UIColor,
         displayMode: ImageRunInfo.DisplayMode,
-        maxWidth: CGFloat
+        targetWidth: CGFloat
     ) -> Rendered? {
         let mode: MTMathUILabelMode = displayMode == .block ? .display : .text
-        let cacheKey = "\(latex)|\(fontSize)|\(textColor.cacheKey)|\(mode.rawValue)|\(maxWidth)" as NSString
+        let cacheKey = "\(latex)|\(fontSize)|\(textColor.cacheKey)|\(mode.rawValue)|\(targetWidth)" as NSString
         if let cached = cache.object(forKey: cacheKey) {
             return cached
         }
@@ -339,7 +339,7 @@ enum MathMLImageRenderer {
         let naturalHeight = max(1, display.ascent + display.descent)
         guard naturalWidth.isFinite, naturalHeight.isFinite else { return nil }
 
-        let widthLimit = max(1, maxWidth)
+        let widthLimit = max(1, targetWidth)
         let scaleFactor = min(1, widthLimit / naturalWidth)
         let ascent = display.ascent * scaleFactor
         let descent = display.descent * scaleFactor
