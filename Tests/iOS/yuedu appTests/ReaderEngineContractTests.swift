@@ -8,6 +8,7 @@ struct ReaderEngineContractTests {
         assertPagedReaderEngine(CoreTextPageEngine.self)
         assertPagedReaderEngine(TXTPageEngine.self)
         assertPagedReaderEngine(FixedLayoutPageEngine.self)
+        assertPagedReaderEngine(MixedLayoutPageEngine.self)
     }
 
     @Test("scroll engine exposes the scroll capability contract")

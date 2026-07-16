@@ -15,6 +15,7 @@ final class EPUBPageRenderer: ObservableObject {
     @Published private(set) var fixedLayoutOrientation: FixedLayoutOrientation = .auto
     @Published private(set) var fixedLayoutViewport: FixedLayoutViewport?
     @Published private(set) var mediaOverlaysByChapter: [Int: EPUBMediaOverlay] = [:]
+    @Published private(set) var requiresPagedLayout = false
     /// Holds the EPUB builder so notifyViewportSize can update renderSize.
     private var epubBuilder: EPUBAttributedStringBuilder?
     private var onlineBuilder: OnlineProviderAttributedStringBuilder?
@@ -92,8 +93,16 @@ final class EPUBPageRenderer: ObservableObject {
         publicationSession = session
 
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
+        let effectiveLayouts = session.chapters.map {
+            $0.layoutModeOverride ?? session.layoutMode
+        }
+        let isMixedLayout = effectiveLayouts.contains(.reflowable)
+            && effectiveLayouts.contains(.prePaginated)
+        requiresPagedLayout = isMixedLayout
+        let isAllFixedLayout = effectiveLayouts.isEmpty == false
+            && effectiveLayouts.allSatisfy { $0 == .prePaginated }
 
-        guard session.layoutMode != .prePaginated else {
+        guard isAllFixedLayout == false else {
             let fixedEngine = FixedLayoutPageEngine(session: session, renderSize: effectiveSize)
             self.engine = fixedEngine
             isCoreTextReady = true
@@ -122,20 +131,40 @@ final class EPUBPageRenderer: ObservableObject {
             renderSettings: settings,
             offsetStore: store
         )
-        self.scrollEngine = CoreTextScrollEngine(builder: builder, renderSettings: settings)
+        let selectedEngine: any PageRenderingProvider
+        if isMixedLayout {
+            selectedEngine = MixedLayoutPageEngine(
+                session: session,
+                reflowEngine: newEngine,
+                fixedEngine: FixedLayoutPageEngine(
+                    session: session,
+                    renderSize: effectiveSize
+                )
+            )
+            self.scrollEngine = nil
+        } else {
+            selectedEngine = newEngine
+            self.scrollEngine = CoreTextScrollEngine(
+                builder: builder,
+                renderSettings: settings
+            )
+        }
 
-        newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
-        self.engine = newEngine
+        selectedEngine.applyThemeChange(
+            textColor: settings.textColor,
+            backgroundColor: settings.backgroundColor
+        )
+        self.engine = selectedEngine
         isCoreTextReady = false
 
         if effectiveSize.width > 0 {
             let startUptime = ProcessInfo.processInfo.systemUptime
             logProgress("load start bookId=\(bookIdentifier) renderSize=\(effectiveSize)")
             Task {
-                await newEngine.start(renderSize: effectiveSize, bookId: bookIdentifier)
+                await selectedEngine.start(renderSize: effectiveSize, bookId: bookIdentifier)
                 self.isCoreTextReady = true
                 self.logProgress(
-                    "load ready bookId=\(bookIdentifier) totalPages=\(newEngine.totalPages) elapsedMs=\(self.elapsedMs(since: startUptime))"
+                    "load ready bookId=\(bookIdentifier) totalPages=\(selectedEngine.totalPages) elapsedMs=\(self.elapsedMs(since: startUptime))"
                 )
             }
         } else {
@@ -174,6 +203,7 @@ final class EPUBPageRenderer: ObservableObject {
         fixedLayoutOrientation = .auto
         pageProgressionDirection = .default
         layoutMode = .reflowable
+        requiresPagedLayout = false
         publicationSession = nil
         let docsURL = FileManager.default.urls(
             for: .documentDirectory, in: .userDomainMask
@@ -220,6 +250,7 @@ final class EPUBPageRenderer: ObservableObject {
         settings: ReaderRenderSettings,
         customScheme: String = "reader-online"
     ) {
+        requiresPagedLayout = false
         let docsURL = FileManager.default.urls(
             for: .documentDirectory, in: .userDomainMask
         ).first!

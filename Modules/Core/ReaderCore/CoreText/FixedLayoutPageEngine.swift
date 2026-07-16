@@ -149,30 +149,20 @@ final class FixedLayoutPageEngine: PageRenderingProvider, FixedLayoutSpreadPairi
     // MARK: - PageViewControllerVending
 
     func pageViewController(at index: Int) -> UIViewController {
-        let spineIndex = max(0, min(index, totalPages - 1))
-        if let vc = pageVCs[spineIndex] {
-            return vc
+        pageViewController(spineIndex: index, globalPage: index)
+    }
+
+    func pageViewController(spineIndex: Int, globalPage: Int) -> UIViewController {
+        let clampedSpine = max(0, min(spineIndex, totalPages - 1))
+        if let cached = pageVCs[clampedSpine],
+           cached.globalPageIndex == globalPage {
+            return cached
         }
-
-        let vc = FixedLayoutPageViewController()
-        vc.configure(globalPage: index)
-        pageVCs[spineIndex] = vc
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let pageSize = await self.viewportResolver.viewport(
-                for: spineIndex,
-                resourceProvider: self.resourceProvider
-            )
-            let html = (try? await self.resourceProvider.chapterHTML(at: spineIndex)) ?? ""
-            let baseURL = self.session.resourceURL(for: self.session.chapters[spineIndex].href)
-                .deletingLastPathComponent()
-            await MainActor.run {
-                vc.load(html: html, baseURL: baseURL, pageSize: pageSize, availableSize: self.renderSize)
-            }
-        }
-
-        return vc
+        let controller = FixedLayoutPageViewController()
+        controller.configure(globalPage: globalPage)
+        pageVCs[clampedSpine] = controller
+        loadPage(controller, spineIndex: clampedSpine)
+        return controller
     }
 
     func pageViewController(for position: CoreTextReadingPosition) -> UIViewController {
@@ -184,4 +174,26 @@ final class FixedLayoutPageEngine: PageRenderingProvider, FixedLayoutSpreadPairi
     }
 
     func renderSnapshot(forPage globalPage: Int) -> UIImage? { nil }
+
+    private func loadPage(
+        _ controller: FixedLayoutPageViewController,
+        spineIndex: Int
+    ) {
+        Task { @MainActor [weak self, weak controller] in
+            guard let self, let controller else { return }
+            let pageSize = await viewportResolver.viewport(
+                for: spineIndex,
+                resourceProvider: resourceProvider
+            )
+            let html = (try? await resourceProvider.chapterHTML(at: spineIndex)) ?? ""
+            let baseURL = session.resourceURL(for: session.chapters[spineIndex].href)
+                .deletingLastPathComponent()
+            controller.load(
+                html: html,
+                baseURL: baseURL,
+                pageSize: pageSize,
+                availableSize: renderSize
+            )
+        }
+    }
 }

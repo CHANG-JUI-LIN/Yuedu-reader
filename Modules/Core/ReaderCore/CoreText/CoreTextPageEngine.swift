@@ -99,7 +99,7 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
 }
 
 @MainActor
-final class CoreTextPageEngine: PageRenderingProvider {
+final class CoreTextPageEngine: PageRenderingProvider, ReaderContentInteractionRouting {
 
     private(set) var totalPages: Int = 0
     private(set) var currentPage: Int = 0
@@ -543,6 +543,38 @@ final class CoreTextPageEngine: PageRenderingProvider {
         return placeholder
     }
 
+    func pageViewController(
+        spineIndex: Int,
+        localPage: Int,
+        globalPage: Int
+    ) -> UIViewController {
+        guard (0..<chapterCount).contains(spineIndex) else {
+            return pageViewController(at: 0)
+        }
+        guard let layout = _layouts[spineIndex],
+              layout.pageRanges.indices.contains(localPage) else {
+            let position = CoreTextReadingPosition.chapterStart(spineIndex)
+            let placeholder = PlaceholderPageViewController(
+                chapterTitle: chapterTitle(at: spineIndex),
+                globalPage: globalPage,
+                readingPosition: position,
+                themeBackgroundColor: themeBackgroundColor,
+                themeTextColor: themeTextColor
+            )
+            Task { [weak self] in
+                await self?.preloadChapter(at: spineIndex)
+                self?.onChapterReady?(spineIndex)
+            }
+            return placeholder
+        }
+        return configuredPageViewController(
+            layout: layout,
+            spineIndex: spineIndex,
+            localPage: localPage,
+            globalPage: globalPage
+        )
+    }
+
     /// Character offset of an anchor (`id`/fragment) within a spine, if that spine is laid out.
     /// Returns nil when the spine hasn't been paginated yet or the anchor is unknown, letting
     /// callers fall back to the spine start.
@@ -810,23 +842,35 @@ _layouts.removeAll()
 
     func snapshotViewController(at index: Int) -> UIViewController? {
         let (spineIndex, localPage) = localPosition(for: index)
+        return snapshotViewController(
+            spineIndex: spineIndex,
+            localPage: localPage,
+            globalPage: index
+        )
+    }
+
+    func snapshotViewController(
+        spineIndex: Int,
+        localPage: Int,
+        globalPage: Int
+    ) -> UIViewController? {
         // Snapshots are only used for chapter boundary handoff. Page 0 key is (spineIndex << 1)
         guard localPage == 0 else {
-            AppLogger.render("[FlipTrace] snapshotVC MISS nonFirstPage page=\(index) spine=\(spineIndex) local=\(localPage)")
+            AppLogger.render("[FlipTrace] snapshotVC MISS nonFirstPage page=\(globalPage) spine=\(spineIndex) local=\(localPage)")
             return nil
         }
         let key = NSNumber(value: (spineIndex << 1))
         guard let snapshot = chapterSnapshots.object(forKey: key) else {
-            AppLogger.render("[FlipTrace] snapshotVC MISS noSnapshot page=\(index) spine=\(spineIndex) key=\(key) layouts=\(_layouts.keys.sorted())")
+            AppLogger.render("[FlipTrace] snapshotVC MISS noSnapshot page=\(globalPage) spine=\(spineIndex) key=\(key) layouts=\(_layouts.keys.sorted())")
             return nil
         }
-        AppLogger.render("[FlipTrace] snapshotVC HIT page=\(index) spine=\(spineIndex) key=\(key)")
+        AppLogger.render("[FlipTrace] snapshotVC HIT page=\(globalPage) spine=\(spineIndex) key=\(key)")
         let bgColor = _layouts[spineIndex]?.backgroundColor ?? .systemBackground
         return SnapshotPageViewController(
             image: snapshot,
-            globalPage: index,
+            globalPage: globalPage,
             backgroundColor: bgColor,
-            readingPosition: readingPosition(forPage: index)
+            readingPosition: CoreTextReadingPosition.chapterStart(spineIndex)
         )
     }
 

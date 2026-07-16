@@ -13,6 +13,12 @@ protocol CoreTextReadingPositionProviding: AnyObject {
     var coreTextReadingPosition: CoreTextReadingPosition? { get }
 }
 
+@MainActor
+protocol ReaderContentInteractionRouting: AnyObject {
+    var onLinkNavigate: ((Int) -> Void)? { get set }
+    var onFootnoteTap: ((String) -> Void)? { get set }
+}
+
 // MARK: - Capability-Based Reader Engine Contracts
 
 @MainActor

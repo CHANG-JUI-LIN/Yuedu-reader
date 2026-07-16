@@ -595,14 +595,14 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 }
             }
 
-            if let coreTextEngine = engine as? CoreTextPageEngine {
-                coreTextEngine.onFootnoteTap = { [weak self] note in
+            if let interactionEngine = engine as? any ReaderContentInteractionRouting {
+                interactionEngine.onFootnoteTap = { [weak self] note in
                     DispatchQueue.main.async {
                         guard let self, self.callbackEngineIdentifier == identifier else { return }
                         self.onFootnoteTap(note)
                     }
                 }
-                coreTextEngine.onLinkNavigate = { [weak self, weak pageViewController] page in
+                interactionEngine.onLinkNavigate = { [weak self, weak pageViewController] page in
                     DispatchQueue.main.async {
                         guard let self, let pageViewController else { return }
                         guard self.callbackEngineIdentifier == identifier else { return }
@@ -621,9 +621,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 engine.onChapterReady = nil
                 engine.onNavigateToPage = nil
             }
-            if let coreTextEngine = callbackEngineObject as? CoreTextPageEngine {
-                coreTextEngine.onFootnoteTap = nil
-                coreTextEngine.onLinkNavigate = nil
+            if let interactionEngine = callbackEngineObject as? any ReaderContentInteractionRouting {
+                interactionEngine.onFootnoteTap = nil
+                interactionEngine.onLinkNavigate = nil
             }
             callbackEngineObject = nil
             callbackEngineIdentifier = nil

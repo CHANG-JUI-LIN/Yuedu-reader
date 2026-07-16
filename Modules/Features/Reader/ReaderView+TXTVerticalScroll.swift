@@ -150,7 +150,7 @@ extension ReaderView {
     }
 
     var effectiveScrollMode: Bool {
-        settings.scrollMode
+        settings.scrollMode && !epubRenderer.requiresPagedLayout
     }
 
     var scrollAxis: CoreTextScrollAxis {
