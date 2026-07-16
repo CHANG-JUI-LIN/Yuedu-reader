@@ -109,6 +109,7 @@ public struct RenderStyle: Sendable {
     public var baseWritingDirection: NSWritingDirection
     public var language: String?
     public var sourceElementTag: String?
+    var hyphenationPolicy: EPUBHyphenationPolicy = .unspecified
     public var lineHeightMultiplier: CGFloat
     /// CSS margin-left (blockquote, list indent)
     public var marginLeft: CGFloat

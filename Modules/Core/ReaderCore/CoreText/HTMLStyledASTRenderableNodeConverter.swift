@@ -147,6 +147,7 @@ private extension HTMLAttributedStringBuilder.ElementNode {
         )
         var style = RenderStyle.from(resolvedStyle: resolvedStyle, parentFontSize: parentFontSize)
         style.sourceElementTag = tag
+        style.hyphenationPolicy = resolvedStyle.hyphenationPolicy
         if containsFloatDescendant || classes.contains("tk") {
             style.compactChildBlockSpacing = true
         }

@@ -161,6 +161,7 @@ final class HTMLAttributedStringBuilder {
         var textAlign: NSTextAlignment
         var baseWritingDirection: NSWritingDirection
         var language: String? = nil
+        var hyphenationPolicy: EPUBHyphenationPolicy = .unspecified
         var textIndent: CGFloat
         var lineHeight: CGFloat
         /// Whether CSS explicitly specifies line-height (true = skip clamping)
@@ -1298,6 +1299,7 @@ final class HTMLAttributedStringBuilder {
             textAlign: parent.textAlign,
             baseWritingDirection: parent.baseWritingDirection,
             language: parent.language,
+            hyphenationPolicy: parent.hyphenationPolicy,
             textIndent: parent.textIndent,
             lineHeight: parent.lineHeight,
             lineHeightExplicit: parent.lineHeightExplicit,
@@ -1365,6 +1367,7 @@ final class HTMLAttributedStringBuilder {
             textAlign: .natural,
             baseWritingDirection: config.baseWritingDirection,
             language: EPUBLanguageTypography.normalizedLanguage(config.documentLanguage),
+            hyphenationPolicy: .unspecified,
             textIndent: config.firstLineIndent,
             lineHeight: defaultLineHeight,
             lineHeightExplicit: false,
@@ -1501,6 +1504,21 @@ final class HTMLAttributedStringBuilder {
         rootFontSize: CGFloat,
         percentageBase: CGFloat? = nil
     ) {
+        if let rawHyphenation = declarations["hyphens"]
+            ?? declarations["-epub-hyphens"]
+            ?? declarations["-webkit-hyphens"] {
+            let keyword = rawHyphenation
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            switch keyword {
+            case "inherit", "unset":
+                style.hyphenationPolicy = parentStyle.hyphenationPolicy
+            default:
+                if let policy = EPUBHyphenationPolicy(cssKeyword: keyword) {
+                    style.hyphenationPolicy = policy
+                }
+            }
+        }
         let applyContext = HTMLCSSApplyContext(
             parentStyle: parentStyle,
             rootFontSize: rootFontSize,

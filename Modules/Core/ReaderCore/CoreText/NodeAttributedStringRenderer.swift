@@ -801,6 +801,7 @@ struct NodeAttributedStringRenderer {
         if let c = style.color { newCtx.textColor = c.uiColor; newCtx.hasCSSColor = true }
         newCtx.language = style.language ?? ctx.language
         newCtx.sourceElementTag = style.sourceElementTag ?? ctx.sourceElementTag
+        newCtx.hyphenationPolicy = style.hyphenationPolicy
 
         // ── Paragraph Style ──
         let para = NSMutableParagraphStyle()
@@ -878,6 +879,15 @@ struct NodeAttributedStringRenderer {
 
         para.alignment = nsTextAlignment(from: style.textAlign)
         para.baseWritingDirection = style.baseWritingDirection
+        let supportsAutomaticHyphenation = EPUBLanguageTypography.supportsAutomaticHyphenation(newCtx.language)
+        switch style.hyphenationPolicy {
+        case .auto:
+            para.hyphenationFactor = supportsAutomaticHyphenation ? 1 : 0
+        case .unspecified:
+            para.hyphenationFactor = supportsAutomaticHyphenation && style.textAlign == .justify ? 1 : 0
+        case .manual, .none:
+            para.hyphenationFactor = 0
+        }
         newCtx.paragraphStyle = para
         newCtx.baselineOffset = ReaderTypographyCorrection.baselineOffset(
             font: newCtx.font,
@@ -903,7 +913,8 @@ struct NodeAttributedStringRenderer {
         guard style.bold || style.italic || style.color != nil || !style.fontFamilies.isEmpty
                 || style.underline || style.strikethrough || style.fontSizeMultiplier != 1.0
                 || style.ssmlIPA != nil || style.language != ctx.language
-                || style.sourceElementTag != ctx.sourceElementTag else { return ctx }
+                || style.sourceElementTag != ctx.sourceElementTag
+                || style.hyphenationPolicy != ctx.hyphenationPolicy else { return ctx }
         var newCtx = ctx
         let families = style.fontFamilies.isEmpty ? ctx.fontFamilies : style.fontFamilies
         let bold = style.bold || ctx.font.isBold
@@ -920,6 +931,7 @@ struct NodeAttributedStringRenderer {
         if let ipa = style.ssmlIPA { newCtx.ipaPronunciation = ipa }
         newCtx.language = style.language ?? ctx.language
         newCtx.sourceElementTag = style.sourceElementTag ?? ctx.sourceElementTag
+        newCtx.hyphenationPolicy = style.hyphenationPolicy
         return newCtx
     }
 
@@ -2743,6 +2755,7 @@ struct NodeAttributedStringRenderer {
         var strikethrough: Bool
         var language: String?
         var sourceElementTag: String?
+        var hyphenationPolicy: EPUBHyphenationPolicy
         var inheritedBlockMarginLeft: CGFloat
         var inheritedBlockMarginRight: CGFloat
         /// Inside a chat thread (`div.tk` of message bubbles): suppress the reader's body
@@ -2773,6 +2786,7 @@ struct NodeAttributedStringRenderer {
             if let sourceElementTag {
                 attrs[EPUBLanguageTypography.sourceElementTagAttribute] = sourceElementTag
             }
+            attrs[EPUBLanguageTypography.hyphenationPolicyAttribute] = hyphenationPolicy.rawValue
             if let href = linkHref {
                 // Tappable. Default link tint is applied in the `.anchor` case (only for links the
                 // author left untouched), not here — keep the run's authored/inherited color.
@@ -2820,6 +2834,7 @@ struct NodeAttributedStringRenderer {
                 strikethrough: false,
                 language: config.documentLanguage,
                 sourceElementTag: nil,
+                hyphenationPolicy: .unspecified,
                 inheritedBlockMarginLeft: 0,
                 inheritedBlockMarginRight: 0,
                 baseSize: config.baseFontSize

@@ -109,6 +109,62 @@ struct EnglishEPUBTypographyTests {
         #expect(Self.sourceTag(in: attributed, near: "package language") == "p")
     }
 
+    @Test @MainActor func cssHyphenationAliasesCascadeIntoNativeParagraphPolicy() async {
+        var config = EPUBTestFixtures.htmlConfig(renderWidth: 320)
+        config.documentLanguage = "en-US"
+        let html = EPUBTestFixtures.xhtml(
+            title: "Hyphenation cascade",
+            body: """
+            <p id="standard">standard alias winner ordinary typography words</p>
+            <p id="epub">epub alias winner ordinary typography words</p>
+            <p id="webkit">webkit alias winner ordinary typography words</p>
+            <p id="none">none policy ordinary typography words</p>
+            <p id="manual">manual policy ordinary typography words</p>
+            <p id="default-justify">default justified ordinary typography words</p>
+            <p id="default-left">default left ordinary typography words</p>
+            <p id="important" style="hyphens:auto">important winner ordinary typography words</p>
+            <p id="inherit" style="hyphens:auto">parent auto <span style="hyphens:inherit">inherited policy words</span></p>
+            <p id="unsupported" lang="zh-Hant">unsupported auto ordinary typography words</p>
+            """,
+            head: """
+            <style>
+              p { text-align: justify; }
+              #standard { -webkit-hyphens:none; -epub-hyphens:manual; hyphens:auto; }
+              #epub { -webkit-hyphens:none; -epub-hyphens:auto; }
+              #webkit { -webkit-hyphens:auto; }
+              #none { hyphens:none; }
+              #manual { hyphens:manual; }
+              #default-left { text-align:left; }
+              #important { hyphens:none !important; }
+              #unsupported { hyphens:auto; }
+            </style>
+            """,
+            bodyAttributes: #"lang="en-US""#
+        )
+        let attributed = await EPUBTestFixtures.renderIR(html: html, config: config)
+
+        #expect(Self.hyphenationPolicy(in: attributed, near: "standard alias") == .auto)
+        #expect(Self.hyphenationPolicy(in: attributed, near: "epub alias") == .auto)
+        #expect(Self.hyphenationPolicy(in: attributed, near: "webkit alias") == .auto)
+        #expect(Self.hyphenationPolicy(in: attributed, near: "none policy") == .some(.none))
+        #expect(Self.hyphenationPolicy(in: attributed, near: "manual policy") == .manual)
+        #expect(Self.hyphenationPolicy(in: attributed, near: "default justified") == .unspecified)
+        #expect(Self.hyphenationPolicy(in: attributed, near: "default left") == .unspecified)
+        #expect(Self.hyphenationPolicy(in: attributed, near: "important winner") == .some(.none))
+        #expect(Self.hyphenationPolicy(in: attributed, near: "inherited policy") == .auto)
+        #expect(Self.hyphenationPolicy(in: attributed, near: "unsupported auto") == .auto)
+
+        #expect(Self.hyphenationFactor(in: attributed, near: "standard alias") == 1)
+        #expect(Self.hyphenationFactor(in: attributed, near: "epub alias") == 1)
+        #expect(Self.hyphenationFactor(in: attributed, near: "webkit alias") == 1)
+        #expect(Self.hyphenationFactor(in: attributed, near: "none policy") == 0)
+        #expect(Self.hyphenationFactor(in: attributed, near: "manual policy") == 0)
+        #expect(Self.hyphenationFactor(in: attributed, near: "default justified") == 1)
+        #expect(Self.hyphenationFactor(in: attributed, near: "default left") == 0)
+        #expect(Self.hyphenationFactor(in: attributed, near: "important winner") == 0)
+        #expect(Self.hyphenationFactor(in: attributed, near: "unsupported auto") == 0)
+    }
+
     @MainActor
     private static func render(_ sample: EPUBTestFixtures.Sample) async throws -> NSAttributedString {
         let epubURL = try await EPUBTestFixtures.makeArchive(entries: sample.entries)
@@ -130,6 +186,22 @@ struct EnglishEPUBTypographyTests {
 
     private static func sourceTag(in attributed: NSAttributedString, near text: String) -> String? {
         attribute(EPUBLanguageTypography.sourceElementTagAttribute, in: attributed, near: text) as? String
+    }
+
+    private static func hyphenationPolicy(
+        in attributed: NSAttributedString,
+        near text: String
+    ) -> EPUBHyphenationPolicy? {
+        guard let raw = attribute(
+            EPUBLanguageTypography.hyphenationPolicyAttribute,
+            in: attributed,
+            near: text
+        ) as? String else { return nil }
+        return EPUBHyphenationPolicy(rawValue: raw)
+    }
+
+    private static func hyphenationFactor(in attributed: NSAttributedString, near text: String) -> Float? {
+        (attribute(.paragraphStyle, in: attributed, near: text) as? NSParagraphStyle)?.hyphenationFactor
     }
 
     private static func attribute(
