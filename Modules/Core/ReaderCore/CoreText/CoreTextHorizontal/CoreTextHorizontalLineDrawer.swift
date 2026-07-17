@@ -94,13 +94,20 @@ enum CoreTextHorizontalLineDrawer {
                 }
             }
 
-            // Determine paragraph-last-line (should not be justified)
+            // Determine paragraph-last-line (never justified). CoreText folds the trailing
+            // paragraph break INTO this line's range, so the break sits at lineEnd-1, NOT at
+            // lineEnd. Checking only the char *after* the line misses it, and the paragraph's last
+            // line gets wrongly stretched (spraying huge gaps between its glyphs). Check the line's
+            // own last char as well as the one after it, covering both range conventions.
             let isParagraphLastLine: Bool
             if lineEnd >= stringLength {
                 isParagraphLastLine = true
             } else {
-                let nextCharCode = nsString.character(at: lineEnd)
-                isParagraphLastLine = nextCharCode == 0x000A || nextCharCode == 0x2028
+                let lastInLine = lineEnd > lineStart ? nsString.character(at: lineEnd - 1) : 0
+                let afterLine = nsString.character(at: lineEnd)
+                isParagraphLastLine =
+                    lastInLine == 0x000A || lastInLine == 0x2028 || lastInLine == 0x2029
+                    || afterLine == 0x000A || afterLine == 0x2028 || afterLine == 0x2029
             }
 
             // Paragraph alignment + right inset. Justification must stretch a line to the
