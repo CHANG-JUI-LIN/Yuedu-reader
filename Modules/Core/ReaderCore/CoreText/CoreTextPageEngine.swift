@@ -296,11 +296,25 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
         await withTaskGroup(of: Void.self) { group in
             for i in priority.sorted() {
-                group.addTask { await self.preloadChapter(at: i) }
+                group.addTask { await self.awaitFirstLayout(at: i) }
             }
         }
         startupTrace("preload priority done totalPages=\(totalPages)")
         AppLogger.render("[CoreTextEngine] start done totalPages=\(totalPages)")
+    }
+
+    /// Returns once the spine has ANY layout installed — a partial first page
+    /// counts. Used by `start()` so the reader's first paint isn't gated on
+    /// paginating a huge opening chapter fully; the running preload task keeps
+    /// completing the layout in the background.
+    private func awaitFirstLayout(at spineIndex: Int) async {
+        guard (0..<chapterCount).contains(spineIndex) else { return }
+        if _layouts[spineIndex] != nil { return }
+        schedulePreloadChapter(at: spineIndex)
+        // Installs happen on the main actor between awaits; poll at frame pace.
+        while _layouts[spineIndex] == nil, preloadTasks[spineIndex] != nil {
+            try? await Task.sleep(nanoseconds: 16_000_000)
+        }
     }
 
     private func scanChapterByteSizes(for bookId: String) async {
@@ -489,7 +503,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             AppLogger.render("[FlipTrace] schedulePreload skip outOfRange spine=\(spineIndex) chapterCount=\(chapterCount)")
             return
         }
-        guard _layouts[spineIndex] == nil else {
+        guard _layouts[spineIndex]?.isPartial != false else {
             AppLogger.render("[FlipTrace] schedulePreload skip loaded spine=\(spineIndex) layouts=\(_layouts.keys.sorted())")
             return
         }
@@ -511,7 +525,9 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     func pageViewController(at index: Int) -> UIViewController {
         let (spineIndex, localPage) = localPosition(for: index)
-        if let layout = _layouts[spineIndex] {
+        // A partial layout only carries its leading page(s); later pages fall
+        // through to the placeholder path until full pagination replaces it.
+        if let layout = _layouts[spineIndex], localPage < layout.pageRanges.count {
             AppLogger.render("[FlipTrace] pageVC REAL page=\(index) spine=\(spineIndex) local=\(localPage) pages=\(layout.pageRanges.count)")
             return configuredPageViewController(
                 layout: layout,
@@ -563,7 +579,14 @@ final class CoreTextPageEngine: PageRenderingProvider {
     }
 
     func pageIndex(for position: CoreTextReadingPosition) -> Int? {
-        CoreTextReadingPositionMapper.pageIndex(
+        // While a chapter is only partially paginated, offsets beyond the covered
+        // range (including .chapterEnd's .max) cannot be resolved yet — return
+        // nil so callers take the placeholder path and wait for the full layout.
+        if let layout = _layouts[position.spineIndex], layout.isPartial {
+            let coveredEnd = layout.pageRanges.last.map { Int($0.location + $0.length) } ?? 0
+            if position.charOffset >= coveredEnd { return nil }
+        }
+        return CoreTextReadingPositionMapper.pageIndex(
             for: position,
             layouts: layouts,
             spinePageOffsets: spinePageOffsets
@@ -622,7 +645,9 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
     func preloadChapter(at spineIndex: Int) async {
         guard (0..<chapterCount).contains(spineIndex) else { return }
-        if _layouts[spineIndex] != nil {
+        // A partial (first-page-only) layout does not count as loaded: callers
+        // of this method need the FULL pagination (restore, link resolution …).
+        if let existing = _layouts[spineIndex], !existing.isPartial {
             AppLogger.render("[FlipTrace] preload skip loaded spine=\(spineIndex) layouts=\(_layouts.keys.sorted())")
             return
         }
@@ -671,9 +696,14 @@ _layouts[spineIndex] = nil
         onChapterReady?(spineIndex)
     }
 
+    /// Chapters at or above this UTF-16 length take the two-phase path: a fast
+    /// first-page pass is installed (and shown) while full pagination continues
+    /// in the background. Short chapters paginate fully in one pass.
+    private static let partialFirstPageThreshold = 20_000
+
     private func preloadChapterInternal(at spineIndex: Int, generation: Int) async {
         guard (0..<chapterCount).contains(spineIndex),
-_layouts[spineIndex] == nil else { return }
+              _layouts[spineIndex]?.isPartial != false else { return }
         guard !shouldAbortPreload(generation: generation) else { return }
         AppLogger.render("[FlipTrace] preload begin spine=\(spineIndex) generation=\(generation) layouts=\(_layouts.keys.sorted())")
 
@@ -703,6 +733,33 @@ _layouts[spineIndex] == nil else { return }
             contentInsets: currentContentInsets(),
             writingMode: renderSettings.writingMode
         )
+
+        // Two-phase open for long chapters (Legado TextChapterLayout idea): lay
+        // out and publish page 1 immediately, then let the full pass replace it.
+        if buildResult.attributedString.length >= Self.partialFirstPageThreshold,
+           _layouts[spineIndex] == nil,
+           let firstPageResult = await paginationManager.paginateFirstPage(request) {
+            guard !shouldAbortPreload(generation: generation) else { return }
+            let firstPageLayout = firstPageResult.layout.withUpdatedAppearance(
+                textColor: themeTextColor,
+                backgroundColor: themeBackgroundColor,
+                readerBackgroundImage: currentReaderBackgroundImage(),
+                dialogueColor: renderSettings.dialogueHighlightColor,
+                dialogueBoxColor: renderSettings.dialogueBoxColor
+            )
+            _layouts[spineIndex] = firstPageLayout
+            generateSnapshot(for: spineIndex)
+            rebuildPageOffsets()
+            if firstPageLayout.isPartial {
+                AppLogger.render("[FlipTrace] preload partial spine=\(spineIndex) estPages=\(firstPageLayout.displayPageCount) generation=\(generation)")
+                onChapterReady?(spineIndex)
+            } else {
+                // Paginator cache hit — the layout is already complete.
+                AppLogger.render("[FlipTrace] preload done spine=\(spineIndex) pages=\(firstPageLayout.pageRanges.count) generation=\(generation) source=cache")
+                return
+            }
+        }
+
         let layout = await paginationManager.paginate(request).layout
         guard !shouldAbortPreload(generation: generation) else { return }
 
@@ -791,7 +848,7 @@ _layouts.removeAll()
             AppLogger.render("[FlipTrace] warmUp skip missingCurrent page=\(currentGlobalPage) spine=\(spineIndex) local=\(localPage) layouts=\(_layouts.keys.sorted())")
             return
         }
-        let total = layout.pageRanges.count
+        let total = layout.displayPageCount
         // Trigger at 20% remaining (minimum 3 pages) so snapshot is ready before chapter boundary
         let threshold = max(3, Int(Double(total) * 0.20))
         let remaining = total - localPage
@@ -967,9 +1024,12 @@ _layouts.removeAll()
         }
     }
 
-    /// Returns the global page index of the last page of the specified chapter. Returns nil if the chapter is not loaded.
+    /// Returns the global page index of the last page of the specified chapter.
+    /// Returns nil if the chapter is not loaded — or only partially paginated,
+    /// since the real last page is unknown until the full pass completes.
     func lastPageIndex(ofChapter spineIndex: Int) -> Int? {
         guard let layout = _layouts[spineIndex],
+              !layout.isPartial,
               spinePageOffsets.indices.contains(spineIndex) else { return nil }
         return spinePageOffsets[spineIndex] + max(0, layout.pageRanges.count - 1)
     }
@@ -1002,7 +1062,9 @@ _layouts.removeAll()
         spinePageOffsets = (0..<chapterCount).map { i in
             let start = offset
             if let layout = _layouts[i] {
-                offset += layout.pageRanges.count
+                // displayPageCount: real count when complete, extrapolated
+                // estimate while the chapter is still partially paginated.
+                offset += layout.displayPageCount
             } else if i < chapterByteSizes.count && chapterByteSizes[i] > 0 {
                 // Estimate page count from byte size
                 offset += max(1, chapterByteSizes[i] / avgBytesPerPage)
@@ -1098,7 +1160,7 @@ _layouts.removeAll()
     private func estimatedPageCount(forChapter spineIndex: Int) -> Int {
         guard spinePageOffsets.indices.contains(spineIndex) else { return 1 }
         if let layout = _layouts[spineIndex] {
-            return max(1, layout.pageRanges.count)
+            return max(1, layout.displayPageCount)
         }
         if spineIndex + 1 < spinePageOffsets.count {
             return max(1, spinePageOffsets[spineIndex + 1] - spinePageOffsets[spineIndex])

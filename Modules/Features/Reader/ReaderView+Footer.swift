@@ -91,7 +91,7 @@ extension ReaderView {
             }
             let localPage = layout.pageIndex(for: charOffset) + 1
             let pct = engine.totalProgress(forSpine: spineIndex, charOffset: charOffset) * 100
-            return ("\(localPage)/\(layout.pageRanges.count)", String(format: "%.2f%%", pct))
+            return ("\(localPage)/\(layout.displayPageCount)", String(format: "%.2f%%", pct))
         } else {
             guard !allPages.isEmpty, idx >= 0, idx < allPages.count else { return ("", "0.00%") }
             let page = allPages[idx]

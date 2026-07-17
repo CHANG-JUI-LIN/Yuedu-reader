@@ -28,32 +28,51 @@ extension BookSourceFetcher {
         let streamed: Bool
     }
 
-    func search(query: String, in source: BookSource) async throws -> [OnlineBook] {
+    /// - Parameters:
+    ///   - page: 1-based result page (載入更多 passes 2+; only page 1 is cached).
+    ///   - earlyFilter: applied at parse time right after name/author extraction
+    ///     so rejected items skip the remaining rule evaluations (換源 strict
+    ///     matching). Filtered runs never write the shared search cache.
+    func search(
+        query: String,
+        in source: BookSource,
+        page: Int = 1,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil
+    ) async throws -> [OnlineBook] {
         guard !source.searchUrl.isEmpty else { throw FetchError.noSearchURL }
         let cacheDays = GlobalSettings.shared.searchCacheDays
-        if let cached = SearchResultCache.shared.freshBooks(
+        let cacheEligible = page == 1 && earlyFilter == nil
+        if page == 1, let cached = SearchResultCache.shared.freshBooks(
             query: query,
             source: source,
             days: cacheDays
         ) {
-            return cached
+            guard let earlyFilter else { return cached }
+            return cached.filter { earlyFilter($0.name, $0.author) }
         }
 
         if source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) {
-            let books = try await ModernParserBridge(source: source)
-                .searchBooks(keyword: query, page: 1)
+            var books = try await ModernParserBridge(source: source)
+                .searchBooks(keyword: query, page: page)
+            if let earlyFilter {
+                // The JS runtime already parsed everything; filtering here just
+                // keeps the returned list consistent with the native path.
+                books = books.filter { earlyFilter($0.name, $0.author) }
+            }
             let filtered = Self.filterSearchResultsByCheckKeyWord(
                 books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
-            SearchResultCache.shared.store(
-                books: filtered,
-                query: query,
-                source: source,
-                days: cacheDays
-            )
+            if cacheEligible {
+                SearchResultCache.shared.store(
+                    books: filtered,
+                    query: query,
+                    source: source,
+                    days: cacheDays
+                )
+            }
             return filtered
         }
 
-        let requestSpec = source.renderSearchRequest(query: query)
+        let requestSpec = source.renderSearchRequest(query: query, page: page)
         let resolvedUrlStr = RuleEngine.resolveURL(
             requestSpec.url,
             base: source.bookSourceUrl
@@ -73,7 +92,8 @@ extension BookSourceFetcher {
                     url: url, method: requestSpec.method, body: requestSpec.body,
                     headers: mergedHeaders, baseURL: source.bookSourceUrl,
                     bodyCharset: requestSpec.charset,
-                    allowInteractiveChallengeOn503: false)
+                    allowInteractiveChallengeOn503: false,
+                    source: source)
             }
         } catch let err as FetchError {
             switch err {
@@ -98,18 +118,21 @@ extension BookSourceFetcher {
         let books: [OnlineBook]
         do {
             books = try pipeline.parseSearchResults(
-                html: html, baseURL: url.absoluteString, source: source)
+                html: html, baseURL: url.absoluteString, source: source,
+                earlyFilter: earlyFilter)
         } catch {
             return []
         }
         let filtered = Self.filterSearchResultsByCheckKeyWord(
             books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
-        SearchResultCache.shared.store(
-            books: filtered,
-            query: query,
-            source: source,
-            days: cacheDays
-        )
+        if cacheEligible {
+            SearchResultCache.shared.store(
+                books: filtered,
+                query: query,
+                source: source,
+                days: cacheDays
+            )
+        }
         return filtered
     }
 

@@ -252,7 +252,8 @@ class ModernParserBridge {
     func parseSearchResults(
         html: String,
         baseURL: String,
-        source: BookSource
+        source: BookSource,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil
     ) throws -> [OnlineBook] {
         let engine = makeEngine()
         engine.setContent(html, baseUrl: baseURL)
@@ -271,6 +272,12 @@ class ModernParserBridge {
             guard !name.isEmpty else { continue }
 
             let author = engine.getString(ruleStr: source.ruleSearch.author)
+
+            // Early filter (Legado BookList idea): a rejected item skips the
+            // remaining six rule evaluations below — for strict matchers like
+            // 換源 that's most of the per-page parsing work.
+            if let earlyFilter, !earlyFilter(name, author) { continue }
+
             let bookUrl = engine.getString(ruleStr: source.ruleSearch.bookUrl, isUrl: true)
             let coverUrl = engine.getString(ruleStr: source.ruleSearch.coverUrl, isUrl: true)
             let intro = engine.getString(ruleStr: source.ruleSearch.intro)
@@ -889,7 +896,10 @@ class ModernParserBridge {
     /// Decoding is intentionally lenient: aggregator sources (e.g. 光遇聚合) emit
     /// `style` values as numbers/bools (`layout_flexBasisPercent: 0.45`), which a
     /// strict `[String: String]` decode would reject — failing the *entire* array.
-    struct DiscoverItem: Decodable {
+    ///
+    /// Also `Encodable` (auto-synthesized; `style` is already normalized to strings
+    /// after decode) so `DiscoverKindsCache` can persist parsed discover categories.
+    struct DiscoverItem: Codable {
         var title: String?
         var url: String?
         var style: [String: String]?
@@ -1315,21 +1325,25 @@ class ModernParserBridge {
         request.timeoutInterval = 30
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await withThrowingTaskGroup(
-                of: (Data, URLResponse).self
-            ) { group in
-                group.addTask {
-                    try await URLSession.shared.data(for: request)
+            // Honor the source's `concurrentRate` budget (per-source anti-ban
+            // throttle) around the actual network round-trip only.
+            (data, response) = try await SourceRateLimit.run(source: sourceRuleData.source) {
+                try await withThrowingTaskGroup(
+                    of: (Data, URLResponse).self
+                ) { group in
+                    group.addTask {
+                        try await URLSession.shared.data(for: request)
+                    }
+                    group.addTask {
+                        try await Task.sleep(nanoseconds: 30_000_000_000)
+                        throw ModernParserBridgeError.timeout
+                    }
+                    guard let result = try await group.next() else {
+                        throw CancellationError()
+                    }
+                    group.cancelAll()
+                    return result
                 }
-                group.addTask {
-                    try await Task.sleep(nanoseconds: 30_000_000_000)
-                    throw ModernParserBridgeError.timeout
-                }
-                guard let result = try await group.next() else {
-                    throw CancellationError()
-                }
-                group.cancelAll()
-                return result
             }
         } catch is ModernParserBridgeError {
             throw ModernParserBridgeError.timeout

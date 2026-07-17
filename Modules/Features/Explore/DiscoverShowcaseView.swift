@@ -47,7 +47,7 @@ struct DiscoverShowcaseView: View {
             .padding(.bottom, 120)
         }
         .scrollDismissesKeyboard(.immediately)
-        .refreshable { discover.reload() }
+        .refreshable { discover.reload(forceRefresh: true) }
     }
 
     private var loadingState: some View {

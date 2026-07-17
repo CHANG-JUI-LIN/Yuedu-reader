@@ -70,6 +70,19 @@ final class ReaderNavigationTransitionDriver: NSObject {
     private var interactionController: UIPercentDrivenInteractiveTransition?
     private var pendingOperation: PendingOperation?
     private var activeAnimator: ReaderCardTransitionAnimator?
+    /// Safety-net watchdog fired after a push/pop request. UIKit may drop the
+    /// transition silently (e.g. when NavigationStack is still settling from a
+    /// previous interactive pop). When that happens `pendingOperation` stays
+    /// set forever, no `didShow` is delivered, and the coordinator refuses all
+    /// future opens. The watchdog inspects state after a grace window and either
+    /// completes the pending operation if the stack already moved, or rolls it
+    /// back so the shelf can be reopened. The timer is cancelled on any normal
+    /// `finishTransition` / `didShow` / detach path.
+    private var pendingReconciliationWorkItem: DispatchWorkItem?
+    // Must be well past the transition animation duration (0.62s) plus
+    // SwiftUI reader construction + CoreText pagination. 3s gives the
+    // system ample time to create the animator before we intervene.
+    private static let reconciliationGraceInterval: TimeInterval = 3.0
     private weak var expectedFromViewController: UIViewController?
     private weak var expectedToViewController: UIViewController?
     private var observesTransitionInvalidation = false
@@ -100,6 +113,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
     }
 
     func detach() {
+        cancelPendingReconciliation()
         if isInteractivePopInFlight, !interactionIsSettling {
             interactionIsSettling = true
             interactionController?.cancel()
@@ -141,6 +155,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
             canStartNavigationTransition,
             navigationController.topViewController !== viewController
         else {
+            AppLogger.info("⟐ startPush refused hasNav=\(navigationController != nil) canStart=\(canStartNavigationTransition) topIsDest=\(navigationController?.topViewController === viewController)")
             return false
         }
 
@@ -148,7 +163,9 @@ final class ReaderNavigationTransitionDriver: NSObject {
         expectedFromViewController = navigationController.topViewController
         expectedToViewController = viewController
         pendingOperation = .push
+        AppLogger.info("⟐ startPush calling pushViewController vc=\(type(of: viewController)) animated=\(animated)")
         navigationController.pushViewController(viewController, animated: animated)
+        schedulePendingReconciliation(for: .push)
         return true
     }
 
@@ -174,6 +191,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
             finishTransition(operation: .pop, completed: false)
             return false
         }
+        schedulePendingReconciliation(for: .pop)
         return true
     }
 
@@ -320,6 +338,8 @@ final class ReaderNavigationTransitionDriver: NSObject {
     }
 
     private func finishTransition(operation: PendingOperation, completed: Bool) {
+        cancelPendingReconciliation()
+        AppLogger.info("⟐ finishTransition operation=\(operation == .push ? "push" : "pop") completed=\(completed) wasInteractive=\(isInteractivePopInFlight)")
         let wasInteractive = isInteractivePopInFlight
         interactionController = nil
         activeAnimator = nil
@@ -362,7 +382,10 @@ final class ReaderNavigationTransitionDriver: NSObject {
     /// A safety net for a UIKit transaction that changes the stack without
     /// asking this delegate for an animator or delivering `didShow`.
     func reconcilePendingPushAsCompleted() {
-        guard pendingOperation == .push, activeAnimator == nil else { return }
+        guard pendingOperation == .push, activeAnimator == nil else {
+            AppLogger.info("⟐ reconcilePendingPushAsCompleted skipped pending=\(String(describing: pendingOperation)) animator=\(activeAnimator != nil)")
+            return
+        }
         let completed: Bool
         if let expectedToViewController {
             completed = navigationController?.topViewController === expectedToViewController
@@ -371,13 +394,17 @@ final class ReaderNavigationTransitionDriver: NSObject {
         } else {
             completed = readerIsPresented()
         }
+        AppLogger.info("⟐ reconcilePendingPushAsCompleted safety net firing completed=\(completed)")
         finishTransition(operation: .push, completed: completed)
     }
 
     /// Symmetric fallback for a UIKit pop that does not request our custom
     /// animator or call the delegate completion path we normally own.
     func reconcilePendingPop() {
-        guard pendingOperation == .pop, activeAnimator == nil else { return }
+        guard pendingOperation == .pop, activeAnimator == nil else {
+            AppLogger.info("⟐ reconcilePendingPop skipped pending=\(String(describing: pendingOperation)) animator=\(activeAnimator != nil)")
+            return
+        }
         let completed: Bool
         if let expectedToViewController {
             completed = navigationController?.topViewController === expectedToViewController
@@ -386,6 +413,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
         } else {
             completed = !readerIsPresented()
         }
+        AppLogger.info("⟐ reconcilePendingPop safety net firing completed=\(completed)")
         finishTransition(operation: .pop, completed: completed)
     }
 
@@ -394,10 +422,69 @@ final class ReaderNavigationTransitionDriver: NSObject {
     }
 
     var canStartNavigationTransition: Bool {
-        guard let navigationController else { return false }
-        return pendingOperation == nil
+        guard let navigationController else {
+            AppLogger.info("⟐ canStartNavigationTransition no navController")
+            return false
+        }
+        let result = pendingOperation == nil
             && activeAnimator == nil
             && navigationController.transitionCoordinator == nil
+        if !result {
+            AppLogger.info("⟐ canStartNavigationTransition=false pending=\(String(describing: pendingOperation)) animator=\(activeAnimator != nil) sysCoordinator=\(navigationController.transitionCoordinator != nil)")
+        }
+        return result
+    }
+
+    /// Schedule a reconciliation watchdog that fires after a grace window.
+    /// If the transition still hasn't started (no `activeAnimator`, no
+    /// `transitionCoordinator`), the pending operation is either marked
+    /// completed (if the stack already moved) or rolled back to unstick.
+    private func schedulePendingReconciliation(for operation: PendingOperation, retryCount: Int = 0) {
+        cancelPendingReconciliation()
+        let maxRetries = 2
+        let workItem = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard self.pendingOperation == operation, self.activeAnimator == nil else {
+                    // Normal path already took over — animator was created
+                    // or transition already finished.
+                    return
+                }
+                guard let nc = self.navigationController else {
+                    self.finishTransition(operation: operation, completed: false)
+                    return
+                }
+                if nc.transitionCoordinator != nil {
+                    // UIKit is still working; give it more time (up to maxRetries)
+                    guard retryCount < maxRetries else {
+                        AppLogger.info("⟐ watchdog max retries reached; force reconciling stuck \(operation == .push ? "push" : "pop")")
+                        self.finishTransition(operation: operation, completed: false)
+                        return
+                    }
+                    self.schedulePendingReconciliation(for: operation, retryCount: retryCount + 1)
+                    return
+                }
+                // UIKit dropped the transition: reconcile now
+                switch operation {
+                case .push:
+                    AppLogger.info("⟐ watchdog reconciling stuck push (retry=\(retryCount))")
+                    self.reconcilePendingPushAsCompleted()
+                case .pop:
+                    AppLogger.info("⟐ watchdog reconciling stuck pop (retry=\(retryCount))")
+                    self.reconcilePendingPop()
+                }
+            }
+        }
+        pendingReconciliationWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.reconciliationGraceInterval,
+            execute: workItem
+        )
+    }
+
+    private func cancelPendingReconciliation() {
+        pendingReconciliationWorkItem?.cancel()
+        pendingReconciliationWorkItem = nil
     }
 
     /// A reader edge-pop can only start from a settled navigation stack. In
@@ -516,6 +603,7 @@ extension ReaderNavigationTransitionDriver: UINavigationControllerDelegate {
         // path. Custom transitions keep `activeAnimator` non-nil until after
         // `completeTransition`, so they do not double-fire.
         guard let pendingOperation, activeAnimator == nil else {
+            AppLogger.info("⟐ didShow nothing to reconcile pending=\(String(describing: self.pendingOperation)) animator=\(activeAnimator != nil) vc=\(type(of: viewController))")
             scheduleNavigationSettledNotification()
             return
         }
@@ -529,6 +617,7 @@ extension ReaderNavigationTransitionDriver: UINavigationControllerDelegate {
                 ? readerIsPresented()
                 : !readerIsPresented()
         }
+        AppLogger.info("⟐ didShow fallback reconcile operation=\(pendingOperation == .push ? "push" : "pop") completed=\(completed) vc=\(type(of: viewController))")
         finishTransition(operation: pendingOperation, completed: completed)
     }
 }

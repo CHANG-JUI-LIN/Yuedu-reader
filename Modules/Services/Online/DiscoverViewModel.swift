@@ -289,7 +289,7 @@ final class DiscoverViewModel: ObservableObject {
 
     // MARK: - Loading
 
-    func reload() {
+    func reload(forceRefresh: Bool = false) {
         guard let source = selectedSource else {
             items = []
             cancelSectionTasks()
@@ -305,12 +305,23 @@ final class DiscoverViewModel: ObservableObject {
         items = []
         sections = []
         isLoadingItems = true
+        let cacheKey = discoverKindsCacheKey(for: source)
         loadItemsTask = Task { [weak self] in
             // Some sources' 榜單/分類 read a site cookie inline (起点 _csrfToken) that's only set by
             // browsing the site — without it every section loads 0 books and 发现页 looks empty.
             // Prime it before the sections start fetching books. No-op when not needed / already set.
             await BookSourceFetcher.shared.primeDiscoverCookies(in: source)
             guard let self, !Task.isCancelled else { return }
+
+            // Category list cache (Legado exploreKinds-style): `@js:` exploreUrls
+            // re-run their JS (often with network calls) on every open just to
+            // rebuild the same category list. The key covers rule + discover
+            // variables, so filter changes and source updates fetch fresh.
+            if !forceRefresh, let cached = DiscoverKindsCache.shared.items(forKey: cacheKey) {
+                self.applyDiscoverItems(cached)
+                return
+            }
+
             var raw = await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
             guard !Task.isCancelled else { return }
 
@@ -330,13 +341,36 @@ final class DiscoverViewModel: ObservableObject {
                 guard !Task.isCancelled else { return }
             }
 
-            self.rawItems = raw
-            self.filters = Self.extractFilters(from: raw)
-            let mapped = raw.compactMap(Self.mapItem)
-            self.items = mapped
-            self.isLoadingItems = false
-            self.buildSections(from: mapped)
+            // Only persist a healthy category list; caching the degraded 榜单
+            // fallback would pin the broken state until the next force refresh.
+            // Recompute the key: the auto-reset above may have cleared variables.
+            if !Self.exploreLikelyDegraded(source: source, items: raw) {
+                DiscoverKindsCache.shared.store(
+                    raw, forKey: self.discoverKindsCacheKey(for: source))
+            }
+
+            self.applyDiscoverItems(raw)
         }
+    }
+
+    /// Shared tail of `reload()` for both the cache-hit and network paths.
+    private func applyDiscoverItems(_ raw: [ModernParserBridge.DiscoverItem]) {
+        rawItems = raw
+        filters = Self.extractFilters(from: raw)
+        let mapped = raw.compactMap(Self.mapItem)
+        items = mapped
+        isLoadingItems = false
+        buildSections(from: mapped)
+    }
+
+    /// Cache key for the current (source, discover runtime variables) pair.
+    private func discoverKindsCacheKey(for source: BookSource) -> String {
+        let variableDict = Self.sanitizeDiscoverVariable(currentVariableDict(for: source))
+        return DiscoverKindsCache.key(
+            sourceUrl: source.bookSourceUrl,
+            exploreUrl: source.exploreUrl,
+            variableJSON: variableDict.isEmpty ? nil : Self.canonicalJSON(variableDict)
+        )
     }
 
     // MARK: - Showcase sections

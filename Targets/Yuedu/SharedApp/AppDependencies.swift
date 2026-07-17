@@ -39,6 +39,15 @@ protocol BookSourceFetching {
     func clearAllChapterCache(bookId: UUID)
     func search(query: String, in source: BookSource) async throws -> [OnlineBook]
 
+    /// Early-filtered search: implementations that can push the predicate into
+    /// rule parsing override this (protocol requirement so existential calls
+    /// dispatch dynamically); a post-filtering default exists for mocks.
+    func search(
+        query: String,
+        in source: BookSource,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)?
+    ) async throws -> [OnlineBook]
+
     func loadChapterPackageSync(
         bookId: UUID,
         chapterIndex: Int,
@@ -84,6 +93,19 @@ extension BookSourceFetching {
             onFirstPageReady: onFirstPageReady,
             forceRefresh: false
         )
+    }
+
+    /// Early-filtered search. Default implementation filters after the fact so
+    /// existing conformers (tests/mocks) keep working; implementations that can
+    /// push the predicate into rule parsing override it (LiveBookSourceFetcher).
+    func search(
+        query: String,
+        in source: BookSource,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)?
+    ) async throws -> [OnlineBook] {
+        let books = try await search(query: query, in: source)
+        guard let earlyFilter else { return books }
+        return books.filter { earlyFilter($0.name, $0.author) }
     }
 }
 
@@ -195,6 +217,18 @@ struct LiveBookSourceFetcher: BookSourceFetching {
 
     func search(query: String, in source: BookSource) async throws -> [OnlineBook] {
         try await bookSourceFetcher.search(query: query, in: source)
+    }
+
+    func search(
+        query: String,
+        in source: BookSource,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)?
+    ) async throws -> [OnlineBook] {
+        // Push the predicate into the parser so rejected items skip most rule
+        // evaluations (instead of the protocol default's post-filter).
+        try await bookSourceFetcher.search(
+            query: query, in: source, earlyFilter: earlyFilter
+        )
     }
 
     func loadChapterPackageSync(

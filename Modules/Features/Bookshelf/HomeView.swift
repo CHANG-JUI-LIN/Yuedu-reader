@@ -103,16 +103,24 @@ struct HomeView: View {
     @State private var modalReaderBookId: UUID? = nil
 
     private func openBook(_ book: ReadingBook, sourceGeometry: ReaderCardGeometry?) {
+        AppLogger.info("⟐ openBook tap bookID=\(book.id) title=\(book.title) pipelineKind=\(book.resolvedPipelineKind) useCard=\(BookCardNavigationGate.shouldUseCardTransition(for: book)) hasGeometry=\(sourceGeometry != nil)")
         if BookCardNavigationGate.shouldUseCardTransition(for: book) {
             let requestToken = UUID()
             pendingReaderOpenToken = requestToken
+            AppLogger.info("⟐ openBook staged token=\(requestToken) hasPendingToken=\(pendingReaderOpenToken != nil)")
             let snapshot: UIImage? = book.coverImagePath.flatMap {
                 BookshelfCoverLoader.load(filename: $0)
             }
+            AppLogger.info("⟐ openBook snapshot resolved hasSnapshot=\(snapshot != nil)")
             Task { @MainActor in
+                AppLogger.info("⟐ openBook begin resolveOpeningDirection bookID=\(book.id)")
                 let direction = await resolveOpeningDirection(for: book)
-                guard pendingReaderOpenToken == requestToken else { return }
+                guard pendingReaderOpenToken == requestToken else {
+                    AppLogger.info("⟐ openBook DROPPED: token mismatch (newTap=\(String(describing: pendingReaderOpenToken))) stale=\(requestToken)")
+                    return
+                }
                 pendingReaderOpenToken = nil
+                AppLogger.info("⟐ openBook direction resolved=\(direction) calling coordinator.open")
                 let source = ReaderTransitionSource(
                     bookID: book.id,
                     cornerRadius: sourceGeometry?.cornerRadius ?? DSRadius.md,
@@ -154,6 +162,7 @@ struct HomeView: View {
                 )
             }
         } else {
+            AppLogger.info("⟐ openBook MODAL path bookID=\(book.id) (audiobook/manga/fixed-page)")
             pendingReaderOpenToken = nil
             store.updateLastOpened(bookId: book.id)
             modalReaderBookId = book.id
@@ -165,20 +174,30 @@ struct HomeView: View {
     ) async -> ReaderBookOpeningDirection {
         if book.resolvedPipelineKind == .epub {
             let url = store.localEPUBURL(for: book)
+            AppLogger.info("⟐ resolveOpeningDirection EPUB url=\(url.lastPathComponent) starting inspect")
+            let t0 = CACurrentMediaTime()
             let flow = await PublicationSession.inspectOpeningFlow(sourceURL: url)
-            return ReaderBookOpeningDirection.resolve(
+            let direction = ReaderBookOpeningDirection.resolve(
                 writingMode: flow.isVertical ? .verticalRTL : .horizontal,
                 pageProgressionIsRTL: flow.pageProgressionIsRTL
             )
+            let elapsed = (CACurrentMediaTime() - t0) * 1000
+            AppLogger.info("⟐ resolveOpeningDirection EPUB done elapsedMs=\(Int(elapsed)) isVertical=\(flow.isVertical) pageProgressionRTL=\(flow.pageProgressionIsRTL) direction=\(direction)")
+            return direction
         }
 
         let writingMode: ReaderWritingMode = book.allowsVerticalWritingMode
             ? gs.readerWritingMode
             : .horizontal
-        return ReaderBookOpeningDirection.resolve(
+        if !book.allowsVerticalWritingMode {
+            AppLogger.info("⟐ resolveOpeningDirection book denies vertical writing mode; using horizontal")
+        }
+        let direction = ReaderBookOpeningDirection.resolve(
             writingMode: writingMode,
             pageProgressionIsRTL: false
         )
+        AppLogger.info("⟐ resolveOpeningDirection non-EPUB done direction=\(direction)")
+        return direction
     }
 
     var sortedFilteredBooks: [ReadingBook] {

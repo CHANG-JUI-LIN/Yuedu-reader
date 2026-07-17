@@ -937,7 +937,7 @@ struct ReaderView: View {
         if let engine = epubRenderer.engine, usesCoreTextEPUB, engine.totalPages > 0 {
             let position = readerOverlayCoreTextPosition(in: engine)
             let layout = engine.layouts[position.spineIndex]
-            let chapterPageCount = layout?.pageRanges.count ?? 0
+            let chapterPageCount = layout?.displayPageCount ?? 0
             let chapterPage = chapterPageCount > 0
                 ? (layout?.pageIndex(for: position.charOffset) ?? -1) + 1
                 : 0
@@ -1098,7 +1098,7 @@ struct ReaderView: View {
                 return ""
             }
             let localPage = layout.pageIndex(for: charOffset) + 1
-            return "\(localPage)/\(layout.pageRanges.count)"
+            return "\(localPage)/\(layout.displayPageCount)"
         }
         guard !allPages.isEmpty else { return "" }
         let page = allPages[min(currentPage, allPages.count - 1)]

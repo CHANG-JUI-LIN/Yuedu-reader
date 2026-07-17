@@ -30,6 +30,8 @@ final class ReaderViewModel: ObservableObject {
     private var mangaDetectionAttempted: Set<UUID> = []
     /// The current 換源 (source switch) search, so a re-open cancels the previous run.
     private var changeSourceSearchTask: Task<Void, Never>?
+    /// Background TOC warm-up for the top 換源 candidates (see `prefetchTopOriginTOCs`).
+    private var tocPrefetchTask: Task<Void, Never>?
 
     convenience init() {
         self.init(
@@ -202,6 +204,8 @@ final class ReaderViewModel: ObservableObject {
             changeSourceFailedKeys = Set(cached.failedKeys)
             changeSourceLoading = false
             changeSourceError = nil
+            sortChangeSourceOriginsByHealth()
+            prefetchTopOriginTOCs()
             return
         }
 
@@ -227,6 +231,7 @@ final class ReaderViewModel: ObservableObject {
         let autoPausePolicy = SearchAutoPausePolicy(count: autoPauseCount)
 
         changeSourceSearchTask?.cancel()
+        tocPrefetchTask?.cancel()
         changeSourceSearchTask = Task { [weak self] in
             guard let self else { return }
             var seenBookUrls = Set<String>()
@@ -248,6 +253,8 @@ final class ReaderViewModel: ObservableObject {
                         guard !Task.isCancelled else { return nil }
                         return await Self.searchSourceWithTimeout(
                             query: bookTitle,
+                            bookTitle: bookTitle,
+                            bookAuthor: bookAuthor,
                             source: source,
                             bookSourceFetcher: bookSourceFetcher
                         )
@@ -262,6 +269,10 @@ final class ReaderViewModel: ObservableObject {
                     if Task.isCancelled { break }
                     guard let list else { continue }
                     var shouldPause = false
+                    // Collect the whole source's matches first and append once:
+                    // per-book appends re-published (and re-diffed) the sheet's
+                    // list for every single origin.
+                    var batchOrigins: [BookOrigin] = []
                     for ob in list {
                         let matched = SearchBook.isLikelySameBook(
                             name: bookTitle, author: bookAuthor,
@@ -275,7 +286,7 @@ final class ReaderViewModel: ObservableObject {
                             if urlKey == currentBookUrlKey { continue }
                             guard seenBookUrls.insert(urlKey).inserted else { continue }
                         }
-                        self.changeSourceOrigins.append(
+                        batchOrigins.append(
                             BookOrigin(
                                 sourceId: ob.sourceId,
                                 sourceName: ob.sourceName,
@@ -290,12 +301,15 @@ final class ReaderViewModel: ObservableObject {
                             )
                         )
                         if autoPausePolicy.shouldPause(
-                            exactCount: self.changeSourceOrigins.count,
+                            exactCount: self.changeSourceOrigins.count + batchOrigins.count,
                             fuzzyCount: 0
                         ) {
                             shouldPause = true
                             break
                         }
+                    }
+                    if !batchOrigins.isEmpty {
+                        self.changeSourceOrigins.append(contentsOf: batchOrigins)
                     }
                     if shouldPause {
                         group.cancelAll()
@@ -307,8 +321,68 @@ final class ReaderViewModel: ObservableObject {
 
             if Task.isCancelled { return }
             self.changeSourceLoading = false
+            // Fastest sources first (respondTime EMA), then persist that order so
+            // the cached list reopens pre-sorted and TOC warm-up hits the best ones.
+            self.sortChangeSourceOriginsByHealth()
             // Persist results so reopening the sheet is instant (honors 快取天數).
             ChangeSourceCache.shared.store(origins: self.changeSourceOrigins, for: bookId)
+            // Warm the top candidates' TOC cache so tapping one switches instantly.
+            self.prefetchTopOriginTOCs()
+        }
+    }
+
+    /// Orders 換源 candidates: origins that previously failed to switch sink to
+    /// the bottom; the rest sort by their source's measured response time
+    /// (unmeasured sources keep arrival order after measured ones).
+    private func sortChangeSourceOriginsByHealth() {
+        guard changeSourceOrigins.count > 1 else { return }
+        let failed = changeSourceFailedKeys
+        let health = SourceHealthStore.shared
+        let decorated = changeSourceOrigins.enumerated().map { offset, origin in
+            (
+                offset: offset,
+                origin: origin,
+                isFailed: failed.contains(ChangeSourceCache.urlKey(origin.bookUrl)),
+                speed: health.responseSortKey(origin.sourceId)
+            )
+        }
+        changeSourceOrigins = decorated.sorted { a, b in
+            if a.isFailed != b.isFailed { return !a.isFailed }
+            if a.speed != b.speed { return a.speed < b.speed }
+            return a.offset < b.offset
+        }.map(\.origin)
+    }
+
+    /// Background-fetches the TOC of the first few switchable origins into
+    /// `BookSourceFetcher`'s cache-first TOC store (Legado's tocMap idea), so the
+    /// actual switch (`updateOnlineBookSource` → `fetchTOCPackage`) is a cache hit
+    /// instead of a network round-trip the user waits on. Serial and low-priority;
+    /// already-cached TOCs return immediately.
+    private func prefetchTopOriginTOCs(limit: Int = 4) {
+        tocPrefetchTask?.cancel()
+        let failedKeys = changeSourceFailedKeys
+        let candidates = Array(
+            changeSourceOrigins
+                .filter { !failedKeys.contains(ChangeSourceCache.urlKey($0.bookUrl)) }
+                .prefix(limit)
+        )
+        guard !candidates.isEmpty else { return }
+        let sources = BookSourceStore.shared.sources
+        let jobs: [(BookOrigin, BookSource)] = candidates.compactMap { origin in
+            guard let source = sources.first(where: { $0.id == origin.sourceId }) else { return nil }
+            return (origin, source)
+        }
+        guard !jobs.isEmpty else { return }
+        let fetcher = bookSourceFetcher
+        tocPrefetchTask = Task {
+            for (origin, source) in jobs {
+                if Task.isCancelled { return }
+                _ = try? await fetcher.fetchTOCPackage(
+                    tocUrl: origin.tocUrl,
+                    source: source,
+                    runtimeVariables: origin.runtimeVariables
+                )
+            }
         }
     }
 
@@ -342,13 +416,29 @@ final class ReaderViewModel: ObservableObject {
     /// `nonisolated` so concurrent tasks don't serialize back onto the MainActor.
     nonisolated private static func searchSourceWithTimeout(
         query: String,
+        bookTitle: String,
+        bookAuthor: String,
         source: BookSource,
         bookSourceFetcher: BookSourceFetching,
         seconds: UInt64 = 20
     ) async -> [OnlineBook]? {
-        await withTaskGroup(of: [OnlineBook]?.self) { group in
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        let books: [OnlineBook]? = await withTaskGroup(of: [OnlineBook]?.self) { group in
             group.addTask {
-                try? await bookSourceFetcher.search(query: query, in: source)
+                // Early filter (Legado BookList idea): reject non-matching items
+                // right after their name/author rules run, so the remaining field
+                // rules (cover/intro/kind/wordCount/lastChapter/bookUrl) are never
+                // evaluated — 換源 only keeps exact same-book candidates anyway.
+                try? await bookSourceFetcher.search(
+                    query: query,
+                    in: source,
+                    earlyFilter: { name, author in
+                        SearchBook.isLikelySameBook(
+                            name: bookTitle, author: bookAuthor,
+                            name: name, author: author
+                        )
+                    }
+                )
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
@@ -358,6 +448,15 @@ final class ReaderViewModel: ObservableObject {
             group.cancelAll()
             return first
         }
+        if books != nil {
+            // Feed the response-time EMA so the 換源 list can rank fast sources first.
+            let elapsedMs = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
+            let sourceId = source.id
+            await MainActor.run {
+                SourceHealthStore.shared.recordSuccess(sourceId, responseMs: elapsedMs)
+            }
+        }
+        return books
     }
 
     // MARK: - Private

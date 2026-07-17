@@ -45,7 +45,11 @@ enum TXTFileReader {
 
     static func readMappedTextFile(url: URL) throws -> TXTMappedTextFile {
         let data = try Data(contentsOf: url, options: .alwaysMapped)
-        let encoding = detectEncoding(fromSample: data)
+        // Detect from a bounded sample: feeding the whole mapped file into
+        // String(data:) meant up to five full-file trial decodes on a large book
+        // just to pick the charset. 512KB matches Legado's detection window;
+        // `canDecode` already tolerates the truncated trailing character.
+        let encoding = detectEncoding(fromSample: data.prefix(512 * 1024))
         return TXTMappedTextFile(data: data, encoding: encoding)
     }
 

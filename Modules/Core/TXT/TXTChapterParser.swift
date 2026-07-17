@@ -150,17 +150,85 @@ enum TXTChapterParser {
             if indexes.isEmpty {
                 return [TXTMappedChapterIndex(index: 0, title: sanitizedTitle(bookTitle), byteRange: 0..<totalBytes)]
             }
-            return indexes
+            return splittingOverlongChapters(indexes, data: mappedTextFile.data)
         }
 
         return splitIntoMappedBlockIndexes(mappedTextFile, blockBytes: 12 * 1024, bookTitle: bookTitle)
+    }
+
+    /// Chapters above this size get split into "標題(1)(2)…" pieces (Legado
+    /// splitLongChapter idea, threshold matches its 100KB): a regex mis-split or
+    /// a genuinely huge chapter otherwise dominates progress granularity, TTS
+    /// chapter units, and single-chapter layout cost.
+    private static let maxChapterBytesBeforeSplit = 100 * 1024
+
+    private static func splittingOverlongChapters(
+        _ indexes: [TXTMappedChapterIndex],
+        data: Data
+    ) -> [TXTMappedChapterIndex] {
+        guard indexes.contains(where: { $0.byteRange.count > maxChapterBytesBeforeSplit }) else {
+            return indexes
+        }
+        var result: [TXTMappedChapterIndex] = []
+        for chapter in indexes {
+            guard chapter.byteRange.count > maxChapterBytesBeforeSplit else {
+                result.append(
+                    TXTMappedChapterIndex(
+                        index: result.count,
+                        title: chapter.title,
+                        byteRange: chapter.byteRange
+                    )
+                )
+                continue
+            }
+            let upper = chapter.byteRange.upperBound
+            var cursor = chapter.byteRange.lowerBound
+            var piece = 0
+            let firstPieceResultIndex = result.count
+            while cursor < upper {
+                var end = min(cursor + maxChapterBytesBeforeSplit, upper)
+                if end < upper {
+                    // Extend to the next line break so pieces split between paragraphs.
+                    let lookaheadLimit = min(upper, end + 1024)
+                    var look = end
+                    while look < lookaheadLimit, data[look] != 0x0A, data[look] != 0x0D {
+                        look += 1
+                    }
+                    if look < upper { end = look }
+                }
+                if end <= cursor { end = min(cursor + 1, upper) }
+                piece += 1
+                result.append(
+                    TXTMappedChapterIndex(
+                        index: result.count,
+                        title: "\(chapter.title)(\(piece))",
+                        byteRange: cursor..<end
+                    )
+                )
+                cursor = end
+                while cursor < upper, data[cursor] == 0x0A || data[cursor] == 0x0D {
+                    cursor += 1
+                }
+            }
+            // The newline lookahead can swallow the remainder: a single-piece
+            // "split" keeps its original title.
+            if piece == 1 {
+                let only = result[firstPieceResultIndex]
+                result[firstPieceResultIndex] = TXTMappedChapterIndex(
+                    index: only.index,
+                    title: chapter.title,
+                    byteRange: only.byteRange
+                )
+            }
+        }
+        return result
     }
 
     static func loadCachedIndexes(bookId: UUID, fileSize: Int, fingerprint: String, encoding: String.Encoding) -> [TXTMappedChapterIndex]? {
         let cacheURL = Self.cacheURL(for: bookId)
         guard let data = try? Data(contentsOf: cacheURL),
               let cache = try? JSONDecoder().decode(TXTChapterIndexCache.self, from: data),
-              cache.version == 4,
+              cache.version == 5,
               cache.fileSize == fileSize,
               cache.fingerprint == fingerprint,
               cache.encodingRawValue == encoding.rawValue
@@ -174,7 +242,9 @@ enum TXTChapterParser {
         let cacheDir = cacheDirectoryURL()
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         let codable = indexes.map { CodableChapterIndex(index: $0.index, title: $0.title, lower: $0.byteRange.lowerBound, upper: $0.byteRange.upperBound) }
-        let cache = TXTChapterIndexCache(version: 4, fileSize: fileSize, fingerprint: fingerprint, encodingRawValue: encoding.rawValue, indexes: codable)
+        // v5: overlong chapters are auto-split into "(1)(2)…" pieces; older
+        // cached lists don't have the split and must re-parse.
+        let cache = TXTChapterIndexCache(version: 5, fileSize: fileSize, fingerprint: fingerprint, encodingRawValue: encoding.rawValue, indexes: codable)
         guard let data = try? JSONEncoder().encode(cache) else { return }
         try? data.write(to: Self.cacheURL(for: bookId))
     }
@@ -369,20 +439,121 @@ enum TXTChapterParser {
         return deduped
     }
 
+    /// ASCII characters a chapter/special title line may start with:
+    /// C (Chapter/CHAPTER), P/p (Part/PART/Prologue/Preface), E/e (Epilogue),
+    /// I/i (Introduction); lowercase c included defensively.
+    private static let titleStartASCII: Set<UInt8> = [
+        0x43, 0x63, 0x50, 0x70, 0x45, 0x65, 0x49, 0x69, // C c P p E e I i
+    ]
+
+    /// UTF-8 3-byte sequences (packed b0<<16|b1<<8|b2) of every CJK character the
+    /// chapter/special patterns can start with. Must stay in sync with
+    /// `chapterPatterns` (第/卷) and `specialTitlePattern` (序/楔/前/引/尾/終/终/後/后/番/結/结).
+    private static let titleStartCJKPacked: Set<UInt32> = [
+        0xE7ACAC, // 第
+        0xE58DB7, // 卷
+        0xE5BA8F, // 序
+        0xE6A594, // 楔
+        0xE5898D, // 前
+        0xE5BC95, // 引
+        0xE5B0BE, // 尾
+        0xE7B582, // 終
+        0xE7BB88, // 终
+        0xE5BE8C, // 後
+        0xE5908E, // 后
+        0xE795AA, // 番
+        0xE7B590, // 結
+        0xE7BB93, // 结
+    ]
+
+    /// Fast UTF-8 pre-filter: a line can only be a title when its first
+    /// non-whitespace character is one of the pattern-start characters above.
+    /// Inspecting 1–3 raw bytes rejects ~99% of body lines without decoding them
+    /// into Strings or running any regex — the per-line all-patterns sweep was
+    /// the dominant cost of first-open chapter indexing on large files.
+    /// The whitespace skip mirrors the patterns' leading `\s*` (space, tab,
+    /// vertical tab, form feed, U+3000 ideographic space, U+00A0 NBSP).
+    private static func utf8LineMayBeTitle(_ data: Data, lineRange: Range<Int>) -> Bool {
+        var i = lineRange.lowerBound
+        let end = lineRange.upperBound
+        while i < end {
+            let byte = data[i]
+            if byte == 0x20 || byte == 0x09 || byte == 0x0B || byte == 0x0C {
+                i += 1
+                continue
+            }
+            if byte == 0xE3, i + 2 < end, data[i + 1] == 0x80, data[i + 2] == 0x80 {
+                i += 3
+                continue
+            }
+            if byte == 0xC2, i + 1 < end, data[i + 1] == 0xA0 {
+                i += 2
+                continue
+            }
+            break
+        }
+        guard i < end else { return false } // blank line
+        let b0 = data[i]
+        if b0 < 0x80 {
+            return titleStartASCII.contains(b0)
+        }
+        guard i + 2 < end else { return false }
+        let packed = (UInt32(b0) << 16) | (UInt32(data[i + 1]) << 8) | UInt32(data[i + 2])
+        return titleStartCJKPacked.contains(packed)
+    }
+
+    /// Sample window for rule selection (Legado getTocRule idea): within the
+    /// first 512KB every pattern competes; past it, the winning pattern is
+    /// locked and the remainder of the file only runs the winner (+ volume
+    /// patterns when the winner is chapter-level) instead of all 11.
+    private static let patternSampleByteLimit = 512 * 1024
+
+    /// Selection mirror of the final pass: first bucket with ≥2 matches wins.
+    /// nil = no winner yet → keep testing every pattern.
+    private static func lockedPatternIndices(fromBuckets buckets: [[MappedTitleMatch]]) -> [Int]? {
+        guard let winner = buckets.indices.first(where: { buckets[$0].count >= 2 }) else {
+            return nil
+        }
+        let chapterLevelIndexes: Set<Int> = [0, 1, 3]
+        let volumeLevelIndexes: [Int] = [2, 4, 5, 6]
+        if chapterLevelIndexes.contains(winner) {
+            return [winner] + volumeLevelIndexes
+        }
+        return [winner]
+    }
+
     private static func detectMappedTitleMatches(in mappedTextFile: TXTMappedTextFile) -> [MappedTitleMatch] {
         // Allocate one bucket per chapterPattern
         var buckets: [[MappedTitleMatch]] = Array(repeating: [], count: chapterPatterns.count)
         var specialMatches: [MappedTitleMatch] = []
 
-        enumerateMappedLines(in: mappedTextFile) { lineByteRange, lineText in
+        let data = mappedTextFile.data
+        let isUTF8 = mappedTextFile.encoding == .utf8
+
+        // nil while sampling (or when no rule has won yet) → test all patterns.
+        var lockedIndices: [Int]? = nil
+
+        enumerateMappedLines(in: mappedTextFile) { lineByteRange, decodeLine in
             // Skip lines longer than 200 bytes (chapter titles are never that long)
             guard lineByteRange.count <= 200 else { return }
 
+            // Byte-level gate (UTF-8 only; other encodings take the full path).
+            if isUTF8, !utf8LineMayBeTitle(data, lineRange: lineByteRange) { return }
+
+            // Past the sample window, try to lock the winning pattern. Locking
+            // mid-file is safe: buckets frozen below 2 matches can never win the
+            // final "first with ≥2" selection, so the outcome is unchanged.
+            if lockedIndices == nil, lineByteRange.lowerBound >= patternSampleByteLimit {
+                lockedIndices = lockedPatternIndices(fromBuckets: buckets)
+            }
+
             // Decode the line and test patterns
+            let lineText = decodeLine()
             let nsLine = lineText as NSString
             let fullRange = NSRange(location: 0, length: nsLine.length)
 
-            for (i, regex) in chapterPatterns.enumerated() {
+            for i in lockedIndices ?? Array(chapterPatterns.indices) {
+                let regex = chapterPatterns[i]
                 guard let match = regex.firstMatch(in: lineText, range: fullRange),
                       let range = Range(match.range, in: lineText) else { continue }
                 let title = String(lineText[range]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -559,7 +730,13 @@ enum TXTChapterParser {
         return result
     }
 
-    private static func enumerateMappedLines(in mappedTextFile: TXTMappedTextFile, _ body: (Range<Int>, String) -> Void) {
+    /// Enumerates line byte-ranges. The line's text is provided as a lazy
+    /// `decodeLine` closure so callers that reject a line early (byte pre-filter,
+    /// length gate) never pay the subdata + String decode for it.
+    private static func enumerateMappedLines(
+        in mappedTextFile: TXTMappedTextFile,
+        _ body: (Range<Int>, () -> String) -> Void
+    ) {
         let data = mappedTextFile.data
         let count = data.count
         guard count > 0 else { return }
@@ -571,7 +748,7 @@ enum TXTChapterParser {
             let byte = data[cursor]
             if byte == 0x0A || byte == 0x0D {
                 let range = lineStart..<cursor
-                body(range, mappedTextFile.string(in: range))
+                body(range, { mappedTextFile.string(in: range) })
 
                 if byte == 0x0D, cursor + 1 < count, data[cursor + 1] == 0x0A {
                     cursor += 1
@@ -585,7 +762,7 @@ enum TXTChapterParser {
 
         if lineStart < count {
             let range = lineStart..<count
-            body(range, mappedTextFile.string(in: range))
+            body(range, { mappedTextFile.string(in: range) })
         }
     }
 

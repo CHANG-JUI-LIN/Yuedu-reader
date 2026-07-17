@@ -148,6 +148,20 @@ final class CoreTextPaginator {
         /// around the float. Empty for the common no-float case. Used to rebuild the notched frame path at
         /// both draw time and attachment extraction so layout matches pagination.
         var pageFloatNotches: [Int: CGRect] = [:]
+        /// True while this layout covers only the leading page(s) of the chapter
+        /// (two-phase chapter open): the full layout replaces it as soon as
+        /// background pagination completes. Partial layouts are never cached.
+        var isPartial: Bool = false
+        /// For a partial layout: projected total page count (>= pageRanges.count),
+        /// extrapolated from the first page's character density. nil when complete.
+        var estimatedPageCount: Int? = nil
+
+        /// Page count for global-offset/progress math: the real count when
+        /// complete, the extrapolated estimate while partial.
+        var displayPageCount: Int {
+            guard isPartial else { return pageRanges.count }
+            return max(pageRanges.count, estimatedPageCount ?? pageRanges.count)
+        }
 
         /// Updates only text colors without repaginating (color does not affect line wrapping).
         /// Ranges with explicitly CSS-specified foreground colors (marked with cssSpecifiedForegroundColorAttribute) retain their original color.
@@ -275,7 +289,9 @@ final class CoreTextPaginator {
                 backgroundColor: effectiveBackgroundColor,
                 contentInsets: contentInsets,
                 writingMode: writingMode,
-                pageFloatNotches: pageFloatNotches
+                pageFloatNotches: pageFloatNotches,
+                isPartial: isPartial,
+                estimatedPageCount: estimatedPageCount
             )
         }
     }
@@ -454,6 +470,59 @@ final class CoreTextPaginator {
         return layout
     }
 
+    /// Fast first-page-only pagination for the two-phase chapter open (Legado
+    /// TextChapterLayout idea: show page 1 while the rest keeps laying out).
+    /// Returns the cached FULL layout when available (already instant), nil for
+    /// image pages (single-page anyway), otherwise a `isPartial` layout covering
+    /// just the first page. Partial layouts never enter the cache.
+    func paginateFirstPage(
+        spineIndex: Int,
+        attrStr: NSAttributedString,
+        imagePage: HTMLAttributedStringBuilder.ImagePage? = nil,
+        pageBackgroundImage: UIImage? = nil,
+        pageBackgroundColor: UIColor? = nil,
+        anchorOffsets: [String: Int] = [:],
+        renderSize: CGSize,
+        fontSize: CGFloat,
+        lineSpacing: CGFloat = 0,
+        paragraphSpacing: CGFloat = 0,
+        letterSpacing: CGFloat = 0,
+        contentInsets: UIEdgeInsets = .zero,
+        writingMode: ReaderWritingMode = .horizontal
+    ) async -> ChapterLayout? {
+        guard imagePage == nil else { return nil }
+        let key = CacheKey(spineIndex: spineIndex,
+                           width: renderSize.width,
+                           height: renderSize.height,
+                           fontSize: fontSize,
+                           marginH: contentInsets.left,
+                           marginV: contentInsets.top,
+                           bottomInset: contentInsets.bottom,
+                           lineSpacing: lineSpacing,
+                           paragraphSpacing: paragraphSpacing,
+                           letterSpacing: letterSpacing,
+                           writingMode: writingMode,
+                           contentFingerprint: Self.layoutFingerprint(for: attrStr),
+                           pageBackgroundColorFingerprint: Self.colorFingerprint(pageBackgroundColor))
+        if let cached = cachedLayout(for: key) {
+            return cached
+        }
+        return await Task.detached(priority: .userInitiated) {
+            Self.computeLayout(spineIndex: spineIndex,
+                               attrStr: attrStr,
+                               imagePage: nil,
+                               pageBackgroundImage: pageBackgroundImage,
+                               pageBackgroundColor: pageBackgroundColor,
+                               anchorOffsets: anchorOffsets,
+                               renderSize: renderSize,
+                               fontSize: fontSize,
+                               lineSpacing: lineSpacing,
+                               contentInsets: contentInsets,
+                               writingMode: writingMode,
+                               maxPages: 1)
+        }.value
+    }
+
     private func cachedLayout(for key: CacheKey) -> ChapterLayout? {
         cacheLock.lock()
         defer { cacheLock.unlock() }
@@ -495,7 +564,8 @@ final class CoreTextPaginator {
         fontSize: CGFloat,
         lineSpacing: CGFloat,
         contentInsets: UIEdgeInsets,
-        writingMode: ReaderWritingMode
+        writingMode: ReaderWritingMode,
+        maxPages: Int? = nil
     ) -> ChapterLayout {
         let contentInsets = gridAlignedContentInsets(
             contentInsets,
@@ -667,6 +737,12 @@ final class CoreTextPaginator {
                 pageFloatAttachments[pageIndex, default: []].append(floatAttachment)
             }
             currentLocation += advance
+
+            // Two-phase chapter open: the partial pass stops after the leading
+            // page(s); the caller shows them while the full pass runs.
+            if let maxPages, pageRanges.count >= maxPages {
+                break
+            }
         }
         if writingMode.isVertical {
             let rangePreview = pageRanges.prefix(6).map { "(\($0.location),\($0.length))" }.joined(separator: ",")
@@ -721,6 +797,20 @@ final class CoreTextPaginator {
             writingMode: writingMode
         )
 
+        // A capped run that stopped before consuming the whole string is a
+        // partial layout; extrapolate its total page count from the character
+        // density of the pages it did lay out.
+        let isPartial = currentLocation < attrStr.length
+        var estimatedPageCount: Int? = nil
+        if isPartial {
+            let coveredLength = max(1, currentLocation)
+            let density = Double(attrStr.length) / Double(coveredLength)
+            estimatedPageCount = max(
+                pageRanges.count + 1,
+                Int((Double(pageRanges.count) * density).rounded(.up))
+            )
+        }
+
         return ChapterLayout(
             spineIndex: spineIndex,
             attributedString: attrStr,
@@ -739,7 +829,9 @@ final class CoreTextPaginator {
             backgroundColor: effectiveBackgroundColor,
             contentInsets: contentInsets,
             writingMode: writingMode,
-            pageFloatNotches: pageFloatNotches
+            pageFloatNotches: pageFloatNotches,
+            isPartial: isPartial,
+            estimatedPageCount: estimatedPageCount
         )
     }
 

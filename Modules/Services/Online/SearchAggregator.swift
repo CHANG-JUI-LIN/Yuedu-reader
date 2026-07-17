@@ -224,8 +224,15 @@ class SearchBook: Identifiable, ObservableObject {
 
 @MainActor
 class SearchAggregator: ObservableObject {
+    /// UI-facing result list. Updated from `internalResults` through a throttled
+    /// flush (`scheduleResultsFlush`) so that a burst of source returns doesn't
+    /// trigger hundreds of SwiftUI list diffs — merging/sorting always operates
+    /// on `internalResults`, never on this property.
     @Published var results: [SearchBook] = []
     @Published var isSearching = false
+    /// True when at least one source that answered successfully has not yet been
+    /// exhausted by 載入更多 rounds — drives the "load more" row in the UI.
+    @Published private(set) var hasMoreResults = false
     /// Paused — either automatically (auto-pause threshold reached) or manually
     /// (floating pause control). Results stay on screen and `resume()` continues
     /// over the sources that had not finished.
@@ -276,8 +283,18 @@ class SearchAggregator: ObservableObject {
     /// Current search task (used for cancellation)
     private var searchTask: Task<Void, Never>?
 
-    /// Dedup table: name key → indices of `results` sharing that title. Within a
-    /// bucket, candidates merge only when their authors are compatible.
+    /// Authoritative merged results. `results` mirrors this array at a throttled
+    /// cadence; keeping the working copy un-published means per-book merges and
+    /// per-batch sorts don't each pay a SwiftUI diff.
+    private var internalResults: [SearchBook] = []
+
+    /// Throttled-flush bookkeeping (`internalResults` → `results`).
+    private var resultsFlushScheduled = false
+    private var lastResultsFlushUptime: TimeInterval = 0
+    private let resultsFlushInterval: TimeInterval = 0.25
+
+    /// Dedup table: name key → indices of `internalResults` sharing that title.
+    /// Within a bucket, candidates merge only when their authors are compatible.
     private var deduplicationMap: [String: [Int]] = [:]
 
     // Resume bookkeeping. `allSources` is the full source list for the current
@@ -289,6 +306,18 @@ class SearchAggregator: ObservableObject {
     private var completedSourceIds: Set<UUID> = []
     private var currentQuery = ""
     private var autoPausePolicy = SearchAutoPausePolicy(count: 0)
+
+    // 載入更多 (cross-source paging, Legado-style). `searchPage` is the page all
+    // sources are currently at; a source that stops yielding NEW merged results
+    // (or fails a page) enters `exhaustedSourceIds` and is skipped on the next
+    // round — Legado's exhaustedSources idea. Only sources that answered page 1
+    // successfully (`successfulSourceIds`) are paged at all.
+    private var searchPage = 1
+    private var successfulSourceIds: Set<UUID> = []
+    private var exhaustedSourceIds: Set<UUID> = []
+    /// Upper bound on 載入更多 rounds so a misbehaving source that repeats
+    /// results forever cannot drive unbounded fan-outs.
+    private let maxSearchPages = 5
 
     // MARK: - Start Search
 
@@ -311,9 +340,16 @@ class SearchAggregator: ObservableObject {
         }
 
         // Reset state for a brand-new query.
+        internalResults = []
         results = []
+        resultsFlushScheduled = false
+        lastResultsFlushUptime = 0
         deduplicationMap = [:]
         completedSourceIds = []
+        searchPage = 1
+        successfulSourceIds = []
+        exhaustedSourceIds = []
+        hasMoreResults = false
         progress = SearchProgress(total: activeSources.count, skipped: skippedCount)
         isPaused = false
 
@@ -398,11 +434,12 @@ class SearchAggregator: ObservableObject {
                     guard !Task.isCancelled, let self = self else { break }
 
                     switch batchResult {
-                    case .success(let sourceId, let books):
+                    case .success(let sourceId, let books, let elapsedMs):
                         await self.mergeBatch(books, query: q)
                         self.progress.completed += 1
                         self.completedSourceIds.insert(sourceId)
-                        SourceHealthStore.shared.recordSuccess(sourceId)
+                        self.successfulSourceIds.insert(sourceId)
+                        SourceHealthStore.shared.recordSuccess(sourceId, responseMs: elapsedMs)
                     case .timeout(let sourceId):
                         self.progress.timedOut += 1
                         self.completedSourceIds.insert(sourceId)
@@ -416,6 +453,7 @@ class SearchAggregator: ObservableObject {
                     // Auto-pause enters the same resumable paused state as the
                     // manual control, so the user can tap to continue the rest.
                     if self.shouldAutoPause(query: q, policy: policy) {
+                        self.flushResultsNow()
                         self.isPaused = true
                         self.isSearching = false
                         group.cancelAll()
@@ -429,6 +467,88 @@ class SearchAggregator: ObservableObject {
             // Only a run that finished on its own clears the flag; a paused or
             // superseded run is cancelled and leaves state for resume().
             guard let self, !Task.isCancelled else { return }
+            self.flushResultsNow()
+            self.updateHasMoreResults()
+            self.isSearching = false
+        }
+    }
+
+    // MARK: - 載入更多 (cross-source paging)
+
+    private var loadMoreCandidates: [BookSource] {
+        allSources.filter {
+            successfulSourceIds.contains($0.id) && !exhaustedSourceIds.contains($0.id)
+        }
+    }
+
+    private func updateHasMoreResults() {
+        hasMoreResults = searchPage < maxSearchPages
+            && !internalResults.isEmpty
+            && !loadMoreCandidates.isEmpty
+    }
+
+    /// Fetches the next result page from every source that answered the previous
+    /// round and hasn't been exhausted. A source contributing zero NEW merged
+    /// origins (or failing the page) is exhausted and skipped from then on.
+    func loadMore() {
+        guard !isSearching, !isPaused, hasMoreResults else { return }
+        let candidates = loadMoreCandidates
+        guard !candidates.isEmpty, searchPage < maxSearchPages else {
+            hasMoreResults = false
+            return
+        }
+        searchPage += 1
+        let page = searchPage
+        let q = currentQuery
+        let concurrency = min(maxConcurrency, candidates.count)
+        let timeout = perSourceTimeout
+        let aggregateTimeout = perAggregateSourceTimeout
+        isSearching = true
+
+        searchTask = Task { [weak self] in
+            await withTaskGroup(of: (UUID, [OnlineBook]?, Double).self) { group in
+                var nextSourceIndex = 0
+
+                func enqueueNextSource() {
+                    guard nextSourceIndex < candidates.count else { return }
+                    let source = candidates[nextSourceIndex]
+                    nextSourceIndex += 1
+                    let sourceTimeout = Self.searchTimeout(
+                        for: source, normal: timeout, aggregate: aggregateTimeout
+                    )
+                    group.addTask {
+                        guard !Task.isCancelled else { return (source.id, nil, 0) }
+                        let outcome = await Self.searchPageWithTimeout(
+                            query: q, source: source, page: page, timeout: sourceTimeout
+                        )
+                        return (source.id, outcome.books, outcome.elapsedMs)
+                    }
+                }
+
+                for _ in 0..<concurrency {
+                    enqueueNextSource()
+                }
+
+                while let (sourceId, books, elapsedMs) = await group.next() {
+                    guard !Task.isCancelled, let self else { break }
+                    if let books {
+                        let newlyMerged = await self.mergeBatch(books, query: q)
+                        if newlyMerged == 0 {
+                            self.exhaustedSourceIds.insert(sourceId)
+                        }
+                        SourceHealthStore.shared.recordSuccess(sourceId, responseMs: elapsedMs)
+                    } else {
+                        // A failed/timed-out later page: stop paging that source,
+                        // but don't strike its health — page 1 already succeeded.
+                        self.exhaustedSourceIds.insert(sourceId)
+                    }
+                    enqueueNextSource()
+                }
+            }
+
+            guard let self, !Task.isCancelled else { return }
+            self.flushResultsNow()
+            self.updateHasMoreResults()
             self.isSearching = false
         }
     }
@@ -441,6 +561,7 @@ class SearchAggregator: ObservableObject {
     func pause() {
         guard isSearching else { return }
         searchTask?.cancel()
+        flushResultsNow()
         isSearching = false
         isPaused = true
     }
@@ -456,8 +577,35 @@ class SearchAggregator: ObservableObject {
 
     func cancel() {
         searchTask?.cancel()
+        flushResultsNow()
         isSearching = false
         isPaused = false
+    }
+
+    // MARK: - Throttled publish (internalResults → results)
+
+    /// Publish at most every `resultsFlushInterval`. A trailing flush is always
+    /// scheduled so the last batch of a burst is never dropped.
+    private func scheduleResultsFlush() {
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastResultsFlushUptime >= resultsFlushInterval {
+            flushResultsNow()
+            return
+        }
+        guard !resultsFlushScheduled else { return }
+        resultsFlushScheduled = true
+        let delay = resultsFlushInterval - (now - lastResultsFlushUptime)
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(0, delay) * 1_000_000_000))
+            guard let self else { return }
+            self.resultsFlushScheduled = false
+            self.flushResultsNow()
+        }
+    }
+
+    private func flushResultsNow() {
+        lastResultsFlushUptime = ProcessInfo.processInfo.systemUptime
+        results = internalResults
     }
 
     // MARK: - Single-source search with timeout (static method, no actor isolation issues)
@@ -468,7 +616,7 @@ class SearchAggregator: ObservableObject {
     // Whichever completes first is returned; the other is cancelAll()
 
     private enum SearchBatchResult: Sendable {
-        case success(UUID, [OnlineBook])
+        case success(UUID, [OnlineBook], elapsedMs: Double)
         case timeout(UUID)
         case failed(UUID)
     }
@@ -480,6 +628,7 @@ class SearchAggregator: ObservableObject {
         onBatch: @escaping @Sendable ([OnlineBook]) async -> Void
     ) async -> SearchBatchResult {
         let sourceId = source.id
+        let startedAt = ProcessInfo.processInfo.systemUptime
         do {
             return try await withThrowingTaskGroup(
                 of: BookSourceFetcher.SearchStreamingOutcome.self
@@ -499,7 +648,8 @@ class SearchAggregator: ObservableObject {
                     throw CancellationError()
                 }
                 group.cancelAll()
-                return .success(sourceId, result.streamed ? [] : result.books)
+                let elapsedMs = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
+                return .success(sourceId, result.streamed ? [] : result.books, elapsedMs: elapsedMs)
             }
         } catch is CancellationError {
             return .failed(sourceId)
@@ -507,6 +657,38 @@ class SearchAggregator: ObservableObject {
             return .timeout(sourceId)
         } catch {
             return .failed(sourceId)
+        }
+    }
+
+    /// One page-N fetch for 載入更多: plain (non-streaming) search with the same
+    /// per-source timeout discipline. nil = failed or timed out.
+    private static func searchPageWithTimeout(
+        query: String,
+        source: BookSource,
+        page: Int,
+        timeout: UInt64
+    ) async -> (books: [OnlineBook]?, elapsedMs: Double) {
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        do {
+            return try await withThrowingTaskGroup(of: [OnlineBook].self) { group in
+                group.addTask {
+                    try await BookSourceFetcher.shared.search(
+                        query: query, in: source, page: page
+                    )
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: timeout * 1_000_000_000)
+                    throw SearchTimeoutError()
+                }
+                guard let books = try await group.next() else {
+                    throw CancellationError()
+                }
+                group.cancelAll()
+                let elapsedMs = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
+                return (books, elapsedMs)
+            }
+        } catch {
+            return (nil, (ProcessInfo.processInfo.systemUptime - startedAt) * 1000)
         }
     }
 
@@ -521,7 +703,7 @@ class SearchAggregator: ObservableObject {
         // search collapses every source into one `SearchBook`, so counting books
         // would stay at ~1 and the threshold would never be reached — that was
         // why auto-pause appeared to do nothing ("自動暫停不生效").
-        for result in results {
+        for result in internalResults {
             let hits = result.origins.count
             if matchScore(name: result.name, query: normalizedQuery) == 3 {
                 exactCount += hits
@@ -534,20 +716,31 @@ class SearchAggregator: ObservableObject {
 
     // MARK: - Merge a batch of results (dedup + aggregate)
     //
-    // Executed immediately whenever any single source returns results:
-    // 1. Build BookOrigin
-    // 2. Check dedup table by name+author key
-    // 3. Already exists → merge into origins array
-    // 4. Does not exist → create new SearchBook
+    // Executed whenever any single source returns results:
+    // 1. Build BookOrigin per book, dedup/merge into `internalResults`
+    // 2. Sort ONCE per batch (not per book — a full sort per merged book was
+    //    O(books × N log N) on the main actor and re-published every mutation)
+    // 3. Publish through the throttled flush
 
-    private func mergeBatch(_ books: [OnlineBook], query: String) async {
+    /// Returns how many books were newly merged (new titles or new origins) —
+    /// the paging loop uses 0 to mark a source as exhausted.
+    @discardableResult
+    private func mergeBatch(_ books: [OnlineBook], query: String) async -> Int {
         let q = Self.normalizedSearchQuery(query)
+        var mergedCount = 0
+        var processed = 0
         for book in books {
             if Task.isCancelled { break }
-            guard mergeBook(book, normalizedQuery: q) else { continue }
-            sortResults(query: q)
-            await Task.yield()
+            if mergeBook(book, normalizedQuery: q) { mergedCount += 1 }
+            processed += 1
+            // Aggregate sources can stream 1000+ books in one batch; keep the
+            // main actor responsive without paying a yield per book.
+            if processed % 200 == 0 { await Task.yield() }
         }
+        guard mergedCount > 0, !Task.isCancelled else { return mergedCount }
+        sortResults(query: q)
+        scheduleResultsFlush()
+        return mergedCount
     }
 
     @discardableResult
@@ -581,23 +774,29 @@ class SearchAggregator: ObservableObject {
         // clearly different author stays a separate book.
         let nameKey = SearchBook.nameKey(book.name)
         let existingIndex = deduplicationMap[nameKey]?.first { idx in
-            idx < results.count
+            idx < internalResults.count
                 && SearchBook.isLikelySameBook(
                     name: book.name, author: book.author,
-                    name: results[idx].name, author: results[idx].author)
+                    name: internalResults[idx].name, author: internalResults[idx].author)
         }
 
         if let existingIndex {
+            // Same origin already merged (a later page repeating page-1 items,
+            // or an aggregate channel echoing) → not new information.
+            let duplicate = internalResults[existingIndex].origins.contains {
+                $0.sourceId == origin.sourceId && $0.bookUrl == origin.bookUrl
+            }
+            guard !duplicate else { return false }
             // Compatible match -> merge into existing result's origin array.
-            results[existingIndex].origins.append(origin)
+            internalResults[existingIndex].origins.append(origin)
         } else {
             let searchBook = SearchBook(
                 name: book.name,
                 author: book.author,
                 origins: [origin]
             )
-            deduplicationMap[nameKey, default: []].append(results.count)
-            results.append(searchBook)
+            deduplicationMap[nameKey, default: []].append(internalResults.count)
+            internalResults.append(searchBook)
         }
         return true
     }
@@ -619,7 +818,7 @@ class SearchAggregator: ObservableObject {
     private func sortResults(query: String) {
         let q = Self.normalizedSearchText(query)
 
-        results.sort { a, b in
+        internalResults.sort { a, b in
             let aScore = matchScore(name: a.name, query: q)
             let bScore = matchScore(name: b.name, query: q)
 
@@ -654,7 +853,7 @@ class SearchAggregator: ObservableObject {
     /// Rebuild dedup table (indices change after sorting)
     private func rebuildDeduplicationMap() {
         deduplicationMap.removeAll(keepingCapacity: true)
-        for (index, book) in results.enumerated() {
+        for (index, book) in internalResults.enumerated() {
             deduplicationMap[SearchBook.nameKey(book.name), default: []].append(index)
         }
     }

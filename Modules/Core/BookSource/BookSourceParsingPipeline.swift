@@ -9,10 +9,13 @@ struct BookSourceParsingPipeline {
     func parseSearchResults(
         html: String,
         baseURL: String,
-        source: BookSource
+        source: BookSource,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil
     ) throws -> [OnlineBook] {
         let bridge = ModernParserBridge(source: source)
-        return try bridge.parseSearchResults(html: html, baseURL: baseURL, source: source)
+        return try bridge.parseSearchResults(
+            html: html, baseURL: baseURL, source: source, earlyFilter: earlyFilter
+        )
     }
 
     // MARK: - Book Details

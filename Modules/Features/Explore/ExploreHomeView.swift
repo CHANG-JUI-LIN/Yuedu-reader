@@ -158,7 +158,7 @@ struct ExploreHomeView: View {
                 Label(localized("切換發現頁"), systemImage: "books.vertical")
             }
             .disabled(discover.exploreSources.count <= 1)
-            Button { discover.reload() } label: {
+            Button { discover.reload(forceRefresh: true) } label: {
                 Label(localized("換一批"), systemImage: "arrow.triangle.2.circlepath")
             }
         } label: {

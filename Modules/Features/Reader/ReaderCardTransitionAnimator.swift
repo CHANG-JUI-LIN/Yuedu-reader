@@ -27,6 +27,12 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
     private var isHoldingOpenAfterCancellationSettle = false
     private var completionDelivered = false
     private var isCompletingTransition = false
+    /// Cached shadow-path dimensions so we avoid rebuilding the CGPath every
+    /// display-link frame. Only the shadow view size or corner radius changes
+    /// trigger a new path.
+    private var cachedShadowSize: CGSize = .zero
+    private var cachedShadowRadius: CGFloat = 0
+    private var cachedShadowPath: CGPath?
 
     init(
         operation: Operation,
@@ -390,6 +396,9 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         cancellationSettle = nil
         cancellationSettleCompletion = nil
         isHoldingOpenAfterCancellationSettle = false
+        cachedShadowSize = .zero
+        cachedShadowRadius = 0
+        cachedShadowPath = nil
 
         guard let state = runtimeState else { return }
         for view in [state.fromView, state.toView] {
@@ -525,10 +534,19 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         stage.shadowView.alpha = 1
         stage.shadowView.frame = visual.frame
         stage.shadowView.layer.shadowOpacity = Float(visual.shadowOpacity)
-        stage.shadowView.layer.shadowPath = UIBezierPath(
-            roundedRect: CGRect(origin: .zero, size: visual.frame.size),
-            cornerRadius: visual.cornerRadius
-        ).cgPath
+        let shadowSize = visual.frame.size
+        let shadowRadius = visual.cornerRadius
+        let sizeDelta = abs(shadowSize.width - cachedShadowSize.width)
+            + abs(shadowSize.height - cachedShadowSize.height)
+        if sizeDelta > 0.5 || abs(shadowRadius - cachedShadowRadius) > 0.5 {
+            cachedShadowPath = UIBezierPath(
+                roundedRect: CGRect(origin: .zero, size: shadowSize),
+                cornerRadius: shadowRadius
+            ).cgPath
+            cachedShadowSize = shadowSize
+            cachedShadowRadius = shadowRadius
+        }
+        stage.shadowView.layer.shadowPath = cachedShadowPath
 
         // The cover assembly rides the card geometry without clipping, so
         // the hinging cover sweeps outside the card like a real front cover.

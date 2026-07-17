@@ -222,21 +222,42 @@ struct BookSearchView: View {
 
     // MARK: Result List
     private var resultList: some View {
-        List(aggregator.results) { book in
-            NavigationLink {
-                if BookSourceStore.shared.isAudiobook(book) {
-                    AudiobookDetailView(searchBook: book)
-                        .environmentObject(bookStore)
-                } else {
-                    OnlineBookView(searchBook: book)
-                        .environmentObject(bookStore)
+        List {
+            ForEach(aggregator.results) { book in
+                NavigationLink {
+                    if BookSourceStore.shared.isAudiobook(book) {
+                        AudiobookDetailView(searchBook: book)
+                            .environmentObject(bookStore)
+                    } else {
+                        OnlineBookView(searchBook: book)
+                            .environmentObject(bookStore)
+                    }
+                } label: {
+                    AggregatedResultRow(book: book)
                 }
-            } label: {
-                AggregatedResultRow(book: book)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                .listRowBackground(Color.clear)
             }
-            .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-            .listRowBackground(Color.clear)
+
+            // 載入更多: fetch the next result page from every source that
+            // answered the last round and hasn't been exhausted yet.
+            if aggregator.hasMoreResults, !aggregator.isSearching, !aggregator.isPaused {
+                Button {
+                    aggregator.loadMore()
+                } label: {
+                    HStack {
+                        Spacer()
+                        Label(localized("載入更多"), systemImage: "arrow.down.circle")
+                            .font(DSFont.subheadline)
+                            .foregroundColor(.accentColor)
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)

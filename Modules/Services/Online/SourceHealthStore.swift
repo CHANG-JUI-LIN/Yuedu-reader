@@ -23,6 +23,9 @@ final class SourceHealthStore {
     private struct Health: Codable {
         var consecutiveFailures: Int = 0
         var cooldownUntil: Date?
+        /// Exponential moving average of successful search round-trips, in
+        /// milliseconds. Optional so records persisted by older builds decode.
+        var averageResponseMs: Double?
     }
 
     /// Consecutive timeouts/failures before a source enters cooldown.
@@ -67,10 +70,32 @@ final class SourceHealthStore {
     }
 
     /// A source returned without timing out → it is reachable; clear any strikes.
-    func recordSuccess(_ id: UUID) {
-        guard map[id.uuidString] != nil else { return }
-        map[id.uuidString] = nil
+    /// When the caller measured the round-trip, fold it into the source's
+    /// response-time EMA (used to rank 換源 candidates by speed).
+    func recordSuccess(_ id: UUID, responseMs: Double? = nil) {
+        var health = map[id.uuidString] ?? Health()
+        health.consecutiveFailures = 0
+        health.cooldownUntil = nil
+        if let responseMs, responseMs > 0 {
+            if let avg = health.averageResponseMs {
+                health.averageResponseMs = avg * 0.7 + responseMs * 0.3
+            } else {
+                health.averageResponseMs = responseMs
+            }
+        }
+        // Nothing worth persisting → drop the record entirely (old behavior).
+        if health.averageResponseMs == nil {
+            map[id.uuidString] = nil
+        } else {
+            map[id.uuidString] = health
+        }
         persist()
+    }
+
+    /// Ranking key for "fastest first" ordering (換源 candidate list): measured
+    /// sources sort by their EMA; unmeasured ones sort after any measured one.
+    func responseSortKey(_ id: UUID) -> Double {
+        map[id.uuidString]?.averageResponseMs ?? Double.greatestFiniteMagnitude
     }
 
     /// A source timed out or hard-failed → add a strike and, past the threshold,

@@ -72,7 +72,34 @@ final class ReaderNavigationCoordinator: ObservableObject {
         destination: @escaping @MainActor () -> UIViewController,
         onTransitionCompleted: (@MainActor () -> Void)? = nil
     ) {
-        guard readerBookID == nil, !isReaderPresented else { return }
+        AppLogger.info("⟐ coordinator.open bookID=\(bookID) hasSource=\(source != nil) readerBookID=\(String(describing: readerBookID)) isReaderPresented=\(isReaderPresented)")
+
+        // Same book double-tap while push still in flight: update source
+        // geometry so animation still reflects live card position.
+        if readerBookID == bookID, transitionDriver.isPushTransitionInFlight {
+            if let source {
+                self.source = source
+            }
+            AppLogger.info("⟐ coordinator.open: same-book in-flight push, updated source")
+            return
+        }
+
+        // Reader already on screen: ignore second tap. User can swipe to
+        // close and tap again. Different-book taps during push animation
+        // are also harmless — the push resolves and the next tap will
+        // succeed. Calling close() here while isReaderPresented is true
+        // but push hasn't settled triggers a pop in the middle of a push
+        // transition, which corrupts UIKit state and causes the "flash
+        // back to shelf and lock up" symptom.
+        if isReaderPresented {
+            AppLogger.info("⟐ coordinator.open: reader already presented, ignoring tap")
+            return
+        }
+
+        guard readerBookID == nil else {
+            AppLogger.info("⟐ coordinator.open REJECTED: another book pending existingBookID=\(String(describing: readerBookID))")
+            return
+        }
 
         pendingCloseAfterPush = false
         isProgrammaticPopPending = false
@@ -88,9 +115,11 @@ final class ReaderNavigationCoordinator: ObservableObject {
 
     private func beginPendingPushIfPossible(allowDeferredRetry: Bool = true) {
         guard pendingDestinationFactory != nil || pendingDestinationViewController != nil else {
+            AppLogger.info("⟐ coordinator.beginPendingPush nothing pending")
             return
         }
         guard transitionDriver.canStartNavigationTransition else {
+            AppLogger.info("⟐ coordinator.beginPendingPush can't start now (transition busy) allowDeferredRetry=\(allowDeferredRetry)")
             if allowDeferredRetry { schedulePendingPushRetry() }
             return
         }
@@ -109,10 +138,12 @@ final class ReaderNavigationCoordinator: ObservableObject {
         // transaction may synchronously deliver `didShow` from inside push.
         isReaderPresented = true
         guard transitionDriver.startPush(destination) else {
+            AppLogger.info("⟐ coordinator.beginPendingPush startPush refused; will retry=\(allowDeferredRetry)")
             isReaderPresented = false
             if allowDeferredRetry { schedulePendingPushRetry() }
             return
         }
+        AppLogger.info("⟐ coordinator.beginPendingPush startPush accepted")
         pendingPushRetryTask?.cancel()
         pendingPushRetryTask = nil
         pendingDestinationViewController = nil

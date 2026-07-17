@@ -250,7 +250,9 @@ extension ReaderView {
             let (spineIndex, charOffset) = engine.charOffset(forPage: currentPage)
             if let layout = engine.layouts[spineIndex], !layout.pageRanges.isEmpty {
                 let localPage = layout.pageIndex(for: charOffset)
-                left = max(0, layout.pageRanges.count - localPage - 1)
+                // displayPageCount: estimated total while the chapter is still
+                // partially paginated, exact once complete.
+                left = max(0, layout.displayPageCount - localPage - 1)
             } else {
                 left = 0
             }

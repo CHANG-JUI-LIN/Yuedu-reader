@@ -506,22 +506,117 @@ enum CoreTextHorizontalLineDrawer {
             justifiable = substring
         }
         let naturalLine = CTLineCreateWithAttributedString(justifiable)
+        // Measure without the trailing whitespace: a Latin line almost always ends at the space it
+        // wrapped on, and CoreText does not stretch that space anyway. Counting it makes the line
+        // look "already full", which would skip justification and leave English ragged.
         let naturalWidth = CTLineGetTypographicBounds(naturalLine, nil, nil, nil)
+            - CTLineGetTrailingWhitespaceWidth(naturalLine)
         let coverage = naturalWidth / Double(availableWidth)
 
         if coverage < 0.7 {
             return naturalLine // skip justification for very short lines (e.g. a <br>-clipped tail)
         }
 
-        // Justify EVERY qualifying line — CJK, Latin, and mixed alike. CTLineCreateJustifiedLine is
-        // CoreText's own justification engine: it spreads the residual width across the line's
-        // justification opportunities (inter-character for CJK ideographs, inter-word for Latin
-        // spaces), which is exactly the residual-distribution Legado does by hand. We used to gate
-        // this to CJK-dominant lines (`isCJKDominant && coverage > 0.85`), leaving Latin and mixed
-        // lines ragged on the right edge. The gate is gone: both margins now align regardless of
-        // script. Any residual per-glyph .kern (letter spacing) stays as the baseline; justification
-        // stacks on top of it, matching how the width was measured above.
-        return CTLineCreateJustifiedLine(naturalLine, 1.0, Double(availableWidth)) ?? naturalLine
+        // Never justify a line that already meets or exceeds the target width. At factor 1.0
+        // CTLineCreateJustifiedLine does not merely stretch — it also COMPRESSES to hit the target,
+        // and the first things it squeezes are CJK punctuation (（ ） ？ ，), which then visibly
+        // overlap each other. Justification means distributing space that is left over; when there
+        // is none, leave the line as CoreText laid it out.
+        guard coverage < 1.0 else { return naturalLine }
+
+        // Justify EVERY qualifying line — CJK, Latin, and mixed alike. We used to gate this to
+        // CJK-dominant lines (`isCJKDominant && coverage > 0.85`), which left Latin and mixed lines
+        // ragged on the right edge; the gate is gone.
+        //
+        // The distribution is hand-rolled rather than CTLineCreateJustifiedLine. That API is
+        // unusable here: while stretching a CJK line it ALSO squeezes full-width punctuation
+        // (（ ） ？ ，) per CJK convention, and squeezes hard enough that the glyphs visibly overlap.
+        // The compression is internal to the API — no parameter suppresses it. Legado hits the same
+        // wall and distributes the residual by hand; this is that algorithm on CoreText.
+        return manuallyJustifiedLine(
+            justifiable,
+            naturalWidth: naturalWidth,
+            availableWidth: availableWidth
+        ) ?? naturalLine
+    }
+
+    /// Spreads the leftover width across a line by ADDING spacing only — never compressing.
+    ///
+    /// Latin lines take the space on their word gaps (prying letters apart inside a word reads
+    /// wrong); CJK lines take it between grapheme clusters, which is what CJK justification means.
+    /// The final cluster never receives spacing: `.kern` is advance placed AFTER a glyph, so
+    /// spacing the last one would push the line past the right margin.
+    private static func manuallyJustifiedLine(
+        _ attributed: NSAttributedString,
+        naturalWidth: Double,
+        availableWidth: CGFloat
+    ) -> CTLine? {
+        let residual = Double(availableWidth) - naturalWidth
+        guard residual > 0.5 else { return nil }
+
+        let nsString = attributed.string as NSString
+        guard nsString.length > 1 else { return nil }
+
+        // Walk grapheme clusters: an emoji or combining sequence must stay one unit, otherwise the
+        // added advance lands *inside* it and tears the glyph apart.
+        var clusters: [NSRange] = []
+        var index = 0
+        while index < nsString.length {
+            let range = nsString.rangeOfComposedCharacterSequence(at: index)
+            clusters.append(range)
+            index = range.location + range.length
+        }
+        let gaps = clusters.dropLast() // every cluster but the last can carry trailing space
+        guard !gaps.isEmpty else { return nil }
+
+        let spaces = gaps.filter { nsString.substring(with: $0) == " " }
+        let targets: [NSRange]
+        if spaces.count > 1 {
+            targets = spaces // Latin: all of it goes on the word spaces
+        } else {
+            // CJK: spread between characters, but NEVER around punctuation. A full-width CJK mark
+            // (（ ） ？ ，) already carries half a character of built-in blank, so letter spacing
+            // added there is exactly what blows 「（？）」 apart — while the paragraph's last line,
+            // which is never justified, stays tight. CLREQ (and Legado's postPanc/prePanc tables)
+            // treat punctuation as the thing you COMPRESS first, never the thing you stretch.
+            let letters = gaps.indices.filter { index in
+                if isCJKPunctuation(nsString.substring(with: gaps[index])) { return false }
+                let next = index + 1
+                if next < clusters.count,
+                   isCJKPunctuation(nsString.substring(with: clusters[next])) {
+                    return false
+                }
+                return true
+            }.map { gaps[$0] }
+            // A line that is mostly punctuation has too few letter gaps to absorb the residual —
+            // cramming it into one or two would look worse than spreading it everywhere.
+            targets = letters.count >= max(1, gaps.count / 3) ? letters : Array(gaps)
+        }
+
+        let extra = CGFloat(residual / Double(targets.count))
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        for cluster in targets {
+            // Attach to the cluster's final unit so a multi-unit cluster is not pried open inside.
+            let tail = NSRange(location: cluster.location + cluster.length - 1, length: 1)
+            let existing = (mutable.attribute(.kern, at: tail.location, effectiveRange: nil) as? CGFloat) ?? 0
+            mutable.addAttribute(.kern, value: existing + extra, range: tail)
+        }
+        return CTLineCreateWithAttributedString(mutable)
+    }
+
+    /// CJK punctuation, mirroring the postPanc / prePanc tables in Legado's ZhLayout.
+    ///
+    /// These glyphs take a full-width advance but are only half-inked — the blank is baked into the
+    /// glyph itself. Letter spacing added around them double-counts that blank, which is what makes
+    /// justified CJK punctuation look scattered.
+    private static let cjkPunctuation: Set<String> = [
+        "，", "。", "、", "：", "；", "？", "！", "…", "—", "·", "～",
+        "）", "》", "】", "」", "』", "”", "’",
+        "（", "《", "【", "「", "『", "“", "‘",
+    ]
+
+    private static func isCJKPunctuation(_ text: String) -> Bool {
+        cjkPunctuation.contains(text)
     }
 
     /// Returns true when the text is predominantly CJK (Chinese / Japanese / Korean),

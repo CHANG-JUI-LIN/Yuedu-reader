@@ -119,11 +119,47 @@ extension ReaderView {
 
     /// Switches the book to the chosen origin. On success dismisses the sheet and
     /// reloads; on failure flags the origin (persisted) and keeps the sheet open so
-    /// the user can try another. (Reading position handling unchanged.)
+    /// the user can try another.
+    ///
+    /// Reading position: the raw chapter index means different things in different
+    /// sources (extra 卷 headers, merged 序章 …), so before reloading, the current
+    /// chapter is re-located in the new TOC via `ChapterAlignment` (title
+    /// similarity + chapter-number match, Legado getDurChapter-style) and the
+    /// restore target/persisted position are updated to the mapped chapter.
     func switchToOrigin(_ origin: BookOrigin) {
+        let oldRefs = book?.onlineChapters ?? []
+        let oldIndex = currentChapterIndex
+        let livePosition = readerSessionCoordinator?.state.location.coreTextPosition
         Task {
             do {
                 try await store.updateOnlineBookSource(bookId: bookId, origin: origin)
+                let mappedPosition: CoreTextReadingPosition? = await MainActor.run {
+                    let newRefs = store.books.first(where: { $0.id == bookId })?.onlineChapters ?? []
+                    guard !oldRefs.isEmpty, !newRefs.isEmpty else { return nil }
+                    let mapped = ChapterAlignment.mappedChapterIndex(
+                        oldIndex: oldIndex,
+                        oldTitle: oldRefs.indices.contains(oldIndex) ? oldRefs[oldIndex].title : nil,
+                        oldCount: oldRefs.count,
+                        newTitles: newRefs.map(\.title)
+                    )
+                    // Same chapter text in a new source starts at a different
+                    // offset anyway; only a same-index mapping keeps the offset.
+                    let keepOffset = (mapped == oldIndex && livePosition?.spineIndex == oldIndex)
+                        ? max(0, livePosition?.charOffset ?? 0)
+                        : 0
+                    let position = CoreTextReadingPosition(spineIndex: mapped, charOffset: keepOffset)
+                    savedCoreTextRestoreTarget = (mapped, keepOffset)
+                    setCoreTextExternalTarget(position)
+                    currentChapterIndex = mapped
+                    scrollVisibleChapter = mapped
+                    return position
+                }
+                // Persist before loadContent so any restore path that re-reads the
+                // position store already sees the mapped chapter.
+                if let mappedPosition {
+                    let storeKey = book?.id.uuidString ?? bookId.uuidString
+                    await dependencies.readingPositionStore.save(mappedPosition, for: storeKey)
+                }
                 await MainActor.run {
                     showChangeSourceSheet = false
                     loadContent()
@@ -343,7 +379,9 @@ extension ReaderView {
         case .paused:
             ttsCoordinator.resume()
         case .stopped:
-            startTTSChapter(currentChapterIndex, syncReader: false)
+            let startOffset = currentTTSReaderPosition()
+                .map { $0.spineIndex == currentChapterIndex ? $0.charOffset : 0 } ?? 0
+            startTTSChapter(currentChapterIndex, syncReader: false, startCharOffset: startOffset)
         }
     }
 
@@ -401,12 +439,13 @@ extension ReaderView {
     }
 
     @discardableResult
-    func startTTSChapter(_ chapterIndex: Int, syncReader: Bool) -> Bool {
+    func startTTSChapter(_ chapterIndex: Int, syncReader: Bool, startCharOffset: Int = 0) -> Bool {
         guard chapters.indices.contains(chapterIndex) else { return false }
         let shouldSyncReader = syncReader && readerHeaderFooterEditorModel == nil
         mediaOverlayCoordinator.stop()
         let narration = narrationForTTSChapter(chapterIndex)
-        let text = narration.text
+        var text = narration.text
+        var hints = narration.pronunciationHints
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             AppLogger.render("[TTS][Reader] startTTSChapter ignored empty chapter=\(chapterIndex)")
             if shouldSyncReader {
@@ -416,8 +455,23 @@ extension ReaderView {
             return false
         }
 
+        if startCharOffset > 0, startCharOffset < (text as NSString).length {
+            let nsText = text as NSString
+            text = nsText.substring(from: startCharOffset)
+            hints = hints.compactMap { hint in
+                let shifted = NSRange(location: hint.range.location - startCharOffset, length: hint.range.length)
+                guard shifted.location >= 0,
+                      NSMaxRange(shifted) <= (text as NSString).length
+                else { return nil }
+                return TTSPronunciationHint(range: shifted, ipa: hint.ipa)
+            }
+        }
+
         ttsChapterIndex = chapterIndex
-        setActiveTTSAnchor(.chapterStart(chapterIndex), alignReader: shouldSyncReader)
+        let anchor = startCharOffset > 0
+            ? CoreTextReadingPosition(spineIndex: chapterIndex, charOffset: startCharOffset)
+            : .chapterStart(chapterIndex)
+        setActiveTTSAnchor(anchor, alignReader: shouldSyncReader)
         ensureChapterReady(chapterIndex: chapterIndex, priority: .jump)
         ttsCoordinator.speak(
             text: text,
@@ -425,7 +479,7 @@ extension ReaderView {
             bookTitle: ttsNowPlayingBookTitle,
             author: ttsNowPlayingAuthor,
             artwork: ttsNowPlayingArtwork(),
-            pronunciationHints: narration.pronunciationHints
+            pronunciationHints: hints
         )
         ttsCoordinator.refreshNowPlayingForSystemSurfaces()
         return true
@@ -495,7 +549,10 @@ extension ReaderView {
 
     func startTTSFromPromptChapter() {
         let target = ttsJumpPromptChapterIndex ?? currentChapterIndex
-        _ = startTTSChapter(target, syncReader: false)
+        let startOffset = currentTTSReaderPosition().map {
+            $0.spineIndex == target ? $0.charOffset : 0
+        } ?? 0
+        _ = startTTSChapter(target, syncReader: false, startCharOffset: startOffset)
     }
 
     func narrationForTTSChapter(_ chapterIndex: Int) -> TTSNarrationUnit {

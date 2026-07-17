@@ -153,7 +153,8 @@ extension BookSourceFetcher {
                     body: body,
                     headers: requestHeadersSnapshot,
                     baseURL: effectiveReferer,
-                    bodyCharset: requestSpec.charset
+                    bodyCharset: requestSpec.charset,
+                    source: source
                 )
             }
 

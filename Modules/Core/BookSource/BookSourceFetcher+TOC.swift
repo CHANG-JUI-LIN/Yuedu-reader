@@ -101,7 +101,8 @@ extension BookSourceFetcher {
             html = try await fetchHTML(
                 url: url, method: "GET", body: nil,
                 headers: source.parsedHeaders,
-                baseURL: baseForReferer.isEmpty ? source.bookSourceUrl : baseForReferer)
+                baseURL: baseForReferer.isEmpty ? source.bookSourceUrl : baseForReferer,
+                source: source)
         }
         // #region agent log
         _dbgLog(
@@ -213,7 +214,8 @@ extension BookSourceFetcher {
             } else {
                 nextHTML = try await fetchHTML(
                     url: nextPageURL, method: "GET", body: nil,
-                    headers: source.parsedHeaders, baseURL: nextBase)
+                    headers: source.parsedHeaders, baseURL: nextBase,
+                    source: source)
             }
             // Append to disk instead of keeping in memory
             if let handle = try? FileHandle(forWritingTo: rawHTMLPath) {

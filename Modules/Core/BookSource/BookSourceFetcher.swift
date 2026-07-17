@@ -136,21 +136,37 @@ actor BookSourceFetcher {
 
     // MARK: - HTTP Request
 
+    /// `source`: when provided, the request honors the source's `concurrentRate`
+    /// declaration (per-source concurrency/frequency budget — anti-ban).
     func fetchHTML(
         url: URL, method: String, body: String?,
         headers: [String: String], baseURL: String,
         bodyCharset: String? = nil,
-        allowInteractiveChallengeOn503: Bool = true
+        allowInteractiveChallengeOn503: Bool = true,
+        source: BookSource? = nil
     ) async throws -> String {
-        try await webFetcher.fetchHTML(
-            url: url,
-            method: method,
-            body: body,
-            headers: headers,
-            baseURL: baseURL,
-            bodyCharset: bodyCharset,
-            allowInteractiveChallengeOn503: allowInteractiveChallengeOn503
-        )
+        guard let source else {
+            return try await webFetcher.fetchHTML(
+                url: url,
+                method: method,
+                body: body,
+                headers: headers,
+                baseURL: baseURL,
+                bodyCharset: bodyCharset,
+                allowInteractiveChallengeOn503: allowInteractiveChallengeOn503
+            )
+        }
+        return try await SourceRateLimit.run(source: source) {
+            try await webFetcher.fetchHTML(
+                url: url,
+                method: method,
+                body: body,
+                headers: headers,
+                baseURL: baseURL,
+                bodyCharset: bodyCharset,
+                allowInteractiveChallengeOn503: allowInteractiveChallengeOn503
+            )
+        }
     }
 
 }

@@ -55,7 +55,8 @@ extension BookSourceFetcher {
         } else {
             html = try await fetchHTML(
                 url: bookURL, method: "GET", body: nil,
-                headers: source.parsedHeaders, baseURL: source.bookSourceUrl)
+                headers: source.parsedHeaders, baseURL: source.bookSourceUrl,
+                source: source)
         }
         let info = try pipeline.parseBookInfo(
             html: html,
