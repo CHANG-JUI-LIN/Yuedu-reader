@@ -99,6 +99,7 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
 
         let bodyParaStyle = NSMutableParagraphStyle()
         bodyParaStyle.alignment = .justified // full justification: both margins align, CJK + Latin alike
+        bodyParaStyle.hyphenationFactor = ReaderHyphenation.factor // break long Latin words instead of gapping the line
         bodyParaStyle.lineBreakMode = .byWordWrapping
         bodyParaStyle.minimumLineHeight = bodyTargetLineHeight
         bodyParaStyle.maximumLineHeight = bodyTargetLineHeight
@@ -124,13 +125,16 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
             attrStr.append(
                 NSAttributedString(
                     string: indentedPara,
-                    attributes: [
-                        .font: bodyFont,
-                        .foregroundColor: themeTextColor,
-                        .baselineOffset: bodyBaselineOffset,
-                        .paragraphStyle: bodyParaStyle,
-                        .kern: settings.letterSpacing as NSNumber,
-                    ]
+                    attributes: ReaderHyphenation.tagging(
+                        [
+                            .font: bodyFont,
+                            .foregroundColor: themeTextColor,
+                            .baselineOffset: bodyBaselineOffset,
+                            .paragraphStyle: bodyParaStyle,
+                            .kern: settings.letterSpacing as NSNumber,
+                        ],
+                        forText: para
+                    )
                 )
             )
         }

@@ -12,6 +12,7 @@ import CoreText
 //   ├── CoreTextCommon.swift                       ← architecture docs
 //   ├── String+VerticalNormalization.swift          ← vertical punctuation normalization
 //   ├── VerticalLayoutConfig.swift                  ← per-font vert-glyph detection + substitution map cache
+//   ├── ReaderHyphenation.swift                     ← Latin language tagging + hyphenation factor
 //
 //   CoreTextHorizontal/
 //   └── CoreTextHorizontalLineDrawer.swift

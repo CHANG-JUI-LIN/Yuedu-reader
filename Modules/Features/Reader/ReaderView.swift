@@ -1622,6 +1622,15 @@ struct ReaderView: View {
         .onChanged(of: settings.readerTextUnderlineDecorationColorHex) { _ in
             forceReaderRenderableContentRefresh()
         }
+        .onChanged(of: settings.readerTextUnderlineStyle) { _ in
+            forceReaderRenderableContentRefresh()
+        }
+        .onChanged(of: settings.readerTextUnderlineThickness) { _ in
+            forceReaderRenderableContentRefresh()
+        }
+        .onChanged(of: settings.readerTextUnderlineOffset) { _ in
+            forceReaderRenderableContentRefresh()
+        }
         .onChanged(of: settings.readerDialogueHighlightEnabled) { _ in
             forceReaderRenderableContentRefresh()
         }

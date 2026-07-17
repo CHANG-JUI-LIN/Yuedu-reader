@@ -358,12 +358,17 @@ final class CoreTextPaginator {
                 hasher.combine(Double(paragraphStyle.minimumLineHeight))
                 hasher.combine(Double(paragraphStyle.maximumLineHeight))
                 hasher.combine(paragraphStyle.alignment.rawValue)
+                // Hyphenation moves where lines break, so it changes pagination itself — it has to
+                // be part of the key, or a stale un-hyphenated layout would outlive the change.
+                hasher.combine(Double(paragraphStyle.hyphenationFactor))
             }
 
             hasher.combine(attrs[HTMLAttributedStringBuilder.spacerRunAttribute] != nil)
             hasher.combine(attrs[HTMLAttributedStringBuilder.inlineAnnotationRunAttribute] != nil)
             hasher.combine(attrs[HTMLAttributedStringBuilder.pageBreakAttribute] != nil)
             hasher.combine(attrs[verticalFormsKey] as? Bool ?? false)
+            // The language tag drives hyphenation, hence line breaks, hence pagination.
+            hasher.combine(attrs[ReaderHyphenation.languageAttributeKey] as? String ?? "")
 
             if let delegate = attrs[delegateKey] {
                 let ctDelegate = delegate as! CTRunDelegate

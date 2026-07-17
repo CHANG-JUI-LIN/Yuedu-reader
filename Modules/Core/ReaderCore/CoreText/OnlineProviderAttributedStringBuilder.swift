@@ -447,6 +447,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
 
         let bodyParaStyle = NSMutableParagraphStyle()
         bodyParaStyle.alignment = .justified // full justification: both margins align, CJK + Latin alike
+        bodyParaStyle.hyphenationFactor = ReaderHyphenation.factor // break long Latin words instead of gapping the line
         bodyParaStyle.lineBreakMode = .byWordWrapping
         bodyParaStyle.minimumLineHeight = bodyTargetLineHeight
         bodyParaStyle.maximumLineHeight = bodyTargetLineHeight
@@ -474,13 +475,16 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             let line = "\u{3000}\u{3000}" + para + "\n"
             attr.append(NSAttributedString(
                 string: line,
-                attributes: [
-                    .font: bodyFont,
-                    .foregroundColor: themeTextColor,
-                    .baselineOffset: bodyBaselineOffset,
-                    .paragraphStyle: bodyParaStyle,
-                    .kern: settings.letterSpacing as NSNumber
-                ]
+                attributes: ReaderHyphenation.tagging(
+                    [
+                        .font: bodyFont,
+                        .foregroundColor: themeTextColor,
+                        .baselineOffset: bodyBaselineOffset,
+                        .paragraphStyle: bodyParaStyle,
+                        .kern: settings.letterSpacing as NSNumber
+                    ],
+                    forText: para
+                )
             ))
         }
 

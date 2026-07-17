@@ -13,6 +13,32 @@ enum TextConversion: String, CaseIterable {
     case toSimplified = "简体"
 }
 
+// MARK: - Reader Text Underline Decoration Style
+
+enum ReaderTextUnderlineStyle: Int, CaseIterable, Codable {
+    case solid = 0
+    case dashed = 1
+    case dotted = 2
+
+    var localizedTitleKey: String {
+        switch self {
+        case .solid: return "底線樣式.實線"
+        case .dashed: return "底線樣式.虛線"
+        case .dotted: return "底線樣式.點線"
+        }
+    }
+
+    var localizedTitle: String { localized(localizedTitleKey) }
+
+    var systemImageName: String {
+        switch self {
+        case .solid: return "line.diagonal"
+        case .dashed: return "lines.measurement.horizontal"
+        case .dotted: return "ellipsis"
+        }
+    }
+}
+
 // MARK: - Page-Turn Style
 
 enum PageTurnStyle: String, CaseIterable {
@@ -411,6 +437,9 @@ class GlobalSettings: ObservableObject {
     private static let commentBubbleTextScaleKey = "yd_comment_bubble_text_scale"
     private static let readerTextUnderlineDecorationKey = "yd_reader_text_underline_decoration"
     private static let readerTextUnderlineDecorationColorHexKey = "yd_reader_text_underline_decoration_color_hex"
+    private static let readerTextUnderlineStyleKey = "yd_reader_text_underline_style"
+    private static let readerTextUnderlineThicknessKey = "yd_reader_text_underline_thickness"
+    private static let readerTextUnderlineOffsetKey = "yd_reader_text_underline_offset"
     private static let readerDialogueHighlightKey = "yd_reader_dialogue_highlight"
     private static let readerDialogueHighlightColorHexKey = "yd_reader_dialogue_highlight_color_hex"
     private static let readerDialogueBoxKey = "yd_reader_dialogue_box"
@@ -440,6 +469,14 @@ class GlobalSettings: ObservableObject {
     static let defaultCommentBubbleScale = 1.0
     static let defaultCommentBubbleTextScale = 0.4
     static let defaultReaderUnderlineColorHex: UInt32 = 0x8E8E93
+    static let defaultReaderUnderlineStyle: ReaderTextUnderlineStyle = .solid
+    /// Line thickness in points. Slider range 0.3...2.0; legacy fixed value was 0.6.
+    static let defaultReaderUnderlineThickness: Double = 0.6
+    /// Distance of the underline below the text baseline, in points. Slider range 1.0...10.0;
+    /// the legacy formula was `max(2, descent * 0.72)`, which fell in the 2–4 pt band.
+    static let defaultReaderUnderlineOffset: Double = 3.0
+    static let readerUnderlineThicknessRange: ClosedRange<Double> = 0.3...2.0
+    static let readerUnderlineOffsetRange: ClosedRange<Double> = 1.0...10.0
     static let defaultReaderDialogueHighlightColorHex: UInt32 = 0xFF6B3A
     /// Default box tint = the shared reference lavender rgb(195,185,225); the gradient-pill
     /// style derives its two translucent stops from this base.
@@ -612,6 +649,21 @@ class GlobalSettings: ObservableObject {
     @Published var readerTextUnderlineDecorationColorHex: UInt32 {
         didSet {
             UserDefaults.standard.set(Int(readerTextUnderlineDecorationColorHex), forKey: Self.readerTextUnderlineDecorationColorHexKey)
+        }
+    }
+    @Published var readerTextUnderlineStyle: ReaderTextUnderlineStyle {
+        didSet {
+            UserDefaults.standard.set(readerTextUnderlineStyle.rawValue, forKey: Self.readerTextUnderlineStyleKey)
+        }
+    }
+    @Published var readerTextUnderlineThickness: Double {
+        didSet {
+            UserDefaults.standard.set(readerTextUnderlineThickness, forKey: Self.readerTextUnderlineThicknessKey)
+        }
+    }
+    @Published var readerTextUnderlineOffset: Double {
+        didSet {
+            UserDefaults.standard.set(readerTextUnderlineOffset, forKey: Self.readerTextUnderlineOffsetKey)
         }
     }
     /// Tint quoted dialogue (「」『』"" '') in the theme accent color. Applied as a
@@ -1111,6 +1163,14 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: Self.readerTextUnderlineDecorationColorHexKey) as? Int)
                 ?? Int(Self.defaultReaderUnderlineColorHex)
         )
+        readerTextUnderlineStyle = {
+            let stored = UserDefaults.standard.integer(forKey: Self.readerTextUnderlineStyleKey)
+            return ReaderTextUnderlineStyle(rawValue: stored) ?? Self.defaultReaderUnderlineStyle
+        }()
+        readerTextUnderlineThickness = (UserDefaults.standard.object(forKey: Self.readerTextUnderlineThicknessKey) as? Double)
+            ?? Self.defaultReaderUnderlineThickness
+        readerTextUnderlineOffset = (UserDefaults.standard.object(forKey: Self.readerTextUnderlineOffsetKey) as? Double)
+            ?? Self.defaultReaderUnderlineOffset
         readerDialogueHighlightEnabled = UserDefaults.standard.bool(forKey: Self.readerDialogueHighlightKey)
         readerDialogueHighlightColorHex = UInt32(clamping:
             (UserDefaults.standard.object(forKey: Self.readerDialogueHighlightColorHexKey) as? Int)

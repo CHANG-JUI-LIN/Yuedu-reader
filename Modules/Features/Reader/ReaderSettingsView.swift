@@ -553,6 +553,47 @@ struct ReaderSettingsView: View {
                     selection: readerTextUnderlineDecorationColorBinding,
                     supportsOpacity: false
                 )
+                Picker(
+                    localized("底線樣式"),
+                    selection: readerTextUnderlineStyleBinding
+                ) {
+                    ForEach(ReaderTextUnderlineStyle.allCases, id: \.self) { style in
+                        Label(style.localizedTitle, systemImage: style.systemImageName)
+                            .tag(style)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(localized("粗細"))
+                            .font(DSFont.body)
+                        Spacer()
+                        Text(String(format: "%.1f pt", settings.readerTextUnderlineThickness))
+                            .font(DSFont.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(
+                        value: readerTextUnderlineThicknessBinding,
+                        in: GlobalSettings.readerUnderlineThicknessRange,
+                        step: 0.1
+                    )
+                    .tint(readerTint)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(localized("偏移"))
+                            .font(DSFont.body)
+                        Spacer()
+                        Text(String(format: "%.1f pt", settings.readerTextUnderlineOffset))
+                            .font(DSFont.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(
+                        value: readerTextUnderlineOffsetBinding,
+                        in: GlobalSettings.readerUnderlineOffsetRange,
+                        step: 0.5
+                    )
+                    .tint(readerTint)
+                }
             }
 
             Toggle(isOn: dialogueHighlightBinding) {
@@ -713,6 +754,36 @@ struct ReaderSettingsView: View {
             set: {
                 settings.readerTextUnderlineDecorationColorHex =
                     UIColor($0).rgbHex ?? GlobalSettings.defaultReaderUnderlineColorHex
+            }
+        )
+    }
+
+    private var readerTextUnderlineStyleBinding: Binding<ReaderTextUnderlineStyle> {
+        Binding(
+            get: { settings.readerTextUnderlineStyle },
+            set: { style in
+                settings.readerTextUnderlineStyle = style
+                readerConfig.refresh.send(.layout)
+            }
+        )
+    }
+
+    private var readerTextUnderlineThicknessBinding: Binding<Double> {
+        Binding(
+            get: { settings.readerTextUnderlineThickness },
+            set: { value in
+                settings.readerTextUnderlineThickness = value
+                readerConfig.refresh.send(.layout)
+            }
+        )
+    }
+
+    private var readerTextUnderlineOffsetBinding: Binding<Double> {
+        Binding(
+            get: { settings.readerTextUnderlineOffset },
+            set: { value in
+                settings.readerTextUnderlineOffset = value
+                readerConfig.refresh.send(.layout)
             }
         )
     }

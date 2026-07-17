@@ -155,7 +155,12 @@ struct NodeAttributedStringRenderer {
         // ──────────────── Leaf nodes ────────────────
 
         case .text(let str):
-            return NSAttributedString(string: str, attributes: ctx.baseAttributes)
+            // Tag Latin-script runs with their language so CoreText can hyphenate them when the
+            // line is justified. CJK runs are deliberately left untagged — see ReaderHyphenation.
+            return NSAttributedString(
+                string: str,
+                attributes: ReaderHyphenation.tagging(ctx.baseAttributes, forText: str)
+            )
 
         case .lineBreak:
             // \u{2028} = Unicode Line Separator (matching HTMLAttributedStringBuilder convention)
@@ -880,6 +885,7 @@ struct NodeAttributedStringRenderer {
         para.alignment = (style.textAlign == .natural && !rtlRightAligned)
             ? .justified
             : nsTextAlignment(from: style.textAlign)
+        para.hyphenationFactor = ReaderHyphenation.factor
         para.baseWritingDirection = style.baseWritingDirection
         newCtx.paragraphStyle = para
         newCtx.baselineOffset = ReaderTypographyCorrection.baselineOffset(
@@ -2799,6 +2805,7 @@ struct NodeAttributedStringRenderer {
             para.maximumLineHeight = targetLineHeight
             para.paragraphSpacing = config.paragraphSpacing
             para.alignment = .natural
+            para.hyphenationFactor = ReaderHyphenation.factor
             para.baseWritingDirection = config.baseWritingDirection
             return RenderContext(
                 font: font,

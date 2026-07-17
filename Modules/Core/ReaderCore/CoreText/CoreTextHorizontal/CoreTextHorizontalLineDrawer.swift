@@ -207,15 +207,34 @@ enum CoreTextHorizontalLineDrawer {
               nsString.substring(with: boundedRange).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         else { return }
 
+        let settings = GlobalSettings.shared
         let color = GlobalSettings.uiColor(
-            rgbHex: GlobalSettings.shared.readerTextUnderlineDecorationColorHex
+            rgbHex: settings.readerTextUnderlineDecorationColorHex
         ).withAlphaComponent(0.45)
-        let underlineY = origin.y - max(2, descent * 0.72)
+        let thickness = CGFloat(settings.readerTextUnderlineThickness)
+        let offset = CGFloat(settings.readerTextUnderlineOffset)
+        let underlineY = origin.y - max(1, offset)
 
         ctx.saveGState()
         ctx.setStrokeColor(color.cgColor)
-        ctx.setLineWidth(0.6)
-        ctx.setLineCap(.round)
+        ctx.setLineWidth(thickness)
+        switch settings.readerTextUnderlineStyle {
+        case .solid:
+            ctx.setLineCap(.round)
+            ctx.setLineDash(phase: 0, lengths: [])
+        case .dashed:
+            ctx.setLineCap(.butt)
+            let dash = max(thickness * 3, 2)
+            let gap = max(thickness * 2, 1.5)
+            let lengths: [CGFloat] = [dash, gap]
+            ctx.setLineDash(phase: 0, lengths: lengths)
+        case .dotted:
+            ctx.setLineCap(.round)
+            // Round-cap zero-length dashes render as circular dots; spacing scales with thickness.
+            let spacing = max(thickness * 2.5, 2)
+            let lengths: [CGFloat] = [0, spacing]
+            ctx.setLineDash(phase: 0, lengths: lengths)
+        }
         ctx.move(to: CGPoint(x: origin.x, y: underlineY))
         ctx.addLine(to: CGPoint(x: origin.x + width, y: underlineY))
         ctx.strokePath()
