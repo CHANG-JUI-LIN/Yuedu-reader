@@ -32,15 +32,24 @@ extension BookSourceFetcher {
         // #endregion
 
         if source.shouldUseLegadoRuntimeFetch(for: url) {
-            let bridge = ModernParserBridge(source: source)
-            let (html, finalUrl) = try await bridge.fetch(ruleUrl: url)
-            let info = try bridge.parseBookInfo(
-                html: html,
-                bookUrl: url,
-                baseURL: finalUrl,
-                source: source,
-                runtimeVariables: runtimeVariables
-            )
+            // Shared per-source session — no fresh JS runtime for this parse.
+            let session = BookSourceSession.session(for: source)
+            let (html, finalUrl) = try await SourcePerfTrace.spanAsync(
+                "detail.network", source.bookSourceName
+            ) {
+                try await session.bridgeForAsyncOperations.fetch(ruleUrl: url)
+            }
+            let info = try SourcePerfTrace.span("detail.parse", source.bookSourceName) {
+                try session.withBridge { bridge in
+                    try bridge.parseBookInfo(
+                        html: html,
+                        bookUrl: url,
+                        baseURL: finalUrl,
+                        source: source,
+                        runtimeVariables: runtimeVariables
+                    )
+                }
+            }
             return saveBookInfoPackage(
                 info: info,
                 source: source,
@@ -49,6 +58,7 @@ extension BookSourceFetcher {
         }
 
         guard let bookURL = safeURL(string: url) else { throw FetchError.invalidURL(url) }
+        let networkStart = ProcessInfo.processInfo.systemUptime
         let html: String
         if source.needsWebView {
             html = try await Self.fetchViaWebView(url: bookURL, headers: source.parsedHeaders)
@@ -58,13 +68,16 @@ extension BookSourceFetcher {
                 headers: source.parsedHeaders, baseURL: source.bookSourceUrl,
                 source: source)
         }
-        let info = try pipeline.parseBookInfo(
-            html: html,
-            bookUrl: url,
-            baseURL: bookURL.absoluteString,
-            source: source,
-            runtimeVariables: runtimeVariables
-        )
+        SourcePerfTrace.record("detail.network", source.bookSourceName, since: networkStart)
+        let info = try SourcePerfTrace.span("detail.parse", source.bookSourceName) {
+            try pipeline.parseBookInfo(
+                html: html,
+                bookUrl: url,
+                baseURL: bookURL.absoluteString,
+                source: source,
+                runtimeVariables: runtimeVariables
+            )
+        }
         let package = saveBookInfoPackage(
             info: info,
             source: source,

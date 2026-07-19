@@ -188,7 +188,9 @@ class ModernParserBridge {
             LoginManager.shared.applyLoginHeaders(to: &request, sourceUrl: sourceUrl)
             let sem = DispatchSemaphore(value: 0)
             var result: String?
-            let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+            // Pool at 16/host (LegadoJSBridge.requestSession) — this handler is the ACTUAL path
+            // 段評 ajaxAll takes for `,{options}` URLs; URLSession.shared would cap it back at 6.
+            let task = LegadoJSBridge.requestSession.dataTask(with: request) { data, response, _ in
                 if let data {
                     let encoding = Self.encodingFromCharset(analyzeUrl.charset)
                     result = String(data: data, encoding: encoding)
@@ -235,7 +237,10 @@ class ModernParserBridge {
         jsEngine.networkHandler = { request in
             let semaphore = DispatchSemaphore(value: 0)
             var result: String?
-            let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+            // Pool at 16/host: this handler is ALWAYS set for the online reader, so plain 段評
+            // ajaxAll requests land here — URLSession.shared would re-cap them at 6/host (why the
+            // ajaxAll throttle raise alone left `⏱ chapter.jsNet` unchanged).
+            let task = LegadoJSBridge.requestSession.dataTask(with: request) { data, response, _ in
                 if let data {
                     result = LegadoJSBridge.decodeData(data, response: response)
                 }
@@ -248,6 +253,44 @@ class ModernParserBridge {
     }
 
     // MARK: - Parsing API (matches BookSourceParsingPipeline signatures)
+
+    /// Legado `ImageUtils.decode`: runs `coverDecodeJs` / `ruleContent.imageDecode`
+    /// over downloaded image bytes. The script sees `result` (byte array) and
+    /// `src`, and returns the decoded bytes. nil = decode failed (keep original).
+    func decodeImageBytes(_ data: Data, src: String, ruleJs: String) -> Data? {
+        var script = ruleJs.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !script.isEmpty, !data.isEmpty else { return nil }
+        if script.hasPrefix("@js:") {
+            script = String(script.dropFirst(4))
+        } else if script.lowercased().hasPrefix("<js>"),
+                  let closeRange = script.range(of: "</js>", options: [.caseInsensitive, .backwards]) {
+            script = String(script[script.index(script.startIndex, offsetBy: 4)..<closeRange.lowerBound])
+        }
+        return jsEngine.evaluateBytes(script, data: data, bindings: ["src": src])
+    }
+
+    /// Legado-fork `hasMoreRule`: a JS expression run against the fetched page
+    /// body (`result`) that answers whether a next result page exists.
+    /// Returns nil when evaluation fails so callers fall back to heuristics.
+    func evaluateHasMoreRule(_ rule: String, html: String) -> Bool? {
+        var script = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !script.isEmpty else { return nil }
+        if script.hasPrefix("@js:") {
+            script = String(script.dropFirst(4))
+        } else if script.lowercased().hasPrefix("<js>"),
+                  let closeRange = script.range(of: "</js>", options: [.caseInsensitive, .backwards]) {
+            script = String(script[script.index(script.startIndex, offsetBy: 4)..<closeRange.lowerBound])
+        }
+        guard let raw = jsEngine.evaluateIsolated(script, result: html, bindings: [:]) else {
+            return nil
+        }
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized.isEmpty || normalized == "false" || normalized == "0"
+            || normalized == "null" || normalized == "undefined" {
+            return false
+        }
+        return true
+    }
 
     func parseSearchResults(
         html: String,
@@ -513,6 +556,26 @@ class ModernParserBridge {
         return engine.getString(ruleStr: rule, isUrl: true)
     }
 
+    /// One TOC page in a single call: chapters plus the next-page URL. The
+    /// second rule reuses the page DOM through `JsoupDocumentCache`, so a page
+    /// is parsed once instead of once per rule set.
+    func parseTOCPage(
+        html: String,
+        baseURL: String,
+        source: BookSource,
+        runtimeVariables: [String: String]? = nil
+    ) throws -> (chapters: [OnlineChapterRef], nextTocURL: String) {
+        let chapters = try parseTOC(
+            html: html, baseURL: baseURL,
+            source: source, runtimeVariables: runtimeVariables
+        )
+        let nextTocURL = extractNextTocURL(
+            html: html, baseURL: baseURL,
+            source: source, runtimeVariables: runtimeVariables
+        )
+        return (chapters, nextTocURL)
+    }
+
     func parseChapterResult(
         html: String,
         baseURL: String,
@@ -575,9 +638,17 @@ class ModernParserBridge {
             """
         ) ?? "false"
 
+        jsEngine.resetJSNetworkMs()
         let _contentStart = Date()
         let content = engine.getString(ruleStr: source.ruleContent.content)
         let _contentMs = Int(Date().timeIntervalSince(_contentStart) * 1000)
+        // Split a slow chapter.parse: 段評 sources fetch per-paragraph review counts from
+        // inside this content rule (java.ajaxAll), so that network hides here, not in
+        // chapter.network. `chapter.parse − chapter.jsNet ≈ JS CPU (SVG generation etc.)`.
+        let _jsNetMs = jsEngine.takeJSNetworkMs()
+        if _jsNetMs >= 1 {
+            AppLogger.parse("⏱ chapter.jsNet \(Int(_jsNetMs))ms \(source.bookSourceName)")
+        }
 
         let lowerContent = content.lowercased()
         let lowerInput = html.lowercased()

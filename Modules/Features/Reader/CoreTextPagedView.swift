@@ -171,7 +171,16 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         //    mode switch, TTS anchor). One-shot — cleared once applied to a real page.
         if externalTargetPosition != nil, !context.coordinator.isTransitioning {
             let targetVC = targetViewController()
-            guard !(pageTurnStyle == .curl && context.coordinator.isPlaceholderDisplay(targetVC)) else { return }
+            // Flip to the destination immediately — INCLUDING its loading placeholder — so a jump
+            // to an unfetched online chapter shows a「加载中」page at once instead of freezing on the
+            // current page until the seconds-long 段評 fetch finishes (Legado's jump-then-load feel;
+            // the user called out our load-then-jump as a big part of the perceived lag). The curl
+            // path used to `return` here and stay put until content arrived. It's safe to show the
+            // placeholder now: `setPage` is a non-animated `setViewControllers` (no curl animation
+            // runs on it), the data source returns placeholders for neighbours during an interactive
+            // curl (no NSInvalidArgumentException), and the one-shot clear below intentionally keeps
+            // `externalTargetPosition` alive while a placeholder is showing so `handleChapterReady`
+            // still swaps in the real content once the layout completes.
             _ = context.coordinator.setPage(targetVC, on: uiViewController, layoutNow: true)
             // One-shot: without this the target persists and every re-render snaps
             // back — the curl "animates then bounces back" bug after scroll→paged.

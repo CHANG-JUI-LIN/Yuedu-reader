@@ -69,7 +69,7 @@ extension ReaderView {
             .navigationTitle(localized("換源"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItemGroup(placement: .navigationBarLeading) {
                     Button {
                         loadOtherOrigins(forceRefresh: true)
                     } label: {
@@ -77,12 +77,90 @@ extension ReaderView {
                     }
                     .disabled(changeSourceLoading)
                     .accessibilityLabel(localized("重新搜尋"))
+
+                    // Legado-style variable editors: sources' JS reads these
+                    // back (`source.getVariable()` / book variables) on fetch.
+                    Menu {
+                        Button {
+                            showBookVariableEditor = true
+                        } label: {
+                            Label(localized("設置書籍變量"), systemImage: "character.book.closed")
+                        }
+                        if currentChangeSourceBookSource != nil {
+                            Button {
+                                showSourceVariableEditor = true
+                            } label: {
+                                Label(localized("設置源變量"), systemImage: "curlybraces")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(localized("關閉")) { showChangeSourceSheet = false }
                 }
             }
+            .sheet(isPresented: $showSourceVariableEditor) {
+                if let source = currentChangeSourceBookSource {
+                    RuntimeVariableEditorView(
+                        title: localized("設置源變量"),
+                        comment: source.variableComment,
+                        initialValue: BookSourceRuntimeStateStore.shared
+                            .sourceVariableJSON(for: source.bookSourceUrl) ?? ""
+                    ) { newValue in
+                        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                        BookSourceRuntimeStateStore.shared.setSourceVariableJSON(
+                            trimmed.isEmpty ? nil : trimmed,
+                            for: source.bookSourceUrl
+                        )
+                        return nil
+                    }
+                }
+            }
+            .sheet(isPresented: $showBookVariableEditor) {
+                RuntimeVariableEditorView(
+                    title: localized("設置書籍變量"),
+                    comment: localized("書籍變量說明"),
+                    initialValue: bookRuntimeVariablesJSON()
+                ) { newValue in
+                    saveBookRuntimeVariables(newValue)
+                }
+            }
         })
+    }
+
+    /// The source the book is currently reading from (for 設置源變量 in-reader).
+    var currentChangeSourceBookSource: BookSource? {
+        guard let sourceId = book?.bookSourceId else { return nil }
+        return BookSourceStore.shared.sources.first { $0.id == sourceId }
+    }
+
+    /// Pretty-printed JSON of the book's runtime-variable map for the editor.
+    func bookRuntimeVariablesJSON() -> String {
+        let dict = book?.runtimeVariables ?? [:]
+        guard !dict.isEmpty else { return "" }
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]
+        ) else { return "" }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    /// Parses the editor text back into `[String: String]` and persists it.
+    /// Returns an error message (keeps the sheet open) on malformed JSON.
+    func saveBookRuntimeVariables(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            store.updateBookRuntimeVariables(bookId: bookId, variables: nil)
+            return nil
+        }
+        guard let data = trimmed.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: String]
+        else {
+            return localized("JSON 格式錯誤")
+        }
+        store.updateBookRuntimeVariables(bookId: bookId, variables: object)
+        return nil
     }
 
     /// A single switchable-origin row; flags origins that previously failed to switch.

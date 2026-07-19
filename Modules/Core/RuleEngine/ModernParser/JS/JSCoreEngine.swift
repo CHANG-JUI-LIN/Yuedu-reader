@@ -235,6 +235,13 @@ class JSCoreEngine {
         return .completed(result!)
     }
 
+    // MARK: - JS network attribution
+    //
+    // Forwards to the java bridge's accumulator so a caller (ModernParserBridge) can measure
+    // how much of a parse was spent blocked on `java.*` network (段評 review fetches) vs JS CPU.
+    func resetJSNetworkMs() { bridge.resetNetworkMs() }
+    func takeJSNetworkMs() -> Double { bridge.takeNetworkMs() }
+
     /// Evaluate JavaScript code and return the result as a string.
     /// Returns `nil` on JS error, timeout, or if the result is `undefined`/`null`.
     func evaluate(_ script: String) -> String? {
@@ -341,6 +348,48 @@ class JSCoreEngine {
 
     func evaluateIsolated(_ script: String, bindings: [String: Any]) -> String? {
         evaluate("{\n\(script)\n}", bindings: bindings)
+    }
+
+    /// Evaluate a script whose result is BYTES (Legado image-decode convention:
+    /// `result` holds the raw bytes, the script returns decoded bytes). The
+    /// input bytes are exposed as a JS number array (0–255); the return value
+    /// may be a number array (Java byte semantics tolerated) or a base64 string.
+    func evaluateBytes(_ script: String, data: Data, bindings: [String: Any] = [:]) -> Data? {
+        let numbers = data.map { NSNumber(value: $0) }
+        switch onJSQueueWithTimeout({ [self] () -> Data? in
+            lastError = nil
+            context.setObject(numbers, forKeyedSubscript: "result" as NSString)
+            for (key, value) in bindings {
+                context.setObject(value, forKeyedSubscript: key as NSString)
+            }
+            let prepared = Self.prepareSourceJS(script)
+            guard let value = context.evaluateScript(prepared) else { return nil }
+            return Self.extractBytes(from: value)
+        }) {
+        case .completed(let r): return r
+        case .timedOut: return nil
+        }
+    }
+
+    private static func extractBytes(from value: JSValue) -> Data? {
+        if value.isUndefined || value.isNull { return nil }
+        if value.isArray {
+            guard let numbers = value.toArray() as? [NSNumber] else { return nil }
+            var data = Data(capacity: numbers.count)
+            for number in numbers {
+                // Tolerate Java's signed-byte range (-128…127) alongside 0…255.
+                data.append(UInt8(bitPattern: Int8(truncatingIfNeeded: number.intValue)))
+            }
+            return data.isEmpty ? nil : data
+        }
+        if value.isString, let string = value.toString() {
+            if let decoded = Data(base64Encoded: string), !decoded.isEmpty {
+                return decoded
+            }
+            let utf8 = Data(string.utf8)
+            return utf8.isEmpty ? nil : utf8
+        }
+        return nil
     }
 
     /// Reset the context — clears all JS variables and re-injects the bridge.
@@ -664,9 +713,56 @@ class JSCoreEngine {
                         };
                     }
                 };
+                function bytesToB64(bytes) {
+                    var out = '', i = 0;
+                    for (; i + 2 < bytes.length; i += 3) {
+                        var n = ((bytes[i] & 0xff) << 16) | ((bytes[i + 1] & 0xff) << 8) | (bytes[i + 2] & 0xff);
+                        out += B64.charAt((n >> 18) & 63) + B64.charAt((n >> 12) & 63) + B64.charAt((n >> 6) & 63) + B64.charAt(n & 63);
+                    }
+                    var rem = bytes.length - i;
+                    if (rem === 1) {
+                        var n1 = (bytes[i] & 0xff) << 16;
+                        out += B64.charAt((n1 >> 18) & 63) + B64.charAt((n1 >> 12) & 63) + '==';
+                    } else if (rem === 2) {
+                        var n2 = ((bytes[i] & 0xff) << 16) | ((bytes[i + 1] & 0xff) << 8);
+                        out += B64.charAt((n2 >> 18) & 63) + B64.charAt((n2 >> 12) & 63) + B64.charAt((n2 >> 6) & 63) + '=';
+                    }
+                    return out;
+                }
+                function hexToByteArray(hex) {
+                    var out = [];
+                    for (var i = 0; i + 1 < hex.length; i += 2) { out.push(parseInt(hex.substr(i, 2), 16)); }
+                    return out;
+                }
+                // hutool SymmetricCrypto shim (Legado `java.createSymmetricCrypto`),
+                // backed by the native java.aes*Hex bridge. Used by imageDecode /
+                // coverDecodeJs and content-decryption sources. AES-family only.
+                java.createSymmetricCrypto = function (transformation, key, iv) {
+                    var t = String(transformation || 'AES');
+                    if (t.indexOf('/') < 0) { t = t + '/ECB/PKCS5Padding'; }
+                    var keyHex = bytesToHex(toByteArray(key));
+                    var ivHex = (iv == null) ? '' : bytesToHex(toByteArray(iv));
+                    function dataToHex(data) {
+                        if (data == null) return '';
+                        if (typeof data === 'string') {
+                            var s = data.replace(/\\s+/g, '');
+                            if (/^[0-9A-Fa-f]+$/.test(s) && s.length % 2 === 0) return s.toLowerCase();
+                            if (/^[A-Za-z0-9+/]+={0,2}$/.test(s)) return bytesToHex(b64ToBytes(s));
+                            return bytesToHex(String(data).getBytes());
+                        }
+                        return bytesToHex(toByteArray(data));
+                    }
+                    return {
+                        decrypt: function (data) { return hexToByteArray(java.aesDecryptHex(t, keyHex, ivHex, dataToHex(data))); },
+                        decryptStr: function (data) { return java.hexDecodeToString(java.aesDecryptHex(t, keyHex, ivHex, dataToHex(data))); },
+                        encrypt: function (data) { return hexToByteArray(java.aesEncryptHex(t, keyHex, ivHex, dataToHex(data))); },
+                        encryptBase64: function (data) { return bytesToB64(hexToByteArray(java.aesEncryptHex(t, keyHex, ivHex, dataToHex(data)))); },
+                        encryptHex: function (data) { return java.aesEncryptHex(t, keyHex, ivHex, dataToHex(data)); }
+                    };
+                };
                 var Base64 = {
                     getDecoder: function () { return { decode: function (s) { return b64ToBytes(s); } }; },
-                    getEncoder: function () { return { encodeToString: function (bytes) { return java.base64Encode(java.hexDecodeToString(bytesToHex(bytes))); } }; }
+                    getEncoder: function () { return { encodeToString: function (bytes) { return bytesToB64(bytes); } }; }
                 };
                 var Arrays = { copyOfRange: function (arr, from, to) { return Array.prototype.slice.call(arr, from, to); } };
                 var members = {

@@ -307,6 +307,10 @@ class SearchAggregator: ObservableObject {
     private var currentQuery = ""
     private var autoPausePolicy = SearchAutoPausePolicy(count: 0)
 
+    /// Sources declaring `coverDecodeJs`, keyed by id — merged results register
+    /// their cover URLs so the cover loader can decrypt them after download.
+    private var coverDecodeSourcesById: [UUID: BookSource] = [:]
+
     // 載入更多 (cross-source paging, Legado-style). `searchPage` is the page all
     // sources are currently at; a source that stops yielding NEW merged results
     // (or fails a page) enters `exhaustedSourceIds` and is skipped on the next
@@ -355,6 +359,11 @@ class SearchAggregator: ObservableObject {
 
         currentQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         allSources = activeSources
+        coverDecodeSourcesById = Dictionary(
+            uniqueKeysWithValues: activeSources
+                .filter { !$0.coverDecodeJs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .map { ($0.id, $0) }
+        )
 
         let autoPauseCount = NetworkSearchSettings.effectiveAutoPauseCount(
             configured: GlobalSettings.shared.searchAutoPauseCount,
@@ -506,7 +515,7 @@ class SearchAggregator: ObservableObject {
         isSearching = true
 
         searchTask = Task { [weak self] in
-            await withTaskGroup(of: (UUID, [OnlineBook]?, Double).self) { group in
+            await withTaskGroup(of: (UUID, [OnlineBook]?, Bool?, Double).self) { group in
                 var nextSourceIndex = 0
 
                 func enqueueNextSource() {
@@ -517,11 +526,11 @@ class SearchAggregator: ObservableObject {
                         for: source, normal: timeout, aggregate: aggregateTimeout
                     )
                     group.addTask {
-                        guard !Task.isCancelled else { return (source.id, nil, 0) }
+                        guard !Task.isCancelled else { return (source.id, nil, nil, 0) }
                         let outcome = await Self.searchPageWithTimeout(
                             query: q, source: source, page: page, timeout: sourceTimeout
                         )
-                        return (source.id, outcome.books, outcome.elapsedMs)
+                        return (source.id, outcome.books, outcome.hasMore, outcome.elapsedMs)
                     }
                 }
 
@@ -529,11 +538,13 @@ class SearchAggregator: ObservableObject {
                     enqueueNextSource()
                 }
 
-                while let (sourceId, books, elapsedMs) = await group.next() {
+                while let (sourceId, books, hasMore, elapsedMs) = await group.next() {
                     guard !Task.isCancelled, let self else { break }
                     if let books {
                         let newlyMerged = await self.mergeBatch(books, query: q)
-                        if newlyMerged == 0 {
+                        // The source's own hasMoreRule verdict wins; without one,
+                        // a page that contributed nothing new means exhausted.
+                        if hasMore == false || (hasMore != true && newlyMerged == 0) {
                             self.exhaustedSourceIds.insert(sourceId)
                         }
                         SourceHealthStore.shared.recordSuccess(sourceId, responseMs: elapsedMs)
@@ -661,18 +672,21 @@ class SearchAggregator: ObservableObject {
     }
 
     /// One page-N fetch for 載入更多: plain (non-streaming) search with the same
-    /// per-source timeout discipline. nil = failed or timed out.
+    /// per-source timeout discipline. books nil = failed or timed out; hasMore
+    /// is the source's own `hasMoreRule` verdict (nil = unknown → heuristics).
     private static func searchPageWithTimeout(
         query: String,
         source: BookSource,
         page: Int,
         timeout: UInt64
-    ) async -> (books: [OnlineBook]?, elapsedMs: Double) {
+    ) async -> (books: [OnlineBook]?, hasMore: Bool?, elapsedMs: Double) {
         let startedAt = ProcessInfo.processInfo.systemUptime
         do {
-            return try await withThrowingTaskGroup(of: [OnlineBook].self) { group in
+            return try await withThrowingTaskGroup(
+                of: (books: [OnlineBook], hasMore: Bool?).self
+            ) { group in
                 group.addTask {
-                    try await BookSourceFetcher.shared.search(
+                    try await BookSourceFetcher.shared.searchPage(
                         query: query, in: source, page: page
                     )
                 }
@@ -680,15 +694,15 @@ class SearchAggregator: ObservableObject {
                     try await Task.sleep(nanoseconds: timeout * 1_000_000_000)
                     throw SearchTimeoutError()
                 }
-                guard let books = try await group.next() else {
+                guard let result = try await group.next() else {
                     throw CancellationError()
                 }
                 group.cancelAll()
                 let elapsedMs = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
-                return (books, elapsedMs)
+                return (result.books, result.hasMore, elapsedMs)
             }
         } catch {
-            return (nil, (ProcessInfo.processInfo.systemUptime - startedAt) * 1000)
+            return (nil, nil, (ProcessInfo.processInfo.systemUptime - startedAt) * 1000)
         }
     }
 
@@ -768,6 +782,13 @@ class SearchAggregator: ObservableObject {
             kind: book.kind,
             runtimeVariables: book.runtimeVariables
         )
+
+        if !book.coverUrl.isEmpty {
+            CoverDecodeService.shared.registerIfNeeded(
+                coverUrl: book.coverUrl,
+                source: coverDecodeSourcesById[book.sourceId]
+            )
+        }
 
         // Bucket by title, then merge into the first same-title result whose
         // author is compatible (equal, or one side empty). Same title with a

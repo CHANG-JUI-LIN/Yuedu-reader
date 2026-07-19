@@ -15,7 +15,8 @@ extension BookSourceFetcher {
             return []
         }
 
-        let items = await ModernParserBridge(source: source).getExploreItems(page: page)
+        let items = await BookSourceSession.session(for: source)
+            .bridgeForAsyncOperations.getExploreItems(page: page)
         let cats = items.prefix(5).map { "\($0.title ?? "nil")[\($0.type ?? "-")]" }.joined(separator: ", ")
         NSLog("❖DISC❖ %@", "\(source.bookSourceName) discoverItems categories=\(items.count) :: \(cats)")
         return items
@@ -25,7 +26,8 @@ extension BookSourceFetcher {
     /// (e.g. 起点 rankings read `_csrfToken`, only issued by browsing the site). No-op for
     /// sources that don't reference such a cookie, or once it's already present.
     func primeDiscoverCookies(in source: BookSource) async {
-        await ModernParserBridge(source: source).primeDiscoverCookiesIfNeeded()
+        await BookSourceSession.session(for: source)
+            .bridgeForAsyncOperations.primeDiscoverCookiesIfNeeded()
     }
 
     func discoverBooks(
@@ -41,7 +43,7 @@ extension BookSourceFetcher {
         }
 
         NSLog("❖DISC❖ %@", "\(source.bookSourceName) discoverBooks fetch page=\(page) url=\(rawURL.prefix(100))")
-        let bridge = ModernParserBridge(source: source)
+        let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
         do {
             let (html, finalURL) = try await bridge.fetch(ruleUrl: rawURL, page: page)
             let head = String(html.prefix(80)).replacingOccurrences(of: "\n", with: " ")

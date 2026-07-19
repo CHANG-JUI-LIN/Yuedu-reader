@@ -5,11 +5,9 @@ import SwiftUI
 
 /// Single source of truth for the `Yuedu Pro` subscription.
 ///
-/// Wraps StoreKit 2: loads the monthly/yearly products, drives purchase and
-/// restore, listens for transaction updates in the background, and derives the
-/// `isProActive` entitlement plus the per-feature `hasAccess(_:)` gate that the
-/// rest of the app reads. There is no receipt server in v1 — the Apple ID's
-/// current entitlements are authoritative and sync across the user's devices.
+/// Wraps StoreKit 2: loads the monthly/lifetime products, drives purchase and
+/// restore, listens for transaction updates in the background, and combines
+/// Apple Account entitlements with a verified Firebase account entitlement.
 @MainActor
 final class SubscriptionStore: ObservableObject {
     static let shared = SubscriptionStore()
@@ -27,6 +25,8 @@ final class SubscriptionStore: ObservableObject {
     @Published private(set) var products: [Product] = []
     /// Product IDs the user currently owns an active entitlement for.
     @Published private(set) var purchasedProductIDs: Set<String> = []
+    @Published private(set) var storeKitIsProActive: Bool = false
+    @Published private(set) var accountIsProActive: Bool = false
     /// `true` while any Pro entitlement is active. Everything gates on this.
     @Published private(set) var isProActive: Bool = false
     @Published private(set) var isLoadingProducts: Bool = false
@@ -44,6 +44,7 @@ final class SubscriptionStore: ObservableObject {
     // MARK: - Private
 
     private var updatesListenerTask: Task<Void, Never>?
+    private let accountService = SubscriptionAccountService.shared
 
     private init() {
         // Start listening for transactions BEFORE any purchase so we never miss
@@ -94,16 +95,50 @@ final class SubscriptionStore: ObservableObject {
 
     /// Returns `true` on a completed, verified purchase.
     @discardableResult
-    func purchase(_ product: Product) async -> Bool {
+    func purchaseAsGuest(_ product: Product) async -> Bool {
+        await purchase(product, accountToken: nil)
+    }
+
+    @discardableResult
+    func purchaseForSignedInAccount(_ product: Product) async -> Bool {
+        guard accountService.isAuthenticated else {
+            lastErrorMessage = localized("請先登入後再綁定會員")
+            return false
+        }
+        do {
+            let token = try await accountService.accountToken()
+            return await purchase(product, accountToken: token)
+        } catch {
+            lastErrorMessage = localized("無法連接帳號服務，請檢查網路後再試")
+            return false
+        }
+    }
+
+    @discardableResult
+    private func purchase(_ product: Product, accountToken: UUID?) async -> Bool {
         guard !isPurchasing else { return false }
         isPurchasing = true
         lastErrorMessage = nil
         defer { isPurchasing = false }
         do {
-            let result = try await product.purchase()
+            let result: Product.PurchaseResult
+            if let accountToken {
+                result = try await product.purchase(options: [.appAccountToken(accountToken)])
+            } else {
+                result = try await product.purchase()
+            }
             switch result {
             case .success(let verification):
                 let transaction = try checkVerified(verification)
+                if accountToken != nil {
+                    do {
+                        accountIsProActive = try await accountService.bind(transaction: verification)
+                    } catch {
+                        // The Apple purchase is already valid. Keep StoreKit access and
+                        // explain that cross-Apple-Account binding still needs retrying.
+                        lastErrorMessage = localized("購買成功，但未能綁定帳號，請稍後使用恢復購買重試")
+                    }
+                }
                 await transaction.finish()
                 await refreshEntitlements()
                 return isProActive
@@ -134,6 +169,9 @@ final class SubscriptionStore: ObservableObject {
             // A failed sync is non-fatal — currentEntitlements may still resolve.
         }
         await refreshEntitlements()
+        if accountService.isAuthenticated {
+            await bindCurrentStoreKitEntitlementsToAccount()
+        }
         if !isProActive {
             lastErrorMessage = localized("沒有找到可恢復的訂閱")
         }
@@ -154,12 +192,63 @@ final class SubscriptionStore: ObservableObject {
         recomputeEntitlement()
     }
 
+    /// Call only after Firebase has been configured (app active/auth callbacks).
+    func refreshAllEntitlements() async {
+        await refreshEntitlements()
+        if let accountEntitlement = await accountService.refreshEntitlement() {
+            accountIsProActive = accountEntitlement
+        }
+        recomputeEntitlement()
+    }
+
+    func authenticationDidChange(isAuthenticated: Bool) async {
+        if !isAuthenticated {
+            accountIsProActive = false
+            recomputeEntitlement()
+            return
+        }
+        if let accountEntitlement = await accountService.refreshEntitlement() {
+            accountIsProActive = accountEntitlement
+            recomputeEntitlement()
+        }
+    }
+
+    func deleteCurrentAccountSubscriptionData() async throws {
+        try await accountService.deleteAccountData()
+        accountIsProActive = false
+        recomputeEntitlement()
+    }
+
+    private func bindCurrentStoreKitEntitlementsToAccount() async {
+        var didFailBinding = false
+        for await result in Transaction.currentEntitlements {
+            guard let transaction = try? checkVerified(result),
+                  ProProduct(rawValue: transaction.productID) != nil else { continue }
+            do {
+                accountIsProActive = try await accountService.bind(transaction: result)
+            } catch {
+                didFailBinding = true
+            }
+        }
+        recomputeEntitlement()
+        if didFailBinding {
+            lastErrorMessage = localized("無法將購買綁定到此帳號")
+        }
+    }
+
     private func recomputeEntitlement() {
         let hasPurchase = ProProduct.allCases.contains { purchasedProductIDs.contains($0.rawValue) }
+        storeKitIsProActive = hasPurchase
         #if DEBUG
-        isProActive = hasPurchase || debugForceProActive
+        isProActive = SubscriptionAccessPolicy.isProActive(
+            storeKit: hasPurchase || debugForceProActive,
+            account: accountIsProActive
+        )
         #else
-        isProActive = hasPurchase
+        isProActive = SubscriptionAccessPolicy.isProActive(
+            storeKit: hasPurchase,
+            account: accountIsProActive
+        )
         #endif
     }
 

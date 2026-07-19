@@ -105,6 +105,20 @@ struct HomeView: View {
     private func openBook(_ book: ReadingBook, sourceGeometry: ReaderCardGeometry?) {
         AppLogger.info("⟐ openBook tap bookID=\(book.id) title=\(book.title) pipelineKind=\(book.resolvedPipelineKind) useCard=\(BookCardNavigationGate.shouldUseCardTransition(for: book)) hasGeometry=\(sourceGeometry != nil)")
         if BookCardNavigationGate.shouldUseCardTransition(for: book) {
+            // Re-entrancy guard: once a card open is staged (readerBookID set)
+            // or the reader is already on screen, ignore further shelf taps.
+            // An impatient double-tap otherwise fired a second open *after*
+            // the reader controller had been pushed onto the shelf's SwiftUI
+            // NavigationStack. That second pass reconciled the directly-pushed
+            // controller back off the stack ("flash back to shelf"), and
+            // because the removal never went through the coordinator it stayed
+            // convinced a reader was still presented — refusing every later
+            // open (the "can't get back into the reader" lock). Blocking here
+            // makes a double-tap behave exactly like a single tap.
+            if readerCoordinator.shouldIgnoreOpenRequest() {
+                AppLogger.info("⟐ openBook ignored re-entrant tap bookID=\(book.id) presented=\(readerCoordinator.isReaderPresented) activeBook=\(String(describing: readerCoordinator.activeBookID))")
+                return
+            }
             let requestToken = UUID()
             pendingReaderOpenToken = requestToken
             AppLogger.info("⟐ openBook staged token=\(requestToken) hasPendingToken=\(pendingReaderOpenToken != nil)")

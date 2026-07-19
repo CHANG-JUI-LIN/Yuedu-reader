@@ -16,13 +16,17 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
     private let chapterSourceHrefs: [String?]
     private var cachedPayloadSourceHrefs: [Int: String] = [:]
     private var renderSize: CGSize
+    /// Per-source content-image decryptor (Legado `ruleContent.imageDecode`),
+    /// applied to downloaded image bytes before decoding. nil for most sources.
+    private let imageDecode: (@Sendable (Data, String) -> Data?)?
 
     init(
         provider: any BookContentProvider,
         renderSize: CGSize,
         resourceProvider: (any BookResourceProvider)? = nil,
         chapterSourceHrefs: [String?] = [],
-        fontRegistrationService: any FontRegistrationServicing = CoreTextFontRegistrationService()
+        fontRegistrationService: any FontRegistrationServicing = CoreTextFontRegistrationService(),
+        imageDecode: (@Sendable (Data, String) -> Data?)? = nil
     ) {
         self.provider = provider
         self.renderSize = renderSize
@@ -30,6 +34,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         self.styleResolver = resourceProvider.map {
             EPUBStyleResolver(resourceProvider: $0, fontRegistrationService: fontRegistrationService)
         }
+        self.imageDecode = imageDecode
         if chapterSourceHrefs.count == provider.totalChapters {
             self.chapterSourceHrefs = chapterSourceHrefs
         } else {
@@ -154,7 +159,9 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         let cleaned = OnlineImageLoader.cleanImageSource(src)
         guard !cleaned.isEmpty else { return nil }
 
-        if let onlineImage = await OnlineImageLoader.load(src: cleaned, renderWidth: renderWidth) {
+        if let onlineImage = await OnlineImageLoader.load(
+            src: cleaned, renderWidth: renderWidth, decode: imageDecode
+        ) {
             return onlineImage
         }
 

@@ -68,6 +68,9 @@ struct SearchRule: Codable {
     var lastChapter: String = ""
     var updateTime: String = ""
     var kind: String = ""
+    /// Legado: JS evaluated against the page body ("result") that decides
+    /// whether a next result page exists. Blank = fall back to heuristics.
+    var hasMoreRule: String = ""
 
     init() {}
     init(from decoder: Decoder) throws {
@@ -83,6 +86,7 @@ struct SearchRule: Codable {
         lastChapter   = c.safeString(forKey: .lastChapter)
         updateTime    = c.safeString(forKey: .updateTime)
         kind          = c.safeString(forKey: .kind)
+        hasMoreRule   = c.safeString(forKey: .hasMoreRule)
     }
 }
 
@@ -198,6 +202,9 @@ struct ExploreRule: Codable {
     var bookUrl: String = ""
     var coverUrl: String = ""
     var wordCount: String = ""
+    /// Legado: JS evaluated against the page body ("result") that decides
+    /// whether a next discover page exists. Blank = fall back to heuristics.
+    var hasMoreRule: String = ""
 
     init() {}
     init(from decoder: Decoder) throws {
@@ -212,6 +219,7 @@ struct ExploreRule: Codable {
         bookUrl     = c.safeString(forKey: .bookUrl)
         coverUrl    = c.safeString(forKey: .coverUrl)
         wordCount   = c.safeString(forKey: .wordCount)
+        hasMoreRule = c.safeString(forKey: .hasMoreRule)
     }
 }
 

@@ -70,7 +70,7 @@ struct CssExtractor: RuleExtractor {
         let (selector, accessor) = splitSelectorAndAccessor(normalizedRule)
         guard !selector.isEmpty else { return [] }
 
-        let document = try SwiftSoup.parse(content)
+        let document = try JsoupDocumentCache.shared.document(for: content, baseURL: "")
         let elements = try document.select(selector).array()
 
         // @all: concatenate outerHtml of ALL matches into a single result
@@ -93,7 +93,7 @@ struct CssExtractor: RuleExtractor {
         let (selector, accessor) = splitSelectorAndAccessor(normalizedRule)
         guard !selector.isEmpty else { return "" }
 
-        let document = try SwiftSoup.parse(content)
+        let document = try JsoupDocumentCache.shared.document(for: content, baseURL: "")
         let elements = try document.select(selector).array()
         guard !elements.isEmpty else { return "" }
 
@@ -113,7 +113,7 @@ struct CssExtractor: RuleExtractor {
             .filter { !$0.isEmpty }
         guard let firstStep = steps.first else { return [] }
 
-        let document = try SwiftSoup.parse(content)
+        let document = try JsoupDocumentCache.shared.document(for: content, baseURL: "")
         var current = try document.select(firstStep).array()
         guard !current.isEmpty else { return [] }
 

@@ -736,6 +736,7 @@ _layouts[spineIndex] = nil
 
         // Two-phase open for long chapters (Legado TextChapterLayout idea): lay
         // out and publish page 1 immediately, then let the full pass replace it.
+        let firstPageStart = ProcessInfo.processInfo.systemUptime
         if buildResult.attributedString.length >= Self.partialFirstPageThreshold,
            _layouts[spineIndex] == nil,
            let firstPageResult = await paginationManager.paginateFirstPage(request) {
@@ -751,6 +752,9 @@ _layouts[spineIndex] = nil
             generateSnapshot(for: spineIndex)
             rebuildPageOffsets()
             if firstPageLayout.isPartial {
+                SourcePerfTrace.record(
+                    "coreText.firstPage", "spine=\(spineIndex)", since: firstPageStart
+                )
                 AppLogger.render("[FlipTrace] preload partial spine=\(spineIndex) estPages=\(firstPageLayout.displayPageCount) generation=\(generation)")
                 onChapterReady?(spineIndex)
             } else {
@@ -760,8 +764,14 @@ _layouts[spineIndex] = nil
             }
         }
 
+        let fullLayoutStart = ProcessInfo.processInfo.systemUptime
         let layout = await paginationManager.paginate(request).layout
         guard !shouldAbortPreload(generation: generation) else { return }
+        SourcePerfTrace.record(
+            "coreText.fullLayout",
+            "spine=\(spineIndex) chars=\(buildResult.attributedString.length)",
+            since: fullLayoutStart
+        )
 
         _layouts[spineIndex] = layout.withUpdatedAppearance(
             textColor: themeTextColor,

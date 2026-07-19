@@ -1,13 +1,43 @@
 rules_version = '2';
 
+// Assumed data model:
+// - users/{uid}: private profile and reader preferences owned by uid.
+// - users/{uid}/{collection}/{docId}: private sync records owned by uid.
+// - entitlements/{uid}: server-aggregated membership status; owner-readable only.
+// - accountTokens/{uid}: server-owned UUID used as StoreKit appAccountToken.
+// - purchaseBindings/{originalTransactionId}: server-verified Apple transaction owner.
+
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if isOwner(uid);
 
       match /{collection}/{docId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if isOwner(uid);
       }
+    }
+
+    // Aggregated membership is written only by Cloud Functions with Admin SDK.
+    match /entitlements/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    // These collections contain server-owned purchase identity and transaction data.
+    match /accountTokens/{uid} {
+      allow read, write: if false;
+    }
+
+    match /purchaseBindings/{originalTransactionId} {
+      allow read, write: if false;
     }
   }
 }

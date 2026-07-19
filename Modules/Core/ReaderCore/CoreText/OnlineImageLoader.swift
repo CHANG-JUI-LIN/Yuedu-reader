@@ -25,7 +25,14 @@ enum OnlineImageLoader {
     /// chapter is stuck on "loading…" forever (起点 段評: 100+ bubbles, one stuck one hangs all).
     /// No matter what stalls underneath (WebView rasterizer, network), we give up after `timeout`
     /// and return nil so the render always proceeds.
-    static func load(src: String, renderWidth: CGFloat, timeout: TimeInterval = 8) async -> UIImage? {
+    /// `decode`: optional per-source byte decryptor (Legado `imageDecode`) run on
+    /// downloaded bytes before image decoding; nil result keeps the originals.
+    static func load(
+        src: String,
+        renderWidth: CGFloat,
+        timeout: TimeInterval = 8,
+        decode: (@Sendable (Data, String) -> Data?)? = nil
+    ) async -> UIImage? {
         let cleaned = cleanImageSource(src)
         guard !cleaned.isEmpty else { return nil }
 
@@ -40,7 +47,7 @@ enum OnlineImageLoader {
         CommentBubbleSVGRecognizer.diag("load:kind=\(kind)", context: ["srcPrefix": String(cleaned.prefix(64))])
 
         let image = await withTimeoutOrNil(seconds: timeout) {
-            await loadResolved(cleaned, renderWidth: renderWidth)
+            await loadResolved(cleaned, renderWidth: renderWidth, decode: decode)
         }
 
         let ms = Int(Date().timeIntervalSince(started) * 1000)
@@ -53,12 +60,16 @@ enum OnlineImageLoader {
         return image
     }
 
-    private static func loadResolved(_ cleaned: String, renderWidth: CGFloat) async -> UIImage? {
+    private static func loadResolved(
+        _ cleaned: String,
+        renderWidth: CGFloat,
+        decode: (@Sendable (Data, String) -> Data?)? = nil
+    ) async -> UIImage? {
         if cleaned.hasPrefix("data:") {
-            return await loadDataURIImage(cleaned, renderWidth: renderWidth)
+            return await loadDataURIImage(cleaned, renderWidth: renderWidth, decode: decode)
         }
         if cleaned.hasPrefix("http://") || cleaned.hasPrefix("https://") {
-            return await loadRemoteImage(cleaned, renderWidth: renderWidth)
+            return await loadRemoteImage(cleaned, renderWidth: renderWidth, decode: decode)
         }
         return nil
     }
@@ -103,7 +114,11 @@ enum OnlineImageLoader {
 
     /// Decodes a `data:` URI into a UIImage. SVG payloads are rasterized via the shared
     /// WebView rasterizer; everything else is treated as raw image bytes.
-    static func loadDataURIImage(_ uri: String, renderWidth: CGFloat) async -> UIImage? {
+    static func loadDataURIImage(
+        _ uri: String,
+        renderWidth: CGFloat,
+        decode: (@Sendable (Data, String) -> Data?)? = nil
+    ) async -> UIImage? {
         guard uri.hasPrefix("data:"), let commaIdx = uri.firstIndex(of: ",") else { return nil }
         let meta = uri[uri.index(uri.startIndex, offsetBy: 5)..<commaIdx].lowercased()
         let payload = String(uri[uri.index(after: commaIdx)...])
@@ -141,11 +156,16 @@ enum OnlineImageLoader {
             // styling must follow the source.
             return await rasterizeSVG(svg, renderWidth: renderWidth, baseURL: nil)
         }
-        return UIImage(data: data)
+        let effectiveData = decode?(data, uri) ?? data
+        return UIImage(data: effectiveData)
     }
 
     /// Fetches a remote image. Falls back to SVG rasterization when the bytes are an SVG document.
-    static func loadRemoteImage(_ urlString: String, renderWidth: CGFloat) async -> UIImage? {
+    static func loadRemoteImage(
+        _ urlString: String,
+        renderWidth: CGFloat,
+        decode: (@Sendable (Data, String) -> Data?)? = nil
+    ) async -> UIImage? {
         guard let url = URL(string: urlString) else { return nil }
         // CRITICAL: the renderer loads images SEQUENTIALLY (await per node), so a single hung
         // remote image (段評 avatar/emoji, 版权页 photo) blocks the whole chapter → "infinite
@@ -168,8 +188,11 @@ enum OnlineImageLoader {
         if ms > 1000 {
             AppLogger.render("⟐ imgLoad http slow", context: ["url": String(urlString.prefix(90)), "ms": ms, "bytes": data.count])
         }
-        if let image = UIImage(data: data) { return image }
-        if let svg = String(data: data, encoding: .utf8), svg.contains("<svg") {
+        // Per-source imageDecode (encrypted-image sources); falls back to the
+        // raw bytes so a broken rule degrades instead of blanking the image.
+        let effectiveData = decode?(data, urlString) ?? data
+        if let image = UIImage(data: effectiveData) { return image }
+        if let svg = String(data: effectiveData, encoding: .utf8), svg.contains("<svg") {
             // ⟐ bubble: REMOTE SVG bubbles never touch recognize() — they go straight to the
             // WebView rasterizer. If this fires for 光遇/企点, the native redraw can't help; the
             // bubble is webview-rendered and the gap/wrap fix must live in the source SVG or here.

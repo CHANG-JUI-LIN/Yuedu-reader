@@ -421,6 +421,22 @@ final class ReaderNavigationTransitionDriver: NSObject {
         pendingOperation == .push
     }
 
+    /// Any push/pop this driver is currently mediating, regardless of type.
+    /// Used by the coordinator to avoid reconciling reader state while a real
+    /// transition is still running.
+    var isTransitionActive: Bool {
+        pendingOperation != nil || activeAnimator != nil
+    }
+
+    /// Whether `viewController` is still in the owned navigation stack. The
+    /// coordinator uses this to detect a reader controller removed by an agent
+    /// other than itself — SwiftUI's `NavigationStack` reconciling away the
+    /// directly-pushed controller, or a system back-gesture — so it can reset
+    /// instead of staying stuck believing a reader is presented.
+    func stackContains(_ viewController: UIViewController) -> Bool {
+        navigationController?.viewControllers.contains(viewController) ?? false
+    }
+
     var canStartNavigationTransition: Bool {
         guard let navigationController else {
             AppLogger.info("⟐ canStartNavigationTransition no navController")

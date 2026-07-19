@@ -24,6 +24,18 @@ extension BookSourceFetcher {
     ///   "update online books" path (launch / foreground / pull-to-refresh) so that
     ///   serial novels actually pick up newly-published chapters instead of replaying
     ///   the stale cached list. Normal reading paths leave it `false` for speed.
+    /// Cached TOC for this URL if a usable one is on disk (same validity rules
+    /// as `fetchTOCPackage`'s fast path). Lets UI layers render a previously
+    /// fetched chapter list instantly while fresh data loads.
+    func cachedTOCPackage(tocUrl: String, source: BookSource) -> TOCPackage? {
+        guard let cached = loadTOCPackageSync(tocUrl: tocUrl, source: source),
+              !cached.chapters.isEmpty else { return nil }
+        let hasBadURL = cached.chapters.contains { ch in
+            ch.url.contains("<") || ch.url.contains("&lt;") || ch.url.contains("%3C")
+        }
+        return hasBadURL ? nil : cached
+    }
+
     func fetchTOCPackage(
         tocUrl: String,
         source: BookSource,
@@ -31,14 +43,8 @@ extension BookSourceFetcher {
         onFirstPageReady: ((_ chapters: [OnlineChapterRef]) -> Void)? = nil,
         forceRefresh: Bool = false
     ) async throws -> TOCPackage {
-        if !forceRefresh,
-            let cached = loadTOCPackageSync(tocUrl: tocUrl, source: source), !cached.chapters.isEmpty {
-            let hasBadURL = cached.chapters.contains { ch in
-                ch.url.contains("<") || ch.url.contains("&lt;") || ch.url.contains("%3C")
-            }
-            if !hasBadURL {
-                return cached
-            }
+        if !forceRefresh, let cached = cachedTOCPackage(tocUrl: tocUrl, source: source) {
+            return cached
         }
         // #region agent log
         _dbgLog(
@@ -60,14 +66,24 @@ extension BookSourceFetcher {
         // #endregion
 
         if source.shouldUseLegadoRuntimeFetch(for: tocUrl) {
-            let bridge = ModernParserBridge(source: source)
-            let (html, finalUrl) = try await bridge.fetch(ruleUrl: tocUrl)
-            let chapters = try bridge.parseTOC(
-                html: html,
-                baseURL: finalUrl,
-                source: source,
-                runtimeVariables: runtimeVariables
-            )
+            // Reuse the per-source session's bridge (JS runtime + jsLib) instead
+            // of standing up a fresh one for this fetch+parse pair.
+            let session = BookSourceSession.session(for: source)
+            let (html, finalUrl) = try await SourcePerfTrace.spanAsync(
+                "toc.network", source.bookSourceName
+            ) {
+                try await session.bridgeForAsyncOperations.fetch(ruleUrl: tocUrl)
+            }
+            let chapters = try SourcePerfTrace.span("toc.parse", source.bookSourceName) {
+                try session.withBridge { bridge in
+                    try bridge.parseTOC(
+                        html: html,
+                        baseURL: finalUrl,
+                        source: source,
+                        runtimeVariables: runtimeVariables
+                    )
+                }
+            }
             let normalized = chapters.enumerated().map { i, ref in
                 var r = ref
                 r.index = i
@@ -89,6 +105,7 @@ extension BookSourceFetcher {
         let html: String
         var usedWebView = false
         let baseForReferer = tocUrl
+        let tocNetworkStart = ProcessInfo.processInfo.systemUptime
         if !source.ruleToc.preUpdateJs.isEmpty {
             html = try await WebViewFetcher.shared.fetchHTMLWithCustomJS(
                 url: url, headers: source.parsedHeaders,
@@ -104,6 +121,7 @@ extension BookSourceFetcher {
                 baseURL: baseForReferer.isEmpty ? source.bookSourceUrl : baseForReferer,
                 source: source)
         }
+        SourcePerfTrace.record("toc.network", source.bookSourceName, since: tocNetworkStart)
         // #region agent log
         _dbgLog(
             "fetchTOC 已取得 HTML",
@@ -113,13 +131,17 @@ extension BookSourceFetcher {
                 "htmlPreview": String(html.prefix(150)).replacingOccurrences(of: "\n", with: " "),
             ], hyp: "H2")
         // #endregion
-        var chapters: [OnlineChapterRef] = try autoreleasepool {
-            try pipeline.parseTOC(
-                html: html,
-                baseURL: url.absoluteString,
-                source: source,
-                runtimeVariables: runtimeVariables
-            )
+        var chapters: [OnlineChapterRef] = try SourcePerfTrace.span(
+            "toc.parse", source.bookSourceName
+        ) {
+            try autoreleasepool {
+                try pipeline.parseTOC(
+                    html: html,
+                    baseURL: url.absoluteString,
+                    source: source,
+                    runtimeVariables: runtimeVariables
+                )
+            }
         }
         var htmlForNext = html
 
@@ -202,6 +224,7 @@ extension BookSourceFetcher {
         while !nextURL.isEmpty && pageCount < 20 {
             guard let nextPageURL = URL(string: nextURL) else { break }
             let nextBase = nextURL.isEmpty ? source.bookSourceUrl : nextURL
+            let pageStart = ProcessInfo.processInfo.systemUptime
             // Network request must be outside autoreleasepool (async cannot be in synchronous closure)
             let nextHTML: String
             if usePreUpdateJs {
@@ -225,23 +248,22 @@ extension BookSourceFetcher {
                 }
                 handle.closeFile()
             }
-            // autoreleasepool ensures SwiftSoup DOM objects for each page are released immediately
-            let pageChapters: [OnlineChapterRef] = try autoreleasepool {
-                try pipeline.parseTOC(
+            // One session-serialized call parses chapters AND the next-page URL
+            // from a single DOM (autoreleasepool drains SwiftSoup per page).
+            let pageResult: (chapters: [OnlineChapterRef], nextTocURL: String) = try autoreleasepool {
+                try pipeline.parseTOCPage(
                     html: nextHTML,
                     baseURL: nextURL,
                     source: source,
                     runtimeVariables: runtimeVariables
                 )
             }
-            nextURL = pipeline.extractNextTocURL(
-                html: nextHTML,
-                baseURL: nextURL,
-                source: source,
-                runtimeVariables: runtimeVariables
-            )
-            chapters.append(contentsOf: pageChapters)
+            nextURL = pageResult.nextTocURL
+            chapters.append(contentsOf: pageResult.chapters)
             pageCount += 1
+            SourcePerfTrace.record(
+                "toc.nextPage", "page=\(pageCount) \(source.bookSourceName)", since: pageStart
+            )
         }
         let normalized = chapters.enumerated().map { i, ref in
             var r = ref

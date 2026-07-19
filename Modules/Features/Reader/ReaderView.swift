@@ -131,6 +131,9 @@ struct ReaderView: View {
 
     @State var isRestoringPosition = true
     @State var savedCoreTextRestoreTarget: (chapterIndex: Int, charOffset: Int)?
+    /// 換源 sheet 內的變量編輯入口 (Legado 設置書籍變量/設置源變量)。
+    @State var showBookVariableEditor = false
+    @State var showSourceVariableEditor = false
     @State private var isApplyingCoreTextRestore = false
     @State var isLoadingPipeline = false
     @State private var curlStartupStartedAt: CFAbsoluteTime?
@@ -2017,12 +2020,20 @@ struct ReaderView: View {
             return
         }
 
+        // Repair only when metadata is genuinely missing: no TOC URL or no chapters.
+        // Empty `runtimeVariables` is NOT a defect — most sources never set any, so gating
+        // on it made `needsRepair` true on EVERY open of such a book, firing a background
+        // `refreshOnlineBookMetadata(forceInfoRefresh: true)` that re-fetches the book info AND
+        // re-traverses the whole multi-page TOC (serial, ~13s for 神魔/捞尸人). That refetch
+        // contends with the opening chapter's 段評 fetch on the same per-source bridge/network,
+        // dragging a ~3s first-chapter open out to ~10s — every single time. Runtime variables
+        // that a source DOES need are captured per-chapter during content parse (runtimeBox),
+        // not from this open-time repair, so dropping the check doesn't starve them.
         let needsRepair =
             (currentBook.bookSourceId != nil)
             && (
                 (currentBook.tocURL?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
                     || (currentBook.onlineChapters?.isEmpty != false)
-                    || (currentBook.runtimeVariables?.isEmpty ?? true)
             )
 
         guard needsRepair else {

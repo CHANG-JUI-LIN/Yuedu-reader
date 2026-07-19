@@ -33,11 +33,14 @@ extension BookSourceFetcher {
     ///   - earlyFilter: applied at parse time right after name/author extraction
     ///     so rejected items skip the remaining rule evaluations (換源 strict
     ///     matching). Filtered runs never write the shared search cache.
+    ///   - onHasMore: reports the source's own next-page verdict (`hasMoreRule`,
+    ///     native path only). nil = unknown → caller uses heuristics.
     func search(
         query: String,
         in source: BookSource,
         page: Int = 1,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil,
+        onHasMore: ((Bool?) -> Void)? = nil
     ) async throws -> [OnlineBook] {
         guard !source.searchUrl.isEmpty else { throw FetchError.noSearchURL }
         let cacheDays = GlobalSettings.shared.searchCacheDays
@@ -47,13 +50,16 @@ extension BookSourceFetcher {
             source: source,
             days: cacheDays
         ) {
+            onHasMore?(nil)
             guard let earlyFilter else { return cached }
             return cached.filter { earlyFilter($0.name, $0.author) }
         }
 
         if source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) {
-            var books = try await ModernParserBridge(source: source)
+            var books = try await BookSourceSession.session(for: source)
+                .bridgeForAsyncOperations
                 .searchBooks(keyword: query, page: page)
+            onHasMore?(nil)
             if let earlyFilter {
                 // The JS runtime already parsed everything; filtering here just
                 // keeps the returned list consistent with the native path.
@@ -121,8 +127,25 @@ extension BookSourceFetcher {
                 html: html, baseURL: url.absoluteString, source: source,
                 earlyFilter: earlyFilter)
         } catch {
+            onHasMore?(false)
             return []
         }
+
+        if let onHasMore {
+            let hasMoreRule = source.ruleSearch.hasMoreRule
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !hasMoreRule.isEmpty {
+                onHasMore(BookSourceSession.session(for: source).withBridge {
+                    $0.evaluateHasMoreRule(hasMoreRule, html: html)
+                })
+            } else if books.isEmpty {
+                // Legado's blank-rule fallback: an empty list page means no more.
+                onHasMore(false)
+            } else {
+                onHasMore(nil)
+            }
+        }
+
         let filtered = Self.filterSearchResultsByCheckKeyWord(
             books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
         if cacheEligible {
@@ -134,6 +157,20 @@ extension BookSourceFetcher {
             )
         }
         return filtered
+    }
+
+    /// Page fetch for 載入更多: books plus the source's own next-page verdict.
+    func searchPage(
+        query: String,
+        in source: BookSource,
+        page: Int
+    ) async throws -> (books: [OnlineBook], hasMore: Bool?) {
+        var hasMore: Bool? = nil
+        let books = try await search(
+            query: query, in: source, page: page,
+            onHasMore: { hasMore = $0 }
+        )
+        return (books, hasMore)
     }
 
     func searchStreaming(
@@ -152,7 +189,8 @@ extension BookSourceFetcher {
         }
 
         if source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) {
-            let outcome = try await ModernParserBridge(source: source)
+            let outcome = try await BookSourceSession.session(for: source)
+                .bridgeForAsyncOperations
                 .searchBooksStreaming(keyword: query, page: 1) { books in
                     let filtered = Self.filterSearchResultsByCheckKeyWord(
                         books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)

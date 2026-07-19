@@ -169,12 +169,26 @@ extension ReaderView {
         }
         allPages = []
 
+        // Per-source content-image decryptor (Legado `ruleContent.imageDecode`):
+        // only sources declaring the rule pay anything; the closure runs the
+        // source's JS over downloaded image bytes.
+        var imageDecode: (@Sendable (Data, String) -> Data?)? = nil
+        if let sourceId = book.bookSourceId,
+           let source = BookSourceStore.shared.sources.first(where: { $0.id == sourceId }),
+           !source.ruleContent.imageDecode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let ruleJs = source.ruleContent.imageDecode
+            imageDecode = { data, src in
+                SourceImageDecoder.decode(data, src: src, ruleJs: ruleJs, source: source)
+            }
+        }
+
         epubRenderer.loadWithProvider(
             contentProvider: bundle.provider,
             chapterSourceHrefs: bundle.chapterSourceHrefs,
             bookIdentifier: bundle.bookIdentifier,
             renderSize: currentReaderRenderSize,
-            settings: settings
+            settings: settings,
+            imageDecode: imageDecode
         )
 
         currentPage = 0

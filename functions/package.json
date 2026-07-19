@@ -1,0 +1,25 @@
+{
+  "name": "yuedu-functions",
+  "private": true,
+  "engines": {
+    "node": "22"
+  },
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "tsx --test test/**/*.test.ts"
+  },
+  "dependencies": {
+    "@apple/app-store-server-library": "^3.0.0",
+    "firebase-admin": "^14.2.0",
+    "firebase-functions": "^7.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
+}

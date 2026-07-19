@@ -196,11 +196,48 @@ import UIKit
     /// through AnalyzeUrl rather than treating the entire string as a simple URL.
     var analyzeUrlHandler: ((String) -> String?)?
 
+    // MARK: - JS network attribution
+    //
+    // Wall-time the JS thread spent blocked on `java.*` network during the current parse.
+    // 段評 sources fetch per-paragraph review counts from inside the content rule JS, so that
+    // network lands inside `chapter.parse` and is invisible to `chapter.network`. Accumulate it
+    // here (ajaxAll adds its BATCH wall time — it runs 6-wide, so summing items would over-count)
+    // and let ModernParserBridge emit `⏱ chapter.jsNet` to split a slow parse into network vs CPU.
+    private let networkMsLock = NSLock()
+    private var accumulatedNetworkMs: Double = 0
+    func resetNetworkMs() { networkMsLock.lock(); accumulatedNetworkMs = 0; networkMsLock.unlock() }
+    func takeNetworkMs() -> Double { networkMsLock.lock(); defer { networkMsLock.unlock() }; return accumulatedNetworkMs }
+    private func recordBlockingNetwork(_ ms: Double) {
+        networkMsLock.lock(); accumulatedNetworkMs += ms; networkMsLock.unlock()
+    }
+
+    // MARK: - Dedicated java.* session
+    //
+    // iOS caps `URLSession.shared` at 6 connections per host. 段評 sources fan out ONE
+    // review-count request PER PARAGRAPH (50–150) to a single host, so that cap — doubled by
+    // the old `ajaxAll` throttle of 6 — serialized them into multi-second batches (measured
+    // `⏱ chapter.jsNet` ≈ 1.7–6.2s, ≈ the whole chapter.parse). Legado runs these at its user
+    // "线程数" (threadCount, default 16) over an OkHttp pool, which is why the SAME 段評 chapter
+    // opens ~3× faster there. Match Legado's default 16 per host; the user confirmed Legado's 16
+    // doesn't trip these 段評 servers, so 16 is a validated (not speculative) concurrency.
+    //
+    // NOT private: the online reader routes java.* network through ModernParserBridge's
+    // `networkHandler` / `analyzeUrlHandler` (those are always set), so those two handlers must
+    // use THIS pool too — otherwise they fall back to URLSession.shared's 6/host and the 16-wide
+    // ajaxAll just queues behind 6 connections (the reason raising the throttle alone did nothing).
+    static let requestSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.httpMaximumConnectionsPerHost = 16
+        config.timeoutIntervalForRequest = 20
+        return URLSession(configuration: config)
+    }()
+
     // MARK: Networking
 
     func ajax(_ urlStr: String) -> String {
         let started = Date()
         let body = performRequest(urlStr)
+        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
         // ⟐ ajax — reveal WHY 起点 content comes back empty: log the response of the
         // auth/content/review API calls (get_my_token / content.php / review.php …).
         if Self.shouldLogReviewNetwork(urlStr) {
@@ -294,7 +331,7 @@ import UIKit
         // plain `[String]` made `.body()` throw → callers' try/catch swallowed it → e.g. 段评
         // bubbles silently never injected (review.php fetched fine, just unused). Wrap each
         // body in LegadoStrResponse so `.body()` works.
-        let throttle = DispatchSemaphore(value: 6)
+        let throttle = DispatchSemaphore(value: 16) // match Legado threadCount (16); paired with requestSession httpMaximumConnectionsPerHost=16
         var results = Array(repeating: "", count: urlArray.count)
         let resultsLock = NSLock()
         let group = DispatchGroup()
@@ -340,6 +377,9 @@ import UIKit
         // must finish well within 30s. Never block the JS thread forever.
         let waited = group.wait(timeout: .now() + 30)
         let _ms = Int(Date().timeIntervalSince(_start) * 1000)
+        // Batch wall time = how long the JS thread was actually blocked (requests ran up to
+        // 16-wide over requestSession's 16 connections/host — matches Legado threadCount).
+        recordBlockingNetwork(Date().timeIntervalSince(_start) * 1000)
         AppLogger.parse("⟐ ajaxAll done", context: [
             "ms": _ms,
             "timedOut": waited == .timedOut,
@@ -420,14 +460,20 @@ import UIKit
     }
 
     func connect(_ urlStr: String) -> String {
-        return performRequest(urlStr)
+        let started = Date()
+        let body = performRequest(urlStr)
+        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
+        return body
     }
 
     /// Legado `java.post(url, body, headers)` — HTTP POST returning a `StrResponse` (`.body()`).
     /// `body` is sent verbatim; `headers` is a JS object. Defaults to
     /// `application/x-www-form-urlencoded` when no Content-Type is supplied.
     func post(_ urlStr: String, _ body: String, _ headers: JSValue) -> LegadoStrResponse {
-        return performPost(urlStr, body: body, headers: Self.headerDict(from: headers))
+        let started = Date()
+        let response = performPost(urlStr, body: body, headers: Self.headerDict(from: headers))
+        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
+        return response
     }
 
     /// Legado `java.importScript(url)` — fetch a remote JS library and return its text.
@@ -960,7 +1006,7 @@ import UIKit
 
         var responseBody = ""
         let semaphore = DispatchSemaphore(value: 0)
-        let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+        let task = Self.requestSession.dataTask(with: request) { data, response, _ in
             defer { semaphore.signal() }
             guard let data = data else { return }
             responseBody = Self.decodeData(data, response: response)
@@ -1010,7 +1056,7 @@ import UIKit
         let timeoutSeconds: Double = cloudflareChallengeHandler != nil ? 120 : requestTimeoutSeconds
         let semaphore = DispatchSemaphore(value: 0)
 
-        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+        let task = Self.requestSession.dataTask(with: request) { [weak self] data, response, _ in
             guard let data = data else { semaphore.signal(); return }
             let body = Self.decodeData(data, response: response)
 
@@ -1038,7 +1084,7 @@ import UIKit
 
             // Retry once without CF check (cookies are fresh).
             let retrySem = DispatchSemaphore(value: 0)
-            URLSession.shared.dataTask(with: request) { retryData, retryResp, _ in
+            Self.requestSession.dataTask(with: request) { retryData, retryResp, _ in
                 defer { retrySem.signal() }
                 guard let retryData else { return }
                 responseBody = Self.decodeData(retryData, response: retryResp)

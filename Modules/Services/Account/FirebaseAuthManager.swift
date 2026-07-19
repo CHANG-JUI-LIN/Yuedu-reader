@@ -30,6 +30,7 @@ final class FirebaseAuthManager: ObservableObject {
                 self?.currentUser = user
                 self?.syncPublishedState(from: user)
                 GlobalSettings.shared.applyFirebaseUser(user)
+                await SubscriptionStore.shared.authenticationDidChange(isAuthenticated: user != nil)
                 if user != nil {
                     await FirestoreSyncManager.shared.syncAfterSignIn()
                 }
@@ -192,6 +193,7 @@ final class FirebaseAuthManager: ObservableObject {
             throw AuthFlowError.missingFirebaseUser
         }
         try await reauthenticate(user, emailPassword: emailPassword)
+        try await SubscriptionStore.shared.deleteCurrentAccountSubscriptionData()
         try await FirestoreSyncManager.shared.deleteRemoteData(uid: user.uid)
         do {
             try await user.delete()

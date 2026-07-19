@@ -184,13 +184,15 @@ extension BookSourceFetcher {
                     content: content, title: "", sourceMatched: true, isPay: ref.isPay)
             }
             do {
-                let parsed = try pipeline.parseChapterResult(
-                    html: html,
-                    baseURL: baseURL,
-                    source: source,
-                    runtimeVariables: runtimeBox.get(),
-                    chapterRef: ref
-                )
+                let parsed = try SourcePerfTrace.span("chapter.parse", source.bookSourceName) {
+                    try pipeline.parseChapterResult(
+                        html: html,
+                        baseURL: baseURL,
+                        source: source,
+                        runtimeVariables: runtimeBox.get(),
+                        chapterRef: ref
+                    )
+                }
                 if let runtimeVariables = parsed.runtimeVariables, !runtimeVariables.isEmpty {
                     runtimeBox.set(runtimeVariables)
                 }
@@ -221,7 +223,11 @@ extension BookSourceFetcher {
             )
         }
 
-        let stagedRawHTML = try await fetchChapterHTML(url, requestSpec.method, requestSpec.body)
+        let stagedRawHTML = try await SourcePerfTrace.spanAsync(
+            "chapter.network", source.bookSourceName
+        ) {
+            try await fetchChapterHTML(url, requestSpec.method, requestSpec.body)
+        }
 
         let buildResult = try await ChapterFetcher.shared.buildChapterPackage(
             bookId: bookId,
@@ -284,15 +290,25 @@ extension BookSourceFetcher {
         guard !ref.shouldRenderAsVolumeSeparator else {
             throw FetchError.volumeSeparator(ref.title)
         }
-        let bridge = ModernParserBridge(source: source)
-        let (html, finalUrl) = try await bridge.fetch(ruleUrl: ref.url)
-        let parsed = try bridge.parseChapterResult(
-            html: html,
-            baseURL: finalUrl,
-            source: source,
-            runtimeVariables: ref.runtimeVariables,
-            chapterRef: ref
-        )
+        // Shared per-source session: the JS runtime (and jsLib) stays warm
+        // across chapters instead of booting per fetch.
+        let session = BookSourceSession.session(for: source)
+        let (html, finalUrl) = try await SourcePerfTrace.spanAsync(
+            "chapter.network", source.bookSourceName
+        ) {
+            try await session.bridgeForAsyncOperations.fetch(ruleUrl: ref.url)
+        }
+        let parsed = try SourcePerfTrace.span("chapter.parse", source.bookSourceName) {
+            try session.withBridge { bridge in
+                try bridge.parseChapterResult(
+                    html: html,
+                    baseURL: finalUrl,
+                    source: source,
+                    runtimeVariables: ref.runtimeVariables,
+                    chapterRef: ref
+                )
+            }
+        }
         let content = await ChapterFetcher.shared.resolveContent(
             parsed: parsed,
             replaceRules: source.ruleContent.replaceRegex,

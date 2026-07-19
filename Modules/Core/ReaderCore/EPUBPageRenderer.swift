@@ -218,7 +218,8 @@ final class EPUBPageRenderer: ObservableObject {
         bookIdentifier: String,
         renderSize: CGSize,
         settings: ReaderRenderSettings,
-        customScheme: String = "reader-online"
+        customScheme: String = "reader-online",
+        imageDecode: (@Sendable (Data, String) -> Data?)? = nil
     ) {
         let docsURL = FileManager.default.urls(
             for: .documentDirectory, in: .userDomainMask
@@ -237,7 +238,8 @@ final class EPUBPageRenderer: ObservableObject {
             provider: contentProvider,
             renderSize: effectiveSizeForBuilder,
             resourceProvider: resourceAdapter,
-            chapterSourceHrefs: chapterSourceHrefs
+            chapterSourceHrefs: chapterSourceHrefs,
+            imageDecode: imageDecode
         )
         let newEngine = CoreTextPageEngine(
             attributedBuilder: onlineBuilder,

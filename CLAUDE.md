@@ -81,6 +81,19 @@ Import/Export: OPML 2.0 and Legado JSON formats
 - **Vertical CJK**: Vertical writing uses right-to-left page flow. `String+VerticalNormalization` and `VerticalLayoutConfig` handle coordinate transforms. Run `CoreTextWritingModeTests` before touching vertical layout code.
 - **SwiftUI previews**: Add `#Preview` when creating or changing view code.
 
+## Engineering Discipline
+
+This project is past "make it work" and into systems engineering. Locally-reasonable patches accumulate into duplicate paths, unowned state, and death-by-a-thousand-fallbacks. These rules override the default instinct to add a recovery layer:
+
+- **Root cause before fallback.** An empty or failed result is a diagnostic signal, not a retry trigger. First distinguish "legitimately empty" from "parse/request failed", then fix the primary path. A fallback is justified only for genuinely external, unavoidable failures (site outage, anti-bot wall) — never to paper over a bug in our own code.
+- **Every fallback must be documented and disclosed.** Precise trigger condition (not bare `if result.isEmpty`), a comment stating the real-world case it guards and the condition under which it can be deleted, and an explicit mention in your summary so the user can veto it. When editing near an existing fallback, check whether its reason still holds; if obsolete, propose deleting it.
+- **No timing-based waits.** Never `Task.sleep` / `asyncAfter` "to let state settle" and retry. Await the actual signal (async value, callback, notification). A delay that fixes a race is hiding the race.
+- **One path per concern.** Don't add a second cache, parser route, or loader where one exists. All online parsing goes through `BookSourceSession.session(for:)` (one reused JS bridge per source — bypassing it recreates the JSContext-per-call regression). When fixing a data-flow bug, enumerate every route that flow traverses (cache hit / network / fallback / pagination) and confirm the fix covers each, or state why not.
+- **Views don't orchestrate.** A view calls one service-level use case; the service owns caching, concurrency, dedup, and degradation. No fetch→parse→cache→store chains inside SwiftUI code.
+- **Measure, then optimize.** Performance claims need numbers. Instrument with `SourcePerfTrace` spans (⏱ lines, visible in Release Console; add a span if the stage isn't covered) and report before/after milliseconds. Never guess the bottleneck from reading code.
+- **Don't swallow errors.** In parsing/network pipelines, `try?` that discards the error is banned unless an empty result is truly equivalent; log through `AppLogger` (never wrapped in `#if DEBUG` — os_log is how on-device issues get diagnosed).
+- **Vague perf tasks get a contract first.** For "optimize X" requests, state the measurable goal, the constraints (no source-compat behavior change, no new cache layer, no wider WebView use), and the acceptance evidence before writing code.
+
 ## Dependencies
 
 Detailed package versions and their transitive dependencies are recorded in [Dependencies.md](file:///Users/zhangruilin/Desktop/Yuedu-reader/Technotes/Dependencies.md).

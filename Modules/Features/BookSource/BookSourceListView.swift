@@ -17,6 +17,7 @@ struct BookSourceListView: View {
     @State private var importURLString = ""
     @State private var networkImportLoading = false
     @State private var loginSource: BookSource? = nil
+    @State private var variableEditingSource: BookSource? = nil
     @Environment(\.presentationMode) var dismiss
 
     @State private var selectedIds: Set<UUID> = []
@@ -179,6 +180,23 @@ struct BookSourceListView: View {
                 } else {
                     BookSourceFormLoginView(source: src) {
                         loginSource = nil
+                    }
+                }
+            }
+            .sheet(item: $variableEditingSource) { src in
+                AdaptiveSheetContainer(maxWidth: DSLayout.readablePanelWidth) {
+                    RuntimeVariableEditorView(
+                        title: localized("設置源變量"),
+                        comment: src.variableComment,
+                        initialValue: BookSourceRuntimeStateStore.shared
+                            .sourceVariableJSON(for: src.bookSourceUrl) ?? ""
+                    ) { newValue in
+                        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                        BookSourceRuntimeStateStore.shared.setSourceVariableJSON(
+                            trimmed.isEmpty ? nil : trimmed,
+                            for: src.bookSourceUrl
+                        )
+                        return nil
                     }
                 }
             }
@@ -385,6 +403,11 @@ struct BookSourceListView: View {
                     } label: {
                         Label(localized("Cookie 驗證登入"), systemImage: "key.fill")
                     }
+                }
+                Button {
+                    variableEditingSource = source
+                } label: {
+                    Label(localized("設置源變量"), systemImage: "curlybraces")
                 }
                 Divider()
                 Button(role: .destructive) {

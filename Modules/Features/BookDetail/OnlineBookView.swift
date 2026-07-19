@@ -575,15 +575,109 @@ struct OnlineBookView: View {
 
         Task {
             do {
-                var finalTocURL = requestBook.bookUrl
                 var currentRuntimeVariables = requestBook.runtimeVariables
-                // Always fetch the detail page to get full info (author, title, etc.) and extract the real TOC URL
-                if !requestBook.bookUrl.isEmpty {
-                    let infoPackage = try await dependencies.bookSourceFetcher.fetchBookInfoPackage(
-                        url: requestBook.bookUrl,
+
+                // ① Cache-first: a previously fetched TOC for this book renders
+                //    instantly; the detail info and a fresh TOC still load below.
+                let provisionalTocURL = requestBook.tocUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? requestBook.bookUrl
+                    : requestBook.tocUrl
+                var showedCachedTOC = false
+                if !provisionalTocURL.isEmpty,
+                   let cached = BookSourceFetcher.shared.cachedTOCPackage(
+                       tocUrl: provisionalTocURL, source: source
+                   ) {
+                    showedCachedTOC = true
+                    await MainActor.run {
+                        guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                        chapters = cached.chapters
+                        loadingTOC = false
+                    }
+                }
+
+                let applyFirstPage: ([OnlineChapterRef]) -> Void = { firstChapters in
+                    // First page ready — show immediately, don't wait for multi-page fetch
+                    Task { @MainActor in
+                        guard requestBook.bookUrl == self.currentBook.bookUrl else { return }
+                        if self.chapters.isEmpty {
+                            self.chapters = firstChapters
+                            self.loadingTOC = false
+                        }
+                        if let bookId = self.addedBookId {
+                            self.bookStore.updateOnlineChapters(bookId: bookId, chapters: firstChapters)
+                        }
+                    }
+                }
+
+                let applyFinal: (TOCPackage) async -> Void = { tocPackage in
+                    await MainActor.run {
+                        guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                        chapters = tocPackage.chapters
+                        loadingTOC = false
+                        if let bookId = addedBookId {
+                            bookStore.updateOnlineChapters(bookId: bookId, chapters: tocPackage.chapters)
+                        }
+                    }
+                }
+
+                // ② Concurrent fast path: the book already carries a TOC URL
+                //    distinct from the detail page, so detail info and TOC can
+                //    load in parallel instead of TOC waiting on detail.
+                let trimmedTocURL = requestBook.tocUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !showedCachedTOC,
+                   !trimmedTocURL.isEmpty,
+                   trimmedTocURL != requestBook.bookUrl,
+                   !requestBook.bookUrl.isEmpty {
+                    async let tocTask = dependencies.bookSourceFetcher.fetchTOCPackage(
+                        tocUrl: trimmedTocURL,
                         source: source,
-                        runtimeVariables: currentRuntimeVariables
+                        runtimeVariables: currentRuntimeVariables,
+                        onFirstPageReady: applyFirstPage,
+                        forceRefresh: false
                     )
+                    let infoPackage = try await SourcePerfTrace.spanAsync(
+                        "detail.total", source.bookSourceName
+                    ) {
+                        try await dependencies.bookSourceFetcher.fetchBookInfoPackage(
+                            url: requestBook.bookUrl,
+                            source: source,
+                            runtimeVariables: currentRuntimeVariables
+                        )
+                    }
+                    currentRuntimeVariables = infoPackage.runtimeVariables
+                    await MainActor.run {
+                        guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                        detailInfo = infoPackage.onlineBook
+                    }
+                    var tocPackage = try await tocTask
+                    // Detail resolved a different TOC URL (rare) — it wins.
+                    if !infoPackage.tocUrl.isEmpty, infoPackage.tocUrl != trimmedTocURL {
+                        tocPackage = try await dependencies.bookSourceFetcher.fetchTOCPackage(
+                            tocUrl: infoPackage.tocUrl,
+                            source: source,
+                            runtimeVariables: currentRuntimeVariables,
+                            onFirstPageReady: nil,
+                            forceRefresh: false
+                        )
+                    }
+                    await applyFinal(tocPackage)
+                    return
+                }
+
+                // ③ Serial fallback: fetch the detail page for full info and the
+                //    real TOC URL, then the TOC (instant when ① already showed
+                //    this URL's cache).
+                var finalTocURL = requestBook.bookUrl
+                if !requestBook.bookUrl.isEmpty {
+                    let infoPackage = try await SourcePerfTrace.spanAsync(
+                        "detail.total", source.bookSourceName
+                    ) {
+                        try await dependencies.bookSourceFetcher.fetchBookInfoPackage(
+                            url: requestBook.bookUrl,
+                            source: source,
+                            runtimeVariables: currentRuntimeVariables
+                        )
+                    }
                     currentRuntimeVariables = infoPackage.runtimeVariables
                     await MainActor.run {
                         guard requestBook.bookUrl == currentBook.bookUrl else { return }
@@ -597,32 +691,18 @@ struct OnlineBookView: View {
                     tocUrl: finalTocURL,
                     source: source,
                     runtimeVariables: currentRuntimeVariables,
-                    onFirstPageReady: { firstChapters in
-                        // First page ready — show immediately, don't wait for multi-page fetch
-                        Task { @MainActor in
-                            guard requestBook.bookUrl == self.currentBook.bookUrl else { return }
-                            if self.chapters.isEmpty {
-                                self.chapters = firstChapters
-                                self.loadingTOC = false
-                            }
-                            if let bookId = self.addedBookId {
-                                self.bookStore.updateOnlineChapters(bookId: bookId, chapters: firstChapters)
-                            }
-                        }
-                    }
+                    onFirstPageReady: applyFirstPage,
+                    forceRefresh: false
                 )
-                await MainActor.run {
-                    guard requestBook.bookUrl == currentBook.bookUrl else { return }
-                    chapters = tocPackage.chapters
-                    loadingTOC = false
-                    if let bookId = addedBookId {
-                        bookStore.updateOnlineChapters(bookId: bookId, chapters: tocPackage.chapters)
-                    }
-                }
+                await applyFinal(tocPackage)
             } catch {
                 await MainActor.run {
                     guard requestBook.bookUrl == currentBook.bookUrl else { return }
-                    tocError = error.localizedDescription
+                    // A cached TOC is already on screen — keep it rather than
+                    // replacing it with an error banner.
+                    if chapters.isEmpty {
+                        tocError = error.localizedDescription
+                    }
                     loadingTOC = false
                 }
             }

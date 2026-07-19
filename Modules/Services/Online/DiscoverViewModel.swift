@@ -504,6 +504,9 @@ final class DiscoverViewModel: ObservableObject {
             .map { $0.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && BookCoverLoader.cachedImage(for: $0) == nil }
         guard !urls.isEmpty else { return }
+        for url in urls {
+            CoverDecodeService.shared.registerIfNeeded(coverUrl: url, source: source)
+        }
         Task.detached(priority: .utility) {
             // A section can carry dozens of covers; bound the fan-out so warming
             // one section doesn't burst that many simultaneous fetches + decodes

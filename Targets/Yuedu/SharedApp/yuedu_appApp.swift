@@ -51,6 +51,7 @@ struct yuedu_appApp: App {
                 .onChange(of: scenePhase) { _, newPhase in
                     // Pick up sources shared while the app was backgrounded.
                     if newPhase == .active {
+                        Task { await subscriptionStore.refreshAllEntitlements() }
                         Task { await SharedImportQueueDrainer.shared.drain() }
                         // Returning to the foreground also checks online books for
                         // new chapters (throttled). Cold launch already kicked one

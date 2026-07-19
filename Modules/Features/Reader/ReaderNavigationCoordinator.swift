@@ -34,6 +34,11 @@ final class ReaderNavigationCoordinator: ObservableObject {
     private let transitionDriver: ReaderNavigationTransitionDriver
     private var pendingDestinationFactory: (@MainActor () -> UIViewController)?
     private var pendingDestinationViewController: UIViewController?
+    /// The reader controller currently pushed (or being pushed). Held weakly so
+    /// that if some agent other than this coordinator removes it from the stack
+    /// — SwiftUI reconciling its `NavigationStack`, a system back-gesture — we
+    /// can notice on the next settle and reset instead of locking the shelf.
+    private weak var presentedReaderController: UIViewController?
     private var pendingOpenCompletion: (@MainActor () -> Void)?
     private var pendingPushRetryTask: Task<Void, Never>?
     private var pendingCloseAfterPush = false
@@ -147,6 +152,7 @@ final class ReaderNavigationCoordinator: ObservableObject {
         pendingPushRetryTask?.cancel()
         pendingPushRetryTask = nil
         pendingDestinationViewController = nil
+        presentedReaderController = destination
     }
 
     private func schedulePendingPushRetry() {
@@ -165,7 +171,39 @@ final class ReaderNavigationCoordinator: ObservableObject {
     func navigationTransitionDidSettle() {
         pendingPushRetryTask?.cancel()
         pendingPushRetryTask = nil
+        reconcileIfReaderDetached()
         beginPendingPushIfPossible()
+    }
+
+    /// Reset reader state when the pushed reader controller has left the
+    /// navigation stack without this coordinator driving the pop. SwiftUI can
+    /// reconcile the directly-pushed controller off its `NavigationStack` (most
+    /// visibly during an impatient double-tap open), and a system back-gesture
+    /// would do the same. When that happens no `completeInteractivePop` /
+    /// `completeProgrammaticPop` ever fires, so without this the coordinator
+    /// stays convinced a reader is presented and refuses every future open.
+    /// Guarded to run only while the stack is idle so it never races a real
+    /// transition that is still mid-flight.
+    private func reconcileIfReaderDetached() {
+        guard isReaderPresented,
+              let reader = presentedReaderController,
+              !transitionDriver.isTransitionActive,
+              !isProgrammaticPopPending,
+              !transitionDriver.isInteractivePopInFlight,
+              !transitionDriver.stackContains(reader)
+        else { return }
+
+        AppLogger.info("⟐ coordinator reconcile: reader controller popped externally; resetting state")
+        pendingPushRetryTask?.cancel()
+        pendingPushRetryTask = nil
+        pendingCloseAfterPush = false
+        isProgrammaticPopPending = false
+        isReaderPresented = false
+        readerBookID = nil
+        source = nil
+        presentedReaderController = nil
+        pendingDestinationFactory = nil
+        pendingDestinationViewController = nil
     }
 
     /// Pop the directly-owned reader. State is cleared only after UIKit says
@@ -220,6 +258,7 @@ final class ReaderNavigationCoordinator: ObservableObject {
         isReaderPresented = false
         readerBookID = nil
         source = nil
+        presentedReaderController = nil
     }
 
     private func completePushTransition(completed: Bool) {
@@ -233,6 +272,7 @@ final class ReaderNavigationCoordinator: ObservableObject {
             isReaderPresented = false
             readerBookID = nil
             source = nil
+            presentedReaderController = nil
             pendingDestinationFactory = nil
             pendingDestinationViewController = nil
         }
@@ -260,11 +300,23 @@ final class ReaderNavigationCoordinator: ObservableObject {
             isReaderPresented = false
             readerBookID = nil
             source = nil
+            presentedReaderController = nil
         }
     }
 
     /// The book id of the currently-open reader, if any.
     var activeBookID: UUID? { readerBookID }
+
+    /// Whether a fresh shelf tap should be ignored because a reader is already
+    /// staged or on screen. Call this instead of reading `isReaderPresented`
+    /// directly from the shelf: it first self-heals a stranded state (a reader
+    /// controller removed by an external agent, e.g. SwiftUI reconciling its
+    /// `NavigationStack`), so a genuinely idle shelf can never get permanently
+    /// stuck ignoring every tap.
+    func shouldIgnoreOpenRequest() -> Bool {
+        reconcileIfReaderDetached()
+        return isReaderPresented || readerBookID != nil
+    }
 }
 
 // MARK: - Environment bridge

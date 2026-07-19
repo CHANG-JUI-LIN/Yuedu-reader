@@ -113,9 +113,60 @@ struct CommentBubbleSVGRecognizer {
         AppLogger.parse("⟐ bubble \(signature)", context: context)
     }
 
+    // MARK: - Bubble render caches
+    //
+    // 段評-heavy chapters carry hundreds of paragraph bubbles, and the counts repeat
+    // heavily ("0", "1", "99+"…). Producing a bubble is a pure function of (svg, size,
+    // theme, settings), yet nothing memoized it: every paragraph re-ran ~15 regex to
+    // parse the SVG and a full @3× draw + per-pixel transparent-trim. ReviewBadgeRenderer
+    // (the <comment>-tag bubble) has always cached by count; these give the SVG-bubble
+    // path the same treatment, collapsing hundreds of redraws into one per distinct
+    // (count, style, theme, size). Keys carry the full determinant so a hit is never the
+    // wrong image, and an all-unique chapter is simply no worse than before this cache.
+    private final class RecognizedBox { let svg: CommentBubbleSVG?; init(_ svg: CommentBubbleSVG?) { self.svg = svg } }
+    private static let recognizeCache: NSCache<NSString, RecognizedBox> = {
+        let cache = NSCache<NSString, RecognizedBox>(); cache.countLimit = 256; return cache
+    }()
+    private static let bubbleImageCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>(); cache.countLimit = 512; return cache
+    }()
+
+    // Cache-hit telemetry so the win is visible on device: filter Console for
+    // "⟐ bubble cache" — a 段評 chapter should show draws ≪ hits once counts repeat.
+    private static let bubbleStatLock = NSLock()
+    nonisolated(unsafe) private static var bubbleHitCount = 0
+    nonisolated(unsafe) private static var bubbleDrawCount = 0
+    private static func noteBubbleCache(hit: Bool) {
+        bubbleStatLock.lock()
+        if hit { bubbleHitCount += 1 } else { bubbleDrawCount += 1 }
+        let hits = bubbleHitCount, draws = bubbleDrawCount
+        let shouldLog = (hits + draws) % 256 == 0
+        bubbleStatLock.unlock()
+        if shouldLog {
+            AppLogger.render("⟐ bubble cache", context: ["hits": hits, "draws": draws])
+        }
+    }
+
+    /// Raw-input identity for the recognition cache: the SVG string (or data URI) that
+    /// fully determines the parse. Length-prefixed so a hash clash also needs equal length.
+    private static func recognizeCacheKey(src: String, svgContent: String?) -> NSString {
+        let identity = (svgContent?.isEmpty == false) ? svgContent! : src
+        return "\(identity.utf8.count)#\(identity.hashValue)" as NSString
+    }
+
     /// Checks if the given image source or SVG string represents a recognizable simple comment bubble.
-    /// If so, decodes and parses it into a CommentBubbleSVG representation.
+    /// If so, decodes and parses it into a CommentBubbleSVG representation. Memoized: a 段評
+    /// chapter calls this 2–3× per bubble (gate + resolve + template) over hundreds of paragraphs,
+    /// and the parse is pure, so the first occurrence of each distinct SVG pays it and the rest hit.
     static func recognize(src: String, svgContent: String?) -> CommentBubbleSVG? {
+        let cacheKey = recognizeCacheKey(src: src, svgContent: svgContent)
+        if let box = recognizeCache.object(forKey: cacheKey) { return box.svg }
+        let result = recognizeUncached(src: src, svgContent: svgContent)
+        recognizeCache.setObject(RecognizedBox(result), forKey: cacheKey)
+        return result
+    }
+
+    private static func recognizeUncached(src: String, svgContent: String?) -> CommentBubbleSVG? {
         guard let svg = getSVGString(src: src, svgContent: svgContent) else {
             diag("reject:no-svg", context: ["srcPrefix": String(src.prefix(48))])
             return nil
@@ -155,6 +206,55 @@ struct CommentBubbleSVGRecognizer {
     }
 
     static func resolvedBubbleImage(
+        src: String,
+        svgContent: String?,
+        pointSize: CGFloat,
+        themeTextColor: UIColor
+    ) -> UIImage? {
+        let cacheKey = bubbleImageCacheKey(
+            src: src, svgContent: svgContent, pointSize: pointSize, themeTextColor: themeTextColor
+        )
+        if let cached = bubbleImageCache.object(forKey: cacheKey) {
+            noteBubbleCache(hit: true)
+            return cached
+        }
+        guard let image = computeResolvedBubbleImage(
+            src: src, svgContent: svgContent, pointSize: pointSize, themeTextColor: themeTextColor
+        ) else { return nil }
+        bubbleImageCache.setObject(image, forKey: cacheKey)
+        noteBubbleCache(hit: false)
+        return image
+    }
+
+    /// The full determinant of a drawn bubble: which SVG (the count is baked into it), the
+    /// point size, the resolved theme text colour, and every GlobalSettings knob that alters
+    /// the draw. Changing any of these mints a new key, so stale settings never surface a
+    /// wrong bubble; `L…` folds the selected style's length in to catch in-place SVG edits.
+    private static func bubbleImageCacheKey(
+        src: String,
+        svgContent: String?,
+        pointSize: CGFloat,
+        themeTextColor: UIColor
+    ) -> NSString {
+        let identity = (svgContent?.isEmpty == false) ? svgContent! : src
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        themeTextColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let rgba = String(format: "%.2f-%.2f-%.2f-%.2f", r, g, b, a)
+        let s = GlobalSettings.shared
+        let sig = [
+            s.commentBubbleFollowsSourceSVG ? "F1" : "F0",
+            s.commentBubblePresetMode.rawValue,
+            s.commentBubbleSelectedCustomStyleID?.uuidString ?? "-",
+            s.commentBubbleSelectedCustomStyle.map { "L\($0.svg.utf8.count)" } ?? "-",
+            String(format: "%.2f", s.commentBubbleScale),
+            String(format: "%.2f", s.commentBubbleTextScale),
+            s.readerFontBold ? "B1" : "B0",
+            s.selectedReaderFontPostScript ?? "sys"
+        ].joined(separator: "|")
+        return "\(identity.utf8.count)#\(identity.hashValue)|\(Int(pointSize.rounded()))|\(rgba)|\(sig)" as NSString
+    }
+
+    private static func computeResolvedBubbleImage(
         src: String,
         svgContent: String?,
         pointSize: CGFloat,

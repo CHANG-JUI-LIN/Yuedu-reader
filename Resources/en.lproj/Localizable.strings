@@ -1464,3 +1464,20 @@
 "搜索" = "Search";
 "個書源，" = "source(s), ";
 "其他" = "Other";
+
+// Runtime variable editors (Legado source/book variables)
+"設置源變量" = "Set Source Variable";
+"設置書籍變量" = "Set Book Variables";
+"變量說明" = "Variable Notes";
+"書籍變量說明" = "Edit this book's runtime variables as a JSON object ({\"key\":\"value\"}); the source's JS reads them when fetching.";
+"JSON 格式錯誤" = "Invalid JSON format";
+
+// Account-linked purchases
+"選擇購買方式" = "Choose Purchase Method";
+"登入後購買" = "Sign In and Purchase";
+"直接購買" = "Purchase Without Signing In";
+"未登入時，會員只會跟隨本次購買使用的 Apple 帳號。登入後購買可綁定 Yuedu 帳號，切換 App Store 帳號後仍可使用。" = "Without signing in, Pro follows the Apple Account used for this purchase. Sign in first to link Pro to your Yuedu account and keep access after changing App Store accounts.";
+"請先登入後再綁定會員" = "Sign in before linking Pro";
+"無法連接帳號服務，請檢查網路後再試" = "Unable to connect to the account service. Check your connection and try again.";
+"購買成功，但未能綁定帳號，請稍後使用恢復購買重試" = "The purchase succeeded, but account linking failed. Use Restore Purchases later to try again.";
+"無法將購買綁定到此帳號" = "Unable to link the purchase to this account";

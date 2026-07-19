@@ -487,8 +487,18 @@ enum CoreTextHorizontalLineDrawer {
         attrStr: NSAttributedString,
         nsString: NSString
     ) -> CTLine {
-        guard isJustified, !isParagraphLastLine else { return line }
+        // Non-justified paragraphs (centered heading, right-aligned, natural): draw CoreText's own
+        // line untouched — its origin already encodes the alignment.
+        guard isJustified else { return line }
 
+        // Rebuild the line from its own substring instead of reusing `line`. This is the crux of
+        // the "声。 / 是！ sprayed across the whole column" regression: with a `.justified` paragraph
+        // style the CTFramesetter can hand back a CTLine it has ALREADY stretched to the column
+        // width — a paragraph's last line included, depending on iOS version and how the trailing
+        // "\n" folds into the range. Returning that frame line for a last line (the old
+        // `guard …, !isParagraphLastLine else { return line }` early-out did exactly this) draws it
+        // pre-stretched no matter what we decide below. A line freshly built from the substring is
+        // always at its natural width, so WE own the stretching, never the framesetter.
         let lineNSRange = NSRange(location: lineStart, length: max(0, lineRange.length))
         let substring = attrStr.attributedSubstring(from: lineNSRange)
         // Drop the trailing per-glyph spacing (.kern) on the line's last character.
@@ -506,6 +516,12 @@ enum CoreTextHorizontalLineDrawer {
             justifiable = substring
         }
         let naturalLine = CTLineCreateWithAttributedString(justifiable)
+
+        // A paragraph's last line is NEVER justified — return it at its natural width. Built from
+        // the substring above, so it is guaranteed un-stretched regardless of what the framesetter
+        // did to `line`.
+        if isParagraphLastLine { return naturalLine }
+
         // Measure without the trailing whitespace: a Latin line almost always ends at the space it
         // wrapped on, and CoreText does not stretch that space anyway. Counting it makes the line
         // look "already full", which would skip justification and leave English ragged.

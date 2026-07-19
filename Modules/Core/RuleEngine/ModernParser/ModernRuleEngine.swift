@@ -621,7 +621,11 @@ final class ModernRuleEngine {
     /// Mode-specific extraction step for a single-string pipeline.
     private func applyStringExtraction(_ sourceRule: SourceRule, result: Any?, idx: Int) -> Any? {
         let rule = sourceRule.rule
-        let inputPreview = String(Self.toString(result).prefix(200))
+        // Serializing the content (an Element's outerHtml / a whole page) is
+        // expensive; only pay it when a debug observer is actually attached.
+        let inputPreview = debugObserver != nil
+            ? String(Self.toString(result).prefix(200))
+            : ""
         switch sourceRule.mode {
         case .js:
             debugObserver?(.beforeExtract(
@@ -702,7 +706,11 @@ final class ModernRuleEngine {
     /// Mode-specific extraction step for a string-list pipeline.
     private func applyListExtraction(_ sourceRule: SourceRule, result: Any?, idx: Int) -> Any? {
         let rule = sourceRule.rule
-        let inputPreview = String(Self.toString(result).prefix(200))
+        // Serializing the content (an Element's outerHtml / a whole page) is
+        // expensive; only pay it when a debug observer is actually attached.
+        let inputPreview = debugObserver != nil
+            ? String(Self.toString(result).prefix(200))
+            : ""
         switch sourceRule.mode {
         case .js:
             debugObserver?(.beforeExtract(

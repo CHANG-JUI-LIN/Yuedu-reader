@@ -70,7 +70,12 @@ enum BookCoverLoader {
 
         guard let (data, response) = try? await URLSession.shared.data(for: request) else { return nil }
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { return nil }
-        guard let image = decodedCover(from: data) else { return nil }
+        // Sources with `coverDecodeJs` serve encrypted cover bytes; decode falls
+        // back to the raw data so a broken rule degrades, not disappears.
+        let effectiveData = CoverDecodeService.shared.decodedIfRegistered(
+            coverUrl: urlString, data: data
+        ) ?? data
+        guard let image = decodedCover(from: effectiveData) else { return nil }
 
         cache.setObject(image, forKey: urlString as NSString, cost: bitmapCost(of: image))
         return image

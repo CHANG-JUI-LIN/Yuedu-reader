@@ -3,6 +3,8 @@
 xcuserdata/
 DerivedData/
 .build/
+functions/lib/
+functions/node_modules/
 .worktrees/
 build/
 

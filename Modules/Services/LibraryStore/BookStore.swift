@@ -1072,6 +1072,7 @@ class BookStore: ObservableObject, BookProvider {
             sourceBaseURL: source?.bookSourceUrl,
             sourceHeaders: source?.parsedHeaders ?? [:]
         )
+        CoverDecodeService.shared.registerIfNeeded(coverUrl: trimmed, source: source)
         let filename = "\(bookId.uuidString)_cover.jpg"
         Task { [weak self] in
             guard let saved = await BookCoverLoader.downloadAndSave(
@@ -1193,6 +1194,15 @@ class BookStore: ObservableObject, BookProvider {
 
     /// Switches the book to a new source: fetches new TOC, updates book-source metadata,
     /// replaces onlineChapters, and clears the chapter cache.
+    /// 設置書籍變量 editor: replaces the book's runtime-variable map (the values
+    /// a source's JS reads back as book variables on subsequent fetches).
+    func updateBookRuntimeVariables(bookId: UUID, variables: [String: String]?) {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        let normalized = (variables?.isEmpty ?? true) ? nil : variables
+        books[idx].runtimeVariables = normalized
+        saveMeta()
+    }
+
     func updateOnlineBookSource(bookId: UUID, origin: BookOrigin) async throws {
         guard let source = BookSourceStore.shared.sources.first(where: { $0.id == origin.sourceId })
         else {
