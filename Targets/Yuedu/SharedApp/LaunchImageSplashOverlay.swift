@@ -17,6 +17,16 @@ struct LaunchImageSplashOverlay: View {
     private let holdDuration: UInt64 = 1_300_000_000  // 1.3s before fading
     private let fadeDuration = 0.45
 
+    /// Max time we wait at cold launch for StoreKit / Firestore entitlements to
+    /// resolve before giving up on the splash. Defends against the race where
+    /// `SubscriptionStore.refreshEntitlements()` (async, kicked off in
+    /// `SubscriptionStore.init`) hasn't finished by the time ContentView's
+    /// overlay first appears — without this wait, `isProActive` is still false,
+    /// `currentImage` returns nil, the splash dismisses, and `hasPlayed` latches
+    /// so the user's enabled splash never shows even though they are Pro.
+    /// Can be deleted once entitlements load synchronously at app start.
+    private let entitlementWaitNanoseconds: UInt64 = 1_500_000_000  // 1.5s
+
     var body: some View {
         ZStack {
             if visible, let image = currentImage {
@@ -29,6 +39,18 @@ struct LaunchImageSplashOverlay: View {
             guard !Self.hasPlayed else {
                 visible = false
                 return
+            }
+            // Wait for the entitlement gate to settle before latching. The
+            // body stays empty while `currentImage` is nil, so this wait is
+            // invisible to the user when the splash ends up not showing.
+            let deadline = UInt64(Date().timeIntervalSince1970 * 1_000_000_000)
+                + entitlementWaitNanoseconds
+            while currentImage == nil, !subscriptionStore.isProActive {
+                if Task.isCancelled { return }
+                if UInt64(Date().timeIntervalSince1970 * 1_000_000_000) >= deadline {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms tick
             }
             Self.hasPlayed = true
             guard currentImage != nil else {

@@ -494,38 +494,11 @@ struct ReaderSettingsView: View {
                         step: 1
                     )
 
-                    Toggle(localized("顯示標題"), isOn: $readerConfig.readerTitleVisible)
-                        .font(DSFont.body)
-
-                    LayoutSliderRow(
-                        title: localized("標題大小"),
-                        icon: .titleSize,
-                        valueText: "\(Int(readerConfig.readerTitleSize)) pt",
-                        value: $readerConfig.readerTitleSize,
-                        range: 14...40,
-                        step: 1,
-                        isEnabled: readerConfig.readerTitleVisible
-                    )
-
-                    LayoutSliderRow(
-                        title: localized("標題上距"),
-                        icon: .titleTopSpacing,
-                        valueText: "\(Int(readerConfig.readerTitleTopSpacing)) pt",
-                        value: $readerConfig.readerTitleTopSpacing,
-                        range: 0...100,
-                        step: 1,
-                        isEnabled: readerConfig.readerTitleVisible
-                    )
-
-                    LayoutSliderRow(
-                        title: localized("標題下距"),
-                        icon: .titleBottomSpacing,
-                        valueText: "\(Int(readerConfig.readerTitleBottomSpacing)) pt",
-                        value: $readerConfig.readerTitleBottomSpacing,
-                        range: 0...100,
-                        step: 1,
-                        isEnabled: readerConfig.readerTitleVisible
-                    )
+                    NavigationLink {
+                        ChapterTitleStyleSettingsView()
+                    } label: {
+                        Label(localized("章節標題樣式"), systemImage: "textformat.size")
+                    }
                 }
             }
         }
@@ -683,10 +656,10 @@ struct ReaderSettingsView: View {
             abs(readerConfig.paragraphSpacingMultiplier - defaultParagraphSpacingMultiplier) > 0.001 ||
             abs(readerConfig.pageMarginH - defaultPageMarginH) > 0.001 ||
             abs(readerConfig.pageMarginV - defaultPageMarginV) > 0.001 ||
-            readerConfig.readerTitleVisible != true ||
-            abs(readerConfig.readerTitleSize - defaultReaderTitleSize) > 0.001 ||
-            abs(readerConfig.readerTitleTopSpacing - defaultReaderTitleTopSpacing) > 0.001 ||
-            abs(readerConfig.readerTitleBottomSpacing - defaultReaderTitleBottomSpacing) > 0.001
+            settings.readerTitleVisible != true ||
+            abs(settings.readerTitleSize - defaultReaderTitleSize) > 0.001 ||
+            abs(settings.readerTitleTopSpacing - defaultReaderTitleTopSpacing) > 0.001 ||
+            abs(settings.readerTitleBottomSpacing - defaultReaderTitleBottomSpacing) > 0.001
     }
 
     private func resetLayoutDefaults() {
@@ -695,10 +668,10 @@ struct ReaderSettingsView: View {
         readerConfig.paragraphSpacingMultiplier = defaultParagraphSpacingMultiplier
         readerConfig.pageMarginH = defaultPageMarginH
         readerConfig.pageMarginV = defaultPageMarginV
-        readerConfig.readerTitleVisible = true
-        readerConfig.readerTitleSize = defaultReaderTitleSize
-        readerConfig.readerTitleTopSpacing = defaultReaderTitleTopSpacing
-        readerConfig.readerTitleBottomSpacing = defaultReaderTitleBottomSpacing
+        settings.readerTitleVisible = true
+        settings.readerTitleSize = Double(defaultReaderTitleSize)
+        settings.readerTitleTopSpacing = Double(defaultReaderTitleTopSpacing)
+        settings.readerTitleBottomSpacing = Double(defaultReaderTitleBottomSpacing)
     }
 
     private var followSystemBrightnessBinding: Binding<Bool> {
@@ -934,16 +907,16 @@ struct ReaderSettingsView: View {
             readerConfig.pageMarginV = pageMarginV
         }
         if let titleVisible = preset.titleVisible {
-            readerConfig.readerTitleVisible = titleVisible
+            settings.readerTitleVisible = titleVisible
         }
         if let titleSize = preset.titleSize {
-            readerConfig.readerTitleSize = titleSize
+            settings.readerTitleSize = Double(titleSize)
         }
         if let titleTopSpacing = preset.titleTopSpacing {
-            readerConfig.readerTitleTopSpacing = titleTopSpacing
+            settings.readerTitleTopSpacing = Double(titleTopSpacing)
         }
         if let titleBottomSpacing = preset.titleBottomSpacing {
-            readerConfig.readerTitleBottomSpacing = titleBottomSpacing
+            settings.readerTitleBottomSpacing = Double(titleBottomSpacing)
         }
         if let scrollMode = preset.scrollMode {
             settings.scrollMode = scrollMode

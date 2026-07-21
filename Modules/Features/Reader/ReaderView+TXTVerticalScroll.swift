@@ -128,10 +128,7 @@ extension ReaderView {
             writingMode: effectiveWritingMode,
             fontPostScriptName: UserReaderFontResolver.selectedPostScriptName,
             isBold: readerConfig.readerFontBold,
-            titleVisible: readerConfig.readerTitleVisible,
-            titleSize: readerConfig.readerTitleSize,
-            titleTopSpacing: readerConfig.readerTitleTopSpacing,
-            titleBottomSpacing: readerConfig.readerTitleBottomSpacing,
+            chapterTitleStyle: readerConfig.chapterTitleStyle,
             readerBackgroundImageURL: activeReaderBackgroundImageURL,
             dialogueHighlightColor: GlobalSettings.shared.readerDialogueHighlightEnabled
                 ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueHighlightColorHex)
@@ -163,7 +160,7 @@ extension ReaderView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(chapters.enumerated()), id: \.offset) { ci, chapter in
                         Text(chapter.title.converted(to: settings.textConversion))
-                            .font(DSFont.fixed(size: readerConfig.readerTitleSize, weight: .bold, design: .serif))
+                            .font(DSFont.fixed(size: readerConfig.chapterTitleStyle.size, weight: .bold, design: .serif))
                             .foregroundColor(readerTheme.textColor)
                             .padding(.top, 80)
                             .padding(.horizontal, 24)

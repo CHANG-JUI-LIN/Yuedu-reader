@@ -34,10 +34,7 @@ extension ReaderView {
             writingMode: effectiveWritingMode,
             fontPostScriptName: UserReaderFontResolver.selectedPostScriptName,
             isBold: readerConfig.readerFontBold,
-            titleVisible: readerConfig.readerTitleVisible,
-            titleSize: readerConfig.readerTitleSize,
-            titleTopSpacing: readerConfig.readerTitleTopSpacing,
-            titleBottomSpacing: readerConfig.readerTitleBottomSpacing,
+            chapterTitleStyle: readerConfig.chapterTitleStyle,
             readerBackgroundImageURL: activeReaderBackgroundImageURL,
             dialogueHighlightColor: GlobalSettings.shared.readerDialogueHighlightEnabled
                 ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueHighlightColorHex)

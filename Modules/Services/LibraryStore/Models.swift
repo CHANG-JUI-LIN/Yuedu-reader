@@ -675,13 +675,12 @@ struct ReaderRenderSettings: Equatable {
     /// but included here so the relayout dedup check detects font changes.
     var fontPostScriptName: String? = nil
     var isBold: Bool = false
-    // In-content chapter title (rendered at the top of each chapter). Driven by
-    // the reader's "顯示標題 / 標題大小 / 標題上距 / 標題下距" settings; included
-    // here so a change re-triggers pagination via the relayout dedup check.
-    var titleVisible: Bool = true
-    var titleSize: CGFloat = 28
-    var titleTopSpacing: CGFloat = 10
-    var titleBottomSpacing: CGFloat = 20
+    // In-content chapter title (rendered at the top of each chapter). The full
+    // ChapterTitleStyle (size/spacing/weight/alignment/split/fonts) drives the
+    // paged & scroll TXT and online builders; the EPUB <h1> path reads only
+    // visible/size/bottomSpacing. Included here so a change re-triggers
+    // pagination via the relayout dedup check (ChapterTitleStyle is Equatable).
+    var chapterTitleStyle: ChapterTitleStyle = .default
     /// Optional user-selected reader background. The URL stays value-semantic so
     /// layout invalidation can distinguish a new imported image without retaining
     /// UIKit image objects in persisted render settings.

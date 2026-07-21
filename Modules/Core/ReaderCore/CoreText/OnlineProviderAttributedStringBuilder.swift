@@ -435,7 +435,6 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         themeTextColor: UIColor,
         themeBackgroundColor: UIColor
     ) async -> AttributedChapterBuildResult {
-        let titleFont = UserReaderFontResolver.titleFont(size: settings.titleSize, isBold: settings.isBold)
         let bodyFont = UserReaderFontResolver.bodyFont(size: settings.fontSize, isBold: settings.isBold)
         let bodyTargetLineHeight = ReaderTypographyCorrection.targetLineHeight(
             font: bodyFont,
@@ -447,11 +446,6 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             targetLineHeight: bodyTargetLineHeight
         )
 
-        let titleParaStyle = NSMutableParagraphStyle()
-        titleParaStyle.alignment = .center
-        titleParaStyle.paragraphSpacingBefore = settings.titleTopSpacing
-        titleParaStyle.paragraphSpacing = settings.titleBottomSpacing
-
         let bodyParaStyle = NSMutableParagraphStyle()
         bodyParaStyle.alignment = .justified // full justification: both margins align, CJK + Latin alike
         bodyParaStyle.hyphenationFactor = ReaderHyphenation.factor // break long Latin words instead of gapping the line
@@ -461,17 +455,16 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         bodyParaStyle.paragraphSpacing = settings.paragraphSpacing
 
         let attr = NSMutableAttributedString()
-        if settings.titleVisible, !payload.title.isEmpty {
-            attr.append(NSAttributedString(
-                string: payload.title + "\n",
-                attributes: [
-                    .font: titleFont,
-                    .foregroundColor: themeTextColor,
-                    .paragraphStyle: titleParaStyle,
-                    .kern: settings.letterSpacing as NSNumber
-                ]
-            ))
-        }
+        await ChapterTitleAttributedBuilder.append(
+            title: payload.title,
+            style: settings.chapterTitleStyle,
+            settings: settings,
+            renderWidth: max(1, renderSize.width - settings.contentInsets.left - settings.contentInsets.right),
+            themeTextColor: themeTextColor,
+            themeBackgroundColor: themeBackgroundColor,
+            letterSpacing: settings.letterSpacing,
+            to: attr
+        )
 
         let paragraphs = ReaderHTMLUtilities.bodyParagraphs(
             fromPlainText: text,

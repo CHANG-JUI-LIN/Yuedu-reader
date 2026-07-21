@@ -58,6 +58,8 @@ struct NodeAttributedStringRenderer {
         init(
             from settings: ReaderRenderSettings,
             textColor: UIColor? = nil,
+            baseFontSize: CGFloat? = nil,
+            paragraphSpacing: CGFloat? = nil,
             fontFamily: String? = nil,
             renderWidth: CGFloat? = nil,
             renderHeight: CGFloat? = nil,
@@ -67,18 +69,20 @@ struct NodeAttributedStringRenderer {
             baseWritingDirection: NSWritingDirection = .natural,
             centerStandaloneImages: Bool = false
         ) {
-            self.baseFontSize = settings.fontSize
+            self.baseFontSize = baseFontSize ?? settings.fontSize
             self.lineHeightMultiple = settings.lineHeightMultiple
-            self.paragraphSpacing = settings.paragraphSpacing
+            self.paragraphSpacing = paragraphSpacing ?? settings.paragraphSpacing
             self.letterSpacing = settings.letterSpacing
             self.textColor = textColor ?? settings.textColor
             self.backgroundColor = settings.backgroundColor
             self.dialogueTextColor = settings.dialogueHighlightColor
             self.dialogueBoxColor = settings.dialogueBoxColor
-            self.chapterTitleVisible = settings.titleVisible
-            self.chapterTitleSize = settings.titleSize
-            self.chapterTitleTopSpacing = settings.titleTopSpacing
-            self.chapterTitleBottomSpacing = settings.titleBottomSpacing
+            // EPUB <h1> path: only these three are honoured (matches prior
+            // behaviour). Weight/alignment/split/fonts intentionally ignored here.
+            self.chapterTitleVisible = settings.chapterTitleStyle.visible
+            self.chapterTitleSize = settings.chapterTitleStyle.size
+            self.chapterTitleTopSpacing = settings.chapterTitleStyle.topSpacing
+            self.chapterTitleBottomSpacing = settings.chapterTitleStyle.bottomSpacing
             self.fontFamily = fontFamily
             self.renderWidth = renderWidth
             self.renderHeight = renderHeight

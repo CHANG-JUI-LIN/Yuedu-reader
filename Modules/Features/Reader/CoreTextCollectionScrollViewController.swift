@@ -566,17 +566,93 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     /// Reloads the collection view while keeping the reader at the same content
     /// position. Used when incremental insertion can't be trusted (count desync,
     /// RTL prepend) so the reader never snaps back to the chapter start.
+    ///
+    /// Anchor strategy: capture the topmost visible chunk and the offset from
+    /// that chunk's frame origin to the viewport's top-left corner BEFORE the
+    /// reload, then re-apply that exact delta after the reload. Centering the
+    /// chunk with `.centeredVertically` was wrong: if the user is looking at
+    /// the lower half of a tall chunk (e.g. fast scroll-down stopped mid-chunk),
+    /// centering jumps the viewport UP by up to half a chunk — the "往上回跳一
+    /// 點點" reported when scrolling fast downward and stopping manually. Chunk
+    /// identity is stable across reloads (`loadChapter` only prepends/appends;
+    /// existing chunk instances are never replaced), so we can re-find the same
+    /// instance via `===` after the reload.
     private func reloadPreservingVisiblePosition() {
-        let anchor = visibleCanonicalPosition()
+        let anchorPath = visibleProgressIndexPath()
+        let anchorRow = anchorPath?.item
+        let anchorChunk: CoreTextChunk? = anchorRow.flatMap {
+            engine.chunks.indices.contains($0) ? engine.chunks[$0] : nil
+        }
+        let anchorFrame = anchorPath.flatMap {
+            collectionView.layoutAttributesForItem(at: $0)?.frame
+        }
+        let savedOffset = collectionView.contentOffset
+        let deltaFromAnchorOrigin: CGPoint? = (anchorFrame != nil)
+            ? CGPoint(
+                x: savedOffset.x - anchorFrame!.minX,
+                y: savedOffset.y - anchorFrame!.minY
+            )
+            : nil
+
         displayedCount = engine.chunks.count
         collectionView.reloadData()
         collectionView.layoutIfNeeded()
-        guard let anchor,
-              let row = engine.chunkIndex(forChapter: anchor.spineIndex, charOffset: anchor.charOffset),
-              row < collectionView.numberOfItems(inSection: 0) else { return }
-        let position: UICollectionView.ScrollPosition =
-            scrollAxis == .vertical ? .centeredVertically : .centeredHorizontally
-        collectionView.scrollToItem(at: IndexPath(item: row, section: 0), at: position, animated: false)
+
+        guard let anchorChunk,
+              let newRow = engine.chunks.firstIndex(where: { $0 === anchorChunk }),
+              newRow < collectionView.numberOfItems(inSection: 0),
+              let newFrame = collectionView.layoutAttributesForItem(
+                at: IndexPath(item: newRow, section: 0)
+              )?.frame else {
+            // Last-resort fallback: keep the user inside the anchor's chapter by
+            // scrolling to its first chunk. Better than chapter-start snap, but
+            // only triggers if identity lookup fails (which would indicate a
+            // separate bug in the engine).
+            if let anchorChunk,
+               let fallbackRow = engine.chunkIndex(
+                forChapter: anchorChunk.chapterIndex,
+                charOffset: anchorChunk.charRange.location
+               ),
+               fallbackRow < collectionView.numberOfItems(inSection: 0) {
+                let position: UICollectionView.ScrollPosition =
+                    scrollAxis == .vertical ? .top : .right
+                collectionView.scrollToItem(
+                    at: IndexPath(item: fallbackRow, section: 0),
+                    at: position,
+                    animated: false
+                )
+            }
+            return
+        }
+
+        let proposed: CGPoint
+        if let deltaFromAnchorOrigin {
+            proposed = CGPoint(
+                x: newFrame.minX + deltaFromAnchorOrigin.x,
+                y: newFrame.minY + deltaFromAnchorOrigin.y
+            )
+        } else {
+            proposed = savedOffset
+        }
+        // Axis-aware clamp: vertical mode scrolls contentOffset.y in [0, +max],
+        // but horizontalRTL scrolls contentOffset.x in [-max, 0] (RTL shoves
+        // content to the left of the viewport). A naive `max(0, ...)` clamp
+        // would push RTL offsets back to 0.
+        let clampedX: CGFloat
+        let clampedY: CGFloat
+        if scrollAxis == .vertical {
+            let maxYOffset = max(0, collectionView.contentSize.height - collectionView.bounds.height)
+            clampedY = min(max(0, proposed.y), maxYOffset)
+            clampedX = proposed.x
+        } else {
+            let minXOffset = -max(0, collectionView.contentSize.width - collectionView.bounds.width)
+            clampedX = min(max(minXOffset, proposed.x), 0)
+            clampedY = proposed.y
+        }
+        collectionView.setContentOffset(
+            CGPoint(x: clampedX, y: clampedY),
+            animated: false
+        )
     }
 
     private func applyPendingInitialScrollIfPossible() {
@@ -1020,9 +1096,16 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
     private func visibleCanonicalPosition() -> CoreTextReadingPosition? {
         guard !engine.chunks.isEmpty else { return nil }
 
+        // `collectionView.bounds` already has its origin shifted by `contentOffset`
+        // (UIScrollView semantics), so `bounds.midX/Y` IS the visible center in
+        // the collection view's coordinate system. Adding `contentOffset` again
+        // double-counted it, sent the hit-test point far past the content, and
+        // made every caller fall through to the top-chunk fallback — which in
+        // turn made `reloadPreservingVisiblePosition` snap to the chunk start
+        // and caused the "scroll-down stop → jump back" symptom.
         let visibleCenter = CGPoint(
-            x: collectionView.bounds.midX + collectionView.contentOffset.x,
-            y: collectionView.bounds.midY + collectionView.contentOffset.y
+            x: collectionView.bounds.midX,
+            y: collectionView.bounds.midY
         )
 
         if let (_, chunk, localPoint) = hitTestChunk(at: visibleCenter) {

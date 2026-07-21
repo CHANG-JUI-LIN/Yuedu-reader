@@ -234,10 +234,7 @@ final class ReaderConfig: ObservableObject {
     @Published var pageMarginV: CGFloat
     @Published var footerBottomPadding: CGFloat
     @Published var footerTextGap: CGFloat
-    @Published var readerTitleVisible: Bool
-    @Published var readerTitleSize: CGFloat
-    @Published var readerTitleTopSpacing: CGFloat
-    @Published var readerTitleBottomSpacing: CGFloat
+    @Published var chapterTitleStyle: ChapterTitleStyle
     @Published var readerFontBold: Bool
     @Published var readerHeaderVisible: Bool
     @Published var readerHeaderTopPadding: CGFloat
@@ -270,10 +267,7 @@ final class ReaderConfig: ObservableObject {
         pageMarginV = CGFloat(gs.pageMarginV)
         footerBottomPadding = CGFloat(gs.footerBottomPadding)
         footerTextGap = CGFloat(gs.footerTextGap)
-        readerTitleVisible = gs.readerTitleVisible
-        readerTitleSize = CGFloat(gs.readerTitleSize)
-        readerTitleTopSpacing = CGFloat(gs.readerTitleTopSpacing)
-        readerTitleBottomSpacing = CGFloat(gs.readerTitleBottomSpacing)
+        chapterTitleStyle = gs.chapterTitleStyle
         readerFontBold = gs.readerFontBold
         readerHeaderVisible = gs.readerHeaderVisible
         readerHeaderTopPadding = CGFloat(gs.readerHeaderTopPadding)
@@ -296,10 +290,7 @@ final class ReaderConfig: ObservableObject {
         pageMarginV = CGFloat(gs.pageMarginV)
         footerBottomPadding = CGFloat(gs.footerBottomPadding)
         footerTextGap = CGFloat(gs.footerTextGap)
-        readerTitleVisible = gs.readerTitleVisible
-        readerTitleSize = CGFloat(gs.readerTitleSize)
-        readerTitleTopSpacing = CGFloat(gs.readerTitleTopSpacing)
-        readerTitleBottomSpacing = CGFloat(gs.readerTitleBottomSpacing)
+        chapterTitleStyle = gs.chapterTitleStyle
         readerFontBold = gs.readerFontBold
         readerHeaderVisible = gs.readerHeaderVisible
         readerHeaderTopPadding = CGFloat(gs.readerHeaderTopPadding)
@@ -349,16 +340,13 @@ final class ReaderConfig: ObservableObject {
             }
             .store(in: &cancellables)
 
-        Publishers.CombineLatest4($readerTitleVisible, $readerTitleSize, $readerTitleTopSpacing, $readerTitleBottomSpacing)
+        $chapterTitleStyle
             .dropFirst()
-            .sink { [weak self] visible, size, topSpacing, bottomSpacing in
-                let gs = GlobalSettings.shared
-                gs.readerTitleVisible = visible
-                gs.readerTitleSize = Double(size)
-                gs.readerTitleTopSpacing = Double(topSpacing)
-                gs.readerTitleBottomSpacing = Double(bottomSpacing)
+            .debounce(for: .milliseconds(120), scheduler: RunLoop.main)
+            .sink { [weak self] style in
+                GlobalSettings.shared.chapterTitleStyle = style
                 guard let self, !self.suppressRefresh else { return }
-                // Title size/spacing/visibility change the in-content title, which
+                // Any title change (size/spacing/weight/alignment/split/fonts)
                 // shifts pagination — needs a relayout, not just a recolor.
                 self.refresh.send(.layout)
             }
@@ -435,6 +423,8 @@ class GlobalSettings: ObservableObject {
     private static let commentBubbleSelectedCustomStyleIDKey = "yd_comment_bubble_selected_custom_style_id"
     private static let commentBubbleScaleKey = "yd_comment_bubble_scale"
     private static let commentBubbleTextScaleKey = "yd_comment_bubble_text_scale"
+    private static let chapterTitleStyleKey = "yd_chapter_title_style_v1"
+    private static let chapterTitleCustomPresetsKey = "yd_chapter_title_custom_presets_v1"
     private static let readerTextUnderlineDecorationKey = "yd_reader_text_underline_decoration"
     private static let readerTextUnderlineDecorationColorHexKey = "yd_reader_text_underline_decoration_color_hex"
     private static let readerTextUnderlineStyleKey = "yd_reader_text_underline_style"
@@ -575,6 +565,11 @@ class GlobalSettings: ObservableObject {
     @Published var footerTextGap: Double {
         didSet { UserDefaults.standard.set(footerTextGap, forKey: "yd_footer_text_gap") }
     }
+    // DEPRECATED loose title fields. The single source of truth for the
+    // in-content chapter title is `chapterTitleStyle` below; these are retained
+    // only as a one-time migration source (see `loadChapterTitleStyle`) and for
+    // reading older layout presets. Do not treat them as authoritative for
+    // rendering — nothing mirrors them into the renderer anymore.
     @Published var readerTitleVisible: Bool {
         didSet { UserDefaults.standard.set(readerTitleVisible, forKey: "yd_reader_title_visible") }
     }
@@ -586,6 +581,15 @@ class GlobalSettings: ObservableObject {
     }
     @Published var readerTitleBottomSpacing: Double {
         didSet { UserDefaults.standard.set(readerTitleBottomSpacing, forKey: "yd_reader_title_bottom_spacing") }
+    }
+    /// Full chapter-title style (size/spacing/weight/alignment/split/fonts) — the
+    /// authoritative in-content title description consumed by the renderer.
+    @Published var chapterTitleStyle: ChapterTitleStyle {
+        didSet { Self.saveChapterTitleStyle(chapterTitleStyle) }
+    }
+    /// User-saved chapter-title presets ("我的預設"). Built-ins live in code.
+    @Published private(set) var chapterTitleCustomPresets: [ChapterTitleStylePreset] {
+        didSet { Self.saveChapterTitleCustomPresets(chapterTitleCustomPresets) }
     }
     /// Reader header (頁眉): the info band above the text in paged mode.
     @Published var readerHeaderVisible: Bool {
@@ -1076,6 +1080,8 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_reader_title_top_spacing") as? Double) ?? 10.0
         readerTitleBottomSpacing =
             (UserDefaults.standard.object(forKey: "yd_reader_title_bottom_spacing") as? Double) ?? 20.0
+        chapterTitleStyle = Self.loadChapterTitleStyle()
+        chapterTitleCustomPresets = Self.loadChapterTitleCustomPresets()
         let loadedReaderHeaderVisible =
             (UserDefaults.standard.object(forKey: "yd_reader_header_visible") as? Bool) ?? true
         readerHeaderVisible = loadedReaderHeaderVisible
@@ -1412,6 +1418,63 @@ class GlobalSettings: ObservableObject {
         } else {
             UserDefaults.standard.removeObject(forKey: commentBubbleSelectedCustomStyleIDKey)
         }
+    }
+
+    // MARK: - Chapter Title Style
+
+    private static func loadChapterTitleStyle() -> ChapterTitleStyle {
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: chapterTitleStyleKey),
+           let decoded = try? JSONDecoder().decode(ChapterTitleStyle.self, from: data) {
+            return decoded.sanitized()
+        }
+        // One-time migration from the legacy loose fields. They always resolve
+        // (real values for upgraders, defaults for fresh installs), so an
+        // upgrader keeps their size/spacing/visibility while the new fields take
+        // their defaults. The first `didSet` save writes JSON; thereafter the
+        // legacy keys are only read by older layout-preset import.
+        let visible = (defaults.object(forKey: "yd_reader_title_visible") as? Bool) ?? true
+        let size = (defaults.object(forKey: "yd_reader_title_size") as? Double) ?? 28
+        let top = (defaults.object(forKey: "yd_reader_title_top_spacing") as? Double) ?? 10
+        let bottom = (defaults.object(forKey: "yd_reader_title_bottom_spacing") as? Double) ?? 20
+        return ChapterTitleStyle(
+            legacyVisible: visible,
+            legacySize: CGFloat(size),
+            legacyTopSpacing: CGFloat(top),
+            legacyBottomSpacing: CGFloat(bottom)
+        ).sanitized()
+    }
+
+    private static func saveChapterTitleStyle(_ style: ChapterTitleStyle) {
+        guard let data = try? JSONEncoder().encode(style) else { return }
+        UserDefaults.standard.set(data, forKey: chapterTitleStyleKey)
+    }
+
+    private static func loadChapterTitleCustomPresets() -> [ChapterTitleStylePreset] {
+        guard let data = UserDefaults.standard.data(forKey: chapterTitleCustomPresetsKey),
+              let decoded = try? JSONDecoder().decode([ChapterTitleStylePreset].self, from: data)
+        else { return [] }
+        return decoded
+    }
+
+    private static func saveChapterTitleCustomPresets(_ presets: [ChapterTitleStylePreset]) {
+        let encoded = (try? JSONEncoder().encode(presets)) ?? Data("[]".utf8)
+        UserDefaults.standard.set(encoded, forKey: chapterTitleCustomPresetsKey)
+    }
+
+    /// Add or replace a user preset (matched by id).
+    func upsertChapterTitleCustomPreset(_ preset: ChapterTitleStylePreset) {
+        var list = chapterTitleCustomPresets
+        if let index = list.firstIndex(where: { $0.id == preset.id }) {
+            list[index] = preset
+        } else {
+            list.append(preset)
+        }
+        chapterTitleCustomPresets = list
+    }
+
+    func deleteChapterTitleCustomPreset(id: String) {
+        chapterTitleCustomPresets = chapterTitleCustomPresets.filter { $0.id != id }
     }
 
     @discardableResult
