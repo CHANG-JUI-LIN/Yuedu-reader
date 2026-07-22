@@ -65,8 +65,8 @@ extension BookSourceFetcher {
         extractedTitle: String? = nil,
         rawHTML: String? = nil,
         storeNormalizedHTML: Bool = true
-    ) -> String {
-        Self.chapterCacheRepository.saveToCache(
+    ) throws -> String {
+        try Self.chapterCacheRepository.saveToCache(
             content: content,
             bookId: bookId,
             chapterIndex: chapterIndex,
@@ -83,8 +83,8 @@ extension BookSourceFetcher {
         _ package: ChapterPackage,
         rawHTML: String?,
         normalizedHTML: String?
-    ) -> String {
-        Self.chapterCacheRepository.saveChapterPackageToCache(
+    ) throws -> String {
+        try Self.chapterCacheRepository.saveChapterPackageToCache(
             package,
             rawHTML: rawHTML,
             normalizedHTML: normalizedHTML

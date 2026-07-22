@@ -324,6 +324,8 @@ extension ReaderView {
             return "pause.circle"
         case .available:
             return "checkmark.icloud"
+        case .partial:
+            return "exclamationmark.icloud"
         }
     }
 
@@ -346,18 +348,11 @@ extension ReaderView {
 
     func resumeOfflineDownload() {
         guard let b = book else { return }
-        guard let task = b.offlineDownloadTask?.clamped(to: b.onlineChapters?.count ?? 0) else {
-            return
+        if b.offlineDownloadState == .partial || b.offlineDownloadState == .failed {
+            readerViewModel.retryFailedOfflineDownload(book: b, store: store)
+        } else {
+            readerViewModel.resumeOfflineDownload(book: b, store: store)
         }
-        let completed = task.clampedCompletedChapterCount
-        let remaining = task.totalChapterCount - completed
-        guard remaining > 0 else { return }
-        readerViewModel.handleDownloadAction(
-            book: b,
-            store: store,
-            startChapterIndex: task.startChapterIndex + completed,
-            chapterCount: remaining
-        )
     }
 
     func pauseOfflineDownload() {

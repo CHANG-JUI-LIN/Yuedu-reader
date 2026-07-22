@@ -2,8 +2,9 @@ import SwiftUI
 
 struct DownloadManagementView: View {
     @EnvironmentObject var store: BookStore
-    @ObservedObject private var gs = GlobalSettings.shared
     @Environment(\.presentationMode) private var presentationMode
+    @Environment(\.appDependencies) private var dependencies
+    @StateObject private var viewModel = DownloadManagementViewModel()
 
     private var onlineBooks: [ReadingBook] {
         store.books.filter { $0.isOnline }
@@ -13,6 +14,7 @@ struct DownloadManagementView: View {
         onlineBooks.filter { book in
             book.offlineDownloadState == .downloading
                 || book.offlineDownloadState == .paused
+                || book.offlineDownloadState == .partial
                 || (book.offlineDownloadState == .failed && book.offlineDownloadTask != nil)
         }
     }
@@ -22,9 +24,14 @@ struct DownloadManagementView: View {
     }
 
     private var totalDownloadedMegabytes: Double {
-        onlineBooks.reduce(0) { partial, book in
-            partial + cacheSizeMB(for: book)
-        }
+        viewModel.totalMegabytes
+    }
+
+    private var storageStateToken: String {
+        onlineBooks
+            .map { "\($0.id.uuidString):\($0.offlineDownloadState.rawValue)" }
+            .sorted()
+            .joined(separator: "|")
     }
 
     var body: some View {
@@ -47,7 +54,20 @@ struct DownloadManagementView: View {
                 }
             }
             .task {
-                resumeInterruptedDownloads()
+                await dependencies.offlineDownloadManager
+                    .reconcileInterruptedDownloads(store: store)
+                await viewModel.refreshStorage(
+                    for: onlineBooks,
+                    chapterStore: dependencies.offlineChapterStore
+                )
+            }
+            .onChange(of: storageStateToken) { _, _ in
+                Task {
+                    await viewModel.refreshStorage(
+                        for: onlineBooks,
+                        chapterStore: dependencies.offlineChapterStore
+                    )
+                }
             }
         }
     }
@@ -101,10 +121,19 @@ struct DownloadManagementView: View {
                                 }
                                 .font(DSFont.caption)
                             } else {
-                                Button(localized("繼續下載")) {
+                                Button(
+                                    book.offlineDownloadState == .partial || book.offlineDownloadState == .failed
+                                        ? localized("重試失敗章節")
+                                        : localized("繼續下載")
+                                ) {
                                     resumeDownload(for: book)
                                 }
                                 .font(DSFont.caption)
+                                Button(role: .destructive) {
+                                    removeDownload(for: book)
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
                             }
                         }
                     }
@@ -132,7 +161,7 @@ struct DownloadManagementView: View {
                         }
                         Spacer()
                         Button(role: .destructive) {
-                            store.clearOnlineDownload(bookId: book.id)
+                            removeDownload(for: book)
                         } label: {
                             Text(localized("移除"))
                         }
@@ -186,53 +215,40 @@ struct DownloadManagementView: View {
         )
     }
 
-    private func resumeInterruptedDownloads() {
-        for book in activeDownloads where book.offlineDownloadState == .downloading {
-            resumeDownload(for: book)
-        }
-    }
-
     private func resumeDownload(for book: ReadingBook) {
-        if let task = book.offlineDownloadTask?.clamped(to: chapterTotal(for: book)) {
-            let completed = task.clampedCompletedChapterCount
-            let remaining = task.totalChapterCount - completed
-            guard remaining > 0 else { return }
-            OnlineBookCoordinator.shared.downloadBook(
-                book,
-                store: store,
-                startChapterIndex: task.startChapterIndex + completed,
-                chapterCount: remaining
-            )
-        } else {
-            OnlineBookCoordinator.shared.downloadBook(book, store: store)
+        Task {
+            if book.offlineDownloadState == .partial || book.offlineDownloadState == .failed {
+                await dependencies.offlineDownloadManager.retryFailed(book: book, store: store)
+            } else {
+                await dependencies.offlineDownloadManager.resume(book: book, store: store)
+            }
         }
     }
 
     private func pauseDownload(for book: ReadingBook) {
-        OnlineBookCoordinator.shared.pauseDownload(book: book, store: store)
+        Task {
+            await dependencies.offlineDownloadManager.pause(bookId: book.id, store: store)
+        }
+    }
+
+    private func removeDownload(for book: ReadingBook) {
+        Task {
+            do {
+                try await dependencies.offlineDownloadManager.remove(
+                    bookId: book.id,
+                    store: store
+                )
+                await viewModel.refreshStorage(
+                    for: onlineBooks,
+                    chapterStore: dependencies.offlineChapterStore
+                )
+            } catch {
+                AppLogger.error("Offline book removal failed", error: error)
+            }
+        }
     }
 
     private func cacheSizeMB(for book: ReadingBook) -> Double {
-        let fileManager = FileManager.default
-        let cacheDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("online_cache")
-            .appendingPathComponent(book.id.uuidString)
-
-        guard let enumerator = fileManager.enumerator(
-            at: cacheDir,
-            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]
-        ) else {
-            return 0
-        }
-
-        var totalBytes: Int64 = 0
-        for case let fileURL as URL in enumerator {
-            guard
-                let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
-                values.isRegularFile == true
-            else { continue }
-            totalBytes += Int64(values.fileSize ?? 0)
-        }
-        return Double(totalBytes) / 1_048_576
+        viewModel.megabytes(for: book.id)
     }
 }

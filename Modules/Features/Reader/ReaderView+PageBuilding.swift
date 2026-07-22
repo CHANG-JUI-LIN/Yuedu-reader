@@ -321,7 +321,15 @@ extension ReaderView {
                 if let cached = TXTChapterParser.loadCachedIndexes(bookId: bookId, fileSize: fileSize, fingerprint: fingerprint, encoding: encoding) {
                     mappedChapterIndexes = cached
                 } else {
-                    let fresh = TXTChapterParser.parseMappedChapterIndexes(mappedTextFile, bookTitle: bookTitle)
+                    let fresh = SourcePerfTrace.span(
+                        "txt.index",
+                        "bytes=\(fileSize) encoding=\(encoding.rawValue)"
+                    ) {
+                        TXTChapterParser.parseMappedChapterIndexes(
+                            mappedTextFile,
+                            bookTitle: bookTitle
+                        )
+                    }
                     TXTChapterParser.saveCachedIndexes(fresh, bookId: bookId, fileSize: fileSize, fingerprint: fingerprint, encoding: encoding)
                     mappedChapterIndexes = fresh
                 }

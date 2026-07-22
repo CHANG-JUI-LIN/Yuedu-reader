@@ -384,60 +384,13 @@ enum BookCompatibilityState: String, Codable {
     case quarantined
 }
 
-enum BookOfflineDownloadState: String, Codable {
+enum BookOfflineDownloadState: String, Codable, Sendable {
     case none
     case downloading
     case available
+    case partial
     case failed
     case paused
-}
-
-struct BookOfflineDownloadTask: Codable, Equatable {
-    var startChapterIndex: Int
-    var endChapterIndex: Int
-    var completedChapterCount: Int
-    var startedAt: Date
-    var updatedAt: Date
-
-    init(
-        startChapterIndex: Int,
-        endChapterIndex: Int,
-        completedChapterCount: Int = 0,
-        startedAt: Date = Date(),
-        updatedAt: Date = Date()
-    ) {
-        self.startChapterIndex = max(0, startChapterIndex)
-        self.endChapterIndex = max(self.startChapterIndex, endChapterIndex)
-        self.completedChapterCount = max(0, completedChapterCount)
-        self.startedAt = startedAt
-        self.updatedAt = updatedAt
-    }
-
-    var totalChapterCount: Int {
-        max(0, endChapterIndex - startChapterIndex + 1)
-    }
-
-    var clampedCompletedChapterCount: Int {
-        min(max(completedChapterCount, 0), max(totalChapterCount, 0))
-    }
-
-    func updatingProgress(_ completed: Int, at date: Date = Date()) -> BookOfflineDownloadTask {
-        var copy = self
-        copy.completedChapterCount = min(max(completed, 0), max(totalChapterCount, 0))
-        copy.updatedAt = date
-        return copy
-    }
-
-    func clamped(to chapterCount: Int) -> BookOfflineDownloadTask? {
-        guard chapterCount > 0 else { return nil }
-        let start = min(max(startChapterIndex, 0), chapterCount - 1)
-        let end = min(max(endChapterIndex, start), chapterCount - 1)
-        var copy = self
-        copy.startChapterIndex = start
-        copy.endChapterIndex = end
-        copy.completedChapterCount = min(copy.completedChapterCount, copy.totalChapterCount)
-        return copy
-    }
 }
 
 enum BookResourceRole: String, Codable {

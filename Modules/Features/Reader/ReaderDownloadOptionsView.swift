@@ -32,6 +32,7 @@ struct ReaderDownloadOptionsView: View {
     @State private var startOption: ReaderDownloadStartOption = .currentChapter
     @State private var chapterCount: Double
     @State private var chapterCountText: String
+    @State private var isAddingRange = false
 
     init(
         bookId: UUID,
@@ -69,10 +70,10 @@ struct ReaderDownloadOptionsView: View {
         switch downloadState {
         case .downloading, .paused:
             return .progress
-        case .failed:
+        case .failed, .partial:
             return book?.offlineDownloadTask != nil ? .progress : .range
         case .available:
-            return .completed
+            return isAddingRange ? .range : .completed
         case .none:
             return .range
         }
@@ -205,6 +206,17 @@ struct ReaderDownloadOptionsView: View {
             .padding(.vertical, DSSpacing.xs)
         }
 
+        if let task = clampedTask, !task.failedChapters.isEmpty {
+            Section(header: Text(localized("失敗章節"))) {
+                Text(String(format: localized("%d 章失敗"), task.failedChapters.count))
+                    .foregroundColor(DSColor.textSecondary)
+                ForEach(task.failedChapters.values.sorted { $0.chapterIndex < $1.chapterIndex }.prefix(3), id: \.chapterIndex) { failure in
+                    Text(failure.title)
+                        .font(DSFont.caption)
+                }
+            }
+        }
+
         Section {
             Button {
                 if downloadState == .downloading {
@@ -214,8 +226,12 @@ struct ReaderDownloadOptionsView: View {
                 }
             } label: {
                 Label(
-                    downloadState == .downloading ? localized("暫停下載") : localized("繼續下載"),
-                    systemImage: downloadState == .downloading ? "pause.fill" : "play.fill"
+                    downloadState == .downloading
+                        ? localized("暫停下載")
+                        : (downloadState == .partial || downloadState == .failed
+                            ? localized("重試失敗章節")
+                            : localized("繼續下載")),
+                    systemImage: downloadState == .downloading ? "pause.fill" : "arrow.clockwise"
                 )
             }
             if downloadState != .downloading {
@@ -248,6 +264,11 @@ struct ReaderDownloadOptionsView: View {
         }
 
         Section {
+            Button {
+                isAddingRange = true
+            } label: {
+                Label(localized("新增下載範圍"), systemImage: "plus.circle")
+            }
             Button(role: .destructive) {
                 onRemove()
             } label: {
@@ -283,6 +304,8 @@ struct ReaderDownloadOptionsView: View {
             return localized("下載失敗")
         case .available:
             return localized("下載完成")
+        case .partial:
+            return localized("部分完成")
         case .none:
             return localized("未下載")
         }

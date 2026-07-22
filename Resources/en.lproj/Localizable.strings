@@ -1532,3 +1532,8 @@
 /* Chapter load failure */
 "章節載入失敗" = "Chapter Failed to Load";
 "資料不一致，請點擊重試" = "The chapter cache is inconsistent. Tap Retry.";
+"部分完成" = "Partially Downloaded";
+"失敗章節" = "Failed Chapters";
+"%d 章失敗" = "%d Chapters Failed";
+"重試失敗章節" = "Retry Failed Chapters";
+"新增下載範圍" = "Add Download Range";

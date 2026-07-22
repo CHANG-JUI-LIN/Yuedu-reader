@@ -117,6 +117,33 @@ struct TXTMetadataProbeTests {
         #expect(try Data(contentsOf: importedURL) == sourceData)
     }
 
+    @Test("BookStore keeps GB18030 bytes while decoded content remains readable")
+    func bookStoreKeepsGB18030BytesAndReadableContent() async throws {
+        let text = "书名：活着\n作者：余华\n\n第一章\n原始内容保持不变。"
+        let sourceData = try #require(text.data(using: TXTFileReader.gb18030Encoding))
+        let sourceURL = try writeTemporaryTXT(sourceData)
+        let metadataURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("json")
+        let store = BookStore(metadataFileURL: metadataURL)
+
+        let book = try await store.importTxt(url: sourceURL)
+        let importedURL = FileManager.default.urls(
+            for: .documentDirectory,
+            in: .userDomainMask
+        )[0].appendingPathComponent(book.contentFilename)
+        defer {
+            try? FileManager.default.removeItem(at: sourceURL)
+            try? FileManager.default.removeItem(at: importedURL)
+            try? FileManager.default.removeItem(at: metadataURL)
+        }
+
+        #expect(book.title == "活着")
+        #expect(book.author == "余华")
+        #expect(try Data(contentsOf: importedURL) == sourceData)
+        #expect(store.content(for: book) == text)
+    }
+
     private func writeTemporaryTXT(_ text: String) throws -> URL {
         try writeTemporaryTXT(Data(text.utf8))
     }

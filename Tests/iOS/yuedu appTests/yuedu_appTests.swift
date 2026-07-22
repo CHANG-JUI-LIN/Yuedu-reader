@@ -285,7 +285,7 @@ struct yuedu_appTests {
         onlineBook.isOnline = true
         onlineBook.onlineChapters = refs
 
-        _ = BookSourceFetcher.shared.saveToCache(
+        _ = try BookSourceFetcher.shared.saveToCache(
             content: "已快取內容",
             bookId: bookId,
             chapterIndex: 0,
@@ -293,7 +293,10 @@ struct yuedu_appTests {
             tocTitle: refs[0].title
         )
 
-        let package = try OnlineBookCoordinator.shared.buildPackage(for: onlineBook, preferredChapter: 1)
+        let coordinator = try #require(
+            AppDependencies.live.onlineBookCoordinator as? OnlineBookCoordinator
+        )
+        let package = try coordinator.buildPackage(for: onlineBook, preferredChapter: 1)
 
         #expect(package.parsedBook.chapters.count == 2)
         #expect(package.parsedBook.chapters[0].html.contains("已快取內容"))

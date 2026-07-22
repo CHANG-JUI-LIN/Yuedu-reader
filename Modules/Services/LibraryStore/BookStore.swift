@@ -79,6 +79,9 @@ class BookStore: ObservableObject, BookProvider {
 
     func content(for book: ReadingBook) -> String {
         let url = documentsURL(for: book.contentFilename)
+        if book.resolvedPipelineKind == .txt {
+            return (try? TXTFileReader.readTextFile(url: url)) ?? ""
+        }
         return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     }
 
@@ -154,10 +157,15 @@ class BookStore: ObservableObject, BookProvider {
         let worker = Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
             let metadataStart = ProcessInfo.processInfo.systemUptime
-            let metadata = try TXTMetadataProbe.probe(
-                url: url,
-                fallbackTitle: fallbackTitle
-            )
+            let metadata = try SourcePerfTrace.span(
+                "txt.import.metadata",
+                "bytes=\((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)"
+            ) {
+                try TXTMetadataProbe.probe(
+                    url: url,
+                    fallbackTitle: fallbackTitle
+                )
+            }
             AppLogger.info(
                 "[ImportTrace][BookStore.importTxt] stage=metadataProbe "
                     + "elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - metadataStart) * 1_000))"
@@ -165,7 +173,15 @@ class BookStore: ObservableObject, BookProvider {
 
             try Task.checkCancellation()
             let persistenceStart = ProcessInfo.processInfo.systemUptime
-            try Self.persistLocalTextFile(source: url, destination: destination)
+            try SourcePerfTrace.span(
+                "txt.import.persist",
+                "bytes=\((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)"
+            ) {
+                try TXTFilePersistence.persistOriginal(
+                    source: url,
+                    destination: destination
+                )
+            }
             AppLogger.info(
                 "[ImportTrace][BookStore.importTxt] stage=filePersistence "
                     + "elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - persistenceStart) * 1_000))"
@@ -410,7 +426,7 @@ class BookStore: ObservableObject, BookProvider {
     ) throws -> ReadingBook {
         let filename = "\(UUID().uuidString).\(fileExtension)"
         let destURL = documentsURL(for: filename)
-        try Self.persistLocalTextFile(source: url, destination: destURL)
+        try TXTFilePersistence.persistOriginal(source: url, destination: destURL)
 
         var book = ReadingBook(title: title, author: author, source: "local", contentFilename: filename)
         book.contentPipelineKind = .txt
@@ -425,106 +441,6 @@ class BookStore: ObservableObject, BookProvider {
             return "markdown"
         default:
             return "md"
-        }
-    }
-
-    private static func persistLocalTextFile(source: URL, destination: URL) throws {
-        do {
-            let sourceEncoding = try TXTFileReader.detectEncodingBySampling(url: source)
-            try Task.checkCancellation()
-            if sourceEncoding == .utf8 {
-                try FileManager.default.copyItem(at: source, to: destination)
-            } else {
-                try streamTranscodeToUTF8(
-                    source: source,
-                    destination: destination,
-                    sourceEncoding: sourceEncoding
-                )
-            }
-
-            try Task.checkCancellation()
-            let fileSize = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            let validationPrefix = try TXTFileReader.readPrefix(
-                url: destination,
-                maxByteCount: 128
-            )
-            guard !validationPrefix.isEmpty || fileSize == 0
-            else {
-                throw TXTFileReaderError.encodingNotSupported
-            }
-        } catch {
-            if FileManager.default.fileExists(atPath: destination.path) {
-                do {
-                    try FileManager.default.removeItem(at: destination)
-                } catch let cleanupError {
-                    AppLogger.error(
-                        "Failed to clean local text import: \(cleanupError.localizedDescription)"
-                    )
-                }
-            }
-            throw error
-        }
-    }
-
-    private static func streamTranscodeToUTF8(
-        source: URL,
-        destination: URL,
-        sourceEncoding: String.Encoding
-    ) throws {
-        guard let outputStream = OutputStream(url: destination, append: false) else {
-            throw TXTFileReaderError.encodingNotSupported
-        }
-
-        outputStream.open()
-        defer { outputStream.close() }
-
-        guard let freshInput = InputStream(url: source) else { throw TXTFileReaderError.encodingNotSupported }
-        freshInput.open()
-        defer { freshInput.close() }
-
-        let bufferSize = 64 * 1024
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
-        var leftover = Data()
-
-        while freshInput.hasBytesAvailable {
-            try Task.checkCancellation()
-            let readCount = freshInput.read(&buffer, maxLength: bufferSize)
-            guard readCount > 0 else { break }
-            let chunk = leftover + Data(buffer[0..<readCount])
-            leftover = Data()
-
-            if let decoded = String(data: chunk, encoding: sourceEncoding) {
-                if let utf8Data = decoded.data(using: .utf8) {
-                    utf8Data.withUnsafeBytes { ptr in
-                        if let base = ptr.bindMemory(to: UInt8.self).baseAddress {
-                            _ = outputStream.write(base, maxLength: utf8Data.count)
-                        }
-                    }
-                }
-            } else if chunk.count > 4 {
-                // Keep last 3 bytes for next chunk (multi-byte boundary recovery)
-                let safeEnd = chunk.count - 3
-                let safe = chunk.subdata(in: 0..<safeEnd)
-                leftover = chunk.subdata(in: safeEnd..<chunk.count)
-                if let decoded = String(data: safe, encoding: sourceEncoding),
-                   let utf8Data = decoded.data(using: .utf8) {
-                    utf8Data.withUnsafeBytes { ptr in
-                        if let base = ptr.bindMemory(to: UInt8.self).baseAddress {
-                            _ = outputStream.write(base, maxLength: utf8Data.count)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Flush leftover
-        if !leftover.isEmpty, let decoded = String(data: leftover, encoding: sourceEncoding),
-           let utf8Data = decoded.data(using: .utf8) {
-            utf8Data.withUnsafeBytes { ptr in
-                if let base = ptr.bindMemory(to: UInt8.self).baseAddress {
-                    _ = outputStream.write(base, maxLength: utf8Data.count)
-                }
-            }
         }
     }
 
@@ -752,10 +668,30 @@ class BookStore: ObservableObject, BookProvider {
         // termination. Progress updates remain debounced to avoid rewriting the
         // full library metadata once per chapter.
         switch state {
-        case .available, .paused, .failed:
+        case .available, .partial, .paused, .failed:
             saveMetaImmediately()
         case .none, .downloading:
             saveMeta()
+        }
+    }
+
+    func replaceOfflineDownloadTask(
+        bookId: UUID,
+        task: BookOfflineDownloadTask,
+        isRunning: Bool
+    ) {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        let previousRequestedIndices = books[idx].offlineDownloadTask?.requestedIndices
+        let state = task.derivedState(isRunning: isRunning)
+        books[idx].offlineDownloadTask = task
+        books[idx].offlineDownloadState = state
+        books[idx].downloadedChapterCount = task.completedChapterCount
+        let targetsChanged = previousRequestedIndices != task.requestedIndices
+        switch state {
+        case .available, .partial, .paused, .failed:
+            saveMetaImmediately()
+        case .none, .downloading:
+            targetsChanged ? saveMetaImmediately() : saveMeta()
         }
     }
 
@@ -1210,14 +1146,12 @@ class BookStore: ObservableObject, BookProvider {
         saveMeta()
     }
 
-    func clearOnlineDownload(bookId: UUID) {
+    func clearOnlineDownload(
+        bookId: UUID,
+        offlineChapterStore: any OfflineChapterStoring = OfflineChapterStore()
+    ) async throws {
         guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        let cacheDir = documentsURL(for: "online_cache/\(bookId.uuidString)")
-        do {
-            try FileManager.default.removeItem(at: cacheDir)
-        } catch {
-            Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to remove cache directory \(cacheDir): \(error)")
-        }
+        try await offlineChapterStore.removeBook(bookId: bookId)
         if var chapters = books[idx].onlineChapters {
             for chapterIndex in chapters.indices {
                 chapters[chapterIndex].cachedFilename = nil
@@ -1260,7 +1194,11 @@ class BookStore: ObservableObject, BookProvider {
         saveMeta()
     }
 
-    func updateOnlineBookSource(bookId: UUID, origin: BookOrigin) async throws {
+    func updateOnlineBookSource(
+        bookId: UUID,
+        origin: BookOrigin,
+        offlineChapterStore: any OfflineChapterStoring = OfflineChapterStore()
+    ) async throws {
         guard let source = BookSourceStore.shared.sources.first(where: { $0.id == origin.sourceId })
         else {
             throw NSError(
@@ -1268,6 +1206,14 @@ class BookStore: ObservableObject, BookProvider {
         }
         let tocPackage = try await BookSourceFetcher.shared.fetchTOCPackage(
             tocUrl: origin.tocUrl, source: source, runtimeVariables: origin.runtimeVariables)
+        let oldRefs = await MainActor.run {
+            books.first(where: { $0.id == bookId })?.onlineChapters ?? []
+        }
+        try await offlineChapterStore.reconcileBook(
+            bookId: bookId,
+            oldRefs: oldRefs,
+            newRefs: tocPackage.chapters
+        )
         await MainActor.run {
             guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
             books[idx].bookSourceId = origin.sourceId
@@ -1277,7 +1223,11 @@ class BookStore: ObservableObject, BookProvider {
             books[idx].onlineChapters = tocPackage.chapters
             saveMeta()
         }
-        BookSourceFetcher.shared.clearAllChapterCache(bookId: bookId)
+        await reconcileOfflineTaskMetadata(
+            bookId: bookId,
+            oldRefs: oldRefs,
+            newRefs: tocPackage.chapters
+        )
     }
 
     @discardableResult
@@ -1285,6 +1235,7 @@ class BookStore: ObservableObject, BookProvider {
         bookId: UUID,
         forceInfoRefresh: Bool = false,
         bookSourceFetcher: any BookSourceFetching = LiveBookSourceFetcher(bookSourceFetcher: BookSourceFetcher.shared),
+        offlineChapterStore: any OfflineChapterStoring = OfflineChapterStore(),
         onFirstChaptersReady: (@MainActor (ReadingBook) -> Void)? = nil
     ) async throws -> ReadingBook {
         guard let snapshot = await MainActor.run(body: {
@@ -1399,7 +1350,7 @@ class BookStore: ObservableObject, BookProvider {
         let finalRuntimeVariables = runtimeVariables
         let finalInfoPackage = infoPackage
 
-        let updateResult = await MainActor.run { () -> (ReadingBook, Bool)? in
+        let updateResult = await MainActor.run { () -> (ReadingBook, [OnlineChapterRef], [OnlineChapterRef])? in
             guard let idx = books.firstIndex(where: { $0.id == bookId }) else {
                 return nil
             }
@@ -1445,18 +1396,77 @@ class BookStore: ObservableObject, BookProvider {
             if runtimeChanged || chaptersChanged || tocChanged || titleChanged || authorChanged || gainedChapters {
                 saveMeta()
             }
-            return (books[idx], chaptersChanged || tocChanged)
+            return (books[idx], existingChapters, mergedChapters)
         }
 
-        guard let (updated, shouldClearCache) = updateResult else {
+        guard let (updated, oldRefs, newRefs) = updateResult else {
             return snapshot
         }
 
-        if shouldClearCache {
-            BookSourceFetcher.shared.clearAllChapterCache(bookId: bookId)
+        do {
+            try await offlineChapterStore.reconcileBook(
+                bookId: bookId,
+                oldRefs: oldRefs,
+                newRefs: newRefs
+            )
+        } catch {
+            await reconcileOfflineTaskMetadata(
+                bookId: bookId,
+                oldRefs: oldRefs,
+                newRefs: newRefs
+            )
+            throw error
         }
+        await reconcileOfflineTaskMetadata(
+            bookId: bookId,
+            oldRefs: oldRefs,
+            newRefs: newRefs
+        )
 
         return updated
+    }
+
+    @MainActor
+    private func reconcileOfflineTaskMetadata(
+        bookId: UUID,
+        oldRefs: [OnlineChapterRef],
+        newRefs: [OnlineChapterRef]
+    ) {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        var invalidatedIndices: Set<Int> = []
+        if var chapters = books[idx].onlineChapters {
+            for index in chapters.indices {
+                guard oldRefs.indices.contains(index), newRefs.indices.contains(index) else {
+                    chapters[index].cachedFilename = nil
+                    if oldRefs.indices.contains(index) {
+                        invalidatedIndices.insert(index)
+                    }
+                    continue
+                }
+                let sameURL = normalizedOnlineValue(oldRefs[index].url)
+                    == normalizedOnlineValue(newRefs[index].url)
+                let sameTitle = normalizeChapterTitle(oldRefs[index].title)
+                    == normalizeChapterTitle(newRefs[index].title)
+                if !sameURL || !sameTitle {
+                    chapters[index].cachedFilename = nil
+                    invalidatedIndices.insert(index)
+                }
+            }
+            books[idx].onlineChapters = chapters
+        }
+        if var task = books[idx].offlineDownloadTask?.clamped(to: newRefs.count) {
+            for index in invalidatedIndices where task.requestedIndices.contains(index) {
+                task.markPending(index)
+            }
+            replaceOfflineDownloadTask(bookId: bookId, task: task, isRunning: false)
+        } else if books[idx].offlineDownloadTask != nil {
+            books[idx].offlineDownloadTask = nil
+            books[idx].offlineDownloadState = .none
+            books[idx].downloadedChapterCount = 0
+            saveMetaImmediately()
+        } else {
+            saveMeta()
+        }
     }
 
     // MARK: Private Methods

@@ -364,37 +364,50 @@ actor ChapterFetchManager {
             let bsf = bookSourceFetcher
             let capturedStore = store
             let selfRef = self
-            let content = await fetchBrowserImportedChapter(
-                urlString: ref.url,
-                referer: book.bookInfoURL ?? book.source,
-                progressHandler: { @MainActor partial in
-                    Task {
-                        guard await selfRef.isTokenValid(taskKey: taskKey, token: myToken) else { return }
-                        _ = bsf.saveToCache(
-                            content: partial,
-                            bookId: bookId,
-                            chapterIndex: chapterIndex,
-                            sourceURL: ref.url,
-                            tocTitle: ref.title,
-                            storeNormalizedHTML: false
-                        )
-                        await MainActor.run {
-                            capturedStore?.updateCachedChapter(
-                                bookId: bookId,
-                                chapterIndex: chapterIndex,
-                                filename: "\(chapterIndex).txt"
-                            )
-                            NotificationCenter.default.post(
-                                name: .onlineChapterCacheDidUpdate,
-                                object: nil,
-                                userInfo: ["bookId": bookId, "chapterIndex": chapterIndex]
-                            )
+            let content: String
+            do {
+                content = try await fetchBrowserImportedChapter(
+                    urlString: ref.url,
+                    referer: book.bookInfoURL ?? book.source,
+                    progressHandler: { @MainActor partial in
+                        Task {
+                            guard await selfRef.isTokenValid(taskKey: taskKey, token: myToken) else { return }
+                            do {
+                                let filename = try bsf.saveToCache(
+                                    content: partial,
+                                    bookId: bookId,
+                                    chapterIndex: chapterIndex,
+                                    sourceURL: ref.url,
+                                    tocTitle: ref.title,
+                                    storeNormalizedHTML: false
+                                )
+                                await MainActor.run {
+                                    capturedStore?.updateCachedChapter(
+                                        bookId: bookId,
+                                        chapterIndex: chapterIndex,
+                                        filename: filename
+                                    )
+                                    NotificationCenter.default.post(
+                                        name: .onlineChapterCacheDidUpdate,
+                                        object: nil,
+                                        userInfo: ["bookId": bookId, "chapterIndex": chapterIndex]
+                                    )
+                                }
+                            } catch {
+                                AppLogger.error("Progressive chapter cache write failed", error: error)
+                            }
                         }
                     }
-                }
-            )
+                )
+            } catch {
+                bookSourceFetcher.clearChapterCache(
+                    bookId: book.id,
+                    chapterIndex: chapterIndex
+                )
+                throw error
+            }
             if !content.isEmpty {
-                _ = bookSourceFetcher.saveToCache(
+                _ = try bookSourceFetcher.saveToCache(
                     content: content,
                     bookId: book.id,
                     chapterIndex: chapterIndex,
@@ -402,40 +415,17 @@ actor ChapterFetchManager {
                     tocTitle: ref.title,
                     storeNormalizedHTML: false
                 )
-                return bookSourceFetcher.loadChapterPackageSync(
+                guard let persistedPackage = bookSourceFetcher.loadChapterPackageSync(
                     bookId: book.id,
                     chapterIndex: chapterIndex,
                     expectedSourceURL: ref.url,
                     expectedTOCTitle: ref.title
-                ) ?? ChapterPackage(
-                    bookId: book.id,
-                    chapterIndex: chapterIndex,
-                    sourceURL: ref.url,
-                    tocTitle: ref.title,
-                    canonicalTitle: ref.title,
-                    content: content,
-                    contentChecksum: "",
-                    rawHTMLFilename: nil,
-                    normalizedHTMLFilename: nil,
-                    savedAt: Date(),
-                    state: .cached,
-                    failureReason: nil
-                )
+                ) else {
+                    throw ChapterCacheWriteError.verificationFailed
+                }
+                return persistedPackage
             }
-            return ChapterPackage(
-                bookId: book.id,
-                chapterIndex: chapterIndex,
-                sourceURL: ref.url,
-                tocTitle: ref.title,
-                canonicalTitle: ref.title,
-                content: "",
-                contentChecksum: "",
-                rawHTMLFilename: nil,
-                normalizedHTMLFilename: nil,
-                savedAt: Date(),
-                state: .failed,
-                failureReason: "empty"
-            )
+            throw FetchError.emptyContent
         }
 
         tasks[taskKey] = task
@@ -460,7 +450,7 @@ actor ChapterFetchManager {
                     // such as paragraph-review badges.
                     filename = OnlineChapterCacheWritePolicy.contentFilename(chapterIndex: chapterIndex)
                 } else {
-                    filename = bookSourceFetcher.saveToCache(
+                    filename = try bookSourceFetcher.saveToCache(
                         content: package.content,
                         bookId: book.id,
                         chapterIndex: chapterIndex,
@@ -626,7 +616,8 @@ actor ChapterFetchManager {
         urlString: String,
         referer: String?,
         progressHandler: (@MainActor (String) -> Void)? = nil
-    ) async -> String {
+    ) async throws -> String {
+        var directFailure: Error?
         do {
             let direct = try await bookSourceFetcher.fetchWebContent(
                 url: urlString,
@@ -639,9 +630,14 @@ actor ChapterFetchManager {
             )
             if !direct.isEmpty { return direct }
         } catch {
+            directFailure = error
         }
 
-        guard let firstURL = URL(string: urlString) else { return "" }
+        // Browser-imported pages sometimes require JavaScript rendering. Enter
+        // this fallback only when the primary fetch threw or returned no body.
+        guard let firstURL = URL(string: urlString) else {
+            throw directFailure ?? FetchError.invalidURL(urlString)
+        }
         let headers = referer.map { ["Referer": $0] } ?? [:]
         var allContent = ""
         var currentURL: URL? = firstURL
@@ -669,7 +665,10 @@ actor ChapterFetchManager {
                         progressHandler?(allContent)
                     }
                 }
-                if let next = result.nextPageURL, let nextURL = URL(string: next) {
+                if let next = result.nextPageURL {
+                    guard let nextURL = URL(string: next) else {
+                        throw FetchError.invalidURL(next)
+                    }
                     currentURL = nextURL
                 } else {
                     currentURL = nil
@@ -682,7 +681,7 @@ actor ChapterFetchManager {
                     do {
                         _ = try await CloudflareChallengePresenter.present(url: challengeURL)
                     } catch {
-                        break
+                        throw error
                     }
                     do {
                         let result = try await webViewFetcher.fetchContentWithNextPage(
@@ -697,255 +696,39 @@ actor ChapterFetchManager {
                             allContent += cleaned
                             if visited.count == 1 { progressHandler?(allContent) }
                         }
-                        if let next = result.nextPageURL, let nextURL = URL(string: next) {
+                        if let next = result.nextPageURL {
+                            guard let nextURL = URL(string: next) else {
+                                throw FetchError.invalidURL(next)
+                            }
                             currentURL = nextURL
                         } else {
                             currentURL = nil
                         }
                     } catch {
-                        break
+                        throw error
                     }
                 } else {
-                    break
+                    throw err
                 }
             } catch {
-                break
+                throw error
             }
+        }
+        if currentURL != nil {
+            throw NSError(
+                domain: "OnlineReadingPipeline",
+                code: -12,
+                userInfo: [NSLocalizedDescriptionKey: "Browser chapter exceeded the 10-page safety limit"]
+            )
+        }
+        guard !allContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw directFailure ?? FetchError.emptyContent
         }
         return allContent
     }
 }
 
-actor BookDownloadManager {
-    static let shared = BookDownloadManager()
-
-    private let chapterFetchManager: ChapterFetchManager
-    private var activeBookIds: Set<UUID> = []
-    private var pausedBookIds: Set<UUID> = []
-
-    init(chapterFetchManager: ChapterFetchManager = .shared) {
-        self.chapterFetchManager = chapterFetchManager
-    }
-
-    func isDownloadActive(bookId: UUID) -> Bool {
-        activeBookIds.contains(bookId)
-    }
-
-    func isDownloadPaused(bookId: UUID) -> Bool {
-        pausedBookIds.contains(bookId)
-    }
-
-    func pauseDownload(bookId: UUID, store: BookStore?) async {
-        pausedBookIds.insert(bookId)
-        await chapterFetchManager.cancelAll(for: bookId)
-    }
-
-    func downloadBook(
-        book: ReadingBook,
-        store: BookStore?,
-        startChapterIndex: Int = 0,
-        chapterCount: Int? = nil
-    ) async {
-        let libraryBook = await MainActor.run {
-            store?.ensureOnlineBookForDownload(book) ?? book
-        }
-        guard let refs = libraryBook.onlineChapters, !refs.isEmpty else { return }
-        guard !activeBookIds.contains(libraryBook.id) else { return }
-
-        let startIndex = min(max(startChapterIndex, 0), refs.count - 1)
-        let requestedCount = chapterCount.map { max(1, $0) }
-        let endIndex = min(
-            refs.count - 1,
-            startIndex + (requestedCount ?? refs.count) - 1
-        )
-        let indices = Array(startIndex...endIndex)
-        var task = BookOfflineDownloadTask(
-            startChapterIndex: startIndex,
-            endChapterIndex: endIndex
-        )
-
-        activeBookIds.insert(libraryBook.id)
-        defer { activeBookIds.remove(libraryBook.id) }
-
-        let initialTask = task
-        await MainActor.run {
-            store?.setOfflineDownloadState(
-                bookId: libraryBook.id,
-                state: .downloading,
-                downloadedChapterCount: 0,
-                offlineDownloadTask: initialTask
-            )
-        }
-        ReaderTelemetry.shared.log(
-            "book_download_start",
-            attributes: [
-                "bookId": libraryBook.id.uuidString,
-                "chapterCount": "\(indices.count)",
-                "startChapterIndex": "\(startIndex)",
-                "endChapterIndex": "\(endIndex)",
-                "pipelineKind": "online",
-            ]
-        )
-
-        // Manga books additionally pull the page images to disk for true offline reading.
-        let isManga = libraryBook.contentPipelineKind == .manga
-        let mangaHeaders: [String: String] = isManga
-            ? await MainActor.run {
-                let src = libraryBook.bookSourceId.flatMap { id in BookSourceStore.shared.sources.first { $0.id == id } }
-                return BookCoverLoader.headers(
-                    sourceBaseURL: src?.bookSourceUrl, sourceHeaders: src?.parsedHeaders ?? [:])
-            }
-            : [:]
-
-        var completed = 0
-        for idx in indices {
-            do {
-                let package = try await chapterFetchManager.fetchChapter(
-                    book: libraryBook,
-                    chapterIndex: idx,
-                    priority: .download,
-                    store: store
-                )
-                if isManga {
-                    await Self.downloadMangaImages(
-                        bookId: libraryBook.id, chapterIndex: idx, content: package.content, headers: mangaHeaders)
-                }
-                completed += 1
-                let completedNow = completed
-                task = task.updatingProgress(completedNow)
-                let progressTask = task
-                await MainActor.run {
-                    store?.setOfflineDownloadState(
-                        bookId: libraryBook.id,
-                        state: .downloading,
-                        downloadedChapterCount: completedNow,
-                        offlineDownloadTask: progressTask
-                    )
-                }
-                ReaderTelemetry.shared.log(
-                    "book_download_progress",
-                    attributes: [
-                        "bookId": libraryBook.id.uuidString,
-                        "chapterIndex": "\(idx)",
-                        "completed": "\(completedNow)",
-                    ]
-                )
-
-                if pausedBookIds.contains(libraryBook.id) {
-                    pausedBookIds.remove(libraryBook.id)
-                    activeBookIds.remove(libraryBook.id)
-                    let pausedTask = task
-                    await MainActor.run {
-                        store?.setOfflineDownloadState(
-                            bookId: libraryBook.id,
-                            state: .paused,
-                            downloadedChapterCount: completedNow,
-                            offlineDownloadTask: pausedTask
-                        )
-                    }
-                    return
-                }
-            } catch {
-                if pausedBookIds.contains(libraryBook.id) {
-                    pausedBookIds.remove(libraryBook.id)
-                    activeBookIds.remove(libraryBook.id)
-                    let completedNow = completed
-                    task = task.updatingProgress(completedNow)
-                    let pausedTask = task
-                    await MainActor.run {
-                        store?.setOfflineDownloadState(
-                            bookId: libraryBook.id,
-                            state: .paused,
-                            downloadedChapterCount: completedNow,
-                            offlineDownloadTask: pausedTask
-                        )
-                    }
-                    return
-                }
-                let completedNow = completed
-                task = task.updatingProgress(completedNow)
-                let failedTask = task
-                await MainActor.run {
-                    store?.setOfflineDownloadState(
-                        bookId: libraryBook.id,
-                        state: .failed,
-                        downloadedChapterCount: completedNow,
-                        offlineDownloadTask: failedTask
-                    )
-                }
-                ReaderTelemetry.shared.log(
-                    "book_download_end",
-                    attributes: [
-                        "bookId": libraryBook.id.uuidString,
-                        "completed": "\(completedNow)",
-                        "result": "failed",
-                    ]
-                )
-                return
-            }
-        }
-
-        let completedNow = completed
-        task = task.updatingProgress(completedNow)
-        let completedTask = task
-        await MainActor.run {
-            store?.setOfflineDownloadState(
-                bookId: libraryBook.id,
-                state: .available,
-                downloadedChapterCount: completedNow,
-                offlineDownloadTask: completedTask
-            )
-        }
-        ReaderTelemetry.shared.log(
-            "book_download_end",
-            attributes: [
-                "bookId": libraryBook.id.uuidString,
-                "completed": "\(completedNow)",
-                "startChapterIndex": "\(startIndex)",
-                "endChapterIndex": "\(endIndex)",
-                "result": "success",
-            ]
-        )
-    }
-
-    /// Download a manga chapter's page images into the offline directory so the
-    /// chapter can be read without network. Idempotent: skips indices already saved.
-    nonisolated static func downloadMangaImages(
-        bookId: UUID, chapterIndex: Int, content: String, headers: [String: String]
-    ) async {
-        let images = MangaChapterParser.parsedImages(from: content)
-        guard !images.isEmpty else { return }
-        let dir = MangaChapterParser.chapterDirectory(bookId: bookId, chapterIndex: chapterIndex)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-
-        var existing = Set<Int>()
-        if let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path) {
-            for name in files where Int((name as NSString).deletingPathExtension) != nil {
-                existing.insert(Int((name as NSString).deletingPathExtension)!)
-            }
-        }
-
-        for (index, image) in images.enumerated() where !existing.contains(index) {
-            guard let url = URL(string: image.url) else { continue }
-            var request = URLRequest(url: url, timeoutInterval: 60)
-            // Per-image headers (CDN referer/UA) override the source defaults.
-            for (key, value) in headers.merging(image.headers, uniquingKeysWith: { _, perImage in perImage }) {
-                request.setValue(value, forHTTPHeaderField: key)
-            }
-            guard let (data, response) = try? await URLSession.shared.data(for: request),
-                  let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-                  !data.isEmpty else { continue }
-            let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
-            let dest = dir.appendingPathComponent(String(format: "%03d", index)).appendingPathExtension(ext)
-            try? data.write(to: dest)
-        }
-    }
-}
-
 final class OnlineBookCoordinator {
-    // Safe: always first accessed from @MainActor context (AppDependencies.live or @MainActor tests).
-    static let shared = OnlineBookCoordinator(webViewFetcher: MainActor.assumeIsolated { WebViewFetcher.shared })
-
     // MARK: - Injectable Dependencies (defaults to shared singletons, supports test substitution)
 
     let bookSourceFetcher: BookSourceFetcher
@@ -953,8 +736,8 @@ final class OnlineBookCoordinator {
     let webViewFetcher: WebViewFetcher
 
     init(
-        bookSourceFetcher: BookSourceFetcher = BookSourceFetcher.shared,
-        chapterFetchManager: ChapterFetchManager = ChapterFetchManager.shared,
+        bookSourceFetcher: BookSourceFetcher,
+        chapterFetchManager: ChapterFetchManager,
         webViewFetcher: WebViewFetcher
     ) {
         self.bookSourceFetcher = bookSourceFetcher
@@ -1224,32 +1007,6 @@ final class OnlineBookCoordinator {
 
     func chapterState(bookId: UUID, chapterIndex: Int) async -> OnlineChapterLoadState {
         await chapterFetchManager.chapterState(bookId: bookId, chapterIndex: chapterIndex)
-    }
-
-    func downloadBook(_ book: ReadingBook, store: BookStore?) {
-        downloadBook(book, store: store, startChapterIndex: 0, chapterCount: nil)
-    }
-
-    func downloadBook(
-        _ book: ReadingBook,
-        store: BookStore?,
-        startChapterIndex: Int,
-        chapterCount: Int?
-    ) {
-        Task {
-            await BookDownloadManager.shared.downloadBook(
-                book: book,
-                store: store,
-                startChapterIndex: startChapterIndex,
-                chapterCount: chapterCount
-            )
-        }
-    }
-
-    func pauseDownload(book: ReadingBook, store: BookStore?) {
-        Task {
-            await BookDownloadManager.shared.pauseDownload(bookId: book.id, store: store)
-        }
     }
 
     // MARK: - Sanity Checks

@@ -127,14 +127,6 @@ extension BookSourceFetching {
 /// Protocol for online book download and neighborhood chapter prefetch,
 /// decoupling the reader from the concrete OnlineBookCoordinator implementation.
 protocol OnlineBookCoordinating: AnyObject {
-    func downloadBook(_ book: ReadingBook, store: BookStore?)
-    func downloadBook(
-        _ book: ReadingBook,
-        store: BookStore?,
-        startChapterIndex: Int,
-        chapterCount: Int?
-    )
-    func pauseDownload(book: ReadingBook, store: BookStore?)
     func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async
 }
 
@@ -317,6 +309,8 @@ struct AppDependencies {
     var bookSourceFetcher: BookSourceFetching
     var chapterFetcher: ChapterFetching
     var onlineBookCoordinator: OnlineBookCoordinating
+    var offlineDownloadManager: any OfflineDownloadManaging
+    var offlineChapterStore: any OfflineChapterStoring
     var readingPositionStore: ReadingPositionStore
 
     static let live: AppDependencies = {
@@ -324,11 +318,24 @@ struct AppDependencies {
         let webViewFetcher = MainActor.assumeIsolated { WebViewFetcher.shared }
         let bsf = BookSourceFetcher(webFetcher: webFetcher)
         let cfm = ChapterFetchManager(bookSourceFetcher: bsf, webViewFetcher: webViewFetcher)
+        let liveChapterFetcher = LiveChapterFetcher(chapterFetchManager: cfm)
+        let offlineChapterStore = OfflineChapterStore()
+        let offlineDownloadManager = OfflineDownloadManager(
+            chapterFetcher: liveChapterFetcher,
+            chapterStore: offlineChapterStore
+        )
+        let coordinator = OnlineBookCoordinator(
+            bookSourceFetcher: bsf,
+            chapterFetchManager: cfm,
+            webViewFetcher: webViewFetcher
+        )
         return AppDependencies(
             webContentFetcher: LiveWebContentFetcher(webFetcher: webFetcher),
             bookSourceFetcher: LiveBookSourceFetcher(bookSourceFetcher: bsf),
-            chapterFetcher: LiveChapterFetcher(chapterFetchManager: cfm),
-            onlineBookCoordinator: OnlineBookCoordinator.shared,
+            chapterFetcher: liveChapterFetcher,
+            onlineBookCoordinator: coordinator,
+            offlineDownloadManager: offlineDownloadManager,
+            offlineChapterStore: offlineChapterStore,
             readingPositionStore: JSONFileReadingPositionStore()
         )
     }()

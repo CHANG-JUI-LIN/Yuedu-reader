@@ -260,7 +260,7 @@ extension BookSourceFetcher {
             )
         }
 
-        saveChapterPackageToCache(
+        try saveChapterPackageToCache(
             buildResult.package,
             rawHTML: buildResult.rawHTML,
             normalizedHTML: buildResult.normalizedHTML
@@ -278,7 +278,8 @@ extension BookSourceFetcher {
             expectedSourceURL: ref.url,
             expectedTOCTitle: ref.title
         )
-        return reloaded ?? buildResult.package
+        guard let reloaded else { throw ChapterCacheWriteError.verificationFailed }
+        return reloaded
     }
 
     private func fetchLegadoRuntimeChapterPackage(
@@ -346,17 +347,20 @@ extension BookSourceFetcher {
             state: .cached,
             failureReason: nil
         )
-        saveChapterPackageToCache(
+        try saveChapterPackageToCache(
             package,
             rawHTML: html,
             normalizedHTML: normalizedHTML
         )
-        return loadChapterPackageSync(
+        guard let reloaded = loadChapterPackageSync(
             bookId: bookId,
             chapterIndex: ref.index,
             expectedSourceURL: ref.url,
             expectedTOCTitle: ref.title
-        ) ?? package
+        ) else {
+            throw ChapterCacheWriteError.verificationFailed
+        }
+        return reloaded
     }
 
     private func logChapterFetchGate(ref: OnlineChapterRef, source: BookSource) {

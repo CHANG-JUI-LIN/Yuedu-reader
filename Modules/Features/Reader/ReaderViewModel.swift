@@ -24,6 +24,7 @@ final class ReaderViewModel: ObservableObject {
     private var chapterFetcher: ChapterFetching
     private var bookCoordinator: OnlineBookCoordinating
     private var bookSourceFetcher: BookSourceFetching
+    private var offlineDownloadManager: (any OfflineDownloadManaging)?
     private var inFlightRequests: [Int: InFlightRequest] = [:]
     /// Books already checked for auto manga detection this session (cached-chapter path),
     /// so a genuine text book is not re-probed on every `ensureChapterReady`.
@@ -37,26 +38,33 @@ final class ReaderViewModel: ObservableObject {
         self.init(
             chapterFetcher: AppDependencies.live.chapterFetcher,
             bookCoordinator: AppDependencies.live.onlineBookCoordinator,
-            bookSourceFetcher: AppDependencies.live.bookSourceFetcher
+            bookSourceFetcher: AppDependencies.live.bookSourceFetcher,
+            offlineDownloadManager: AppDependencies.live.offlineDownloadManager
         )
     }
 
     init(
         chapterFetcher: ChapterFetching,
         bookCoordinator: OnlineBookCoordinating,
-        bookSourceFetcher: BookSourceFetching
+        bookSourceFetcher: BookSourceFetching,
+        offlineDownloadManager: (any OfflineDownloadManaging)? = nil
     ) {
         self.chapterFetcher = chapterFetcher
         self.bookCoordinator = bookCoordinator
         self.bookSourceFetcher = bookSourceFetcher
+        self.offlineDownloadManager = offlineDownloadManager
     }
 
     func chapterState(for chapterIndex: Int) -> ChapterLoadState {
         chapterStates[chapterIndex] ?? .idle
     }
 
-    func configure(chapterFetcher: ChapterFetching) {
+    func configure(
+        chapterFetcher: ChapterFetching,
+        offlineDownloadManager: any OfflineDownloadManaging
+    ) {
         self.chapterFetcher = chapterFetcher
+        self.offlineDownloadManager = offlineDownloadManager
     }
 
     func resetChapterState(for chapterIndex: Int) {
@@ -149,31 +157,49 @@ final class ReaderViewModel: ObservableObject {
 
     // MARK: - Download Actions
 
-    /// Starts or cancels offline download for a book, replacing direct OnlineBookCoordinator.shared calls from the view.
+    /// Delegates download selection, pause, resume, and retry to the single offline queue.
     func handleDownloadAction(
         book: ReadingBook,
         store: BookStore,
         startChapterIndex: Int = 0,
         chapterCount: Int? = nil
     ) {
+        guard let offlineDownloadManager else { return }
         switch book.offlineDownloadState {
-        case .none, .failed, .paused:
-            bookCoordinator.downloadBook(
-                book,
-                store: store,
-                startChapterIndex: startChapterIndex,
-                chapterCount: chapterCount
-            )
+        case .none, .available, .partial:
+            guard let refs = book.onlineChapters, !refs.isEmpty else { return }
+            let start = min(max(startChapterIndex, 0), refs.count - 1)
+            let count = max(1, chapterCount ?? (refs.count - start))
+            let end = min(refs.count - 1, start + count - 1)
+            Task {
+                await offlineDownloadManager.start(
+                    book: book,
+                    selection: .range(start...end),
+                    store: store
+                )
+            }
+        case .failed:
+            Task { await offlineDownloadManager.retryFailed(book: book, store: store) }
+        case .paused:
+            Task { await offlineDownloadManager.resume(book: book, store: store) }
         case .downloading:
-            bookCoordinator.pauseDownload(book: book, store: store)
-        case .available:
-            break  // .available is handled by the view layer via store.clearOnlineDownload
+            Task { await offlineDownloadManager.pause(bookId: book.id, store: store) }
         }
+    }
+
+    func resumeOfflineDownload(book: ReadingBook, store: BookStore) {
+        guard let offlineDownloadManager else { return }
+        Task { await offlineDownloadManager.resume(book: book, store: store) }
+    }
+
+    func retryFailedOfflineDownload(book: ReadingBook, store: BookStore) {
+        guard let offlineDownloadManager else { return }
+        Task { await offlineDownloadManager.retryFailed(book: book, store: store) }
     }
 
     // MARK: - Neighbour Prefetch
 
-    /// Prefetches chapters around the given center index, replacing direct OnlineBookCoordinator.shared calls from the view.
+    /// Prefetches chapters around the given center index through the injected coordinator.
     func prefetchAround(book: ReadingBook, center: Int, store: BookStore) {
         Task {
             await bookCoordinator.prefetchAround(book: book, center: center, store: store)

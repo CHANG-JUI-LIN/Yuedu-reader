@@ -15,6 +15,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     private let state: FixedPageReaderState
     private let headers: [String: String]
     private let chapters: [OnlineChapterRef]
+    private let chapterFetcher: any ChapterFetching
 
     private var chapterIndex: Int
     private var fixedPageReaderConfiguration: FixedPageReaderConfiguration
@@ -26,10 +27,16 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     private var currentPages: [FixedPage] = []
     private var targetWidth: CGFloat = 0
 
-    init(book: ReadingBook, store: BookStore, state: FixedPageReaderState) {
+    init(
+        book: ReadingBook,
+        store: BookStore,
+        state: FixedPageReaderState,
+        chapterFetcher: any ChapterFetching
+    ) {
         self.book = book
         self.store = store
         self.state = state
+        self.chapterFetcher = chapterFetcher
         let resolvedSource = book.bookSourceId.flatMap { id in
             BookSourceStore.shared.sources.first { $0.id == id }
         }
@@ -133,7 +140,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         Task { [weak self] in
             guard let self else { return }
             do {
-                let package = try await ChapterFetchManager.shared.fetchChapter(
+                let package = try await self.chapterFetcher.fetchChapter(
                     book: self.book, chapterIndex: index, priority: .immediate, store: self.store)
                 guard self.loadToken == token else { return }
                 let localDir = MangaChapterParser.chapterDirectory(bookId: self.book.id, chapterIndex: index)
@@ -285,14 +292,34 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
 
         if !forwardIndices.isEmpty {
             Task(priority: .utility) {
-                await ChapterFetchManager.shared.prefetchChapters(
-                    book: book, indices: forwardIndices, priority: .prefetch, store: store)
+                for index in forwardIndices {
+                    do {
+                        _ = try await chapterFetcher.fetchChapter(
+                            book: book,
+                            chapterIndex: index,
+                            priority: .prefetch,
+                            store: store
+                        )
+                    } catch {
+                        AppLogger.error("Manga chapter prefetch failed", error: error)
+                    }
+                }
             }
         }
         if !backwardIndices.isEmpty {
             Task(priority: .background) {
-                await ChapterFetchManager.shared.prefetchChapters(
-                    book: book, indices: backwardIndices, priority: .background, store: store)
+                for index in backwardIndices {
+                    do {
+                        _ = try await chapterFetcher.fetchChapter(
+                            book: book,
+                            chapterIndex: index,
+                            priority: .background,
+                            store: store
+                        )
+                    } catch {
+                        AppLogger.error("Manga chapter prefetch failed", error: error)
+                    }
+                }
             }
         }
     }
@@ -313,8 +340,18 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         prefetchTask?.cancel()
         prefetchTask = Task { [weak self] in
             guard let self else { return }
-            guard let package = try? await ChapterFetchManager.shared.fetchChapter(
-                book: book, chapterIndex: nextIndex, priority: .prefetch, store: store) else { return }
+            let package: ChapterPackage
+            do {
+                package = try await chapterFetcher.fetchChapter(
+                    book: book,
+                    chapterIndex: nextIndex,
+                    priority: .prefetch,
+                    store: store
+                )
+            } catch {
+                AppLogger.error("Next manga chapter prefetch failed", error: error)
+                return
+            }
             let localDir = MangaChapterParser.chapterDirectory(bookId: book.id, chapterIndex: nextIndex)
             let pages = MangaChapterParser.pages(from: package.content, headers: headers, localDir: localDir)
             let prefetchCount = min(3, pages.count)

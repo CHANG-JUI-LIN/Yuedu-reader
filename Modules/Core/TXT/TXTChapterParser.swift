@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct TXTChapterIndex: Equatable {
@@ -136,7 +137,11 @@ enum TXTChapterParser {
                     ? titleMatches[i + 1].lineByteRange.lowerBound
                     : totalBytes
                 let rawStart = titleMatches[i].lineByteRange.upperBound
-                let start = skipLeadingWhitespaceBytes(in: mappedTextFile.data, from: rawStart, upperBound: end)
+                let start = skipLeadingWhitespaceBytes(
+                    in: mappedTextFile,
+                    from: rawStart,
+                    upperBound: end
+                )
                 guard start <= end else { continue }
                 indexes.append(
                     TXTMappedChapterIndex(
@@ -150,7 +155,7 @@ enum TXTChapterParser {
             if indexes.isEmpty {
                 return [TXTMappedChapterIndex(index: 0, title: sanitizedTitle(bookTitle), byteRange: 0..<totalBytes)]
             }
-            return splittingOverlongChapters(indexes, data: mappedTextFile.data)
+            return splittingOverlongChapters(indexes, mappedTextFile: mappedTextFile)
         }
 
         return splitIntoMappedBlockIndexes(mappedTextFile, blockBytes: 12 * 1024, bookTitle: bookTitle)
@@ -164,7 +169,7 @@ enum TXTChapterParser {
 
     private static func splittingOverlongChapters(
         _ indexes: [TXTMappedChapterIndex],
-        data: Data
+        mappedTextFile: TXTMappedTextFile
     ) -> [TXTMappedChapterIndex] {
         guard indexes.contains(where: { $0.byteRange.count > maxChapterBytesBeforeSplit }) else {
             return indexes
@@ -190,11 +195,13 @@ enum TXTChapterParser {
                 if end < upper {
                     // Extend to the next line break so pieces split between paragraphs.
                     let lookaheadLimit = min(upper, end + 1024)
-                    var look = end
-                    while look < lookaheadLimit, data[look] != 0x0A, data[look] != 0x0D {
-                        look += 1
+                    if let lineBreak = nextLineBreak(
+                        in: mappedTextFile,
+                        from: end,
+                        upperBound: lookaheadLimit
+                    ) {
+                        end = lineBreak
                     }
-                    if look < upper { end = look }
                 }
                 if end <= cursor { end = min(cursor + 1, upper) }
                 piece += 1
@@ -206,9 +213,11 @@ enum TXTChapterParser {
                     )
                 )
                 cursor = end
-                while cursor < upper, data[cursor] == 0x0A || data[cursor] == 0x0D {
-                    cursor += 1
-                }
+                cursor = skipLineBreaks(
+                    in: mappedTextFile,
+                    from: cursor,
+                    upperBound: upper
+                )
             }
             // The newline lookahead can swallow the remainder: a single-piece
             // "split" keeps its original title.
@@ -439,67 +448,88 @@ enum TXTChapterParser {
         return deduped
     }
 
-    /// ASCII characters a chapter/special title line may start with:
-    /// C (Chapter/CHAPTER), P/p (Part/PART/Prologue/Preface), E/e (Epilogue),
-    /// I/i (Introduction); lowercase c included defensively.
-    private static let titleStartASCII: Set<UInt8> = [
-        0x43, 0x63, 0x50, 0x70, 0x45, 0x65, 0x49, 0x69, // C c P p E e I i
+    /// First characters accepted by `chapterPatterns` and `specialTitlePattern`.
+    /// Encoding them once lets the mapped parser reject body lines before it
+    /// allocates a String or runs regexes, including GB18030 and Big5 books.
+    private static let titleStartCharacters = [
+        "C", "c", "P", "p", "E", "e", "I", "i",
+        "第", "卷", "序", "楔", "前", "引", "尾", "終", "终",
+        "後", "后", "番", "結", "结",
     ]
 
-    /// UTF-8 3-byte sequences (packed b0<<16|b1<<8|b2) of every CJK character the
-    /// chapter/special patterns can start with. Must stay in sync with
-    /// `chapterPatterns` (第/卷) and `specialTitlePattern` (序/楔/前/引/尾/終/终/後/后/番/結/结).
-    private static let titleStartCJKPacked: Set<UInt32> = [
-        0xE7ACAC, // 第
-        0xE58DB7, // 卷
-        0xE5BA8F, // 序
-        0xE6A594, // 楔
-        0xE5898D, // 前
-        0xE5BC95, // 引
-        0xE5B0BE, // 尾
-        0xE7B582, // 終
-        0xE7BB88, // 终
-        0xE5BE8C, // 後
-        0xE5908E, // 后
-        0xE795AA, // 番
-        0xE7B590, // 結
-        0xE7BB93, // 结
-    ]
+    private struct EncodedTitleStartMatcher {
+        private let titlePrefixes: [UInt8: [[UInt8]]]
+        private let whitespacePrefixes: [UInt8: [[UInt8]]]
 
-    /// Fast UTF-8 pre-filter: a line can only be a title when its first
-    /// non-whitespace character is one of the pattern-start characters above.
-    /// Inspecting 1–3 raw bytes rejects ~99% of body lines without decoding them
-    /// into Strings or running any regex — the per-line all-patterns sweep was
-    /// the dominant cost of first-open chapter indexing on large files.
-    /// The whitespace skip mirrors the patterns' leading `\s*` (space, tab,
-    /// vertical tab, form feed, U+3000 ideographic space, U+00A0 NBSP).
-    private static func utf8LineMayBeTitle(_ data: Data, lineRange: Range<Int>) -> Bool {
-        var i = lineRange.lowerBound
-        let end = lineRange.upperBound
-        while i < end {
-            let byte = data[i]
-            if byte == 0x20 || byte == 0x09 || byte == 0x0B || byte == 0x0C {
-                i += 1
-                continue
-            }
-            if byte == 0xE3, i + 2 < end, data[i + 1] == 0x80, data[i + 2] == 0x80 {
-                i += 3
-                continue
-            }
-            if byte == 0xC2, i + 1 < end, data[i + 1] == 0xA0 {
-                i += 2
-                continue
-            }
-            break
+        init(encoding: String.Encoding) {
+            titlePrefixes = Self.makePrefixTable(
+                strings: TXTChapterParser.titleStartCharacters,
+                encoding: encoding
+            )
+            whitespacePrefixes = Self.makePrefixTable(
+                strings: [" ", "\t", "\u{000B}", "\u{000C}", "\u{3000}", "\u{00A0}", "\u{FEFF}"],
+                encoding: encoding
+            )
         }
-        guard i < end else { return false } // blank line
-        let b0 = data[i]
-        if b0 < 0x80 {
-            return titleStartASCII.contains(b0)
+
+        func lineMayBeTitle(
+            bytes: UnsafeBufferPointer<UInt8>,
+            range: Range<Int>
+        ) -> Bool {
+            var cursor = range.lowerBound
+            while cursor < range.upperBound,
+                  let width = matchingPrefixWidth(
+                    in: whitespacePrefixes,
+                    bytes: bytes,
+                    at: cursor,
+                    upperBound: range.upperBound
+                  ) {
+                cursor += width
+            }
+            guard cursor < range.upperBound else { return false }
+            return matchingPrefixWidth(
+                in: titlePrefixes,
+                bytes: bytes,
+                at: cursor,
+                upperBound: range.upperBound
+            ) != nil
         }
-        guard i + 2 < end else { return false }
-        let packed = (UInt32(b0) << 16) | (UInt32(data[i + 1]) << 8) | UInt32(data[i + 2])
-        return titleStartCJKPacked.contains(packed)
+
+        private func matchingPrefixWidth(
+            in table: [UInt8: [[UInt8]]],
+            bytes: UnsafeBufferPointer<UInt8>,
+            at offset: Int,
+            upperBound: Int
+        ) -> Int? {
+            guard let candidates = table[bytes[offset]] else { return nil }
+            for candidate in candidates where offset + candidate.count <= upperBound {
+                var matches = true
+                for index in candidate.indices where bytes[offset + index] != candidate[index] {
+                    matches = false
+                    break
+                }
+                if matches { return candidate.count }
+            }
+            return nil
+        }
+
+        private static func makePrefixTable(
+            strings: [String],
+            encoding: String.Encoding
+        ) -> [UInt8: [[UInt8]]] {
+            var table: [UInt8: [[UInt8]]] = [:]
+            for string in strings {
+                guard let data = string.data(using: encoding, allowLossyConversion: false),
+                      let first = data.first,
+                      !data.isEmpty
+                else { continue }
+                table[first, default: []].append(Array(data))
+            }
+            for key in table.keys {
+                table[key]?.sort { $0.count > $1.count }
+            }
+            return table
+        }
     }
 
     /// Sample window for rule selection (Legado getTocRule idea): within the
@@ -527,19 +557,12 @@ enum TXTChapterParser {
         var buckets: [[MappedTitleMatch]] = Array(repeating: [], count: chapterPatterns.count)
         var specialMatches: [MappedTitleMatch] = []
 
-        let data = mappedTextFile.data
-        let isUTF8 = mappedTextFile.encoding == .utf8
+        let titleMatcher = EncodedTitleStartMatcher(encoding: mappedTextFile.encoding)
 
         // nil while sampling (or when no rule has won yet) → test all patterns.
         var lockedIndices: [Int]? = nil
 
-        enumerateMappedLines(in: mappedTextFile) { lineByteRange, decodeLine in
-            // Skip lines longer than 200 bytes (chapter titles are never that long)
-            guard lineByteRange.count <= 200 else { return }
-
-            // Byte-level gate (UTF-8 only; other encodings take the full path).
-            if isUTF8, !utf8LineMayBeTitle(data, lineRange: lineByteRange) { return }
-
+        enumerateMappedTitleLines(in: mappedTextFile, matcher: titleMatcher) { lineByteRange, decodeLine in
             // Past the sample window, try to lock the winning pattern. Locking
             // mid-file is safe: buckets frozen below 2 matches can never win the
             // final "first with ≥2" selection, so the outcome is unchanged.
@@ -641,10 +664,33 @@ enum TXTChapterParser {
         return cursor
     }
 
-    private static func skipLeadingWhitespaceBytes(in data: Data, from start: Int, upperBound: Int) -> Int {
+    private static func skipLeadingWhitespaceBytes(
+        in mappedTextFile: TXTMappedTextFile,
+        from start: Int,
+        upperBound: Int
+    ) -> Int {
+        let data = mappedTextFile.data
         guard start < upperBound else { return min(start, upperBound) }
         var cursor = max(0, start)
         let limit = max(cursor, upperBound)
+
+        if mappedTextFile.encoding == .utf16LittleEndian
+            || mappedTextFile.encoding == .utf16BigEndian {
+            let isLittleEndian = mappedTextFile.encoding == .utf16LittleEndian
+            while cursor + 1 < limit {
+                let first = UInt16(data[cursor])
+                let second = UInt16(data[cursor + 1])
+                let unit = isLittleEndian
+                    ? first | (second << 8)
+                    : (first << 8) | second
+                guard unit == 0x0020 || unit == 0x0009
+                    || unit == 0x000A || unit == 0x000D || unit == 0x3000
+                else { break }
+                cursor += 2
+            }
+            return cursor
+        }
+
         while cursor < limit {
             let byte = data[cursor]
             if byte == 0x20 || byte == 0x09 || byte == 0x0A || byte == 0x0D {
@@ -686,9 +732,80 @@ enum TXTChapterParser {
         return false
     }
 
-    private static func splitIntoMappedBlockIndexes(_ mappedTextFile: TXTMappedTextFile, blockBytes: Int, bookTitle: String) -> [TXTMappedChapterIndex] {
+    private static func nextLineBreak(
+        in mappedTextFile: TXTMappedTextFile,
+        from start: Int,
+        upperBound: Int
+    ) -> Int? {
         let data = mappedTextFile.data
-        let total = data.count
+        let limit = min(max(0, upperBound), data.count)
+        var cursor = min(max(0, start), limit)
+
+        if mappedTextFile.encoding == .utf16LittleEndian
+            || mappedTextFile.encoding == .utf16BigEndian {
+            if !cursor.isMultiple(of: 2) { cursor += 1 }
+            while cursor + 1 < limit {
+                let unit = utf16CodeUnit(
+                    in: data,
+                    at: cursor,
+                    littleEndian: mappedTextFile.encoding == .utf16LittleEndian
+                )
+                if unit == 0x000A || unit == 0x000D { return cursor }
+                cursor += 2
+            }
+            return nil
+        }
+
+        while cursor < limit {
+            if data[cursor] == 0x0A || data[cursor] == 0x0D { return cursor }
+            cursor += 1
+        }
+        return nil
+    }
+
+    private static func skipLineBreaks(
+        in mappedTextFile: TXTMappedTextFile,
+        from start: Int,
+        upperBound: Int
+    ) -> Int {
+        let data = mappedTextFile.data
+        let limit = min(max(0, upperBound), data.count)
+        var cursor = min(max(0, start), limit)
+
+        if mappedTextFile.encoding == .utf16LittleEndian
+            || mappedTextFile.encoding == .utf16BigEndian {
+            while cursor + 1 < limit {
+                let unit = utf16CodeUnit(
+                    in: data,
+                    at: cursor,
+                    littleEndian: mappedTextFile.encoding == .utf16LittleEndian
+                )
+                guard unit == 0x000A || unit == 0x000D else { break }
+                cursor += 2
+            }
+            return cursor
+        }
+
+        while cursor < limit, data[cursor] == 0x0A || data[cursor] == 0x0D {
+            cursor += 1
+        }
+        return cursor
+    }
+
+    private static func utf16CodeUnit(
+        in data: Data,
+        at offset: Int,
+        littleEndian: Bool
+    ) -> UInt16 {
+        let first = UInt16(data[offset])
+        let second = UInt16(data[offset + 1])
+        return littleEndian
+            ? first | (second << 8)
+            : (first << 8) | second
+    }
+
+    private static func splitIntoMappedBlockIndexes(_ mappedTextFile: TXTMappedTextFile, blockBytes: Int, bookTitle: String) -> [TXTMappedChapterIndex] {
+        let total = mappedTextFile.data.count
         guard total > 0 else {
             return [TXTMappedChapterIndex(index: 0, title: sanitizedTitle(bookTitle), byteRange: 0..<0)]
         }
@@ -699,12 +816,12 @@ enum TXTChapterParser {
             var end = min(cursor + blockBytes, total)
             if end < total {
                 let lookaheadLimit = min(total, end + 1024)
-                var look = end
-                while look < lookaheadLimit, data[look] != 0x0A, data[look] != 0x0D {
-                    look += 1
-                }
-                if look < total {
-                    end = look
+                if let lineBreak = nextLineBreak(
+                    in: mappedTextFile,
+                    from: end,
+                    upperBound: lookaheadLimit
+                ) {
+                    end = lineBreak
                 }
             }
 
@@ -722,47 +839,102 @@ enum TXTChapterParser {
             )
 
             cursor = end
-            while cursor < total, data[cursor] == 0x0A || data[cursor] == 0x0D {
-                cursor += 1
-            }
+            cursor = skipLineBreaks(
+                in: mappedTextFile,
+                from: cursor,
+                upperBound: total
+            )
         }
 
         return result
     }
 
-    /// Enumerates line byte-ranges. The line's text is provided as a lazy
-    /// `decodeLine` closure so callers that reject a line early (byte pre-filter,
-    /// length gate) never pay the subdata + String decode for it.
-    private static func enumerateMappedLines(
+    /// Enumerates only possible title lines. Raw-pointer traversal avoids the
+    /// per-byte `Data` subscript overhead, while the encoding-aware matcher
+    /// rejects ordinary GB18030/Big5/UTF-8 body lines before String allocation.
+    private static func enumerateMappedTitleLines(
         in mappedTextFile: TXTMappedTextFile,
+        matcher: EncodedTitleStartMatcher,
         _ body: (Range<Int>, () -> String) -> Void
     ) {
         let data = mappedTextFile.data
-        let count = data.count
-        guard count > 0 else { return }
+        data.withUnsafeBytes { (rawBuffer: UnsafeRawBufferPointer) in
+            let bytes = rawBuffer.bindMemory(to: UInt8.self)
+            guard !bytes.isEmpty else { return }
 
-        var lineStart = 0
-        var cursor = 0
-
-        while cursor < count {
-            let byte = data[cursor]
-            if byte == 0x0A || byte == 0x0D {
-                let range = lineStart..<cursor
-                body(range, { mappedTextFile.string(in: range) })
-
-                if byte == 0x0D, cursor + 1 < count, data[cursor + 1] == 0x0A {
-                    cursor += 1
-                }
-                cursor += 1
-                lineStart = cursor
-                continue
+            func emitCandidate(_ range: Range<Int>) {
+                guard range.count <= 200,
+                      matcher.lineMayBeTitle(bytes: bytes, range: range)
+                else { return }
+                body(range, {
+                    let line = mappedTextFile.string(in: range)
+                    guard line.unicodeScalars.first == "\u{FEFF}" else { return line }
+                    return String(line.unicodeScalars.dropFirst())
+                })
             }
-            cursor += 1
-        }
 
-        if lineStart < count {
-            let range = lineStart..<count
-            body(range, { mappedTextFile.string(in: range) })
+            if mappedTextFile.encoding == .utf16LittleEndian
+                || mappedTextFile.encoding == .utf16BigEndian {
+                let isLittleEndian = mappedTextFile.encoding == .utf16LittleEndian
+                func codeUnit(at offset: Int) -> UInt16 {
+                    let first = UInt16(bytes[offset])
+                    let second = UInt16(bytes[offset + 1])
+                    return isLittleEndian
+                        ? first | (second << 8)
+                        : (first << 8) | second
+                }
+
+                var lineStart = 0
+                var cursor = 0
+                while cursor + 1 < bytes.count {
+                    let unit = codeUnit(at: cursor)
+                    guard unit == 0x000A || unit == 0x000D else {
+                        cursor += 2
+                        continue
+                    }
+
+                    emitCandidate(lineStart..<cursor)
+                    cursor += 2
+                    if unit == 0x000D,
+                       cursor + 1 < bytes.count,
+                       codeUnit(at: cursor) == 0x000A {
+                        cursor += 2
+                    }
+                    lineStart = cursor
+                }
+                if lineStart < bytes.count {
+                    emitCandidate(lineStart..<bytes.count)
+                }
+                return
+            }
+
+            // TXT files consistently use LF/CRLF or legacy CR line endings.
+            // Pick the delimiter once; searching for an absent second delimiter
+            // on every line turns an LF-only book into an O(n²) scan.
+            let delimiter: Int32 = memchr(bytes.baseAddress!, 0x0A, bytes.count) == nil
+                ? 0x0D
+                : 0x0A
+            var lineStart = 0
+            var cursor = 0
+            while cursor < bytes.count {
+                let remaining = bytes.count - cursor
+                let searchStart = bytes.baseAddress!.advanced(by: cursor)
+                guard let found = memchr(searchStart, delimiter, remaining) else {
+                    emitCandidate(lineStart..<bytes.count)
+                    return
+                }
+                let delimiterPointer = found.assumingMemoryBound(to: UInt8.self)
+                let delimiterOffset = bytes.baseAddress!.distance(to: delimiterPointer)
+                let lineEnd = delimiter == 0x0A
+                    && delimiterOffset > lineStart
+                    && bytes[delimiterOffset - 1] == 0x0D
+                    ? delimiterOffset - 1
+                    : delimiterOffset
+
+                emitCandidate(lineStart..<lineEnd)
+                cursor = delimiterOffset + 1
+                lineStart = cursor
+            }
         }
     }
 

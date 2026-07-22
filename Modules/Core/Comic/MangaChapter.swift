@@ -219,25 +219,35 @@ enum MangaChapterParser {
         return [:]
     }
 
-    /// Build pages, attaching request headers (per-image headers override the source defaults)
-    /// and any downloaded local files in `localDir`.
+    /// Build pages, attaching request headers (per-image headers override the source defaults).
+    /// Offline files are trusted only when a complete manifest matches the current image list.
     static func pages(from content: String, headers: [String: String], localDir: URL? = nil) -> [FixedPage] {
         let images = parsedImages(from: content)
 
         var localByIndex: [Int: URL] = [:]
         if let localDir,
-           let files = try? FileManager.default.contentsOfDirectory(
-               at: localDir, includingPropertiesForKeys: nil) {
-            for file in files {
-                if let index = Int(file.deletingPathExtension().lastPathComponent) {
-                    localByIndex[index] = file
-                }
+           let manifest = OfflineChapterStore.validatedMangaManifest(in: localDir),
+           manifest.pages.count == images.count,
+           manifest.pages.map(\.sourceURL) == images.map(\.url) {
+            for (index, page) in manifest.pages.enumerated() {
+                localByIndex[index] = localDir.appendingPathComponent(page.filename)
             }
+        }
+
+        if let localDir,
+           FileManager.default.fileExists(atPath: localDir.path),
+           localByIndex.isEmpty {
+            AppLogger.cache("Manga offline manifest missing, incomplete, or stale")
         }
 
         return images.enumerated().map { index, image in
             let merged = headers.merging(image.headers) { _, perImage in perImage }
-            return FixedPage(id: index, imageURL: image.url, headers: merged, localURL: localByIndex[index])
+            return FixedPage(
+                id: index,
+                imageURL: image.url,
+                headers: merged,
+                localURL: localByIndex[index]
+            )
         }
     }
 
@@ -250,8 +260,7 @@ enum MangaChapterParser {
 
     /// Persistent (non-purgeable) root for downloaded manga images.
     static var rootDirectory: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("manga", isDirectory: true)
+        OfflineStorageRoots.live.mangaRoot
     }
 
     static func chapterDirectory(bookId: UUID, chapterIndex: Int) -> URL {
@@ -262,8 +271,9 @@ enum MangaChapterParser {
 
     /// Whether a chapter has downloaded image files on disk.
     static func isChapterDownloaded(bookId: UUID, chapterIndex: Int) -> Bool {
-        let dir = chapterDirectory(bookId: bookId, chapterIndex: chapterIndex)
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-        return !files.isEmpty
+        OfflineChapterStore.validatedMangaManifest(
+            bookId: bookId,
+            chapterIndex: chapterIndex
+        ) != nil
     }
 }

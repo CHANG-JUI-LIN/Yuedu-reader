@@ -210,7 +210,11 @@ extension ReaderView {
         let livePosition = readerSessionCoordinator?.state.location.coreTextPosition
         Task {
             do {
-                try await store.updateOnlineBookSource(bookId: bookId, origin: origin)
+                try await store.updateOnlineBookSource(
+                    bookId: bookId,
+                    origin: origin,
+                    offlineChapterStore: dependencies.offlineChapterStore
+                )
                 let mappedPosition: CoreTextReadingPosition? = await MainActor.run {
                     let newRefs = store.books.first(where: { $0.id == bookId })?.onlineChapters ?? []
                     guard !oldRefs.isEmpty, !newRefs.isEmpty else { return nil }

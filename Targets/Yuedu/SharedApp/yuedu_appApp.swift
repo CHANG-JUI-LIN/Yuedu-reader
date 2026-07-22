@@ -35,6 +35,10 @@ struct yuedu_appApp: App {
                     SharedImportQueueDrainer.shared.bind(bookStore: bookStore)
                     _ = FirebaseAuthManager.shared
                     Task {
+                        await AppDependencies.live.offlineDownloadManager
+                            .reconcileInterruptedDownloads(store: bookStore)
+                    }
+                    Task {
                         await WebFetcher.shared.setCloudflareChallengeHandler { url in
                             try await CloudflareChallengePresenter.present(url: url)
                         }
@@ -53,6 +57,10 @@ struct yuedu_appApp: App {
                     if newPhase == .active {
                         Task { await subscriptionStore.refreshAllEntitlements() }
                         Task { await SharedImportQueueDrainer.shared.drain() }
+                        Task {
+                            await AppDependencies.live.offlineDownloadManager
+                                .reconcileInterruptedDownloads(store: bookStore)
+                        }
                         // Returning to the foreground also checks online books for
                         // new chapters (throttled). Cold launch already kicked one
                         // off in onAppear; the throttle skips the duplicate.
@@ -126,7 +134,9 @@ enum ChapterUpdater {
                 || (book.onlineChapters?.isEmpty != false)
             _ = try await bookStore.refreshOnlineBookMetadata(
                 bookId: book.id,
-                forceInfoRefresh: needInfoRefresh
+                forceInfoRefresh: needInfoRefresh,
+                bookSourceFetcher: AppDependencies.live.bookSourceFetcher,
+                offlineChapterStore: AppDependencies.live.offlineChapterStore
             )
         } catch {
             AppLogger.network(

@@ -1,8 +1,40 @@
 import CryptoKit
 import Foundation
 
-struct ChapterCacheRepository {
-    private let rawStorage = RawHTMLStorage()
+enum ChapterCacheWriteError: LocalizedError, Equatable, Sendable {
+    case emptyContent
+    case createDirectory(String)
+    case writeBody(String)
+    case writeMetadata(String)
+    case writeArtifact(String)
+    case verificationFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyContent:
+            return "Chapter content is empty"
+        case .createDirectory(let message):
+            return "Unable to create chapter cache directory: \(message)"
+        case .writeBody(let message):
+            return "Unable to write chapter body: \(message)"
+        case .writeMetadata(let message):
+            return "Unable to write chapter metadata: \(message)"
+        case .writeArtifact(let message):
+            return "Unable to write chapter artifact: \(message)"
+        case .verificationFailed:
+            return "Chapter cache verification failed"
+        }
+    }
+}
+
+struct ChapterCacheRepository: Sendable {
+    private let rootDirectory: URL
+
+    init(rootDirectory: URL? = nil) {
+        self.rootDirectory = rootDirectory
+            ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("online_cache", isDirectory: true)
+    }
 
     func loadCachedChapterSync(
         bookId: UUID,
@@ -86,7 +118,7 @@ struct ChapterCacheRepository {
         extractedTitle: String? = nil,
         rawHTML: String? = nil,
         storeNormalizedHTML: Bool = true
-    ) -> String {
+    ) throws -> String {
         let canonicalTitle = extractedTitle.map {
             ReaderHTMLUtilities.displayText(fromHTMLFragment: $0)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -113,12 +145,11 @@ struct ChapterCacheRepository {
             state: .cached,
             failureReason: nil
         )
-        _ = saveChapterPackageToCache(
+        return try saveChapterPackageToCache(
             package,
             rawHTML: rawHTML,
             normalizedHTML: normalizedHTML
         )
-        return "\(chapterIndex).txt"
     }
 
     @discardableResult
@@ -126,34 +157,78 @@ struct ChapterCacheRepository {
         _ package: ChapterPackage,
         rawHTML: String?,
         normalizedHTML: String?
-    ) -> String {
+    ) throws -> String {
+        guard !package.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ChapterCacheWriteError.emptyContent
+        }
+
         let dir = cacheDir(for: package.bookId)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            throw ChapterCacheWriteError.createDirectory(error.localizedDescription)
+        }
+
         let filename = "\(package.chapterIndex).txt"
         let contentPath = cachePath(bookId: package.bookId, chapterIndex: package.chapterIndex)
-        try? package.content.write(to: contentPath, atomically: true, encoding: .utf8)
+        let checksum = cacheChecksum(for: package.content)
+
+        do {
+            try package.content.write(to: contentPath, atomically: true, encoding: .utf8)
+        } catch {
+            clearChapterCache(bookId: package.bookId, chapterIndex: package.chapterIndex)
+            throw ChapterCacheWriteError.writeBody(error.localizedDescription)
+        }
 
         let metadata = CachedChapterMetadata(
             sourceURL: package.sourceURL,
             tocTitle: package.tocTitle,
             extractedTitle: package.canonicalTitle,
-            contentChecksum: package.contentChecksum,
+            contentChecksum: checksum,
             savedAt: package.savedAt,
             state: .cached,
             failureReason: nil
         )
-        if let data = try? JSONEncoder().encode(metadata) {
-            try? data.write(
+        do {
+            let data = try JSONEncoder().encode(metadata)
+            try data.write(
                 to: cacheMetadataPath(bookId: package.bookId, chapterIndex: package.chapterIndex),
                 options: .atomic
             )
+        } catch {
+            clearChapterCache(bookId: package.bookId, chapterIndex: package.chapterIndex)
+            throw ChapterCacheWriteError.writeMetadata(error.localizedDescription)
         }
 
-        saveChapterArtifact(
-            package: package,
-            rawHTML: rawHTML,
-            normalizedHTML: normalizedHTML
-        )
+        do {
+            try saveChapterArtifact(
+                package: package,
+                contentChecksum: checksum,
+                rawHTML: rawHTML,
+                normalizedHTML: normalizedHTML
+            )
+        } catch let error as ChapterCacheWriteError {
+            clearChapterCache(bookId: package.bookId, chapterIndex: package.chapterIndex)
+            throw error
+        } catch {
+            clearChapterCache(bookId: package.bookId, chapterIndex: package.chapterIndex)
+            throw ChapterCacheWriteError.writeArtifact(error.localizedDescription)
+        }
+
+        guard
+            let verified = loadChapterPackageSync(
+                bookId: package.bookId,
+                chapterIndex: package.chapterIndex,
+                expectedSourceURL: package.sourceURL,
+                expectedTOCTitle: package.tocTitle
+            ),
+            verified.state == .cached,
+            verified.content == package.content,
+            verified.contentChecksum == checksum
+        else {
+            clearChapterCache(bookId: package.bookId, chapterIndex: package.chapterIndex)
+            throw ChapterCacheWriteError.verificationFailed
+        }
         return filename
     }
 
@@ -312,9 +387,7 @@ struct ChapterCacheRepository {
     }
 
     private func cacheDir(for bookId: UUID) -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("online_cache")
-            .appendingPathComponent(bookId.uuidString)
+        rootDirectory.appendingPathComponent(bookId.uuidString, isDirectory: true)
     }
 
     private func cachePath(bookId: UUID, chapterIndex: Int) -> URL {
@@ -412,20 +485,41 @@ struct ChapterCacheRepository {
 
     private func saveChapterArtifact(
         package: ChapterPackage,
+        contentChecksum: String,
         rawHTML: String?,
         normalizedHTML: String?
-    ) {
+    ) throws {
         let rawPath = chapterRawHTMLPath(bookId: package.bookId, chapterIndex: package.chapterIndex)
         let normalizedPath = chapterNormalizedHTMLPath(bookId: package.bookId, chapterIndex: package.chapterIndex)
         let packagePath = chapterPackagePath(bookId: package.bookId, chapterIndex: package.chapterIndex)
 
-        let rawFilename = rawStorage.persistRawHTML(rawHTML, at: rawPath)
+        let rawFilename: String?
+        if let rawHTML, !rawHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            do {
+                try rawHTML.write(to: rawPath, atomically: true, encoding: .utf8)
+                rawFilename = rawPath.lastPathComponent
+            } catch {
+                throw ChapterCacheWriteError.writeArtifact(error.localizedDescription)
+            }
+        } else {
+            if FileManager.default.fileExists(atPath: rawPath.path) {
+                try FileManager.default.removeItem(at: rawPath)
+            }
+            rawFilename = nil
+        }
+
         let normalizedFilename: String?
         if let normalizedHTML {
-            rawStorage.persistNormalizedHTML(normalizedHTML, at: normalizedPath)
+            do {
+                try normalizedHTML.write(to: normalizedPath, atomically: true, encoding: .utf8)
+            } catch {
+                throw ChapterCacheWriteError.writeArtifact(error.localizedDescription)
+            }
             normalizedFilename = normalizedPath.lastPathComponent
         } else {
-            try? FileManager.default.removeItem(at: normalizedPath)
+            if FileManager.default.fileExists(atPath: normalizedPath.path) {
+                try FileManager.default.removeItem(at: normalizedPath)
+            }
             normalizedFilename = nil
         }
 
@@ -433,13 +527,12 @@ struct ChapterCacheRepository {
             sourceURL: package.sourceURL,
             tocTitle: package.tocTitle,
             canonicalTitle: package.canonicalTitle,
-            contentChecksum: package.contentChecksum,
+            contentChecksum: contentChecksum,
             rawHTMLFilename: rawFilename,
             normalizedHTMLFilename: normalizedFilename,
             savedAt: package.savedAt
         )
-        if let data = try? JSONEncoder().encode(artifact) {
-            try? data.write(to: packagePath, options: .atomic)
-        }
+        let data = try JSONEncoder().encode(artifact)
+        try data.write(to: packagePath, options: .atomic)
     }
 }

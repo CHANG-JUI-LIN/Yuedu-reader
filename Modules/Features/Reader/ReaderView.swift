@@ -1456,7 +1456,10 @@ struct ReaderView: View {
         .onAppear {
             ensureReaderOverlaySVGAssetStore()
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
-            readerViewModel.configure(chapterFetcher: dependencies.chapterFetcher)
+            readerViewModel.configure(
+                chapterFetcher: dependencies.chapterFetcher,
+                offlineDownloadManager: dependencies.offlineDownloadManager
+            )
             ReaderTelemetry.shared.log(
                 "reader_load_start",
                 attributes: [
@@ -1823,8 +1826,17 @@ struct ReaderView: View {
                         onPause: { pauseOfflineDownload() },
                         onResume: { resumeOfflineDownload() },
                         onRemove: {
-                            store.clearOnlineDownload(bookId: b.id)
-                            showDownloadOptions = false
+                            Task {
+                                do {
+                                    try await dependencies.offlineDownloadManager.remove(
+                                        bookId: b.id,
+                                        store: store
+                                    )
+                                    await MainActor.run { showDownloadOptions = false }
+                                } catch {
+                                    AppLogger.error("Offline book removal failed", error: error)
+                                }
+                            }
                         },
                         onClose: { showDownloadOptions = false }
                     )
@@ -2047,7 +2059,8 @@ struct ReaderView: View {
                 _ = try? await store.refreshOnlineBookMetadata(
                     bookId: currentBook.id,
                     forceInfoRefresh: true,
-                    bookSourceFetcher: dependencies.bookSourceFetcher
+                    bookSourceFetcher: dependencies.bookSourceFetcher,
+                    offlineChapterStore: dependencies.offlineChapterStore
                 )
             }
         } else {
@@ -2057,6 +2070,7 @@ struct ReaderView: View {
                     bookId: currentBook.id,
                     forceInfoRefresh: true,
                     bookSourceFetcher: dependencies.bookSourceFetcher,
+                    offlineChapterStore: dependencies.offlineChapterStore,
                     onFirstChaptersReady: { repairedBook in
                         guard repairedBook.id == currentBook.id, self.chapters.isEmpty else { return }
                         self.loadContent()

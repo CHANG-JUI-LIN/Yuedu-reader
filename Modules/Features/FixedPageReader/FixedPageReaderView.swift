@@ -52,6 +52,7 @@ struct FixedPageReaderView: View {
     @EnvironmentObject var store: BookStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.appDependencies) private var dependencies
     @StateObject private var state = FixedPageReaderState()
     @State private var readingStatsTracker: ReadingStatsSessionTracker?
     @State private var showTouchZoneEditor = false
@@ -61,7 +62,12 @@ struct FixedPageReaderView: View {
             Color.black.ignoresSafeArea()
 
             if let book = store.books.first(where: { $0.id == bookId }) {
-                FixedPageReaderRepresentable(book: book, store: store, state: state)
+                FixedPageReaderRepresentable(
+                    book: book,
+                    store: store,
+                    state: state,
+                    chapterFetcher: dependencies.chapterFetcher
+                )
                     .ignoresSafeArea()
 
                 if state.isLoading {
@@ -155,9 +161,15 @@ private struct FixedPageReaderRepresentable: UIViewControllerRepresentable {
     let book: ReadingBook
     let store: BookStore
     let state: FixedPageReaderState
+    let chapterFetcher: any ChapterFetching
 
     func makeUIViewController(context: Context) -> FixedPageReaderViewController {
-        FixedPageReaderViewController(book: book, store: store, state: state)
+        FixedPageReaderViewController(
+            book: book,
+            store: store,
+            state: state,
+            chapterFetcher: chapterFetcher
+        )
     }
 
     func updateUIViewController(_ uiViewController: FixedPageReaderViewController, context: Context) {}
