@@ -1,6 +1,197 @@
 import Foundation
 import UIKit
 
+/// Removes the source-provided title before an advanced-CSS title template is
+/// prepended. Online review markup can represent `div` wrappers as paragraph
+/// nodes, so this walks the first structural-content spine rather than assuming
+/// every wrapper is `.block`.
+enum OnlineChapterTitleDeduplicator {
+    struct Result {
+        let bodyNodes: [RenderableNode]
+        let titleAccessories: [RenderableNode]
+    }
+
+    private enum NodeUpdate {
+        case remove(accessories: [RenderableNode])
+        case replace(RenderableNode, accessories: [RenderableNode])
+    }
+
+    static func deduplicatingLeadingTitle(
+        from nodes: [RenderableNode],
+        matching chapterTitle: String
+    ) -> Result {
+        let titleKey = normalizedTitleKey(chapterTitle)
+        guard !titleKey.isEmpty,
+              let stripped = strippingFirstTitle(in: nodes, matching: titleKey, depth: 0)
+        else {
+            AppLogger.render("⟐ title.dedup miss title=«\(chapterTitle.prefix(12))»")
+            return Result(bodyNodes: nodes, titleAccessories: [])
+        }
+        AppLogger.render("⟐ title.dedup hit title=«\(chapterTitle.prefix(12))»")
+        return Result(bodyNodes: stripped.nodes, titleAccessories: stripped.accessories)
+    }
+
+    static func removingLeadingTitle(
+        from nodes: [RenderableNode],
+        matching chapterTitle: String
+    ) -> [RenderableNode] {
+        deduplicatingLeadingTitle(from: nodes, matching: chapterTitle).bodyNodes
+    }
+
+    private static func strippingFirstTitle(
+        in nodes: [RenderableNode],
+        matching titleKey: String,
+        depth: Int
+    ) -> (nodes: [RenderableNode], accessories: [RenderableNode])? {
+        guard depth < 12 else { return nil }
+        for (index, node) in nodes.enumerated() {
+            if case .text(let text) = node,
+               text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                continue
+            }
+            guard let update = titleUpdate(for: node, matching: titleKey, depth: depth) else {
+                return nil
+            }
+            var copy = nodes
+            switch update {
+            case .remove(let accessories):
+                copy.remove(at: index)
+                return (copy, accessories)
+            case .replace(let replacement, let accessories):
+                copy[index] = replacement
+                return (copy, accessories)
+            }
+        }
+        return nil
+    }
+
+    private static func titleUpdate(
+        for node: RenderableNode,
+        matching titleKey: String,
+        depth: Int
+    ) -> NodeUpdate? {
+        switch node {
+        case .anchorTarget(let id, let child):
+            guard let update = titleUpdate(
+                for: child,
+                matching: titleKey,
+                depth: depth + 1
+            ) else { return nil }
+            switch update {
+            case .remove(let accessories):
+                return .remove(accessories: accessories)
+            case .replace(let replacement, let accessories):
+                return .replace(
+                    .anchorTarget(id: id, child: replacement),
+                    accessories: accessories
+                )
+            }
+
+        case .block(let tag, let children, let style):
+            guard let stripped = strippingFirstTitle(
+                in: children,
+                matching: titleKey,
+                depth: depth + 1
+            ) else { return nil }
+            return .replace(
+                .block(tag: tag, children: stripped.nodes, style: style),
+                accessories: stripped.accessories
+            )
+
+        case .paragraph(let children, let style):
+            // HTMLStyledASTRenderableNodeConverter intentionally maps `<div>`
+            // to `.paragraph`. A wrapper paragraph therefore may contain more
+            // paragraphs; descend before treating it as a leaf title line.
+            if children.contains(where: isStructuralNode) {
+                guard let stripped = strippingFirstTitle(
+                    in: children,
+                    matching: titleKey,
+                    depth: depth + 1
+                ) else { return nil }
+                return .replace(
+                    .paragraph(stripped.nodes, style: style),
+                    accessories: stripped.accessories
+                )
+            }
+            guard normalizedTitleKey(plainText(of: children)) == titleKey else { return nil }
+            let survivors = removingTextRuns(from: children)
+            return .remove(accessories: survivors)
+
+        case .heading(let children, let level, let style):
+            guard normalizedTitleKey(plainText(of: children)) == titleKey else { return nil }
+            let survivors = removingTextRuns(from: children)
+            return .remove(accessories: survivors)
+
+        default:
+            return nil
+        }
+    }
+
+    private static func isStructuralNode(_ node: RenderableNode) -> Bool {
+        switch node {
+        case .block, .paragraph, .heading, .blockquote, .listItem:
+            return true
+        case .anchorTarget(_, let child):
+            return isStructuralNode(child)
+        default:
+            return false
+        }
+    }
+
+    /// Removes only typographic title content. Review badges and images remain,
+    /// including when they share an inline wrapper with the title text.
+    private static func removingTextRuns(from nodes: [RenderableNode]) -> [RenderableNode] {
+        nodes.compactMap { node in
+            switch node {
+            case .text, .lineBreak, .ruby:
+                return nil
+            case .inline(let tag, let children, let style):
+                let survivors = removingTextRuns(from: children)
+                return survivors.isEmpty
+                    ? nil
+                    : .inline(tag: tag, children: survivors, style: style)
+            case .anchor(let href, let children):
+                let survivors = removingTextRuns(from: children)
+                return survivors.isEmpty ? nil : .anchor(href: href, children: survivors)
+            case .anchorTarget(let id, let child):
+                guard let survivor = removingTextRuns(from: [child]).first else { return nil }
+                return .anchorTarget(id: id, child: survivor)
+            default:
+                return node
+            }
+        }
+    }
+
+    private static func normalizedTitleKey(_ text: String) -> String {
+        String(text.filter { !$0.isWhitespace })
+    }
+
+    private static func plainText(of nodes: [RenderableNode]) -> String {
+        nodes.map { node in
+            switch node {
+            case .text(let text):
+                return text
+            case .paragraph(let children, _),
+                 .heading(let children, _, _),
+                 .block(_, let children, _),
+                 .inline(_, let children, _),
+                 .anchor(_, let children),
+                 .blockquote(let children),
+                 .listItem(let children, _):
+                return plainText(of: children)
+            case .anchorTarget(_, let child):
+                return plainText(of: [child])
+            case .ruby(let base, _, _):
+                return plainText(of: base)
+            case .unsupportedInteractive(_, _, let children, _):
+                return plainText(of: children)
+            default:
+                return ""
+            }
+        }.joined()
+    }
+}
+
 /// Wraps `BookContentProvider` (online book source) as `AttributedStringBuilding`,
 /// allowing `CoreTextScrollEngine` to directly consume online chapters.
 ///
@@ -302,6 +493,36 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             body: ast,
             whitespacePolicy: .trimTextNodeBoundaries
         )
+
+        // Advanced-CSS chapter title for HTML-body chapters: source content
+        // carries its own title as a heading or review-bearing paragraph. In
+        // CSS mode, remove that leading title text and typeset the title through
+        // ChapterTitleAttributedBuilder so HTML-body books honour the same
+        // templates as plain-text ones.
+        var renderNodes = nodes
+        var cssTitle: NSMutableAttributedString?
+        var titleAccessories: [RenderableNode] = []
+        if settings.chapterTitleStyle.advancedCSSEnabled {
+            let deduplicated = OnlineChapterTitleDeduplicator.deduplicatingLeadingTitle(
+                from: nodes,
+                matching: payload.title
+            )
+            renderNodes = deduplicated.bodyNodes
+            titleAccessories = deduplicated.titleAccessories
+            let titleAttr = NSMutableAttributedString()
+            await ChapterTitleAttributedBuilder.append(
+                title: payload.title,
+                style: settings.chapterTitleStyle,
+                settings: settings,
+                renderWidth: contentRenderWidth,
+                themeTextColor: themeTextColor,
+                themeBackgroundColor: themeBackgroundColor,
+                letterSpacing: settings.letterSpacing,
+                to: titleAttr
+            )
+            cssTitle = titleAttr
+        }
+
         let hasResources = resourceProvider != nil
         let renderer = NodeAttributedStringRenderer(
             config: NodeAttributedStringRenderer.Config(
@@ -333,14 +554,25 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             )
         )
 
-        let attributedString = await renderer.render(nodes)
+        if let cssTitle, !titleAccessories.isEmpty {
+            let renderedAccessories = await renderer.render(titleAccessories)
+            Self.mergeTitleAccessories(renderedAccessories, into: cssTitle)
+        }
+        let bodyAttributed = await renderer.render(renderNodes)
+        let attributedString: NSAttributedString
+        if let cssTitle, cssTitle.length > 0 {
+            cssTitle.append(bodyAttributed)
+            attributedString = cssTitle
+        } else {
+            attributedString = bodyAttributed
+        }
         // ⟐ 段評 format probe (Release-visible): paragraph structure + first paragraph styles.
         // Splits the search space for the "indent+spacing gone with 段評 on" report — if the
         // probes already show indent=0/spacing=0 (or paragraphs joined by \u{2028}), the content
         // or IR conversion is at fault; if they look right, the paginator/display side is.
         AppLogger.render(
             "⟐ onlineChapter format idx=\(payload.index)",
-            context: Self.chapterFormatProbe(nodes: nodes, attributed: attributedString)
+            context: Self.chapterFormatProbe(nodes: renderNodes, attributed: attributedString)
         )
         let pageBackgroundImage = await builder.pageBackgroundImage(from: ast)
         let pageBackgroundColor = builder.pageBackgroundColor(from: ast)
@@ -351,6 +583,54 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             pageBackgroundColor: pageBackgroundColor,
             anchorOffsets: builder.anchorOffsets(in: attributedString)
         )
+    }
+
+    /// Moves a source title's inline review attachment onto the last visible line of the
+    /// advanced-CSS title. Keeping the attachment inside the now-empty source `<h1>` creates a
+    /// full blank heading block between the CSS title and body text.
+    static func mergeTitleAccessories(
+        _ accessories: NSAttributedString,
+        into title: NSMutableAttributedString
+    ) {
+        guard title.length > 0, accessories.length > 0 else { return }
+
+        let accessory = NSMutableAttributedString(attributedString: accessories)
+        for index in stride(from: accessory.length - 1, through: 0, by: -1) {
+            let scalar = (accessory.string as NSString).character(at: index)
+            if scalar == 0x0A || scalar == 0x2028 {
+                accessory.deleteCharacters(in: NSRange(location: index, length: 1))
+            }
+        }
+        guard accessory.length > 0 else { return }
+
+        let titleText = title.string as NSString
+        var lastVisibleIndex = title.length - 1
+        while lastVisibleIndex >= 0 {
+            let scalar = titleText.character(at: lastVisibleIndex)
+            let isWhitespace = UnicodeScalar(scalar).map {
+                CharacterSet.whitespaces.contains($0)
+            } ?? false
+            if scalar != 0x0A, scalar != 0x2028, !isWhitespace {
+                break
+            }
+            lastVisibleIndex -= 1
+        }
+        guard lastVisibleIndex >= 0 else { return }
+
+        let insertionIndex = lastVisibleIndex + 1
+        let titleAttributes = title.attributes(at: lastVisibleIndex, effectiveRange: nil)
+        if let paragraphStyle = titleAttributes[.paragraphStyle] {
+            accessory.addAttribute(
+                .paragraphStyle,
+                value: paragraphStyle,
+                range: NSRange(location: 0, length: accessory.length)
+            )
+        }
+        title.insert(
+            NSAttributedString(string: "\u{2009}", attributes: titleAttributes),
+            at: insertionIndex
+        )
+        title.insert(accessory, at: insertionIndex + 1)
     }
 
     /// Diagnostic payload for the ⟐ onlineChapter format probe: IR node shape (descending into
@@ -453,6 +733,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         bodyParaStyle.minimumLineHeight = bodyTargetLineHeight
         bodyParaStyle.maximumLineHeight = bodyTargetLineHeight
         bodyParaStyle.paragraphSpacing = settings.paragraphSpacing
+        bodyParaStyle.firstLineHeadIndent = settings.fontSize * 2
 
         let attr = NSMutableAttributedString()
         await ChapterTitleAttributedBuilder.append(
@@ -472,7 +753,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         )
 
         for para in paragraphs {
-            let line = "\u{3000}\u{3000}" + para + "\n"
+            let line = para + "\n"
             attr.append(NSAttributedString(
                 string: line,
                 attributes: ReaderHyphenation.tagging(

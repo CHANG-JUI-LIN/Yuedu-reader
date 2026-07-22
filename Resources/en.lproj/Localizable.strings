@@ -1528,3 +1528,7 @@
 "預設・上下分隔" = "Rules Above & Below";
 "預設・右對齊" = "Right Aligned";
 "預設・菱形裝飾" = "Diamond Ornament";
+
+/* Chapter load failure */
+"章節載入失敗" = "Chapter Failed to Load";
+"資料不一致，請點擊重試" = "The chapter cache is inconsistent. Tap Retry.";

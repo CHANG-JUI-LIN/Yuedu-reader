@@ -50,15 +50,16 @@ enum ChapterTitleAttributedBuilder {
                     + " ok=\(rendered != nil) len=\(rendered?.length ?? 0)"
             )
             if let rendered {
-                // 上距/下距 spacers frame the template block; the template's own
-                // margins/padding handle everything inside.
+                let titleBlock = NSMutableAttributedString(attributedString: rendered)
+                applyBottomSpacing(style.bottomSpacing, to: titleBlock)
+                // The first paragraph cannot carry visible space above itself in CoreText,
+                // so top spacing still needs a spacer. Bottom spacing belongs on the last
+                // visible title paragraph; a trailing blank paragraph is not stable across
+                // HTML block normalization and chapter/body concatenation.
                 if style.topSpacing > 0 {
                     attr.append(spacerLine(height: style.topSpacing))
                 }
-                attr.append(rendered)
-                if style.bottomSpacing > 0 {
-                    attr.append(spacerLine(height: style.bottomSpacing))
-                }
+                attr.append(titleBlock)
                 return
             }
             // Fallback: the template is user-authored/imported HTML we cannot
@@ -73,6 +74,43 @@ enum ChapterTitleAttributedBuilder {
             themeTextColor: themeTextColor,
             letterSpacing: letterSpacing,
             to: attr
+        )
+    }
+
+    /// Adds reader-controlled body separation to the template's final visible paragraph while
+    /// retaining any margin authored by the template itself.
+    static func applyBottomSpacing(
+        _ spacing: CGFloat,
+        to attributedString: NSMutableAttributedString
+    ) {
+        guard spacing > 0, attributedString.length > 0 else { return }
+        let text = attributedString.string as NSString
+        var lastVisibleIndex = attributedString.length - 1
+        while lastVisibleIndex >= 0 {
+            let scalar = text.character(at: lastVisibleIndex)
+            let isWhitespace = UnicodeScalar(scalar).map {
+                CharacterSet.whitespacesAndNewlines.contains($0)
+            } ?? false
+            if !isWhitespace { break }
+            lastVisibleIndex -= 1
+        }
+        guard lastVisibleIndex >= 0 else { return }
+
+        let paragraphRange = text.paragraphRange(
+            for: NSRange(location: lastVisibleIndex, length: 0)
+        )
+        let existing = attributedString.attribute(
+            .paragraphStyle,
+            at: lastVisibleIndex,
+            effectiveRange: nil
+        ) as? NSParagraphStyle
+        let paragraph = (existing?.mutableCopy() as? NSMutableParagraphStyle)
+            ?? NSMutableParagraphStyle()
+        paragraph.paragraphSpacing += spacing
+        attributedString.addAttribute(
+            .paragraphStyle,
+            value: paragraph,
+            range: paragraphRange
         )
     }
 

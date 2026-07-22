@@ -47,6 +47,12 @@ struct ChapterTitleStyleSettingsView: View {
         .navigationTitle(localized("章節標題樣式"))
         .toolbarTitleDisplayMode(.inline    )
         .themedAppSurface(for: .settings)
+        .onDisappear {
+            // Guarantee the currently visible cached chapter is rebuilt when
+            // returning from this subpage. This stays entirely inside the
+            // render-settings path and never invokes chapter/network refresh.
+            readerConfig.refresh.send(.layout)
+        }
         .fileImporter(
             isPresented: $showingImporter,
             allowedContentTypes: Self.styleContentTypes,

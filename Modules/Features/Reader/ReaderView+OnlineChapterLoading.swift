@@ -48,15 +48,6 @@ extension ReaderView {
                 Task { await scrollEngine.retryChapterIfNeeded(chapterIndex) }
                 return
             }
-            if chapterIndex == currentChapterIndex,
-               newState == .ready,
-               !contentAvailable {
-                #if DEBUG
-                AppLogger.render("[StateDebug] scroll resetAndRefetchChapter ch=\(chapterIndex)")
-                #endif
-                refreshCurrentChapter()
-                return
-            }
         }
         let action = ReaderChapterPresentation.refreshAction(
             changedChapterIndex: chapterIndex,
@@ -93,12 +84,63 @@ extension ReaderView {
             AppLogger.render("[StateDebug] rebuildPages()")
             #endif
             rebuildPages()
-        case .resetAndRefetchChapter:
-            #if DEBUG
-            AppLogger.render("[StateDebug] resetAndRefetchChapter ch=\(chapterIndex) ← will clear cache and re-fetch")
-            #endif
-            refreshCurrentChapter()
         }
+    }
+
+    // MARK: - Failure Surface
+
+    /// Shown when the current chapter's fetch failed (`.failed` state, or
+    /// ready-but-empty cache). Loading deliberately has NO overlay; only
+    /// failures surface, with the reason and a MANUAL retry — no auto-retry,
+    /// because rate-limited sources (起點代理限流) would avalanche.
+    @ViewBuilder
+    func chapterLoadFailureOverlay(message: String) -> some View {
+        VStack(spacing: DSSpacing.md) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 34))
+                .foregroundStyle(DSColor.textSecondary)
+            Text(localized("章節載入失敗"))
+                .font(DSFont.body.weight(.semibold))
+                .foregroundStyle(DSColor.textPrimary)
+            Text(localized(message))
+                .font(DSFont.caption)
+                .foregroundStyle(DSColor.textSecondary)
+                .lineLimit(4)
+                .multilineTextAlignment(.center)
+            Button {
+                retryCurrentChapterLoad()
+            } label: {
+                Text(localized("重試"))
+                    .font(DSFont.body.weight(.semibold))
+                    .padding(.horizontal, DSSpacing.lg)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(DSSpacing.xl)
+        .frame(maxWidth: 300)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .transition(.opacity)
+    }
+
+    /// Surgical retry for the failed chapter only: removes that chapter's
+    /// invalid artifact, clears its state, and refetches it. Other readable
+    /// chapters are never purged.
+    func retryCurrentChapterLoad() {
+        guard let currentBook = book else { return }
+        let idx = currentChapterIndex
+        AppLogger.render("⟐ chapter retry tapped ch=\(idx)")
+        dependencies.bookSourceFetcher.clearChapterCache(
+            bookId: currentBook.id,
+            chapterIndex: idx
+        )
+        store.clearCachedChapter(bookId: currentBook.id, chapterIndex: idx)
+        readerViewModel.resetChapterState(for: idx)
+        if let engine = epubRenderer.engine {
+            Task { await engine.notifyChapterDataChanged(at: idx) }
+        }
+        // .jump = user-initiated highest priority; preempts any stale in-flight.
+        ensureChapterReady(chapterIndex: idx, priority: .jump)
     }
 
     func prefetchAdjacentChapters(around chapterIndex: Int) {

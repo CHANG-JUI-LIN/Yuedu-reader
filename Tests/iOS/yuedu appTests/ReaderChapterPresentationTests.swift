@@ -4,6 +4,22 @@ import Testing
 @Suite("ReaderChapterPresentation", .serialized)
 struct ReaderChapterPresentationTests {
 
+    @Test("manual refresh relayouts validated cache without fetching")
+    func manualRefreshRelayoutsValidatedCache() {
+        #expect(
+            ReaderChapterPresentation.manualRefreshAction(isContentAvailable: true)
+                == .relayoutCachedContent
+        )
+    }
+
+    @Test("manual refresh fetches only when current content is missing")
+    func manualRefreshFetchesMissingContent() {
+        #expect(
+            ReaderChapterPresentation.manualRefreshAction(isContentAvailable: false)
+                == .fetchMissingContent
+        )
+    }
+
     @Test("content availability suppresses overlays")
     func contentAvailabilitySuppressesOverlays() {
         #expect(ReaderChapterPresentation.overlayState(isContentAvailable: true, loadState: .loading) == ReaderChapterOverlayState.hidden)
@@ -25,7 +41,11 @@ struct ReaderChapterPresentationTests {
     func readyOnCurrentTriggersCorrectRefreshAction() {
         #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 3, currentChapterIndex: 3, usesCoreText: true, newState: .ready, isContentAvailable: true) == ReaderChapterRefreshAction.notifyChapterDataChanged(3))
         #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 4, currentChapterIndex: 4, usesCoreText: false, newState: .ready, isContentAvailable: true) == ReaderChapterRefreshAction.rebuildPages)
-        #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 5, currentChapterIndex: 5, usesCoreText: true, newState: .ready, isContentAvailable: false) == ReaderChapterRefreshAction.resetAndRefetchChapter(5))
+    }
+
+    @Test("ready without validated content does not auto-refetch")
+    func readyWithoutValidatedContentDoesNotAutoRefetch() {
+        #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 5, currentChapterIndex: 5, usesCoreText: true, newState: .ready, isContentAvailable: false) == ReaderChapterRefreshAction.none)
     }
 
     @Test("different indices return none")

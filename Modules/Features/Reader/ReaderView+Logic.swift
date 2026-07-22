@@ -296,25 +296,21 @@ extension ReaderView {
     }
 
     func refreshCurrentChapter() {
-        guard let b = book, let refs = b.onlineChapters, !refs.isEmpty else { return }
+        guard book?.onlineChapters?.isEmpty == false else { return }
         let idx = currentChapterIndex
-        #if DEBUG
-        AppLogger.render("[StateDebug] refreshCurrentChapter ch=\(idx) ← clearing ENTIRE book cache and restarting fetch")
-        #endif
-        // Clear all cached chapters for the entire book since the "next chapter misdetected as next page"
-        // bug contaminates subsequent chapters into the current chapter's cache. Clearing just the current
-        // chapter is insufficient; the whole book must be purged.
-        dependencies.bookSourceFetcher.clearAllChapterCache(bookId: b.id)
-        store.clearAllCachedChapterFilenames(bookId: b.id)
-        for ref in refs {
-            readerViewModel.resetChapterState(for: ref.index)
+        switch ReaderChapterPresentation.manualRefreshAction(
+            isContentAvailable: isChapterContentAvailable(at: idx)
+        ) {
+        case .relayoutCachedContent:
+            // Reader refresh is a rendering operation when validated content is
+            // already present. Never delete readable chapters before a network
+            // request succeeds: authenticated sources may be temporarily 401.
+            AppLogger.render("⟐ chapter refresh relayout cached ch=\(idx)")
+            forceReaderRenderableContentRefresh()
+        case .fetchMissingContent:
+            AppLogger.render("⟐ chapter refresh fetch missing ch=\(idx)")
+            retryCurrentChapterLoad()
         }
-        // Immediately invalidate the current chapter's layout and show loading UI
-        // so the user doesn't continue seeing the old (concatenated) content while the refetch completes.
-        if let engine = epubRenderer.engine {
-            Task { await engine.notifyChapterDataChanged(at: idx) }
-        }
-        ensureChapterReady(chapterIndex: idx, priority: .jump)
     }
 
     var downloadButtonIcon: String {

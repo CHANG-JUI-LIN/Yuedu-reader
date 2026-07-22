@@ -1316,16 +1316,14 @@ struct ReaderView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
 
-            // Network fetch status overlay is disabled per user request.
-            // Logic is preserved in currentChapterOverlayState + refreshCurrentChapter().
-            // To restore the UI, uncomment the switch block below:
-            //
-            //   if !showBars {
-            //       switch currentChapterOverlayState {
-            //       case .hidden, .loading: EmptyView()
-            //       case .failed(let message): /* error tip + retry button */
-            //       }
-            //   }
+            // The network-fetch *loading* overlay stays disabled per user request —
+            // the engine's placeholder page already communicates loading. Only the
+            // FAILURE branch is rendered (restored 2026-07-22): a failed chapter
+            // fetch used to be swallowed here (state was computed but never shown),
+            // leaving the placeholder spinning forever with no error and no retry.
+            if case .failed(let message) = currentChapterOverlayState {
+                chapterLoadFailureOverlay(message: message)
+            }
 
             if overlayVisibility.showsRuntimeCanvas,
                !chapters.isEmpty,

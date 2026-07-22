@@ -10,12 +10,20 @@ public enum ReaderChapterRefreshAction: Equatable {
     case none
     case notifyChapterDataChanged(Int)
     case rebuildPages
-    /// The chapter state is `.ready` but its content is missing from the validated
-    /// cache — clears the stale cache entry and re-fetches immediately.
-    case resetAndRefetchChapter(Int)
+}
+
+public enum ReaderManualRefreshAction: Equatable {
+    case relayoutCachedContent
+    case fetchMissingContent
 }
 
 public enum ReaderChapterPresentation {
+    public static func manualRefreshAction(
+        isContentAvailable: Bool
+    ) -> ReaderManualRefreshAction {
+        isContentAvailable ? .relayoutCachedContent : .fetchMissingContent
+    }
+
     public static func overlayState(isContentAvailable: Bool, loadState: ChapterLoadState?) -> ReaderChapterOverlayState {
         if isContentAvailable { return .hidden }
         guard let loadState = loadState else { return .loading }
@@ -25,10 +33,9 @@ public enum ReaderChapterPresentation {
         case .failed(let reason):
             return .failed(message: reason)
         case .ready:
-            // State claims ready but validated content is unavailable (e.g. a legacy
-            // cache entry without the .package.json artifact).  Return .failed so the
-            // "Tap to Retry" button is shown and the auto-reset path in refreshAction can
-            // clear and re-fetch — avoids a permanent "loading" deadlock.
+            // State claims ready but validated content is unavailable. Surface the
+            // inconsistency and wait for an explicit retry; auto-refetching here loops
+            // forever when the same validation failure repeats.
             return .failed(message: "資料不一致，請點擊重試")
         }
     }
@@ -41,11 +48,6 @@ public enum ReaderChapterPresentation {
         isContentAvailable: Bool
     ) -> ReaderChapterRefreshAction {
         guard changedChapterIndex == currentChapterIndex else { return .none }
-        // State transitioned to .ready but content is not available in the validated
-        // cache — automatically clear and re-fetch instead of staying stuck.
-        if newState == .ready, !isContentAvailable {
-            return .resetAndRefetchChapter(changedChapterIndex)
-        }
         guard isContentAvailable, newState == .ready else { return .none }
         if usesCoreText {
             return .notifyChapterDataChanged(currentChapterIndex)

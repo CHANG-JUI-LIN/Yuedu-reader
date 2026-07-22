@@ -98,6 +98,7 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         bodyParaStyle.minimumLineHeight = bodyTargetLineHeight
         bodyParaStyle.maximumLineHeight = bodyTargetLineHeight
         bodyParaStyle.paragraphSpacing = settings.paragraphSpacing
+        bodyParaStyle.firstLineHeadIndent = settings.fontSize * 2
 
         let attrStr = NSMutableAttributedString()
         await ChapterTitleAttributedBuilder.append(
@@ -112,10 +113,10 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         )
 
         for para in paragraphs {
-            let indentedPara = "\u{3000}\u{3000}" + para.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
+            let paragraphText = para.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
             attrStr.append(
                 NSAttributedString(
-                    string: indentedPara,
+                    string: paragraphText,
                     attributes: ReaderHyphenation.tagging(
                         [
                             .font: bodyFont,

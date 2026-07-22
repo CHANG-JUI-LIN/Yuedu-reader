@@ -179,6 +179,17 @@ actor WebFetcher {
         {
             request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
         }
+        if request.value(forHTTPHeaderField: "Cookie") == nil {
+            // CookieStore is the durable Legado cookie jar. Native URLSession
+            // storage can be empty after a cold launch even though a source's
+            // login session is still persisted (e.g. shenmoxs.top
+            // `admin_session`); reading it here prevents authenticated chapter
+            // requests from incorrectly becoming HTTP 401.
+            let persistedCookie = CookieStore.shared.get(url: url.absoluteString)
+            if !persistedCookie.isEmpty {
+                request.setValue(persistedCookie, forHTTPHeaderField: "Cookie")
+            }
+        }
         if let bodyStr = body, method == "POST" {
             let enc = encoding(forIANA: bodyCharset) ?? .utf8
             request.httpBody = bodyStr.data(using: enc)
