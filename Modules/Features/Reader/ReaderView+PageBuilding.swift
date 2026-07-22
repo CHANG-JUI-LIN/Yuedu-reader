@@ -206,7 +206,12 @@ extension ReaderView {
     }
 
     func loadContent() {
-        guard !isLoadingPipeline else { return }
+        // ⟐ infinite-loading probe: if reloads are being swallowed here, the
+        // pipeline flag was left dangling by an earlier aborted load.
+        guard !isLoadingPipeline else {
+            AppLogger.render("⟐ loadContent blocked: isLoadingPipeline still true")
+            return
+        }
         isLoadingPipeline = true
         isRestoringPosition = true
         refreshInitialRestoreState()
@@ -423,7 +428,13 @@ extension ReaderView {
             return
         }
         epubRenderer.updateRenderSettings(newSettings)
-        Task { await engine.invalidateLayout(newSize: size) }
+        AppLogger.render("⟐ relayout invalidate begin size=\(size) css=\(newSettings.chapterTitleStyle.advancedCSSEnabled)")
+        Task {
+            let t0 = CFAbsoluteTimeGetCurrent()
+            await engine.invalidateLayout(newSize: size)
+            let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+            AppLogger.render("⟐ relayout invalidate end ms=\(ms)")
+        }
     }
 
     func forceReaderRenderableContentRefresh() {

@@ -36,14 +36,20 @@ enum ChapterTitleAttributedBuilder {
         guard !trimmed.isEmpty else { return }
 
         if style.advancedCSSEnabled {
-            if let rendered = await renderAdvancedCSS(
+            let t0 = CFAbsoluteTimeGetCurrent()
+            let rendered = await renderAdvancedCSS(
                 rawTitle: trimmed,
                 style: style,
                 settings: settings,
                 renderWidth: renderWidth,
                 themeTextColor: themeTextColor,
                 themeBackgroundColor: themeBackgroundColor
-            ) {
+            )
+            AppLogger.render(
+                "⟐ title.css render ms=\(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))"
+                    + " ok=\(rendered != nil) len=\(rendered?.length ?? 0)"
+            )
+            if let rendered {
                 // 上距/下距 spacers frame the template block; the template's own
                 // margins/padding handle everything inside.
                 if style.topSpacing > 0 {

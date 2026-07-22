@@ -51,6 +51,30 @@ private final class ReaderLeadingEdgePanGestureRecognizer: UIScreenEdgePanGestur
     }
 }
 
+// MARK: - ResumeOnceBox
+
+/// Guards a continuation against the double-resume hazard of
+/// `UIViewControllerTransitionCoordinator.animate(alongsideTransition:)`,
+/// whose completion callback and queue-refusal return value are not mutually
+/// exclusive signals. Lock-based (not actor-isolated) so it can be captured
+/// and called regardless of how the deployed SDK annotates that callback.
+private final class ResumeOnceBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    init(_ continuation: CheckedContinuation<Void, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume() {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume()
+    }
+}
+
 // MARK: - ReaderNavigationTransitionDriver
 
 /// Owns the UIKit half of reader navigation: the custom push/pop animator,
@@ -78,6 +102,14 @@ final class ReaderNavigationTransitionDriver: NSObject {
     /// completes the pending operation if the stack already moved, or rolls it
     /// back so the shelf can be reopened. The timer is cancelled on any normal
     /// `finishTransition` / `didShow` / detach path.
+    ///
+    /// It also covers the in-flight variant: UIKit created our animator, the
+    /// destination's `viewWillAppear` already hid the shelf bars, and then the
+    /// transition was never driven to completion (no animator completion, no
+    /// `didShow`). Animator creation alone must not disarm the watchdog — if
+    /// the timeline is frozen across a full extra window, the animator is
+    /// asked to force-settle the abandoned context so UIKit tears the
+    /// transition down and the shelf's bars come back.
     private var pendingReconciliationWorkItem: DispatchWorkItem?
     // Must be well past the transition animation duration (0.62s) plus
     // SwiftUI reader construction + CoreText pagination. 3s gives the
@@ -242,6 +274,8 @@ final class ReaderNavigationTransitionDriver: NSObject {
         guard isInteractivePopInFlight, !interactionIsSettling else { return }
         interactionIsSettling = true
         interactionController?.cancel()
+        // The cancellation must now finish on its own; guard it like `.ended`.
+        schedulePendingReconciliation(for: .pop)
     }
 
     @objc private func handleEdgePan(_ gesture: ReaderLeadingEdgePanGestureRecognizer) {
@@ -288,6 +322,11 @@ final class ReaderNavigationTransitionDriver: NSObject {
             interaction.update(popProgress)
             activeAnimator?.renderCurrentProgress()
             interactionIsSettling = true
+            // From release onward the transition must complete or cancel on
+            // its own within ~1s; arm the same stall watchdog that guards
+            // push/programmatic-pop. Not armed at `.began` — a held finger
+            // legitimately parks the timeline for arbitrarily long.
+            schedulePendingReconciliation(for: .pop)
             let velocity = gesture.velocity(in: navigationController.view).x
             if ReaderCardTransitionMath.shouldFinishClose(
                 closeProgress: popProgress,
@@ -452,18 +491,50 @@ final class ReaderNavigationTransitionDriver: NSObject {
     }
 
     /// Schedule a reconciliation watchdog that fires after a grace window.
-    /// If the transition still hasn't started (no `activeAnimator`, no
-    /// `transitionCoordinator`), the pending operation is either marked
-    /// completed (if the stack already moved) or rolled back to unstick.
-    private func schedulePendingReconciliation(for operation: PendingOperation, retryCount: Int = 0) {
+    /// Covers two failure shapes: a transition UIKit never started (no
+    /// `activeAnimator`, no `transitionCoordinator`) and a transition UIKit
+    /// began but stopped driving (animator alive with a frozen timeline). The
+    /// pending operation is completed or rolled back from stack truth so the
+    /// shelf can always be reopened.
+    private func schedulePendingReconciliation(
+        for operation: PendingOperation,
+        retryCount: Int = 0,
+        lastObservedFraction: CGFloat? = nil
+    ) {
         cancelPendingReconciliation()
         let maxRetries = 2
         let workItem = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                guard self.pendingOperation == operation, self.activeAnimator == nil else {
-                    // Normal path already took over — animator was created
-                    // or transition already finished.
+                guard self.pendingOperation == operation else {
+                    // Transition already finished through a normal path.
+                    return
+                }
+                if let animator = self.activeAnimator {
+                    // In-flight but past the grace window (a healthy
+                    // transition lasts 0.62s). A timeline that advanced since
+                    // the last sample gets another window — the main thread
+                    // may have been blocked by first-layout work. A frozen
+                    // timeline means UIKit abandoned the transition (seen
+                    // when a push lands while NavigationStack is still
+                    // settling from a prior interactive pop): no completion
+                    // and no `didShow` will ever arrive, and the shelf sits
+                    // bar-less under a dead transition container.
+                    let fraction = animator.currentFractionComplete
+                    let isAdvancing = fraction != nil
+                        && fraction != lastObservedFraction
+                        && retryCount < maxRetries
+                    if isAdvancing {
+                        self.schedulePendingReconciliation(
+                            for: operation,
+                            retryCount: retryCount + 1,
+                            lastObservedFraction: fraction
+                        )
+                        return
+                    }
+                    let completed = self.stalledTransitionShouldComplete(operation: operation)
+                    AppLogger.info("⟐ watchdog force-settling stalled \(operation == .push ? "push" : "pop") retry=\(retryCount) fraction=\(fraction.map { String(format: "%.2f", $0) } ?? "nil") completed=\(completed)")
+                    animator.forceSettleStalledTransition(completed: completed)
                     return
                 }
                 guard let nc = self.navigationController else {
@@ -473,8 +544,18 @@ final class ReaderNavigationTransitionDriver: NSObject {
                 if nc.transitionCoordinator != nil {
                     // UIKit is still working; give it more time (up to maxRetries)
                     guard retryCount < maxRetries else {
-                        AppLogger.info("⟐ watchdog max retries reached; force reconciling stuck \(operation == .push ? "push" : "pop")")
-                        self.finishTransition(operation: operation, completed: false)
+                        // Reconcile from the actual stack instead of forcing
+                        // a rollback: if UIKit committed the move but its
+                        // coordinator lingered, rolling back would strand a
+                        // visible reader behind a coordinator that thinks the
+                        // shelf is frontmost (breaking the edge-swipe gate).
+                        AppLogger.info("⟐ watchdog max retries reached; reconciling stuck \(operation == .push ? "push" : "pop") from stack state")
+                        switch operation {
+                        case .push:
+                            self.reconcilePendingPushAsCompleted()
+                        case .pop:
+                            self.reconcilePendingPop()
+                        }
                         return
                     }
                     self.schedulePendingReconciliation(for: operation, retryCount: retryCount + 1)
@@ -498,6 +579,23 @@ final class ReaderNavigationTransitionDriver: NSObject {
         )
     }
 
+    /// Direction a force-settle should take: for a transition UIKit abandoned
+    /// mid-flight, stack membership is the only remaining truth. Completing
+    /// forward matches a stack that already contains the destination;
+    /// otherwise roll back so the shelf's bars are restored by the normal
+    /// cancellation path.
+    private func stalledTransitionShouldComplete(operation: PendingOperation) -> Bool {
+        guard let nc = navigationController else { return false }
+        switch operation {
+        case .push:
+            guard let expectedToViewController else { return readerIsPresented() }
+            return nc.viewControllers.contains(expectedToViewController)
+        case .pop:
+            guard let expectedFromViewController else { return !readerIsPresented() }
+            return !nc.viewControllers.contains(expectedFromViewController)
+        }
+    }
+
     private func cancelPendingReconciliation() {
         pendingReconciliationWorkItem?.cancel()
         pendingReconciliationWorkItem = nil
@@ -508,6 +606,36 @@ final class ReaderNavigationTransitionDriver: NSObject {
     /// finishes, so that flag alone is not a safe interaction gate.
     var isReadyForInteractivePop: Bool {
         canStartNavigationTransition
+    }
+
+    /// True when a transition this driver does not own (UIKit's lingering
+    /// coordinator after a pop, a SwiftUI-driven push) is what blocks a new
+    /// start. The coordinator only arms its deferred-push wait for this case;
+    /// driver-owned operations re-arm through the settle notification instead.
+    var hasBlockingSystemTransition: Bool {
+        pendingOperation == nil
+            && activeAnimator == nil
+            && navigationController?.transitionCoordinator != nil
+    }
+
+    /// Suspends until the blocking transition's own completion callback — the
+    /// real end-of-transition signal — instead of guessing with a timed or
+    /// yielded retry. Returns immediately when nothing blocks. Callers must
+    /// re-check `canStartNavigationTransition` afterwards.
+    func waitForBlockingSystemTransitionEnd() async {
+        guard
+            let navigationController,
+            let coordinator = navigationController.transitionCoordinator
+        else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let resumeOnce = ResumeOnceBox(continuation)
+            let queued = coordinator.animate(alongsideTransition: nil) { _ in
+                resumeOnce.resume()
+            }
+            // `animate` refuses to queue on a coordinator that has already
+            // finished; resume immediately so the caller can re-check state.
+            if !queued { resumeOnce.resume() }
+        }
     }
 
     private func claimNavigationDelegate() {

@@ -34,6 +34,12 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
     private var cachedShadowRadius: CGFloat = 0
     private var cachedShadowPath: CGPath?
 
+    /// Keyframe samples for the non-interactive declarative path
+    /// (`runDeclarativeAnimation`). ~60 samples across the 0.62s transition is
+    /// dense enough that linear interpolation between the sampled phased-model
+    /// values is visually indistinguishable from the per-frame scrub path.
+    private static let declarativeKeyframeCount = 60
+
     init(
         operation: Operation,
         source: ReaderTransitionSource,
@@ -204,7 +210,21 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             self.deliverCompletion(completed)
         }
         propertyAnimator = animator
-        startDisplayLink()
+        if transitionContext.isInteractive {
+            // Interactive edge-pop scrubs with the finger: keep the per-frame
+            // CADisplayLink model so drag position maps 1:1 to the visuals.
+            startDisplayLink()
+        } else if let state = runtimeState {
+            // Non-interactive push / programmatic pop: run the phased model
+            // declaratively on the render server (see runDeclarativeAnimation)
+            // so a momentarily busy main thread can't drop transition frames.
+            runDeclarativeAnimation(
+                state: state,
+                duration: transitionDuration(using: transitionContext)
+            )
+        } else {
+            startDisplayLink()
+        }
         return animator
     }
 
@@ -215,6 +235,84 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         if !isCompletingTransition {
             deliverCompletion(transitionCompleted)
         }
+    }
+
+    /// Timeline position of the in-flight transition, if one exists. The
+    /// driver's watchdog samples this to distinguish a slow-but-advancing
+    /// transition from one UIKit has stopped driving.
+    var currentFractionComplete: CGFloat? {
+        propertyAnimator?.fractionComplete
+    }
+
+    /// Watchdog-only last resort for a transition UIKit began but stopped
+    /// driving (observed when a push lands while SwiftUI's `NavigationStack`
+    /// is still settling from a previous interactive pop: the animator is
+    /// created, then neither the property-animator completion nor `didShow`
+    /// ever arrives). Completes the abandoned context ourselves so UIKit
+    /// tears the transition down: `completed == false` rolls the push back,
+    /// which runs the reader's `viewWillDisappear` and restores the shelf's
+    /// navigation/tab bars. Never called on a healthy transition — the driver
+    /// only invokes it after the grace window with a frozen timeline.
+    func forceSettleStalledTransition(completed: Bool) {
+        guard !completionDelivered else { return }
+        // A context that already recorded a cancellation (percent-driven
+        // `cancel()` ran before the stall) must settle as cancelled: the user
+        // chose to keep the from-controller, and UIKit's bookkeeping already
+        // committed that decision even though the stack no longer shows it.
+        let resolvedCompleted: Bool
+        if let context = activeTransitionContext, context.transitionWasCancelled {
+            resolvedCompleted = false
+        } else {
+            resolvedCompleted = completed
+        }
+        AppLogger.info("⟐ reader-nav forceSettle stalled transition completed=\(resolvedCompleted) animatorState=\(propertyAnimator.map { String(describing: $0.state.rawValue) } ?? "nil") fraction=\(propertyAnimator.map { String(format: "%.2f", $0.fractionComplete) } ?? "-") hasContext=\(activeTransitionContext != nil)")
+
+        // Silence the original completion first so a late CA callback cannot
+        // complete the same context a second time.
+        if let propertyAnimator, propertyAnimator.state == .active {
+            propertyAnimator.stopAnimation(true)
+        }
+
+        if let state = runtimeState {
+            // Strip any in-flight CA animations (declarative keyframes,
+            // UIKit alongside animations) so the endpoint values set below
+            // take effect immediately instead of being overridden.
+            let animatedViews = [
+                state.fromView, state.toView, state.backdrop, state.progressProbe,
+                state.stage.shadowView, state.stage.coverContainer,
+                state.stage.coverView, state.stage.spineShadowView
+            ]
+            for view in animatedViews {
+                view.layer.removeAllAnimations()
+            }
+            applyRuntimeState(
+                progress: resolvedCompleted ? state.endProgress : state.startProgress,
+                state: state
+            )
+        }
+        cleanupTemporaryViews(transitionCompleted: resolvedCompleted)
+
+        guard let transitionContext = activeTransitionContext else {
+            // Context already died with the transition; unwind our own
+            // bookkeeping so the driver and coordinator can reset.
+            propertyAnimator = nil
+            deliverCompletion(resolvedCompleted)
+            return
+        }
+
+        isCompletingTransition = true
+        if transitionContext.isInteractive, !transitionContext.transitionWasCancelled {
+            if resolvedCompleted {
+                transitionContext.finishInteractiveTransition()
+            } else {
+                transitionContext.cancelInteractiveTransition()
+            }
+        }
+        transitionContext.completeTransition(resolvedCompleted)
+        isCompletingTransition = false
+        propertyAnimator = nil
+        activeTransitionContext = nil
+        deliverCompletion(resolvedCompleted)
     }
 
     /// Keep gesture changes visually in lockstep instead of waiting one
@@ -402,6 +500,9 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
 
         guard let state = runtimeState else { return }
         for view in [state.fromView, state.toView] {
+            // Clear any declarative keyframe animations still attached to the
+            // live reader layer before restoring its resting state.
+            view.layer.removeAllAnimations()
             view.isHidden = false
             view.alpha = 1
             view.transform = .identity
@@ -491,6 +592,59 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         sourceGeometry: ReaderCardGeometry,
         destinationGeometry: ReaderCardGeometry
     ) {
+        let values = computeFrameValues(
+            progress: progress,
+            reduceMotion: reduceMotion,
+            sourceGeometry: sourceGeometry,
+            destinationGeometry: destinationGeometry
+        )
+        setFrameValues(
+            values,
+            stage: stage,
+            backdrop: backdrop,
+            liveReaderView: liveReaderView
+        )
+    }
+
+    // MARK: Single-source visual model
+    //
+    // `computeFrameValues` is the one place the phased book visuals become
+    // concrete layer values. Both drivers consume it, so they cannot drift:
+    // the interactive edge-pop evaluates it per CADisplayLink frame via
+    // `setFrameValues`, and the non-interactive push/pop samples it into
+    // keyframes via `runDeclarativeAnimation`.
+
+    /// Every concrete layer value for one progress point.
+    private struct FrameValues {
+        var reduceMotion: Bool
+        var readerTransform: CGAffineTransform
+        var readerCornerRadius: CGFloat
+        var readerMasksToBounds: Bool
+        var readerAlpha: CGFloat
+        var backdropAlpha: CGFloat
+        var shadowViewAlpha: CGFloat
+        var shadowFrame: CGRect
+        var shadowOpacity: Float
+        var shadowSize: CGSize
+        var shadowCornerRadius: CGFloat
+        var shadowOffset: CGSize
+        var coverContainerAlpha: CGFloat
+        var coverContainerFrame: CGRect
+        var spineShadowFrame: CGRect
+        var spineShadowAlpha: CGFloat
+        var coverBounds: CGRect
+        var coverPosition: CGPoint
+        var coverCornerRadius: CGFloat
+        var coverTransform: CATransform3D
+        var coverAlpha: CGFloat
+    }
+
+    private func computeFrameValues(
+        progress: CGFloat,
+        reduceMotion: Bool,
+        sourceGeometry: ReaderCardGeometry,
+        destinationGeometry: ReaderCardGeometry
+    ) -> FrameValues {
         let p = ReaderCardTransitionMath.clampProgress(progress)
         let visual = ReaderCardVisualState.interpolate(
             progress: p,
@@ -499,20 +653,33 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         )
 
         if reduceMotion {
-            stage.shadowView.alpha = 0
-            stage.coverContainer.alpha = 0
-            liveReaderView.transform = .identity
-            liveReaderView.layer.cornerRadius = 0
-            liveReaderView.layer.masksToBounds = false
-            liveReaderView.alpha = p
-            backdrop.alpha = p
-            return
+            return FrameValues(
+                reduceMotion: true,
+                readerTransform: .identity,
+                readerCornerRadius: 0,
+                readerMasksToBounds: false,
+                readerAlpha: p,
+                backdropAlpha: p,
+                shadowViewAlpha: 0,
+                shadowFrame: visual.frame,
+                shadowOpacity: 0,
+                shadowSize: visual.frame.size,
+                shadowCornerRadius: visual.cornerRadius,
+                shadowOffset: CGSize(width: 0, height: 10),
+                coverContainerAlpha: 0,
+                coverContainerFrame: visual.frame,
+                spineShadowFrame: .zero,
+                spineShadowAlpha: 0,
+                coverBounds: CGRect(origin: .zero, size: visual.frame.size),
+                coverPosition: .zero,
+                coverCornerRadius: visual.cornerRadius,
+                coverTransform: CATransform3DIdentity,
+                coverAlpha: 0
+            )
         }
 
         let pose = ReaderBookOpeningPose.interpolate(progress: p, direction: source.direction)
         let full = destinationGeometry.frame
-
-        backdrop.alpha = ReaderCardTransitionMath.phase(p, in: 0.04...0.72)
 
         // The real reader view is the transition's paper: it scales between
         // the shelf card and full screen, so live content grows and shrinks
@@ -521,56 +688,31 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         // never relayouts mid-flight.
         let scaleX = max(visual.frame.width / max(full.width, 1), 0.001)
         let scaleY = max(visual.frame.height / max(full.height, 1), 0.001)
-        liveReaderView.alpha = 1
-        liveReaderView.transform = CGAffineTransform(
+        let readerTransform = CGAffineTransform(
             translationX: visual.frame.midX - full.midX,
             y: visual.frame.midY - full.midY
         ).scaledBy(x: scaleX, y: scaleY)
         // Corner radius lives in the view's own (unscaled) coordinate space;
         // divide so the on-screen rounding matches the card's.
-        liveReaderView.layer.cornerRadius = visual.cornerRadius / scaleX
-        liveReaderView.layer.masksToBounds = visual.cornerRadius > 0
-
-        stage.shadowView.alpha = 1
-        stage.shadowView.frame = visual.frame
-        stage.shadowView.layer.shadowOpacity = Float(visual.shadowOpacity)
-        let shadowSize = visual.frame.size
-        let shadowRadius = visual.cornerRadius
-        let sizeDelta = abs(shadowSize.width - cachedShadowSize.width)
-            + abs(shadowSize.height - cachedShadowSize.height)
-        if sizeDelta > 0.5 || abs(shadowRadius - cachedShadowRadius) > 0.5 {
-            cachedShadowPath = UIBezierPath(
-                roundedRect: CGRect(origin: .zero, size: shadowSize),
-                cornerRadius: shadowRadius
-            ).cgPath
-            cachedShadowSize = shadowSize
-            cachedShadowRadius = shadowRadius
-        }
-        stage.shadowView.layer.shadowPath = cachedShadowPath
-
-        // The cover assembly rides the card geometry without clipping, so
-        // the hinging cover sweeps outside the card like a real front cover.
-        stage.coverContainer.alpha = 1
-        stage.coverContainer.frame = visual.frame
+        let readerCornerRadius = visual.cornerRadius / scaleX
 
         let spineShadowWidth = min(full.width * 0.18, visual.frame.width)
-        stage.spineShadowView.frame = CGRect(
+        let spineShadowFrame = CGRect(
             x: source.direction == .leftSpine ? 0 : visual.frame.width - spineShadowWidth,
             y: 0,
             width: spineShadowWidth,
             height: visual.frame.height
         )
-        stage.spineShadowView.alpha = pose.spineShadowOpacity
 
         // Laid out via bounds/position because the layer carries a 3D
-        // transform; its hinge anchor was fixed at construction.
+        // transform; its hinge anchor was fixed at construction
+        // (leftSpine -> 0, rightSpine -> 1).
         let coverBounds = CGRect(origin: .zero, size: visual.frame.size)
-        stage.coverView.layer.bounds = coverBounds
-        stage.coverView.layer.position = CGPoint(
-            x: coverBounds.width * stage.coverView.layer.anchorPoint.x,
-            y: coverBounds.height * stage.coverView.layer.anchorPoint.y
+        let coverAnchorX: CGFloat = source.direction == .leftSpine ? 0 : 1
+        let coverPosition = CGPoint(
+            x: coverBounds.width * coverAnchorX,
+            y: coverBounds.height * 0.5
         )
-        stage.coverView.layer.cornerRadius = visual.cornerRadius
         var coverTransform = CATransform3DIdentity
         coverTransform.m34 = -1 / 900
         coverTransform = CATransform3DRotate(
@@ -580,13 +722,323 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             1,
             0
         )
-        stage.coverView.layer.transform = coverTransform
-        stage.coverView.alpha = pose.coverOpacity
 
         let shadowDirection: CGFloat = source.direction == .leftSpine ? -1 : 1
-        stage.shadowView.layer.shadowOffset = CGSize(
+        let shadowOffset = CGSize(
             width: shadowDirection * 10 * ReaderCardTransitionMath.phase(p, in: 0.04...0.55),
             height: 10
+        )
+
+        return FrameValues(
+            reduceMotion: false,
+            readerTransform: readerTransform,
+            readerCornerRadius: readerCornerRadius,
+            readerMasksToBounds: visual.cornerRadius > 0,
+            readerAlpha: 1,
+            backdropAlpha: ReaderCardTransitionMath.phase(p, in: 0.04...0.72),
+            shadowViewAlpha: 1,
+            shadowFrame: visual.frame,
+            shadowOpacity: Float(visual.shadowOpacity),
+            shadowSize: visual.frame.size,
+            shadowCornerRadius: visual.cornerRadius,
+            shadowOffset: shadowOffset,
+            coverContainerAlpha: 1,
+            coverContainerFrame: visual.frame,
+            spineShadowFrame: spineShadowFrame,
+            spineShadowAlpha: pose.spineShadowOpacity,
+            coverBounds: coverBounds,
+            coverPosition: coverPosition,
+            coverCornerRadius: visual.cornerRadius,
+            coverTransform: coverTransform,
+            coverAlpha: pose.coverOpacity
+        )
+    }
+
+    private func setFrameValues(
+        _ values: FrameValues,
+        stage: BookStage,
+        backdrop: UIView,
+        liveReaderView: UIView
+    ) {
+        if values.reduceMotion {
+            stage.shadowView.alpha = 0
+            stage.coverContainer.alpha = 0
+            liveReaderView.transform = .identity
+            liveReaderView.layer.cornerRadius = 0
+            liveReaderView.layer.masksToBounds = false
+            liveReaderView.alpha = values.readerAlpha
+            backdrop.alpha = values.backdropAlpha
+            return
+        }
+
+        backdrop.alpha = values.backdropAlpha
+
+        liveReaderView.alpha = values.readerAlpha
+        liveReaderView.transform = values.readerTransform
+        liveReaderView.layer.cornerRadius = values.readerCornerRadius
+        liveReaderView.layer.masksToBounds = values.readerMasksToBounds
+
+        stage.shadowView.alpha = values.shadowViewAlpha
+        stage.shadowView.frame = values.shadowFrame
+        stage.shadowView.layer.shadowOpacity = values.shadowOpacity
+        let sizeDelta = abs(values.shadowSize.width - cachedShadowSize.width)
+            + abs(values.shadowSize.height - cachedShadowSize.height)
+        if sizeDelta > 0.5 || abs(values.shadowCornerRadius - cachedShadowRadius) > 0.5 {
+            cachedShadowPath = UIBezierPath(
+                roundedRect: CGRect(origin: .zero, size: values.shadowSize),
+                cornerRadius: values.shadowCornerRadius
+            ).cgPath
+            cachedShadowSize = values.shadowSize
+            cachedShadowRadius = values.shadowCornerRadius
+        }
+        stage.shadowView.layer.shadowPath = cachedShadowPath
+        stage.shadowView.layer.shadowOffset = values.shadowOffset
+
+        // The cover assembly rides the card geometry without clipping, so
+        // the hinging cover sweeps outside the card like a real front cover.
+        stage.coverContainer.alpha = values.coverContainerAlpha
+        stage.coverContainer.frame = values.coverContainerFrame
+
+        stage.spineShadowView.frame = values.spineShadowFrame
+        stage.spineShadowView.alpha = values.spineShadowAlpha
+
+        stage.coverView.layer.bounds = values.coverBounds
+        stage.coverView.layer.position = values.coverPosition
+        stage.coverView.layer.cornerRadius = values.coverCornerRadius
+        stage.coverView.layer.transform = values.coverTransform
+        stage.coverView.alpha = values.coverAlpha
+    }
+
+    /// Non-interactive push / programmatic pop. Instead of recomputing the
+    /// phased model on the main thread every CADisplayLink frame, sample it
+    /// into keyframes once and hand them to Core Animation, which drives the
+    /// whole transition on the render server. A momentarily busy main thread
+    /// (first CoreText pagination, SwiftUI updates, cover decoding) can then no
+    /// longer drop transition frames — the cause of the intermittent stutter on
+    /// both opening and closing. The interactive edge-pop deliberately keeps
+    /// the per-frame path, because it must scrub with the finger.
+    private func runDeclarativeAnimation(state: RuntimeState, duration: TimeInterval) {
+        let commitStart = CACurrentMediaTime()
+
+        // Model layers jump to the end state, so the transition is seamless the
+        // instant Core Animation removes the presentation-only animations.
+        let endValues = computeFrameValues(
+            progress: state.endProgress,
+            reduceMotion: state.reduceMotion,
+            sourceGeometry: state.sourceGeometry,
+            destinationGeometry: state.destinationGeometry
+        )
+        setFrameValues(
+            endValues,
+            stage: state.stage,
+            backdrop: state.backdrop,
+            liveReaderView: state.liveReaderView
+        )
+
+        let sampleCount = Self.declarativeKeyframeCount
+        let keyTimes: [NSNumber] = (0...sampleCount).map {
+            NSNumber(value: Double($0) / Double(sampleCount))
+        }
+
+        let frames: [FrameValues] = (0...sampleCount).map { index in
+            let t = CGFloat(index) / CGFloat(sampleCount)
+            // Same easing the scrub path applies to non-interactive playback,
+            // so the sampled timeline matches the per-frame model exactly.
+            let progress = ReaderCardTransitionMath.lerp(
+                state.startProgress,
+                state.endProgress,
+                easedTransitionFraction(t)
+            )
+            return computeFrameValues(
+                progress: progress,
+                reduceMotion: state.reduceMotion,
+                sourceGeometry: state.sourceGeometry,
+                destinationGeometry: state.destinationGeometry
+            )
+        }
+
+        func addKeyframe(_ keyPath: String, to layer: CALayer, values: [Any]) {
+            let animation = CAKeyframeAnimation(keyPath: keyPath)
+            animation.values = values
+            animation.keyTimes = keyTimes
+            animation.duration = duration
+            animation.calculationMode = .linear
+            animation.isRemovedOnCompletion = true
+            layer.add(animation, forKey: "readerTransition.\(keyPath)")
+        }
+
+        if state.reduceMotion {
+            // Reduce Motion is a plain crossfade: only reader and backdrop
+            // opacity carry it, the book stage stays hidden throughout.
+            addKeyframe(
+                "opacity",
+                to: state.liveReaderView.layer,
+                values: frames.map { NSNumber(value: Double($0.readerAlpha)) }
+            )
+            addKeyframe(
+                "opacity",
+                to: state.backdrop.layer,
+                values: frames.map { NSNumber(value: Double($0.backdropAlpha)) }
+            )
+            AppLogger.info(
+                "⟐ reader-transition declarative reduceMotion "
+                + "op=\(operation == .push ? "push" : "pop") "
+                + "commit=\(String(format: "%.1f", (CACurrentMediaTime() - commitStart) * 1000))ms"
+            )
+            return
+        }
+
+        // masksToBounds cannot animate; enable it for the whole run when any
+        // sampled frame needs clipping, matching the scrub path's per-frame
+        // rule. The completion handler restores the resting value.
+        if frames.contains(where: { $0.readerMasksToBounds }) {
+            state.liveReaderView.layer.masksToBounds = true
+        }
+
+        let readerLayer = state.liveReaderView.layer
+        addKeyframe(
+            "transform",
+            to: readerLayer,
+            values: frames.map {
+                NSValue(caTransform3D: CATransform3DMakeAffineTransform($0.readerTransform))
+            }
+        )
+        addKeyframe(
+            "cornerRadius",
+            to: readerLayer,
+            values: frames.map { NSNumber(value: Double($0.readerCornerRadius)) }
+        )
+
+        addKeyframe(
+            "opacity",
+            to: state.backdrop.layer,
+            values: frames.map { NSNumber(value: Double($0.backdropAlpha)) }
+        )
+
+        let shadowLayer = state.stage.shadowView.layer
+        addKeyframe(
+            "bounds",
+            to: shadowLayer,
+            values: frames.map { NSValue(cgRect: CGRect(origin: .zero, size: $0.shadowFrame.size)) }
+        )
+        addKeyframe(
+            "position",
+            to: shadowLayer,
+            values: frames.map {
+                NSValue(cgPoint: CGPoint(x: $0.shadowFrame.midX, y: $0.shadowFrame.midY))
+            }
+        )
+        addKeyframe(
+            "opacity",
+            to: shadowLayer,
+            values: frames.map { NSNumber(value: Double($0.shadowViewAlpha)) }
+        )
+        addKeyframe(
+            "shadowOpacity",
+            to: shadowLayer,
+            values: frames.map { NSNumber(value: Double($0.shadowOpacity)) }
+        )
+        addKeyframe(
+            "shadowPath",
+            to: shadowLayer,
+            values: frames.map {
+                UIBezierPath(
+                    roundedRect: CGRect(origin: .zero, size: $0.shadowSize),
+                    cornerRadius: $0.shadowCornerRadius
+                ).cgPath
+            }
+        )
+        addKeyframe(
+            "shadowOffset",
+            to: shadowLayer,
+            values: frames.map { NSValue(cgSize: $0.shadowOffset) }
+        )
+
+        let coverContainerLayer = state.stage.coverContainer.layer
+        addKeyframe(
+            "bounds",
+            to: coverContainerLayer,
+            values: frames.map {
+                NSValue(cgRect: CGRect(origin: .zero, size: $0.coverContainerFrame.size))
+            }
+        )
+        addKeyframe(
+            "position",
+            to: coverContainerLayer,
+            values: frames.map {
+                NSValue(
+                    cgPoint: CGPoint(
+                        x: $0.coverContainerFrame.midX,
+                        y: $0.coverContainerFrame.midY
+                    )
+                )
+            }
+        )
+        addKeyframe(
+            "opacity",
+            to: coverContainerLayer,
+            values: frames.map { NSNumber(value: Double($0.coverContainerAlpha)) }
+        )
+
+        let spineLayer = state.stage.spineShadowView.layer
+        addKeyframe(
+            "bounds",
+            to: spineLayer,
+            values: frames.map {
+                NSValue(cgRect: CGRect(origin: .zero, size: $0.spineShadowFrame.size))
+            }
+        )
+        addKeyframe(
+            "position",
+            to: spineLayer,
+            values: frames.map {
+                NSValue(
+                    cgPoint: CGPoint(
+                        x: $0.spineShadowFrame.midX,
+                        y: $0.spineShadowFrame.midY
+                    )
+                )
+            }
+        )
+        addKeyframe(
+            "opacity",
+            to: spineLayer,
+            values: frames.map { NSNumber(value: Double($0.spineShadowAlpha)) }
+        )
+
+        let coverLayer = state.stage.coverView.layer
+        addKeyframe(
+            "bounds",
+            to: coverLayer,
+            values: frames.map { NSValue(cgRect: $0.coverBounds) }
+        )
+        addKeyframe(
+            "position",
+            to: coverLayer,
+            values: frames.map { NSValue(cgPoint: $0.coverPosition) }
+        )
+        addKeyframe(
+            "cornerRadius",
+            to: coverLayer,
+            values: frames.map { NSNumber(value: Double($0.coverCornerRadius)) }
+        )
+        addKeyframe(
+            "transform",
+            to: coverLayer,
+            values: frames.map { NSValue(caTransform3D: $0.coverTransform) }
+        )
+        addKeyframe(
+            "opacity",
+            to: coverLayer,
+            values: frames.map { NSNumber(value: Double($0.coverAlpha)) }
+        )
+
+        AppLogger.info(
+            "⟐ reader-transition declarative committed "
+            + "op=\(operation == .push ? "push" : "pop") "
+            + "keyframes=\(sampleCount + 1) "
+            + "dur=\(String(format: "%.2f", duration))s "
+            + "commit=\(String(format: "%.1f", (CACurrentMediaTime() - commitStart) * 1000))ms"
         )
     }
 

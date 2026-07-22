@@ -45,7 +45,7 @@ struct ChapterTitleStyleSettingsView: View {
             actionSection
         }
         .navigationTitle(localized("章節標題樣式"))
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbarTitleDisplayMode(.inline    )
         .themedAppSurface(for: .settings)
         .fileImporter(
             isPresented: $showingImporter,

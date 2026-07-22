@@ -157,11 +157,25 @@ final class ReaderNavigationCoordinator: ObservableObject {
 
     private func schedulePendingPushRetry() {
         guard pendingPushRetryTask == nil else { return }
+        // Only a system-owned transition (UIKit's coordinator lingering after
+        // a pop) needs an armed wait: its end is observable through its own
+        // completion callback. When the blocker is this driver's own
+        // operation, `finishTransition` → `navigationTransitionDidSettle`
+        // re-arms the pending push, so arming here would just spin.
+        guard transitionDriver.hasBlockingSystemTransition else { return }
         pendingPushRetryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            // Await the real end-of-transition signal. The single-yield retry
+            // this replaces could resume before UIKit released the
+            // coordinator, burning the only attempt and stranding the staged
+            // open forever (shelf ignores every later tap).
+            await self.transitionDriver.waitForBlockingSystemTransitionEnd()
+            // One scheduling hop: UIKit releases `transitionCoordinator`
+            // after the completion callback returns, not inside it.
             await Task.yield()
-            guard let self, !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return }
             self.pendingPushRetryTask = nil
-            self.beginPendingPushIfPossible(allowDeferredRetry: false)
+            self.beginPendingPushIfPossible(allowDeferredRetry: true)
         }
     }
 
@@ -307,14 +321,41 @@ final class ReaderNavigationCoordinator: ObservableObject {
     /// The book id of the currently-open reader, if any.
     var activeBookID: UUID? { readerBookID }
 
+    /// Fallback of last resort: a staged open whose deferred push lost every
+    /// re-arm signal (all known signal paths are now awaited — this guards the
+    /// unknown ones). Trigger: a book is staged (`readerBookID` set) but
+    /// nothing was ever pushed, no retry is armed, and the driver is fully
+    /// idle — a state no live open can occupy. Clearing it lets the current
+    /// tap open normally instead of being ignored forever. Delete once device
+    /// logs confirm the log line below never fires.
+    private func resetStrandedStagedOpenIfNeeded() {
+        guard readerBookID != nil,
+              !isReaderPresented,
+              presentedReaderController == nil,
+              pendingPushRetryTask == nil,
+              !isProgrammaticPopPending,
+              !transitionDriver.isTransitionActive
+        else { return }
+
+        AppLogger.info("⟐ coordinator reset stranded staged open bookID=\(String(describing: readerBookID))")
+        readerBookID = nil
+        source = nil
+        pendingDestinationFactory = nil
+        pendingDestinationViewController = nil
+        pendingOpenCompletion = nil
+        pendingCloseAfterPush = false
+    }
+
     /// Whether a fresh shelf tap should be ignored because a reader is already
     /// staged or on screen. Call this instead of reading `isReaderPresented`
     /// directly from the shelf: it first self-heals a stranded state (a reader
     /// controller removed by an external agent, e.g. SwiftUI reconciling its
-    /// `NavigationStack`), so a genuinely idle shelf can never get permanently
-    /// stuck ignoring every tap.
+    /// `NavigationStack`, or a staged open whose deferred push never fired),
+    /// so a genuinely idle shelf can never get permanently stuck ignoring
+    /// every tap.
     func shouldIgnoreOpenRequest() -> Bool {
         reconcileIfReaderDetached()
+        resetStrandedStagedOpenIfNeeded()
         return isReaderPresented || readerBookID != nil
     }
 }
