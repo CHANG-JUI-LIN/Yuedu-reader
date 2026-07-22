@@ -69,23 +69,41 @@ struct TouchZoneConfig: Codable, Equatable {
         })
     }
 
-    /// Persistence key
-    private static let key = "yd_touch_zones"
+    /// The legacy undirected key is read only for right-opening books. Existing
+    /// custom layouts were authored against the old LTR-only default, so applying
+    /// them to left-opening books would silently recreate the shared-profile bug.
+    private static let legacyKey = "yd_touch_zones"
+    private static let ltrKey = "yd_touch_zones_ltr"
+    private static let rtlKey = "yd_touch_zones_rtl"
 
-    static func loadSaved() -> TouchZoneConfig? {
-        guard let data = UserDefaults.standard.data(forKey: key),
+    static func loadSaved(
+        isRTL: Bool,
+        defaults: UserDefaults = .standard
+    ) -> TouchZoneConfig? {
+        let directionKey = isRTL ? rtlKey : ltrKey
+        let data = defaults.data(forKey: directionKey)
+            ?? (!isRTL ? defaults.data(forKey: legacyKey) : nil)
+        guard let data,
               let config = try? JSONDecoder().decode(TouchZoneConfig.self, from: data),
               config.zones.count == 9
         else { return nil }
         return config
     }
 
-    static func load() -> TouchZoneConfig {
-        loadSaved() ?? .default
+    static func load(isRTL: Bool = false) -> TouchZoneConfig {
+        loadSaved(isRTL: isRTL) ?? defaultForReadingDirection(isRTL: isRTL)
+    }
+
+    static func effective(isProActive: Bool, isRTL: Bool) -> TouchZoneConfig {
+        effective(
+            saved: loadSaved(isRTL: isRTL),
+            isProActive: isProActive,
+            isRTL: isRTL
+        )
     }
 
     static func effective(
-        saved: TouchZoneConfig? = loadSaved(),
+        saved: TouchZoneConfig?,
         isProActive: Bool,
         isRTL: Bool
     ) -> TouchZoneConfig {
@@ -95,9 +113,9 @@ struct TouchZoneConfig: Codable, Equatable {
         return saved
     }
 
-    func save() {
+    func save(isRTL: Bool, defaults: UserDefaults = .standard) {
         if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: Self.key)
+            defaults.set(data, forKey: isRTL ? Self.rtlKey : Self.ltrKey)
         }
     }
 

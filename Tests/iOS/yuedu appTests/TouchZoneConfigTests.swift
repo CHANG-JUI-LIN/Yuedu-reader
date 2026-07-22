@@ -66,4 +66,19 @@ struct TouchZoneConfigTests {
         #expect(TouchZoneConfig.effective(saved: saved, isProActive: false, isRTL: true) == rtlDefault)
         #expect(TouchZoneConfig.effective(saved: saved, isProActive: true, isRTL: true) == saved)
     }
+
+    @Test("left-opening and right-opening grids persist independently")
+    func directionProfilesPersistIndependently() throws {
+        let suiteName = "TouchZoneConfigTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let ltr = TouchZoneConfig(zones: Array(repeating: .previousChapter, count: 9))
+        let rtl = TouchZoneConfig(zones: Array(repeating: .nextChapter, count: 9))
+
+        ltr.save(isRTL: false, defaults: defaults)
+        rtl.save(isRTL: true, defaults: defaults)
+
+        #expect(TouchZoneConfig.loadSaved(isRTL: false, defaults: defaults) == ltr)
+        #expect(TouchZoneConfig.loadSaved(isRTL: true, defaults: defaults) == rtl)
+    }
 }

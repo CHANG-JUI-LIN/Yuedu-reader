@@ -23,9 +23,9 @@ final class ReaderTouchZoneEditorModel: ObservableObject {
     convenience init(isRTL: Bool = false) {
         let defaultConfig = TouchZoneConfig.defaultForReadingDirection(isRTL: isRTL)
         self.init(
-            initial: TouchZoneConfig.loadSaved() ?? defaultConfig,
+            initial: TouchZoneConfig.loadSaved(isRTL: isRTL) ?? defaultConfig,
             defaultConfig: defaultConfig,
-            save: { $0.save() },
+            save: { $0.save(isRTL: isRTL) },
             disableGlobalPaging: { GlobalSettings.shared.readerTapBothSidesNextPage = false }
         )
     }
