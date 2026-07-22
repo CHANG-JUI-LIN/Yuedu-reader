@@ -135,6 +135,14 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
             )
         }
 
+        if settings.dialogueHighlightColor != nil || settings.dialogueBoxColor != nil {
+            DialogueHighlighter.apply(
+                textColor: settings.dialogueHighlightColor,
+                boxColor: settings.dialogueBoxColor,
+                to: attrStr
+            )
+        }
+
         return AttributedChapterBuildResult(
             attributedString: attrStr,
             imagePage: nil,
