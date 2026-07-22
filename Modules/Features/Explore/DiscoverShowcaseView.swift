@@ -10,7 +10,6 @@ import SwiftUI
 /// `docs/design.md` §10 — Discover archetype).
 struct DiscoverShowcaseView: View {
     @ObservedObject var discover: DiscoverViewModel
-    let onOpenBook: (OnlineBook) -> Void
 
     var body: some View {
         ScrollView {
@@ -26,7 +25,6 @@ struct DiscoverShowcaseView: View {
                                 DiscoverRankedSectionsCarousel(
                                     sections: rankedSections,
                                     source: discover.selectedSource,
-                                    onOpenBook: onOpenBook,
                                     onAppearLoad: { discover.loadSection($0) },
                                     onRetry: { discover.retrySection($0) }
                                 )
@@ -35,7 +33,6 @@ struct DiscoverShowcaseView: View {
                             DiscoverSectionView(
                                 section: section,
                                 source: discover.selectedSource,
-                                onOpenBook: onOpenBook,
                                 onAppearLoad: { discover.loadSection(section.id) },
                                 onRetry: { discover.retrySection(section.id) }
                             )
@@ -176,7 +173,6 @@ private struct DiscoverFilterBar: View {
 private struct DiscoverSectionView: View {
     let section: DiscoverShowcaseSection
     let source: BookSource?
-    let onOpenBook: (OnlineBook) -> Void
     let onAppearLoad: () -> Void
     let onRetry: () -> Void
 
@@ -195,14 +191,8 @@ private struct DiscoverSectionView: View {
                 .foregroundColor(DSColor.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: DSSpacing.sm)
-            if let source {
-                NavigationLink {
-                    DiscoverCategoryView(
-                        section: section,
-                        source: source,
-                        onOpenBook: onOpenBook
-                    )
-                } label: {
+            if source != nil {
+                NavigationLink(value: ExploreNavigationRoute.category(section.id)) {
                     HStack(spacing: DSSpacing.xs) {
                         Text(localized("查看全部"))
                         Image(systemName: "chevron.right")
@@ -247,7 +237,7 @@ private struct DiscoverSectionView: View {
                 // lazily materializing them can't change the carousel's height.
                 LazyHStack(alignment: .top, spacing: DSSpacing.md) {
                     ForEach(section.books) { display in
-                        Button { onOpenBook(display.book) } label: {
+                        NavigationLink(value: ExploreNavigationRoute.book(display.book)) {
                             DiscoverFeaturedCard(display: display, section: section)
                         }
                         .buttonStyle(.plain)
@@ -260,7 +250,7 @@ private struct DiscoverSectionView: View {
             VStack(spacing: 0) {
                 let ranked = Array(section.books.prefix(6).enumerated())
                 ForEach(ranked, id: \.element.id) { index, display in
-                    Button { onOpenBook(display.book) } label: {
+                    NavigationLink(value: ExploreNavigationRoute.book(display.book)) {
                         DiscoverRankedRow(rank: index + 1, display: display, section: section)
                     }
                     .buttonStyle(.plain)
@@ -321,7 +311,6 @@ private struct DiscoverSectionView: View {
 private struct DiscoverRankedSectionsCarousel: View {
     let sections: [DiscoverShowcaseSection]
     let source: BookSource?
-    let onOpenBook: (OnlineBook) -> Void
     let onAppearLoad: (UUID) -> Void
     let onRetry: (UUID) -> Void
 
@@ -332,7 +321,6 @@ private struct DiscoverRankedSectionsCarousel: View {
                     DiscoverRankedSummaryCard(
                         section: section,
                         source: source,
-                        onOpenBook: onOpenBook,
                         onAppearLoad: { onAppearLoad(section.id) },
                         onRetry: { onRetry(section.id) }
                     )
@@ -347,7 +335,6 @@ private struct DiscoverRankedSectionsCarousel: View {
 private struct DiscoverRankedSummaryCard: View {
     let section: DiscoverShowcaseSection
     let source: BookSource?
-    let onOpenBook: (OnlineBook) -> Void
     let onAppearLoad: () -> Void
     let onRetry: () -> Void
 
@@ -374,14 +361,8 @@ private struct DiscoverRankedSummaryCard: View {
                 .foregroundColor(DSColor.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: DSSpacing.sm)
-            if let source {
-                NavigationLink {
-                    DiscoverCategoryView(
-                        section: section,
-                        source: source,
-                        onOpenBook: onOpenBook
-                    )
-                } label: {
+            if source != nil {
+                NavigationLink(value: ExploreNavigationRoute.category(section.id)) {
                     HStack(spacing: DSSpacing.xs) {
                         Text(localized("查看全部"))
                         Image(systemName: "chevron.right")
@@ -402,7 +383,7 @@ private struct DiscoverRankedSummaryCard: View {
             let ranked = Array(section.books.prefix(6).enumerated())
             VStack(spacing: 0) {
                 ForEach(ranked, id: \.element.id) { index, display in
-                    Button { onOpenBook(display.book) } label: {
+                    NavigationLink(value: ExploreNavigationRoute.book(display.book)) {
                         DiscoverRankedRow(rank: index + 1, display: display, section: section)
                     }
                     .buttonStyle(.plain)
@@ -578,10 +559,9 @@ private struct DiscoverRankedRow: View {
 // MARK: - Category detail ("查看全部")
 
 /// Full list of one explore category, reached from a section's 查看全部 link.
-private struct DiscoverCategoryView: View {
+struct DiscoverCategoryView: View {
     let section: DiscoverShowcaseSection
     let source: BookSource
-    let onOpenBook: (OnlineBook) -> Void
 
     @State private var books: [DiscoverBookDisplay]
     @State private var nextPage: Int
@@ -591,12 +571,10 @@ private struct DiscoverCategoryView: View {
 
     init(
         section: DiscoverShowcaseSection,
-        source: BookSource,
-        onOpenBook: @escaping (OnlineBook) -> Void
+        source: BookSource
     ) {
         self.section = section
         self.source = source
-        self.onOpenBook = onOpenBook
         _books = State(initialValue: section.books)
         _nextPage = State(initialValue: section.books.isEmpty ? 1 : 2)
     }
@@ -605,7 +583,7 @@ private struct DiscoverCategoryView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(Array(books.enumerated()), id: \.element.id) { index, display in
-                    Button { onOpenBook(display.book) } label: {
+                    NavigationLink(value: ExploreNavigationRoute.book(display.book)) {
                         DiscoverRankedRow(rank: index + 1, display: display, section: section)
                     }
                     .buttonStyle(.plain)
@@ -718,7 +696,7 @@ private struct DiscoverCategoryView: View {
 #Preview {
     let vm = DiscoverViewModel()
     return NavigationStack {
-        DiscoverShowcaseView(discover: vm, onOpenBook: { _ in })
+        DiscoverShowcaseView(discover: vm)
             .navigationTitle("探索")
             .toolbarTitleDisplayModeInlineLarge()
     }

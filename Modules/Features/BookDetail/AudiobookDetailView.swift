@@ -133,18 +133,10 @@ struct AudiobookDetailView: View {
     }
 
     private var tags: [String] {
-        let d = detailInfo?.kind.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let raw = d.isEmpty ? currentBook.kind : d
-        let separators = CharacterSet(charactersIn: ",，|｜、/／;；\t\n ")
-        var seen = Set<String>()
-        return raw.components(separatedBy: separators)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { tag in
-                !tag.isEmpty && tag.count <= 10 && !tag.contains("作者")
-                    && !tag.contains("字") && seen.insert(tag).inserted
-            }
-            .prefix(6)
-            .map { $0 }
+        OnlineBookMetadataFormatter.tags(
+            detailKind: detailInfo?.kind,
+            fallbackKind: currentBook.kind
+        )
     }
 
     private var resolvedTOCURL: String? {

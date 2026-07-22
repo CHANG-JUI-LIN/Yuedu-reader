@@ -917,10 +917,16 @@ extension CommentBubbleSVGRecognizer {
                     || (Int((fontWeight ?? "").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) >= 600
                 let isBold = isSVGBold || GlobalSettings.shared.readerFontBold
                 let font = UserReaderFontResolver.bodyFont(size: canvasFontSize, isBold: isBold)
-                let textAttrs: [NSAttributedString.Key: Any] = [
+                var textAttrs: [NSAttributedString.Key: Any] = [
                     .font: font,
                     .foregroundColor: textColor
                 ]
+                textAttrs.merge(
+                    UserReaderFontResolver.syntheticBoldAttributes(
+                        for: font,
+                        isBoldRequested: isBold
+                    )
+                ) { _, new in new }
                 let textSize = (text as NSString).size(withAttributes: textAttrs)
 
                 var drawX = canvasX

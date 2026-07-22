@@ -716,6 +716,10 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         themeBackgroundColor: UIColor
     ) async -> AttributedChapterBuildResult {
         let bodyFont = UserReaderFontResolver.bodyFont(size: settings.fontSize, isBold: settings.isBold)
+        let syntheticBoldAttributes = UserReaderFontResolver.syntheticBoldAttributes(
+            for: bodyFont,
+            isBoldRequested: UserReaderFontResolver.bodyBoldRequested(isBold: settings.isBold)
+        )
         let bodyTargetLineHeight = ReaderTypographyCorrection.targetLineHeight(
             font: bodyFont,
             fontSize: settings.fontSize,
@@ -763,7 +767,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                         .baselineOffset: bodyBaselineOffset,
                         .paragraphStyle: bodyParaStyle,
                         .kern: settings.letterSpacing as NSNumber
-                    ],
+                    ].merging(syntheticBoldAttributes) { _, new in new },
                     forText: para
                 )
             ))

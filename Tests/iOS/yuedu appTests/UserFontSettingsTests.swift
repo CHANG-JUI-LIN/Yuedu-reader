@@ -157,6 +157,112 @@ struct UserFontSettingsTests {
         #expect(bodyFont.fontName == selectedFont.fontName)
     }
 
+    @Test("regular-only custom font keeps its face and gains synthetic bold in TXT")
+    func regularOnlyCustomFontGainsSyntheticBoldInTXT() async throws {
+        let settingsStore = GlobalSettings.shared
+        let previousFont = settingsStore.selectedReaderFontPostScript
+        let previousBold = settingsStore.readerFontBold
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Ahem.ttf")
+        let imported = try UserFontStorageManager.shared.importFont(fileURL: fixtureURL)
+        defer {
+            settingsStore.selectedReaderFontPostScript = previousFont
+            settingsStore.readerFontBold = previousBold
+            UserFontStorageManager.shared.delete(imported)
+        }
+
+        settingsStore.selectedReaderFontPostScript = imported.postScriptName
+        settingsStore.readerFontBold = false
+        var renderSettings = defaultRenderSettings(fontSize: 18)
+        renderSettings.isBold = true
+        let builder = NodeAttributedStringBuilder(
+            chapters: [
+                UnifiedChapter(
+                    index: 0,
+                    title: "第一章",
+                    paragraphs: ["這是一段粗體文字"],
+                    sourceHref: nil
+                )
+            ]
+        )
+
+        let result = try await builder.buildChapter(
+            at: 0,
+            settings: renderSettings,
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+        let contentRange = try #require(result.attributedString.string.range(of: "這是一段粗體文字"))
+        let index = NSRange(contentRange, in: result.attributedString.string).location
+        let font = try #require(
+            result.attributedString.attribute(.font, at: index, effectiveRange: nil) as? UIFont
+        )
+        let strokeWidth = try #require(
+            result.attributedString.attribute(.strokeWidth, at: index, effectiveRange: nil) as? NSNumber
+        )
+
+        #expect(font.fontName == imported.postScriptName)
+        #expect(strokeWidth.doubleValue < 0)
+    }
+
+    @Test("regular-only custom font gains synthetic bold for online HTML strong text")
+    func regularOnlyCustomFontGainsSyntheticBoldForOnlineHTML() async throws {
+        let settingsStore = GlobalSettings.shared
+        let previousFont = settingsStore.selectedReaderFontPostScript
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Ahem.ttf")
+        let imported = try UserFontStorageManager.shared.importFont(fileURL: fixtureURL)
+        defer {
+            settingsStore.selectedReaderFontPostScript = previousFont
+            UserFontStorageManager.shared.delete(imported)
+        }
+
+        settingsStore.selectedReaderFontPostScript = imported.postScriptName
+        let builder = OnlineProviderAttributedStringBuilder(
+            provider: FakeOnlineBookProvider(
+                payload: ChapterContentPayload(
+                    index: 0,
+                    title: "第一章",
+                    plainText: "",
+                    body: .html("<p><strong>線上粗體</strong></p>"),
+                    sourceHref: nil
+                )
+            ),
+            renderSize: CGSize(width: 320, height: 640)
+        )
+
+        let result = try await builder.buildChapter(
+            at: 0,
+            settings: defaultRenderSettings(fontSize: 18),
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+        let contentRange = try #require(result.attributedString.string.range(of: "線上粗體"))
+        let index = NSRange(contentRange, in: result.attributedString.string).location
+        let font = try #require(
+            result.attributedString.attribute(.font, at: index, effectiveRange: nil) as? UIFont
+        )
+        let strokeWidth = try #require(
+            result.attributedString.attribute(.strokeWidth, at: index, effectiveRange: nil) as? NSNumber
+        )
+
+        #expect(font.fontName == imported.postScriptName)
+        #expect(strokeWidth.doubleValue < 0)
+    }
+
+    @Test("native bold face does not receive synthetic stroke")
+    func nativeBoldFaceDoesNotReceiveSyntheticStroke() {
+        let font = UIFont.boldSystemFont(ofSize: 18)
+        let attributes = UserReaderFontResolver.syntheticBoldAttributes(
+            for: font,
+            isBoldRequested: true
+        )
+
+        #expect(attributes[.strokeWidth] == nil)
+    }
+
     @Test("global font import selects only the app interface font")
     func globalFontImportDoesNotChangeReaderSelection() throws {
         let settings = GlobalSettings.shared

@@ -1,6 +1,12 @@
+import CoreText
 import UIKit
 
 enum UserReaderFontResolver {
+    /// A negative stroke width fills the glyph and expands its outline. CoreText
+    /// interprets the value as a percentage of the point size, so this scales
+    /// with the reader font without changing line metrics.
+    private static let syntheticBoldStrokeWidth = -2.5 as NSNumber
+
     static var selectedPostScriptName: String? {
         guard let postScriptName = GlobalSettings.shared.selectedReaderFontPostScript,
               !postScriptName.isEmpty
@@ -10,10 +16,32 @@ enum UserReaderFontResolver {
 
     static func bodyFont(size: CGFloat, isBold: Bool = false) -> UIFont {
         let baseFont = selectedFont(size: size) ?? UIFont.systemFont(ofSize: size)
-        if isBold || GlobalSettings.shared.readerFontBold {
+        if bodyBoldRequested(isBold: isBold) {
             return boldVersion(of: baseFont, size: size)
         }
         return baseFont
+    }
+
+    static func bodyBoldRequested(isBold: Bool) -> Bool {
+        isBold || GlobalSettings.shared.readerFontBold
+    }
+
+    /// Returns the only extra attributed-string attributes required to render a
+    /// requested bold face. The stroke is deliberately limited to fonts that
+    /// have neither a native bold trait nor a variable-weight axis; regular-only
+    /// custom fonts otherwise keep returning their unchanged Regular face from
+    /// `UIFontDescriptor`, which is why the old "synthetic" bold was invisible.
+    /// This compatibility path can be removed once CoreText exposes a real
+    /// emboldening transform for static fonts.
+    static func syntheticBoldAttributes(
+        for font: UIFont,
+        isBoldRequested: Bool
+    ) -> [NSAttributedString.Key: Any] {
+        guard isBoldRequested,
+              !font.fontDescriptor.symbolicTraits.contains(.traitBold),
+              !supportsVariableWeight(font)
+        else { return [:] }
+        return [.strokeWidth: syntheticBoldStrokeWidth]
     }
 
     /// Font for the in-content chapter title.
@@ -64,5 +92,18 @@ enum UserReaderFontResolver {
             .traits: [UIFontDescriptor.TraitKey.weight: UIFont.Weight.bold]
         ]
         return UIFont(descriptor: font.fontDescriptor.addingAttributes(attrs), size: size)
+    }
+
+    private static func supportsVariableWeight(_ font: UIFont) -> Bool {
+        guard let axes = CTFontCopyVariationAxes(font as CTFont) as? [[CFString: Any]] else {
+            return false
+        }
+        return axes.contains { axis in
+            guard let identifier = axis[kCTFontVariationAxisIdentifierKey] as? NSNumber else {
+                return false
+            }
+            // OpenType `wght` is encoded as the four-character tag 0x77676874.
+            return identifier.uint32Value == 0x7767_6874
+        }
     }
 }

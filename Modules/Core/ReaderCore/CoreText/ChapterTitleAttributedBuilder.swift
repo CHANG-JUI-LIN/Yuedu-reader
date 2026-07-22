@@ -147,6 +147,7 @@ enum ChapterTitleAttributedBuilder {
                 font: UserReaderFontResolver.titleFont(
                     size: numberSize, weight: style.weight, postScriptName: style.numberFontName()
                 ),
+                isBoldRequested: style.weight.uiFontWeight.rawValue >= UIFont.Weight.semibold.rawValue,
                 alignment: alignment,
                 paragraphSpacing: style.size * 0.1,
                 color: themeTextColor,
@@ -158,6 +159,7 @@ enum ChapterTitleAttributedBuilder {
                 font: UserReaderFontResolver.titleFont(
                     size: style.size, weight: style.weight, postScriptName: style.nameFontName()
                 ),
+                isBoldRequested: style.weight.uiFontWeight.rawValue >= UIFont.Weight.semibold.rawValue,
                 alignment: alignment,
                 paragraphSpacing: style.bottomSpacing,
                 color: themeTextColor,
@@ -170,6 +172,7 @@ enum ChapterTitleAttributedBuilder {
                 font: UserReaderFontResolver.titleFont(
                     size: style.size, weight: style.weight, postScriptName: style.nameFontName()
                 ),
+                isBoldRequested: style.weight.uiFontWeight.rawValue >= UIFont.Weight.semibold.rawValue,
                 alignment: alignment,
                 paragraphSpacing: style.bottomSpacing,
                 color: themeTextColor,
@@ -182,6 +185,7 @@ enum ChapterTitleAttributedBuilder {
     private static func appendLine(
         _ text: String,
         font: UIFont,
+        isBoldRequested: Bool,
         alignment: NSTextAlignment,
         paragraphSpacing: CGFloat,
         color: UIColor,
@@ -191,12 +195,19 @@ enum ChapterTitleAttributedBuilder {
         let para = NSMutableParagraphStyle()
         para.alignment = alignment
         para.paragraphSpacing = paragraphSpacing
-        attr.append(NSAttributedString(string: text + "\n", attributes: [
+        var attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: color,
             .paragraphStyle: para,
             .kern: letterSpacing as NSNumber,
-        ]))
+        ]
+        attributes.merge(
+            UserReaderFontResolver.syntheticBoldAttributes(
+                for: font,
+                isBoldRequested: isBoldRequested
+            )
+        ) { _, new in new }
+        attr.append(NSAttributedString(string: text + "\n", attributes: attributes))
     }
 
     // MARK: - Advanced CSS layout

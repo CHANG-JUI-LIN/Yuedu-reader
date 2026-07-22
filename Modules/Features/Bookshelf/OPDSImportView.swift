@@ -365,7 +365,7 @@ struct OPDSFeedView: View {
                 case "md":
                     try store.importMarkdown(url: tempURL, title: title)
                 default:
-                    try store.importTxt(url: tempURL, title: title)
+                    try await store.importTxt(url: tempURL, title: title)
                 }
                 try? FileManager.default.removeItem(at: tempURL)
                 importedIDs.insert(entry.id)

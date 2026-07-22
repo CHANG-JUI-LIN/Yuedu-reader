@@ -199,6 +199,10 @@ struct ChapterCacheRepository {
         expectedSourceURL: String? = nil,
         expectedTOCTitle: String? = nil
     ) -> ChapterPackage? {
+        // The package loader is the reading pipeline's source of truth. Upgrade
+        // old offline downloads here (not only from `isChapterCached`) so opening
+        // an already-downloaded chapter can never miss its valid `.txt` body.
+        upgradeLegacyChapterCacheIfNeeded(bookId: bookId, chapterIndex: chapterIndex)
         guard let metadata = loadCachedChapterMetadataSync(bookId: bookId, chapterIndex: chapterIndex) else {
             print("[CacheDebug] ch=\(chapterIndex) FAIL: no metadata")
             return nil
@@ -385,8 +389,9 @@ struct ChapterCacheRepository {
             try? data.write(to: packageURL, options: .atomic)
         }
 
-        // Backfill an empty checksum in very old metadata entries.
-        if metadata.contentChecksum.isEmpty {
+        // Backfill both fields used by the current package loader. Some legacy
+        // metadata already has a checksum but predates the explicit state field.
+        if metadata.contentChecksum != checksum || metadata.state != .cached {
             let updated = CachedChapterMetadata(
                 sourceURL: metadata.sourceURL,
                 tocTitle: metadata.tocTitle,

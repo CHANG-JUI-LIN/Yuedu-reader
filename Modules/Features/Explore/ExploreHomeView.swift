@@ -31,7 +31,7 @@ struct ExploreHomeView: View {
     @State private var showDiscoverSourcePicker = false
     @State private var showHistory = false
     @State private var showSourceSites = false
-    @State private var openingBook: OnlineBook?
+    @State private var navigation = ExploreNavigationPath()
 
     private var tab: ExploreTab { ExploreTab(rawValue: tabRaw) ?? .discover }
     private var tabBinding: Binding<ExploreTab> {
@@ -39,7 +39,7 @@ struct ExploreHomeView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigation.path) {
             VStack(spacing: 0) {
                 segmentedPicker
                     .padding(.horizontal, DSSpacing.lg)
@@ -105,11 +105,21 @@ struct ExploreHomeView: View {
             }
             .sheet(isPresented: $showHistory) { historySheet }
             .sheet(isPresented: $showSourceSites) { sourceSitesSheet }
-            .navigationDestination(item: $openingBook) { book in
-                if BookSourceStore.shared.isAudiobook(book) {
-                    AudiobookDetailView(book: book).environmentObject(store)
-                } else {
-                    OnlineBookView(book: book).environmentObject(store)
+            .navigationDestination(for: ExploreNavigationRoute.self) { route in
+                switch route {
+                case .category(let sectionID):
+                    if let section = discover.sections.first(where: { $0.id == sectionID }),
+                       let source = discover.selectedSource {
+                        DiscoverCategoryView(section: section, source: source)
+                    } else {
+                        ContentUnavailableView(localized("暫無發現內容"), systemImage: "books.vertical")
+                    }
+                case .book(let book):
+                    if BookSourceStore.shared.isAudiobook(book) {
+                        AudiobookDetailView(book: book).environmentObject(store)
+                    } else {
+                        OnlineBookView(book: book).environmentObject(store)
+                    }
                 }
             }
         }
@@ -141,7 +151,7 @@ struct ExploreHomeView: View {
     @ViewBuilder
     private var discoverContent: some View {
         if discover.hasExploreSource {
-            DiscoverShowcaseView(discover: discover, onOpenBook: { openingBook = $0 })
+            DiscoverShowcaseView(discover: discover)
         } else {
             emptySourceState
         }

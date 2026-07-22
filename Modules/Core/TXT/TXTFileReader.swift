@@ -66,6 +66,35 @@ enum TXTFileReader {
         return detectEncoding(fromSample: sample)
     }
 
+    /// Decodes only the requested file prefix, using the same bounded encoding
+    /// detection as the full TXT reader. The caller controls the hard I/O cap.
+    static func readPrefix(url: URL, maxByteCount: Int) throws -> String {
+        guard maxByteCount > 0 else { return "" }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
+        let data = try handle.read(upToCount: maxByteCount) ?? Data()
+        guard !data.isEmpty else { return "" }
+        let detectionSample = data.prefix(min(8192, data.count))
+        let encoding = detectEncoding(fromSample: detectionSample)
+
+        if let decoded = String(data: data, encoding: encoding) {
+            return decoded.trimmingLeadingByteOrderMark()
+        }
+
+        // The fixed byte boundary may cut through one multibyte scalar. Match
+        // encoding detection's tolerance without reading beyond the hard cap.
+        let maxDrop = min(3, data.count - 1)
+        if maxDrop >= 1 {
+            for drop in 1...maxDrop {
+                if let decoded = String(data: data.prefix(data.count - drop), encoding: encoding) {
+                    return decoded.trimmingLeadingByteOrderMark()
+                }
+            }
+        }
+        throw TXTFileReaderError.encodingNotSupported
+    }
+
     private static func detectEncoding(fromSample data: Data) -> String.Encoding {
         // BOM first
         if data.starts(with: [0xEF, 0xBB, 0xBF]) {

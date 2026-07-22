@@ -145,15 +145,81 @@ class BookStore: ObservableObject, BookProvider {
 
     // MARK: Import TXT File
 
-    @discardableResult
-    func importTxt(url: URL, title: String? = nil) throws -> ReadingBook {
-        let bookTitle = title ?? url.deletingPathExtension().lastPathComponent
-        return try importLocalTextFile(
-            url: url,
-            title: bookTitle,
-            author: "未知作者",
-            fileExtension: "txt"
+    @MainActor @discardableResult
+    func importTxt(url: URL, title: String? = nil) async throws -> ReadingBook {
+        let fallbackTitle = title ?? url.deletingPathExtension().lastPathComponent
+        let filename = "\(UUID().uuidString).txt"
+        let destination = documentsURL(for: filename)
+
+        let worker = Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
+            let metadataStart = ProcessInfo.processInfo.systemUptime
+            let metadata = try TXTMetadataProbe.probe(
+                url: url,
+                fallbackTitle: fallbackTitle
+            )
+            AppLogger.info(
+                "[ImportTrace][BookStore.importTxt] stage=metadataProbe "
+                    + "elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - metadataStart) * 1_000))"
+            )
+
+            try Task.checkCancellation()
+            let persistenceStart = ProcessInfo.processInfo.systemUptime
+            try Self.persistLocalTextFile(source: url, destination: destination)
+            AppLogger.info(
+                "[ImportTrace][BookStore.importTxt] stage=filePersistence "
+                    + "elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - persistenceStart) * 1_000))"
+            )
+            try Task.checkCancellation()
+            return metadata
+        }
+
+        let metadata: TXTBookMetadata
+        do {
+            metadata = try await withTaskCancellationHandler {
+                try await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+        } catch {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                do {
+                    try FileManager.default.removeItem(at: destination)
+                } catch let cleanupError {
+                    AppLogger.error(
+                        "Failed to clean cancelled TXT import: \(cleanupError.localizedDescription)"
+                    )
+                }
+            }
+            throw error
+        }
+
+        var book = ReadingBook(
+            title: title ?? metadata.title,
+            author: metadata.author ?? "未知作者",
+            source: "local",
+            contentFilename: filename
         )
+        book.contentPipelineKind = .txt
+        let importedBook = book
+
+        do {
+            try Task.checkCancellation()
+            books.insert(importedBook, at: 0)
+            saveMeta()
+        } catch {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                do {
+                    try FileManager.default.removeItem(at: destination)
+                } catch let cleanupError {
+                    AppLogger.error(
+                        "Failed to clean uncommitted TXT import: \(cleanupError.localizedDescription)"
+                    )
+                }
+            }
+            throw error
+        }
+        return importedBook
     }
 
     @discardableResult
@@ -344,35 +410,7 @@ class BookStore: ObservableObject, BookProvider {
     ) throws -> ReadingBook {
         let filename = "\(UUID().uuidString).\(fileExtension)"
         let destURL = documentsURL(for: filename)
-
-        // Probe encoding using first 4KB
-        let probeData: Data
-        if let handle = try? FileHandle(forReadingFrom: url) {
-            probeData = handle.readData(ofLength: 4096)
-            try? handle.close()
-        } else {
-            probeData = Data()
-        }
-
-        if probeData.isEmpty || String(data: probeData, encoding: .utf8) != nil {
-            // Fast path: file is UTF-8 (or empty) — direct copy, no memory overhead
-            try FileManager.default.copyItem(at: url, to: destURL)
-        } else {
-            // Slow path: non-UTF-8 (Big5/GBK) — stream-transcode to UTF-8
-            try streamTranscodeToUTF8(source: url, destination: destURL)
-        }
-
-        // Validate the copied file is readable
-        guard let mapped = try? TXTFileReader.readMappedTextFile(url: destURL),
-              !mapped.string(in: 0..<min(128, mapped.byteCount)).isEmpty || mapped.byteCount == 0
-        else {
-            do {
-                try FileManager.default.removeItem(at: destURL)
-            } catch {
-                Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to remove item at \(destURL): \(error)")
-            }
-            throw TXTFileReaderError.encodingNotSupported
-        }
+        try Self.persistLocalTextFile(source: url, destination: destURL)
 
         var book = ReadingBook(title: title, author: author, source: "local", contentFilename: filename)
         book.contentPipelineKind = .txt
@@ -390,38 +428,56 @@ class BookStore: ObservableObject, BookProvider {
         }
     }
 
-    private func streamTranscodeToUTF8(source: URL, destination: URL) throws {
-        guard let inputStream = InputStream(url: source) else {
-            throw TXTFileReaderError.encodingNotSupported
+    private static func persistLocalTextFile(source: URL, destination: URL) throws {
+        do {
+            let sourceEncoding = try TXTFileReader.detectEncodingBySampling(url: source)
+            try Task.checkCancellation()
+            if sourceEncoding == .utf8 {
+                try FileManager.default.copyItem(at: source, to: destination)
+            } else {
+                try streamTranscodeToUTF8(
+                    source: source,
+                    destination: destination,
+                    sourceEncoding: sourceEncoding
+                )
+            }
+
+            try Task.checkCancellation()
+            let fileSize = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            let validationPrefix = try TXTFileReader.readPrefix(
+                url: destination,
+                maxByteCount: 128
+            )
+            guard !validationPrefix.isEmpty || fileSize == 0
+            else {
+                throw TXTFileReaderError.encodingNotSupported
+            }
+        } catch {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                do {
+                    try FileManager.default.removeItem(at: destination)
+                } catch let cleanupError {
+                    AppLogger.error(
+                        "Failed to clean local text import: \(cleanupError.localizedDescription)"
+                    )
+                }
+            }
+            throw error
         }
+    }
+
+    private static func streamTranscodeToUTF8(
+        source: URL,
+        destination: URL,
+        sourceEncoding: String.Encoding
+    ) throws {
         guard let outputStream = OutputStream(url: destination, append: false) else {
             throw TXTFileReaderError.encodingNotSupported
         }
 
-        inputStream.open()
         outputStream.open()
-        defer { inputStream.close(); outputStream.close() }
+        defer { outputStream.close() }
 
-        // Detect encoding from first 128KB
-        let probeSize = 128 * 1024
-        var probeBuffer = [UInt8](repeating: 0, count: probeSize)
-        let probeRead = inputStream.read(&probeBuffer, maxLength: probeSize)
-        guard probeRead > 0 else { return }
-
-        let probeData = Data(probeBuffer[0..<probeRead])
-        let big5Encoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.big5.rawValue)))
-        let gbkEncoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
-        let sourceEncoding: String.Encoding
-        if String(data: probeData, encoding: big5Encoding) != nil {
-            sourceEncoding = big5Encoding
-        } else if String(data: probeData, encoding: gbkEncoding) != nil {
-            sourceEncoding = gbkEncoding
-        } else {
-            sourceEncoding = .utf8
-        }
-
-        // Re-open source stream from beginning (InputStream can't seek, so close and reopen)
-        inputStream.close()
         guard let freshInput = InputStream(url: source) else { throw TXTFileReaderError.encodingNotSupported }
         freshInput.open()
         defer { freshInput.close() }
@@ -431,6 +487,7 @@ class BookStore: ObservableObject, BookProvider {
         var leftover = Data()
 
         while freshInput.hasBytesAvailable {
+            try Task.checkCancellation()
             let readCount = freshInput.read(&buffer, maxLength: bufferSize)
             guard readCount > 0 else { break }
             let chunk = leftover + Data(buffer[0..<readCount])

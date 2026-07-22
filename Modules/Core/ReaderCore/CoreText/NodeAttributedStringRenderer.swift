@@ -2746,6 +2746,7 @@ struct NodeAttributedStringRenderer {
         var font: UIFont
         var fontFamilies: [String]
         var fontWeight: Int
+        var forceBold: Bool
         var textColor: UIColor
         var hasCSSColor: Bool
         var kern: CGFloat
@@ -2777,6 +2778,12 @@ struct NodeAttributedStringRenderer {
                 .baselineOffset: baselineOffset as NSNumber,
                 .paragraphStyle: paragraphStyle
             ]
+            attrs.merge(
+                UserReaderFontResolver.syntheticBoldAttributes(
+                    for: font,
+                    isBoldRequested: forceBold || fontWeight >= 600
+                )
+            ) { _, new in new }
             if hasCSSColor {
                 attrs[HTMLAttributedStringBuilder.cssSpecifiedForegroundColorAttribute] = textColor
             }
@@ -2815,6 +2822,7 @@ struct NodeAttributedStringRenderer {
                 font: font,
                 fontFamilies: config.fontFamily.map { [$0] } ?? [],
                 fontWeight: 400,
+                forceBold: config.isBold,
                 textColor: config.textColor,
                 hasCSSColor: false,
                 kern: config.letterSpacing,

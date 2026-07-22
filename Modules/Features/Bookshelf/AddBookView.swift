@@ -99,7 +99,7 @@ struct FileImportTab: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
 
-                        // Determine whether to show TXT word count or EPUB confirmation
+                        // Determine whether to show text-document or structured-format confirmation
                         if pendingAudiobookURL != nil {
                             Text(String(format: localized("已解析有聲書，共 %d 章"), pendingAudiobookChapterCount))
                                 .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
@@ -158,7 +158,7 @@ struct FileImportTab: View {
                                         } else if markdownURLForImport != nil {
                                             mode = "markdown"
                                         } else {
-                                            mode = "txt"
+                                            mode = "text"
                                         }
                                         importTrace(
                                             "confirmImport begin session=\(sessionID) mode=\(mode) title=\(t)"
@@ -313,6 +313,8 @@ struct FileImportTab: View {
                 )
                 if ext == "epub" {
                     importEPUB(url: url, sessionID: sessionID)
+                } else if ext == "txt" {
+                    importTXTImmediately(url: url, sessionID: sessionID)
                 } else if ext == "zip" {
                     importZip(url: url, sessionID: sessionID)
                 } else if LocalAudiobookArchive.supports(url) {
@@ -320,7 +322,7 @@ struct FileImportTab: View {
                 } else if LocalMangaArchive.supports(url) {
                     importManga(url: url, sessionID: sessionID)
                 } else {
-                    importTXT(url: url, sessionID: sessionID)
+                    prepareTextDocument(url: url, sessionID: sessionID)
                 }
             case .failure(let err):
                 importTrace("picker failure error=\(err.localizedDescription)")
@@ -339,12 +341,53 @@ struct FileImportTab: View {
         }
     }
 
-    // MARK: - TXT Import
-    private func importTXT(url: URL, sessionID: UUID) {
+    // MARK: - Immediate TXT Import
+    private func importTXTImmediately(url: URL, sessionID: UUID) {
+        parseTask = Task(priority: .userInitiated) {
+            let startUptime = ProcessInfo.processInfo.systemUptime
+            importTrace("importTXT begin session=\(sessionID) file=\(url.lastPathComponent)")
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+            do {
+                _ = try await store.importTxt(url: url)
+                try Task.checkCancellation()
+                guard AddBookImportGuard.shouldApplyResult(
+                    activeSessionID: activeSessionID,
+                    resultSessionID: sessionID,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                importTrace(
+                    "importTXT success session=\(sessionID) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1_000))"
+                )
+                isLoading = false
+                onDismiss()
+            } catch is CancellationError {
+                guard activeSessionID == sessionID else { return }
+                importTrace("importTXT cancelled session=\(sessionID)")
+                isLoading = false
+            } catch {
+                guard AddBookImportGuard.shouldApplyResult(
+                    activeSessionID: activeSessionID,
+                    resultSessionID: sessionID,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                AppLogger.error("TXT import failed", error: error)
+                importTrace(
+                    "importTXT failed session=\(sessionID) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1_000)) error=\(error.localizedDescription)"
+                )
+                isLoading = false
+                errorMsg = localized("匯入失敗：") + error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: - Markdown / JSON Preparation
+    private func prepareTextDocument(url: URL, sessionID: UUID) {
         parseTask = Task(priority: .userInitiated) {
             let startUptime = ProcessInfo.processInfo.systemUptime
             await MainActor.run {
-                importTrace("importTXT begin session=\(sessionID) file=\(url.lastPathComponent)")
+                importTrace("prepareTextDocument begin session=\(sessionID) file=\(url.lastPathComponent)")
             }
             let ok = url.startAccessingSecurityScopedResource()
             defer { if ok { url.stopAccessingSecurityScopedResource() } }
@@ -364,7 +407,7 @@ struct FileImportTab: View {
                     markdownTempURL = nil
                     await MainActor.run {
                         importTrace(
-                            "importTXT markdownCopyFailed session=\(sessionID) error=\(error.localizedDescription)"
+                            "prepareTextDocument markdownCopyFailed session=\(sessionID) error=\(error.localizedDescription)"
                         )
                     }
                 }
@@ -380,7 +423,7 @@ struct FileImportTab: View {
                 ) else { return }
                 isLoading = false
                 importTrace(
-                    "importTXT parsed session=\(sessionID) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000)) textChars=\(text?.count ?? 0)"
+                    "prepareTextDocument parsed session=\(sessionID) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000)) textChars=\(text?.count ?? 0)"
                 )
                 if let t = text {
                     if isMarkdownFile, markdownTempURL == nil {

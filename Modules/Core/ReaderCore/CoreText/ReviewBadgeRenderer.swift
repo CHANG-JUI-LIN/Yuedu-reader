@@ -28,10 +28,16 @@ enum ReviewBadgeRenderer {
     private static func draw(text: String, pointSize: CGFloat, color: UIColor) -> UIImage {
         let fontSize = max(8, pointSize * 0.62)
         let badgeFont = UserReaderFontResolver.bodyFont(size: fontSize, isBold: GlobalSettings.shared.readerFontBold)
-        let textAttrs: [NSAttributedString.Key: Any] = [
+        var textAttrs: [NSAttributedString.Key: Any] = [
             .font: badgeFont,
             .foregroundColor: color,
         ]
+        textAttrs.merge(
+            UserReaderFontResolver.syntheticBoldAttributes(
+                for: badgeFont,
+                isBoldRequested: GlobalSettings.shared.readerFontBold
+            )
+        ) { _, new in new }
         let textSize = (text as NSString).size(withAttributes: textAttrs)
 
         let height = ceil(pointSize * 0.96)

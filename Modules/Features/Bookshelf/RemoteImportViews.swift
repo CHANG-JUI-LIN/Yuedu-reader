@@ -233,7 +233,7 @@ struct WebDAVDirectoryView: View {
                 case "md", "markdown":
                     try store.importMarkdown(url: tempURL, title: bookTitle)
                 default:
-                    try store.importTxt(url: tempURL, title: bookTitle)
+                    try await store.importTxt(url: tempURL, title: bookTitle)
                 }
                 try? FileManager.default.removeItem(at: tempURL)
                 importedIDs.insert(entry.id)
