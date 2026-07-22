@@ -6,10 +6,16 @@ private extension TouchAction {
 
 struct ReaderTouchZoneEditorView: View {
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
-    @StateObject private var model = ReaderTouchZoneEditorModel()
+    @StateObject private var model: ReaderTouchZoneEditorModel
 
     let onCancel: () -> Void
     let onSave: () -> Void
+
+    init(isRTL: Bool, onCancel: @escaping () -> Void, onSave: @escaping () -> Void) {
+        _model = StateObject(wrappedValue: ReaderTouchZoneEditorModel(isRTL: isRTL))
+        self.onCancel = onCancel
+        self.onSave = onSave
+    }
 
     var body: some View {
         ZStack {

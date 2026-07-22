@@ -62,19 +62,36 @@ struct TouchZoneConfig: Codable, Equatable {
         .prevPage, .nextPage, .nextPage,  // Bottom row: BL←, BC→, BR→
     ])
 
+    static func defaultForReadingDirection(isRTL: Bool) -> TouchZoneConfig {
+        guard isRTL else { return .default }
+        return TouchZoneConfig(zones: stride(from: 0, to: 9, by: 3).flatMap { rowStart in
+            Array(TouchZoneConfig.default.zones[rowStart..<(rowStart + 3)].reversed())
+        })
+    }
+
     /// Persistence key
     private static let key = "yd_touch_zones"
 
-    static func load() -> TouchZoneConfig {
+    static func loadSaved() -> TouchZoneConfig? {
         guard let data = UserDefaults.standard.data(forKey: key),
-            let config = try? JSONDecoder().decode(TouchZoneConfig.self, from: data),
-            config.zones.count == 9
-        else { return .default }
+              let config = try? JSONDecoder().decode(TouchZoneConfig.self, from: data),
+              config.zones.count == 9
+        else { return nil }
         return config
     }
 
-    static func effective(saved: TouchZoneConfig = .load(), isProActive: Bool) -> TouchZoneConfig {
-        guard isProActive, saved.zones.count == 9 else { return .default }
+    static func load() -> TouchZoneConfig {
+        loadSaved() ?? .default
+    }
+
+    static func effective(
+        saved: TouchZoneConfig? = loadSaved(),
+        isProActive: Bool,
+        isRTL: Bool
+    ) -> TouchZoneConfig {
+        guard isProActive, let saved, saved.zones.count == 9 else {
+            return defaultForReadingDirection(isRTL: isRTL)
+        }
         return saved
     }
 

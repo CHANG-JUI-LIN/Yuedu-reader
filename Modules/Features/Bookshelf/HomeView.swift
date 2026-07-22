@@ -135,15 +135,18 @@ struct HomeView: View {
                 }
                 pendingReaderOpenToken = nil
                 AppLogger.info("⟐ openBook direction resolved=\(direction) calling coordinator.open")
+                weak let geometryStore = readerGeometryStore
+                weak let transitionBookStore = store
+                weak let navigator = readerCoordinator
                 let source = ReaderTransitionSource(
                     bookID: book.id,
                     cornerRadius: sourceGeometry?.cornerRadius ?? DSRadius.md,
                     frame: sourceGeometry?.frame,
-                    frameProvider: { [weak readerGeometryStore, weak store] in
-                        guard store?.books.contains(where: { $0.id == book.id }) == true else {
+                    frameProvider: {
+                        guard transitionBookStore?.books.contains(where: { $0.id == book.id }) == true else {
                             return nil
                         }
-                        return readerGeometryStore?.frame(for: book.id)
+                        return geometryStore?.frame(for: book.id)
                     },
                     snapshot: snapshot,
                     direction: direction
@@ -157,21 +160,21 @@ struct HomeView: View {
                 readerCoordinator.open(
                     bookID: readerBookID,
                     source: source,
-                    destination: { [weak readerCoordinator] in
+                    destination: {
                         ReaderHostingController(content: AnyView(
                             BookReaderView(bookId: readerBookID)
                                 .environmentObject(readerStore)
                                 .environment(\.appDependencies, readerDependencies)
-                                .environment(\.readerNavigator, readerCoordinator)
+                                .environment(\.readerNavigator, navigator)
                         ))
                     },
-                    onTransitionCompleted: { [weak readerGeometryStore, weak store] in
+                    onTransitionCompleted: {
                         if shouldInvalidateForRecentSort {
                             // Do not let a closing transition use the old row
                             // position while the recently-read sort moves it.
-                            readerGeometryStore?.invalidate(bookID: readerBookID)
+                            geometryStore?.invalidate(bookID: readerBookID)
                         }
-                        store?.updateLastOpened(bookId: readerBookID)
+                        transitionBookStore?.updateLastOpened(bookId: readerBookID)
                     }
                 )
             }

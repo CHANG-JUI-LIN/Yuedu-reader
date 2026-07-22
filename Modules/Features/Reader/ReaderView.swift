@@ -1370,6 +1370,7 @@ struct ReaderView: View {
 
             if showTouchZoneEditor {
                 ReaderTouchZoneEditorView(
+                    isRTL: epubRenderer.pageProgressionDirection == .rtl || effectiveWritingMode.isVertical,
                     onCancel: { showTouchZoneEditor = false },
                     onSave: { showTouchZoneEditor = false }
                 )

@@ -40,7 +40,30 @@ struct TouchZoneConfigTests {
     func entitlementResolution() {
         let saved = TouchZoneConfig(zones: Array(repeating: .none, count: 9))
 
-        #expect(TouchZoneConfig.effective(saved: saved, isProActive: false).zones == TouchZoneConfig.default.zones)
-        #expect(TouchZoneConfig.effective(saved: saved, isProActive: true).zones == saved.zones)
+        #expect(TouchZoneConfig.effective(saved: saved, isProActive: false, isRTL: false) == .default)
+        #expect(TouchZoneConfig.effective(saved: saved, isProActive: true, isRTL: true) == saved)
+    }
+
+    @Test("left-opening books mirror the unsaved default grid")
+    func leftOpeningDefaultIsMirrored() {
+        let ltr = TouchZoneConfig.defaultForReadingDirection(isRTL: false)
+        let rtl = TouchZoneConfig.defaultForReadingDirection(isRTL: true)
+
+        #expect(ltr == .default)
+        #expect(rtl.zones == [
+            .nextPage, .prevPage, .prevPage,
+            .nextPage, .toggleMenu, .prevPage,
+            .nextPage, .nextPage, .prevPage,
+        ])
+    }
+
+    @Test("left-opening defaults apply until a Pro reader saves a custom grid")
+    func directionalDefaultPrecedesCustomization() {
+        let saved = TouchZoneConfig(zones: Array(repeating: .none, count: 9))
+        let rtlDefault = TouchZoneConfig.defaultForReadingDirection(isRTL: true)
+
+        #expect(TouchZoneConfig.effective(saved: nil, isProActive: true, isRTL: true) == rtlDefault)
+        #expect(TouchZoneConfig.effective(saved: saved, isProActive: false, isRTL: true) == rtlDefault)
+        #expect(TouchZoneConfig.effective(saved: saved, isProActive: true, isRTL: true) == saved)
     }
 }

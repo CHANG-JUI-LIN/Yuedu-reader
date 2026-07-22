@@ -189,6 +189,50 @@ struct CoreTextWritingModeTests {
         #expect(paragraph.resolvedStyle.lineHeightExplicit == true)
     }
 
+    @Test("vertical EPUB body text-align left stays left aligned")
+    func verticalEPUBBodyTextAlignLeftStaysLeftAligned() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let config = HTMLAttributedStringBuilder.Config(
+            fontSize: 18,
+            lineHeightMultiple: 1.0,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            firstLineIndent: 0,
+            textColor: .black,
+            backgroundColor: .white,
+            fontFamilyName: nil,
+            renderWidth: 240,
+            writingMode: .verticalRTL
+        )
+
+        let result = await builder.build(
+            html: """
+            <html>
+            <head>
+            <style>
+            .calibre { writing-mode: vertical-rl; text-align: left; }
+            .calibre7 { display: block; line-height: 160%; margin: 0; padding: 0; }
+            .small1 { color: #8c0000; font-size: 0.75em; }
+            </style>
+            </head>
+            <body class="calibre"><p class="calibre7">又不知攜了弟子到何地方？<span class="small1">昔子房後謁黃石公，惟見一石。</span>望乞明示。</p></body>
+            </html>
+            """,
+            config: config
+        )
+
+        let textRange = (result.attributedString.string as NSString).range(of: "又不知")
+        try #require(textRange.location != NSNotFound)
+        let paragraphStyle = try #require(
+            result.attributedString.attribute(
+                .paragraphStyle,
+                at: textRange.location,
+                effectiveRange: nil
+            ) as? NSParagraphStyle
+        )
+        #expect(paragraphStyle.alignment == .left)
+    }
+
     @Test("pagination cache differentiates paragraph style changes")
     func paginationCacheDifferentiatesParagraphStyleChanges() async throws {
         let paginator = CoreTextPaginator()

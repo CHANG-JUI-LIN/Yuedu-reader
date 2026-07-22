@@ -371,6 +371,20 @@ struct CSSPropertyApplierTests {
         #expect(style.textAlign == .center)
     }
 
+    @Test("text-align left 保留明確靠左")
+    func textAlignLeft() {
+        var style = Self.makeDefaultStyle()
+        let ctx = Self.makeContext(parentStyle: style)
+
+        HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
+            declarations: ["text-align": "left"],
+            style: &style,
+            context: ctx
+        )
+
+        #expect(style.textAlign == .left)
+    }
+
     @Test("font-size px 設定字型大小")
     func fontSizePx() {
         var style = Self.makeDefaultStyle()

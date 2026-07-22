@@ -117,7 +117,7 @@ enum OnlineChapterTitleDeduplicator {
             let survivors = removingTextRuns(from: children)
             return .remove(accessories: survivors)
 
-        case .heading(let children, let level, let style):
+        case .heading(let children, _, _):
             guard normalizedTitleKey(plainText(of: children)) == titleKey else { return nil }
             let survivors = removingTextRuns(from: children)
             return .remove(accessories: survivors)

@@ -4,22 +4,27 @@ import Combine
 final class ReaderTouchZoneEditorModel: ObservableObject {
     @Published private(set) var draft: TouchZoneConfig
 
+    private let defaultConfig: TouchZoneConfig
     private let persist: (TouchZoneConfig) -> Void
     private let disableGlobalPaging: () -> Void
 
     init(
         initial: TouchZoneConfig,
+        defaultConfig: TouchZoneConfig = .default,
         save: @escaping (TouchZoneConfig) -> Void,
         disableGlobalPaging: @escaping () -> Void
     ) {
-        draft = initial.zones.count == 9 ? initial : .default
+        draft = initial.zones.count == 9 ? initial : defaultConfig
+        self.defaultConfig = defaultConfig
         persist = save
         self.disableGlobalPaging = disableGlobalPaging
     }
 
-    convenience init() {
+    convenience init(isRTL: Bool = false) {
+        let defaultConfig = TouchZoneConfig.defaultForReadingDirection(isRTL: isRTL)
         self.init(
-            initial: .load(),
+            initial: TouchZoneConfig.loadSaved() ?? defaultConfig,
+            defaultConfig: defaultConfig,
             save: { $0.save() },
             disableGlobalPaging: { GlobalSettings.shared.readerTapBothSidesNextPage = false }
         )
@@ -31,7 +36,7 @@ final class ReaderTouchZoneEditorModel: ObservableObject {
     }
 
     func restoreDefault() {
-        draft = .default
+        draft = defaultConfig
     }
 
     @discardableResult

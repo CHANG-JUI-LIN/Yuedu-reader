@@ -36,6 +36,21 @@ struct ReaderTouchZoneEditorModelTests {
         #expect(saved.zones.allSatisfy { $0 == .none })
     }
 
+    @Test("restore defaults follows the current book opening direction")
+    func restoresDirectionalDefault() {
+        let rtlDefault = TouchZoneConfig.defaultForReadingDirection(isRTL: true)
+        let model = ReaderTouchZoneEditorModel(
+            initial: TouchZoneConfig(zones: Array(repeating: .none, count: 9)),
+            defaultConfig: rtlDefault,
+            save: { _ in },
+            disableGlobalPaging: {}
+        )
+
+        model.restoreDefault()
+
+        #expect(model.draft == rtlDefault)
+    }
+
     @Test("lost Pro access refuses to save")
     func refusesSaveWithoutPro() {
         var didSave = false

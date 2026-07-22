@@ -584,7 +584,7 @@ struct OnlineBookView: View {
                     : requestBook.tocUrl
                 var showedCachedTOC = false
                 if !provisionalTocURL.isEmpty,
-                   let cached = BookSourceFetcher.shared.cachedTOCPackage(
+                   let cached = await dependencies.bookSourceFetcher.cachedTOCPackage(
                        tocUrl: provisionalTocURL, source: source
                    ) {
                     showedCachedTOC = true
@@ -628,10 +628,11 @@ struct OnlineBookView: View {
                    !trimmedTocURL.isEmpty,
                    trimmedTocURL != requestBook.bookUrl,
                    !requestBook.bookUrl.isEmpty {
+                    let parallelRuntimeVariables = currentRuntimeVariables
                     async let tocTask = dependencies.bookSourceFetcher.fetchTOCPackage(
                         tocUrl: trimmedTocURL,
                         source: source,
-                        runtimeVariables: currentRuntimeVariables,
+                        runtimeVariables: parallelRuntimeVariables,
                         onFirstPageReady: applyFirstPage,
                         forceRefresh: false
                     )
@@ -641,7 +642,7 @@ struct OnlineBookView: View {
                         try await dependencies.bookSourceFetcher.fetchBookInfoPackage(
                             url: requestBook.bookUrl,
                             source: source,
-                            runtimeVariables: currentRuntimeVariables
+                            runtimeVariables: parallelRuntimeVariables
                         )
                     }
                     currentRuntimeVariables = infoPackage.runtimeVariables

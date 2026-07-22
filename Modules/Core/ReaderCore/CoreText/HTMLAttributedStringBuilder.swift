@@ -2201,6 +2201,8 @@ final class HTMLAttributedStringBuilder {
 
     private func cssAlignment(_ raw: String) -> NSTextAlignment {
         switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "left":
+            return .left
         case "center":
             return .center
         case "right", "end":

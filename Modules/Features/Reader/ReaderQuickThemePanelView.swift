@@ -118,10 +118,6 @@ struct ReaderQuickThemePanelView: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: DSSpacing.lg) {
                 topControls
-                if showsFontSizeScale {
-                    fontSizeScale
-                        .transition(.opacity)
-                }
                 brightnessSlider
                 readingBackgroundGrid
                 customizeButton
@@ -165,9 +161,23 @@ struct ReaderQuickThemePanelView: View {
     // MARK: - Top controls (font size + icon menus)
 
     private var topControls: some View {
-        HStack(spacing: DSSpacing.md) {
-            fontSizeControl
-            iconMenuControl
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            HStack(spacing: DSSpacing.md) {
+                fontSizeControl
+                    .frame(maxWidth: .infinity)
+                iconMenuControl
+            }
+
+            if showsFontSizeScale {
+                HStack(spacing: DSSpacing.md) {
+                    fontSizeScale
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Color.clear
+                        .frame(width: DSLayout.readerQuickPanelTopMenuWidth)
+                        .accessibilityHidden(true)
+                }
+                .transition(.opacity)
+            }
         }
     }
 
@@ -205,8 +215,6 @@ struct ReaderQuickThemePanelView: View {
             pageTurnMenu
             themeModeMenu
         }
-        .menuStyle(.button)
-        .buttonStyle(QuickPanelSegmentButtonStyle())
         .frame(width: DSLayout.readerQuickPanelTopMenuWidth)
         .background(DSColor.neutralControlFill, in: Capsule())
         .shadow(color: DSColor.shadow, radius: 6, y: 1)
@@ -269,15 +277,17 @@ struct ReaderQuickThemePanelView: View {
     /// Discrete dot scale that surfaces the current font-size step. Revealed
     /// transiently while the reader taps the A / A control, then auto-hides.
     private var fontSizeScale: some View {
-        HStack(spacing: DSSpacing.xs) {
+        HStack(spacing: 0) {
             ForEach(0..<fontStepCount, id: \.self) { index in
                 Circle()
                     .fill(index <= currentFontStepIndex
                         ? DSColor.textPrimary
                         : DSColor.textPrimary.opacity(0.16))
                     .frame(width: fontScaleDotSize, height: fontScaleDotSize)
+                if index < fontStepCount - 1 {
+                    Spacer(minLength: 0)
+                }
             }
-            Spacer(minLength: 0)
         }
         .frame(height: DSSpacing.sm)
         .accessibilityElement()
@@ -620,10 +630,9 @@ private struct QuickPanelActionButtonStyle: ButtonStyle {
     }
 }
 
-/// Segment sharing one capsule with its neighbors (the A / A halves and the
-/// two icon menus): while pressed, an inset darker capsule appears behind the
-/// content; on release it shrinks and fades back out, echoing the Apple Books
-/// quick panel. Highlight snaps in fast and recedes on the slower curve.
+/// Segment sharing one capsule with its neighbor in the A / A control. While
+/// pressed, an inset darker capsule appears behind the content; on release it
+/// shrinks and fades back out, echoing the Apple Books quick panel.
 private struct QuickPanelSegmentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

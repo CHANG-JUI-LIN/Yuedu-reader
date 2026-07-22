@@ -28,6 +28,11 @@ protocol BookSourceFetching {
         forceRefresh: Bool
     ) async throws -> TOCPackage
 
+    func cachedTOCPackage(
+        tocUrl: String,
+        source: BookSource
+    ) async -> TOCPackage?
+
     func isChapterCached(
         bookId: UUID,
         chapterIndex: Int,
@@ -64,6 +69,16 @@ protocol BookSourceFetching {
 }
 
 extension BookSourceFetching {
+    /// Cache lookup is an optional acceleration capability. Test doubles and
+    /// alternate implementations without persistent TOC storage skip it and
+    /// continue through the normal fetch path.
+    func cachedTOCPackage(
+        tocUrl: String,
+        source: BookSource
+    ) async -> TOCPackage? {
+        nil
+    }
+
     func fetchTOCPackage(
         tocUrl: String,
         source: BookSource,
@@ -164,6 +179,13 @@ struct LiveWebContentFetcher: WebContentFetching {
 
 struct LiveBookSourceFetcher: BookSourceFetching {
     let bookSourceFetcher: BookSourceFetcher
+
+    func cachedTOCPackage(
+        tocUrl: String,
+        source: BookSource
+    ) async -> TOCPackage? {
+        await bookSourceFetcher.cachedTOCPackage(tocUrl: tocUrl, source: source)
+    }
 
     func fetchBookInfoPackage(
         url: String,

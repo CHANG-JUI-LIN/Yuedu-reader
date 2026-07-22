@@ -114,7 +114,8 @@ final class FixedPagePagedViewController: UIViewController, FixedPageModeReader,
             action = (0.3...0.7).contains(xFraction) ? .toggleMenu : .nextPage
         } else {
             action = TouchZoneConfig.effective(
-                isProActive: SubscriptionStore.shared.isProActive
+                isProActive: SubscriptionStore.shared.isProActive,
+                isRTL: usesRightToLeftProgression
             ).action(at: point, in: view.bounds.size)
         }
 

@@ -86,6 +86,7 @@ struct FixedPageReaderView: View {
 
                 if showTouchZoneEditor {
                     ReaderTouchZoneEditorView(
+                        isRTL: state.fixedPageReaderConfiguration.progression == .rightToLeft,
                         onCancel: { showTouchZoneEditor = false },
                         onSave: { showTouchZoneEditor = false }
                     )
