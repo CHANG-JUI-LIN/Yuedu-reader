@@ -233,15 +233,15 @@ extension ReaderView {
             let bookTitle = b.title
             let settings = currentRenderSettings(marginH: marginH)
             let targetBook = b
+            let targetBookID = targetBook.id
+            let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let txtURL = docsURL.appendingPathComponent(targetBook.contentFilename)
+            let lowercasedFilename = targetBook.contentFilename.lowercased()
+            let isMarkdownFile = lowercasedFilename.hasSuffix(".md")
+                || lowercasedFilename.hasSuffix(".markdown")
 
-            DispatchQueue.global(qos: .userInitiated).async {
-                let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                let txtURL = docsURL.appendingPathComponent(targetBook.contentFilename)
-                let lowercasedFilename = targetBook.contentFilename.lowercased()
-                let isMarkdownFile = lowercasedFilename.hasSuffix(".md")
-                    || lowercasedFilename.hasSuffix(".markdown")
-
-                if isMarkdownFile {
+            if isMarkdownFile {
+                DispatchQueue.global(qos: .userInitiated).async {
                     let markdownText: String
                     do {
                         markdownText = try TXTFileReader.readTextFile(url: txtURL)
@@ -296,81 +296,79 @@ extension ReaderView {
                         self.isLoadingPipeline = false
                         self.isRestoringPosition = false
                     }
-                    return
                 }
+                return
+            }
 
-                let mappedTextFile: TXTMappedTextFile
+            Task { @MainActor in
                 do {
-                    mappedTextFile = try TXTFileReader.readMappedTextFile(url: txtURL)
-                } catch {
-                    Task { @MainActor in
-                        guard self.book?.id == targetBook.id else { return }
-                        self.applyDocument(nil)
-                        self.isLoadingPipeline = false
-                        self.isRestoringPosition = false
-                    }
-                    return
-                }
-
-                let bookId = targetBook.id
-                let fingerprint = TXTFileReader.fileFingerprint(data: mappedTextFile.data)
-                let fileSize = mappedTextFile.byteCount
-                let encoding = mappedTextFile.encoding
-
-                let mappedChapterIndexes: [TXTMappedChapterIndex]
-                if let cached = TXTChapterParser.loadCachedIndexes(bookId: bookId, fileSize: fileSize, fingerprint: fingerprint, encoding: encoding) {
-                    mappedChapterIndexes = cached
-                } else {
-                    let fresh = SourcePerfTrace.span(
-                        "txt.index",
-                        "bytes=\(fileSize) encoding=\(encoding.rawValue)"
-                    ) {
-                        TXTChapterParser.parseMappedChapterIndexes(
-                            mappedTextFile,
+                    let preparation = try await Task.detached(priority: .userInitiated) {
+                        try TXTReaderPreparationService.prepare(
+                            url: txtURL,
+                            bookId: targetBookID,
                             bookTitle: bookTitle
                         )
-                    }
-                    TXTChapterParser.saveCachedIndexes(fresh, bookId: bookId, fileSize: fileSize, fingerprint: fingerprint, encoding: encoding)
-                    mappedChapterIndexes = fresh
-                }
-                let lazyBuilder = TXTLazyAttributedStringBuilder(
-                    mappedTextFile: mappedTextFile,
-                    chapterIndexes: mappedChapterIndexes
-                )
+                    }.value
 
-                Task { @MainActor in
                     guard self.book?.id == targetBook.id else {
                         self.isLoadingPipeline = false
                         self.isRestoringPosition = false
                         return
                     }
 
-                    let document = BookDocumentFactory.makeTXTDocument(
+                    if preparation.cachedChapterIndexes == nil {
+                        let previewIndexes = TXTChapterParser.parseChapterIndexes(
+                            preparation.previewText,
+                            bookTitle: bookTitle
+                        )
+                        let previewBuilder = TXTLazyAttributedStringBuilder(
+                            text: preparation.previewText,
+                            chapterIndexes: previewIndexes
+                        )
+                        let previewDocument = BookDocumentFactory.makeTXTDocument(
+                            book: targetBook,
+                            chapterIndexes: previewIndexes,
+                            text: preparation.previewText
+                        )
+                        self.applyTXTReaderPhase(
+                            book: targetBook,
+                            title: bookTitle,
+                            document: previewDocument,
+                            builder: previewBuilder,
+                            settings: settings,
+                            completesPipeline: false
+                        )
+                    }
+
+                    let mappedChapterIndexes = await Task.detached(priority: .userInitiated) {
+                        TXTReaderPreparationService.completeChapterIndexes(
+                            for: preparation
+                        )
+                    }.value
+
+                    guard self.book?.id == targetBook.id else { return }
+                    let finalBuilder = TXTLazyAttributedStringBuilder(
+                        mappedTextFile: preparation.mappedTextFile,
+                        chapterIndexes: mappedChapterIndexes
+                    )
+                    let finalDocument = BookDocumentFactory.makeTXTDocument(
                         book: targetBook,
                         mappedChapterIndexes: mappedChapterIndexes,
-                        mappedTextFile: mappedTextFile
+                        mappedTextFile: preparation.mappedTextFile
                     )
-                    self.applyDocument(document)
-
-                    self.epubRenderer.loadTXT(
-                        attributedBuilder: lazyBuilder,
-                        bookIdentifier: targetBook.id.uuidString,
-                        renderSize: self.currentReaderRenderSize,
-                        settings: settings
+                    self.applyTXTReaderPhase(
+                        book: targetBook,
+                        title: bookTitle,
+                        document: finalDocument,
+                        builder: finalBuilder,
+                        settings: self.currentRenderSettings(
+                            marginH: self.effectivePageMarginH
+                        )
                     )
-
-                    if document.tableOfContents.count > 0 {
-                        self.chapters = document.tableOfContents.enumerated().map { i, chapter in
-                            BookChapter(index: i, title: chapter.title, content: "")
-                        }
-                    } else {
-                        self.chapters = [BookChapter(index: 0, title: bookTitle, content: "")]
-                    }
-
-                    self.allPages = []
-                    if self.savedCoreTextRestoreTarget == nil {
-                        self.currentPage = 0
-                    }
+                } catch {
+                    guard self.book?.id == targetBook.id else { return }
+                    AppLogger.error("TXT reader preparation failed", error: error)
+                    self.applyDocument(nil)
                     self.isLoadingPipeline = false
                     self.isRestoringPosition = false
                 }
@@ -389,6 +387,39 @@ extension ReaderView {
         self.allPages = [PageContent(chapterIndex: 0, chapterTitle: bookTitle, content: "", pageInChapter: 0)]
         self.currentPage = 0
         loadLocalEPUB(b, marginH: marginH)
+    }
+
+    func applyTXTReaderPhase(
+        book: ReadingBook,
+        title: String,
+        document: any BookDocument,
+        builder: any AttributedStringBuilding,
+        settings: ReaderRenderSettings,
+        completesPipeline: Bool = true
+    ) {
+        applyDocument(document)
+        epubRenderer.loadTXT(
+            attributedBuilder: builder,
+            bookIdentifier: book.id.uuidString,
+            renderSize: currentReaderRenderSize,
+            settings: settings
+        )
+
+        if document.tableOfContents.isEmpty {
+            chapters = [BookChapter(index: 0, title: title, content: "")]
+        } else {
+            chapters = document.tableOfContents.enumerated().map { index, chapter in
+                BookChapter(index: index, title: chapter.title, content: "")
+            }
+        }
+        allPages = []
+        if savedCoreTextRestoreTarget == nil {
+            currentPage = 0
+        }
+        if completesPipeline {
+            isLoadingPipeline = false
+            isRestoringPosition = false
+        }
     }
 
     func rebuildPages() {

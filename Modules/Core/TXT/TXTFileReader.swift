@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-struct TXTMappedTextFile {
+struct TXTMappedTextFile: Sendable {
     let data: Data
     let encoding: String.Encoding
 

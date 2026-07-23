@@ -9,7 +9,7 @@ struct TXTChapterIndex: Equatable {
     var sourceHref: String { String(index) }
 }
 
-struct TXTMappedChapterIndex: Equatable {
+struct TXTMappedChapterIndex: Equatable, Sendable {
     let index: Int
     let title: String
     let byteRange: Range<Int>

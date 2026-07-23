@@ -72,6 +72,7 @@ extension ReaderView {
                     ensureChapterReady(chapterIndex: chapterIndex)
                 }
             )
+            .id(ObjectIdentifier(scrollEngine))
             .background(readerSurfaceBackground)
             .ignoresSafeArea()
             .modifier(ScrollConfigObserver(readerConfig: readerConfig, readerTheme: readerTheme) { scheduleScrollReslice() })

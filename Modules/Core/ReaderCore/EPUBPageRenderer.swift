@@ -201,6 +201,7 @@ final class EPUBPageRenderer: ObservableObject {
             logProgress("loadTXT start bookId=\(bookIdentifier) renderSize=\(effectiveSize)")
             Task {
                 await newEngine.start(renderSize: effectiveSize, bookId: bookIdentifier)
+                guard self.engine === newEngine else { return }
                 self.isCoreTextReady = true
                 self.logProgress(
                     "loadTXT ready bookId=\(bookIdentifier) totalPages=\(newEngine.totalPages) elapsedMs=\(self.elapsedMs(since: startUptime))"

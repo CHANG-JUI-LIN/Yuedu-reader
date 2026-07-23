@@ -145,6 +145,44 @@ struct TXTFileReaderTests {
         )
     }
 
+    @Test("uncached reader preparation exposes a bounded preview before full indexing")
+    func uncachedReaderPreparationExposesBoundedPreview() throws {
+        let text = String(repeating: "普通正文內容，先顯示再建立完整索引。\n", count: 20_000)
+        let data = try #require(text.data(using: .utf8))
+        let url = try writeTemporaryTXT(data: data)
+        let bookId = UUID()
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            TXTChapterParser.deleteCachedIndexes(bookId: bookId)
+        }
+
+        let preparation = try TXTReaderPreparationService.prepare(
+            url: url,
+            bookId: bookId,
+            bookTitle: "預覽測試"
+        )
+
+        #expect(preparation.cachedChapterIndexes == nil)
+        #expect(!preparation.previewText.isEmpty)
+        #expect(
+            preparation.previewText.lengthOfBytes(using: .utf8)
+                <= TXTInitialPreviewPlanner.maximumByteCount
+        )
+
+        let indexes = TXTReaderPreparationService.completeChapterIndexes(
+            for: preparation
+        )
+        #expect(indexes.count > 1)
+        #expect(
+            TXTChapterParser.loadCachedIndexes(
+                bookId: bookId,
+                fileSize: preparation.fileSize,
+                fingerprint: preparation.fingerprint,
+                encoding: preparation.encoding
+            ) == indexes
+        )
+    }
+
     private func writeTemporaryTXT(data: Data) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
