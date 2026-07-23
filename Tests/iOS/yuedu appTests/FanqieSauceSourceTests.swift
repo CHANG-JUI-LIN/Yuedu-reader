@@ -60,6 +60,57 @@ struct FanqieSauceSourceTests {
         return source
     }
 
+    private static func cleanupLiveCache(
+        sourceID: UUID,
+        fetcher: BookSourceFetcher
+    ) {
+        cleanupCacheDirectory(
+            fetcher.bookInfoCacheDir(),
+            packageType: BookInfoPackage.self,
+            sourceID: sourceID,
+            packageSourceID: { $0.sourceId },
+            rawHTMLFilename: { $0.rawHTMLFilename }
+        )
+        cleanupCacheDirectory(
+            fetcher.tocCacheDir(),
+            packageType: TOCPackage.self,
+            sourceID: sourceID,
+            packageSourceID: { $0.sourceId },
+            rawHTMLFilename: { $0.rawHTMLFilename }
+        )
+    }
+
+    private static func cleanupCacheDirectory<Package: Decodable>(
+        _ directory: URL,
+        packageType: Package.Type,
+        sourceID: UUID,
+        packageSourceID: (Package) -> UUID,
+        rawHTMLFilename: (Package) -> String?
+    ) {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        for jsonURL in files where jsonURL.pathExtension.lowercased() == "json" {
+            guard let data = try? Data(contentsOf: jsonURL),
+                let package = try? JSONDecoder().decode(packageType, from: data),
+                packageSourceID(package) == sourceID
+            else { continue }
+
+            if let rawHTMLFilename = rawHTMLFilename(package), !rawHTMLFilename.isEmpty {
+                let filename = (rawHTMLFilename as NSString).lastPathComponent
+                if filename == rawHTMLFilename, filename != ".", filename != ".." {
+                    try? FileManager.default.removeItem(
+                        at: directory.appendingPathComponent(filename)
+                    )
+                }
+            }
+            try? FileManager.default.removeItem(at: jsonURL)
+        }
+    }
+
     @Test("provided source buildRequest emits authorization")
     func buildRequestEmitsAuthorization() throws {
         guard let source = try loadSource() else { return }
@@ -93,7 +144,13 @@ struct FanqieSauceSourceTests {
 
         // Book-info and TOC cache keys include source.id. A fresh ID keeps this
         // opt-in live test from replaying a package persisted by an earlier run.
-        source.id = UUID()
+        let testSourceID = UUID()
+        source.id = testSourceID
+        defer { Self.cleanupLiveCache(sourceID: testSourceID, fetcher: fetcher) }
+        source.lastUpdateTime = max(
+            1,
+            Int64(Date().timeIntervalSince1970 * 1_000)
+        )
         SearchResultCache.shared.clear(query: searchQuery, source: source)
         defer { SearchResultCache.shared.clear(query: searchQuery, source: source) }
 
