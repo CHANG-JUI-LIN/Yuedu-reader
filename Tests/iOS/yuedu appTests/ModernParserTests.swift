@@ -1844,6 +1844,26 @@ struct JSCoreEngineTests {
         #expect(decoded == "Hello")
     }
 
+    @Test("java.HMacBase64 exports HMAC-SHA256 to JavaScript")
+    func javaHMACBase64Bridge() {
+        let engine = JSCoreEngine()
+        let result = engine.evaluate(
+            "java.HMacBase64('The quick brown fox jumps over the lazy dog', 'HmacSHA256', 'key')"
+        )
+
+        #expect(result == "97yD9DBThCSxMpjmqm+xQ+9NWaFJRhdZl0edvC0aPNg=")
+    }
+
+    @Test("java.base64DecodeToByteArray exports unsigned bytes to JavaScript")
+    func javaBase64ByteArrayBridge() {
+        let engine = JSCoreEngine()
+        let result = engine.evaluate(
+            "JSON.stringify(java.base64DecodeToByteArray('AH+A/w=='))"
+        )
+
+        #expect(result == "[0,127,128,255]")
+    }
+
     @Test("error handling for invalid JS")
     func errorHandlingInvalidJS() {
         let engine = JSCoreEngine()
@@ -2119,6 +2139,35 @@ struct LegadoJSBridgeTests {
         let result = bridge.base64Decode("!!!invalid!!!")
         // Returns empty on failure
         #expect(result.isEmpty || result == "!!!invalid!!!")
+    }
+
+    @Test("HMacBase64 supports Legado HMAC algorithm names")
+    func hmacBase64Algorithms() {
+        let bridge = LegadoJSBridge()
+        let content = "The quick brown fox jumps over the lazy dog"
+        let vectors: [(algorithm: String, expected: String)] = [
+            ("HmacSHA1", "3nybhbi3iqa8ino29wqQcBydtNk="),
+            ("HmacSHA256", "97yD9DBThCSxMpjmqm+xQ+9NWaFJRhdZl0edvC0aPNg="),
+            ("HmacSHA384", "1/RyfiwLOa4PHkDMlvYCQtW3gBhBzqb8WSxdPhrlBwBYKpbPNeHlVJlf5OAzgcI3"),
+            ("HmacSHA512", "tCrwkFe6weLUFwjkipAuCbX/fxKrQopP6GZTxz3SSPuC+UilSfe3kaW0GRXuTR7Dk1NX5OIxclDQNyr6Lr7rOg=="),
+        ]
+
+        for vector in vectors {
+            #expect(bridge.HMacBase64(content, vector.algorithm, "key") == vector.expected)
+        }
+        #expect(
+            bridge.HMacBase64(content, "hmac-sha-256", "key")
+                == vectors[1].expected
+        )
+        #expect(bridge.HMacBase64(content, "unsupported", "key").isEmpty)
+    }
+
+    @Test("base64DecodeToByteArray preserves unsigned byte values")
+    func base64DecodeToByteArray() {
+        let bridge = LegadoJSBridge()
+
+        #expect(bridge.base64DecodeToByteArray("AH+A/w==") == [0, 127, 128, 255])
+        #expect(bridge.base64DecodeToByteArray("A").isEmpty)
     }
 
     @Test("md5Encode produces 32-char hex")

@@ -60,6 +60,8 @@ import UIKit
     // Encoding / Decoding
     func base64Decode(_ str: String) -> String
     func base64Encode(_ str: String) -> String
+    func HMacBase64(_ content: String, _ algorithm: String, _ key: String) -> String
+    func base64DecodeToByteArray(_ str: String) -> [Int]
     func md5Encode(_ str: String) -> String
     func md5Encode16(_ str: String) -> String
     func hexDecodeToString(_ hex: String) -> String
@@ -661,6 +663,37 @@ import UIKit
     func base64Encode(_ str: String) -> String {
         guard let data = str.data(using: .utf8) else { return "" }
         return data.base64EncodedString()
+    }
+
+    func HMacBase64(_ content: String, _ algorithm: String, _ key: String) -> String {
+        let normalized = algorithm.uppercased().filter { $0.isLetter || $0.isNumber }
+        let message = Data(content.utf8)
+        let symmetricKey = SymmetricKey(data: Data(key.utf8))
+
+        switch normalized {
+        case "HMACSHA1", "SHA1":
+            return Data(HMAC<Insecure.SHA1>.authenticationCode(for: message, using: symmetricKey)).base64EncodedString()
+        case "HMACSHA256", "SHA256":
+            return Data(HMAC<SHA256>.authenticationCode(for: message, using: symmetricKey)).base64EncodedString()
+        case "HMACSHA384", "SHA384":
+            return Data(HMAC<SHA384>.authenticationCode(for: message, using: symmetricKey)).base64EncodedString()
+        case "HMACSHA512", "SHA512":
+            return Data(HMAC<SHA512>.authenticationCode(for: message, using: symmetricKey)).base64EncodedString()
+        default:
+            AppLogger.parse(
+                "Legado bridge rejected unsupported HMAC algorithm",
+                context: ["algorithm": normalized]
+            )
+            return ""
+        }
+    }
+
+    func base64DecodeToByteArray(_ str: String) -> [Int] {
+        guard let data = Data(base64Encoded: str, options: .ignoreUnknownCharacters) else {
+            AppLogger.parse("Legado bridge rejected invalid Base64 byte-array input")
+            return []
+        }
+        return data.map(Int.init)
     }
 
     func md5Encode(_ str: String) -> String {
