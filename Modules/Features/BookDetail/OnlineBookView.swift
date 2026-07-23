@@ -10,8 +10,8 @@ struct OnlineBookView: View {
     @State private var currentBook: OnlineBook
     @EnvironmentObject var bookStore: BookStore
     @Environment(\.appDependencies) private var dependencies
-    @ObservedObject private var sourceStore = BookSourceStore.shared
-    @ObservedObject private var gs = GlobalSettings.shared
+    private var gs: GlobalSettings { GlobalSettings.shared }
+    private var source: BookSource? { BookSourceStore.shared.sources.first(where: { $0.id == currentBook.sourceId }) }
 
     @State private var chapters: [OnlineChapterRef] = []
     @State private var loadingTOC = false
@@ -67,10 +67,6 @@ struct OnlineBookView: View {
             sourceName: origin.sourceName,
             runtimeVariables: origin.runtimeVariables
         )
-    }
-
-    private var source: BookSource? {
-        sourceStore.sources.first(where: { $0.id == currentBook.sourceId })
     }
 
     private var canSwitchSource: Bool {

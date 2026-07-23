@@ -7,7 +7,6 @@ struct BookSearchView: View {
     var showsCloseButton = false
 
     @EnvironmentObject var bookStore: BookStore
-    @ObservedObject private var sourceStore = BookSourceStore.shared
     @StateObject private var aggregator = SearchAggregator()
     @Environment(\.dismiss) private var dismiss
 
@@ -15,7 +14,7 @@ struct BookSearchView: View {
     @State private var selectedSourceId: UUID? = nil  // nil = all
     @State private var errorMsg: String? = nil
     @State private var submittedQuery = ""
-    @ObservedObject private var gs = GlobalSettings.shared
+    private var sourceStore: BookSourceStore { BookSourceStore.shared }
 
     var enabledSources: [BookSource] { sourceStore.enabledSources }
 
@@ -317,7 +316,6 @@ struct BookSearchView: View {
 
 struct AggregatedResultRow: View {
     @ObservedObject var book: SearchBook
-    @ObservedObject private var gs = GlobalSettings.shared
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -412,7 +410,6 @@ struct SourcePickerSheet: View {
     @Environment(\.presentationMode) var dismiss
     let searchBook: SearchBook
     let onSelectOrigin: (BookOrigin) -> Void
-    @ObservedObject private var gs = GlobalSettings.shared
 
     var body: some View {
         NavigationStack {
