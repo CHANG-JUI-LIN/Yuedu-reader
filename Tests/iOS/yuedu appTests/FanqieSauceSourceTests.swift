@@ -5,24 +5,59 @@ import Testing
 @Suite("Fanqie Sauce source compatibility", .serialized)
 struct FanqieSauceSourceTests {
 
+    private static let sourceName = "🌙 番茄酱"
+    private static let defaultJSONPath =
+        "/Users/zhangruilin/Desktop/Test document/RULE/🌙 番茄酱.json"
+
+    private enum FixtureError: LocalizedError {
+        case unexpectedSource(String)
+        case sourceNotFound
+
+        var errorDescription: String? {
+            switch self {
+            case .unexpectedSource(let actualName):
+                return "Expected \(sourceName) fixture, found \(actualName)."
+            case .sourceNotFound:
+                return "The fixture does not contain the \(sourceName) source."
+            }
+        }
+    }
+
+    private static func environmentValue(for key: String) -> String? {
+        guard let value = ProcessInfo.processInfo.environment[key]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !value.isEmpty
+        else { return nil }
+        return value
+    }
+
     static var jsonPath: String {
-        ProcessInfo.processInfo.environment["FANQIE_SAUCE_SOURCE_JSON"]
-            ?? ProcessInfo.processInfo.environment["TEST_RUNNER_FANQIE_SAUCE_SOURCE_JSON"]
-            ?? "/Users/zhangruilin/Desktop/Test document/RULE/🌙 番茄酱.json"
+        environmentValue(for: "FANQIE_SAUCE_SOURCE_JSON")
+            ?? environmentValue(for: "TEST_RUNNER_FANQIE_SAUCE_SOURCE_JSON")
+            ?? defaultJSONPath
     }
 
     static var runLiveTests: Bool {
-        let env = ProcessInfo.processInfo.environment
-        return env["RUN_LIVE_FANQIE_SAUCE_TESTS"] == "1"
-            || env["TEST_RUNNER_RUN_LIVE_FANQIE_SAUCE_TESTS"] == "1"
+        if let primary = environmentValue(for: "RUN_LIVE_FANQIE_SAUCE_TESTS") {
+            return primary == "1"
+        }
+        return environmentValue(for: "TEST_RUNNER_RUN_LIVE_FANQIE_SAUCE_TESTS") == "1"
     }
 
     private func loadSource() throws -> BookSource? {
         guard FileManager.default.fileExists(atPath: Self.jsonPath) else { return nil }
         let data = try Data(contentsOf: URL(fileURLWithPath: Self.jsonPath))
-        if let source = try? JSONDecoder().decode(BookSource.self, from: data) { return source }
-        return try JSONDecoder().decode([BookSource].self, from: data)
-            .first { $0.bookSourceName == "🌙 番茄酱" }
+        if let source = try? JSONDecoder().decode(BookSource.self, from: data) {
+            guard source.bookSourceName == Self.sourceName else {
+                throw FixtureError.unexpectedSource(source.bookSourceName)
+            }
+            return source
+        }
+        let sources = try JSONDecoder().decode([BookSource].self, from: data)
+        guard let source = sources.first(where: { $0.bookSourceName == Self.sourceName }) else {
+            throw FixtureError.sourceNotFound
+        }
+        return source
     }
 
     @Test("provided source buildRequest emits authorization")
@@ -34,35 +69,40 @@ struct FanqieSauceSourceTests {
         #expect(engine.lastError == nil)
         #expect(engine.evaluate("typeof buildRequest") == "function")
 
-        let request = try #require(engine.evaluate(
+        let result = engine.evaluate(
             """
             (function () {
                 const value = buildRequest(
                     backend + '/fq/detail?book_id=7045187140329671720'
                 );
-                return typeof value === 'string' ? value : JSON.stringify(value);
+                const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+                return typeof serialized === 'string'
+                    && /"Authorization"\\s*:\\s*"[^"]+"/.test(serialized);
             })()
             """
-        ))
-        let authorizationPattern = try NSRegularExpression(
-            pattern: #""Authorization"\s*:\s*"[^"]+""#
         )
-        let range = NSRange(request.startIndex..., in: request)
-        #expect(authorizationPattern.firstMatch(in: request, range: range) != nil)
+        #expect(result == "true")
         #expect(engine.lastError == nil)
     }
 
     @Test("live source completes the basic reading flow")
     func liveBasicReadingFlow() async throws {
-        guard Self.runLiveTests, let source = try loadSource() else { return }
+        guard Self.runLiveTests, var source = try loadSource() else { return }
         let fetcher = BookSourceFetcher.shared
+        let searchQuery = "重生医妃一睁眼，全京城排队抢亲"
+
+        // Book-info and TOC cache keys include source.id. A fresh ID keeps this
+        // opt-in live test from replaying a package persisted by an earlier run.
+        source.id = UUID()
+        SearchResultCache.shared.clear(query: searchQuery, source: source)
+        defer { SearchResultCache.shared.clear(query: searchQuery, source: source) }
 
         let books = try await fetcher.search(
-            query: "重生医妃一睁眼，全京城排队抢亲",
+            query: searchQuery,
             in: source
         )
         let book = try #require(
-            books.first { $0.name.contains("重生医妃一睁眼") } ?? books.first
+            books.first { $0.name.contains("重生医妃一睁眼") }
         )
         let info = try await fetcher.fetchBookInfoPackage(
             url: book.bookUrl,
@@ -75,7 +115,9 @@ struct FanqieSauceSourceTests {
         let toc = try await fetcher.fetchTOCPackage(
             tocUrl: tocURL,
             source: source,
-            runtimeVariables: info.runtimeVariables
+            runtimeVariables: info.runtimeVariables,
+            onFirstPageReady: nil,
+            forceRefresh: true
         )
         let chapter = try #require(
             toc.chapters.first {
