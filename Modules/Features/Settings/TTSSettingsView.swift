@@ -611,6 +611,7 @@ struct TTSSourceLoginView: View {
 
     @State private var fieldValues: [String: String] = [:]
     @State private var saved = false
+    @State private var engine: JSCoreEngine?
 
     private let fields: [LoginField]
 
@@ -624,6 +625,68 @@ struct TTSSourceLoginView: View {
         } else {
             fields = []
         }
+    }
+
+    private func ensureEngine() -> JSCoreEngine {
+        if let e = engine { return e }
+        let e = JSCoreEngine()
+        let sourceId = source.id
+        e.sourceBridge.getLoginInfoMapHandler = {
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceId) ?? [:]
+        }
+        e.sourceBridge.putLoginInfoHandler = { info in
+            if let d = info.data(using: .utf8),
+               let dict = try? JSONSerialization.jsonObject(with: d) as? [String: String] {
+                LoginManager.shared.storeLoginInfo(sourceUrl: sourceId, info: dict)
+                Task { @MainActor in fieldValues = dict }
+            }
+        }
+        e.sourceBridge.putLoginHeaderHandler = { header in
+            if let d = header.data(using: .utf8),
+               let dict = try? JSONSerialization.jsonObject(with: d) as? [String: String] {
+                LoginManager.shared.storeLoginHeaders(sourceUrl: sourceId, headers: dict)
+            } else {
+                var info = LoginManager.shared.getLoginInfo(sourceUrl: sourceId) ?? [:]
+                info["__tts_header"] = header
+                LoginManager.shared.storeLoginInfo(sourceUrl: sourceId, info: info)
+            }
+        }
+        e.sourceBridge.getLoginHeaderHandler = {
+            if let info = LoginManager.shared.getLoginInfo(sourceUrl: sourceId),
+               let state = info["__tts_header"] { return state }
+            return LoginManager.shared.getLoginHeader(sourceUrl: sourceId)
+        }
+        e.sourceBridge.getVariableHandler = {
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceId)?["__tts_variable"]
+        }
+        e.sourceBridge.setVariableHandler = { val in
+            var info = LoginManager.shared.getLoginInfo(sourceUrl: sourceId) ?? [:]
+            info["__tts_variable"] = val ?? ""
+            LoginManager.shared.storeLoginInfo(sourceUrl: sourceId, info: info)
+        }
+        e.sourceBridge.getKeyValueHandler = { key in
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceId)?[key]
+        }
+        e.sourceBridge.putKeyValueHandler = { key, value in
+            var info = LoginManager.shared.getLoginInfo(sourceUrl: sourceId) ?? [:]
+            info[key] = value
+            LoginManager.shared.storeLoginInfo(sourceUrl: sourceId, info: info)
+        }
+        e.sourceBridge.getHeaderMapHandler = {
+            LoginManager.shared.getLoginHeaders(sourceUrl: sourceId)
+        }
+        e.sourceBridge.removeLoginInfoHandler = {
+            LoginManager.shared.clearLogin(sourceUrl: sourceId)
+        }
+        e.sourceBridge.removeLoginHeaderHandler = {
+            LoginManager.shared.clearLogin(sourceUrl: sourceId)
+        }
+        // Evaluate loginUrl JS first so functions (set, next, Style, etc.) are available
+        if let loginUrl = source.loginUrl, !loginUrl.isEmpty {
+            e.evaluate(loginUrl, result: nil, bindings: [:])
+        }
+        engine = e
+        return e
     }
 
     var body: some View {
@@ -712,25 +775,24 @@ struct TTSSourceLoginView: View {
     private func handleButtonAction(_ field: LoginField) {
         guard let action = field.action else { return }
         LoginManager.shared.storeLoginInfo(sourceUrl: source.id, info: fieldValues)
-        // Execute button action JS if it starts with @js:
+        let e = ensureEngine()
+        // Execute button action in the JS context that has loginUrl functions loaded
         if action.hasPrefix("@js:") || action.hasPrefix("<js>") {
             let jsCode = action.hasPrefix("@js:")
                 ? String(action.dropFirst(4))
                 : String(action.dropFirst(4).dropLast(5))
-            let engine = JSCoreEngine()
-            engine.sourceBridge.getLoginInfoMapHandler = {
-                LoginManager.shared.getLoginInfo(sourceUrl: source.id) ?? [:]
-            }
-            engine.sourceBridge.putLoginInfoHandler = { info in
-                if let d = info.data(using: .utf8),
-                   let dict = try? JSONSerialization.jsonObject(with: d) as? [String: String] {
-                    LoginManager.shared.storeLoginInfo(sourceUrl: source.id, info: dict)
-                    fieldValues = dict
-                }
-            }
-            _ = engine.evaluate(jsCode, result: nil, bindings: [
+            _ = e.evaluate(jsCode, result: nil, bindings: [
                 "baseUrl": source.urlTemplate
             ])
+        } else {
+            // Plain function call — execute in loginUrl JS context
+            _ = e.evaluate(action, result: nil, bindings: [
+                "baseUrl": source.urlTemplate
+            ])
+        }
+        // Reload field values after JS may have modified them
+        if let updated = LoginManager.shared.getLoginInfo(sourceUrl: source.id) {
+            fieldValues = updated
         }
     }
 }

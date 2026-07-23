@@ -218,7 +218,7 @@
 "書源列表" = "Source List";
 "書源名稱" = "Source Name";
 "書源地址" = "Source URL";
-"書源已立即更新，書庫和替換規則將在重啟 App 後完全生效" = "Book sources were updated immediately. The library and replacement rules will fully apply after restarting the app.";
+"資料已還原，書庫與替換規則已即時更新" = "Data restored. The library and replacement rules have been updated immediately.";
 "書源已被刪除" = "Source has been deleted";
 "書源未設定 loginUrl" = "The book source has no loginUrl configured";
 "書源登入" = "Book Source Login";
@@ -305,8 +305,11 @@
 "確定要刪除選中的" = "Delete the selected";
 "確定要從書架刪除" = "Remove from Library";
 "確認" = "OK";
+"確認從外部來源匯入書源？" = "Import book source from this external source?";
+"確認匯入" = "Import";
 "確認刪除" = "Confirm Delete";
 "確認書籍資訊" = "Confirm Book Info";
+"來源：" = "Source:";
 "秒翻一頁" = "sec/page";
 "移除" = "Remove";
 "章" = "ch.";

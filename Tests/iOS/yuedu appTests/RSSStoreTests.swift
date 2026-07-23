@@ -84,6 +84,69 @@ struct RSSStoreTests {
         #expect(article.isFavorite)
     }
 
+    @Test("merge tolerates duplicate-id items from a feed (regression for Crashlytics 5dd3bb...)")
+    func mergeToleratesDuplicateIDItems() throws {
+        let store = RSSStore(storageDirectory: try temporaryDirectory())
+        let source = RSSSource(id: "source-1", name: "BBC", url: "https://feed.example/rss")
+        store.addSource(source)
+
+        // Real-world feeds fall back to link/title for uniqueID and routinely
+        // emit duplicates. Before the fix, Dictionary(uniqueKeysWithValues:)
+        // trapped on the second refresh. Keep-first/feed-order dedupe is the
+        // contract.
+        let items = [
+            RSSItem(id: "dup", title: "First", link: "https://example.com/a",
+                    pubDate: nil, description: "v1", author: nil, sourceId: source.id),
+            RSSItem(id: "dup", title: "Second", link: "https://example.com/b",
+                    pubDate: nil, description: "v2", author: nil, sourceId: source.id),
+            RSSItem(id: "unique", title: "Third", link: "https://example.com/c",
+                    pubDate: nil, description: "v3", author: nil, sourceId: source.id)
+        ]
+        store.mergeFetchedItems(items, for: source.id)
+
+        let records = store.articles(for: source.id).map(\.id).sorted()
+        #expect(records == ["dup", "unique"])
+        #expect(store.articles(for: source.id).first { $0.id == "dup" }?.summary == "v1")
+    }
+
+    @Test("merge self-heals a cache already corrupted with duplicate ids")
+    func mergeSelfHealsCorruptedCache() throws {
+        let directory = try temporaryDirectory()
+        let source = RSSSource(id: "source-1", name: "BBC", url: "https://feed.example/rss")
+        let sourcesURL = directory.appendingPathComponent("rss_sources.json")
+        let articlesURL = directory.appendingPathComponent("rss_articles.json")
+
+        try JSONEncoder().encode([source])!.write(to: sourcesURL)
+
+        // Simulate a pre-fix persisted cache with two records sharing the same
+        // id (the corruption that caused the original crash).
+        let now = Date()
+        let corrupted: [String: [RSSArticleRecord]] = [
+            source.id: [
+                RSSArticleRecord(item: RSSItem(id: "dup", title: "Old A",
+                                                link: "https://example.com/a", pubDate: nil,
+                                                description: "old a", author: nil, sourceId: source.id),
+                                 fetchedAt: now),
+                RSSArticleRecord(item: RSSItem(id: "dup", title: "Old B",
+                                                link: "https://example.com/b", pubDate: nil,
+                                                description: "old b", author: nil, sourceId: source.id),
+                                 fetchedAt: now)
+            ]
+        ]
+        try JSONEncoder().encode(corrupted)!.write(to: articlesURL)
+
+        let store = RSSStore(storageDirectory: directory)
+
+        // This call used to trap inside _NativeDictionary.merge/assertionFailure.
+        let refresh = RSSItem(id: "dup", title: "Fresh", link: "https://example.com/a",
+                              pubDate: nil, description: "fresh", author: nil, sourceId: source.id)
+        store.mergeFetchedItems([refresh], for: source.id)
+
+        let dupRecords = store.articles(for: source.id).filter { $0.id == "dup" }
+        #expect(dupRecords.count == 1)
+        #expect(dupRecords.first?.title == "Fresh")
+    }
+
     @Test("refresh merge reports only newly inserted unread articles after initial cache")
     func refreshMergeReportsNewUnreadArticles() throws {
         let store = RSSStore(storageDirectory: try temporaryDirectory())

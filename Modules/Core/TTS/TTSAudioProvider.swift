@@ -6,6 +6,7 @@ struct ImportedTTSSource: Identifiable, Codable, Equatable {
     let urlTemplate: String
     let headers: [String: String]
     let loginUi: String?
+    let loginUrl: String?
     let loginCheckJs: String?
     let contentType: String?
     let concurrentRate: String?
@@ -16,6 +17,7 @@ struct ImportedTTSSource: Identifiable, Codable, Equatable {
         sourceID: String? = nil,
         headers: [String: String] = [:],
         loginUi: String? = nil,
+        loginUrl: String? = nil,
         loginCheckJs: String? = nil,
         contentType: String? = nil,
         concurrentRate: String? = nil
@@ -26,6 +28,7 @@ struct ImportedTTSSource: Identifiable, Codable, Equatable {
         self.urlTemplate = trimmedURL
         self.headers = headers
         self.loginUi = loginUi
+        self.loginUrl = loginUrl
         self.loginCheckJs = loginCheckJs
         self.contentType = contentType
         self.concurrentRate = concurrentRate
@@ -35,7 +38,7 @@ struct ImportedTTSSource: Identifiable, Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, urlTemplate, headers
-        case loginUi, loginCheckJs, contentType, concurrentRate
+        case loginUi, loginUrl, loginCheckJs, contentType, concurrentRate
     }
 }
 
@@ -65,15 +68,17 @@ enum TTSSourceJSONParser {
             let headers = parsedHeaders(from: value(for: "header", in: dictionary))
                 .merging(parsedHeaders(from: value(for: "headers", in: dictionary))) { _, new in new }
             let loginUi = firstString(in: dictionary, keys: ["loginUi"])
+            let loginUrl = firstString(in: dictionary, keys: ["loginUrl"])
             let loginCheckJs = firstString(in: dictionary, keys: ["loginCheckJs"])
             let contentType = firstString(in: dictionary, keys: ["contentType"])
             let concurrentRate = firstString(in: dictionary, keys: ["concurrentRate"])
             let source = ImportedTTSSource(
                 name: name,
-                urlTemplate: url,
+                urlTemplate: url ?? "",
                 sourceID: sourceID,
                 headers: headers,
                 loginUi: loginUi,
+                loginUrl: loginUrl,
                 loginCheckJs: loginCheckJs,
                 contentType: contentType,
                 concurrentRate: concurrentRate
@@ -470,16 +475,57 @@ final class CustomHTTPProvider: TTSAudioProvider {
                 LoginManager.shared.storeLoginInfo(sourceUrl: sourceId, info: dict)
             }
         }
+        engine.sourceBridge.removeLoginInfoHandler = {
+            LoginManager.shared.clearLogin(sourceUrl: sourceId)
+        }
+        engine.sourceBridge.removeLoginHeaderHandler = {
+            LoginManager.shared.clearLogin(sourceUrl: sourceId)
+        }
+
         var loginHeaders: [String: String] = [:]
         engine.sourceBridge.putLoginHeaderHandler = { header in
             if let d = header.data(using: .utf8),
                let dict = try? JSONSerialization.jsonObject(with: d) as? [String: String] {
                 loginHeaders.merge(dict) { _, new in new }
                 LoginManager.shared.storeLoginHeaders(sourceUrl: sourceId, headers: dict)
+            } else {
+                var info = LoginManager.shared.getLoginInfo(sourceUrl: sourceId) ?? [:]
+                info["__tts_header"] = header
+                LoginManager.shared.storeLoginInfo(sourceUrl: sourceId, info: info)
             }
+        }
+        engine.sourceBridge.getLoginHeaderHandler = {
+            if let info = LoginManager.shared.getLoginInfo(sourceUrl: sourceId),
+               let state = info["__tts_header"] {
+                return state
+            }
+            return LoginManager.shared.getLoginHeader(sourceUrl: sourceId)
         }
         engine.sourceBridge.getHeaderMapHandler = {
             LoginManager.shared.getLoginHeaders(sourceUrl: sourceId)
+        }
+
+        engine.sourceBridge.getVariableHandler = {
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceId)?["__tts_variable"]
+        }
+        engine.sourceBridge.setVariableHandler = { val in
+            var info = LoginManager.shared.getLoginInfo(sourceUrl: sourceId) ?? [:]
+            info["__tts_variable"] = val ?? ""
+            LoginManager.shared.storeLoginInfo(sourceUrl: sourceId, info: info)
+        }
+
+        engine.sourceBridge.getKeyValueHandler = { key in
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceId)?[key]
+        }
+        engine.sourceBridge.putKeyValueHandler = { key, value in
+            var info = LoginManager.shared.getLoginInfo(sourceUrl: sourceId) ?? [:]
+            info[key] = value
+            LoginManager.shared.storeLoginInfo(sourceUrl: sourceId, info: info)
+        }
+
+        // Evaluate loginUrl JS first if present (defines shared functions/variables)
+        if let loginUrl = source?.loginUrl, !loginUrl.isEmpty {
+            engine.evaluate(loginUrl, result: nil, bindings: [:])
         }
 
         // Prepare JS with speakText/speakSpeed bindings

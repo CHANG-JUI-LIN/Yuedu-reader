@@ -212,10 +212,30 @@ final class RSSStore: ObservableObject {
     @discardableResult
     func mergeFetchedItems(_ items: [RSSItem], for sourceID: String) -> [RSSArticleRecord] {
         let existingRecords = cachedArticlesBySource[sourceID] ?? []
-        let existingByID = Dictionary(uniqueKeysWithValues: existingRecords.map { ($0.id, $0) })
+
+        // Real-world feeds (and Legado custom-rule sources whose uniqueID
+        // falls back to link then title) routinely emit duplicate GUIDs, which
+        // become duplicate RSSItem.id. A prior build persisted those duplicates
+        // into cachedArticlesBySource, and the uniqueKeysWithValues initializer
+        // traps on duplicate keys — Crashlytics 5dd3bb... (main-thread
+        // assertionFailure inside _NativeDictionary.merge). Build the lookup
+        // crash-safely so an already-corrupted cache self-heals on the next
+        // refresh instead of taking the app down. This is an invariant guard
+        // for cached article records (keyed by id must be unique); it is not a
+        // retry/alternate path and stays even after the parser is hardened,
+        // because feed GUIDs are external data we cannot trust to be unique.
+        let existingByID = Dictionary(existingRecords.map { ($0.id, $0) },
+                                      uniquingKeysWith: { first, _ in first })
+
         let hadExistingCache = !existingRecords.isEmpty
         let fetchedAt = Date()
-        let mergedRecords = items.map { item in
+
+        // Same root cause: dedupe incoming items by id (keep first occurrence /
+        // feed order) so we never persist duplicate records in the first place.
+        var seenIDs = Set<String>()
+        let dedupedItems = items.filter { seenIDs.insert($0.id).inserted }
+
+        let mergedRecords = dedupedItems.map { item in
             var record = RSSArticleRecord(item: item, fetchedAt: fetchedAt, status: articleStatuses[item.id])
             if let oldRecord = existingByID[item.id] {
                 record.fullText = oldRecord.fullText

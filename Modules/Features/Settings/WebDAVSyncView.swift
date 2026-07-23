@@ -193,7 +193,7 @@ struct WebDAVSyncView: View {
             try await manager.restore()
             await MainActor.run {
                 alertTitle   = localized("還原成功")
-                alertMessage = localized("書源已立即更新，書庫和替換規則將在重啟 App 後完全生效")
+                alertMessage = localized("資料已還原，書庫與替換規則已即時更新")
                 showAlert    = true
             }
         } catch {

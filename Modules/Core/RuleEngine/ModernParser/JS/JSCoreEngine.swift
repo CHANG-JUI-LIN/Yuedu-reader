@@ -814,6 +814,166 @@ class JSCoreEngine {
                 this.JavaImporter = JavaImporter;
             })();
         """)
+
+        // org.jsoup.Jsoup polyfill.
+        // Legado Android uses Rhino with full Java interop, so book sources can call
+        // `org.jsoup.Jsoup.connect(url).execute().body()` directly. JavaScriptCore has
+        // no Java interop, so `org` is undefined → "undefined is not an object" crashes
+        // obfuscated content scripts (e.g. 番茄酱's remote `to.js`). This polyfill delegates
+        // HTTP to the existing `java.ajax` (GET) / `java.post` (POST) bridges. Response
+        // headers are not available through `java.ajax` (it returns body only), so
+        // `headers().get(name)` returns null — sources that rely on ETag caching fall
+        // back to their catch block, which is the existing behaviour.
+        ctx.evaluateScript("""
+            (function () {
+                function Connection(url) {
+                    this._url = String(url || '');
+                    this._method = 'GET';
+                    this._headers = {};
+                    this._data = {};
+                    this._timeout = 10000;
+                    this._ua = '';
+                    this._referrer = '';
+                    this._body = null;
+                }
+                var P = Connection.prototype;
+                P.method = function (m) { this._method = (typeof m === 'string') ? m : (m && m.name) || 'GET'; return this; };
+                P.header = function (k, v) { this._headers[k] = String(v); return this; };
+                P.headers = function (h) { if (h) for (var k in h) this._headers[k] = String(h[k]); return this; };
+                P.data = function (k, v) {
+                    if (arguments.length === 1 && typeof k === 'object') { for (var key in k) this._data[key] = String(k[key]); }
+                    else { this._data[k] = String(v); }
+                    return this;
+                };
+                P.requestBody = function (b) { this._body = (arguments.length === 0) ? null : String(b); return this; };
+                P.cookie = function (k, v) { return this; };
+                P.ignoreContentType = function (b) { return this; };
+                P.timeout = function (ms) { this._timeout = parseInt(ms) || 10000; return this; };
+                P.userAgent = function (ua) { this._ua = String(ua); return this; };
+                P.referrer = function (r) { this._referrer = String(r); return this; };
+                P.followRedirects = function (b) { return this; };
+                P.sslSocketFactory = function () { return this; };
+                P.execute = function () { return new Response(this._fetch(), this._url); };
+                P.get = function () { this._method = 'GET'; return JsoupParse(this._fetch(), this._url); };
+                P.post = function () { this._method = 'POST'; return JsoupParse(this._fetch(), this._url); };
+                P._fetch = function () {
+                    var url = this._url, pairs = [], hasData = false;
+                    for (var k in this._data) { hasData = true; pairs.push(encodeURIComponent(k) + '=' + encodeURIComponent(this._data[k])); }
+                    var dataStr = pairs.join('&');
+                    if (this._method === 'POST' || this._method === 'PUT') {
+                        var body = this._body || dataStr;
+                        var hdrs = this._headers;
+                        if (dataStr && !this._body && !hdrs['Content-Type']) hdrs['Content-Type'] = 'application/x-www-form-urlencoded';
+                        var r = java.post(url, body, hdrs);
+                        return (r && typeof r.body === 'function') ? r.body() : String(r || '');
+                    }
+                    if (hasData) url += (url.indexOf('?') < 0 ? '?' : '&') + dataStr;
+                    return java.ajax(url);
+                };
+                function Response(body, url) { this._body = body || ''; this._url = url; }
+                var RP = Response.prototype;
+                RP.body = function () { return this._body; };
+                RP.text = function () { return this._body; };
+                RP.html = function () { return this._body; };
+                RP.header = function (n) { return null; };
+                RP.get = function (n) { return null; };
+                RP.headers = function () { return { get: function () { return null; }, has: function () { return false; }, size: function () { return 0; } }; };
+                RP.statusCode = function () { return 200; };
+                RP.contentType = function () { return 'text/html'; };
+                RP.url = function () { return this._url; };
+                RP.parse = function () { return JsoupParse(this._body, this._url); };
+                RP.statusMessage = function () { return 'OK'; };
+
+                function Element(html, baseUrl) { this._html = html || ''; this._baseUrl = baseUrl || ''; }
+                var EP = Element.prototype;
+                EP.html = function () { return this._html; };
+                EP.text = function () { return this._html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' '); };
+                EP.outerHtml = function () { return this._html; };
+                EP.toString = function () { return this._html; };
+                EP.attr = function (k, v) { if (arguments.length === 2) { return this; } return ''; };
+                EP.select = function () { return new Elements([]); };
+                EP.first = function () { return null; };
+                EP.last = function () { return null; };
+                EP.children = function () { return new Elements([]); };
+                EP.child = function () { return null; };
+                EP.parent = function () { return null; };
+                EP.nextElementSibling = function () { return null; };
+                EP.previousElementSibling = function () { return null; };
+                EP.appendChild = function (el) { return this; };
+                EP.prependChild = function (el) { return this; };
+                EP.remove = function () { return this; };
+                EP.tagName = function () { return 'div'; };
+                EP.id = function () { return ''; };
+                EP.className = function () { return ''; };
+                EP.hasClass = function () { return false; };
+                EP.getElements = function () { return new Elements([]); };
+                EP.getAllElements = function () { return new Elements([]); };
+                EP.getElementById = function () { return null; };
+                EP.getElementsByClass = function () { return new Elements([]); };
+                EP.getElementsByTag = function () { return new Elements([]); };
+                EP.getElementsByAttribute = function () { return new Elements([]); };
+                EP.getElementsByAttributeValue = function () { return new Elements([]); };
+                EP.getElementsByAttributeValueContaining = function () { return new Elements([]); };
+                EP.absUrl = function () { return ''; };
+                EP.baseUri = function () { return this._baseUrl; };
+                EP.parentNode = function () { return null; };
+                EP.wholeText = function () { return this.text(); };
+                EP.data = function () { return ''; };
+                EP.val = function () { return ''; };
+                EP.textNode = function () { return this.text(); };
+                EP.nodeName = function () { return '#text'; };
+                EP.hasAttr = function () { return false; };
+                EP.removeAttr = function () { return this; };
+
+                function Elements(arr) { this._arr = arr || []; }
+                var ESP = Elements.prototype;
+                ESP.size = function () { return this._arr.length; };
+                ESP.size2 = function () { return this._arr.length; };
+                Object.defineProperty(ESP, 'length', { get: function () { return this._arr.length; }, configurable: true });
+                ESP.get = function (i) { return this._arr[i] || null; };
+                ESP.first = function () { return this._arr[0] || null; };
+                ESP.last = function () { return this._arr[this._arr.length - 1] || null; };
+                ESP.text = function () { return this._arr.map(function (e) { return e.text(); }).join(''); };
+                ESP.html = function () { return this._arr.map(function (e) { return e.html(); }).join(''); };
+                ESP.each = function (fn) { this._arr.forEach(fn); return this; };
+                ESP.forEach = function (fn) { this._arr.forEach(fn); return this; };
+                ESP.attr = function () { return this._arr[0] ? this._arr[0].attr.apply(this._arr[0], arguments) : ''; };
+                ESP.hasAttr = function () { return false; };
+                ESP.select = function () { return new Elements([]); };
+                ESP.not = function () { return this; };
+                ESP.eq = function (i) { return new Elements([this._arr[i]]); };
+                ESP.is = function () { return false; };
+                ESP.empty = function () { return this._arr.length === 0; };
+                ESP.iterator = function () { return this._arr[Symbol.iterator](); };
+                ESP[Symbol.iterator] = function () { return this._arr[Symbol.iterator](); };
+
+                function Document(html, baseUrl) { Element.call(this, html, baseUrl); }
+                Document.prototype = Object.create(Element.prototype);
+                Document.prototype.constructor = Document;
+                Document.prototype.body = function () { return new Element(this._html, this._baseUrl); };
+                Document.prototype.head = function () { return new Element('', this._baseUrl); };
+                Document.prototype.title = function () { var m = this._html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i); return m ? m[1].trim() : ''; };
+                Document.prototype.select = function () { return new Elements([]); };
+                Document.prototype.setBaseUri = function () { return this; };
+                Document.prototype.outputSettings = function () { return this; };
+
+                function JsoupParse(html, baseUrl) { return new Document(html, baseUrl); }
+
+                var Method = { GET: 'GET', POST: 'POST', HEAD: 'HEAD', PUT: 'PUT', DELETE: 'DELETE', OPTIONS: 'OPTIONS', PATCH: 'PATCH', TRACE: 'TRACE' };
+
+                this.org = {
+                    jsoup: {
+                        Jsoup: { connect: function (url) { return new Connection(url); }, parse: function (h, b) { return JsoupParse(h, b); }, parseBodyFragment: function (h, b) { return JsoupParse(h, b); }, clean: function (h) { return h; } },
+                        Connection: { Method: Method, Response: Response, KeyVal: { create: function (k, v) { return { key: function () { return k; }, value: function () { return v; } }; } } },
+                        nodes: { Document: Document, Element: Element, TextNode: Element },
+                        safety: { Clean: { clean: function (h) { return h; } } },
+                        select: { Selector: { select: function () { return new Elements([]); } } },
+                        parser: { Parser: { parse: function (h, b) { return JsoupParse(h, b); } } },
+                        helper: { HttpConnection: { connect: function (url) { return new Connection(url); } } }
+                    }
+                };
+            })();
+        """)
     }
 
     /// Some Legado/Rhino source scripts read current-chapter fields as bare globals

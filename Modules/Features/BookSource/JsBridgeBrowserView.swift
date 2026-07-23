@@ -376,26 +376,9 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         }
 
         static func onlineImportSourceURL(from url: URL) -> URL? {
-            guard let scheme = url.scheme?.lowercased() else { return nil }
-            let host = url.host?.lowercased()
-
-            // Our own scheme: yuedu://booksource/importOnline?src=URL
-            let isYueduImport = scheme == "yuedu"
-                && host == "booksource"
-                && url.path.lowercased() == "/importonline"
-            // Legado deep link: legado://import/{auto,bookSource,bookSourceUrl,…}?src=URL
-            // The 更新書源 download button on 書源 sites emits this form.
-            let isLegadoImport = scheme == "legado" && host == "import"
-
-            guard isYueduImport || isLegadoImport,
-                  let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                  let sourceString = components.queryItems?.first(where: {
-                      let name = $0.name.lowercased()
-                      return name == "src" || name == "url"
-                  })?.value else {
-                return nil
-            }
-            return URL(string: sourceString)
+            // Single source of truth: shared with the system-level deep-link
+            // handler in `yuedu_appApp`. One path for this concern.
+            BookSourceImportDeepLink.sourceURL(from: url)
         }
 
         static func cookiesForInitialLoad(url: URL) -> [HTTPCookie] {

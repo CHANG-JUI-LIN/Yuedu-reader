@@ -1,15 +1,32 @@
 import SwiftUI
+import GoogleSignIn
 
 @main
 struct yuedu_appApp: App {
     @UIApplicationDelegateAdaptor(RSSAppNotificationDelegate.self) private var rssNotificationDelegate
     @StateObject private var bookStore = BookStore()
     @StateObject private var subscriptionStore = SubscriptionStore.shared
+    @StateObject private var bookSourceDeepLinkHandler = BookSourceDeepLinkHandler()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
         UserFontStorageManager.shared.registerAllOnLaunch()
         GlobalSettings.shared.validateGlobalFontSelection()
+    }
+
+    /// Presents the book-source import sheet whenever the deep-link handler
+    /// is in any non-`.idle` phase. Dismiss is driven by `finish()` /
+    /// `cancel()`, which flip back to `.idle` and let SwiftUI animate the sheet
+    /// down naturally instead of fighting a separate `isPresented` flag.
+    private var bookSourceImportSheetBinding: Binding<Bool> {
+        Binding(
+            get: { bookSourceDeepLinkHandler.phase != .idle },
+            set: { presented in
+                if !presented, bookSourceDeepLinkHandler.phase != .idle {
+                    bookSourceDeepLinkHandler.finish()
+                }
+            }
+        )
     }
 
     var body: some Scene {
@@ -18,6 +35,20 @@ struct yuedu_appApp: App {
                 .environmentObject(bookStore)
                 .environmentObject(subscriptionStore)
                 .environment(\.appDependencies, .live)
+                .onOpenURL { incomingURL in
+                    // Google Sign-In OAuth callback: hand off first so a Google
+                    // sign-in round-trip completes. `handle(_:)` returns false
+                    // for non-Google URLs, in which case we route to book-source
+                    // import. Routing one concern per URL keeps a deep link from
+                    // accidentally invoking both handlers.
+                    if GIDSignIn.sharedInstance.handle(incomingURL) {
+                        return
+                    }
+                    bookSourceDeepLinkHandler.handle(url: incomingURL)
+                }
+                .sheet(isPresented: bookSourceImportSheetBinding) {
+                    BookSourceImportConfirmSheet(handler: bookSourceDeepLinkHandler)
+                }
                 .onAppear {
                     CoreTextFontRegistrationService.cleanupStaleTemporaryFonts()
                     // Remove the retired discover-page cache directory written by
@@ -33,6 +64,7 @@ struct yuedu_appApp: App {
                     FirestoreSyncManager.shared.bind(bookStore: bookStore)
                     ICloudSyncManager.shared.bind(bookStore: bookStore)
                     SharedImportQueueDrainer.shared.bind(bookStore: bookStore)
+                    WebDAVManager.shared.bind(bookStore: bookStore)
                     _ = FirebaseAuthManager.shared
                     Task {
                         await AppDependencies.live.offlineDownloadManager

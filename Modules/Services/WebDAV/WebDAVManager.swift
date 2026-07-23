@@ -1,6 +1,13 @@
 import Foundation
 import Combine
 import UIKit
+import os
+
+/// Diagnostic log for WebDAV backup/restore. Watch on device via Console.app
+/// (filter subsystem `com.yuedu.app`, category `webdav`). Every HTTP call logs
+/// its method, path, and either the status code or the URLError code, so a
+/// transport-layer failure (-1005 etc.) is diagnosable without guessing.
+private let webdavLog = Logger(subsystem: "com.yuedu.app", category: "webdav")
 
 // MARK: - WebDAV Error Types
 
@@ -81,6 +88,27 @@ final class WebDAVManager: ObservableObject {
         return id
     }
 
+    /// Bound at launch so a restore can reload the live bookshelf without
+    /// requiring an app restart. Mirrors `ICloudSyncManager.bind(bookStore:)`.
+    private weak var boundBookStore: BookStore?
+
+    /// Dedicated session for WebDAV. `URLSession.shared` reuses pooled
+    /// connections aggressively and surfaces a dropped keep-alive connection as
+    /// `URLError.networkConnectionLost` (-1005) — common against jianguoyun and
+    /// other WebDAV servers that close idle connections fast. A dedicated
+    /// session with `waitsForConnectivity` plus the one-shot transport retry in
+    /// `send(_:)` mirrors OkHttp's `retryOnConnectionFailure(true)` (see legado
+    /// `HttpHelper.kt`), which is what keeps legado's WebDAV client stable
+    /// against the same servers.
+    private static let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.waitsForConnectivity = true
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 300
+        config.httpShouldUsePipelining = false
+        return URLSession(configuration: config)
+    }()
+
     // MARK: Initialization
 
     private init() {
@@ -88,6 +116,37 @@ final class WebDAVManager: ObservableObject {
         username     = UserDefaults.standard.string(forKey: "webdav_username") ?? ""
         password     = UserDefaults.standard.string(forKey: "webdav_password") ?? ""
         lastSyncDate = UserDefaults.standard.object(forKey: "webdav_last_sync") as? Date
+    }
+
+    /// Bind the live bookshelf so `restore()` can refresh it in place. Call once
+    /// at app launch (mirrors the iCloud/Firestore bind in `yuedu_appApp`).
+    func bind(bookStore: BookStore) {
+        boundBookStore = bookStore
+    }
+
+    // MARK: - Transport
+
+    /// Executes a WebDAV request on the dedicated session, retrying **once** on
+    /// transient connection-level failures (`networkConnectionLost`, `timedOut`).
+    /// This is NOT a fallback for a failing primary path and does NOT retry
+    /// business status codes (401/404/5xx are returned as-is). It handles real
+    /// TCP keep-alive drops that happen when a server closes an idle connection
+    /// that the session has just reused — the same class of failure OkHttp's
+    /// `retryOnConnectionFailure(true)` recovers from. Safe to delete once the
+    /// WebDAV server in use stops dropping idle keep-alive connections.
+    private func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        do {
+            return try await Self.session.data(for: request)
+        } catch {
+            guard Self.isTransientConnectionError(error) else { throw error }
+            webdavLog.notice("retry \(request.httpMethod ?? "GET", privacy: .public) \(request.url?.path ?? "", privacy: .public) after transient \(String(describing: (error as? URLError)?.code), privacy: .public)")
+            return try await Self.session.data(for: request)
+        }
+    }
+
+    private static func isTransientConnectionError(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        return urlError.code == .networkConnectionLost || urlError.code == .timedOut
     }
 
     // MARK: - Authentication
@@ -225,9 +284,17 @@ final class WebDAVManager: ObservableObject {
             try rulesData.write(to: url, options: .atomic)
         }
 
+        // Reload the in-memory stores from the just-restored files so the
+        // bookshelf and replace-rule list update live, mirroring the iCloud
+        // restore path. Book sources were already reloaded above.
+        await MainActor.run {
+            boundBookStore?.reloadFromDisk()
+            ReplaceRuleStore.shared.reloadFromDisk()
+        }
+
         await MainActor.run {
             self.lastSyncDate = Date()
-            self.statusMessage = "還原成功，書庫和替換規則需重啟 App 後完全生效"
+            self.statusMessage = "還原成功"
         }
     }
 
@@ -240,9 +307,15 @@ final class WebDAVManager: ObservableObject {
         request.setValue("0", forHTTPHeaderField: "Depth")
         request.setValue("application/xml", forHTTPHeaderField: "Content-Type")
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { return false }
-        return http.statusCode == 200 || http.statusCode == 207
+        do {
+            let (_, response) = try await send(request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            webdavLog.notice("PROPFIND \(path, privacy: .public) → \(http.statusCode)")
+            return http.statusCode == 200 || http.statusCode == 207
+        } catch {
+            webdavLog.error("PROPFIND \(path, privacy: .public) failed: \(String(describing: (error as? URLError)?.code), privacy: .public) \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
     }
 
     /// MKCOL: Create directory (ignore 405 = already exists).
@@ -250,10 +323,18 @@ final class WebDAVManager: ObservableObject {
         var request = try makeRequest(path: path)
         request.httpMethod = "MKCOL"
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { return }
-        if http.statusCode != 201 && http.statusCode != 405 && http.statusCode != 200 {
-            throw WebDAVError.connectionFailed(http.statusCode)
+        do {
+            let (_, response) = try await send(request)
+            guard let http = response as? HTTPURLResponse else { return }
+            webdavLog.notice("MKCOL \(path, privacy: .public) → \(http.statusCode)")
+            if http.statusCode != 201 && http.statusCode != 405 && http.statusCode != 200 {
+                throw WebDAVError.connectionFailed(http.statusCode)
+            }
+        } catch let error as WebDAVError {
+            throw error
+        } catch {
+            webdavLog.error("MKCOL \(path, privacy: .public) failed: \(String(describing: (error as? URLError)?.code), privacy: .public) \(error.localizedDescription, privacy: .public)")
+            throw error
         }
     }
 
@@ -264,11 +345,19 @@ final class WebDAVManager: ObservableObject {
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.httpBody = data
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { return }
-        if http.statusCode == 401 { throw WebDAVError.authenticationFailed }
-        if !(200...299).contains(http.statusCode) {
-            throw WebDAVError.connectionFailed(http.statusCode)
+        do {
+            let (_, response) = try await send(request)
+            guard let http = response as? HTTPURLResponse else { return }
+            webdavLog.notice("PUT \(path, privacy: .public) \(data.count)B → \(http.statusCode)")
+            if http.statusCode == 401 { throw WebDAVError.authenticationFailed }
+            if !(200...299).contains(http.statusCode) {
+                throw WebDAVError.connectionFailed(http.statusCode)
+            }
+        } catch let error as WebDAVError {
+            throw error
+        } catch {
+            webdavLog.error("PUT \(path, privacy: .public) \(data.count)B failed: \(String(describing: (error as? URLError)?.code), privacy: .public) \(error.localizedDescription, privacy: .public)")
+            throw error
         }
     }
 
@@ -277,14 +366,22 @@ final class WebDAVManager: ObservableObject {
         var request = try makeRequest(path: path)
         request.httpMethod = "GET"
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw WebDAVError.noData }
-        if http.statusCode == 401 { throw WebDAVError.authenticationFailed }
-        if http.statusCode == 404 { throw WebDAVError.fileNotFound }
-        if !(200...299).contains(http.statusCode) {
-            throw WebDAVError.connectionFailed(http.statusCode)
+        do {
+            let (data, response) = try await send(request)
+            guard let http = response as? HTTPURLResponse else { throw WebDAVError.noData }
+            webdavLog.notice("GET \(path, privacy: .public) → \(http.statusCode) \(data.count)B")
+            if http.statusCode == 401 { throw WebDAVError.authenticationFailed }
+            if http.statusCode == 404 { throw WebDAVError.fileNotFound }
+            if !(200...299).contains(http.statusCode) {
+                throw WebDAVError.connectionFailed(http.statusCode)
+            }
+            return data
+        } catch let error as WebDAVError {
+            throw error
+        } catch {
+            webdavLog.error("GET \(path, privacy: .public) failed: \(String(describing: (error as? URLError)?.code), privacy: .public) \(error.localizedDescription, privacy: .public)")
+            throw error
         }
-        return data
     }
 
     // MARK: - Utilities
