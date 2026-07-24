@@ -152,11 +152,22 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
     }
 
     private func chapterText(at index: Int) -> String? {
+        let rawText: String?
         if mappedChapterIndexes.indices.contains(index), let mappedTextFile {
-            return TXTChapterParser.chapterText(mappedTextFile, byteRange: mappedChapterIndexes[index].byteRange)
+            rawText = TXTChapterParser.chapterText(mappedTextFile, byteRange: mappedChapterIndexes[index].byteRange)
+        } else if chapterIndexes.indices.contains(index), let text {
+            rawText = TXTChapterParser.chapterText(text, range: chapterIndexes[index].contentRange)
+        } else {
+            rawText = nil
         }
 
-        guard chapterIndexes.indices.contains(index), let text else { return nil }
-        return TXTChapterParser.chapterText(text, range: chapterIndexes[index].contentRange)
+        guard var result = rawText else { return nil }
+
+        let globalRules = ReplaceRuleStore.shared.rules(for: "")
+        if !globalRules.isEmpty {
+            result = ReplaceRuleEngine.apply(globalRules, to: result)
+        }
+
+        return result
     }
 }

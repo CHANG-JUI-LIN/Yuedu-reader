@@ -396,22 +396,16 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         ])
         #endif
 
+        let result: AttributedChapterBuildResult
         switch payload.body {
         case .html(let rawHTML):
-            // ⟐ 本章说 probe: does the chapter content actually carry the chapter-comment card and
-            // per-paragraph bubbles the source's getComments() is supposed to inject? The card's
-            // click action `androidshowChapterComments(...)` and the bubble action `showCmt(...)`
-            // survive as literal text in the img click-config suffix (not base64), so we can detect
-            // them in the raw HTML BEFORE any rendering. hasCard=false ⇒ the source/API never built
-            // the card (server side); hasCard=true but no card on screen ⇒ an app render failure
-            // (follow the matching ⟐ imgLoad / svgRaster lines for that SVG).
             AppLogger.render("⟐ ccsCard", context: [
                 "chapter": index,
                 "hasCard": rawHTML.contains("androidshowChapterComments"),
                 "bubbles": rawHTML.components(separatedBy: "showCmt(").count - 1,
                 "len": rawHTML.count
             ])
-            return await buildHTMLChapter(
+            result = await buildHTMLChapter(
                 payload: payload,
                 html: ReaderHTMLUtilities.rewriteReviewComments(rawHTML),
                 settings: settings,
@@ -419,7 +413,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 themeBackgroundColor: themeBackgroundColor
             )
         case .plainText(let text):
-            return await buildPlainTextChapter(
+            result = await buildPlainTextChapter(
                 payload: payload,
                 text: text,
                 settings: settings,
@@ -427,6 +421,60 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 themeBackgroundColor: themeBackgroundColor
             )
         }
+
+        let scopeURL = (provider as? OnlineBookContentProvider)?.replaceRuleScopeURL ?? ""
+        let rules = ReplaceRuleStore.shared.rules(for: scopeURL)
+        guard !rules.isEmpty else { return result }
+
+        return applyReplaceRules(rules, to: result)
+    }
+
+    private func applyReplaceRules(
+        _ rules: [ReplaceRule],
+        to result: AttributedChapterBuildResult
+    ) -> AttributedChapterBuildResult {
+        let mutable = NSMutableAttributedString(attributedString: result.attributedString)
+        let backing = mutable.mutableString
+        var changed = false
+
+        for rule in rules {
+            guard rule.enabled, !rule.pattern.isEmpty else { continue }
+            let range = NSRange(location: 0, length: backing.length)
+            let replacement = Self.legadoToNSReplacement(rule.replacement)
+            if rule.isRegex {
+                guard let regex = try? NSRegularExpression(pattern: rule.pattern) else { continue }
+                let before = backing.length
+                regex.replaceMatches(in: backing, range: range, withTemplate: replacement)
+                if backing.length != before { changed = true }
+            } else {
+                let before = backing.length
+                backing.replaceOccurrences(
+                    of: rule.pattern,
+                    with: rule.replacement,
+                    options: [],
+                    range: range
+                )
+                if backing.length != before { changed = true }
+            }
+        }
+
+        guard changed else { return result }
+
+        return AttributedChapterBuildResult(
+            attributedString: mutable,
+            imagePage: result.imagePage,
+            pageBackgroundImage: result.pageBackgroundImage,
+            pageBackgroundColor: result.pageBackgroundColor,
+            anchorOffsets: result.anchorOffsets
+        )
+    }
+
+    private static func legadoToNSReplacement(_ template: String) -> String {
+        var result = template
+        for i in stride(from: 9, through: 0, by: -1) {
+            result = result.replacingOccurrences(of: "$\(i)", with: "\\\(i)")
+        }
+        return result
     }
 
     private func buildHTMLChapter(

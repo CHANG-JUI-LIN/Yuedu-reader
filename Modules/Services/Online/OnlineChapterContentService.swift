@@ -82,6 +82,12 @@ final class OnlineChapterContentService {
         return makePayload(package: package, ref: ref, index: index)
     }
 
+    var replaceRuleScopeURL: String {
+        book.bookSourceId.flatMap { sourceID in
+            BookSourceStore.shared.sources.first(where: { $0.id == sourceID })?.bookSourceUrl
+        } ?? ""
+    }
+
     // MARK: - Private
 
     private func makePayload(

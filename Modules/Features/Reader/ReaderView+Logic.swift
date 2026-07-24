@@ -296,20 +296,16 @@ extension ReaderView {
     }
 
     func refreshCurrentChapter() {
-        guard book?.onlineChapters?.isEmpty == false else { return }
-        let idx = currentChapterIndex
-        switch ReaderChapterPresentation.manualRefreshAction(
-            isContentAvailable: isChapterContentAvailable(at: idx)
-        ) {
-        case .relayoutCachedContent:
-            // Reader refresh is a rendering operation when validated content is
-            // already present. Never delete readable chapters before a network
-            // request succeeds: authenticated sources may be temporarily 401.
-            AppLogger.render("⟐ chapter refresh relayout cached ch=\(idx)")
-            forceReaderRenderableContentRefresh()
-        case .fetchMissingContent:
-            AppLogger.render("⟐ chapter refresh fetch missing ch=\(idx)")
+        if let b = book, b.isOnline {
+            // For online books the chapter content is cached *after* the current set of
+            // replace rules has been applied.  When the user adds/edits a rule and calls
+            // refresh we must clear that cache and re-fetch so the new rule takes effect.
             retryCurrentChapterLoad()
+        } else if book != nil {
+            // Local TXT/EPUB: replace rules are applied during attributed-string building
+            // (TXTLazyAttributedStringBuilder / MarkdownAttributedStringBuilder).  Invalidate
+            // the layout so the engine rebuilds each chapter through the pipeline again.
+            forceReaderRenderableContentRefresh()
         }
     }
 

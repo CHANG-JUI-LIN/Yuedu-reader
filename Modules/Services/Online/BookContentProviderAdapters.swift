@@ -123,6 +123,8 @@ final class OnlineBookContentProvider: BookContentProvider {
     func contentForChapter(index: Int) async throws -> ChapterContentPayload {
         try await service.payload(at: index, policy: .cacheOnly)
     }
+
+    var replaceRuleScopeURL: String { service.replaceRuleScopeURL }
 }
 
 // MARK: - OnlineReaderProviderBundle

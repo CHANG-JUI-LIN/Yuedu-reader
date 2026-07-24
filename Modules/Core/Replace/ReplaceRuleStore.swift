@@ -145,10 +145,8 @@ final class ReplaceRuleStore: ObservableObject {
     private func installPresets() {
         let presets: [(String, String, String, Bool)] = [
             // (name, pattern, replacement, isRegex)
-            ("移除 HTML 標籤",       "<[^>]+>",                          "",      true),
             ("廣告文字過濾（首行）",  "^\\s*本章節.*?(?=\\n)",              "",      true),
             ("廣告文字過濾（尾行）",  "(?<=\\n).*?閱讀\\s*$",              "",      true),
-            ("水印去除",             "(?i)(www\\.|http)[^\\s，。！？]+",   "",      true),
             ("合并多餘空行",          "\\n{3,}",                           "\n\n",  true),
             ("清除全形空格開頭",      "^[\\u3000\\s]+",                    "",      true),
             ("清除行末空白",          "[\\t ]+$",                          "",      true),

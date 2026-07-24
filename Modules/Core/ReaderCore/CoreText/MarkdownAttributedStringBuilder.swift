@@ -5,7 +5,9 @@ struct MarkdownAttributedStringBuilder: AttributedStringBuilding {
     private let sections: [MarkdownSection]
 
     init(markdown: String, fallbackTitle: String) {
-        self.sections = MarkdownSectionParser.sections(from: markdown, fallbackTitle: fallbackTitle)
+        let globalRules = ReplaceRuleStore.shared.rules(for: "")
+        let processedMarkdown = globalRules.isEmpty ? markdown : ReplaceRuleEngine.apply(globalRules, to: markdown)
+        self.sections = MarkdownSectionParser.sections(from: processedMarkdown, fallbackTitle: fallbackTitle)
     }
 
     var chapterCount: Int { sections.count }
