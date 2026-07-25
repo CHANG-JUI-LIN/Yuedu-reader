@@ -519,15 +519,15 @@ struct OnlineBookView: View {
 
     private var bottomBar: some View {
         HStack(spacing: DSSpacing.md) {
-            Button { addToShelfOnly() } label: {
+            Button { alreadyInShelf ? removeFromShelf() : addToShelfOnly() } label: {
                 HStack(spacing: DSSpacing.sm) {
                     if addingToShelf {
                         ProgressView().controlSize(.small)
                     } else {
-                        Image(systemName: alreadyInShelf ? "checkmark" : "plus")
+                        Image(systemName: alreadyInShelf ? "minus" : "plus")
                     }
                     Text(alreadyInShelf
-                        ? localized("已加入書架")
+                        ? localized("移除書架")
                         : (addingToShelf ? localized("加入中…") : localized("加入書架")))
                 }
                 .font(DSFont.subheadline.weight(.semibold))
@@ -535,8 +535,8 @@ struct OnlineBookView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .tint(DSColor.accent)
-            .disabled(chapters.isEmpty || addingToShelf || alreadyInShelf)
+            .tint(alreadyInShelf ? DSColor.warning : DSColor.accent)
+            .disabled(chapters.isEmpty || addingToShelf)
 
             Button { openReader() } label: {
                 HStack(spacing: DSSpacing.sm) {
@@ -736,6 +736,14 @@ struct OnlineBookView: View {
                 loadingTOC = false
             }
         }
+    }
+
+    /// Remove from shelf.
+    private func removeFromShelf() {
+        guard alreadyInShelf, let bookId = addedBookId else { return }
+        bookStore.delete(bookId: bookId)
+        addedBookId = nil
+        alreadyInShelf = false
     }
 
     /// Add to shelf without opening the reader.
