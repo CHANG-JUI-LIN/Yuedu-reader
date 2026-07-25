@@ -635,7 +635,7 @@ struct ReaderSettingsView: View {
     private var fontSizeBinding: Binding<CGFloat> {
         Binding(
             get: { fontSize },
-            set: { fontSize = min(32, max(12, $0)) }
+            set: { fontSize = min(40, max(10, $0)) }
         )
     }
 

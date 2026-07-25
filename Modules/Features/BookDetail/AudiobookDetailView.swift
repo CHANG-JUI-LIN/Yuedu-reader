@@ -1,10 +1,33 @@
 import SwiftUI
+import os
 import os.log
 
 /// On-device routing diagnostics (Console.app, category `audioroute`): one line per
 /// detail-page tap showing every signal the audio/text routing decision used.
 private let audioRouteLog = Logger(
     subsystem: Bundle.main.bundleIdentifier ?? "com.yuedu.app", category: "audioroute")
+
+/// Last routing decision already logged, per book.
+///
+/// `isAudiobook` is called from `NavigationLink` destination builders, which SwiftUI
+/// evaluates for every visible row on every layout pass (not just on tap, as the log's
+/// "one line per detail-page tap" contract assumes). Emitting there unconditionally
+/// buried the log and re-ran the marker read per pass, so a decision is logged only
+/// when it is new or has changed.
+private let audioRouteLogged = OSAllocatedUnfairLock<[String: OnlineBookContentKind]>(
+    initialState: [:])
+
+/// True when this routing decision has not been logged yet, or differs from the last
+/// one logged for the same book. Bounded so a long search session can't grow it without
+/// limit — dropping the memo only costs a repeated log line.
+private func shouldLogAudioRoute(key: String, kind: OnlineBookContentKind) -> Bool {
+    audioRouteLogged.withLock { logged in
+        if logged[key] == kind { return false }
+        if logged.count > 500 { logged.removeAll(keepingCapacity: true) }
+        logged[key] = kind
+        return true
+    }
+}
 
 // MARK: - Audiobook Detail (unified audiobook landing page)
 
@@ -706,21 +729,25 @@ extension BookSourceStore {
     func isAudiobook(_ book: OnlineBook) -> Bool {
         let source = sources.first { $0.id == book.sourceId }
         let kind = book.inferredContentKind(source: source)
-        let modes = OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
-        audioRouteLog.notice(
-            "⟐ route \(book.name, privacy: .public) → \(String(describing: kind), privacy: .public) srcType=\(source?.bookSourceType ?? -1) modes=\(modes.joined(separator: ","), privacy: .public) vars=\(book.runtimeVariables?.keys.joined(separator: ",") ?? "-", privacy: .public) url=\(String(book.bookUrl.prefix(160)), privacy: .public)"
-        )
+        if shouldLogAudioRoute(key: book.bookUrl, kind: kind) {
+            let modes = OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
+            audioRouteLog.notice(
+                "⟐ route \(book.name, privacy: .public) → \(String(describing: kind), privacy: .public) srcType=\(source?.bookSourceType ?? -1) modes=\(modes.joined(separator: ","), privacy: .public) vars=\(book.runtimeVariables?.keys.joined(separator: ",") ?? "-", privacy: .public) url=\(String(book.bookUrl.prefix(160)), privacy: .public)"
+            )
+        }
         return kind == .audio
     }
 
     func isAudiobook(_ searchBook: SearchBook) -> Bool {
         let kind = searchBook.inferredContentKind(sourceStore: self)
-        let origin = searchBook.origins.first
-        let source = sources.first { $0.id == origin?.sourceId }
-        let modes = OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
-        audioRouteLog.notice(
-            "⟐ route(search) \(searchBook.name, privacy: .public) → \(String(describing: kind), privacy: .public) origins=\(searchBook.origins.count) srcType=\(source?.bookSourceType ?? -1) modes=\(modes.joined(separator: ","), privacy: .public) url=\(String(origin?.bookUrl.prefix(160) ?? ""), privacy: .public)"
-        )
+        if shouldLogAudioRoute(key: searchBook.id.uuidString, kind: kind) {
+            let origin = searchBook.origins.first
+            let source = sources.first { $0.id == origin?.sourceId }
+            let modes = OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
+            audioRouteLog.notice(
+                "⟐ route(search) \(searchBook.name, privacy: .public) → \(String(describing: kind), privacy: .public) origins=\(searchBook.origins.count) srcType=\(source?.bookSourceType ?? -1) modes=\(modes.joined(separator: ","), privacy: .public) url=\(String(origin?.bookUrl.prefix(160) ?? ""), privacy: .public)"
+            )
+        }
         return kind == .audio
     }
 

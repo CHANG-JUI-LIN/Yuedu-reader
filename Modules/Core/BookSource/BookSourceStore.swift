@@ -6,7 +6,15 @@ import Combine
 class BookSourceStore: ObservableObject {
     static let shared = BookSourceStore()
 
-    @Published var sources: [BookSource] = []
+    @Published var sources: [BookSource] = [] {
+        didSet { revision &+= 1 }
+    }
+
+    /// Monotonic counter bumped whenever `sources` changes. Consumers that memoize
+    /// values derived from the source list (content-kind inference on search rows)
+    /// pair this with `BookSourceRuntimeStateStore.stateGeneration` to detect
+    /// staleness in O(1), instead of re-deriving on every SwiftUI layout pass.
+    private(set) var revision: UInt64 = 0
 
     private let fileName = "book_sources.json"
 
