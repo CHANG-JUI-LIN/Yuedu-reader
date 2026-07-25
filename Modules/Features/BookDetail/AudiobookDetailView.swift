@@ -93,6 +93,23 @@ struct AudiobookDetailView: View {
         )
     }
 
+    private static func makeOnlineBook(from origin: BookOrigin, name: String, author: String) -> OnlineBook {
+        OnlineBook(
+            name: name,
+            author: author,
+            intro: origin.intro,
+            coverUrl: origin.coverUrl,
+            bookUrl: origin.bookUrl,
+            tocUrl: origin.tocUrl,
+            wordCount: origin.wordCount,
+            lastChapter: origin.lastChapter,
+            kind: origin.kind,
+            sourceId: origin.sourceId,
+            sourceName: origin.sourceName,
+            runtimeVariables: origin.runtimeVariables
+        )
+    }
+
     // MARK: Display fallbacks (detail overrides search result, never with placeholders)
 
     private var displayName: String {
@@ -168,10 +185,17 @@ struct AudiobookDetailView: View {
         .environment(\.locale, Locale(identifier: gs.localeIdentifier))
         .safeAreaInset(edge: .bottom) { bottomBar }
         .sheet(isPresented: $showSourcePicker) {
-            if let searchBook {
+            if canSwitchSource, let searchBook {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                     SourcePickerSheet(
                         searchBook: searchBook,
+                        onSelectOrigin: { origin in switchToOrigin(origin) }
+                    )
+                }
+            } else {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
+                    SourceSearchSheet(
+                        query: currentBook.name,
                         onSelectOrigin: { origin in switchToOrigin(origin) }
                     )
                 }
@@ -337,7 +361,7 @@ struct AudiobookDetailView: View {
                 .font(DSFont.headline)
 
             Button {
-                if canSwitchSource { showSourcePicker = true }
+                showSourcePicker = true
             } label: {
                 HStack(spacing: DSSpacing.md) {
                     Image(systemName: "globe")
@@ -351,14 +375,12 @@ struct AudiobookDetailView: View {
 
                     Spacer(minLength: DSSpacing.sm)
 
-                    if canSwitchSource {
-                        Text(localized("換源"))
-                            .font(DSFont.caption)
-                            .foregroundStyle(DSColor.accent)
-                        Image(systemName: "chevron.right")
-                            .font(DSFont.caption)
-                            .foregroundStyle(.tertiary)
-                    }
+                    Text(localized("換源"))
+                        .font(DSFont.caption)
+                        .foregroundStyle(DSColor.accent)
+                    Image(systemName: "chevron.right")
+                        .font(DSFont.caption)
+                        .foregroundStyle(.tertiary)
                 }
                 .padding(.horizontal, DSSpacing.lg)
                 .padding(.vertical, DSSpacing.md)
@@ -368,9 +390,8 @@ struct AudiobookDetailView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .allowsHitTesting(canSwitchSource)
             .accessibilityLabel(localized("來源") + " " + sourceName)
-            .accessibilityHint(canSwitchSource ? localized("換源") : "")
+            .accessibilityHint(localized("換源"))
         }
         .padding(.horizontal, DSSpacing.lg)
     }
@@ -494,11 +515,12 @@ struct AudiobookDetailView: View {
     // MARK: Load (detail + TOC via the shared fetcher API)
 
     private func switchToOrigin(_ origin: BookOrigin) {
-        guard let searchBook else { return }
-        let newBook = Self.makeOnlineBook(from: searchBook, origin: origin)
-        // Switch when the SOURCE differs even if the bookUrl matches — sibling
-        // sources sharing one site produce identical bookUrls, so a bookUrl-only
-        // guard would make picking a different source a no-op.
+        let newBook: OnlineBook
+        if let searchBook {
+            newBook = Self.makeOnlineBook(from: searchBook, origin: origin)
+        } else {
+            newBook = Self.makeOnlineBook(from: origin, name: currentBook.name, author: currentBook.author)
+        }
         guard newBook.sourceId != currentBook.sourceId
             || newBook.bookUrl != currentBook.bookUrl else { return }
 

@@ -110,6 +110,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             : fallbackBackgroundColor
         setNeedsDisplay()
         updatePlaybackHighlightOverlay()
+        refreshAccessibility()
     }
 
     func setPlaybackHighlight(text: String?) {
@@ -120,6 +121,86 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     func setTextAnnotations(_ annotations: [CoreTextTextAnnotation]) {
         textAnnotations = annotations
         updateAnnotationOverlay()
+    }
+
+    // MARK: - Accessibility
+
+    /// CoreText draws straight into `draw(_:)`, so without this the page is an empty
+    /// `UIView` to VoiceOver: nothing to focus, and the reader's tap-zone recognizer
+    /// (centre tap → menu) never fires because VoiceOver swallows the touch. Reported
+    /// by a blind user who had to switch VoiceOver off to reach the reading toolbar.
+    /// The page reads as one element carrying the whole page's text, mirroring how
+    /// the tap zones behave: activate → menu, accessibility scroll → page turn.
+
+    /// Routes VoiceOver-originated reader commands. Set by the paged/scroll host,
+    /// which owns the same tap-zone routing these mirror.
+    var onAccessibilityAction: ((TouchAction) -> Void)?
+
+    /// RTL books (including vertical CJK) flip the physical page order, so a
+    /// VoiceOver "scroll right" has to advance rather than go back.
+    var accessibilityUsesRTLPageOrder = false {
+        didSet {
+            guard accessibilityUsesRTLPageOrder != oldValue else { return }
+            refreshAccessibility()
+        }
+    }
+
+    /// Plain text of the page currently drawn.
+    var accessibilityPageText: String {
+        guard let layout, localPageIndex < layout.pageRanges.count else { return "" }
+        let pageRange = layout.pageRanges[localPageIndex]
+        let clamped = NSIntersectionRange(
+            NSRange(location: pageRange.location, length: pageRange.length),
+            NSRange(location: 0, length: layout.attributedString.length)
+        )
+        guard clamped.length > 0 else { return "" }
+        return layout.attributedString.attributedSubstring(from: clamped).string
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func refreshAccessibility() {
+        isAccessibilityElement = true
+        accessibilityTraits = .staticText
+        accessibilityLabel = accessibilityPageText
+        accessibilityHint = localized("點兩下展開閱讀工具，三指左右滑動翻頁")
+        accessibilityCustomActions = [
+            accessibilityAction(named: localized("下一頁"), action: .nextPage),
+            accessibilityAction(named: localized("上一頁"), action: .prevPage),
+            accessibilityAction(named: localized("選單"), action: .toggleMenu),
+            accessibilityAction(named: localized("目錄"), action: .tableOfContents),
+        ]
+    }
+
+    private func accessibilityAction(
+        named name: String,
+        action: TouchAction
+    ) -> UIAccessibilityCustomAction {
+        UIAccessibilityCustomAction(name: name) { [weak self] _ in
+            guard let handler = self?.onAccessibilityAction else { return false }
+            handler(action)
+            return true
+        }
+    }
+
+    override func accessibilityActivate() -> Bool {
+        guard let onAccessibilityAction else { return false }
+        onAccessibilityAction(.toggleMenu)
+        return true
+    }
+
+    override func accessibilityScroll(_ direction: UIAccessibilityScrollDirection) -> Bool {
+        guard let onAccessibilityAction else { return false }
+        let action: TouchAction
+        switch direction {
+        case .left, .up:
+            action = accessibilityUsesRTLPageOrder ? .prevPage : .nextPage
+        case .right, .down:
+            action = accessibilityUsesRTLPageOrder ? .nextPage : .prevPage
+        default:
+            return false
+        }
+        onAccessibilityAction(action)
+        return true
     }
 
     override var canBecomeFirstResponder: Bool { true }
@@ -1714,6 +1795,22 @@ final class CoreTextPageViewController: UIViewController {
             }
         }
     }
+    /// VoiceOver-originated reader commands (menu, page turn, TOC) — see
+    /// `CoreTextPageView.onAccessibilityAction`.
+    var onAccessibilityAction: ((TouchAction) -> Void)? {
+        didSet {
+            if isViewLoaded {
+                pageView.onAccessibilityAction = onAccessibilityAction
+            }
+        }
+    }
+    var accessibilityUsesRTLPageOrder = false {
+        didSet {
+            if isViewLoaded {
+                pageView.accessibilityUsesRTLPageOrder = accessibilityUsesRTLPageOrder
+            }
+        }
+    }
 
     private var pendingLayout: CoreTextPaginator.ChapterLayout?
     private var pendingLocalPage: Int = 0
@@ -1742,6 +1839,8 @@ final class CoreTextPageViewController: UIViewController {
         self.currentLocalPage = localPage
         if isViewLoaded {
             pageView.onInternalLinkTap = onInternalLinkTap
+            pageView.onAccessibilityAction = onAccessibilityAction
+            pageView.accessibilityUsesRTLPageOrder = accessibilityUsesRTLPageOrder
             installImageTapHandler()
             pageView.configure(layout: layout, pageIndex: localPage, fallbackBackgroundColor: fallbackBackgroundColor)
             pageView.setTextAnnotations(pendingTextAnnotations)
@@ -1770,6 +1869,8 @@ final class CoreTextPageViewController: UIViewController {
         pageView.frame = view.bounds
         pageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         pageView.onInternalLinkTap = onInternalLinkTap
+        pageView.onAccessibilityAction = onAccessibilityAction
+        pageView.accessibilityUsesRTLPageOrder = accessibilityUsesRTLPageOrder
         installImageTapHandler()
         view.addSubview(pageView)
         if let layout = pendingLayout {
@@ -1785,6 +1886,14 @@ final class CoreTextPageViewController: UIViewController {
         super.viewDidLayoutSubviews()
         // Keep embedded inline video views aligned with their (bounds-relative) attachment rects.
         repositionInlineVideos()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Move VoiceOver to the page that just became visible; otherwise a page turn
+        // leaves focus on the previous (now offscreen) page and reads nothing.
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        UIAccessibility.post(notification: .screenChanged, argument: pageView)
     }
 
     private func installImageTapHandler() {
@@ -2125,6 +2234,8 @@ final class PageBackViewController: UIViewController {
         // shows the page content (no show-through text).
         view.backgroundColor = pageBackgroundColor
         view.isOpaque = true
+        // Purely decorative half of the curl pair — never announce it.
+        view.accessibilityElementsHidden = true
     }
 }
 
@@ -2137,6 +2248,8 @@ final class PlaceholderPageViewController: UIViewController {
     private let spinner = UIActivityIndicatorView(style: .medium)
     private(set) var globalPageIndex: Int
     private(set) var coreTextReadingPosition: CoreTextReadingPosition?
+    /// VoiceOver-originated reader commands — see `configureAccessibility`.
+    var onAccessibilityAction: ((TouchAction) -> Void)?
 
     private let themeBackgroundColor: UIColor
     private let themeTextColor: UIColor
@@ -2184,6 +2297,41 @@ final class PlaceholderPageViewController: UIViewController {
             titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
         ])
         spinner.startAnimating()
+        configureAccessibility()
+    }
+
+    /// Read as one element so VoiceOver announces "<chapter> 載入中…" instead of
+    /// landing on a silent spinner, and keep the reader commands reachable — a
+    /// blind user must not be stranded on a loading page with no way back to the
+    /// toolbar. Mirrors `CoreTextPageView`'s accessibility contract.
+    private func configureAccessibility() {
+        view.isAccessibilityElement = true
+        view.accessibilityTraits = .staticText
+        let title = titleLabel.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let loading = localized("載入中…")
+        view.accessibilityLabel = title.isEmpty ? loading : "\(title)，\(loading)"
+        view.accessibilityHint = localized("點兩下展開閱讀工具，三指左右滑動翻頁")
+        view.accessibilityCustomActions = [
+            accessibilityAction(named: localized("選單"), action: .toggleMenu),
+            accessibilityAction(named: localized("目錄"), action: .tableOfContents),
+        ]
+    }
+
+    private func accessibilityAction(
+        named name: String,
+        action: TouchAction
+    ) -> UIAccessibilityCustomAction {
+        UIAccessibilityCustomAction(name: name) { [weak self] _ in
+            guard let handler = self?.onAccessibilityAction else { return false }
+            handler(action)
+            return true
+        }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        UIAccessibility.post(notification: .screenChanged, argument: view)
     }
 }
 

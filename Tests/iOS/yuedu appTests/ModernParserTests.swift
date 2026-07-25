@@ -1987,6 +1987,36 @@ struct JSCoreEngineTests {
         let result = engine.evaluate("eval(java.importScript('1 + 4'))")
         #expect(result == "5")
     }
+
+    /// 书山聚合 decrypts chapter text with `DES/CBC/PKCS5Padding` through hutool's
+    /// SymmetricCrypto. The bridge used to accept AES only and returned "" without
+    /// throwing, so the source's own `catch` fallback never ran and every chapter
+    /// came back empty with no JS error.
+    @Test("java.createSymmetricCrypto decrypts DES/CBC/PKCS5Padding")
+    func createSymmetricCryptoDES() {
+        let engine = JSCoreEngine()
+        let plain = "我会奔向你，以夏天的名义。"
+        let script = """
+        (function () {
+            var c = java.createSymmetricCrypto('DES/CBC/PKCS5Padding', 'K7bM2nXy', 'tQ5v9rS1');
+            return c.decryptStr(java.base64DecodeToByteArray(c.encryptBase64('\(plain)')));
+        })()
+        """
+        #expect(engine.evaluate(script) == plain)
+    }
+
+    @Test("java.createSymmetricCrypto still handles AES/CBC")
+    func createSymmetricCryptoAES() {
+        let engine = JSCoreEngine()
+        let plain = "hello aes"
+        let script = """
+        (function () {
+            var c = java.createSymmetricCrypto('AES/CBC/PKCS5Padding', '0123456789abcdef', 'fedcba9876543210');
+            return c.decryptStr(java.base64DecodeToByteArray(c.encryptBase64('\(plain)')));
+        })()
+        """
+        #expect(engine.evaluate(script) == plain)
+    }
 }
 
 // MARK: - 9. JSSandbox Tests

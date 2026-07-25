@@ -370,11 +370,21 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         return utterance
     }
 
-    /// Maps the UI rate (0.10–1.0, where 0.5 is "normal") onto an `AVSpeechUtterance` rate
-    /// centered on the system default, then clamps to the supported range.
+    /// Maps the UI rate (0.5 is "normal") onto an `AVSpeechUtterance` rate centered on the
+    /// system default, then clamps to the supported range.
     static func utteranceRate(forUIRate uiRate: Float) -> Float {
         let scaled = AVSpeechUtteranceDefaultSpeechRate * (uiRate / 0.5)
         return max(AVSpeechUtteranceMinimumSpeechRate, min(scaled, AVSpeechUtteranceMaximumSpeechRate))
+    }
+
+    /// Highest UI rate this engine can actually deliver. `AVSpeechUtterance.rate` is hard
+    /// capped at `AVSpeechUtteranceMaximumSpeechRate` (2× the default), so the slider's
+    /// upper half is a no-op here — unlike the HTTP engine, which reaches 5× either through
+    /// the source's `speakSpeed` or through `TTSChunkAudioPlayer`'s time-pitch unit.
+    /// Surfacing this rather than saturating silently: see `TTSPanelView`'s rate note.
+    /// Deletable only if AVFoundation ever lifts the utterance rate ceiling.
+    static var maxSupportedUIRate: Float {
+        0.5 * (AVSpeechUtteranceMaximumSpeechRate / AVSpeechUtteranceDefaultSpeechRate)
     }
 
     private func estimatedDuration(for text: String) -> TimeInterval {

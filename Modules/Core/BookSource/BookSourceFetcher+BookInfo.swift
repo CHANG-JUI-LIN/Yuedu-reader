@@ -65,7 +65,7 @@ extension BookSourceFetcher {
         } else {
             html = try await fetchHTML(
                 url: bookURL, method: "GET", body: nil,
-                headers: source.parsedHeaders, baseURL: source.bookSourceUrl,
+                headers: source.parsedHeaders, baseURL: source.cleanedBookSourceURL,
                 source: source)
         }
         SourcePerfTrace.record("detail.network", source.bookSourceName, since: networkStart)

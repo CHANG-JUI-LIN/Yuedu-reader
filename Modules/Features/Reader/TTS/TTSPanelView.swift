@@ -27,6 +27,12 @@ struct TTSPanelView: View {
             || gs.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// The system voice saturates at `AVSpeechUtteranceMaximumSpeechRate`, so say so
+    /// instead of letting the upper half of the slider do nothing.
+    private var systemVoiceRateIsCapped: Bool {
+        usesSystemVoice && tts.speechRate > SystemTTSEngine.maxSupportedUIRate
+    }
+
     private var controlChapterIndex: Int {
         activeTTSChapterIndex ?? currentReaderChapterIndex
     }
@@ -189,7 +195,7 @@ struct TTSPanelView: View {
                                 get: { tts.speechRate },
                                 set: { tts.updateRate($0) }
                             ),
-                            in: 0.1...1.0,
+                            in: TTSCoordinator.minSpeechRate...TTSCoordinator.maxSpeechRate,
                             step: 0.05,
                             onEditingChanged: { editing in
                                 if !editing { tts.applyRateToActivePlayback() }
@@ -201,6 +207,16 @@ struct TTSPanelView: View {
                     Text("\(localized("當前速度"))：\(String(format: "%.0f%%", tts.speechRate / 0.5 * 100))")
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
+                    if systemVoiceRateIsCapped {
+                        Text(
+                            String(
+                                format: localized("系統語音最快 %@（iOS 限制），需要更快請改用網路語音"),
+                                String(format: "%.0f%%", SystemTTSEngine.maxSupportedUIRate / 0.5 * 100)
+                            )
+                        )
+                        .font(DSFont.caption)
+                        .foregroundColor(DSColor.textSecondary)
+                    }
                 }
 
                 Section(header: Text(localized("定時停止"))) {

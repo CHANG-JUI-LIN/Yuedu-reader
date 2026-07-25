@@ -57,10 +57,16 @@ struct DiscoverShowcaseView: View {
     }
 
     private var emptyState: some View {
+        // When the source replied with a plain message instead of categories
+        // (e.g. 「请先于【源变量】处填写共享Token」), show ITS words — the generic
+        // copy would hide the one instruction the user needs.
         ContentUnavailableView(
             localized("暫無發現內容"),
             systemImage: "sparkles",
-            description: Text(localized("此書源未回傳發現內容，可下拉重新整理或切換書源"))
+            description: Text(
+                discover.sourceNotice
+                    ?? localized("此書源未回傳發現內容，可下拉重新整理或切換書源")
+            )
         )
         .frame(maxWidth: .infinity, minHeight: 320)
     }

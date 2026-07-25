@@ -61,6 +61,15 @@ final class CoreTextChunkBackdropView: UIView {
 /// Draws the CTFrame directly. Handles the CoreText coordinate system inversion.
 final class CoreTextChunkDrawView: UIView {
     var chunk: CoreTextChunk?
+    /// VoiceOver double-tap on the chapter text — mirrors the sighted centre tap
+    /// that opens the reader toolbar.
+    var onAccessibilityActivate: (() -> Void)?
+
+    override func accessibilityActivate() -> Bool {
+        guard let onAccessibilityActivate else { return false }
+        onAccessibilityActivate()
+        return true
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -161,6 +170,10 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
     private var boundLeadingSpacing: CGFloat = 0
     private(set) var currentChunk: CoreTextChunk?
     private var annotationOverlays: [LayerKey: InteractionOverlayView] = [:]
+    /// Opens the reader toolbar from VoiceOver — the same sink the centre tap uses.
+    /// Without it a VoiceOver user cannot reach the toolbar in scroll mode: the tap
+    /// recognizer never fires because VoiceOver consumes the touch.
+    var onAccessibilityMenu: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -235,6 +248,38 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         backdropView.setNeedsDisplay()
         drawView.setNeedsDisplay()
         overlay.clearSelection()
+        refreshAccessibility(for: chunk)
+    }
+
+    /// The chunk is drawn with `CTFrameDraw`, so without this it is an empty view to
+    /// VoiceOver. Expose the chunk's text as one element — the collection view's own
+    /// scrolling then carries VoiceOver through the chapter — and keep the toolbar
+    /// reachable through a custom action.
+    private func refreshAccessibility(for chunk: CoreTextChunk) {
+        drawView.isAccessibilityElement = true
+        drawView.accessibilityTraits = .staticText
+        drawView.accessibilityLabel = Self.plainText(of: chunk)
+        drawView.accessibilityHint = localized("點兩下展開閱讀工具")
+        drawView.onAccessibilityActivate = { [weak self] in self?.onAccessibilityMenu?() }
+        drawView.accessibilityCustomActions = [
+            UIAccessibilityCustomAction(name: localized("選單")) { [weak self] _ in
+                guard let handler = self?.onAccessibilityMenu else { return false }
+                handler()
+                return true
+            }
+        ]
+    }
+
+    private static func plainText(of chunk: CoreTextChunk) -> String {
+        let available = chunk.attributedString.length - chunk.charRange.location
+        guard chunk.charRange.location >= 0, available > 0 else { return "" }
+        let range = NSRange(
+            location: chunk.charRange.location,
+            length: min(chunk.charRange.length, available)
+        )
+        guard range.length > 0 else { return "" }
+        return chunk.attributedString.attributedSubstring(from: range).string
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     override func layoutSubviews() {

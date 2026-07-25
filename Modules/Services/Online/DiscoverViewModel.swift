@@ -363,6 +363,24 @@ final class DiscoverViewModel: ObservableObject {
         buildSections(from: mapped)
     }
 
+    /// A message the source put in place of its categories.
+    ///
+    /// A label-only explore payload (title, but no url and no action) is how a
+    /// Legado source says "configure me first" — 同人小说网's `/explore/init`
+    /// answers `[{"title":"请先于【源变量】处填写共享Token","url":""}]` until a token
+    /// is stored. `mapItem` correctly drops such items as non-navigable, so
+    /// without surfacing them here the 發現頁 just looks broken.
+    var sourceNotice: String? {
+        guard items.isEmpty, !rawItems.isEmpty else { return nil }
+        let labels = rawItems.compactMap { item -> String? in
+            guard (item.type ?? "") != "select" else { return nil }  // filters render on their own
+            let title = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return title.isEmpty || title == "--" ? nil : title
+        }
+        guard !labels.isEmpty else { return nil }
+        return labels.prefix(4).joined(separator: "\n")
+    }
+
     /// Cache key for the current (source, discover runtime variables) pair.
     private func discoverKindsCacheKey(for source: BookSource) -> String {
         let variableDict = Self.sanitizeDiscoverVariable(currentVariableDict(for: source))

@@ -310,7 +310,7 @@ struct ReaderSettingsView: View {
                     title: localized("字體大小"),
                     valueText: "\(Int(fontSize)) pt",
                     value: fontSizeBinding,
-                    range: 12...32,
+                    range: 10...40,
                     step: 1
                 )
             }

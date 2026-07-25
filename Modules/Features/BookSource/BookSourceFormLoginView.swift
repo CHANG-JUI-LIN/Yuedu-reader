@@ -507,16 +507,24 @@ struct BookSourceFormLoginView: View {
         engine.sourceBridge.removeLoginInfoHandler = {
             LoginManager.shared.clearLogin(sourceUrl: sourceUrl)
         }
+        // Legado semantics: the payload is stored verbatim and only becomes request
+        // headers if it is a JSON object. 书山聚合's `login()` stores a bare api_key
+        // and reads it straight back via `source.getLoginHeader()` to build `?key=`
+        // URLs — synthesising a header name for it clobbers the constant token the
+        // source's own `header` rule sends.
         engine.sourceBridge.putLoginHeaderHandler = { header in
-            guard let data = header.data(using: .utf8),
-                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
-            LoginManager.shared.storeLoginHeaders(sourceUrl: sourceUrl, headers: dict)
+            LoginManager.shared.storeLoginHeader(sourceUrl: sourceUrl, raw: header)
+        }
+        engine.sourceBridge.getLoginHeaderHandler = {
+            LoginManager.shared.getLoginHeader(sourceUrl: sourceUrl)
         }
         engine.sourceBridge.removeLoginHeaderHandler = {
             LoginManager.shared.clearLogin(sourceUrl: sourceUrl)
         }
         engine.sourceBridge.getHeaderMapHandler = {
-            var headers = source.parsedHeaders
+            // This sheet's own engine resolves the (possibly `@js:`) header rule —
+            // don't reach for a second engine via `source.parsedHeaders`.
+            var headers = engine.resolvedSourceHeaders()
             if let loginHeaders = LoginManager.shared.getLoginHeaderMap(sourceUrl: sourceUrl) {
                 headers.merge(loginHeaders) { _, new in new }
             }
@@ -541,10 +549,18 @@ struct BookSourceFormLoginView: View {
                 return String(data: decoded.data, encoding: .utf8) ?? ""
             }
             guard var request = analyzeUrl.toURLRequest() else { return "" }
-            for (key, value) in source.parsedHeaders where request.value(forHTTPHeaderField: key) == nil {
+            for (key, value) in engine.resolvedSourceHeaders()
+            where request.value(forHTTPHeaderField: key) == nil {
                 request.setValue(value, forHTTPHeaderField: key)
             }
             LoginManager.shared.applyLoginHeaders(to: &request, sourceUrl: sourceUrl)
+            if request.value(forHTTPHeaderField: "Cookie") == nil,
+               let reqUrl = request.url?.absoluteString {
+                let jar = CookieStore.shared.get(url: reqUrl)
+                if !jar.isEmpty {
+                    request.setValue(jar, forHTTPHeaderField: "Cookie")
+                }
+            }
             let semaphore = DispatchSemaphore(value: 0)
             var body = ""
             URLSession.shared.dataTask(with: request) { data, _, _ in

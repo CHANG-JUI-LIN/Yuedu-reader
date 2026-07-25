@@ -988,6 +988,8 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
         if let chunkCell = cell as? CoreTextChunkCollectionCell,
            indexPath.item < engine.chunks.count {
             let chunk = engine.chunks[indexPath.item]
+            // Same sink as the centre tap, so VoiceOver reaches the reader toolbar.
+            chunkCell.onAccessibilityMenu = { [weak self] in self?.onTap?() }
             chunkCell.bind(
                 chunk: chunk,
                 axis: scrollAxis,

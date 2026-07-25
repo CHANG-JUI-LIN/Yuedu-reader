@@ -47,6 +47,41 @@ class ModernParserBridge {
         wireJSEngine()
     }
 
+    // MARK: - Last JS network exchange (diagnostics)
+
+    /// What the rule's own JS last fetched. Recorded on every `java.ajax`, dumped
+    /// only when a chapter comes back empty — that is the one moment where knowing
+    /// the server's actual answer decides between "we sent a bad request",
+    /// "the source needs login/quota" and "our parsing dropped it".
+    struct JSNetworkExchange {
+        let url: String
+        let status: String
+        let length: Int
+        let bodyHead: String
+    }
+    private var lastJSNetworkExchange: JSNetworkExchange?
+
+    private func recordJSNetwork(
+        url: String?, status: String, body: String?
+    ) {
+        lastJSNetworkExchange = JSNetworkExchange(
+            url: String((url ?? "-").prefix(200)),
+            status: status,
+            length: body?.count ?? -1,
+            bodyHead: String((body ?? "nil").prefix(200)).replacingOccurrences(of: "\n", with: " ")
+        )
+    }
+
+    // MARK: - Source Headers
+
+    /// The source's `header` rule resolved to request headers — plain JSON, or a
+    /// `@js:` / `<js>` rule evaluated on this bridge's engine (Legado
+    /// `getHeaderMap()`). Every request built here must carry these: sources like
+    /// 书山聚合 put a required constant API token in a JS header rule.
+    func resolvedSourceHeaders() -> [String: String] {
+        jsEngine.resolvedSourceHeaders()
+    }
+
     // MARK: - Engine Factory
 
     /// Creates a fresh, fully-wired ModernRuleEngine for a single parse operation.
@@ -92,15 +127,31 @@ class ModernParserBridge {
 
     private func wireJSEngine() {
         jsEngine.bookSource = sourceRuleData.source
+        let sourceName = sourceRuleData.source.bookSourceName
 
         jsEngine.errorHandler = { [weak self] msg, script in
             self?.debugObserver?(.jsExecuted(
                 segmentIndex: -1, script: String(script.prefix(200)),
                 inputPreview: "", result: "ERROR: \(msg)"
             ))
-            #if DEBUG
-            print("[ModernParserBridge] JS error: \(msg)")
-            #endif
+            // NOT #if DEBUG: a rule's JS blowing up is the most common cause of an
+            // empty chapter/TOC, and on a device os_log is the only way to see it.
+            AppLogger.parse("⟐ rule JS error", context: [
+                "source": sourceName,
+                "error": msg,
+                "script": String(script.prefix(160)).replacingOccurrences(of: "\n", with: " ")
+            ])
+        }
+
+        // `java.toast(...)` is how a source reports its own failures — 书山聚合's
+        // chapter rule toasts 「❌ 未登录，请先登录」/「⚠️请求失败3次: …」/「请尝试切换
+        // 服务器」 from inside its retry loop. Nothing displays toasts during a
+        // background parse, so log them; otherwise the source's own diagnosis is lost.
+        jsEngine.toastHandler = { msg in
+            AppLogger.parse("⟐ source toast", context: [
+                "source": sourceName,
+                "msg": msg.replacingOccurrences(of: "\n", with: " ")
+            ])
         }
 
         jsEngine.getData = { [weak self] key in
@@ -148,10 +199,13 @@ class ModernParserBridge {
         jsEngine.sourceBridge.removeLoginInfoHandler = {
             LoginManager.shared.clearLogin(sourceUrl: sourceUrl)
         }
+        // Legado stores whatever `putLoginHeader` was given verbatim and only sends
+        // it as headers when it parses as a JSON object; a bare token (书山聚合's
+        // api_key) is read back by the source's own JS. Do NOT invent a header name
+        // for it — guessing `X-Novel-Token` overwrote the constant token the source's
+        // `header` rule sends and the server answered `{"error":"访问被拒绝"}`.
         jsEngine.sourceBridge.putLoginHeaderHandler = { header in
-            guard let data = header.data(using: .utf8),
-                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
-            LoginManager.shared.storeLoginHeaders(sourceUrl: sourceUrl, headers: dict)
+            LoginManager.shared.storeLoginHeader(sourceUrl: sourceUrl, raw: header)
         }
         jsEngine.sourceBridge.getLoginHeaderHandler = {
             LoginManager.shared.getLoginHeader(sourceUrl: sourceUrl)
@@ -160,7 +214,7 @@ class ModernParserBridge {
             LoginManager.shared.clearLogin(sourceUrl: sourceUrl)
         }
         jsEngine.sourceBridge.getHeaderMapHandler = { [weak self] in
-            var merged = self?.jsEngine.parseHeaders(self?.sourceRuleData.source.header ?? "") ?? [:]
+            var merged = self?.resolvedSourceHeaders() ?? [:]
             if let loginHeaders = LoginManager.shared.getLoginHeaderMap(sourceUrl: sourceUrl) {
                 merged.merge(loginHeaders) { _, new in new }
             }
@@ -186,17 +240,28 @@ class ModernParserBridge {
                 return Self.bodyForDataURI(analyzeUrl)
             }
             guard var request = analyzeUrl.toURLRequest() else { return nil }
-            for (key, value) in self.sourceRuleData.source.parsedHeaders {
+            for (key, value) in self.resolvedSourceHeaders() {
                 if request.value(forHTTPHeaderField: key) == nil {
                     request.setValue(value, forHTTPHeaderField: key)
                 }
             }
             LoginManager.shared.applyLoginHeaders(to: &request, sourceUrl: sourceUrl)
+            if request.value(forHTTPHeaderField: "Cookie") == nil,
+               let reqUrl = request.url?.absoluteString {
+                let jar = CookieStore.shared.get(url: reqUrl)
+                if !jar.isEmpty {
+                    request.setValue(jar, forHTTPHeaderField: "Cookie")
+                }
+            }
             let sem = DispatchSemaphore(value: 0)
             var result: String?
-            // Pool at 16/host (LegadoJSBridge.requestSession) — this handler is the ACTUAL path
-            // 段評 ajaxAll takes for `,{options}` URLs; URLSession.shared would cap it back at 6.
-            let task = LegadoJSBridge.requestSession.dataTask(with: request) { data, response, _ in
+            var responseStatusCode: Int?
+            var responseError: Error?
+            let task = LegadoJSBridge.requestSession.dataTask(with: request) { data, response, error in
+                if let httpResponse = response as? HTTPURLResponse {
+                    responseStatusCode = httpResponse.statusCode
+                }
+                responseError = error
                 if let data {
                     let encoding = Self.encodingFromCharset(analyzeUrl.charset)
                     result = String(data: data, encoding: encoding)
@@ -205,7 +270,38 @@ class ModernParserBridge {
                 sem.signal()
             }
             task.resume()
-            _ = sem.wait(timeout: .now() + 30)
+            let waitResult = sem.wait(timeout: .now() + 30)
+            self.recordJSNetwork(
+                url: request.url?.absoluteString,
+                status: waitResult == .timedOut
+                    ? "timeout" : (responseStatusCode.map(String.init) ?? "error"),
+                body: result
+            )
+            if waitResult == .timedOut {
+                AppLogger.parse("⟐ ajax IN timeout", context: [
+                    "url": request.url?.absoluteString ?? analyzeUrl.url,
+                    "method": analyzeUrl.method
+                ])
+                task.cancel()
+                return nil
+            }
+            // Log failures only — this handler is the 段評 `ajaxAll` path too, and a
+            // body head per call floods the device console. "Failure" includes a 2xx
+            // with a tiny body: these aggregator APIs answer `{"error":"访问被拒绝"}` /
+            // `{"code":1,"message":…}` with HTTP 200, so status alone would miss them,
+            // while real chapter/search payloads are far larger than 300 chars.
+            let bodyLooksLikeErrorEnvelope = (result?.count ?? 0) < 300
+            if responseStatusCode.map({ !(200..<300).contains($0) }) ?? true
+                || bodyLooksLikeErrorEnvelope {
+                AppLogger.parse("⟐ ajax IN failed", context: [
+                    "url": request.url?.absoluteString ?? analyzeUrl.url,
+                    "method": analyzeUrl.method,
+                    "status": responseStatusCode.map(String.init) ?? "error",
+                    "error": responseError?.localizedDescription ?? "-",
+                    "headerKeys": request.allHTTPHeaderFields?.keys.sorted().joined(separator: ",") ?? "-",
+                    "bodyHead": (result ?? "nil").prefix(200).description
+                ])
+            }
             return result
         }
 
@@ -240,20 +336,45 @@ class ModernParserBridge {
 
         // networkHandler runs on the jsEngine serial queue thread — blocking via
         // semaphore here is intentional and safe (dedicated thread, not the global pool).
-        jsEngine.networkHandler = { request in
+        jsEngine.networkHandler = { [weak self] request in
             let semaphore = DispatchSemaphore(value: 0)
             var result: String?
+            var statusCode: Int?
+            var transportError: Error?
             // Pool at 16/host: this handler is ALWAYS set for the online reader, so plain 段評
             // ajaxAll requests land here — URLSession.shared would re-cap them at 6/host (why the
             // ajaxAll throttle raise alone left `⏱ chapter.jsNet` unchanged).
-            let task = LegadoJSBridge.requestSession.dataTask(with: request) { data, response, _ in
+            let task = LegadoJSBridge.requestSession.dataTask(with: request) { data, response, error in
+                statusCode = (response as? HTTPURLResponse)?.statusCode
+                transportError = error
                 if let data {
                     result = LegadoJSBridge.decodeData(data, response: response)
                 }
                 semaphore.signal()
             }
             task.resume()
-            _ = semaphore.wait(timeout: .now() + 30)
+            let timedOut = semaphore.wait(timeout: .now() + 30) == .timedOut
+            self?.recordJSNetwork(
+                url: request.url?.absoluteString,
+                status: timedOut ? "timeout" : (statusCode.map(String.init) ?? "error"),
+                body: result
+            )
+            // This is the path a plain `java.ajax(url)` takes — 书山聚合 fetches chapter
+            // *content* here — and the transport error used to be discarded outright, so
+            // a failed chapter left no trace at all. Same failure rule as the AnalyzeUrl
+            // branch: non-2xx, or a 2xx whose body is too short to be real content.
+            if timedOut || transportError != nil
+                || statusCode.map({ !(200..<300).contains($0) }) ?? true
+                || (result?.count ?? 0) < 300 {
+                AppLogger.parse("⟐ js net failed", context: [
+                    "source": sourceName,
+                    "url": request.url?.absoluteString.prefix(160).description ?? "-",
+                    "status": timedOut ? "timeout" : (statusCode.map(String.init) ?? "error"),
+                    "error": transportError?.localizedDescription ?? "-",
+                    "bodyHead": (result ?? "nil").prefix(200).description
+                ])
+            }
+            if timedOut { task.cancel() }
             return result
         }
     }
@@ -645,8 +766,13 @@ class ModernParserBridge {
         ) ?? "false"
 
         jsEngine.resetJSNetworkMs()
+        lastJSNetworkExchange = nil
         let _contentStart = Date()
         var content = engine.getString(ruleStr: source.ruleContent.content)
+        // Snapshot the error HERE: every later `jsEngine.evaluate` (the replaceRegex
+        // pass below runs one) starts by clearing `lastError`, so reading it at log
+        // time reported `jsError=none` for a content rule that had actually thrown.
+        let contentRuleError = jsEngine.lastError
         // 全文替换 — Legado `BookContent.analyzeContent`: line-trim, then run the source's own
         // `replaceRegex` **through the rule engine**, which is what expands `{{chapter.title}}`
         // templates and splits `##pattern##replacement`. Handing the raw string to a regex API
@@ -694,9 +820,23 @@ class ModernParserBridge {
             "inputHasContent": lowerInput.contains(#""content""#),
             "inputHasReview": lowerInput.contains("review") || lowerInput.contains("comment"),
             "empty": content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            "jsError": jsEngine.lastError ?? "none",
+            "jsError": contentRuleError ?? "none",
             "head": String(content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(180))
         ])
+        // An empty chapter is almost always the source's own HTTP call coming back
+        // with something its JS couldn't use. The exchange is recorded (not logged)
+        // per request, and only dumped here — otherwise every 段評 `ajaxAll` call
+        // would print a body head.
+        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let net = lastJSNetworkExchange
+            AppLogger.parse("⟐ contentJS empty · lastJSNet", context: [
+                "source": source.bookSourceName,
+                "url": net?.url ?? "(the rule made no HTTP call)",
+                "status": net?.status ?? "-",
+                "len": net?.length ?? -1,
+                "bodyHead": net?.bodyHead ?? "-"
+            ])
+        }
         let title = engine.getString(ruleStr: source.ruleContent.title)
 
         let sourceRegex = source.ruleContent.sourceRegex
@@ -1391,7 +1531,7 @@ class ModernParserBridge {
         }
 
         // Apply source-level headers (don't overwrite per-request ones)
-        for (key, value) in sourceRuleData.source.parsedHeaders {
+        for (key, value) in resolvedSourceHeaders() {
             if request.value(forHTTPHeaderField: key) == nil {
                 request.setValue(value, forHTTPHeaderField: key)
             }

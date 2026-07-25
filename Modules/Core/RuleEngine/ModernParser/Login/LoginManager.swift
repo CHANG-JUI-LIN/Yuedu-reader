@@ -100,8 +100,15 @@ final class LoginManager {
     /// Dedicated UserDefaults suite so login data is isolated.
     private let defaults: UserDefaults
 
-    /// In-memory cache of login headers keyed by source URL.
-    private var headerCache: [String: [String: String]] = [:]
+    /// In-memory cache of the raw `putLoginHeader` payload keyed by source URL.
+    ///
+    /// Legado's `BaseSource.putLoginHeader` stores the string *verbatim* and only
+    /// `getLoginHeaderMap()` (a GSON object parse) turns it into request headers.
+    /// That distinction matters: 书山聚合 stores a bare API key here and reads it
+    /// back through `source.getLoginHeader()` to build `?key=` URLs — it must never
+    /// be sent as an HTTP header, because guessing a header name for it overwrites
+    /// the constant token the source's own `header` rule sends.
+    private var headerCache: [String: String] = [:]
 
     /// Serial queue for thread-safe access to caches and defaults.
     private let queue = DispatchQueue(label: "com.yuedu.LoginManager", attributes: .concurrent)
@@ -430,36 +437,45 @@ final class LoginManager {
 
     // MARK: - Login Header Management (mirrors Legado BaseSource)
 
-    /// Retrieve stored login headers for a source.
+    /// Headers to attach to requests — the stored payload parsed as a JSON object.
+    /// A non-object payload (bare token) contributes nothing, matching Legado.
     func getLoginHeaders(sourceUrl: String) -> [String: String] {
-        var result: [String: String] = [:]
+        getLoginHeaderMap(sourceUrl: sourceUrl) ?? [:]
+    }
+
+    /// Retrieve the raw stored payload (Legado `getLoginHeader()`).
+    func getLoginHeader(sourceUrl: String) -> String? {
+        var result: String?
         queue.sync {
-            result = headerCache[sourceUrl] ?? [:]
+            result = headerCache[sourceUrl]
         }
         return result
     }
 
-    /// Retrieve login headers as a JSON string (Legado `getLoginHeader()`).
-    func getLoginHeader(sourceUrl: String) -> String? {
-        let headers = getLoginHeaders(sourceUrl: sourceUrl)
-        guard !headers.isEmpty else { return nil }
-        guard let data = try? JSONSerialization.data(withJSONObject: headers),
-              let json = String(data: data, encoding: .utf8) else { return nil }
-        return json
-    }
-
-    /// Retrieve login headers as a map (Legado `getLoginHeaderMap()`).
+    /// Retrieve login headers as a map (Legado `getLoginHeaderMap()`):
+    /// `nil` unless the stored payload is a JSON object of string values.
     func getLoginHeaderMap(sourceUrl: String) -> [String: String]? {
-        let headers = getLoginHeaders(sourceUrl: sourceUrl)
-        return headers.isEmpty ? nil : headers
+        guard let raw = getLoginHeader(sourceUrl: sourceUrl),
+              let data = raw.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+              !dict.isEmpty
+        else { return nil }
+        return dict
     }
 
-    /// Store login headers (Legado `putLoginHeader`).
-    func storeLoginHeaders(sourceUrl: String, headers: [String: String]) {
+    /// Store the raw `putLoginHeader` payload verbatim (Legado semantics).
+    func storeLoginHeader(sourceUrl: String, raw: String) {
         queue.async(flags: .barrier) { [weak self] in
-            self?.headerCache[sourceUrl] = headers
-            self?.persistHeaders(sourceUrl: sourceUrl, headers: headers)
+            self?.headerCache[sourceUrl] = raw
+            self?.persistHeader(sourceUrl: sourceUrl, raw: raw)
         }
+    }
+
+    /// Store a header dictionary (serialized to the JSON form Legado expects).
+    func storeLoginHeaders(sourceUrl: String, headers: [String: String]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: headers),
+              let json = String(data: data, encoding: .utf8) else { return }
+        storeLoginHeader(sourceUrl: sourceUrl, raw: json)
     }
 
     /// Remove all login data for a source (Legado `removeLoginHeader`).
@@ -522,22 +538,18 @@ final class LoginManager {
 
     // MARK: - Persistence Helpers
 
-    private func persistHeaders(sourceUrl: String, headers: [String: String]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: headers),
-              let json = String(data: data, encoding: .utf8) else { return }
-        defaults.set(json, forKey: LoginManager.loginHeaderPrefix + sourceUrl)
+    private func persistHeader(sourceUrl: String, raw: String) {
+        defaults.set(raw, forKey: LoginManager.loginHeaderPrefix + sourceUrl)
     }
 
     private func loadAllHeaders() {
         let dict = defaults.dictionaryRepresentation()
         for (key, value) in dict {
             guard key.hasPrefix(LoginManager.loginHeaderPrefix),
-                  let json = value as? String,
-                  let data = json.data(using: .utf8),
-                  let headers = try? JSONSerialization.jsonObject(with: data) as? [String: String]
+                  let raw = value as? String
             else { continue }
             let sourceUrl = String(key.dropFirst(LoginManager.loginHeaderPrefix.count))
-            headerCache[sourceUrl] = headers
+            headerCache[sourceUrl] = raw
         }
     }
 

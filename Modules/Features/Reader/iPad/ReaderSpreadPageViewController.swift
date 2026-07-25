@@ -20,6 +20,11 @@ final class ReaderSpreadPageViewController: UIViewController, PageIndexProviding
         return nil
     }
 
+    /// Both halves of the spread in reading order, skipping an absent trailing page.
+    var pageViewControllers: [UIViewController] {
+        orderedPages.compactMap { $0 }
+    }
+
     var containsPlaceholderPage: Bool {
         primaryViewController is PlaceholderPageViewController ||
             secondaryViewController is PlaceholderPageViewController

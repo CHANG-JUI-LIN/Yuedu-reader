@@ -81,7 +81,7 @@ extension BookSourceFetcher {
         let requestSpec = source.renderSearchRequest(query: query, page: page)
         let resolvedUrlStr = RuleEngine.resolveURL(
             requestSpec.url,
-            base: source.bookSourceUrl
+            base: source.cleanedBookSourceURL
         )
         guard let url = safeURL(string: resolvedUrlStr) else {
             throw FetchError.invalidURL(resolvedUrlStr)
@@ -96,7 +96,7 @@ extension BookSourceFetcher {
             } else {
                 html = try await fetchHTML(
                     url: url, method: requestSpec.method, body: requestSpec.body,
-                    headers: mergedHeaders, baseURL: source.bookSourceUrl,
+                    headers: mergedHeaders, baseURL: source.cleanedBookSourceURL,
                     bodyCharset: requestSpec.charset,
                     allowInteractiveChallengeOn503: false,
                     source: source)

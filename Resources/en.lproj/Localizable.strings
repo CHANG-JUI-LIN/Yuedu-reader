@@ -1404,6 +1404,7 @@
 "%@，進度 %@" = "%@, progress %@";
 "點兩下顯示閱讀進度" = "Double-tap to show reading progress";
 "點兩下展開閱讀工具" = "Double-tap to expand reading tools";
+"點兩下展開閱讀工具，三指左右滑動翻頁" = "Double-tap to expand reading tools, three-finger swipe to turn pages";
 
 // MARK: - Reader Battery SVG Templates
 "電量 SVG 模板" = "Battery SVG Templates";
@@ -1544,3 +1545,4 @@
 /* Paywall */
 "更多客製化功能" = "More Customization";
 "更多個人化設定正在開發中，敬請期待" = "More personalization features are on the way.";
+"系統語音最快 %@（iOS 限制），需要更快請改用網路語音" = "System voice tops out at %@ (iOS limit); use a network voice to go faster";

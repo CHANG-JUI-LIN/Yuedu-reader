@@ -129,6 +129,7 @@ class JSCoreEngine {
     var bookSource: BookSource? {
         didSet {
             onJSQueue {
+                resolvedHeaderCache = nil
                 guard let src = bookSource else {
                     sourceBridge = LegadoSourceBridge(
                         bookSourceUrl: "", bookSourceName: "", bookSourceGroup: "",
@@ -136,7 +137,6 @@ class JSCoreEngine {
                     )
                     cacheBridge = LegadoCacheBridge(sourceId: "")
                     bridge.requestTimeoutSeconds = 8
-                    bridge.sourceHeaders = [:]
                     injectSourceObject(into: context)
                     context.setObject(cacheBridge, forKeyedSubscript: "cache" as NSString)
                     return
@@ -147,9 +147,32 @@ class JSCoreEngine {
                 cacheBridge = LegadoCacheBridge(sourceId: src.bookSourceUrl)
                 injectSourceObject(into: context)
                 context.setObject(cacheBridge, forKeyedSubscript: "cache" as NSString)
-                bridge.sourceHeaders = parseHeaders(src.header)
                 bridge.requestTimeoutSeconds = Self.clampedRequestTimeoutSeconds(src.respondTime)
             }
+        }
+    }
+
+    // MARK: - Resolved source headers
+
+    private var resolvedHeaderCache: [String: String]?
+    private var isResolvingHeaders = false
+
+    /// The source's `header` rule resolved to request headers (Legado
+    /// `getHeaderMap()`): plain JSON, or a `@js:` / `<js>` rule evaluated here.
+    ///
+    /// Resolved on first use — not when the source is attached — so a rule that
+    /// calls `jsLib` helpers sees them. Cached because a JS rule would otherwise
+    /// re-run for every `java.get`/`java.ajax` (段評 fires hundreds), and guarded
+    /// against re-entry because a header rule may itself issue a request.
+    func resolvedSourceHeaders() -> [String: String] {
+        onJSQueue { [self] () -> [String: String] in
+            if let resolvedHeaderCache { return resolvedHeaderCache }
+            guard !isResolvingHeaders, let header = bookSource?.header else { return [:] }
+            isResolvingHeaders = true
+            let headers = parseHeaders(header)
+            isResolvingHeaders = false
+            resolvedHeaderCache = headers
+            return headers
         }
     }
 
@@ -172,6 +195,13 @@ class JSCoreEngine {
 
         jsQueue.setSpecific(key: jsQueueKey, value: ())
         configureContext(ctx)
+
+        // `java.get`/`java.post`/`java.ajax` inside rule JS ask for the source's
+        // headers per request; resolve them lazily so a `@js:` rule runs after
+        // jsLib is in place (and only once — see `resolvedSourceHeaders`).
+        bridge.sourceHeadersProvider = { [weak self] in
+            self?.resolvedSourceHeaders() ?? [:]
+        }
     }
 
     private static func clampedRequestTimeoutSeconds(_ respondTimeMilliseconds: Int64) -> TimeInterval {
@@ -740,8 +770,9 @@ class JSCoreEngine {
                     return out;
                 }
                 // hutool SymmetricCrypto shim (Legado `java.createSymmetricCrypto`),
-                // backed by the native java.aes*Hex bridge. Used by imageDecode /
-                // coverDecodeJs and content-decryption sources. AES-family only.
+                // backed by the native java.aes*Hex bridge (which handles the AES and
+                // DES families — 书山聚合 decrypts chapter text with DES/CBC/PKCS5Padding).
+                // Used by imageDecode / coverDecodeJs and content-decryption sources.
                 java.createSymmetricCrypto = function (transformation, key, iv) {
                     var t = String(transformation || 'AES');
                     if (t.indexOf('/') < 0) { t = t + '/ECB/PKCS5Padding'; }
@@ -764,6 +795,26 @@ class JSCoreEngine {
                         encryptBase64: function (data) { return bytesToB64(hexToByteArray(java.aesEncryptHex(t, keyHex, ivHex, dataToHex(data)))); },
                         encryptHex: function (data) { return java.aesEncryptHex(t, keyHex, ivHex, dataToHex(data)); }
                     };
+                };
+                // Legado compat.js helpers: aesBase64Decode / aesBase64DecodeToString.
+                // Convenience functions that combine Base64 decode + AES decrypt.
+                // Comic sources like 全免漫画 (kaimanhua.com) call these directly on
+                // chapter content that is Base64-encoded AES ciphertext.
+                // Signature: (base64Data, keyStr, transformation, ivStr)
+                // keyStr / ivStr are plain strings -> getBytes() -> hex for native bridge.
+                java.aesBase64Decode = function (base64Str, keyStr, transformation, ivStr) {
+                    var dataBytes = b64ToBytes(String(base64Str || ''));
+                    var keyHex = bytesToHex(String(keyStr || '').getBytes());
+                    var ivHex = (ivStr == null) ? '' : bytesToHex(String(ivStr).getBytes());
+                    var outHex = java.aesDecryptHex(String(transformation || 'AES'), keyHex, ivHex, bytesToHex(dataBytes));
+                    return hexToByteArray(outHex);
+                };
+                java.aesBase64DecodeToString = function (base64Str, keyStr, transformation, ivStr) {
+                    var dataBytes = b64ToBytes(String(base64Str || ''));
+                    var keyHex = bytesToHex(String(keyStr || '').getBytes());
+                    var ivHex = (ivStr == null) ? '' : bytesToHex(String(ivStr).getBytes());
+                    var outHex = java.aesDecryptHex(String(transformation || 'AES'), keyHex, ivHex, bytesToHex(dataBytes));
+                    return java.hexDecodeToString(outHex);
                 };
                 var Base64 = {
                     getDecoder: function () { return { decode: function (s) { return b64ToBytes(s); } }; },
@@ -1040,9 +1091,32 @@ class JSCoreEngine {
         return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
     }
 
-    /// Parse a Legado header string (JSON object or "Key: Value\nKey2: Value2") into a dictionary.
+    /// Parse a Legado header string (JSON object, `@js:`/`<js>` rule, or
+    /// "Key: Value\nKey2: Value2") into a dictionary.
+    ///
+    /// Mirrors `BaseSource.getHeaderMap()`: a header rule may be JS that *builds*
+    /// the map (书山聚合 emits `java.getWebViewUA()` plus a constant API token that
+    /// its server requires on every endpoint). Evaluating it here is what makes
+    /// those headers reach the request at all.
     func parseHeaders(_ headerStr: String) -> [String: String] {
         let trimmed = headerStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [:] }
+        if let script = Self.headerJSScript(trimmed) {
+            let evaluated = (evaluate(script) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !evaluated.isEmpty, let data = evaluated.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+                // A JS header rule that fails must yield nothing: the line-format
+                // fallback below would otherwise mine the *script text* for colons
+                // and emit junk headers such as `"User-Agent": java.getWebViewUA(),`.
+                AppLogger.parse("header JS produced no header map", context: [
+                    "rule": String(trimmed.prefix(120)),
+                    "result": String(evaluated.prefix(120)),
+                    "jsError": lastError ?? "-"
+                ])
+                return [:]
+            }
+            return json
+        }
         if let data = trimmed.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
             return json
@@ -1056,6 +1130,19 @@ class JSCoreEngine {
             if parts.count == 2 { result[parts[0]] = parts[1] }
         }
         return result
+    }
+
+    /// The JS body of a `@js:` / `<js>…</js>` header rule, or nil for a plain header.
+    static func headerJSScript(_ headerStr: String) -> String? {
+        let trimmed = headerStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("@js:") {
+            return String(trimmed.dropFirst(4))
+        }
+        if trimmed.lowercased().hasPrefix("<js>"),
+           let close = trimmed.range(of: "</js>", options: [.caseInsensitive, .backwards]) {
+            return String(trimmed[trimmed.index(trimmed.startIndex, offsetBy: 4)..<close.lowerBound])
+        }
+        return nil
     }
 
     /// Extract a usable String from a JSValue, returning nil for undefined/null/error.

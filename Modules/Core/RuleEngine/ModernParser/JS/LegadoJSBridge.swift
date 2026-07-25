@@ -190,8 +190,14 @@ import UIKit
     /// Calls `done()` after CF cookies are obtained; jsQueue blocks via DispatchSemaphore until then.
     var cloudflareChallengeHandler: ((URL, @escaping () -> Void) -> Void)?
 
-    /// Book source headers (for JS network requests to use correct User-Agent etc.)
-    var sourceHeaders: [String: String] = [:]
+    /// Book source headers (for JS network requests to use correct User-Agent etc.).
+    ///
+    /// Supplied by the owning engine rather than stored, because a `@js:` header
+    /// rule can only be evaluated once `jsLib` exists — snapshotting it when the
+    /// source is attached resolved 书山聚合's rule too early and left every
+    /// `java.get`/`java.post` without the token its server requires.
+    var sourceHeadersProvider: (() -> [String: String])?
+    var sourceHeaders: [String: String] { sourceHeadersProvider?() ?? [:] }
 
     /// Timeout for `java.ajax`/`java.connect` requests. Legado sources carry `respondTime`
     /// in milliseconds; JSCoreEngine clamps it before assigning here.
@@ -639,11 +645,14 @@ import UIKit
 
     // MARK: Logging
 
+    /// `java.log(...)` — the source author's own diagnostic channel (「请求共享接口
+    /// /novel/chap 异常：…」). It used to be DEBUG-only `print`, i.e. invisible in the
+    /// exact situation it exists for: a rule failing on a real device.
     @discardableResult
     func log(_ msg: String) -> String {
-        #if DEBUG
-        print("[JSBridge] \(msg)")
-        #endif
+        AppLogger.parse("⟐ source log", context: [
+            "msg": String(msg.prefix(300)).replacingOccurrences(of: "\n", with: " ")
+        ])
         return msg
     }
 
@@ -762,17 +771,19 @@ import UIKit
 
     // MARK: - Symmetric Crypto
 
-    /// AES decrypt. Inputs/output are lowercase hex; `""` on failure.
+    /// Symmetric decrypt. Inputs/output are lowercase hex; `""` on failure.
     /// `transformation` is a Java-style spec like `AES/CBC/PKCS5Padding`.
-    /// Backs the `javax.crypto.Cipher` JS shim so Legado sources that decrypt
-    /// chapter content via raw Java crypto (e.g. 七猫-明月) work under JavaScriptCore.
+    /// Backs the `javax.crypto.Cipher` / hutool `SymmetricCrypto` JS shims so Legado
+    /// sources that decrypt chapter content via raw Java crypto work under
+    /// JavaScriptCore (七猫-明月: AES; 书山聚合: `DES/CBC/PKCS5Padding`).
+    /// Name kept as `aes…` because it is the JS-visible bridge API Legado defines.
     func aesDecryptHex(_ transformation: String, _ keyHex: String, _ ivHex: String, _ dataHex: String) -> String {
-        return Self.aesCrypt(encrypt: false, transformation: transformation, keyHex: keyHex, ivHex: ivHex, dataHex: dataHex)
+        return Self.symmetricCrypt(encrypt: false, transformation: transformation, keyHex: keyHex, ivHex: ivHex, dataHex: dataHex)
     }
 
-    /// AES encrypt. Inputs/output are lowercase hex; `""` on failure.
+    /// Symmetric encrypt. Inputs/output are lowercase hex; `""` on failure.
     func aesEncryptHex(_ transformation: String, _ keyHex: String, _ ivHex: String, _ dataHex: String) -> String {
-        return Self.aesCrypt(encrypt: true, transformation: transformation, keyHex: keyHex, ivHex: ivHex, dataHex: dataHex)
+        return Self.symmetricCrypt(encrypt: true, transformation: transformation, keyHex: keyHex, ivHex: ivHex, dataHex: dataHex)
     }
 
     /// Hex string → bytes (nil on malformed input).
@@ -789,9 +800,26 @@ import UIKit
         return bytes
     }
 
-    private static func aesCrypt(encrypt: Bool, transformation: String, keyHex: String, ivHex: String, dataHex: String) -> String {
+    private static func symmetricCrypt(encrypt: Bool, transformation: String, keyHex: String, ivHex: String, dataHex: String) -> String {
         let parts = transformation.uppercased().split(separator: "/").map(String.init)
-        guard parts.first == "AES" else { return "" }
+        let algorithmName = parts.first ?? "AES"
+        // 书山聚合 ships chapter content as DES/CBC/PKCS5Padding; restricting this to
+        // AES made `decryptStr` return "" WITHOUT throwing, so the source's own
+        // `catch → base64Decode` fallback never ran and the chapter came back empty
+        // with no JS error. hutool's SymmetricCrypto covers the DES family too.
+        let algorithm: CCAlgorithm
+        let blockSize: Int
+        switch algorithmName {
+        case "AES":
+            algorithm = CCAlgorithm(kCCAlgorithmAES); blockSize = kCCBlockSizeAES128
+        case "DES":
+            algorithm = CCAlgorithm(kCCAlgorithmDES); blockSize = kCCBlockSizeDES
+        case "DESEDE", "3DES", "TRIPLEDES":
+            algorithm = CCAlgorithm(kCCAlgorithm3DES); blockSize = kCCBlockSize3DES
+        default:
+            AppLogger.parse("⟐ crypto unsupported algorithm", context: ["transformation": transformation])
+            return ""
+        }
         let mode = parts.count > 1 ? parts[1] : "ECB"
         let padding = parts.count > 2 ? parts[2] : "PKCS5PADDING"
 
@@ -802,21 +830,27 @@ import UIKit
         switch padding {
         case "PKCS5PADDING", "PKCS7PADDING": options |= CCOptions(kCCOptionPKCS7Padding)
         case "NOPADDING": break
-        default: return "" // unsupported padding (e.g. ISO10126) — fail loudly rather than corrupt
+        default:
+            // unsupported padding (e.g. ISO10126) — fail loudly rather than corrupt
+            AppLogger.parse("⟐ crypto unsupported padding", context: ["transformation": transformation])
+            return ""
         }
         if mode == "ECB" {
             options |= CCOptions(kCCOptionECBMode)
         } else if mode != "CBC" {
+            AppLogger.parse("⟐ crypto unsupported mode", context: ["transformation": transformation])
             return "" // only ECB/CBC supported via CommonCrypto here
         }
-        // CBC requires a 16-byte IV; ECB ignores it.
-        let ivBytes: [UInt8] = (mode == "CBC") ? (iv.count == kCCBlockSizeAES128 ? iv : [UInt8](repeating: 0, count: kCCBlockSizeAES128)) : []
+        // CBC needs an IV of exactly one block; ECB ignores it.
+        let ivBytes: [UInt8] = (mode == "CBC")
+            ? (iv.count == blockSize ? iv : [UInt8](repeating: 0, count: blockSize))
+            : []
 
-        var out = [UInt8](repeating: 0, count: data.count + kCCBlockSizeAES128)
+        var out = [UInt8](repeating: 0, count: data.count + blockSize)
         var moved = 0
         let status = CCCrypt(
             CCOperation(encrypt ? kCCEncrypt : kCCDecrypt),
-            CCAlgorithm(kCCAlgorithmAES),
+            algorithm,
             options,
             key, key.count,
             ivBytes.isEmpty ? nil : ivBytes,
@@ -824,7 +858,16 @@ import UIKit
             &out, out.count,
             &moved
         )
-        guard status == kCCSuccess else { return "" }
+        guard status == kCCSuccess else {
+            AppLogger.parse("⟐ crypto failed", context: [
+                "transformation": transformation,
+                "status": Int(status),
+                "keyBytes": key.count,
+                "ivBytes": iv.count,
+                "dataBytes": data.count
+            ])
+            return ""
+        }
         return out.prefix(moved).map { String(format: "%02x", $0) }.joined()
     }
 
@@ -1088,7 +1131,12 @@ import UIKit
 
         // Delegate to external handler if provided
         if let handler = networkHandler {
-            guard let url = URL(string: urlStr.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            guard let url = URL(string: trimmedUrl) else {
+                // Silently returning "" here made the rule's `JSON.parse("")` throw
+                // three retries later with no trace of the real cause. Rule JS builds
+                // URLs by string concatenation, so unencoded CJK / spaces / stray
+                // template leftovers land here.
+                AppLogger.parse("⟐ js net bad URL", context: ["url": String(trimmedUrl.prefix(200))])
                 return ""
             }
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: requestTimeoutSeconds)
@@ -1097,7 +1145,8 @@ import UIKit
         }
 
         // Fallback: synchronous URLSession request with charset-aware decoding
-        guard let url = URL(string: urlStr.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        guard let url = URL(string: trimmedUrl) else {
+            AppLogger.parse("⟐ js net bad URL", context: ["url": String(trimmedUrl.prefix(200))])
             return ""
         }
 

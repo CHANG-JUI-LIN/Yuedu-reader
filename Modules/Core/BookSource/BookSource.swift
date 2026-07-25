@@ -242,6 +242,13 @@ struct BookSource: Identifiable, Codable {
     var bookSourceName: String = ""
     var bookSourceUrl: String = ""
     var bookSourceGroup: String = ""
+
+    var cleanedBookSourceURL: String {
+        if let hashIdx = bookSourceUrl.firstIndex(of: "#") {
+            return String(bookSourceUrl[..<hashIdx]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return bookSourceUrl
+    }
     var bookSourceComment: String = ""
     var bookSourceType: Int = 0       // 0 = text, 1 = audio, 2 = image, 3 = file
     var bookUrlPattern: String = ""   // Legado: URL match pattern

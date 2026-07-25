@@ -207,13 +207,56 @@ extension BookSource {
         )
     }
 
-    /// Parse header string into Dictionary
+    /// Parse header string into Dictionary.
+    ///
+    /// Legado's `getHeaderMap()` also accepts a `@js:` / `<js>` rule that *builds*
+    /// the map; returning `[:]` for those dropped the constant token 书山聚合
+    /// requires on every endpoint, so its search/catalog answered
+    /// `{"error":"访问被拒绝"}`. JS rules are evaluated through the source's shared
+    /// session bridge and cached per source version (see `jsHeaderCache`).
     var parsedHeaders: [String: String] {
-        guard !header.isEmpty,
-            let data = header.data(using: .utf8),
-            let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String]
-        else { return [:] }
-        return dict
+        let trimmed = header.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [:] }
+        if let data = trimmed.data(using: .utf8),
+           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+            return dict
+        }
+        guard JSCoreEngine.headerJSScript(trimmed) != nil else { return [:] }
+        return Self.evaluatedJSHeaders(for: self)
+    }
+
+    /// Resolved `@js:` header maps keyed by source URL + `lastUpdateTime`, so an
+    /// edited/re-imported source re-evaluates while normal use pays the JS cost once.
+    ///
+    /// The engine caches this too; the second layer exists because `parsedHeaders`
+    /// is read from SwiftUI bodies (cover cells) on the main thread, and reaching
+    /// the engine means a `sync` onto its serial JS queue — which may be mid-parse.
+    /// Only the first read per source version pays that.
+    private nonisolated(unsafe) static var jsHeaderCache: [String: [String: String]] = [:]
+    private static let jsHeaderCacheLock = NSLock()
+
+    private static func evaluatedJSHeaders(for source: BookSource) -> [String: String] {
+        let key = "\(source.bookSourceUrl)#\(source.lastUpdateTime)"
+        jsHeaderCacheLock.lock()
+        let cached = jsHeaderCache[key]
+        jsHeaderCacheLock.unlock()
+        if let cached { return cached }
+
+        // One bridge per source (BookSourceSession) — never build a throwaway
+        // JSContext here, and don't take the session's parse lock: the header
+        // script only needs the engine's own serial queue.
+        let headers = BookSourceSession.session(for: source)
+            .bridgeForAsyncOperations.resolvedSourceHeaders()
+
+        jsHeaderCacheLock.lock()
+        if jsHeaderCache.count >= 32 { jsHeaderCache.removeAll(keepingCapacity: true) }
+        jsHeaderCache[key] = headers
+        jsHeaderCacheLock.unlock()
+        AppLogger.parse("⟐ header.js resolved", context: [
+            "source": source.bookSourceName,
+            "keys": headers.keys.sorted().joined(separator: ",")
+        ])
+        return headers
     }
 
     /// Process remaining `{{...}}` JavaScript template expressions in URLs.

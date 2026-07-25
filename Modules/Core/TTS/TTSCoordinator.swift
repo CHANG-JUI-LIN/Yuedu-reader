@@ -312,11 +312,16 @@ final class TTSCoordinator: ObservableObject {
     }
 
     private static let speechRateDefaultsKey = "yd_tts_speech_rate"
+    /// UI speech-rate scale: `0.5` is 100%, so the bounds read as 20%–500%. Legado's
+    /// `speakSpeed` (`滑桿 + 5`, 10 == 1.0×) is derived from this in
+    /// `CustomHTTPProvider.legadoSpeakSpeed`, whose 0…50 range already covers 5×.
+    static let minSpeechRate: Float = 0.1
+    static let maxSpeechRate: Float = 2.5
 
     init() {
         if UserDefaults.standard.object(forKey: Self.speechRateDefaultsKey) != nil {
             let stored = UserDefaults.standard.float(forKey: Self.speechRateDefaultsKey)
-            speechRate = max(0.1, min(stored, 1.0))
+            speechRate = max(Self.minSpeechRate, min(stored, Self.maxSpeechRate))
         }
         rewireCallbacks()
         setupAudioSessionNotifications()
@@ -531,7 +536,7 @@ final class TTSCoordinator: ObservableObject {
     }
 
     func updateRate(_ rate: Float) {
-        speechRate = max(0.1, min(rate, 1.0))
+        speechRate = max(Self.minSpeechRate, min(rate, Self.maxSpeechRate))
         UserDefaults.standard.set(speechRate, forKey: Self.speechRateDefaultsKey)
     }
 

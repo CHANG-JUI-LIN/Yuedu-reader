@@ -2,7 +2,7 @@ import AVFoundation
 import Foundation
 import UIKit
 
-// MARK: - HTTP TTS Engine (chunked download + preload + AVAudioPlayer playback)
+// MARK: - HTTP TTS Engine (chunked download + preload + rate-shifted chunk playback)
 
 /// URL template supports placeholders: {{text}}, {{title}}, {{speakSpeed}}
 final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
@@ -13,7 +13,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     var onPlaybackStarted: ((TimeInterval) -> Void)?
     var onSegmentChanged: ((Int, Int, String) -> Void)?
 
-    private var audioPlayer: AVAudioPlayer?
+    private var audioPlayer: TTSChunkAudioPlayer?
     private let audioProvider: TTSAudioProvider
     private var activeTasks: [Int: Task<Void, Never>] = [:]
     private var audioCache: [Int: Data] = [:]
@@ -388,9 +388,11 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     // MARK: - Playback
 
     /// Client-side playback rate: 1.0 when the source synthesizes at the requested speed
-    /// itself; otherwise the UI rate (0.5 == 100%) mapped into AVAudioPlayer's 0.5–2.0 range.
+    /// itself; otherwise the UI rate (0.5 == 100%) as a plain multiplier. No 2.0 ceiling
+    /// any more — `TTSChunkAudioPlayer` replaced `AVAudioPlayer`, whose documented
+    /// 0.5–2.0 `rate` range silently swallowed everything above 200%.
     private var clientPlaybackRate: Float {
-        serverControlsSpeed ? 1.0 : max(0.5, min(lastRate / 0.5, 2.0))
+        serverControlsSpeed ? 1.0 : lastRate / 0.5
     }
 
     private func playAudioData(_ data: Data, index: Int, token: UUID) {
@@ -404,23 +406,20 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             audioPlayer?.stop()
             stopSilence()   // real audio is about to play; stop the keep-alive silence
 
-            let player = try AVAudioPlayer(data: data)
+            let player = try TTSChunkAudioPlayer(data: data)
             player.delegate = self
-            player.enableRate = true
             player.rate = clientPlaybackRate
-            let prepared = player.prepareToPlay()
-            player.volume = 1.0
-            player.numberOfLoops = 0
             audioPlayer = player
 
             let success = player.play()
             isPlaying = success
-            ttsLog("[TTS][HTTPEngine] play submitted index=\(index) prepared=\(prepared) success=\(success) duration=\(player.duration) currentTime=\(player.currentTime) format=\(player.format) volume=\(player.volume)")
+            ttsLog("[TTS][HTTPEngine] play submitted index=\(index) success=\(success) duration=\(player.duration) rate=\(player.rate)")
 
             if !success {
                 playChunk(at: index + 1, token: token)
             } else {
-                onPlaybackStarted?(player.duration)
+                // Wall-clock length, so the Now Playing clock matches what is heard.
+                onPlaybackStarted?(player.effectiveDuration)
             }
         } catch {
             ttsLog("[TTS][HTTPEngine] player init failed index=\(index) error=\(error.localizedDescription)")
@@ -428,7 +427,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         }
     }
 
-    /// Rebuilds the AVAudioPlayer for the already-cached current chunk and seeks to `time`,
+    /// Rebuilds the chunk player for the already-cached current chunk and seeks to `time`,
     /// so a resume after the OS discarded the paused player continues mid-sentence rather than
     /// replaying it. Falls back to the normal `playChunk` path on any failure.
     private func resumeCachedChunk(_ data: Data, at index: Int, from time: TimeInterval, token: UUID) {
@@ -438,13 +437,9 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             audioPlayer?.stop()
             stopSilence()   // real audio is about to play; stop the keep-alive silence
 
-            let player = try AVAudioPlayer(data: data)
+            let player = try TTSChunkAudioPlayer(data: data)
             player.delegate = self
-            player.enableRate = true
             player.rate = clientPlaybackRate
-            player.prepareToPlay()
-            player.volume = 1.0
-            player.numberOfLoops = 0
             player.currentTime = min(max(0, time), max(0, player.duration - 0.05))
             audioPlayer = player
             currentIndex = index
@@ -453,7 +448,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             isPlaying = success
             ttsLog("[TTS][HTTPEngine] resume cached chunk index=\(index) seekTo=\(time) duration=\(player.duration) success=\(success)")
             if success {
-                onPlaybackStarted?(player.duration)
+                onPlaybackStarted?(player.effectiveDuration)
             } else {
                 playChunk(at: index, token: token)
             }
@@ -619,20 +614,14 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     }
 }
 
-extension HTTPTTSEngine: AVAudioPlayerDelegate {
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+extension HTTPTTSEngine: TTSChunkAudioPlayerDelegate {
+    // Decode failures now surface as a throw from `TTSChunkAudioPlayer(data:)` (AVAudioFile
+    // parses the container up front) and are handled by the `catch` in `playAudioData` /
+    // `resumeCachedChunk`, which logs and skips to the next chunk — the same recovery the
+    // old `audioPlayerDecodeErrorDidOccur` performed.
+    func chunkAudioPlayerDidFinishPlaying(_ player: TTSChunkAudioPlayer, successfully flag: Bool) {
         DispatchQueue.main.async { [weak self] in
             self?.handlePlaybackEnded(successfully: flag)
-        }
-    }
-
-    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        DispatchQueue.main.async { [weak self] in
-            ttsLog("[TTS][HTTPEngine] decode error=\(error?.localizedDescription ?? "nil")")
-            guard let self else { return }
-            self.audioPlayer?.delegate = nil
-            self.audioPlayer = nil
-            self.playChunk(at: self.currentIndex + 1, token: self.playbackToken)
         }
     }
 }

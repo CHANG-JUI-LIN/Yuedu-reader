@@ -118,7 +118,7 @@ extension BookSourceFetcher {
             html = try await fetchHTML(
                 url: url, method: "GET", body: nil,
                 headers: source.parsedHeaders,
-                baseURL: baseForReferer.isEmpty ? source.bookSourceUrl : baseForReferer,
+                baseURL: baseForReferer.isEmpty ? source.cleanedBookSourceURL : baseForReferer,
                 source: source)
         }
         SourcePerfTrace.record("toc.network", source.bookSourceName, since: tocNetworkStart)

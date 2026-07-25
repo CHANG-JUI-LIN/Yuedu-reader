@@ -561,7 +561,13 @@ final class ReaderViewModel: ObservableObject {
                 self.clearInFlight(chapterIndex: chapterIndex, token: token)
             } catch {
                 guard !Task.isCancelled else { return }
-                print("[FetchStateDebug] ch=\(chapterIndex) fetchChapter ERROR \(error)")
+                // os_log, not print: this is the end of the online chapter pipeline,
+                // and on a device it's the only record of *why* a chapter failed.
+                AppLogger.parse("⟐ chapter fetch failed", error: error, context: [
+                    "chapter": chapterIndex,
+                    "book": book.title,
+                    "online": book.isOnline
+                ])
                 self.finishFetch(
                     chapterIndex: chapterIndex,
                     token: token,
