@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import yuedu_app
 
 @Suite("Root tab customization")

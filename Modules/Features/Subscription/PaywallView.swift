@@ -119,16 +119,39 @@ struct PaywallView: View {
                     }
                 }
             }
+
+            Divider()
+
+            HStack(spacing: DSSpacing.md) {
+                Image(systemName: "sparkles.rectangle.stack")
+                    .font(DSFont.fixed(size: 18, weight: .medium))
+                    .foregroundStyle(DSColor.textSecondary)
+                    .frame(width: 32, height: 32)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localized("更多客製化功能"))
+                        .font(DSFont.bodyBold)
+                        .foregroundColor(DSColor.textPrimary)
+                    Text(localized("更多個人化設定正在開發中，敬請期待"))
+                        .font(DSFont.caption)
+                        .foregroundColor(DSColor.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .opacity(0.6)
         }
         .padding(DSSpacing.lg)
         .background(DSColor.surface)
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
     }
 
-    /// Highlighted feature first, then the rest in declaration order.
+    private let excludedFeatures: Set<PremiumFeature> = [.readerThemePacks, .alternateAppIcons]
+
+    /// Highlighted feature first, then the rest in declaration order (excludes deprecated features).
     private var orderedFeatures: [PremiumFeature] {
-        guard let highlightedFeature else { return PremiumFeature.allCases }
-        return [highlightedFeature] + PremiumFeature.allCases.filter { $0 != highlightedFeature }
+        let available = PremiumFeature.allCases.filter { !excludedFeatures.contains($0) }
+        guard let highlightedFeature else { return available }
+        return [highlightedFeature] + available.filter { $0 != highlightedFeature }
     }
 
     // MARK: - Plan picker

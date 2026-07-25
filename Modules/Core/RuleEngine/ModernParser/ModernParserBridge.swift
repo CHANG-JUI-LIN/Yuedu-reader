@@ -63,6 +63,12 @@ class ModernParserBridge {
             // Safe because jsEngine serialises all evaluations on its dedicated queue.
             self.jsEngine.getStringHandler = { ruleStr in engine.getString(ruleStr: ruleStr) }
             self.jsEngine.getStringListHandler = { ruleStr in engine.getStringList(ruleStr: ruleStr) }
+            // `java.getString(rule, obj)` — evaluate against the caller-supplied document.
+            // `mContent` is a per-call input in ModernRuleEngine, so this does not disturb
+            // the content the surrounding rule chain is parsing.
+            self.jsEngine.getStringWithContentHandler = { ruleStr, content in
+                engine.getString(ruleStr: ruleStr, mContent: content)
+            }
             var bindings: [String: Any] = [
                 "baseUrl": engine.baseUrl,
                 "baseURL": engine.baseUrl
@@ -640,7 +646,16 @@ class ModernParserBridge {
 
         jsEngine.resetJSNetworkMs()
         let _contentStart = Date()
-        let content = engine.getString(ruleStr: source.ruleContent.content)
+        var content = engine.getString(ruleStr: source.ruleContent.content)
+        // Legado `BookContent.analyzeContent` tail: the source's own `replaceRegex` runs through
+        // the rule engine, not a standalone regex helper, so `{{chapter.title}}` templates expand
+        // and `##pattern` splitting works like any other rule. 番茄酱 returns the chapter title as
+        // an <h1> inside the content and strips it here — applying the raw string as a regex
+        // instead just fails to compile (`{{…}}` is not valid regex syntax), which is why the
+        // reader showed the title twice: its own header plus the source's <h1>.
+        if !source.ruleContent.replaceRegex.isEmpty {
+            content = engine.getString(ruleStr: source.ruleContent.replaceRegex, mContent: content)
+        }
         let _contentMs = Int(Date().timeIntervalSince(_contentStart) * 1000)
         // Split a slow chapter.parse: 段評 sources fetch per-paragraph review counts from
         // inside this content rule (java.ajaxAll), so that network hides here, not in
@@ -1553,6 +1568,8 @@ class ModernParserBridge {
         guard let decoded = analyzeUrl.decodeDataUri() else { return "" }
         // A `type` key in the data-URI options means "return the payload hex-encoded"
         // (binary-safe), which the source then decodes with `java.hexDecodeToString`.
+        // Matches Legado's AnalyzeUrl.getStrResponseAwait():
+        //   if (type != null) return StrResponse(url, HexUtil.encodeHexStr(getByteArrayAwait()))
         // The VALUE is just a marker — 起点 uses `{"type":"X-QD"}` for tocUrl but
         // `{"type":""}` (empty!) for chapter content, and BOTH content/toc JS call
         // hexDecodeToString. Keying off `type?.isEmpty == false` wrongly sent the

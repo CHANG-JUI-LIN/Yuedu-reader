@@ -15,6 +15,7 @@ struct LaunchImageSplashOverlay: View {
     private static var hasPlayed = false
 
     private let holdDuration: UInt64 = 1_300_000_000  // 1.3s before fading
+    private let minimalHoldDuration: UInt64 = 400_000_000  // 0.4s for non-Pro orphaned image
     private let fadeDuration = 0.45
 
     /// Max time we wait at cold launch for StoreKit / Firestore entitlements to
@@ -40,24 +41,38 @@ struct LaunchImageSplashOverlay: View {
                 visible = false
                 return
             }
-            // Wait for the entitlement gate to settle before latching. The
-            // body stays empty while `currentImage` is nil, so this wait is
-            // invisible to the user when the splash ends up not showing.
-            let deadline = UInt64(Date().timeIntervalSince1970 * 1_000_000_000)
-                + entitlementWaitNanoseconds
-            while currentImage == nil, !subscriptionStore.isProActive {
-                if Task.isCancelled { return }
-                if UInt64(Date().timeIntervalSince1970 * 1_000_000_000) >= deadline {
-                    break
-                }
-                try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms tick
-            }
             Self.hasPlayed = true
-            guard currentImage != nil else {
+
+            let hasImage = currentImage != nil
+
+            // Wait for the entitlement gate to settle so we know whether to
+            // hold the splash or dismiss fast. The image (if any) is already
+            // visible from frame 1 because `currentImage` no longer gates on
+            // entitlements — this wait only controls dismissal timing.
+            if !subscriptionStore.isProActive {
+                let deadline = UInt64(Date().timeIntervalSince1970 * 1_000_000_000)
+                    + entitlementWaitNanoseconds
+                while !subscriptionStore.isProActive {
+                    if Task.isCancelled { return }
+                    if UInt64(Date().timeIntervalSince1970 * 1_000_000_000) >= deadline {
+                        break
+                    }
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+            }
+
+            guard hasImage else {
                 visible = false
                 return
             }
-            try? await Task.sleep(nanoseconds: holdDuration)
+
+            if subscriptionStore.hasAccess(.launchScreen) {
+                try? await Task.sleep(nanoseconds: holdDuration)
+            } else {
+                // Non-Pro with an orphaned image: quick dismiss so the user
+                // isn't shown stale branding they can no longer configure.
+                try? await Task.sleep(nanoseconds: minimalHoldDuration)
+            }
             visible = false
         }
     }
@@ -76,7 +91,6 @@ struct LaunchImageSplashOverlay: View {
 
     private var currentImage: UIImage? {
         guard settings.launchImageEnabled,
-              subscriptionStore.hasAccess(.launchScreen),
               let url = settings.launchImageURL(for: colorScheme),
               let image = UIImage(contentsOfFile: url.path) else {
             return nil

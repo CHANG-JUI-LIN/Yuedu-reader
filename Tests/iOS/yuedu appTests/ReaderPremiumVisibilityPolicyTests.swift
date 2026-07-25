@@ -1,4 +1,5 @@
 import Testing
+@testable import yuedu_app
 
 @Suite("Reader Premium Visibility Policy")
 struct ReaderPremiumVisibilityPolicyTests {

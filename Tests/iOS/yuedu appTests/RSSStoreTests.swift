@@ -116,7 +116,7 @@ struct RSSStoreTests {
         let sourcesURL = directory.appendingPathComponent("rss_sources.json")
         let articlesURL = directory.appendingPathComponent("rss_articles.json")
 
-        try JSONEncoder().encode([source])!.write(to: sourcesURL)
+        try JSONEncoder().encode([source]).write(to: sourcesURL)
 
         // Simulate a pre-fix persisted cache with two records sharing the same
         // id (the corruption that caused the original crash).
@@ -133,7 +133,7 @@ struct RSSStoreTests {
                                  fetchedAt: now)
             ]
         ]
-        try JSONEncoder().encode(corrupted)!.write(to: articlesURL)
+        try JSONEncoder().encode(corrupted).write(to: articlesURL)
 
         let store = RSSStore(storageDirectory: directory)
 

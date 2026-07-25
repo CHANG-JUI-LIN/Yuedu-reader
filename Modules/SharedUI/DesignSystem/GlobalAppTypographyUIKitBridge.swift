@@ -164,10 +164,13 @@ enum GlobalAppTypographyUIKitBridge {
             item.setTitleTextAttributes([.font: font], for: .normal)
             item.setTitleTextAttributes([.font: font], for: .selected)
         }
-        tabBar.standardAppearance = tabAppearance(tabBar.standardAppearance, font: font)
-        tabBar.scrollEdgeAppearance = tabBar.scrollEdgeAppearance.map {
-            tabAppearance($0, font: font)
-        }
+        let newStandard = tabAppearance(tabBar.standardAppearance, font: font)
+        tabBar.standardAppearance = newStandard
+        // Keep scrollEdgeAppearance in sync; when nil, the system provides a
+        // default transparent appearance that differs from the modified
+        // standard, causing white/transparent flicker on scroll.
+        let scrollSource = tabBar.scrollEdgeAppearance ?? newStandard
+        tabBar.scrollEdgeAppearance = tabAppearance(scrollSource, font: font)
     }
 
     private static func tabAppearance(

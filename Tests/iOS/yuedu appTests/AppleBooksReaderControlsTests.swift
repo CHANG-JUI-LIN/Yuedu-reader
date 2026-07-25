@@ -1,4 +1,5 @@
 import Testing
+import UIKit
 @testable import yuedu_app
 
 @Suite("Apple Books reader controls", .serialized)

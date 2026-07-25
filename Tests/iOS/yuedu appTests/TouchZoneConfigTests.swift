@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import yuedu_app
 
 @Suite("Touch Zone Config")
 struct TouchZoneConfigTests {

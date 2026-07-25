@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UIKit
 @testable import yuedu_app
 
 @Suite("Comment bubble SVG recognizer")

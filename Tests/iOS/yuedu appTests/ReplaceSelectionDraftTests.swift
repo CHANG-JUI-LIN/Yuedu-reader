@@ -1,4 +1,5 @@
 import Testing
+@testable import yuedu_app
 
 @Suite("Replace selection draft")
 struct ReplaceSelectionDraftTests {

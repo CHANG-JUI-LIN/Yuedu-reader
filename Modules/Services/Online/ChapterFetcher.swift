@@ -434,6 +434,12 @@ struct ChapterFetcher {
         // "Fetched empty content" in the player. Mirrors the manga-image exemption below.
         let isDirectAudio = DirectChapterAudioResolver.looksLikeAudioContent(content)
 
+        // The source's `ruleContent.replaceRegex` is primarily applied at parse time
+        // (`ModernParserBridge.parseChapterResult`), which is where the rule engine can expand
+        // `{{chapter.title}}` templates and where the result also reaches the HTML render branch.
+        // This pass stays because `content` may have come from the fetchViaJS / fetchBySelectors
+        // fallbacks, which never went through the content rule — and because the paragraph indent
+        // below is rebuilt here. Re-running the already-applied removals is a no-op.
         if !replaceRules.isEmpty && !isDirectAudio {
             content = content
                 .components(separatedBy: .newlines)

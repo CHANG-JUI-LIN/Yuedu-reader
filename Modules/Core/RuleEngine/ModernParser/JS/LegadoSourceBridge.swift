@@ -5,6 +5,14 @@ import JavaScriptCore
 
 /// JS-callable interface for Legado's `source.*` bridge object.
 /// Mirrors Legado's `BaseSource` API: variable storage, login info/headers, metadata.
+///
+/// On Android, `source` IS the `BookSource` object — Rhino's Java interop lets source JS read
+/// *any* field of its own source, including the nested rule groups (`source.ruleContent.content`).
+/// Sources rely on that: 番茄酱's remote `to.js` refuses to run unless
+/// `java.md5Encode(source.bookSourceComment + source.concurrentRate + source.ruleContent.content)`
+/// matches a baked-in digest (an anti-tamper gate). Exposing only a handful of fields made
+/// `source.ruleContent` undefined, so the gate threw and every chapter came back as
+/// "请求失败: …". Keep this list mirroring `BookSource`.
 @objc protocol LegadoSourceBridgeExport: JSExport {
     func getVariable() -> String
     func setVariable(_ variable: String?)
@@ -16,7 +24,6 @@ import JavaScriptCore
     func getLoginHeader() -> String?
     func removeLoginHeader()
     func getHeaderMap() -> JSValue
-    func loginUi() -> String
     func login() -> String
     func put(_ key: String, _ value: String)
     func get(_ key: String) -> String
@@ -27,9 +34,33 @@ import JavaScriptCore
     var key: String { get }
     var bookSourceGroup: String { get }
     var bookSourceComment: String { get }
+    var bookSourceType: Int { get }
+    var bookUrlPattern: String { get }
+    var customOrder: Int { get }
+    var enabled: Bool { get }
+    var enabledExplore: Bool { get }
+    var enabledCookieJar: Bool { get }
+    var enabledReview: Bool { get }
+    var searchUrl: String { get }
+    var exploreUrl: String { get }
+    var exploreScreen: String { get }
+    var concurrentRate: String { get }
     var loginUrl: String { get }
-    var header: String { get }
+    var loginUi: String { get }
     var loginCheckJs: String { get }
+    var header: String { get }
+    var respondTime: Int64 { get }
+    var lastUpdateTime: Int64 { get }
+    var weight: Int { get }
+    var variableComment: String { get }
+    var coverDecodeJs: String { get }
+    var jsLib: String { get }
+    var ruleSearch: NSDictionary { get }
+    var ruleExplore: NSDictionary { get }
+    var ruleBookInfo: NSDictionary { get }
+    var ruleToc: NSDictionary { get }
+    var ruleContent: NSDictionary { get }
+    var ruleReview: NSDictionary { get }
 }
 
 // MARK: - Bridge Implementation
@@ -42,9 +73,33 @@ import JavaScriptCore
     @objc let bookSourceName: String
     @objc let bookSourceGroup: String
     @objc let bookSourceComment: String
+    @objc let bookSourceType: Int
+    @objc let bookUrlPattern: String
+    @objc let customOrder: Int
+    @objc let enabled: Bool
+    @objc let enabledExplore: Bool
+    @objc let enabledCookieJar: Bool
+    @objc let enabledReview: Bool
+    @objc let searchUrl: String
+    @objc let exploreUrl: String
+    @objc let exploreScreen: String
+    @objc let concurrentRate: String
     @objc let loginUrl: String
-    @objc let header: String
+    @objc let loginUi: String
     @objc let loginCheckJs: String
+    @objc let header: String
+    @objc let respondTime: Int64
+    @objc let lastUpdateTime: Int64
+    @objc let weight: Int
+    @objc let variableComment: String
+    @objc let coverDecodeJs: String
+    @objc let jsLib: String
+    @objc let ruleSearch: NSDictionary
+    @objc let ruleExplore: NSDictionary
+    @objc let ruleBookInfo: NSDictionary
+    @objc let ruleToc: NSDictionary
+    @objc let ruleContent: NSDictionary
+    @objc let ruleReview: NSDictionary
 
     @objc var key: String { bookSourceUrl }
 
@@ -98,21 +153,120 @@ import JavaScriptCore
 
     // MARK: Init
 
-    init(bookSourceUrl: String,
-         bookSourceName: String,
-         bookSourceGroup: String,
-         bookSourceComment: String,
-         loginUrl: String,
-         header: String,
-         loginCheckJs: String) {
-        self.bookSourceUrl = bookSourceUrl
-        self.bookSourceName = bookSourceName
-        self.bookSourceGroup = bookSourceGroup
-        self.bookSourceComment = bookSourceComment
-        self.loginUrl = loginUrl
-        self.header = header
-        self.loginCheckJs = loginCheckJs
+    init(source: BookSource) {
+        bookSourceUrl = source.bookSourceUrl
+        bookSourceName = source.bookSourceName
+        bookSourceGroup = source.bookSourceGroup
+        bookSourceComment = source.bookSourceComment
+        bookSourceType = source.bookSourceType
+        bookUrlPattern = source.bookUrlPattern
+        customOrder = source.customOrder
+        enabled = source.enabled
+        enabledExplore = source.enabledExplore
+        enabledCookieJar = source.enabledCookieJar
+        enabledReview = source.enabledReview
+        searchUrl = source.searchUrl
+        exploreUrl = source.exploreUrl
+        exploreScreen = source.exploreScreen
+        concurrentRate = source.concurrentRate
+        loginUrl = source.loginUrl
+        loginUi = source.loginUi
+        loginCheckJs = source.loginCheckJs
+        header = source.header
+        respondTime = source.respondTime
+        lastUpdateTime = source.lastUpdateTime
+        weight = source.weight
+        variableComment = source.variableComment
+        coverDecodeJs = source.coverDecodeJs
+        jsLib = source.jsLib
+        // Keys are Legado's JSON field names, not our Swift property names — source JS
+        // addresses them exactly as they appear in the book-source JSON
+        // (`ruleBookInfo.init`, not `.initScript`).
+        ruleSearch = [
+            "checkKeyWord": source.ruleSearch.checkKeyWord,
+            "bookList": source.ruleSearch.bookList,
+            "name": source.ruleSearch.name,
+            "author": source.ruleSearch.author,
+            "coverUrl": source.ruleSearch.coverUrl,
+            "intro": source.ruleSearch.intro,
+            "bookUrl": source.ruleSearch.bookUrl,
+            "wordCount": source.ruleSearch.wordCount,
+            "lastChapter": source.ruleSearch.lastChapter,
+            "updateTime": source.ruleSearch.updateTime,
+            "kind": source.ruleSearch.kind,
+            "hasMoreRule": source.ruleSearch.hasMoreRule
+        ] as NSDictionary
+        ruleExplore = [
+            "bookList": source.ruleExplore.bookList,
+            "name": source.ruleExplore.name,
+            "author": source.ruleExplore.author,
+            "intro": source.ruleExplore.intro,
+            "kind": source.ruleExplore.kind,
+            "lastChapter": source.ruleExplore.lastChapter,
+            "updateTime": source.ruleExplore.updateTime,
+            "bookUrl": source.ruleExplore.bookUrl,
+            "coverUrl": source.ruleExplore.coverUrl,
+            "wordCount": source.ruleExplore.wordCount,
+            "hasMoreRule": source.ruleExplore.hasMoreRule
+        ] as NSDictionary
+        ruleBookInfo = [
+            "init": source.ruleBookInfo.initScript,
+            "name": source.ruleBookInfo.name,
+            "author": source.ruleBookInfo.author,
+            "coverUrl": source.ruleBookInfo.coverUrl,
+            "intro": source.ruleBookInfo.intro,
+            "kind": source.ruleBookInfo.kind,
+            "wordCount": source.ruleBookInfo.wordCount,
+            "lastChapter": source.ruleBookInfo.lastChapter,
+            "updateTime": source.ruleBookInfo.updateTime,
+            "tocUrl": source.ruleBookInfo.tocUrl,
+            "canReName": source.ruleBookInfo.canReName,
+            "downloadUrls": source.ruleBookInfo.downloadUrls,
+            "ttsDice": source.ruleBookInfo.ttsDice
+        ] as NSDictionary
+        ruleToc = [
+            "preUpdateJs": source.ruleToc.preUpdateJs,
+            "chapterList": source.ruleToc.chapterList,
+            "chapterName": source.ruleToc.chapterName,
+            "chapterUrl": source.ruleToc.chapterUrl,
+            "formatJs": source.ruleToc.formatJs,
+            "isVolume": source.ruleToc.isVolume,
+            "isVip": source.ruleToc.isVip,
+            "isPay": source.ruleToc.isPay,
+            "updateTime": source.ruleToc.updateTime,
+            "nextTocUrl": source.ruleToc.nextTocUrl
+        ] as NSDictionary
+        ruleContent = [
+            "content": source.ruleContent.content,
+            "title": source.ruleContent.title,
+            "nextContentUrl": source.ruleContent.nextContentUrl,
+            "webJs": source.ruleContent.webJs,
+            "sourceRegex": source.ruleContent.sourceRegex,
+            "replaceRegex": source.ruleContent.replaceRegex,
+            "imageStyle": source.ruleContent.imageStyle,
+            "imageDecode": source.ruleContent.imageDecode,
+            "payAction": source.ruleContent.payAction
+        ] as NSDictionary
+        ruleReview = ["review": source.ruleReview.review] as NSDictionary
         super.init()
+    }
+
+    convenience init(bookSourceUrl: String,
+                     bookSourceName: String,
+                     bookSourceGroup: String,
+                     bookSourceComment: String,
+                     loginUrl: String,
+                     header: String,
+                     loginCheckJs: String) {
+        var source = BookSource()
+        source.bookSourceUrl = bookSourceUrl
+        source.bookSourceName = bookSourceName
+        source.bookSourceGroup = bookSourceGroup
+        source.bookSourceComment = bookSourceComment
+        source.loginUrl = loginUrl
+        source.header = header
+        source.loginCheckJs = loginCheckJs
+        self.init(source: source)
     }
 
     // MARK: Source Variables
@@ -162,10 +316,6 @@ import JavaScriptCore
     }
 
     // MARK: Login UI / Execution
-
-    func loginUi() -> String {
-        return "" // loginUi is a static property; JS accesses it as source.loginUi
-    }
 
     func login() -> String {
         return loginHandler?() ?? ""
@@ -258,14 +408,6 @@ import JavaScriptCore
 extension LegadoSourceBridge {
     /// Create a bridge populated from a BookSource.
     static func from(_ source: BookSource) -> LegadoSourceBridge {
-        return LegadoSourceBridge(
-            bookSourceUrl: source.bookSourceUrl,
-            bookSourceName: source.bookSourceName,
-            bookSourceGroup: source.bookSourceGroup,
-            bookSourceComment: source.bookSourceComment,
-            loginUrl: source.loginUrl,
-            header: source.header,
-            loginCheckJs: source.loginCheckJs
-        )
+        return LegadoSourceBridge(source: source)
     }
 }

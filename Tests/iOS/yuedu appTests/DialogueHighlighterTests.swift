@@ -14,7 +14,7 @@ struct DialogueHighlighterTests {
 
     private func highlighted(_ string: String) -> NSMutableAttributedString {
         let attr = NSMutableAttributedString(string: string)
-        DialogueHighlighter.apply(color: tint, to: attr)
+        DialogueHighlighter.apply(textColor: tint, boxColor: nil, to: attr)
         return attr
     }
 

@@ -32,7 +32,10 @@ import UIKit
     func get(_ key: String) -> String
 
     // Rule evaluation (placeholder — connected to ModernRuleEngine later)
-    func getString(_ ruleStr: String) -> String
+    /// Legado: `AnalyzeRule.getString(ruleStr, mContent = null, isUrl = false)`.
+    /// `mContent` is optional in JS — JavaScriptCore passes `undefined` when the source
+    /// calls `java.getString(rule)` with one argument.
+    func getString(_ ruleStr: String, _ mContent: JSValue) -> String
     func getStringList(_ ruleStr: String) -> [String]
     func setContent(_ content: JSValue, _ baseUrl: JSValue) -> String
     func getElements(_ ruleStr: String) -> [Any]
@@ -537,8 +540,32 @@ import UIKit
     private var storedContent: Any?
     private var storedBaseUrl: String?
 
-    func getString(_ ruleStr: String) -> String {
+    /// `java.getString(rule)` evaluates against the response currently being parsed;
+    /// `java.getString(rule, obj)` evaluates against `obj` instead (Legado's `mContent`).
+    /// Sources that fetch a JSON body themselves and then pull a field out of it rely on the
+    /// two-argument form — e.g. 番茄酱's `to.js` does
+    /// `java.getString("$..content", java.ajax(...))`. Ignoring the second argument silently
+    /// evaluated the rule against the wrong document and returned "".
+    func getString(_ ruleStr: String, _ mContent: JSValue) -> String {
+        if let content = Self.ruleInput(from: mContent) {
+            guard let handler = getStringWithContentHandler else {
+                AppLogger.parse(
+                    "java.getString(rule, mContent) called with no rule engine attached",
+                    context: ["rule": String(ruleStr.prefix(60))]
+                )
+                return ""
+            }
+            return handler(ruleStr, content) ?? ""
+        }
         return _evaluateString(ruleStr)
+    }
+
+    /// Converts an optional JS `mContent` argument into rule-engine input.
+    /// `undefined`/`null` mean "not supplied" — fall back to the current parse content.
+    private static func ruleInput(from value: JSValue) -> Any? {
+        guard !value.isUndefined, !value.isNull else { return nil }
+        if value.isString { return value.toString() }
+        return value.toObject()
     }
 
     func getStringList(_ ruleStr: String) -> [String] {

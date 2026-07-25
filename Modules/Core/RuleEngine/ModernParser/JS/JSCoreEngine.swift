@@ -17,6 +17,8 @@ class JSCoreEngine {
     private var context: JSContext
     private let bridge: LegadoJSBridge
     private let cookieBridge = LegadoCookieBridge()
+    /// SwiftSoup backing for the `org.jsoup.*` polyfill.
+    private let jsoupBridge = LegadoJsoupBridge()
 
     /// Bridge for `source.*` — replaces the plain dictionary with a full Legado-compatible object.
     private(set) var sourceBridge: LegadoSourceBridge
@@ -483,6 +485,9 @@ class JSCoreEngine {
         // Inject the `cookie` bridge object (get/set/remove via HTTPCookieStorage)
         ctx.setObject(cookieBridge, forKeyedSubscript: "cookie" as NSString)
 
+        // SwiftSoup backing for the `org.jsoup.*` polyfill installed below.
+        ctx.setObject(jsoupBridge, forKeyedSubscript: "__yueduJsoup" as NSString)
+
         // Inject `source` as a full bridge object (Legado-compatible)
         injectSourceObject(into: ctx)
 
@@ -884,45 +889,56 @@ class JSCoreEngine {
                 RP.parse = function () { return JsoupParse(this._body, this._url); };
                 RP.statusMessage = function () { return 'OK'; };
 
-                function Element(html, baseUrl) { this._html = html || ''; this._baseUrl = baseUrl || ''; }
+                // `_n` is a native SwiftSoup node (`__yueduJsoup`). JavaScriptCore owns its
+                // lifetime, so a selected element stays valid for as long as JS holds it —
+                // serialising back to a string between calls would mangle fragments the HTML
+                // parser is context-sensitive about (`<body>`, `<td>`, `<li>`, …).
+                // Mutating methods stay no-ops: the document is shared via JsoupDocumentCache.
+                function Element(node, baseUrl) { this._n = node || null; this._baseUrl = baseUrl || ''; }
+                function wrap(list, baseUrl) {
+                    var out = [];
+                    if (list) for (var i = 0; i < list.length; i++) out.push(new Element(list[i], baseUrl));
+                    return new Elements(out);
+                }
                 var EP = Element.prototype;
-                EP.html = function () { return this._html; };
-                EP.text = function () { return this._html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' '); };
-                EP.outerHtml = function () { return this._html; };
-                EP.toString = function () { return this._html; };
-                EP.attr = function (k, v) { if (arguments.length === 2) { return this; } return ''; };
-                EP.select = function () { return new Elements([]); };
+                EP.html = function () { return this._n ? this._n.html() : ''; };
+                EP.text = function () { return this._n ? this._n.text() : ''; };
+                EP.ownText = function () { return this._n ? this._n.ownText() : ''; };
+                EP.outerHtml = function () { return this._n ? this._n.outerHtml() : ''; };
+                EP.toString = function () { return this.outerHtml(); };
+                EP.attr = function (k, v) { if (arguments.length === 2) { return this; } return this._n ? this._n.attr(String(k)) : ''; };
+                EP.select = function (q) { return wrap(this._n ? this._n.select(String(q)) : [], this._baseUrl); };
                 EP.first = function () { return null; };
                 EP.last = function () { return null; };
-                EP.children = function () { return new Elements([]); };
-                EP.child = function () { return null; };
-                EP.parent = function () { return null; };
+                EP.children = function () { return wrap(this._n ? this._n.children() : [], this._baseUrl); };
+                EP.child = function (i) { return this.children().get(i); };
+                EP.parent = function () { var p = this._n ? this._n.parent() : null; return p ? new Element(p, this._baseUrl) : null; };
                 EP.nextElementSibling = function () { return null; };
                 EP.previousElementSibling = function () { return null; };
                 EP.appendChild = function (el) { return this; };
                 EP.prependChild = function (el) { return this; };
                 EP.remove = function () { return this; };
-                EP.tagName = function () { return 'div'; };
-                EP.id = function () { return ''; };
-                EP.className = function () { return ''; };
-                EP.hasClass = function () { return false; };
-                EP.getElements = function () { return new Elements([]); };
-                EP.getAllElements = function () { return new Elements([]); };
-                EP.getElementById = function () { return null; };
-                EP.getElementsByClass = function () { return new Elements([]); };
-                EP.getElementsByTag = function () { return new Elements([]); };
-                EP.getElementsByAttribute = function () { return new Elements([]); };
-                EP.getElementsByAttributeValue = function () { return new Elements([]); };
-                EP.getElementsByAttributeValueContaining = function () { return new Elements([]); };
-                EP.absUrl = function () { return ''; };
+                EP.tagName = function () { return (this._n ? this._n.tagName() : '') || 'div'; };
+                EP.nodeName = function () { return this.tagName(); };
+                EP.id = function () { return this._n ? this._n.id() : ''; };
+                EP.className = function () { return this._n ? this._n.className() : ''; };
+                EP.hasClass = function (c) { return (' ' + this.className() + ' ').indexOf(' ' + c + ' ') >= 0; };
+                EP.getElements = function () { return this.select('*'); };
+                EP.getAllElements = function () { return this.select('*'); };
+                EP.getElementById = function (id) { return this.select('#' + id).first(); };
+                EP.getElementsByClass = function (c) { return this.select('.' + c); };
+                EP.getElementsByTag = function (t) { return this.select(String(t)); };
+                EP.getElementsByAttribute = function (a) { return this.select('[' + a + ']'); };
+                EP.getElementsByAttributeValue = function (a, v) { return this.select('[' + a + '="' + v + '"]'); };
+                EP.getElementsByAttributeValueContaining = function (a, v) { return this.select('[' + a + '*="' + v + '"]'); };
+                EP.absUrl = function (k) { return this.attr(k); };
                 EP.baseUri = function () { return this._baseUrl; };
-                EP.parentNode = function () { return null; };
+                EP.parentNode = function () { return this.parent(); };
                 EP.wholeText = function () { return this.text(); };
                 EP.data = function () { return ''; };
-                EP.val = function () { return ''; };
+                EP.val = function () { return this.attr('value'); };
                 EP.textNode = function () { return this.text(); };
-                EP.nodeName = function () { return '#text'; };
-                EP.hasAttr = function () { return false; };
+                EP.hasAttr = function (k) { return this._n ? this._n.hasAttr(String(k)) : false; };
                 EP.removeAttr = function () { return this; };
 
                 function Elements(arr) { this._arr = arr || []; }
@@ -938,8 +954,14 @@ class JSCoreEngine {
                 ESP.each = function (fn) { this._arr.forEach(fn); return this; };
                 ESP.forEach = function (fn) { this._arr.forEach(fn); return this; };
                 ESP.attr = function () { return this._arr[0] ? this._arr[0].attr.apply(this._arr[0], arguments) : ''; };
-                ESP.hasAttr = function () { return false; };
-                ESP.select = function () { return new Elements([]); };
+                ESP.hasAttr = function (k) { return this._arr.some(function (e) { return e.hasAttr(k); }); };
+                ESP.select = function (q) {
+                    var out = [];
+                    this._arr.forEach(function (e) { e.select(q).each(function (m) { out.push(m); }); });
+                    return new Elements(out);
+                };
+                ESP.outerHtml = function () { return this._arr.map(function (e) { return e.outerHtml(); }).join(''); };
+                ESP.toString = function () { return this.outerHtml(); };
                 ESP.not = function () { return this; };
                 ESP.eq = function (i) { return new Elements([this._arr[i]]); };
                 ESP.is = function () { return false; };
@@ -947,17 +969,18 @@ class JSCoreEngine {
                 ESP.iterator = function () { return this._arr[Symbol.iterator](); };
                 ESP[Symbol.iterator] = function () { return this._arr[Symbol.iterator](); };
 
-                function Document(html, baseUrl) { Element.call(this, html, baseUrl); }
+                function Document(node, baseUrl) { Element.call(this, node, baseUrl); }
                 Document.prototype = Object.create(Element.prototype);
                 Document.prototype.constructor = Document;
-                Document.prototype.body = function () { return new Element(this._html, this._baseUrl); };
-                Document.prototype.head = function () { return new Element('', this._baseUrl); };
-                Document.prototype.title = function () { var m = this._html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i); return m ? m[1].trim() : ''; };
-                Document.prototype.select = function () { return new Elements([]); };
+                Document.prototype.body = function () { var b = this._n ? this._n.body() : null; return new Element(b, this._baseUrl); };
+                Document.prototype.head = function () { return this.select('head').first() || new Element(null, this._baseUrl); };
+                Document.prototype.title = function () { return this._n ? this._n.title() : ''; };
                 Document.prototype.setBaseUri = function () { return this; };
                 Document.prototype.outputSettings = function () { return this; };
 
-                function JsoupParse(html, baseUrl) { return new Document(html, baseUrl); }
+                function JsoupParse(html, baseUrl) {
+                    return new Document(__yueduJsoup.parse(html == null ? '' : String(html), baseUrl), baseUrl);
+                }
 
                 var Method = { GET: 'GET', POST: 'POST', HEAD: 'HEAD', PUT: 'PUT', DELETE: 'DELETE', OPTIONS: 'OPTIONS', PATCH: 'PATCH', TRACE: 'TRACE' };
 
@@ -967,7 +990,7 @@ class JSCoreEngine {
                         Connection: { Method: Method, Response: Response, KeyVal: { create: function (k, v) { return { key: function () { return k; }, value: function () { return v; } }; } } },
                         nodes: { Document: Document, Element: Element, TextNode: Element },
                         safety: { Clean: { clean: function (h) { return h; } } },
-                        select: { Selector: { select: function () { return new Elements([]); } } },
+                        select: { Selector: { select: function (q, root) { return root ? root.select(q) : new Elements([]); } } },
                         parser: { Parser: { parse: function (h, b) { return JsoupParse(h, b); } } },
                         helper: { HttpConnection: { connect: function (url) { return new Connection(url); } } }
                     }

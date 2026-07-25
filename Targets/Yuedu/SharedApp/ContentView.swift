@@ -27,8 +27,34 @@ struct ContentView: View {
     /// system colors. Presets are light palettes, so surfaces only retint in
     /// light appearance; dark mode keeps clean system colors (accent still
     /// applies). Classic = no override.
+    ///
+    /// > **Optimistic Pro theme.** On cold launch StoreKit entitlements are
+    /// > still loading, so `subscriptionStore.hasAccess(.readerThemePacks)`
+    /// > returns false even for Pro users. Without the optimistic fallback
+    /// > below, the first render would fall back to classic → `activeAppTheme`
+    /// > = nil → the entire UI flashes in system colors until entitlements
+    /// > resolve. Instead, we detect the intended theme from UserDefaults and
+    /// > apply it optimistically when it requires Pro. If the user turns out
+    /// > not to be Pro, the theme downgrades on the next render pass (~1
+    /// > frame), which is imperceptible compared to the 500ms–2s flash.
     private var resolvedAppTheme: AppearanceThemePreset? {
-        (colorScheme == .light && !appearanceTheme.isClassic) ? appearanceTheme : nil
+        guard colorScheme == .light else { return nil }
+        let theme = gs.appearanceTheme(
+            for: colorScheme,
+            isProActive: subscriptionStore.hasAccess(.readerThemePacks)
+        )
+        if theme.isClassic {
+            // The intended theme may be a Pro theme that requires Pro, but
+            // entitlements haven't resolved yet. Look up the intended theme
+            // from UserDefaults (synchronous) and use it optimistically.
+            let selectedID = gs.selectedAppearanceThemeID(for: colorScheme)
+            if let intended = AppearanceThemePreset.preset(
+                id: selectedID, customThemes: gs.customAppearanceThemes
+            ), !intended.isClassic, intended.requiresPro {
+                return intended
+            }
+        }
+        return theme.isClassic ? nil : theme
     }
 
     private var typographyRefreshID: String {
