@@ -344,10 +344,35 @@ private struct DiscoverRankedSummaryCard: View {
     let onAppearLoad: () -> Void
     let onRetry: () -> Void
 
+    /// Ranked rows every card reserves, filled or not.
+    ///
+    /// The carousel is a `LazyHStack` with `scrollClipDisabled`, so its height
+    /// tracks only the cards built so far AND anything taller draws outside it:
+    /// a card holding 6 books next to an empty 「暫無發現內容」 one rendered straight
+    /// over the section below (書山聚合's 出版榜单 landing on top of 西方奇幻).
+    /// Every card must therefore be the same height — the invariant
+    /// `DiscoverFeaturedCard` documents for the featured carousel.
+    ///
+    /// Six matches the vertical ranked section's count. It costs height — the
+    /// carousel row is ~690pt, and a category with fewer books pads the rest out
+    /// as blank space — which is the accepted trade for showing a full top-six
+    /// without opening 查看全部. Lowering it shortens the row; the invariant only
+    /// requires that `prefix` and the reserved height stay driven by this one value.
+    private static let reservedRows = 6
+
+    /// One ranked row at default text size: 70pt cover / ~78pt text stack plus
+    /// `DSSpacing.md` top and bottom, with a few points of slack. `@ScaledMetric`
+    /// keeps it in step with Dynamic Type instead of clipping at larger sizes.
+    @ScaledMetric(relativeTo: .subheadline) private var rowHeight: CGFloat = 106
+
+    private var reservedContentHeight: CGFloat { CGFloat(Self.reservedRows) * rowHeight }
+
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.md) {
             header
             content
+                .frame(height: reservedContentHeight, alignment: .top)
+                .clipped()
         }
         .padding(DSSpacing.md)
         .frame(width: 320, alignment: .topLeading)
@@ -386,7 +411,7 @@ private struct DiscoverRankedSummaryCard: View {
     @ViewBuilder
     private var content: some View {
         if !section.books.isEmpty {
-            let ranked = Array(section.books.prefix(6).enumerated())
+            let ranked = Array(section.books.prefix(Self.reservedRows).enumerated())
             VStack(spacing: 0) {
                 ForEach(ranked, id: \.element.id) { index, display in
                     NavigationLink(value: ExploreNavigationRoute.book(display.book)) {
@@ -397,6 +422,7 @@ private struct DiscoverRankedSummaryCard: View {
                         Divider().padding(.leading, 88)
                     }
                 }
+                Spacer(minLength: 0)  // short rankings pad out; cards stay equal height
             }
         } else {
             switch section.phase {
@@ -416,15 +442,14 @@ private struct DiscoverRankedSummaryCard: View {
             ProgressView()
             Spacer()
         }
-        .frame(height: 120)
+        .frame(maxHeight: .infinity)
     }
 
     private var empty: some View {
         Text(localized("暫無發現內容"))
             .font(DSFont.caption)
             .foregroundColor(DSColor.textSecondary)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.vertical, DSSpacing.lg)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private var failed: some View {
@@ -444,8 +469,7 @@ private struct DiscoverRankedSummaryCard: View {
                         .lineLimit(3)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.vertical, DSSpacing.lg)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .buttonStyle(.plain)
     }
