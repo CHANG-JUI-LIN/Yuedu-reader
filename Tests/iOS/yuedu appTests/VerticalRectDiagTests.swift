@@ -1,4 +1,5 @@
 import CoreText
+import CoreGraphics
 import Foundation
 import Testing
 import UIKit

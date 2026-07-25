@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreGraphics
 import Testing
 @testable import yuedu_app
 

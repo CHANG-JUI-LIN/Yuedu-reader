@@ -66,8 +66,24 @@ struct ChapterFetcher {
             "plainYdreview": Self.countOccurrences(of: "ydreview://", in: plainTextContent, caseInsensitive: true),
             "rawHead": String(rawTrimmed.prefix(240))
         ])
+        // 去除重复标题 (Legado `ContentProcessor.getContent`): the reader renders `title` as its own
+        // heading, so the source's own copy of it must not render again. Resolved here because this
+        // is the one place that holds both the effective title and the body — and it has to happen
+        // twice, once per representation: a leading-text strip for the plain branch, and an element
+        // drop for the HTML branch, where the copy sits inside markup (`<h1>第1章 …</h1>`) that a
+        // prefix regex cannot see.
+        let (titleTextPart, titleBubbleHTML) = Self.splitTitleBubble(title, reviewContext: reviewContext)
+        let trimmedTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: titleTextPart)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
         guard looksHTML else {
-            return buildNormalizedHTML(title: title, content: plainTextContent)
+            return buildNormalizedHTML(
+                title: title,
+                content: ReaderHTMLUtilities.stripLeadingDuplicateTitle(
+                    plainTextContent,
+                    title: trimmedTitle
+                )
+            )
         }
         let originalRawHTML = raw
 
@@ -124,6 +140,7 @@ struct ChapterFetcher {
                   let body = document.body() else { return ("", nil) }
             _ = try? body.select("script,noscript,iframe,object,embed").remove()
             let titleBubble = Self.detachLeadingTitleReviewImage(from: body)
+            Self.detachLeadingDuplicateTitle(from: body, title: trimmedTitle)
             let html = ((try? body.html()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return (html, titleBubble)
         }.value
@@ -133,16 +150,19 @@ struct ChapterFetcher {
         }
 
         guard !bodyHTML.isEmpty || leadingTitleBubbleHTML != nil else {
-            return buildNormalizedHTML(title: title, content: plainTextContent)
+            return buildNormalizedHTML(
+                title: title,
+                content: ReaderHTMLUtilities.stripLeadingDuplicateTitle(
+                    plainTextContent,
+                    title: trimmedTitle
+                )
+            )
         }
 
         // A chapter title may carry a 本章说 comment bubble appended as a bare `data:image/...` URI
-        // (起點: `titleRow = title + Bubble`). Split it off so the text becomes the heading and the
+        // (起點: `titleRow = title + Bubble`). `splitTitleBubble` above peeled the text off; the
         // bubble is rendered as the source's image (text-sized, like body 段評), not literal text.
-        let (titleTextPart, titleBubbleHTML) = Self.splitTitleBubble(title, reviewContext: reviewContext)
         let resolvedTitleBubbleHTML = titleBubbleHTML ?? leadingTitleBubbleHTML
-        let trimmedTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: titleTextPart)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
         let escapedTitle = ReaderHTMLUtilities.escapeHTML(trimmedTitle.isEmpty ? "Untitled" : trimmedTitle)
         let heading = (trimmedTitle.isEmpty && resolvedTitleBubbleHTML == nil)
             ? ""
@@ -205,6 +225,25 @@ struct ChapterFetcher {
 
         try? firstElement.remove()
         return anchorHTML
+    }
+
+    /// HTML-side half of 去除重复标题: drops a leading element whose entire text is the chapter
+    /// title (番茄酱 emits `<h1 class="chapterTitle1">第1章 …</h1>` ahead of the prose). The
+    /// plain-text half is `ReaderHTMLUtilities.stripLeadingDuplicateTitle`.
+    ///
+    /// Deliberately conservative: the element must carry no image (an image-bearing block is
+    /// content, and title-review bubbles are already handled by `detachLeadingTitleReviewImage`),
+    /// and something must remain after the removal so a one-element chapter is never emptied.
+    @discardableResult
+    private static func detachLeadingDuplicateTitle(from body: Element, title: String) -> Bool {
+        let children = body.children().array()
+        guard children.count > 1, let first = children.first else { return false }
+        guard ((try? first.select("img").array()) ?? []).isEmpty else { return false }
+        guard let text = try? first.text(),
+              ReaderHTMLUtilities.isDuplicateChapterTitle(text, title: title)
+        else { return false }
+        try? first.remove()
+        return true
     }
 
     private static func containsLikelyHTMLTags(_ text: String) -> Bool {
@@ -302,7 +341,6 @@ struct ChapterFetcher {
         initialHTML: String,
         initialURL: URL,
         initialBaseURL: String,
-        replaceRules: String,
         replaceRuleScope: String = "",
         reviewContext: ReaderHTMLUtilities.LegadoReviewContext? = nil,
         parsePage: @escaping @Sendable (String, String) async throws -> ChapterParsePayload,
@@ -332,7 +370,6 @@ struct ChapterFetcher {
         let parsed = paginated.payload
         let content = await resolveContent(
             parsed: parsed,
-            replaceRules: replaceRules,
             sourceUrl: ReplaceRuleScope.resolve(
                 chapterURL: sourceURL,
                 bookSourceURL: replaceRuleScope
@@ -398,7 +435,6 @@ struct ChapterFetcher {
 
     func resolveContent(
         parsed: ChapterParsePayload,
-        replaceRules: String,
         sourceUrl: String = "",
         fetchViaJS: @escaping @Sendable () async throws -> String?,
         fetchBySelectors: @escaping @Sendable () async throws -> String?
@@ -434,26 +470,12 @@ struct ChapterFetcher {
         // "Fetched empty content" in the player. Mirrors the manga-image exemption below.
         let isDirectAudio = DirectChapterAudioResolver.looksLikeAudioContent(content)
 
-        // The source's `ruleContent.replaceRegex` is primarily applied at parse time
-        // (`ModernParserBridge.parseChapterResult`), which is where the rule engine can expand
-        // `{{chapter.title}}` templates and where the result also reaches the HTML render branch.
-        // This pass stays because `content` may have come from the fetchViaJS / fetchBySelectors
-        // fallbacks, which never went through the content rule — and because the paragraph indent
-        // below is rebuilt here. Re-running the already-applied removals is a no-op.
-        if !replaceRules.isEmpty && !isDirectAudio {
-            content = content
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .joined(separator: "\n")
-            content = RuleEngine.applyReplaceRegex(content, rules: replaceRules)
-            content = content
-                .components(separatedBy: .newlines)
-                .map { line in
-                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                    return trimmed.isEmpty ? "" : "　　" + trimmed
-                }
-                .joined(separator: "\n")
-        }
+        // The source's own `ruleContent.replaceRegex` is NOT applied here. It runs at parse time
+        // (`ModernParserBridge.parseChapterResult`, matching Legado's `BookContent.analyzeContent`),
+        // which is the only place the rule engine can expand `{{chapter.title}}` templates — and the
+        // only place whose result also reaches the HTML render branch, since that branch renders
+        // `parsed.content`, not this plain-text copy. Applying it a second time here would be a
+        // second implementation of the same concern operating on a different representation.
 
         content = Self.sanitizeResolvedContent(content, title: chapterTitle)
 

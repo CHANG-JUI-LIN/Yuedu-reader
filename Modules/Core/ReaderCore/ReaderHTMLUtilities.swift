@@ -1258,4 +1258,67 @@ enum ReaderHTMLUtilities {
         flush()
         return chunks.isEmpty ? [text] : chunks
     }
+
+    // MARK: - Duplicate Chapter Title
+
+    /// Legado `ContentProcessor.getContent` 去除重复标题.
+    ///
+    /// Sources routinely repeat the chapter title as the first line of the content, so a reader
+    /// that renders its own title heading shows it twice. Legado strips one leading occurrence
+    /// with `^(\s|\p{P}|<bookName>)*<title> *\n?`; this is the same rule minus the book-name
+    /// branch (the book name is not plumbed down to the chapter-render layer — add it here if a
+    /// source turns up that prefixes the title with `書名` rather than punctuation, which the
+    /// `\p{P}` branch already covers).
+    ///
+    /// Only the *leading* occurrence goes: a title that legitimately recurs mid-chapter stays.
+    static func stripLeadingDuplicateTitle(_ text: String, title: String) -> String {
+        guard let regex = duplicateTitlePrefixRegex(for: title) else { return text }
+        let ns = text as NSString
+        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+              match.range.location == 0,
+              match.range.length > 0,
+              match.range.length < ns.length   // never swallow the whole chapter
+        else { return text }
+        return ns.substring(from: match.range.length)
+    }
+
+    /// True when `candidate` is the chapter title and nothing else — used to drop the source's own
+    /// `<h1>第1章 …</h1>` from an HTML chapter body, where a prefix regex cannot reach it.
+    /// Whitespace is collapsed and surrounding punctuation ignored (`《第1章》` counts as a match),
+    /// but the text must be the *whole* title: a paragraph merely starting with it is left alone.
+    static func isDuplicateChapterTitle(_ candidate: String, title: String) -> Bool {
+        let normalizedTitle = titleComparisonKey(title)
+        guard !normalizedTitle.isEmpty else { return false }
+        return titleComparisonKey(candidate) == normalizedTitle
+    }
+
+    private static func titleComparisonKey(_ text: String) -> String {
+        text
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined()
+            .trimmingCharacters(in: .punctuationCharacters)
+    }
+
+    /// `^(\s|\p{P})*<title> *\n?`, with the title's own whitespace runs relaxed to `\s*` so
+    /// "第1章  天资" still matches a content copy spelled "第1章 天资" (Legado does the same via
+    /// `escapeRegex().replace(spaceRegex, "\\s*")`).
+    ///
+    /// One addition over Legado: trailing punctuation is consumed too, but only when the line ends
+    /// right after it — otherwise `《第1章 …》` would leave a stray `》` behind (Legado's leading
+    /// `\p{P}*` eats the opening bracket and nothing eats the closing one). The lookahead keeps
+    /// prose safe: in `第1章 …，她愣住了。` the `，` is followed by text, so only the title goes.
+    private static func duplicateTitlePrefixRegex(for title: String) -> NSRegularExpression? {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let relaxedTitle = trimmed
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { NSRegularExpression.escapedPattern(for: String($0)) }
+            .joined(separator: "\\s*")
+        guard !relaxedTitle.isEmpty else { return nil }
+        let pattern = "^(?:\\s|\\p{P})*"
+            + relaxedTitle
+            + "(?:[ \\t]*\\p{P}+[ \\t]*(?=\\n|$))?[ \\t]*\\n?"
+        return try? NSRegularExpression(pattern: pattern)
+    }
 }

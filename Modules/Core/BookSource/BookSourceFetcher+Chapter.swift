@@ -237,7 +237,6 @@ extension BookSourceFetcher {
             initialHTML: stagedRawHTML,
             initialURL: url,
             initialBaseURL: url.absoluteString,
-            replaceRules: source.ruleContent.replaceRegex,
             replaceRuleScope: source.bookSourceUrl,
             reviewContext: source.legadoReviewContext,
             parsePage: parsePage,
@@ -312,7 +311,6 @@ extension BookSourceFetcher {
         }
         let content = await ChapterFetcher.shared.resolveContent(
             parsed: parsed,
-            replaceRules: source.ruleContent.replaceRegex,
             sourceUrl: ref.url,
             fetchViaJS: { nil },
             fetchBySelectors: { nil }

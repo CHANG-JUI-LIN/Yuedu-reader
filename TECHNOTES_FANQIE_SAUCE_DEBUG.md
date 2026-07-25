@@ -116,6 +116,59 @@ ruleContent.replaceRegex = ##<!DOCTYPE.*dtd">|<tt.*ad>|{{chapter.title}}|^第.{0
 替換後留下空的 `<h1 …></h1>`，`NodeAttributedStringRenderer.renderBlock` 對
 `contentLength == 0` 且沒有背景/邊框/高度的 block 直接回空字串，不會多出空行。
 
+### 上游對照（決定縮排要不要保留）
+
+`BookContent.analyzeContent` 在 gedoor 主線（huajideshutiao fork）長這樣：
+
+```kotlin
+val replaceRegex = contentRule.replaceRegex
+if (!replaceRegex.isNullOrEmpty()) {
+    contentStr = contentStr.split(AppPattern.LFRegex).joinToString("\n") { it.trim() }
+    contentStr = analyzeRule.getString(replaceRegex, contentStr)
+    contentStr = contentStr.split(AppPattern.LFRegex).joinToString("\n") { "　　$it" }   // ← 縮排
+}
+```
+
+`HapeLee/legado-with-MD3` 與主線完全相同。**`Lyrc-vi/legado-lyc-` 多包了一層 guard**：
+
+```kotlin
+    if (book.isOnLineTxt) {                       // ← lyc 只對純文字線上書補縮排
+        contentStr = ... { "　　$it" }
+    }
+```
+
+也就是上游自己已經認定「無條件補 `　　`」是錯的（HTML／漫畫／有聲會被塞全形空格）。
+本專案更進一步不補：`NodeAttributedStringBuilder` 有明文約定「縮排走
+`firstLineHeadIndent`，不要用字面 U+3000」——使用者字體（WeReadType/楷）若缺表意空格字形，
+CoreText 會從那個字形決定整段 run 的字體，整行掉回 PingFang；而且下游 `trimmingCharacters`
+本來就會把 U+3000 修掉，等於白加。
+
+因此最終落地：**parse 階段做 line-trim + replaceRegex，不補縮排**；
+`ChapterFetcher.resolveContent` 完全不再碰書源 replaceRegex，
+`RuleEngine.applyReplaceRegex`（`BookSourceFetcher+ReplaceRegex.swift`）失去唯一呼叫端後刪除。
+
+### 通用「去除重复标题」（已移植）
+
+Legado `ContentProcessor.getContent` 還有一層跟 replaceRegex 無關的保護：用
+`^(\s|\p{P}|書名)*章節名 *\n?` 從正文開頭剝掉重複標題，對**所有**書源生效。
+我們的版本落在 `ReaderHTMLUtilities`：
+
+- `stripLeadingDuplicateTitle(_:title:)` — 純文字分支，同一條正則（少了書名分支：
+  書名沒有一路傳到章節渲染層，而 `\p{P}` 已經涵蓋 `《…》` 這類裝飾）。
+  比 Legado 多一點：尾隨標點只在「後面就是行尾」時才一起吃掉，否則 `《第1章 …》` 會留下孤零零的
+  `》`；lookahead 保證 `第1章 …，她愣住了。` 這種散文不會被多剝。
+- `isDuplicateChapterTitle(_:title:)` + `ChapterFetcher.detachLeadingDuplicateTitle` —
+  HTML 分支。標題副本包在標籤裡（`<h1>第1章 …</h1>`），開頭正則看不到，所以改成比對第一個
+  子元素的完整文字；元素含 `<img>` 就不動（那是內容，標題段評氣泡另有 `detachLeadingTitleReviewImage`），
+  且至少要留下一個元素，避免把只有一段的章節清空。
+
+兩者都掛在 `buildRenderableNormalizedHTML` —— 那是唯一同時握有「有效標題」和「正文」的地方。
+測試見 `Tests/iOS/yuedu appTests/DuplicateChapterTitleTests.swift`。
+
+注意範圍：這層只作用在**渲染用**的 normalizedHTML。`ChapterPackage.content`（純文字，聽書/搜尋用）
+仍保留書源原樣的標題行；若之後發現 TTS 會把標題唸兩次，要在 `buildChapterPackage` 拿到
+`effectiveTitle` 之後再套一次 `stripLeadingDuplicateTitle`。
+
 ## 注意事項
 
 - 這個 md5 自檢代表：**書源 JSON 的 `bookSourceComment`、`concurrentRate`、

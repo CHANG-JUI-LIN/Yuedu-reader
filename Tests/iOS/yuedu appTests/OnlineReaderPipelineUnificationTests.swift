@@ -189,7 +189,7 @@ struct OnlineReaderPipelineUnificationTests {
         let attachmentFont = try #require(
             rendered.attribute(.font, at: attachmentRange.location, effectiveRange: nil) as? UIFont
         )
-        #expect(abs(attachmentFont.pointSize - Self.settings.titleSize) < 0.5)
+        #expect(abs(attachmentFont.pointSize - Self.settings.chapterTitleStyle.size) < 0.5)
         let reviewHref = try #require(
             rendered.attribute(
                 HTMLAttributedStringBuilder.internalLinkAttribute,

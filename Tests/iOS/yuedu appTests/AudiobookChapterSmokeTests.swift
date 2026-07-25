@@ -328,7 +328,6 @@ struct AudiobookChapterSmokeTests {
             content: audioURL, title: "终极斗罗 0001 那是什么", sourceMatched: true, isPay: false)
         let resolved = await ChapterFetcher.shared.resolveContent(
             parsed: payload,
-            replaceRules: source.ruleContent.replaceRegex,
             sourceUrl: "data:;base64,xxx",
             fetchViaJS: { nil },
             fetchBySelectors: { nil }
@@ -341,7 +340,6 @@ struct AudiobookChapterSmokeTests {
                 content: stage2Content, title: "终极斗罗 0001 那是什么", sourceMatched: true, isPay: false)
             let resolved2 = await ChapterFetcher.shared.resolveContent(
                 parsed: payload2,
-                replaceRules: source.ruleContent.replaceRegex,
                 sourceUrl: "data:;base64,xxx",
                 fetchViaJS: { nil },
                 fetchBySelectors: { nil }

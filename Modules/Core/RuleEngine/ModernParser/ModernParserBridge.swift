@@ -647,13 +647,24 @@ class ModernParserBridge {
         jsEngine.resetJSNetworkMs()
         let _contentStart = Date()
         var content = engine.getString(ruleStr: source.ruleContent.content)
-        // Legado `BookContent.analyzeContent` tail: the source's own `replaceRegex` runs through
-        // the rule engine, not a standalone regex helper, so `{{chapter.title}}` templates expand
-        // and `##pattern` splitting works like any other rule. 番茄酱 returns the chapter title as
-        // an <h1> inside the content and strips it here — applying the raw string as a regex
-        // instead just fails to compile (`{{…}}` is not valid regex syntax), which is why the
-        // reader showed the title twice: its own header plus the source's <h1>.
+        // 全文替换 — Legado `BookContent.analyzeContent`: line-trim, then run the source's own
+        // `replaceRegex` **through the rule engine**, which is what expands `{{chapter.title}}`
+        // templates and splits `##pattern##replacement`. Handing the raw string to a regex API
+        // instead just fails to compile (`{{…}}` is not valid regex syntax) and silently replaced
+        // nothing — that is why 番茄酱 showed its chapter title twice (the reader's own header plus
+        // the `<h1>` the source embeds in the content, which this rule exists to delete).
+        //
+        // Legado re-adds a literal `　　` indent per line right after this; we deliberately do not.
+        // The legado-lyc branch already gates that on `book.isOnLineTxt` (it is wrong for HTML /
+        // comic / audio content), and this reader indents through `firstLineHeadIndent` on purpose:
+        // a leading U+3000 makes CoreText resolve the whole paragraph run from a glyph that user
+        // fonts like WeReadType may lack, dropping the entire line to PingFang. See
+        // `NodeAttributedStringBuilder.convert`, which also trims U+3000 back off.
         if !source.ruleContent.replaceRegex.isEmpty {
+            content = content
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .joined(separator: "\n")
             content = engine.getString(ruleStr: source.ruleContent.replaceRegex, mContent: content)
         }
         let _contentMs = Int(Date().timeIntervalSince(_contentStart) * 1000)
