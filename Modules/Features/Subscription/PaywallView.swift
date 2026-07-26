@@ -1,5 +1,6 @@
 import StoreKit
 import SwiftUI
+import UIKit
 
 /// Modal paywall for `Yuedu Pro`. Presented from feature lock rows and from the
 /// Pro settings page. Shows the value proposition, the monthly/lifetime options,
@@ -19,6 +20,15 @@ struct PaywallView: View {
 
     private let privacyPolicyURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/privacy.html")
     private let paidTermsURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/paid-terms.html")
+
+    private var activeWindowScene: UIWindowScene? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first {
+                $0.activationState == .foregroundActive
+                    && $0.windows.contains(where: \.isKeyWindow)
+            }
+    }
 
     var body: some View {
         NavigationStack {
@@ -49,8 +59,13 @@ struct PaywallView: View {
                 }
             }
             .task { await store.loadProducts() }
-            .onChange(of: store.isProActive) { _, isActive in
-                if isActive, store.lastErrorMessage == nil { dismiss() }
+            .onChange(of: store.isProActive) { _, _ in
+                dismissIfProIsReady()
+            }
+            .onChange(of: store.isRedeemingOfferCode) { _, isRedeeming in
+                if !isRedeeming {
+                    dismissIfProIsReady()
+                }
             }
             .alert(localized("選擇購買方式"), isPresented: $showGuestPurchaseAlert) {
                 Button(localized("登入後購買")) {
@@ -71,6 +86,14 @@ struct PaywallView: View {
             .sheet(isPresented: $showLogin, onDismiss: purchasePendingProductAfterLogin) {
                 LoginView()
             }
+        }
+    }
+
+    private func dismissIfProIsReady() {
+        if store.isProActive,
+           !store.isRedeemingOfferCode,
+           store.lastErrorMessage == nil {
+            dismiss()
         }
     }
 
@@ -295,6 +318,23 @@ struct PaywallView: View {
 
     private var restoreAndTerms: some View {
         VStack(spacing: DSSpacing.md) {
+            Button {
+                let scene = activeWindowScene
+                Task { await store.redeemOfferCode(in: scene) }
+            } label: {
+                Group {
+                    if store.isRedeemingOfferCode {
+                        ProgressView()
+                    } else {
+                        Label(localized("兌換優惠碼"), systemImage: "ticket.fill")
+                    }
+                }
+                .font(DSFont.subheadline)
+                .frame(minHeight: 44)
+            }
+            .disabled(store.isRedeemingOfferCode)
+            .accessibilityLabel(localized("兌換優惠碼"))
+
             Button {
                 Task { await store.restore() }
             } label: {

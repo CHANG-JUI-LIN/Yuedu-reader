@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import StoreKit
 import SwiftUI
+import UIKit
 
 enum SubscriptionProductReloadPolicy {
     static func shouldReload(
@@ -45,6 +46,7 @@ final class SubscriptionStore: ObservableObject {
     @Published private(set) var isLoadingProducts: Bool = false
     @Published private(set) var isPurchasing: Bool = false
     @Published private(set) var isRestoring: Bool = false
+    @Published private(set) var isRedeemingOfferCode: Bool = false
     /// Human-readable last error for surfacing in the paywall; nil when clear.
     @Published var lastErrorMessage: String?
 
@@ -197,6 +199,38 @@ final class SubscriptionStore: ObservableObject {
         } catch {
             lastErrorMessage = localized("購買失敗，請稍後再試")
             return false
+        }
+    }
+
+    /// Presents Apple's offer-code sheet, then synchronizes any entitlement
+    /// created by the redemption with StoreKit and the signed-in Yuedu account.
+    func redeemOfferCode(in scene: UIWindowScene?) async {
+        switch SubscriptionOfferCodeRedemptionPolicy.action(
+            isRedeeming: isRedeemingOfferCode,
+            hasWindowScene: scene != nil
+        ) {
+        case .ignore:
+            return
+        case .reportUnavailable:
+            lastErrorMessage = localized("目前無法開啟優惠碼兌換，請稍後再試")
+            return
+        case .present:
+            break
+        }
+
+        guard let scene else { return }
+        isRedeemingOfferCode = true
+        lastErrorMessage = nil
+        defer { isRedeemingOfferCode = false }
+
+        do {
+            try await AppStore.presentOfferCodeRedeemSheet(in: scene)
+            await refreshEntitlements()
+            if accountService.isAuthenticated {
+                await bindCurrentStoreKitEntitlementsToAccount()
+            }
+        } catch {
+            lastErrorMessage = localized("目前無法開啟優惠碼兌換，請稍後再試")
         }
     }
 

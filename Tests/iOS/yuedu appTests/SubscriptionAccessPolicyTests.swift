@@ -62,4 +62,28 @@ struct SubscriptionAccessPolicyTests {
             currentStorefrontID: nil
         ))
     }
+
+    @Test("idle offer-code request presents when a window scene is available")
+    func idleOfferCodeRequestPresents() {
+        #expect(SubscriptionOfferCodeRedemptionPolicy.action(
+            isRedeeming: false,
+            hasWindowScene: true
+        ) == .present)
+    }
+
+    @Test("offer-code request is ignored while another sheet is active")
+    func duplicateOfferCodeRequestIsIgnored() {
+        #expect(SubscriptionOfferCodeRedemptionPolicy.action(
+            isRedeeming: true,
+            hasWindowScene: true
+        ) == .ignore)
+    }
+
+    @Test("offer-code request reports unavailable without a window scene")
+    func offerCodeRequestWithoutSceneReportsUnavailable() {
+        #expect(SubscriptionOfferCodeRedemptionPolicy.action(
+            isRedeeming: false,
+            hasWindowScene: false
+        ) == .reportUnavailable)
+    }
 }
