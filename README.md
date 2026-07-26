@@ -25,7 +25,7 @@
     <img src="https://img.shields.io/badge/Featured%20in-iOS%20Dev%20Weekly%20%23751-FF6600" alt="Featured in iOS Dev Weekly #751">
   </a>
   <img src="https://img.shields.io/badge/iOS-18.0%2B-000000?logo=apple&logoColor=white" alt="iOS 18.0+">
-  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License">
+  <img src="https://img.shields.io/badge/license-MPL--2.0-blue" alt="MPL 2.0 License">
 </p>
 
 > Featured in [iOS Dev Weekly #751](https://iosdevweekly.com/issues/751) — [*From WebView to CoreText: Building a Native EPUB Reader for iOS*](https://chang-jui-lin.github.io/Yuedu-reader/2026/05/20/from-webview-to-coretext/).
@@ -69,7 +69,11 @@ cd Yuedu-reader
 open Yuedu-Reader.xcodeproj
 ```
 
-Then select a simulator (or your device) and run.
+Then select a simulator (or your device) and run. Self-built versions need their own signing configuration and bundle identifier. Publicly redistributed forks must use distinct app names, icons, and branding and must not imply official endorsement.
+
+## Official App Store build
+
+The source code is open source. The App Store version is the official build maintained, signed, reviewed, distributed, and supported by the project owner. Its purchase price supports ongoing development and release maintenance.
 
 ## Documentation
 
@@ -89,4 +93,4 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for convent
 
 ## License
 
-[MIT](LICENSE).
+Source code is licensed under the [Mozilla Public License 2.0](LICENSE). The Yuedu name, app icon, logo, screenshots, and other brand assets are not licensed under the MPL; see [TRADEMARKS.md](TRADEMARKS.md). Versions released before the license transition remain available under the license that applied when they were published; see [LICENSING.md](LICENSING.md).

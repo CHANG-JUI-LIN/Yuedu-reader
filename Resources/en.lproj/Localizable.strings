@@ -418,6 +418,9 @@
 "聯絡方式" = "Contact";
 "聯絡方式、版本資訊與政策協議" = "Contact, version, policies, and agreements";
 "版本資訊" = "Version Information";
+"開放原始碼" = "Open Source";
+"原始碼與開源授權" = "Source Code and Open-Source License";
+"取得本版本對應原始碼與 MPL-2.0 授權" = "Get the corresponding source code and MPL-2.0 license for this version";
 "電子郵件" = "Email";
 "官方 QQ 群" = "Official QQ Group";
 "Telegram 群" = "Telegram Group";

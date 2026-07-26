@@ -23,6 +23,12 @@ Thanks for contributing! Here is how to get started.
 - **Comments**: Comment *why*, not *what*. Use `// MARK: - Section` for organization.
 - **Language**: Commit messages and documentation in English. Comments may be in Chinese where domain terms are clearer.
 
+## Licensing of contributions
+
+By submitting a contribution, you agree to license it under the Mozilla Public License 2.0 and confirm that you have the right to do so. Do not submit code, assets, or other material whose license is incompatible with this project. Third-party material must retain its original notices.
+
+The official Yuedu names, app icon, logo, screenshots, and other brand assets are not licensed for reuse by publicly redistributed modified builds. See [TRADEMARKS.md](TRADEMARKS.md).
+
 ## You do not need to know CoreText to contribute
 
 Yuedu has several contribution areas that do not require working on the rendering engine:
