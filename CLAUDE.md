@@ -93,6 +93,7 @@ This project is past "make it work" and into systems engineering. Locally-reason
 - **Measure, then optimize.** Performance claims need numbers. Instrument with `SourcePerfTrace` spans (⏱ lines, visible in Release Console; add a span if the stage isn't covered) and report before/after milliseconds. Never guess the bottleneck from reading code.
 - **Don't swallow errors.** In parsing/network pipelines, `try?` that discards the error is banned unless an empty result is truly equivalent; log through `AppLogger` (never wrapped in `#if DEBUG` — os_log is how on-device issues get diagnosed).
 - **Vague perf tasks get a contract first.** For "optimize X" requests, state the measurable goal, the constraints (no source-compat behavior change, no new cache layer, no wider WebView use), and the acceptance evidence before writing code.
+- **Freeze data at search navigation boundaries.** The iOS 17 search watchdog was resolved only after the selected `SearchBook` snapshot moved into the route and the destination stopped reading live `SearchAggregator.results`. Never regress to an id-only route that re-resolves from the source screen. Keep source-controlled detail text bounded and sanitized before SwiftUI layout. Read `Technotes/iOS17SearchWatchdogPostmortem.md` before changing search result rendering, routing, or online detail intro presentation.
 
 ## Dependencies
 
@@ -107,6 +108,7 @@ Detailed package versions and their transitive dependencies are recorded in [Dep
 ## Key Documentation
 
 - `Technotes/Architecture.md` — full architecture
+- `Technotes/iOS17SearchWatchdogPostmortem.md` — verified iOS 17 search freeze root cause, failed approaches, and non-regression guardrails
 - `docs/coretext/README.md` — CoreText code map and contributor notes
 - `docs/coretext/rendering-pipeline.md` — content → pages flow
 - `docs/coretext/vertical-writing.md` — vertical-rl layout rules
