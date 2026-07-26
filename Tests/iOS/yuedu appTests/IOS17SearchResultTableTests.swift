@@ -4,6 +4,29 @@ import Testing
 
 @Suite("iOS 17 native search result table")
 struct IOS17SearchResultTableTests {
+    @Test("search detail identity stays stable across destination rebuilds")
+    func searchDetailIdentityStaysStable() {
+        let searchBookID = UUID(
+            uuidString: "11111111-2222-3333-4444-555555555555"
+        )!
+        let originID = UUID(
+            uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+        )!
+
+        #expect(
+            SearchResultDetailIdentity.onlineBookID(
+                searchBookID: searchBookID,
+                originID: originID
+            ) == originID
+        )
+        #expect(
+            SearchResultDetailIdentity.onlineBookID(
+                searchBookID: searchBookID,
+                originID: nil
+            ) == searchBookID
+        )
+    }
+
     @Test("search result navigation uses one presentation mechanism per iOS version")
     func navigationUsesOnePresentationMechanismPerOSVersion() {
         #expect(

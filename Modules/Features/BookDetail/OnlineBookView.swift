@@ -44,17 +44,25 @@ struct OnlineBookView: View {
             _currentBook = State(initialValue: Self.makeOnlineBook(from: searchBook, origin: origin))
         } else {
             _currentBook = State(initialValue: OnlineBook(
+                id: SearchResultDetailIdentity.onlineBookID(
+                    searchBookID: searchBook.id,
+                    originID: nil
+                ),
                 name: searchBook.name, author: searchBook.author,
                 intro: searchBook.intro, coverUrl: searchBook.coverUrl,
                 bookUrl: "", tocUrl: "", wordCount: "",
                 lastChapter: searchBook.lastChapter, kind: searchBook.kind,
-                sourceId: UUID(), sourceName: ""
+                sourceId: searchBook.id, sourceName: ""
             ))
         }
     }
 
     private static func makeOnlineBook(from book: SearchBook, origin: BookOrigin) -> OnlineBook {
         OnlineBook(
+            id: SearchResultDetailIdentity.onlineBookID(
+                searchBookID: book.id,
+                originID: origin.id
+            ),
             name: book.name,
             author: book.author,
             intro: origin.intro.isEmpty ? book.intro : origin.intro,

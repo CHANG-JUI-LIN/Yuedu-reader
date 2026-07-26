@@ -19,12 +19,10 @@ private struct SearchResultRoute: Hashable {
 
 /// Installs only the navigation mechanism used by the active result renderer.
 ///
-/// Keeping both destination styles in the same iOS 17 view graph makes
-/// `NavigationStack` reconcile two presentations of the same route after a
-/// UIKit row selection. Build 46 watchdogs captured that reconciliation looping
-/// in SwiftUI/AttributeGraph and UIKit trait propagation. Delete the
-/// item-based branch together with the native iOS 17 table when the deployment
-/// target reaches iOS 18.
+/// The UIKit renderer drives an item binding on iOS 17, while the native SwiftUI
+/// list uses value routing on later systems. Delete the item-based branch
+/// together with the native iOS 17 table when the deployment target reaches
+/// iOS 18.
 private struct SearchResultNavigationModifier<Destination: View>: ViewModifier {
     let mode: SearchResultNavigationMode
     @Binding var selectedRoute: SearchResultRoute?

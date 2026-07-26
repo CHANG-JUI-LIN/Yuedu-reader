@@ -50,6 +50,10 @@ struct AudiobookDetailView: View {
         self.searchBook = searchBook
         if let origin = searchBook.preferredOrigin(for: .audio) ?? searchBook.origins.first {
             _currentBook = State(initialValue: OnlineBook(
+                id: SearchResultDetailIdentity.onlineBookID(
+                    searchBookID: searchBook.id,
+                    originID: origin.id
+                ),
                 name: searchBook.name, author: searchBook.author,
                 intro: origin.intro, coverUrl: origin.coverUrl,
                 bookUrl: origin.bookUrl, tocUrl: origin.tocUrl,
@@ -58,10 +62,14 @@ struct AudiobookDetailView: View {
                 sourceName: origin.sourceName, runtimeVariables: origin.runtimeVariables))
         } else {
             _currentBook = State(initialValue: OnlineBook(
+                id: SearchResultDetailIdentity.onlineBookID(
+                    searchBookID: searchBook.id,
+                    originID: nil
+                ),
                 name: searchBook.name, author: searchBook.author,
                 intro: "", coverUrl: "", bookUrl: "", tocUrl: "",
                 wordCount: "", lastChapter: "", kind: "",
-                sourceId: UUID(), sourceName: ""))
+                sourceId: searchBook.id, sourceName: ""))
         }
     }
 
@@ -78,6 +86,10 @@ struct AudiobookDetailView: View {
 
     private static func makeOnlineBook(from book: SearchBook, origin: BookOrigin) -> OnlineBook {
         OnlineBook(
+            id: SearchResultDetailIdentity.onlineBookID(
+                searchBookID: book.id,
+                originID: origin.id
+            ),
             name: book.name,
             author: book.author,
             intro: origin.intro.isEmpty ? book.intro : origin.intro,
