@@ -717,9 +717,8 @@ extension BookSourceStore {
         let kind = searchBook.inferredContentKind(sourceStore: self)
         let origin = searchBook.origins.first
         let source = sources.first { $0.id == origin?.sourceId }
-        let modes = OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
         audioRouteLog.notice(
-            "⟐ route(search) \(searchBook.name, privacy: .public) → \(String(describing: kind), privacy: .public) origins=\(searchBook.origins.count) srcType=\(source?.bookSourceType ?? -1) modes=\(modes.joined(separator: ","), privacy: .public) url=\(String(origin?.bookUrl.prefix(160) ?? ""), privacy: .public)"
+            "⟐ route(search snapshot) \(searchBook.name, privacy: .public) → \(String(describing: kind), privacy: .public) origins=\(searchBook.origins.count) srcType=\(source?.bookSourceType ?? -1) url=\(String(origin?.bookUrl.prefix(160) ?? ""), privacy: .public)"
         )
         return kind == .audio
     }

@@ -4,13 +4,10 @@ import SwiftUI
 ///
 /// Value-based navigation is deliberate. The closure form
 /// `NavigationLink { destination } label: { … }` builds its destination for every
-/// visible row on *every* list body evaluation, so the audio/text routing check
-/// (`isAudiobook`, which reads source runtime state through a serial queue) kept
-/// running while the pushed detail page's book-source JS was writing source
-/// variables onto that same queue — the search list stays alive behind the detail
-/// page and the aggregator keeps publishing into it. The main thread contended
-/// with those writes during the push transition until the scene-update watchdog
-/// killed the app.
+/// visible row on *every* list body evaluation. Before search-row presentation
+/// snapshots were introduced, that repeatedly ran audio/text inference over
+/// unbounded metadata such as full-page HTML intros. Value routing also keeps
+/// destination creation out of the streaming list's redraw path.
 ///
 /// The discover page never had this: it routes through `.navigationDestination`,
 /// which resolves the destination once, on tap. This keeps both paths on that
@@ -379,15 +376,13 @@ struct AggregatedResultRow: View {
                         .foregroundColor(.secondary)
                 }
 
-                if !book.intro.isEmpty {
-                    let introForList = book.displayIntro
-                    if !introForList.isEmpty {
-                        Text(introForList)
-                            .font(DSFont.fixed(size: 12))
-                            .foregroundColor(Color.secondary.opacity(0.8))
-                            .lineLimit(2)
-                            .padding(.top, 2)
-                    }
+                let introForList = book.displayIntro
+                if !introForList.isEmpty {
+                    Text(introForList)
+                        .font(DSFont.fixed(size: 12))
+                        .foregroundColor(Color.secondary.opacity(0.8))
+                        .lineLimit(2)
+                        .padding(.top, 2)
                 }
 
                 Spacer(minLength: 4)

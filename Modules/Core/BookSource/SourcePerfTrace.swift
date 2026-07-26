@@ -9,6 +9,7 @@ import Foundation
 ///   chapter.network / chapter.parse
 ///   js.runtimeCreate
 ///   coreText.firstPage / coreText.fullLayout
+///   search.presentation.runtimeMarkers / kindInference / introSanitize / mainMerge
 ///
 /// Only spans at or above their reporting threshold are logged, so hot paths
 /// (per-chapter title rules etc.) don't flood the Console.

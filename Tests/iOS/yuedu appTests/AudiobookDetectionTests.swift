@@ -165,6 +165,142 @@ struct AudiobookDetectionTests {
         #expect(book.preferredOrigin(for: .audio)?.bookUrl == audioURL)
     }
 
+    @Test("search row reads its prepared presentation instead of reprocessing raw metadata")
+    func searchBookUsesPreparedPresentation() {
+        let sourceId = UUID()
+        let rawIntro = String(repeating: "<html><body>整頁 HTML</body></html>", count: 2_000)
+        let origin = BookOrigin(
+            sourceId: sourceId,
+            sourceName: "測試源",
+            bookUrl: "https://example.com/text",
+            tocUrl: "",
+            coverUrl: "",
+            intro: rawIntro,
+            lastChapter: "",
+            wordCount: "",
+            kind: "",
+            runtimeVariables: nil
+        )
+        let preparedOrigin = PreparedSearchOrigin(
+            origin: origin,
+            presentation: SearchOriginPresentation(
+                contentKind: .text,
+                displayIntro: "預先清理的簡介",
+                introCharacterCount: rawIntro.count,
+                lastChapterTitleCandidate: "",
+                introTitleCandidate: "整頁 HTML"
+            )
+        )
+
+        let book = SearchBook(
+            name: "測試書",
+            author: "作者",
+            preparedOrigins: [preparedOrigin]
+        )
+
+        #expect(book.displayName == "測試書")
+        #expect(book.displayIntro == "預先清理的簡介")
+        #expect(book.inferredContentKind() == .text)
+    }
+
+    @Test("appending a prepared origin refreshes routing and row presentation")
+    func appendingPreparedOriginRefreshesPresentation() {
+        let sourceId = UUID()
+        let textOrigin = BookOrigin(
+            sourceId: sourceId,
+            sourceName: "文字源",
+            bookUrl: "https://example.com/text",
+            tocUrl: "",
+            coverUrl: "",
+            intro: "短簡介",
+            lastChapter: "",
+            wordCount: "",
+            kind: "",
+            runtimeVariables: nil
+        )
+        let audioOrigin = BookOrigin(
+            sourceId: sourceId,
+            sourceName: "有聲源",
+            bookUrl: "https://example.com/audio",
+            tocUrl: "",
+            coverUrl: "",
+            intro: "這是一段比較長的有聲書簡介",
+            lastChapter: "",
+            wordCount: "",
+            kind: "",
+            runtimeVariables: nil
+        )
+        let book = SearchBook(
+            name: "測試書",
+            author: "作者",
+            preparedOrigins: [
+                PreparedSearchOrigin(
+                    origin: textOrigin,
+                    presentation: SearchOriginPresentation(
+                        contentKind: .text,
+                        displayIntro: "短簡介",
+                        introCharacterCount: textOrigin.intro.count,
+                        lastChapterTitleCandidate: "",
+                        introTitleCandidate: "短簡介"
+                    )
+                )
+            ]
+        )
+
+        book.append(
+            PreparedSearchOrigin(
+                origin: audioOrigin,
+                presentation: SearchOriginPresentation(
+                    contentKind: .audio,
+                    displayIntro: "這是一段比較長的有聲書簡介",
+                    introCharacterCount: audioOrigin.intro.count,
+                    lastChapterTitleCandidate: "",
+                    introTitleCandidate: "這是一段比較長的有聲書簡介"
+                )
+            )
+        )
+
+        #expect(book.inferredContentKind() == .audio)
+        #expect(book.preferredOrigin(for: .audio)?.bookUrl == audioOrigin.bookUrl)
+        #expect(book.displayIntro == "這是一段比較長的有聲書簡介")
+        #expect(book.origins.count == 2)
+    }
+
+    @Test("search presentation builder hops off MainActor and prepares row values")
+    @MainActor
+    func searchPresentationBuilderRunsOffMain() async {
+        var source = BookSource(
+            bookSourceUrl: "https://example.com/audio",
+            bookSourceName: "有聲源"
+        )
+        source.bookSourceType = 1
+        let book = OnlineBook(
+            name: "測試書",
+            author: "作者",
+            intro: "<p>預先清理的簡介</p>",
+            coverUrl: "",
+            bookUrl: "https://example.com/book",
+            tocUrl: "",
+            wordCount: "",
+            lastChapter: "",
+            kind: "",
+            sourceId: source.id,
+            sourceName: source.bookSourceName
+        )
+
+        let prepared = await SearchResultPresentationBuilder.prepareBatch(
+            [book],
+            source: source
+        )
+
+        #expect(prepared.count == 1)
+        #expect(prepared[0].preparedOrigin.presentation.contentKind == .audio)
+        #expect(
+            prepared[0].preparedOrigin.presentation.displayIntro
+                == "預先清理的簡介"
+        )
+    }
+
     @Test("book store creates aggregate listening result as audio")
     func bookStoreCreatesAggregateListeningResultAsAudio() throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "聚合")

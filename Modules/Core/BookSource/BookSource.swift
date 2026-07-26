@@ -349,7 +349,7 @@ struct BookSource: Identifiable, Codable {
 
 // MARK: - Search Results / Book Info
 
-struct OnlineBook: Identifiable {
+struct OnlineBook: Identifiable, Sendable {
     var id = UUID()
     var name: String
     var author: String
@@ -365,7 +365,7 @@ struct OnlineBook: Identifiable {
     var runtimeVariables: [String: String]? = nil
 }
 
-enum OnlineBookContentKind: Equatable {
+enum OnlineBookContentKind: Equatable, Sendable {
     case text
     case audio
     case manga
@@ -571,9 +571,15 @@ enum OnlineBookContentInference {
     /// so the source's current mode is the only signal left for routing. Feed these
     /// into `infer`'s `metadataText` (weakest priority: any per-book marker wins).
     static func sourceRuntimeModeMarkers(for source: BookSource?) -> [String] {
-        guard let source,
+        sourceRuntimeModeMarkers(forSourceURL: source?.bookSourceUrl)
+    }
+
+    /// URL-only form for Sendable search-presentation snapshots. The imported
+    /// source value itself is not needed to read its persisted runtime markers.
+    static func sourceRuntimeModeMarkers(forSourceURL sourceURL: String?) -> [String] {
+        guard let sourceURL,
               let json = BookSourceRuntimeStateStore.shared
-                  .sourceVariableJSON(for: source.bookSourceUrl),
+                  .sourceVariableJSON(for: sourceURL),
               let data = json.data(using: .utf8),
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return [] }

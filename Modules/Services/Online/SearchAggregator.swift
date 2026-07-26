@@ -3,7 +3,7 @@ import Foundation
 
 // MARK: - Book Origin (link info provided by a single book source)
 
-struct BookOrigin: Identifiable, Codable {
+struct BookOrigin: Identifiable, Codable, Sendable {
     let id = UUID()
     let sourceId: UUID
     let sourceName: String
@@ -43,7 +43,19 @@ class SearchBook: Identifiable, ObservableObject {
     let id = UUID()
     let name: String
     let author: String
-    @Published var origins: [BookOrigin]
+    @Published private(set) var origins: [BookOrigin]
+
+    /// Snapshots are index-aligned with `origins`. Production search batches build
+    /// them off the main actor before constructing or mutating a `SearchBook`.
+    private var originPresentations: [SearchOriginPresentation]
+    private var rowPresentation: RowPresentation
+
+    private struct RowPresentation {
+        let displayName: String
+        let displayIntro: String
+        let contentKind: OnlineBookContentKind
+        let primaryIntroIndex: Int?
+    }
 
     /// Normalized key for deduplication
     var deduplicationKey: String {
@@ -116,7 +128,10 @@ class SearchBook: Identifiable, ObservableObject {
 
     /// Primary intro (longest one)
     var intro: String {
-        origins.max(by: { $0.intro.count < $1.intro.count })?.intro ?? ""
+        guard let index = rowPresentation.primaryIntroIndex, index < origins.count else {
+            return ""
+        }
+        return origins[index].intro
     }
 
     /// Primary latest chapter
@@ -129,88 +144,128 @@ class SearchBook: Identifiable, ObservableObject {
         origins.first(where: { !$0.kind.isEmpty })?.kind ?? ""
     }
 
-    func inferredContentKind(sourceStore: BookSourceStore = .shared) -> OnlineBookContentKind {
-        if origins.contains(where: { $0.inferredContentKind(sourceStore: sourceStore) == .audio }) {
-            return .audio
-        }
-        if origins.contains(where: { $0.inferredContentKind(sourceStore: sourceStore) == .manga }) {
-            return .manga
-        }
-        return origins.first?.inferredContentKind(sourceStore: sourceStore) ?? .text
+    /// The source-store argument remains for source compatibility. Content kind
+    /// is deliberately snapshotted when the origin arrives so detail-page JS
+    /// writes cannot mutate routing for a result already shown to the user.
+    func inferredContentKind(
+        sourceStore _: BookSourceStore = .shared
+    ) -> OnlineBookContentKind {
+        rowPresentation.contentKind
     }
 
-    func preferredOrigin(for kind: OnlineBookContentKind, sourceStore: BookSourceStore = .shared) -> BookOrigin? {
-        origins.first { $0.inferredContentKind(sourceStore: sourceStore) == kind }
+    func preferredOrigin(
+        for kind: OnlineBookContentKind,
+        sourceStore _: BookSourceStore = .shared
+    ) -> BookOrigin? {
+        guard let index = originPresentations.firstIndex(where: {
+            $0.contentKind == kind
+        }), index < origins.count else {
+            return nil
+        }
+        return origins[index]
     }
 
-    /// Intro for list display: filter out tag lines (e.g. "标签 (tags):", "#xxx") and truncate
-    /// overly long content to avoid flooding the screen with tags.
     var displayIntro: String {
-        let raw = ReaderHTMLUtilities.displayText(fromHTMLFragment: intro, preservingLineBreaks: false)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty else { return "" }
-        let lines = raw.components(separatedBy: .newlines)
-        var kept: [String] = []
-        for line in lines {
-            let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if t.isEmpty { continue }
-            if t.hasPrefix("标签:") || t.hasPrefix("標籤:") { continue }
-            if t.hasPrefix("#") && t.count < 30 { continue }
-            kept.append(t)
-        }
-        let joined = kept.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        if joined.count <= 100 { return joined }
-        let end = joined.index(joined.startIndex, offsetBy: 100)
-        return String(joined[..<end]) + "…"
+        rowPresentation.displayIntro
     }
 
-    /// Display name: prefer the book name, otherwise use the latest chapter or the first N
-    /// characters of the intro to reduce "unknown title" results.
-    /// Cleans leading ?, ..., and meaningless symbols (e.g. "?... 诡秘之主 (Book Title)...").
     var displayName: String {
-        let n = Self.cleanDisplayTitle(name.trimmingCharacters(in: .whitespacesAndNewlines))
-        if !n.isEmpty && !Self.isOnlyListNumber(n) { return n }
-        if !lastChapter.isEmpty { return Self.cleanDisplayTitle(lastChapter) }
-        let introTrimmed = intro.trimmingCharacters(in: .whitespacesAndNewlines)
-        if introTrimmed.count > 2 {
-            let cleaned = Self.cleanDisplayTitle(introTrimmed)
-            if !cleaned.isEmpty {
-                let end = cleaned.index(cleaned.startIndex, offsetBy: min(30, cleaned.count))
-                return String(cleaned[..<end])
-            }
-        }
-        return name.isEmpty ? "未知書名" : n
-    }
-
-    /// Clean display title: strip leading ?, ..., fullwidth spaces, etc.
-    private static func cleanDisplayTitle(_ s: String) -> String {
-        var t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        while true {
-            let before = t
-            if t.hasPrefix("？") || t.hasPrefix("?") { t = String(t.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines); continue }
-            if t.hasPrefix("...") { t = String(t.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines); continue }
-            if t.hasPrefix("..") { t = String(t.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines); continue }
-            if t.hasPrefix(".") { t = String(t.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines); continue }
-            if t.hasPrefix("　") { t = String(t.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines); continue }
-            if before == t { break }
-        }
-        return t
-    }
-
-    /// Whether the string is a pure list number (e.g. "1.", "2、")
-    private static func isOnlyListNumber(_ s: String) -> Bool {
-        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return true }
-        if let regex = try? NSRegularExpression(pattern: #"^\s*\d+[\.\、．]?\s*$"#),
-           regex.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil
-        { return true }
-        return false
+        rowPresentation.displayName
     }
 
     init(name: String, author: String, origins: [BookOrigin] = []) {
+        let preparedOrigins = SearchResultPresentationBuilder.prepareOrigins(
+            origins,
+            sourceStore: .shared
+        )
+        assert(preparedOrigins.count == origins.count)
         self.name = name
         self.author = author
         self.origins = origins
+        self.originPresentations = preparedOrigins.map(\.presentation)
+        self.rowPresentation = Self.resolveRowPresentation(
+            name: name,
+            preparedOrigins: preparedOrigins
+        )
+    }
+
+    init(name: String, author: String, preparedOrigins: [PreparedSearchOrigin]) {
+        let origins = preparedOrigins.map(\.origin)
+        let presentations = preparedOrigins.map(\.presentation)
+        assert(origins.count == presentations.count)
+        self.name = name
+        self.author = author
+        self.origins = origins
+        self.originPresentations = presentations
+        self.rowPresentation = Self.resolveRowPresentation(
+            name: name,
+            preparedOrigins: preparedOrigins
+        )
+    }
+
+    func append(_ preparedOrigin: PreparedSearchOrigin) {
+        assert(origins.count == originPresentations.count)
+        let preparedOrigins = zip(origins, originPresentations).map {
+            PreparedSearchOrigin(origin: $0.0, presentation: $0.1)
+        } + [preparedOrigin]
+
+        // Refresh the lightweight snapshot before `@Published origins` emits.
+        // SwiftUI therefore sees a self-consistent row on its next body evaluation.
+        rowPresentation = Self.resolveRowPresentation(
+            name: name,
+            preparedOrigins: preparedOrigins
+        )
+        originPresentations.append(preparedOrigin.presentation)
+        origins.append(preparedOrigin.origin)
+        assert(origins.count == originPresentations.count)
+    }
+
+    private static func resolveRowPresentation(
+        name: String,
+        preparedOrigins: [PreparedSearchOrigin]
+    ) -> RowPresentation {
+        let primaryIntroIndex = preparedOrigins.indices.max { lhs, rhs in
+            preparedOrigins[lhs].presentation.introCharacterCount
+                < preparedOrigins[rhs].presentation.introCharacterCount
+        }
+
+        let kinds = preparedOrigins.map(\.presentation.contentKind)
+        let contentKind: OnlineBookContentKind
+        if kinds.contains(.audio) {
+            contentKind = .audio
+        } else if kinds.contains(.manga) {
+            contentKind = .manga
+        } else {
+            contentKind = kinds.first ?? .text
+        }
+
+        let cleanedName = SearchResultPresentationBuilder.cleanDisplayTitle(name)
+        let displayName: String
+        if !cleanedName.isEmpty,
+           !SearchResultPresentationBuilder.isOnlyListNumber(cleanedName) {
+            displayName = cleanedName
+        } else if let firstChapter = preparedOrigins.first(where: {
+            !$0.origin.lastChapter.isEmpty
+        }) {
+            displayName = firstChapter.presentation.lastChapterTitleCandidate
+        } else if let primaryIntroIndex,
+                  !preparedOrigins[primaryIntroIndex].presentation.introTitleCandidate.isEmpty {
+            displayName = preparedOrigins[primaryIntroIndex]
+                .presentation.introTitleCandidate
+        } else {
+            displayName = name.isEmpty ? "未知書名" : cleanedName
+        }
+
+        let displayIntro = primaryIntroIndex.map {
+            preparedOrigins[$0].presentation.displayIntro
+        } ?? ""
+
+        return RowPresentation(
+            displayName: displayName,
+            displayIntro: displayIntro,
+            contentKind: contentKind,
+            primaryIntroIndex: primaryIntroIndex
+        )
     }
 }
 
@@ -424,7 +479,7 @@ class SearchAggregator: ObservableObject {
                             source: source,
                             timeout: sourceTimeout
                         ) { [weak self] books in
-                            await self?.mergeBatch(books, query: q)
+                            await self?.mergeBatch(books, source: source, query: q)
                         }
                     }
                 }
@@ -444,7 +499,8 @@ class SearchAggregator: ObservableObject {
 
                     switch batchResult {
                     case .success(let sourceId, let books, let elapsedMs):
-                        await self.mergeBatch(books, query: q)
+                        let source = sources.first { $0.id == sourceId }
+                        await self.mergeBatch(books, source: source, query: q)
                         self.progress.completed += 1
                         self.completedSourceIds.insert(sourceId)
                         self.successfulSourceIds.insert(sourceId)
@@ -541,7 +597,12 @@ class SearchAggregator: ObservableObject {
                 while let (sourceId, books, hasMore, elapsedMs) = await group.next() {
                     guard !Task.isCancelled, let self else { break }
                     if let books {
-                        let newlyMerged = await self.mergeBatch(books, query: q)
+                        let source = candidates.first { $0.id == sourceId }
+                        let newlyMerged = await self.mergeBatch(
+                            books,
+                            source: source,
+                            query: q
+                        )
                         // The source's own hasMoreRule verdict wins; without one,
                         // a page that contributed nothing new means exhausted.
                         if hasMore == false || (hasMore != true && newlyMerged == 0) {
@@ -739,13 +800,30 @@ class SearchAggregator: ObservableObject {
     /// Returns how many books were newly merged (new titles or new origins) —
     /// the paging loop uses 0 to mark a source as exhausted.
     @discardableResult
-    private func mergeBatch(_ books: [OnlineBook], query: String) async -> Int {
+    private func mergeBatch(
+        _ books: [OnlineBook],
+        source: BookSource?,
+        query: String
+    ) async -> Int {
+        let preparedBooks = await SearchResultPresentationBuilder.prepareBatch(
+            books,
+            source: source
+        )
+        let mainMergeStartedAt = ProcessInfo.processInfo.systemUptime
+        defer {
+            SourcePerfTrace.record(
+                "search.presentation.mainMerge",
+                "\(preparedBooks.count) books source=\(source?.bookSourceName ?? "unknown")",
+                since: mainMergeStartedAt,
+                thresholdMs: 4
+            )
+        }
         let q = Self.normalizedSearchQuery(query)
         var mergedCount = 0
         var processed = 0
-        for book in books {
+        for preparedBook in preparedBooks {
             if Task.isCancelled { break }
-            if mergeBook(book, normalizedQuery: q) { mergedCount += 1 }
+            if mergeBook(preparedBook, normalizedQuery: q) { mergedCount += 1 }
             processed += 1
             // Aggregate sources can stream 1000+ books in one batch; keep the
             // main actor responsive without paying a yield per book.
@@ -758,7 +836,14 @@ class SearchAggregator: ObservableObject {
     }
 
     @discardableResult
-    private func mergeBook(_ book: OnlineBook, normalizedQuery q: String) -> Bool {
+    private func mergeBook(
+        _ preparedBook: PreparedSearchResult,
+        normalizedQuery q: String
+    ) -> Bool {
+        let book = preparedBook.book
+        let preparedOrigin = preparedBook.preparedOrigin
+        let origin = preparedOrigin.origin
+
         // Filter out results completely unrelated to the search keyword.
         let normalizedName = Self.normalizedSearchText(book.name)
         let normalizedAuthor = Self.normalizedSearchText(book.author)
@@ -769,19 +854,6 @@ class SearchAggregator: ObservableObject {
             q.contains(normalizedName)
         )
         guard isRelated else { return false }
-
-        let origin = BookOrigin(
-            sourceId: book.sourceId,
-            sourceName: book.sourceName,
-            bookUrl: book.bookUrl,
-            tocUrl: book.tocUrl,
-            coverUrl: book.coverUrl,
-            intro: book.intro,
-            lastChapter: book.lastChapter,
-            wordCount: book.wordCount,
-            kind: book.kind,
-            runtimeVariables: book.runtimeVariables
-        )
 
         if !book.coverUrl.isEmpty {
             CoverDecodeService.shared.registerIfNeeded(
@@ -809,12 +881,12 @@ class SearchAggregator: ObservableObject {
             }
             guard !duplicate else { return false }
             // Compatible match -> merge into existing result's origin array.
-            internalResults[existingIndex].origins.append(origin)
+            internalResults[existingIndex].append(preparedOrigin)
         } else {
             let searchBook = SearchBook(
                 name: book.name,
                 author: book.author,
-                origins: [origin]
+                preparedOrigins: [preparedOrigin]
             )
             deduplicationMap[nameKey, default: []].append(internalResults.count)
             internalResults.append(searchBook)

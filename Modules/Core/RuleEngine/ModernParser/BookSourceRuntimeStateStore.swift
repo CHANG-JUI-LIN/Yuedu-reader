@@ -6,7 +6,10 @@ import Foundation
 /// Source variables are intentionally kept outside `BookSource`: imported rule
 /// JSON remains immutable, while settings changed by `source.setVariable(...)`
 /// survive search/detail/toc/content sessions and app relaunches.
-final class BookSourceRuntimeStateStore {
+/// All mutable `UserDefaults` access is serialized by `queue`; the remaining
+/// stored properties are immutable after initialization. This makes the shared
+/// instance safe to call from the detached search-presentation worker.
+final class BookSourceRuntimeStateStore: @unchecked Sendable {
     static let shared = BookSourceRuntimeStateStore()
 
     private let defaults: UserDefaults
