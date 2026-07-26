@@ -156,6 +156,12 @@ enum DSSpacing {
 // MARK: - Design System: Layout Tokens
 
 enum DSLayout {
+    /// Search-result cover width shared by native list renderers.
+    static let searchResultCoverWidth: CGFloat = 72
+    /// Search-result cover height shared by native list renderers.
+    static let searchResultCoverHeight: CGFloat = 96
+    /// Diameter of the audiobook badge over a search-result cover.
+    static let searchResultAudiobookBadgeSize: CGFloat = 20
     /// Narrow modal content such as confirmations or small pickers.
     static let readableNarrowWidth: CGFloat = 480
     /// Compact sheets with short forms or account actions.

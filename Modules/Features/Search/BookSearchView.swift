@@ -32,6 +32,7 @@ struct BookSearchView: View {
     @State private var selectedSourceId: UUID? = nil  // nil = all
     @State private var errorMsg: String? = nil
     @State private var submittedQuery = ""
+    @State private var selectedIOS17ResultRoute: SearchResultRoute?
     private var sourceStore: BookSourceStore { BookSourceStore.shared }
 
     var enabledSources: [BookSource] { sourceStore.enabledSources }
@@ -90,18 +91,10 @@ struct BookSearchView: View {
         // Declared here, outside the `List`, because `.navigationDestination`
         // must not sit inside a lazy container.
         .navigationDestination(for: SearchResultRoute.self) { route in
-            if let book = aggregator.results.first(where: { $0.id == route.bookId }) {
-                if BookSourceStore.shared.isAudiobook(book) {
-                    AudiobookDetailView(searchBook: book)
-                        .environmentObject(bookStore)
-                } else {
-                    OnlineBookView(searchBook: book)
-                        .environmentObject(bookStore)
-                }
-            } else {
-                ContentUnavailableView(
-                    localized("暫無發現內容"), systemImage: "books.vertical")
-            }
+            resultDestination(for: route)
+        }
+        .navigationDestination(item: $selectedIOS17ResultRoute) { route in
+            resultDestination(for: route)
         }
         .searchable(text: $query, prompt: localized("輸入書名或作者"))
         .onSubmit(of: .search) { doSearch() }
@@ -289,30 +282,35 @@ struct BookSearchView: View {
     }
 
     private var iOS17ResultList: some View {
-        // Build 43 IPS files on iOS 17.0 and 17.7.2 sampled
-        // UICollectionViewListCell layout plus SwiftUI trait/AttributeGraph scene
-        // updates during the watchdog interval. Avoid List's collection-view path
-        // only on iOS 17; delete this compatibility renderer when the deployment
-        // target reaches iOS 18.
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(aggregator.results) { book in
-                    resultLink(for: book)
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, DSSpacing.lg)
-                        .padding(.vertical, DSSpacing.xs)
-
-                    if book.id != aggregator.results.last?.id || canLoadMore {
-                        Divider()
-                            .padding(.leading, DSSpacing.lg)
-                    }
-                }
-
-                if canLoadMore {
-                    loadMoreButton
-                        .padding(.horizontal, DSSpacing.lg)
-                }
+        IOS17SearchResultTable(
+            content: IOS17SearchResultTableContent(
+                rows: aggregator.results.map(IOS17SearchResultTableRow.init(searchBook:)),
+                showsLoadMore: canLoadMore
+            ),
+            onSelect: { id in
+                selectedIOS17ResultRoute = SearchResultRoute(bookId: id)
+            },
+            onLoadMore: {
+                aggregator.loadMore()
             }
+        )
+    }
+
+    @ViewBuilder
+    private func resultDestination(for route: SearchResultRoute) -> some View {
+        if let book = aggregator.results.first(where: { $0.id == route.bookId }) {
+            if BookSourceStore.shared.isAudiobook(book) {
+                AudiobookDetailView(searchBook: book)
+                    .environmentObject(bookStore)
+            } else {
+                OnlineBookView(searchBook: book)
+                    .environmentObject(bookStore)
+            }
+        } else {
+            ContentUnavailableView(
+                localized("暫無發現內容"),
+                systemImage: "books.vertical"
+            )
         }
     }
 
@@ -403,7 +401,10 @@ struct AggregatedResultRow: View {
                 coverURL: book.coverUrl,
                 title: book.displayName
             )
-            .frame(width: 72, height: 96)
+            .frame(
+                width: DSLayout.searchResultCoverWidth,
+                height: DSLayout.searchResultCoverHeight
+            )
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .shadow(color: .black.opacity(0.12), radius: 3, x: 0, y: 1)
             .overlay(alignment: .bottomTrailing) {
