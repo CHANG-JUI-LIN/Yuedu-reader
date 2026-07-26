@@ -39,11 +39,11 @@ extension BookOrigin {
 
 // MARK: - Aggregated Search Results (merge info from multiple sources for the same book)
 
-class SearchBook: Identifiable, ObservableObject {
-    let id = UUID()
+final class SearchBook: Identifiable {
+    let id: UUID
     let name: String
     let author: String
-    @Published private(set) var origins: [BookOrigin]
+    private(set) var origins: [BookOrigin]
 
     /// Snapshots are index-aligned with `origins`. Production search batches build
     /// them off the main actor before constructing or mutating a `SearchBook`.
@@ -173,12 +173,18 @@ class SearchBook: Identifiable, ObservableObject {
         rowPresentation.displayName
     }
 
-    init(name: String, author: String, origins: [BookOrigin] = []) {
+    init(
+        id: UUID = UUID(),
+        name: String,
+        author: String,
+        origins: [BookOrigin] = []
+    ) {
         let preparedOrigins = SearchResultPresentationBuilder.prepareOrigins(
             origins,
             sourceStore: .shared
         )
         assert(preparedOrigins.count == origins.count)
+        self.id = id
         self.name = name
         self.author = author
         self.origins = origins
@@ -189,10 +195,16 @@ class SearchBook: Identifiable, ObservableObject {
         )
     }
 
-    init(name: String, author: String, preparedOrigins: [PreparedSearchOrigin]) {
+    init(
+        id: UUID = UUID(),
+        name: String,
+        author: String,
+        preparedOrigins: [PreparedSearchOrigin]
+    ) {
         let origins = preparedOrigins.map(\.origin)
         let presentations = preparedOrigins.map(\.presentation)
         assert(origins.count == presentations.count)
+        self.id = id
         self.name = name
         self.author = author
         self.origins = origins
@@ -209,8 +221,8 @@ class SearchBook: Identifiable, ObservableObject {
             PreparedSearchOrigin(origin: $0.0, presentation: $0.1)
         } + [preparedOrigin]
 
-        // Refresh the lightweight snapshot before `@Published origins` emits.
-        // SwiftUI therefore sees a self-consistent row on its next body evaluation.
+        // Refresh the lightweight snapshot before the authoritative origin array.
+        // The aggregator publishes the resulting row state on its bounded cadence.
         rowPresentation = Self.resolveRowPresentation(
             name: name,
             preparedOrigins: preparedOrigins
@@ -218,6 +230,36 @@ class SearchBook: Identifiable, ObservableObject {
         originPresentations.append(preparedOrigin.presentation)
         origins.append(preparedOrigin.origin)
         assert(origins.count == originPresentations.count)
+    }
+
+    /// Freeze the current row values for the next UI publication. The stable id
+    /// lets SwiftUI diff the row in place, while later background merges mutate
+    /// only the authoritative instance held by `SearchAggregator`.
+    func publicationSnapshot() -> SearchBook {
+        return SearchBook(
+            id: id,
+            name: name,
+            author: author,
+            origins: origins,
+            originPresentations: originPresentations,
+            rowPresentation: rowPresentation
+        )
+    }
+
+    private init(
+        id: UUID,
+        name: String,
+        author: String,
+        origins: [BookOrigin],
+        originPresentations: [SearchOriginPresentation],
+        rowPresentation: RowPresentation
+    ) {
+        self.id = id
+        self.name = name
+        self.author = author
+        self.origins = origins
+        self.originPresentations = originPresentations
+        self.rowPresentation = rowPresentation
     }
 
     private static func resolveRowPresentation(
@@ -275,24 +317,23 @@ class SearchBook: Identifiable, ObservableObject {
 // 1. TaskGroup schedules at most GlobalSettings.searchConcurrency active source tasks
 // 2. Each book source independently bound to a 15s timeout; timed-out tasks are cancelled to free resources
 // 3. As soon as any single source returns results, stream its visible books into the UI
-// 4. Uses @Published with SwiftUI to automatically trigger view updates (streaming mechanism)
+// 4. Publishes result-list snapshots through a bounded scene-aware cadence
 
 @MainActor
 class SearchAggregator: ObservableObject {
-    /// UI-facing result list. Updated from `internalResults` through a throttled
-    /// flush (`scheduleResultsFlush`) so that a burst of source returns doesn't
-    /// trigger hundreds of SwiftUI list diffs — merging/sorting always operates
-    /// on `internalResults`, never on this property.
-    @Published var results: [SearchBook] = []
+    /// UI-facing result list. Updated from `internalResults` only through the
+    /// scene-aware publication gate so bursts do not trigger unbounded list diffs.
+    /// Merging and sorting always operate on `internalResults`.
+    private(set) var results: [SearchBook] = []
     @Published var isSearching = false
     /// True when at least one source that answered successfully has not yet been
     /// exhausted by 載入更多 rounds — drives the "load more" row in the UI.
-    @Published private(set) var hasMoreResults = false
+    private(set) var hasMoreResults = false
     /// Paused — either automatically (auto-pause threshold reached) or manually
     /// (floating pause control). Results stay on screen and `resume()` continues
     /// over the sources that had not finished.
     @Published var isPaused = false
-    @Published var progress: SearchProgress = SearchProgress()
+    private(set) var progress: SearchProgress = SearchProgress()
 
     /// Search progress
     struct SearchProgress {
@@ -342,11 +383,22 @@ class SearchAggregator: ObservableObject {
     /// cadence; keeping the working copy un-published means per-book merges and
     /// per-batch sorts don't each pay a SwiftUI diff.
     private var internalResults: [SearchBook] = []
+    private var internalProgress = SearchProgress()
+    private var internalHasMoreResults = false
 
-    /// Throttled-flush bookkeeping (`internalResults` → `results`).
-    private var resultsFlushScheduled = false
-    private var lastResultsFlushUptime: TimeInterval = 0
-    private let resultsFlushInterval: TimeInterval = 0.25
+    /// Single publication path (`internalResults` → `results`). The retained task
+    /// provides one cancellable trailing update; the pure gate owns cadence and
+    /// scene-activity policy.
+    private var resultsPublicationTask: Task<Void, Never>?
+    private var publicationGate = SearchResultPublicationGate(minimumInterval: 0.5)
+    private var publicationMetrics = ResultPublicationMetrics()
+
+    private struct ResultPublicationMetrics {
+        var mutations = 0
+        var publications = 0
+        var coalesced = 0
+        var suppressed = 0
+    }
 
     /// Dedup table: name key → indices of `internalResults` sharing that title.
     /// Within a bucket, candidates merge only when their authors are compatible.
@@ -399,17 +451,26 @@ class SearchAggregator: ObservableObject {
         }
 
         // Reset state for a brand-new query.
+        resultsPublicationTask?.cancel()
+        resultsPublicationTask = nil
+        let presentationIsActive = publicationGate.isActive
+        publicationGate = SearchResultPublicationGate(
+            minimumInterval: 0.5,
+            isActive: presentationIsActive
+        )
+        publicationMetrics = ResultPublicationMetrics()
         internalResults = []
-        results = []
-        resultsFlushScheduled = false
-        lastResultsFlushUptime = 0
+        internalProgress = SearchProgress(
+            total: activeSources.count,
+            skipped: skippedCount
+        )
+        internalHasMoreResults = false
+        requestResultsPublication(force: true, reason: "reset")
         deduplicationMap = [:]
         completedSourceIds = []
         searchPage = 1
         successfulSourceIds = []
         exhaustedSourceIds = []
-        hasMoreResults = false
-        progress = SearchProgress(total: activeSources.count, skipped: skippedCount)
         isPaused = false
 
         currentQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -501,24 +562,26 @@ class SearchAggregator: ObservableObject {
                     case .success(let sourceId, let books, let elapsedMs):
                         let source = sources.first { $0.id == sourceId }
                         await self.mergeBatch(books, source: source, query: q)
-                        self.progress.completed += 1
+                        self.internalProgress.completed += 1
                         self.completedSourceIds.insert(sourceId)
                         self.successfulSourceIds.insert(sourceId)
                         SourceHealthStore.shared.recordSuccess(sourceId, responseMs: elapsedMs)
                     case .timeout(let sourceId):
-                        self.progress.timedOut += 1
+                        self.internalProgress.timedOut += 1
                         self.completedSourceIds.insert(sourceId)
                         SourceHealthStore.shared.recordFailure(sourceId)
                     case .failed(let sourceId):
-                        self.progress.failed += 1
+                        self.internalProgress.failed += 1
                         self.completedSourceIds.insert(sourceId)
                         SourceHealthStore.shared.recordFailure(sourceId)
                     }
+                    self.requestResultsPublication(force: false, reason: "progress")
 
                     // Auto-pause enters the same resumable paused state as the
                     // manual control, so the user can tap to continue the rest.
                     if self.shouldAutoPause(query: q, policy: policy) {
-                        self.flushResultsNow()
+                        self.requestResultsPublication(force: true, reason: "autoPause")
+                        self.logPublicationSummary(reason: "autoPause")
                         self.isPaused = true
                         self.isSearching = false
                         group.cancelAll()
@@ -532,9 +595,10 @@ class SearchAggregator: ObservableObject {
             // Only a run that finished on its own clears the flag; a paused or
             // superseded run is cancelled and leaves state for resume().
             guard let self, !Task.isCancelled else { return }
-            self.flushResultsNow()
             self.updateHasMoreResults()
+            self.requestResultsPublication(force: true, reason: "complete")
             self.isSearching = false
+            self.logPublicationSummary(reason: "complete")
         }
     }
 
@@ -547,7 +611,7 @@ class SearchAggregator: ObservableObject {
     }
 
     private func updateHasMoreResults() {
-        hasMoreResults = searchPage < maxSearchPages
+        internalHasMoreResults = searchPage < maxSearchPages
             && !internalResults.isEmpty
             && !loadMoreCandidates.isEmpty
     }
@@ -559,7 +623,8 @@ class SearchAggregator: ObservableObject {
         guard !isSearching, !isPaused, hasMoreResults else { return }
         let candidates = loadMoreCandidates
         guard !candidates.isEmpty, searchPage < maxSearchPages else {
-            hasMoreResults = false
+            internalHasMoreResults = false
+            requestResultsPublication(force: true, reason: "loadMoreExhausted")
             return
         }
         searchPage += 1
@@ -619,9 +684,10 @@ class SearchAggregator: ObservableObject {
             }
 
             guard let self, !Task.isCancelled else { return }
-            self.flushResultsNow()
             self.updateHasMoreResults()
+            self.requestResultsPublication(force: true, reason: "loadMoreComplete")
             self.isSearching = false
+            self.logPublicationSummary(reason: "loadMoreComplete")
         }
     }
 
@@ -633,9 +699,10 @@ class SearchAggregator: ObservableObject {
     func pause() {
         guard isSearching else { return }
         searchTask?.cancel()
-        flushResultsNow()
+        requestResultsPublication(force: true, reason: "pause")
         isSearching = false
         isPaused = true
+        logPublicationSummary(reason: "pause")
     }
 
     /// Continue a paused search over only the sources that had not finished yet.
@@ -649,35 +716,97 @@ class SearchAggregator: ObservableObject {
 
     func cancel() {
         searchTask?.cancel()
-        flushResultsNow()
+        requestResultsPublication(force: true, reason: "cancel")
         isSearching = false
         isPaused = false
+        logPublicationSummary(reason: "cancel")
     }
 
-    // MARK: - Throttled publish (internalResults → results)
+    // MARK: - Scene-aware result publication (internalResults → results)
 
-    /// Publish at most every `resultsFlushInterval`. A trailing flush is always
-    /// scheduled so the last batch of a burst is never dropped.
-    private func scheduleResultsFlush() {
-        let now = ProcessInfo.processInfo.systemUptime
-        if now - lastResultsFlushUptime >= resultsFlushInterval {
-            flushResultsNow()
+    /// Called by the search screen when its scene moves between active and
+    /// inactive states. Network work may continue in the background, but an
+    /// inactive scene never receives a result-list assignment.
+    func setResultPresentationActive(_ active: Bool) {
+        if !active {
+            resultsPublicationTask?.cancel()
+            resultsPublicationTask = nil
+        }
+
+        guard publicationGate.setActive(active) == .publishNow else { return }
+        publishResultsNow(reason: "resume")
+    }
+
+    private func requestResultsPublication(force: Bool, reason: String) {
+        let decision = publicationGate.request(
+            now: ProcessInfo.processInfo.systemUptime,
+            force: force
+        )
+        handlePublicationDecision(decision, reason: reason)
+    }
+
+    private func handlePublicationDecision(
+        _ decision: SearchResultPublicationDecision,
+        reason: String
+    ) {
+        switch decision {
+        case .publishNow:
+            resultsPublicationTask?.cancel()
+            resultsPublicationTask = nil
+            publishResultsNow(reason: reason)
+
+        case .schedule(let delay):
+            guard resultsPublicationTask == nil else {
+                publicationMetrics.coalesced += 1
+                return
+            }
+
+            resultsPublicationTask = Task { [weak self] in
+                do {
+                    try await Task.sleep(
+                        nanoseconds: UInt64(max(0, delay) * 1_000_000_000)
+                    )
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled, let self else { return }
+                self.resultsPublicationTask = nil
+                self.requestResultsPublication(force: false, reason: "trailing")
+            }
+
+        case .suppress:
+            publicationMetrics.suppressed += 1
+        }
+    }
+
+    private func publishResultsNow(reason: String) {
+        guard publicationGate.isActive else {
+            publicationMetrics.suppressed += 1
             return
         }
-        guard !resultsFlushScheduled else { return }
-        resultsFlushScheduled = true
-        let delay = resultsFlushInterval - (now - lastResultsFlushUptime)
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(max(0, delay) * 1_000_000_000))
-            guard let self else { return }
-            self.resultsFlushScheduled = false
-            self.flushResultsNow()
-        }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        let publishedResults = internalResults.map { $0.publicationSnapshot() }
+        objectWillChange.send()
+        results = publishedResults
+        progress = internalProgress
+        hasMoreResults = internalHasMoreResults
+        publicationGate.didPublish(at: now)
+        publicationMetrics.publications += 1
+        AppLogger.parse(
+            "⏱ search.listPublish rows=\(results.count) reason=\(reason) "
+                + "publications=\(publicationMetrics.publications)"
+        )
     }
 
-    private func flushResultsNow() {
-        lastResultsFlushUptime = ProcessInfo.processInfo.systemUptime
-        results = internalResults
+    private func logPublicationSummary(reason: String) {
+        AppLogger.parse(
+            "⏱ search.listPublish.summary reason=\(reason) "
+                + "mutations=\(publicationMetrics.mutations) "
+                + "publications=\(publicationMetrics.publications) "
+                + "coalesced=\(publicationMetrics.coalesced) "
+                + "suppressed=\(publicationMetrics.suppressed)"
+        )
     }
 
     // MARK: - Single-source search with timeout (static method, no actor isolation issues)
@@ -795,7 +924,7 @@ class SearchAggregator: ObservableObject {
     // 1. Build BookOrigin per book, dedup/merge into `internalResults`
     // 2. Sort ONCE per batch (not per book — a full sort per merged book was
     //    O(books × N log N) on the main actor and re-published every mutation)
-    // 3. Publish through the throttled flush
+    // 3. Request one scene-aware, cadence-bounded UI publication
 
     /// Returns how many books were newly merged (new titles or new origins) —
     /// the paging loop uses 0 to mark a source as exhausted.
@@ -831,7 +960,8 @@ class SearchAggregator: ObservableObject {
         }
         guard mergedCount > 0, !Task.isCancelled else { return mergedCount }
         sortResults(query: q)
-        scheduleResultsFlush()
+        publicationMetrics.mutations += mergedCount
+        requestResultsPublication(force: false, reason: "batch")
         return mergedCount
     }
 

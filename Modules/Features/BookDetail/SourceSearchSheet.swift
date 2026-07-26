@@ -5,6 +5,7 @@ struct SourceSearchSheet: View {
     let onSelectOrigin: (BookOrigin) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var aggregator = SearchAggregator()
 
     var body: some View {
@@ -91,10 +92,14 @@ struct SourceSearchSheet: View {
             }
         }
         .onAppear {
+            aggregator.setResultPresentationActive(scenePhase == .active)
             if aggregator.results.isEmpty {
                 let sources = BookSourceStore.shared.enabledSources
                 aggregator.search(query: query, sources: sources)
             }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            aggregator.setResultPresentationActive(phase == .active)
         }
     }
 }

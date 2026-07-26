@@ -246,6 +246,7 @@ struct AudiobookDetectionTests {
                 )
             ]
         )
+        let publishedSnapshot = book.publicationSnapshot()
 
         book.append(
             PreparedSearchOrigin(
@@ -264,6 +265,10 @@ struct AudiobookDetectionTests {
         #expect(book.preferredOrigin(for: .audio)?.bookUrl == audioOrigin.bookUrl)
         #expect(book.displayIntro == "這是一段比較長的有聲書簡介")
         #expect(book.origins.count == 2)
+        #expect(publishedSnapshot.id == book.id)
+        #expect(publishedSnapshot.inferredContentKind() == .text)
+        #expect(publishedSnapshot.displayIntro == "短簡介")
+        #expect(publishedSnapshot.origins.count == 1)
     }
 
     @Test("search presentation builder hops off MainActor and prepares row values")

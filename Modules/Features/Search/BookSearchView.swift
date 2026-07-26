@@ -26,6 +26,7 @@ struct BookSearchView: View {
     @EnvironmentObject var bookStore: BookStore
     @StateObject private var aggregator = SearchAggregator()
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var query = ""
     @State private var selectedSourceId: UUID? = nil  // nil = all
@@ -78,8 +79,6 @@ struct BookSearchView: View {
                 .overlay(alignment: .bottomTrailing) {
                     searchControlButton
                 }
-                .animation(.spring(response: 0.32, dampingFraction: 0.78), value: aggregator.isSearching)
-                .animation(.spring(response: 0.32, dampingFraction: 0.78), value: aggregator.isPaused)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(PageBackgroundView(scope: .search))
@@ -133,10 +132,14 @@ struct BookSearchView: View {
             Text(errorMsg ?? "")
         }
         .onAppear {
+            aggregator.setResultPresentationActive(scenePhase == .active)
             if !initialQuery.isEmpty && query.isEmpty {
                 query = initialQuery
                 doSearch()
             }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            aggregator.setResultPresentationActive(phase == .active)
         }
     }
 
@@ -205,6 +208,7 @@ struct BookSearchView: View {
             .padding(.bottom, DSSpacing.xl)
             .accessibilityLabel(paused ? localized("繼續搜索") : localized("暫停搜索"))
             .transition(.scale.combined(with: .opacity))
+            .animation(.spring(response: 0.32, dampingFraction: 0.78), value: paused)
         }
     }
 
@@ -253,12 +257,20 @@ struct BookSearchView: View {
     }
 
     // MARK: Result List
+    @ViewBuilder
     private var resultList: some View {
+        if #available(iOS 18.0, *) {
+            modernResultList
+        } else {
+            iOS17ResultList
+        }
+    }
+
+    @available(iOS 18.0, *)
+    private var modernResultList: some View {
         List {
             ForEach(aggregator.results) { book in
-                NavigationLink(value: SearchResultRoute(bookId: book.id)) {
-                    AggregatedResultRow(book: book)
-                }
+                resultLink(for: book)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                 .listRowBackground(Color.clear)
@@ -266,25 +278,67 @@ struct BookSearchView: View {
 
             // 載入更多: fetch the next result page from every source that
             // answered the last round and hasn't been exhausted yet.
-            if aggregator.hasMoreResults, !aggregator.isSearching, !aggregator.isPaused {
-                Button {
-                    aggregator.loadMore()
-                } label: {
-                    HStack {
-                        Spacer()
-                        Label(localized("載入更多"), systemImage: "arrow.down.circle")
-                            .font(DSFont.subheadline)
-                            .foregroundColor(.accentColor)
-                        Spacer()
-                    }
-                    .padding(.vertical, 8)
-                }
+            if canLoadMore {
+                loadMoreButton
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+    }
+
+    private var iOS17ResultList: some View {
+        // Build 43 IPS files on iOS 17.0 and 17.7.2 sampled
+        // UICollectionViewListCell layout plus SwiftUI trait/AttributeGraph scene
+        // updates during the watchdog interval. Avoid List's collection-view path
+        // only on iOS 17; delete this compatibility renderer when the deployment
+        // target reaches iOS 18.
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(aggregator.results) { book in
+                    resultLink(for: book)
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, DSSpacing.lg)
+                        .padding(.vertical, DSSpacing.xs)
+
+                    if book.id != aggregator.results.last?.id || canLoadMore {
+                        Divider()
+                            .padding(.leading, DSSpacing.lg)
+                    }
+                }
+
+                if canLoadMore {
+                    loadMoreButton
+                        .padding(.horizontal, DSSpacing.lg)
+                }
+            }
+        }
+    }
+
+    private func resultLink(for book: SearchBook) -> some View {
+        NavigationLink(value: SearchResultRoute(bookId: book.id)) {
+            AggregatedResultRow(book: book)
+        }
+    }
+
+    private var canLoadMore: Bool {
+        aggregator.hasMoreResults && !aggregator.isSearching && !aggregator.isPaused
+    }
+
+    private var loadMoreButton: some View {
+        Button {
+            aggregator.loadMore()
+        } label: {
+            HStack {
+                Spacer()
+                Label(localized("載入更多"), systemImage: "arrow.down.circle")
+                    .font(DSFont.subheadline)
+                    .foregroundColor(.accentColor)
+                Spacer()
+            }
+            .padding(.vertical, 8)
+        }
     }
 
     // MARK: Empty State
@@ -340,7 +394,7 @@ struct BookSearchView: View {
 // MARK: - Aggregated Result Row
 
 struct AggregatedResultRow: View {
-    @ObservedObject var book: SearchBook
+    let book: SearchBook
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
