@@ -22,6 +22,7 @@ struct SettingsView: View {
     private let privacyPolicyURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/privacy.html")
     private let userAgreementURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/terms.html")
     private let paidTermsURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/paid-terms.html")
+    private let sourceCodeURL = URL(string: "https://github.com/CHANG-JUI-LIN/Yuedu-reader/releases")
 
     private var feedbackMailURL: URL? {
         var components = URLComponents()
@@ -180,7 +181,8 @@ struct SettingsView: View {
                                 telegramGroupURL: telegramGroupURL,
                                 privacyPolicyURL: privacyPolicyURL,
                                 userAgreementURL: userAgreementURL,
-                                paidTermsURL: paidTermsURL
+                                paidTermsURL: paidTermsURL,
+                                sourceCodeURL: sourceCodeURL
                             )
                         } label: {
                             HStack {
@@ -264,6 +266,7 @@ private struct AboutSupportView: View {
     let privacyPolicyURL: URL?
     let userAgreementURL: URL?
     let paidTermsURL: URL?
+    let sourceCodeURL: URL?
 
     var body: some View {
         List {
@@ -298,6 +301,19 @@ private struct AboutSupportView: View {
                     Text(appVersion)
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
+                }
+            }
+
+            Section(header: Text(localized("開放原始碼"))) {
+                actionRow(
+                    icon: "chevron.left.forwardslash.chevron.right",
+                    title: localized("原始碼與開源授權"),
+                    detail: localized("取得本版本對應原始碼與 MPL-2.0 授權"),
+                    trailingIcon: "arrow.up.right"
+                ) {
+                    if let url = sourceCodeURL {
+                        openURL(url)
+                    }
                 }
             }
 
