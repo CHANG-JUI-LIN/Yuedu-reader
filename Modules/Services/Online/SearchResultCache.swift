@@ -21,11 +21,14 @@ final class SearchResultCache {
         var kind: String
         var runtimeVariables: [String: String]?
 
-        init(_ book: OnlineBook) {
+        init(_ book: OnlineBook, source: BookSource) {
             name = book.name
             author = book.author
             intro = book.intro
-            coverUrl = book.coverUrl
+            coverUrl = SearchResultCoverURLPolicy.normalizedString(
+                book.coverUrl,
+                baseURL: source.bookSourceUrl
+            )
             bookUrl = book.bookUrl
             tocUrl = book.tocUrl
             wordCount = book.wordCount
@@ -39,7 +42,10 @@ final class SearchResultCache {
                 name: name,
                 author: author,
                 intro: intro,
-                coverUrl: coverUrl,
+                coverUrl: SearchResultCoverURLPolicy.normalizedString(
+                    coverUrl,
+                    baseURL: source.bookSourceUrl
+                ),
                 bookUrl: bookUrl,
                 tocUrl: tocUrl,
                 wordCount: wordCount,
@@ -96,7 +102,10 @@ final class SearchResultCache {
         // Don't persist empty results: caching a 0 would make a transient failure
         // (timeout / not-yet-logged-in / server hiccup) sticky for `days`.
         guard days > 0, !books.isEmpty, let key = cacheKey(query: query, source: source) else { return }
-        let entry = Entry(books: books.map(CachedBook.init), timestamp: now)
+        let entry = Entry(
+            books: books.map { CachedBook($0, source: source) },
+            timestamp: now
+        )
         queue.sync {
             guard let data = try? JSONEncoder().encode(entry) else { return }
             try? data.write(to: fileURL(for: key), options: .atomic)

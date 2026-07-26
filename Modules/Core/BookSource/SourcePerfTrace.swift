@@ -9,7 +9,8 @@ import Foundation
 ///   chapter.network / chapter.parse
 ///   js.runtimeCreate
 ///   coreText.firstPage / coreText.fullLayout
-///   search.presentation.runtimeMarkers / kindInference / introSanitize / mainMerge
+///   search.presentation.runtimeMarkers / kindInference / coverURL / introSanitize / mainMerge
+///   search.presentation.coverURL.rejected
 ///   search.listPublish / search.listPublish.summary
 ///
 /// Only spans at or above their reporting threshold are logged, so hot paths

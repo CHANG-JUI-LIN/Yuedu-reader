@@ -985,9 +985,9 @@ class SearchAggregator: ObservableObject {
         )
         guard isRelated else { return false }
 
-        if !book.coverUrl.isEmpty {
+        if !origin.coverUrl.isEmpty {
             CoverDecodeService.shared.registerIfNeeded(
-                coverUrl: book.coverUrl,
+                coverUrl: origin.coverUrl,
                 source: coverDecodeSourcesById[book.sourceId]
             )
         }

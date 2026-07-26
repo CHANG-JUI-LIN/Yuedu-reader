@@ -90,6 +90,19 @@ enum SearchResultIPSDiagnostics {
         let end = joined.index(joined.startIndex, offsetBy: 100)
         return String(joined[..<end]) + "…"
     }
+
+    /// Named frame for future watchdog reports. Build 44 showed the unbounded
+    /// equivalent executing inside `AggregatedResultRow.body` on MainActor.
+    @inline(never)
+    static func normalizeCoverURL(
+        _ rawCoverURL: String,
+        baseURL: String?
+    ) -> String {
+        SearchResultCoverURLPolicy.normalizedString(
+            rawCoverURL,
+            baseURL: baseURL
+        )
+    }
 }
 
 enum SearchResultPresentationBuilder {
@@ -163,7 +176,29 @@ enum SearchResultPresentationBuilder {
             return values
         }
         let booksWithKinds = Array(books.prefix(kinds.count))
-        let origins = booksWithKinds.map(Self.makeOrigin)
+        let origins = SourcePerfTrace.span(
+            "search.presentation.coverURL",
+            detail,
+            thresholdMs: 4
+        ) {
+            booksWithKinds.map { book in
+                autoreleasepool {
+                    Self.makeOrigin(book, sourceBaseURL: source.url)
+                }
+            }
+        }
+        let rejectedCoverCount = zip(booksWithKinds, origins).reduce(into: 0) {
+            count, pair in
+            if !pair.0.coverUrl.isEmpty && pair.1.coverUrl.isEmpty {
+                count += 1
+            }
+        }
+        if rejectedCoverCount > 0 {
+            AppLogger.parse(
+                "⏱ search.presentation.coverURL.rejected "
+                    + "count=\(rejectedCoverCount) source=\(source.name.prefix(80))"
+            )
+        }
         let presentations = SourcePerfTrace.span(
             "search.presentation.introSanitize",
             detail,
@@ -213,13 +248,19 @@ enum SearchResultPresentationBuilder {
         }
     }
 
-    private static func makeOrigin(_ book: OnlineBook) -> BookOrigin {
+    private static func makeOrigin(
+        _ book: OnlineBook,
+        sourceBaseURL: String?
+    ) -> BookOrigin {
         BookOrigin(
             sourceId: book.sourceId,
             sourceName: book.sourceName,
             bookUrl: book.bookUrl,
             tocUrl: book.tocUrl,
-            coverUrl: book.coverUrl,
+            coverUrl: SearchResultIPSDiagnostics.normalizeCoverURL(
+                book.coverUrl,
+                baseURL: sourceBaseURL
+            ),
             intro: book.intro,
             lastChapter: book.lastChapter,
             wordCount: book.wordCount,

@@ -399,18 +399,13 @@ struct AggregatedResultRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             // ── Cover ──
-            AsyncImage(url: URL(string: book.coverUrl)) { phase in
-                switch phase {
-                case .success(let img):
-                    img.resizable().scaledToFill()
-                        .frame(width: 72, height: 96)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .shadow(color: .black.opacity(0.12), radius: 3, x: 0, y: 1)
-                default:
-                    placeholderCover
-                }
-            }
+            BookCoverImage(
+                coverURL: book.coverUrl,
+                title: book.displayName
+            )
             .frame(width: 72, height: 96)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .shadow(color: .black.opacity(0.12), radius: 3, x: 0, y: 1)
             .overlay(alignment: .bottomTrailing) {
                 if BookSourceStore.shared.isAudiobookForBadge(book) {
                     AudiobookCoverBadge(glyphSize: 9)
@@ -465,20 +460,6 @@ struct AggregatedResultRow: View {
         .padding(.vertical, 10)
         .frame(minHeight: 96)
     }
-
-    private var placeholderCover: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .fill(Color(UIColor.systemGray6))
-            .frame(width: 72, height: 96)
-            .overlay(
-                Text(book.displayName)
-                    .font(DSFont.fixed(size: 12, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .padding(6)
-            )
-    }
 }
 
 // MARK: - Source Picker Sheet
@@ -492,21 +473,12 @@ struct SourcePickerSheet: View {
         NavigationStack {
             VStack(spacing: 0) {
                 HStack(alignment: .top, spacing: 12) {
-                    AsyncImage(url: URL(string: searchBook.coverUrl)) { phase in
-                        switch phase {
-                        case .success(let img):
-                            img.resizable().scaledToFill()
-                                .frame(width: 60, height: 80)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                        default:
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.secondary.opacity(0.2))
-                                .frame(width: 60, height: 80)
-                                .overlay(
-                                    Text(String(searchBook.displayName.prefix(1)))
-                                        .font(DSFont.title2).foregroundColor(.secondary))
-                        }
-                    }
+                    BookCoverImage(
+                        coverURL: searchBook.coverUrl,
+                        title: searchBook.displayName
+                    )
+                    .frame(width: 60, height: 80)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
                     VStack(alignment: .leading, spacing: 4) {
                         Text(searchBook.displayName).font(DSFont.headline)
                         Text(searchBook.author).font(DSFont.subheadline).foregroundColor(.secondary)
