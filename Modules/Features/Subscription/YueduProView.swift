@@ -73,7 +73,7 @@ struct YueduProView: View {
 
     private var featuresSection: some View {
         Section(header: Text(localized("Pro 功能"))) {
-            ForEach(PremiumFeature.allCases) { feature in
+            ForEach(PremiumFeature.marketedFeatures()) { feature in
                 HStack(spacing: DSSpacing.md) {
                     Image(systemName: feature.iconName)
                         .font(DSFont.fixed(size: 17, weight: .medium))

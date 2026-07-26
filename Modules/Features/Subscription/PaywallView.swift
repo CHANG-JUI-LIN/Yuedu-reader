@@ -145,13 +145,9 @@ struct PaywallView: View {
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
     }
 
-    private let excludedFeatures: Set<PremiumFeature> = [.readerThemePacks, .alternateAppIcons]
-
-    /// Highlighted feature first, then the rest in declaration order (excludes deprecated features).
+    /// Highlighted feature first, then the implemented marketing features in declaration order.
     private var orderedFeatures: [PremiumFeature] {
-        let available = PremiumFeature.allCases.filter { !excludedFeatures.contains($0) }
-        guard let highlightedFeature else { return available }
-        return [highlightedFeature] + available.filter { $0 != highlightedFeature }
+        PremiumFeature.marketedFeatures(highlighting: highlightedFeature)
     }
 
     // MARK: - Plan picker

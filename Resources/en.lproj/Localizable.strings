@@ -1019,8 +1019,7 @@
 "排版參數導入" = "Layout Presets";
 "閱讀背景導入" = "Reader Backgrounds";
 "底部導覽列自訂" = "Bottom Bar";
-"閱讀器主題包" = "Reader Themes";
-"外觀主題包" = "Appearance Theme Packs";
+"外觀自定義" = "Appearance Customization";
 "桌面圖標切換" = "App Icons";
 "匯入並切換自訂字體" = "Import and switch custom fonts";
 "自訂 3×3 翻頁點擊區塊" = "Customize the 3×3 tap zones";
@@ -1036,8 +1035,7 @@
 "匯入圖片作為閱讀背景" = "Import images as reader backgrounds";
 "排序與隱藏底部工具項" = "Reorder and hide bottom bar items";
 "自訂底部 Tab 頁面、大小與圖標" = "Customize bottom tab pages, size, and icons";
-"套用整組閱讀器主題配色" = "Apply full reader theme palettes";
-"套用整組外觀主題與閱讀主題配色" = "Apply full appearance and reading theme palettes";
+"自訂應用配色、閱讀配色與頁面背景" = "Customize app colors, reader colors, and page backgrounds";
 "切換預置的桌面圖標" = "Switch between bundled app icons";
 "無法載入訂閱項目，請稍後再試" = "Couldn't load subscription options. Please try again.";
 "購買待確認，完成後將自動解鎖" = "Purchase pending. It will unlock automatically once approved.";
@@ -1129,7 +1127,7 @@
 "薰衣紫" = "Wisteria Purple";
 "櫻語粉" = "Sakura Pink";
 "刪除此自訂主題？" = "Delete this custom theme?";
-"免費用戶可選擇 7 套內置主題；修改顏色、主題包、背景、封面等需開通會員。" = "Free users can pick from 7 built-in themes. Colors, theme packs, backgrounds and covers require Pro.";
+"自訂應用配色、閱讀配色與頁面背景需開通會員。" = "Customize app colors, reader colors, and page backgrounds with Pro.";
 "Apple Books" = "Apple Books";
 "內建氣泡" = "Built-in Bubble";
 "自訂 SVG" = "Custom SVG";

@@ -91,7 +91,7 @@ struct AppearanceThemeView: View {
         .toolbarTitleDisplayMode(.inline)
         .tint(selectedTheme.isClassic ? nil : selectedTheme.accentColor)
         .sheet(isPresented: $showPaywall) {
-            PaywallView(highlightedFeature: .readerThemePacks)
+            PaywallView()
                 .environmentObject(subscriptionStore)
         }
         .navigationDestination(isPresented: $showCustomizer) {
@@ -816,8 +816,7 @@ struct AppearanceThemeView: View {
         .buttonStyle(.plain)
     }
 
-    /// Free-user entry: same row shape as the Pro editor's rows, tapping opens
-    /// the paywall highlighting theme packs.
+    /// Free-user entry: same row shape as the Pro editor's rows.
     private var pageBackgroundLockedRow: some View {
         Button {
             showPaywall = true
@@ -921,7 +920,7 @@ struct AppearanceThemeView: View {
             }
             .buttonStyle(.plain)
 
-            Text(localized("免費用戶可選擇 7 套內置主題；修改顏色、主題包、背景、封面等需開通會員。"))
+            Text(localized("自訂應用配色、閱讀配色與頁面背景需開通會員。"))
                 .font(DSFont.subheadline)
                 .foregroundStyle(DSColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)

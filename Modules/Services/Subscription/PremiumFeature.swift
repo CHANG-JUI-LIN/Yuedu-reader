@@ -19,6 +19,18 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
 
     var id: String { rawValue }
 
+    /// Features that are implemented and may be advertised in Pro surfaces.
+    /// Theme packs and alternate app icons remain internal capability keys, but
+    /// neither product currently ships and they must not reappear as marketing.
+    static func marketedFeatures(highlighting highlightedFeature: PremiumFeature? = nil) -> [PremiumFeature] {
+        let unavailable: Set<PremiumFeature> = [.readerThemePacks, .alternateAppIcons]
+        let available = allCases.filter { !unavailable.contains($0) }
+        guard let highlightedFeature, available.contains(highlightedFeature) else {
+            return available
+        }
+        return [highlightedFeature] + available.filter { $0 != highlightedFeature }
+    }
+
     /// SF Symbol used in the Pro settings feature list and paywall.
     var iconName: String {
         switch self {
@@ -43,7 +55,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
         case .layoutPresetImport: return "排版參數導入"
         case .readerBackgroundImport: return "閱讀背景導入"
         case .bottomBarCustomization: return "底部導覽列自訂"
-        case .readerThemePacks: return "外觀主題包"
+        case .readerThemePacks: return "外觀自定義"
         case .alternateAppIcons: return "桌面圖標切換"
         case .launchScreen: return "啟動圖"
         }
@@ -58,7 +70,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
         case .layoutPresetImport: return "匯入排版參數 preset 一鍵套用"
         case .readerBackgroundImport: return "匯入圖片作為閱讀背景"
         case .bottomBarCustomization: return "自訂底部 Tab 頁面、大小與圖標"
-        case .readerThemePacks: return "套用整組外觀主題與閱讀主題配色"
+        case .readerThemePacks: return "自訂應用配色、閱讀配色與頁面背景"
         case .alternateAppIcons: return "切換預置的桌面圖標"
         case .launchScreen: return "自訂 App 開屏畫面"
         }
