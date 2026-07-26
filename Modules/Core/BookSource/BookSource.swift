@@ -365,7 +365,7 @@ struct OnlineBook: Identifiable {
     var runtimeVariables: [String: String]? = nil
 }
 
-enum OnlineBookContentKind: Equatable, Sendable {
+enum OnlineBookContentKind: Equatable {
     case text
     case audio
     case manga
@@ -571,12 +571,12 @@ enum OnlineBookContentInference {
     /// so the source's current mode is the only signal left for routing. Feed these
     /// into `infer`'s `metadataText` (weakest priority: any per-book marker wins).
     static func sourceRuntimeModeMarkers(for source: BookSource?) -> [String] {
-        guard let source else { return [] }
-        // `sourceVariables` serves an already-parsed, in-memory snapshot: this runs
-        // once per origin per search-result row, so re-parsing the JSON here is what
-        // used to stall layout.
-        let dict = BookSourceRuntimeStateStore.shared.sourceVariables(for: source.bookSourceUrl)
-        guard !dict.isEmpty else { return [] }
+        guard let source,
+              let json = BookSourceRuntimeStateStore.shared
+                  .sourceVariableJSON(for: source.bookSourceUrl),
+              let data = json.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [] }
 
         var markers: [String] = []
         for key in ["发现页类型", "搜索模式"] {

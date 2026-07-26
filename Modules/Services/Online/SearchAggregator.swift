@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-import os
 
 // MARK: - Book Origin (link info provided by a single book source)
 
@@ -44,35 +43,7 @@ class SearchBook: Identifiable, ObservableObject {
     let id = UUID()
     let name: String
     let author: String
-    @Published var origins: [BookOrigin] {
-        didSet {
-            kindCache.withLock { $0 = nil }
-            displayCache.withLock { $0 = nil }
-        }
-    }
-
-    private let displayCache = OSAllocatedUnfairLock<DisplayStrings?>(initialState: nil)
-
-    /// Memoized `inferredContentKind`.
-    ///
-    /// Inference walks every origin, normalizes each origin's kind/intro/lastChapter
-    /// (allocating lowercased, whitespace-stripped copies of the full intro) and reads
-    /// the source's persisted runtime variables. That is far too much work for a
-    /// SwiftUI `body` — which is exactly where it is called from, once for the row's
-    /// audiobook badge and once for the `NavigationLink` destination, for every visible
-    /// row on every layout pass, while streamed search results keep re-diffing the list.
-    /// Left uncached it wedged the main thread and the app was killed by the
-    /// scene-update watchdog on backgrounding.
-    ///
-    /// Keyed on both clocks the result depends on, so an edited source or a
-    /// `source.setVariable(...)` write still re-derives the kind.
-    private let kindCache = OSAllocatedUnfairLock<CachedContentKind?>(initialState: nil)
-
-    private struct CachedContentKind: Sendable {
-        let runtimeGeneration: UInt64
-        let sourcesRevision: UInt64
-        let kind: OnlineBookContentKind
-    }
+    @Published var origins: [BookOrigin]
 
     /// Normalized key for deduplication
     var deduplicationKey: String {
@@ -159,34 +130,13 @@ class SearchBook: Identifiable, ObservableObject {
     }
 
     func inferredContentKind(sourceStore: BookSourceStore = .shared) -> OnlineBookContentKind {
-        let runtimeGeneration = BookSourceRuntimeStateStore.shared.stateGeneration
-        let sourcesRevision = sourceStore.revision
-        if let cached = kindCache.withLock({ $0 }),
-           cached.runtimeGeneration == runtimeGeneration,
-           cached.sourcesRevision == sourcesRevision {
-            return cached.kind
+        if origins.contains(where: { $0.inferredContentKind(sourceStore: sourceStore) == .audio }) {
+            return .audio
         }
-
-        // One inference pass per origin. The previous audio/manga/first probing ran
-        // the full inference up to `2 * origins.count + 1` times per call.
-        let kinds = origins.map { $0.inferredContentKind(sourceStore: sourceStore) }
-        let resolved: OnlineBookContentKind
-        if kinds.contains(.audio) {
-            resolved = .audio
-        } else if kinds.contains(.manga) {
-            resolved = .manga
-        } else {
-            resolved = kinds.first ?? .text
+        if origins.contains(where: { $0.inferredContentKind(sourceStore: sourceStore) == .manga }) {
+            return .manga
         }
-
-        kindCache.withLock {
-            $0 = CachedContentKind(
-                runtimeGeneration: runtimeGeneration,
-                sourcesRevision: sourcesRevision,
-                kind: resolved
-            )
-        }
-        return resolved
+        return origins.first?.inferredContentKind(sourceStore: sourceStore) ?? .text
     }
 
     func preferredOrigin(for kind: OnlineBookContentKind, sourceStore: BookSourceStore = .shared) -> BookOrigin? {
@@ -195,36 +145,7 @@ class SearchBook: Identifiable, ObservableObject {
 
     /// Intro for list display: filter out tag lines (e.g. "标签 (tags):", "#xxx") and truncate
     /// overly long content to avoid flooding the screen with tags.
-    var displayIntro: String { displayStrings().intro }
-
-    /// Display name: prefer the book name, otherwise use the latest chapter or the first N
-    /// characters of the intro to reduce "unknown title" results.
-    var displayName: String { displayStrings().name }
-
-    /// Row text derived from `origins`, computed once per `origins` change.
-    ///
-    /// `computeDisplayIntro` runs SwiftSoup entity unescaping plus four
-    /// `NSRegularExpression` passes over the full intro, and `computeDisplayName`
-    /// compiles another regex — all read from `AggregatedResultRow.body`, so SwiftUI
-    /// re-ran them for every visible row on every layout pass while streamed results
-    /// kept re-diffing the list. Same precompute the discover list already does in
-    /// `DiscoverBookDisplay`.
-    private func displayStrings() -> DisplayStrings {
-        if let cached = displayCache.withLock({ $0 }) { return cached }
-        let computed = DisplayStrings(
-            name: computeDisplayName(),
-            intro: computeDisplayIntro()
-        )
-        displayCache.withLock { $0 = computed }
-        return computed
-    }
-
-    private struct DisplayStrings: Sendable {
-        let name: String
-        let intro: String
-    }
-
-    private func computeDisplayIntro() -> String {
+    var displayIntro: String {
         let raw = ReaderHTMLUtilities.displayText(fromHTMLFragment: intro, preservingLineBreaks: false)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return "" }
@@ -243,8 +164,10 @@ class SearchBook: Identifiable, ObservableObject {
         return String(joined[..<end]) + "…"
     }
 
+    /// Display name: prefer the book name, otherwise use the latest chapter or the first N
+    /// characters of the intro to reduce "unknown title" results.
     /// Cleans leading ?, ..., and meaningless symbols (e.g. "?... 诡秘之主 (Book Title)...").
-    private func computeDisplayName() -> String {
+    var displayName: String {
         let n = Self.cleanDisplayTitle(name.trimmingCharacters(in: .whitespacesAndNewlines))
         if !n.isEmpty && !Self.isOnlyListNumber(n) { return n }
         if !lastChapter.isEmpty { return Self.cleanDisplayTitle(lastChapter) }
