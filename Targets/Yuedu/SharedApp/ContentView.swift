@@ -11,6 +11,17 @@ struct ContentView: View {
     @ObservedObject private var importDrainer = SharedImportQueueDrainer.shared
     @StateObject private var nowPlaying = NowPlayingHub.shared
     @State private var selectedRootTab: RootTabItem = .bookshelf
+    /// A keyword a book source's discover page handed back via `java.searchBook`.
+    /// Presented as a sheet rather than by switching to the 搜尋 tab: that tab is
+    /// user-hideable (`gs.visibleRootTabs`), so selecting it would do nothing at all
+    /// for anyone who turned it off — and a fresh sheet also lets `initialQuery` run
+    /// on appear, which an already-visited tab would not.
+    @State private var sourceSearchRequest: SourceSearchRequest?
+
+    struct SourceSearchRequest: Identifiable {
+        let id = UUID()
+        let keyword: String
+    }
 
     private var rssUnreadCount: Int {
         rssStore.totalUnreadCount()
@@ -120,6 +131,24 @@ struct ContentView: View {
         // Cold-launch splash: sits above every tab/overlay and fades out.
         .overlay {
             LaunchImageSplashOverlay()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .bookSourceRequestedSearch)) { note in
+            guard let keyword = note.userInfo?["keyword"] as? String,
+                  !keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return }
+            sourceSearchRequest = SourceSearchRequest(keyword: keyword)
+        }
+        .sheet(item: $sourceSearchRequest) { request in
+            NavigationStack {
+                SearchView(initialQuery: request.keyword)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button { sourceSearchRequest = nil } label: {
+                                Image(systemName: "xmark")
+                            }
+                        }
+                    }
+            }
         }
     }
 

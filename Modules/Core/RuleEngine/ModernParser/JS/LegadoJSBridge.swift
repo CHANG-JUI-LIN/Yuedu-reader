@@ -4,6 +4,12 @@ import CryptoKit
 import CommonCrypto
 import UIKit
 
+extension Notification.Name {
+    /// A book source's JS asked the app to search for a keyword
+    /// (`java.searchBook` / `java.open('search', …)`). `userInfo["keyword"]`.
+    static let bookSourceRequestedSearch = Notification.Name("bookSourceRequestedSearch")
+}
+
 // MARK: - JSExport Protocol
 
 /// Protocol for Legado's `java.*` bridge functions.
@@ -48,6 +54,10 @@ import UIKit
     // Toast notifications
     func toast(_ msg: String)
     func longToast(_ msg: String)
+
+    // Hand a keyword back to the app's own search
+    func searchBook(_ key: String, _ source: JSValue?)
+    func open(_ target: String, _ argument: JSValue?)
 
     // Logging
     func log(_ msg: String) -> String
@@ -667,6 +677,50 @@ import UIKit
     }
 
     func longToast(_ msg: String) { toast(msg) }
+
+    // MARK: Search hand-off
+
+    /// `java.searchBook(key, source)` — a discover page's own search box handing a
+    /// keyword back to the app (洋柿子's 發現頁 search field). The `source` argument is
+    /// accepted for signature parity and ignored: the search screen already searches
+    /// every enabled source, and narrowing it would silently change what the user
+    /// asked for. `java.open('search', key)` is the source's fallback for the same
+    /// thing, so both land here.
+    func searchBook(_ key: String, _ source: JSValue?) {
+        requestAppSearch(keyword: key)
+    }
+
+    /// `java.open(target, argument)`. Only `search` is meaningful to this app; any
+    /// other target is logged rather than silently swallowed, so a source asking for
+    /// something we do not route shows up in the device log instead of looking dead.
+    func open(_ target: String, _ argument: JSValue?) {
+        let name = target.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let value = argument?.isUndefined == false ? (argument?.toString() ?? "") : ""
+        guard name == "search" else {
+            AppLogger.parse("⟐ java.open unrouted", context: ["target": target, "arg": value])
+            return
+        }
+        requestAppSearch(keyword: value)
+    }
+
+    /// Single funnel for both entry points. Broadcast rather than wired per engine:
+    /// the request can come from the discover session's bridge, a login sheet, or a
+    /// background parse, none of which own a screen to navigate.
+    private func requestAppSearch(keyword: String) {
+        let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            AppLogger.parse("⟐ java.searchBook empty keyword", context: [:])
+            return
+        }
+        AppLogger.parse("⟐ java.searchBook", context: ["keyword": String(trimmed.prefix(60))])
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .bookSourceRequestedSearch,
+                object: nil,
+                userInfo: ["keyword": trimmed]
+            )
+        }
+    }
 
     // MARK: Logging
 

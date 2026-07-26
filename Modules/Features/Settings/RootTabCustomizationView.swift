@@ -151,35 +151,59 @@ struct RootTabCustomizationView: View {
 
             Spacer(minLength: DSSpacing.md)
 
-            Menu {
-                Button {
-                    guard canCustomize else {
-                        showPaywall = true
-                        return
+            if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+                HStack(spacing: DSSpacing.sm) {
+                    Button {
+                        iconImportTarget = RootTabIconImportTarget(tab: tab, slot: slot)
+                        showingIconImporter = true
+                    } label: {
+                        Label(localized("選擇圖片"), systemImage: "photo")
+                            .font(DSFont.subheadline)
                     }
-                    iconImportTarget = RootTabIconImportTarget(tab: tab, slot: slot)
-                    showingIconImporter = true
-                } label: {
-                    Label(localized("選擇圖片"), systemImage: "photo")
-                }
+                    .buttonStyle(.bordered)
 
-                if asset != nil {
-                    Button(role: .destructive) {
+                    if asset != nil {
+                        Button(role: .destructive) {
+                            settings.deleteRootTabIcon(tab: tab, slot: slot)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel(localized("移除圖片"))
+                    }
+                }
+                .disabled(!canCustomize)
+            } else {
+                Menu {
+                    Button {
                         guard canCustomize else {
                             showPaywall = true
                             return
                         }
-                        settings.deleteRootTabIcon(tab: tab, slot: slot)
+                        iconImportTarget = RootTabIconImportTarget(tab: tab, slot: slot)
+                        showingIconImporter = true
                     } label: {
-                        Label(localized("移除圖片"), systemImage: "trash")
+                        Label(localized("選擇圖片"), systemImage: "photo")
                     }
+
+                    if asset != nil {
+                        Button(role: .destructive) {
+                            guard canCustomize else {
+                                showPaywall = true
+                                return
+                            }
+                            settings.deleteRootTabIcon(tab: tab, slot: slot)
+                        } label: {
+                            Label(localized("移除圖片"), systemImage: "trash")
+                        }
+                    }
+                } label: {
+                    Label(localized("選擇圖片"), systemImage: "chevron.down")
+                        .font(DSFont.subheadline)
                 }
-            } label: {
-                Label(localized("選擇圖片"), systemImage: "chevron.down")
-                    .font(DSFont.subheadline)
+                .buttonStyle(.bordered)
+                .disabled(!canCustomize)
             }
-            .buttonStyle(.bordered)
-            .disabled(!canCustomize)
         }
         .frame(minHeight: 52)
     }

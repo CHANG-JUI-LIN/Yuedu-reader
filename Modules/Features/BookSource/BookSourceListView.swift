@@ -1,9 +1,16 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum BookSourceImportPresentationRoute: Hashable {
+    case local
+    case network
+}
+
 // MARK: - Book Source List (Legado Style)
 
 struct BookSourceListView: View {
+    var embedsNavigationStack = true
+
     @ObservedObject private var store = BookSourceStore.shared
     @ObservedObject private var gs = GlobalSettings.shared
     @State private var showAdd = false
@@ -16,6 +23,9 @@ struct BookSourceListView: View {
     @State private var showNetworkImport = false
     @State private var importURLString = ""
     @State private var networkImportLoading = false
+    @State private var showLegacyImportChooser = false
+    @State private var legacyImportSequence =
+        DismissalSequencedPresentation<BookSourceImportPresentationRoute>()
     @State private var loginSource: BookSource? = nil
     @State private var variableEditingSource: BookSource? = nil
     @Environment(\.presentationMode) var dismiss
@@ -63,8 +73,19 @@ struct BookSourceListView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            AdaptiveSheetContainer(maxWidth: DSLayout.readableWideWidth) {
+        Group {
+            if embedsNavigationStack {
+                NavigationStack {
+                    managementContent
+                }
+            } else {
+                managementContent
+            }
+        }
+    }
+
+    private var managementContent: some View {
+        AdaptiveSheetContainer(maxWidth: DSLayout.readableWideWidth) {
                 VStack(spacing: 0) {
                     if store.sources.isEmpty {
                         emptyView
@@ -95,20 +116,7 @@ struct BookSourceListView: View {
                     }
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            showImport = true
-                        } label: {
-                            Label(localized("本地導入"), systemImage: "doc.badge.plus")
-                        }
-                        Button {
-                            showNetworkImport = true
-                        } label: {
-                            Label(localized("網路導入"), systemImage: "network")
-                        }
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                    }
+                    importToolbarControl
                     Button {
                         showAdd = true
                     } label: {
@@ -146,6 +154,29 @@ struct BookSourceListView: View {
                     } label: {
                         Image(systemName: "ellipsis")
                     }
+                }
+            }
+            .sheet(
+                isPresented: $showLegacyImportChooser,
+                onDismiss: presentLegacyImportAfterChooserDismissal
+            ) {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                    DismissalSequencedActionChooser(
+                        title: localized("匯入"),
+                        actions: [
+                            DismissalSequencedAction(
+                                route: .local,
+                                title: localized("本地導入"),
+                                systemImage: "doc.badge.plus"
+                            ),
+                            DismissalSequencedAction(
+                                route: .network,
+                                title: localized("網路導入"),
+                                systemImage: "network"
+                            ),
+                        ],
+                        onSelect: { legacyImportSequence.select($0) }
+                    )
                 }
             }
             .sheet(isPresented: $showAdd) {
@@ -286,6 +317,44 @@ struct BookSourceListView: View {
             .onChange(of: store.sources.map(\.id)) { _, sourceIds in
                 selectedIds.formIntersection(Set(sourceIds))
             }
+    }
+
+    @ViewBuilder
+    private var importToolbarControl: some View {
+        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+            Button {
+                legacyImportSequence.cancel()
+                showLegacyImportChooser = true
+            } label: {
+                Image(systemName: "square.and.arrow.down")
+            }
+        } else {
+            Menu {
+                Button {
+                    showImport = true
+                } label: {
+                    Label(localized("本地導入"), systemImage: "doc.badge.plus")
+                }
+                Button {
+                    showNetworkImport = true
+                } label: {
+                    Label(localized("網路導入"), systemImage: "network")
+                }
+            } label: {
+                Image(systemName: "square.and.arrow.down")
+            }
+        }
+    }
+
+    private func presentLegacyImportAfterChooserDismissal() {
+        guard let route = legacyImportSequence.consumeAfterDismissal() else {
+            return
+        }
+        switch route {
+        case .local:
+            showImport = true
+        case .network:
+            showNetworkImport = true
         }
     }
 

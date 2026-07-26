@@ -200,7 +200,11 @@ struct SettingsView: View {
             .themedAppSurface(for: .settings)
             .navigationTitle(localized("設定"))
             .toolbarTitleDisplayModeInlineLarge()
-            .sheet(isPresented: $showSourceList) {
+            .navigationDestination(isPresented: pushedSourceListBinding) {
+                BookSourceListView(embedsNavigationStack: false)
+                    .environmentObject(store)
+            }
+            .sheet(isPresented: sheetSourceListBinding) {
                 BookSourceListView()
                     .environmentObject(store)
             }
@@ -230,6 +234,26 @@ struct SettingsView: View {
                 TTSSettingsView()
             }
         }
+    }
+
+    private var pushedSourceListBinding: Binding<Bool> {
+        Binding(
+            get: {
+                showSourceList
+                    && BookSourceManagementPresentationPolicy.prefersNavigationDestination
+            },
+            set: { if !$0 { showSourceList = false } }
+        )
+    }
+
+    private var sheetSourceListBinding: Binding<Bool> {
+        Binding(
+            get: {
+                showSourceList
+                    && !BookSourceManagementPresentationPolicy.prefersNavigationDestination
+            },
+            set: { if !$0 { showSourceList = false } }
+        )
     }
 
     private var downloadedBooksCount: Int {

@@ -62,13 +62,23 @@ class ModernParserBridge {
     private var lastJSNetworkExchange: JSNetworkExchange?
 
     private func recordJSNetwork(
-        url: String?, status: String, body: String?
+        url: String?, statusCode: Int?, timedOut: Bool, body: String?
     ) {
         lastJSNetworkExchange = JSNetworkExchange(
             url: String((url ?? "-").prefix(200)),
-            status: status,
+            status: timedOut ? "timeout" : (statusCode.map(String.init) ?? "error"),
             length: body?.count ?? -1,
             bodyHead: String((body ?? "nil").prefix(200)).replacingOccurrences(of: "\n", with: " ")
+        )
+        // Same exchange, second reader: the log line above is for us, this one is for
+        // the user. A rule that swallows its API's error (`requestApiUrl` returning
+        // null on `{"error":…}`) otherwise leaves an empty screen with no explanation.
+        SourceAPIErrorLog.shared.record(
+            sourceUrl: sourceRuleData.source.bookSourceUrl,
+            requestUrl: url,
+            statusCode: statusCode,
+            body: body,
+            timedOut: timedOut
         )
     }
 
@@ -273,8 +283,8 @@ class ModernParserBridge {
             let waitResult = sem.wait(timeout: .now() + 30)
             self.recordJSNetwork(
                 url: request.url?.absoluteString,
-                status: waitResult == .timedOut
-                    ? "timeout" : (responseStatusCode.map(String.init) ?? "error"),
+                statusCode: responseStatusCode,
+                timedOut: waitResult == .timedOut,
                 body: result
             )
             if waitResult == .timedOut {
@@ -356,7 +366,8 @@ class ModernParserBridge {
             let timedOut = semaphore.wait(timeout: .now() + 30) == .timedOut
             self?.recordJSNetwork(
                 url: request.url?.absoluteString,
-                status: timedOut ? "timeout" : (statusCode.map(String.init) ?? "error"),
+                statusCode: statusCode,
+                timedOut: timedOut,
                 body: result
             )
             // This is the path a plain `java.ajax(url)` takes — 书山聚合 fetches chapter
@@ -1211,6 +1222,7 @@ class ModernParserBridge {
 
         var ruleStr = rawExploreUrl
         let isJS = Self.isJSExploreRule(rawExploreUrl)
+        var exploreJSError: String?
         if isJS {
             let jsCode = Self.jsCode(fromExploreRule: rawExploreUrl)
             let bindings: [String: Any] = [
@@ -1219,6 +1231,9 @@ class ModernParserBridge {
             ]
             ruleStr = jsEngine.evaluateIsolated(jsCode, bindings: bindings)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            // Snapshot now: any later `jsEngine.evaluate` clears `lastError`, so
+            // reading it at log time would report "none" for a rule that threw.
+            exploreJSError = jsEngine.lastError
         }
 
         let result: [DiscoverItem]
@@ -1248,6 +1263,24 @@ class ModernParserBridge {
         } else {
             result = parseExploreKindText(ruleStr)
         }
+
+        // An empty 發現頁 has four different causes that look identical on screen: the
+        // rule JS threw, its API answered but with nothing usable, the payload decoded
+        // to items with no `url` (dropped later as non-navigable), or it was never JSON
+        // in the shape we decode. Only the payload itself tells them apart, and this is
+        // the one place it exists. Logged for every explore load — it is one line per
+        // page open, not per row.
+        AppLogger.parse("⟐ explore", context: [
+            "source": source.bookSourceName,
+            "isJS": isJS,
+            "jsError": exploreJSError ?? "none",
+            "payloadLen": ruleStr.count,
+            "items": result.count,
+            "titled": result.filter { !($0.title ?? "").isEmpty }.count,
+            "navigable": result.filter { !($0.url ?? "").isEmpty }.count,
+            "selects": result.filter { ($0.type ?? "") == "select" }.count,
+            "head": String(ruleStr.prefix(240)).replacingOccurrences(of: "\n", with: " ")
+        ])
 
         return result
     }
@@ -1583,6 +1616,11 @@ class ModernParserBridge {
                 }
             }
         } catch is ModernParserBridgeError {
+            SourceAPIErrorLog.shared.record(
+                sourceUrl: sourceRuleData.source.bookSourceUrl,
+                requestUrl: request.url?.absoluteString,
+                statusCode: nil, body: nil, timedOut: true
+            )
             throw ModernParserBridgeError.timeout
         }
 
@@ -1591,6 +1629,17 @@ class ModernParserBridge {
             ?? String(data: data, encoding: .utf8) ?? ""
         let finalUrl = (response as? HTTPURLResponse)?.url?.absoluteString
             ?? analyzeUrl.url
+
+        // The status is otherwise dropped here: a 403 error envelope reaches the rule
+        // engine as an ordinary body, matches no rule, and search/TOC just come back
+        // empty. Keep the body flowing (Legado parity — some sources DO parse error
+        // pages) and record the failure alongside it.
+        SourceAPIErrorLog.shared.record(
+            sourceUrl: sourceRuleData.source.bookSourceUrl,
+            requestUrl: request.url?.absoluteString,
+            statusCode: (response as? HTTPURLResponse)?.statusCode,
+            body: body
+        )
 
         return (body, finalUrl)
     }

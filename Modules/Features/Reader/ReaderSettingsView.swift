@@ -368,63 +368,76 @@ struct ReaderSettingsView: View {
     }
 
     private var fontSelector: some View {
-        Menu {
-            Button {
-                settings.selectedReaderFontPostScript = nil
-                readerConfig.refresh.send(.layout)
-            } label: {
-                Label(localized("系統字體"), systemImage: settings.selectedReaderFontPostScript == nil ? "checkmark" : "textformat")
-            }
-
-            if !settings.userFonts.isEmpty {
-                Divider()
-                Section {
-                    ForEach(settings.userFonts, id: \.id) { font in
-                        Button {
-                            settings.selectedReaderFontPostScript = font.postScriptName
-                            readerConfig.refresh.send(.layout)
-                        } label: {
-                            Label(
-                                font.displayName,
-                                systemImage: settings.selectedReaderFontPostScript == font.postScriptName ? "checkmark" : "textformat"
-                            )
-                        }
-                    }
-                } header: {
-                    Text(localized("已匯入字體"))
+        HStack(spacing: DSSpacing.sm) {
+            Menu {
+                Button {
+                    settings.selectedReaderFontPostScript = nil
+                    readerConfig.refresh.send(.layout)
+                } label: {
+                    Label(localized("系統字體"), systemImage: settings.selectedReaderFontPostScript == nil ? "checkmark" : "textformat")
                 }
 
-                Menu(localized("刪除字體")) {
-                    ForEach(settings.userFonts, id: \.id) { font in
-                        Button(role: .destructive) {
-                            settings.deleteUserFont(font)
-                            readerConfig.refresh.send(.layout)
-                        } label: {
-                            Label(font.displayName, systemImage: "trash")
+                if !settings.userFonts.isEmpty {
+                    Divider()
+                    Section {
+                        ForEach(settings.userFonts, id: \.id) { font in
+                            Button {
+                                settings.selectedReaderFontPostScript = font.postScriptName
+                                readerConfig.refresh.send(.layout)
+                            } label: {
+                                Label(
+                                    font.displayName,
+                                    systemImage: settings.selectedReaderFontPostScript == font.postScriptName ? "checkmark" : "textformat"
+                                )
+                            }
+                        }
+                    } header: {
+                        Text(localized("已匯入字體"))
+                    }
+
+                    Menu(localized("刪除字體")) {
+                        ForEach(settings.userFonts, id: \.id) { font in
+                            Button(role: .destructive) {
+                                settings.deleteUserFont(font)
+                                readerConfig.refresh.send(.layout)
+                            } label: {
+                                Label(font.displayName, systemImage: "trash")
+                            }
                         }
                     }
                 }
-            }
 
-            Divider()
-            Button {
-                showingFontImporter = true
+                if !MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+                    Divider()
+                    Button {
+                        showingFontImporter = true
+                    } label: {
+                        Label(localized("匯入字體..."), systemImage: "plus")
+                    }
+                }
             } label: {
-                Label(localized("匯入字體..."), systemImage: "plus")
+                HStack {
+                    Text(localized("字體"))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Text(currentFontName)
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.up.down")
+                        .font(DSFont.footnote)
+                        .foregroundStyle(.tertiary)
+                }
             }
-        } label: {
-            HStack {
-                Text(localized("字體"))
-                    .foregroundStyle(.primary)
-                Spacer()
-                Text(currentFontName)
-                    .foregroundStyle(.secondary)
-                Image(systemName: "chevron.up.down")
-                    .font(DSFont.footnote)
-                    .foregroundStyle(.tertiary)
+            .buttonStyle(.plain)
+
+            if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+                Button {
+                    showingFontImporter = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel(localized("匯入字體..."))
             }
         }
-        .buttonStyle(.plain)
     }
 
     private var layoutDetailsSection: some View {

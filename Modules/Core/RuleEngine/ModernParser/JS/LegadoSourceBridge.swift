@@ -28,6 +28,7 @@ import JavaScriptCore
     func put(_ key: String, _ value: String)
     func get(_ key: String) -> String
     func evalJS(_ js: String) -> String
+    func getKey() -> String
 
     var bookSourceUrl: String { get }
     var bookSourceName: String { get }
@@ -102,6 +103,15 @@ import JavaScriptCore
     @objc let ruleReview: NSDictionary
 
     @objc var key: String { bookSourceUrl }
+
+    /// Legado `BaseSource.getKey()` — the source's identity, `bookSourceUrl` for a
+    /// book source. Exporting only the `key` *property* was not enough: Rhino sees
+    /// the Kotlin method, so sources call `source.getKey()`, and on JavaScriptCore
+    /// that was `undefined` → `TypeError: source.getKey is not a function`. 洋柿子
+    /// resolves its API host with it (`getHostList` → `src.getKey()`), inside a
+    /// `try {} catch {}` that discards the error, so the host list came out empty
+    /// and the 發現頁 fell through to 「洋柿子发现页加载失败」 with no clue why.
+    @objc func getKey() -> String { key }
 
     // MARK: Degates / Handlers (wired externally)
 

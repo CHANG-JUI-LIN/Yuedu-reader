@@ -2,6 +2,14 @@ import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
 
+private enum RSSAddPresentationRoute: Hashable {
+    case addSource
+    case addFolder
+    case importOPML
+    case importJSON
+    case refresh
+}
+
 struct RSSListView: View {
     @StateObject private var store = RSSStore.shared
     @ObservedObject private var gs = GlobalSettings.shared
@@ -31,6 +39,9 @@ struct RSSListView: View {
     @State private var refreshProgress = RSSRefreshProgress()
     @State private var showSettings = false
     @State private var showOrganize = false
+    @State private var showLegacyAddChooser = false
+    @State private var legacyAddSequence =
+        DismissalSequencedPresentation<RSSAddPresentationRoute>()
 
     private var folders: [RSSFolder] {
         store.orderedFolders()
@@ -71,19 +82,7 @@ struct RSSListView: View {
                 // auto-merge so the add (+) and options (…) menus sit in their own
                 // glass instead of fusing into one.
                 ToolbarItem(placement: .topBarTrailing) {
-                    RSSHomeAddMenu(
-                        isRefreshingAll: isRefreshingAll,
-                        hasSources: !store.sources.isEmpty,
-                        onAddSource: { showAddSheet = true },
-                        onAddFolder: { showAddFolderSheet = true },
-                        onRefresh: { Task { await refreshAllSources() } },
-                        onImportOPML: { showOPMLImportSheet = true },
-                        onImportJSON: {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                showJSONImporter = true
-                            }
-                        }
-                    )
+                    rssAddToolbarControl
                 }
 
                 if #available(iOS 26.0, *) {
@@ -118,6 +117,45 @@ struct RSSListView: View {
             .safeAreaInset(edge: .bottom) {
                 if isRefreshingAll {
                     RSSRefreshProgressBar(progress: refreshProgress)
+                }
+            }
+            .sheet(
+                isPresented: $showLegacyAddChooser,
+                onDismiss: presentLegacyAddActionAfterChooserDismissal
+            ) {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                    DismissalSequencedActionChooser(
+                        title: localized("新增或匯入"),
+                        actions: [
+                            DismissalSequencedAction(
+                                route: .addSource,
+                                title: localized("新增 RSS 訂閱"),
+                                systemImage: "plus"
+                            ),
+                            DismissalSequencedAction(
+                                route: .addFolder,
+                                title: localized("新增資料夾"),
+                                systemImage: "folder.badge.plus"
+                            ),
+                            DismissalSequencedAction(
+                                route: .importOPML,
+                                title: localized("匯入 OPML"),
+                                systemImage: "square.and.arrow.down"
+                            ),
+                            DismissalSequencedAction(
+                                route: .importJSON,
+                                title: localized("匯入 Legado JSON"),
+                                systemImage: "doc.badge.plus"
+                            ),
+                            DismissalSequencedAction(
+                                route: .refresh,
+                                title: localized("刷新全部訂閱"),
+                                systemImage: "arrow.clockwise",
+                                isEnabled: !isRefreshingAll && !store.sources.isEmpty
+                            ),
+                        ],
+                        onSelect: { legacyAddSequence.select($0) }
+                    )
                 }
             }
             .sheet(isPresented: $showAddSheet) {
@@ -618,6 +656,47 @@ private enum RSSDeleteTarget: Identifiable {
             return String(format: localized("確定要刪除「%@」訂閱源嗎？"), source.name)
         case .folder(let folder):
             return String(format: localized("確定要刪除「%@」資料夾以及其中的訂閱源嗎？"), folder.name)
+        }
+    }
+
+    @ViewBuilder
+    private var rssAddToolbarControl: some View {
+        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+            Button {
+                legacyAddSequence.cancel()
+                showLegacyAddChooser = true
+            } label: {
+                Image(systemName: "plus")
+            }
+            .accessibilityLabel(localized("新增或匯入"))
+        } else {
+            RSSHomeAddMenu(
+                isRefreshingAll: isRefreshingAll,
+                hasSources: !store.sources.isEmpty,
+                onAddSource: { showAddSheet = true },
+                onAddFolder: { showAddFolderSheet = true },
+                onRefresh: { Task { await refreshAllSources() } },
+                onImportOPML: { showOPMLImportSheet = true },
+                onImportJSON: { showJSONImporter = true }
+            )
+        }
+    }
+
+    private func presentLegacyAddActionAfterChooserDismissal() {
+        guard let route = legacyAddSequence.consumeAfterDismissal() else {
+            return
+        }
+        switch route {
+        case .addSource:
+            showAddSheet = true
+        case .addFolder:
+            showAddFolderSheet = true
+        case .importOPML:
+            showOPMLImportSheet = true
+        case .importJSON:
+            showJSONImporter = true
+        case .refresh:
+            Task { await refreshAllSources() }
         }
     }
 }

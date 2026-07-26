@@ -39,6 +39,12 @@ private struct BookshelfCoverFramePreferenceKey: PreferenceKey {
     }
 }
 
+private enum BookshelfImportPresentationRoute: Hashable {
+    case local
+    case webDAV
+    case opds
+}
+
 private extension View {
     func reportBookshelfCoverFrame(_ frame: Binding<CGRect>) -> some View {
         background {
@@ -64,6 +70,9 @@ struct HomeView: View {
     @State private var showWebDAVImport = false
     @State private var showOPDSImport = false
     @State private var addSheetSessionID = UUID()
+    @State private var showLegacyImportChooser = false
+    @State private var legacyImportSequence =
+        DismissalSequencedPresentation<BookshelfImportPresentationRoute>()
     @State private var editingBook: ReadingBook? = nil
     @State private var bookToDelete: ReadingBook? = nil
     @State private var selectedOnlineBookDetail: OnlineBook? = nil
@@ -345,6 +354,34 @@ struct HomeView: View {
             // In edit mode, hide the app tab bar so the contextual .bottomBar (delete / group / share)
             // takes its place — the system selection pattern used by Photos / Files.
             .toolbar(editMode == .active ? .hidden : .automatic, for: .tabBar)
+            .sheet(
+                isPresented: $showLegacyImportChooser,
+                onDismiss: presentLegacyImportAfterChooserDismissal
+            ) {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                    DismissalSequencedActionChooser(
+                        title: localized("添加書籍"),
+                        actions: [
+                            DismissalSequencedAction(
+                                route: .local,
+                                title: localized("從本地匯入"),
+                                systemImage: "folder"
+                            ),
+                            DismissalSequencedAction(
+                                route: .webDAV,
+                                title: localized("從 WebDAV 匯入"),
+                                systemImage: "externaldrive.connected.to.line.below"
+                            ),
+                            DismissalSequencedAction(
+                                route: .opds,
+                                title: localized("從 OPDS 匯入"),
+                                systemImage: "books.vertical"
+                            ),
+                        ],
+                        onSelect: { legacyImportSequence.select($0) }
+                    )
+                }
+            }
             .sheet(isPresented: $showAddSheet) {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                     AddBookView()
@@ -450,29 +487,56 @@ struct HomeView: View {
         }
     }
 
+    private func presentLegacyImportAfterChooserDismissal() {
+        guard let route = legacyImportSequence.consumeAfterDismissal() else {
+            return
+        }
+        switch route {
+        case .local:
+            addSheetSessionID = UUID()
+            showAddSheet = true
+        case .webDAV:
+            showWebDAVImport = true
+        case .opds:
+            showOPDSImport = true
+        }
+    }
+
+    @ViewBuilder
     private var addBookMenu: some View {
-        Menu {
+        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
             Button {
-                addSheetSessionID = UUID()
-                showAddSheet = true
+                legacyImportSequence.cancel()
+                showLegacyImportChooser = true
             } label: {
-                Label(localized("從本地匯入"), systemImage: "folder")
+                Image(systemName: "plus")
+                    .font(DSFont.toolbarIcon)
+                    .foregroundColor(.black)
             }
-            Button {
-                showWebDAVImport = true
+        } else {
+            Menu {
+                Button {
+                    addSheetSessionID = UUID()
+                    showAddSheet = true
+                } label: {
+                    Label(localized("從本地匯入"), systemImage: "folder")
+                }
+                Button {
+                    showWebDAVImport = true
+                } label: {
+                    Label(localized("從 WebDAV 匯入"),
+                          systemImage: "externaldrive.connected.to.line.below")
+                }
+                Button {
+                    showOPDSImport = true
+                } label: {
+                    Label(localized("從 OPDS 匯入"), systemImage: "books.vertical")
+                }
             } label: {
-                Label(localized("從 WebDAV 匯入"),
-                      systemImage: "externaldrive.connected.to.line.below")
+                Image(systemName: "plus")
+                    .font(DSFont.toolbarIcon)
+                    .foregroundColor(.black)
             }
-            Button {
-                showOPDSImport = true
-            } label: {
-                Label(localized("從 OPDS 匯入"), systemImage: "books.vertical")
-            }
-        } label: {
-            Image(systemName: "plus")
-                .font(DSFont.toolbarIcon)
-                .foregroundColor(.black)
         }
         .id("\(Locale.autoupdatingCurrent.identifier)_add_menu")
     }

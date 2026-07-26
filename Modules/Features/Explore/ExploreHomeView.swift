@@ -71,7 +71,10 @@ struct ExploreHomeView: View {
                 SearchView(initialQuery: route.query)
                     .environmentObject(store)
             }
-            .sheet(isPresented: $showSourceManager) {
+            .navigationDestination(isPresented: pushedSourceManagerBinding) {
+                BookSourceListView(embedsNavigationStack: false)
+            }
+            .sheet(isPresented: sheetSourceManagerBinding) {
                 // BookSourceListView already provides its own NavigationStack; wrapping
                 // it in another NavigationStack stacks two nav bars (duplicate title on
                 // iOS 18). Present it directly, matching SettingsView.
@@ -123,6 +126,26 @@ struct ExploreHomeView: View {
                 }
             }
         }
+    }
+
+    private var pushedSourceManagerBinding: Binding<Bool> {
+        Binding(
+            get: {
+                showSourceManager
+                    && BookSourceManagementPresentationPolicy.prefersNavigationDestination
+            },
+            set: { if !$0 { showSourceManager = false } }
+        )
+    }
+
+    private var sheetSourceManagerBinding: Binding<Bool> {
+        Binding(
+            get: {
+                showSourceManager
+                    && !BookSourceManagementPresentationPolicy.prefersNavigationDestination
+            },
+            set: { if !$0 { showSourceManager = false } }
+        )
     }
 
     private var segmentedPicker: some View {

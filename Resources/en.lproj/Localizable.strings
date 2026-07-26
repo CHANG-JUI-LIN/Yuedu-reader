@@ -219,6 +219,8 @@
 "書源列表" = "Source List";
 "書源名稱" = "Source Name";
 "書源地址" = "Source URL";
+"書源伺服器回應失敗" = "The source's server returned an error";
+"書源腳本錯誤" = "Book source script error";
 "資料已還原，書庫與替換規則已即時更新" = "Data restored. The library and replacement rules have been updated immediately.";
 "書源已被刪除" = "Source has been deleted";
 "書源未設定 loginUrl" = "The book source has no loginUrl configured";
@@ -392,6 +394,7 @@
 "退出閱讀器後自動恢復原始亮度" = "Brightness resets after leaving reader";
 "速度" = "Speed";
 "連線失敗" = "Connection Failed";
+"連線逾時" = "Connection timed out";
 "連線成功" = "Connection Successful";
 "進入小說章節頁，點「轉碼閱讀」直接開書" = "Go to a chapter page, tap \\\"Read\\\" to open";
 "進階" = "Advanced";

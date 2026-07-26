@@ -2,6 +2,11 @@ import AVFoundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum TTSImportPresentationRoute: Hashable {
+    case local
+    case network
+}
+
 struct TTSSettingsView: View {
     @ObservedObject private var gs = GlobalSettings.shared
     @Environment(\.presentationMode) private var presentationMode
@@ -11,6 +16,9 @@ struct TTSSettingsView: View {
     @State private var isImportingSources = false
     @State private var showSourceFileImporter = false
     @State private var showNetworkImport = false
+    @State private var showLegacyImportChooser = false
+    @State private var legacyImportSequence =
+        DismissalSequencedPresentation<TTSImportPresentationRoute>()
     @State private var searchText = ""
     @State private var selectedSourceIds: Set<String> = []
     @State private var loginSource: ImportedTTSSource?
@@ -57,21 +65,31 @@ struct TTSSettingsView: View {
                     }
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            showSourceFileImporter = true
-                        } label: {
-                            Label(localized("本地導入"), systemImage: "doc.badge.plus")
-                        }
-                        Button {
-                            showNetworkImport = true
-                        } label: {
-                            Label(localized("網路導入"), systemImage: "network")
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                    }
+                    importToolbarControl
                     .disabled(isImportingSources)
+                }
+            }
+            .sheet(
+                isPresented: $showLegacyImportChooser,
+                onDismiss: presentLegacyImportAfterChooserDismissal
+            ) {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                    DismissalSequencedActionChooser(
+                        title: localized("匯入"),
+                        actions: [
+                            DismissalSequencedAction(
+                                route: .local,
+                                title: localized("本地導入"),
+                                systemImage: "doc.badge.plus"
+                            ),
+                            DismissalSequencedAction(
+                                route: .network,
+                                title: localized("網路導入"),
+                                systemImage: "network"
+                            ),
+                        ],
+                        onSelect: { legacyImportSequence.select($0) }
+                    )
                 }
             }
             .sheet(isPresented: $showNetworkImport) {
@@ -109,6 +127,45 @@ struct TTSSettingsView: View {
     }
 
     // MARK: - Private
+
+    @ViewBuilder
+    private var importToolbarControl: some View {
+        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+            Button {
+                legacyImportSequence.cancel()
+                showLegacyImportChooser = true
+            } label: {
+                Image(systemName: "plus")
+            }
+        } else {
+            Menu {
+                Button {
+                    showSourceFileImporter = true
+                } label: {
+                    Label(localized("本地導入"), systemImage: "doc.badge.plus")
+                }
+                Button {
+                    showNetworkImport = true
+                } label: {
+                    Label(localized("網路導入"), systemImage: "network")
+                }
+            } label: {
+                Image(systemName: "plus")
+            }
+        }
+    }
+
+    private func presentLegacyImportAfterChooserDismissal() {
+        guard let route = legacyImportSequence.consumeAfterDismissal() else {
+            return
+        }
+        switch route {
+        case .local:
+            showSourceFileImporter = true
+        case .network:
+            showNetworkImport = true
+        }
+    }
 
     // MARK: - Source list
 

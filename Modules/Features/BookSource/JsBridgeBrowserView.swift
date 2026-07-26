@@ -164,11 +164,17 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
+        // A captcha/OAuth widget that opens itself (not from a tap) is blocked before
+        // the UI delegate is ever consulted unless script-opened windows are allowed.
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
 
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.customUserAgent =
             "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         wv.navigationDelegate = context.coordinator
+        // `uiDelegate` is weak — the Coordinator owns it. Without it the page's
+        // `window.open` / `alert` / `confirm` are dropped without a trace.
+        wv.uiDelegate = context.coordinator.uiDelegate
         context.coordinator.webView = wv
         context.coordinator.bridge = bridge
 
@@ -206,6 +212,8 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         weak var webView: WKWebView?
         weak var bridge: JsBridgeBrowserBridge?
         var progressObservation: NSKeyValueObservation?
+        /// Strongly held: `WKWebView.uiDelegate` is weak.
+        let uiDelegate = SourceWebUIDelegate()
         private var keyboardHideObserver: NSObjectProtocol?
 
         /// WKWebView keeps the tapped `<input>` as `document.activeElement` after the keyboard is

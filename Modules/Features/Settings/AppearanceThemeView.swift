@@ -4,6 +4,11 @@ import UIKit
 import UniformTypeIdentifiers
 
 struct AppearanceThemeView: View {
+    private enum LegacyBackgroundImageAction: Hashable {
+        case photos
+        case files
+    }
+
     @ObservedObject private var settings = GlobalSettings.shared
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.colorScheme) private var colorScheme
@@ -21,6 +26,9 @@ struct AppearanceThemeView: View {
     @State private var showBackgroundPhotosPicker = false
     @State private var backgroundPhotoItem: PhotosPickerItem?
     @State private var isImportingBackgroundFile = false
+    @State private var showLegacyBackgroundImageChooser = false
+    @State private var legacyBackgroundImageSequence =
+        DismissalSequencedPresentation<LegacyBackgroundImageAction>()
     @State private var showSaveThemeAlert = false
     @State private var newThemeName = ""
     @State private var themeExportDocument: AppearanceThemeExportDocument?
@@ -130,6 +138,29 @@ struct AppearanceThemeView: View {
             selection: $backgroundPhotoItem,
             matching: .images
         )
+        .sheet(
+            isPresented: $showLegacyBackgroundImageChooser,
+            onDismiss: presentLegacyBackgroundImageActionAfterChooserDismissal
+        ) {
+            DismissalSequencedActionChooser(
+                title: localized("選擇"),
+                actions: [
+                    DismissalSequencedAction(
+                        route: LegacyBackgroundImageAction.photos,
+                        title: localized("從相簿選擇"),
+                        systemImage: "photo.on.rectangle"
+                    ),
+                    DismissalSequencedAction(
+                        route: LegacyBackgroundImageAction.files,
+                        title: localized("從檔案選擇"),
+                        systemImage: "folder"
+                    ),
+                ],
+                onSelect: { route in
+                    legacyBackgroundImageSequence.select(route)
+                }
+            )
+        }
         .onChange(of: backgroundPhotoItem) { _, item in
             guard let item else { return }
             importBackgroundPhoto(item)
@@ -595,39 +626,69 @@ struct AppearanceThemeView: View {
                         )
                         .accessibilityHidden(true)
                 }
-                Menu {
-                    Button {
-                        backgroundImagePickScheme = scheme
-                        showBackgroundPhotosPicker = true
-                    } label: {
-                        Label(localized("從相簿選擇"), systemImage: "photo.on.rectangle")
-                    }
-                    Button {
-                        backgroundImagePickScheme = scheme
-                        isImportingBackgroundFile = true
-                    } label: {
-                        Label(localized("從檔案選擇"), systemImage: "folder")
-                    }
-                    if fileName != nil {
-                        Button(role: .destructive) {
-                            settings.clearPageBackgroundImage(scope: pageBackgroundScope, appearance: scheme)
+                if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+                    HStack(spacing: DSSpacing.sm) {
+                        Button {
+                            backgroundImagePickScheme = scheme
+                            legacyBackgroundImageSequence.cancel()
+                            showLegacyBackgroundImageChooser = true
                         } label: {
-                            Label(localized("移除背景圖"), systemImage: "trash")
+                            Text(localized("選擇"))
+                                .font(DSFont.subheadline.weight(.medium))
+                                .foregroundStyle(DSColor.accent)
+                                .padding(.horizontal, DSSpacing.md)
+                                .padding(.vertical, DSSpacing.sm - 2)
+                                .background(DSColor.accent.opacity(0.12), in: Capsule())
+                        }
+                        .accessibilityLabel(localized(titleKey))
+                        if fileName != nil {
+                            Button(role: .destructive) {
+                                settings.clearPageBackgroundImage(
+                                    scope: pageBackgroundScope,
+                                    appearance: scheme
+                                )
+                            } label: {
+                                Image(systemName: "trash")
+                                    .foregroundStyle(DSColor.destructive)
+                            }
+                            .accessibilityLabel(localized("移除背景圖"))
                         }
                     }
-                } label: {
-                    HStack(spacing: DSSpacing.xs) {
-                        Text(localized("選擇"))
-                        Image(systemName: "chevron.down")
-                            .font(DSFont.caption2.weight(.semibold))
+                } else {
+                    Menu {
+                        Button {
+                            backgroundImagePickScheme = scheme
+                            showBackgroundPhotosPicker = true
+                        } label: {
+                            Label(localized("從相簿選擇"), systemImage: "photo.on.rectangle")
+                        }
+                        Button {
+                            backgroundImagePickScheme = scheme
+                            isImportingBackgroundFile = true
+                        } label: {
+                            Label(localized("從檔案選擇"), systemImage: "folder")
+                        }
+                        if fileName != nil {
+                            Button(role: .destructive) {
+                                settings.clearPageBackgroundImage(scope: pageBackgroundScope, appearance: scheme)
+                            } label: {
+                                Label(localized("移除背景圖"), systemImage: "trash")
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: DSSpacing.xs) {
+                            Text(localized("選擇"))
+                            Image(systemName: "chevron.down")
+                                .font(DSFont.caption2.weight(.semibold))
+                        }
+                        .font(DSFont.subheadline.weight(.medium))
+                        .foregroundStyle(DSColor.accent)
+                        .padding(.horizontal, DSSpacing.md)
+                        .padding(.vertical, DSSpacing.sm - 2)
+                        .background(DSColor.accent.opacity(0.12), in: Capsule())
                     }
-                    .font(DSFont.subheadline.weight(.medium))
-                    .foregroundStyle(DSColor.accent)
-                    .padding(.horizontal, DSSpacing.md)
-                    .padding(.vertical, DSSpacing.sm - 2)
-                    .background(DSColor.accent.opacity(0.12), in: Capsule())
+                    .accessibilityLabel(localized(titleKey))
                 }
-                .accessibilityLabel(localized(titleKey))
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.md)
@@ -673,6 +734,18 @@ struct AppearanceThemeView: View {
                 settings.updatePageBackgroundConfig(config, for: pageBackgroundScope)
             }
         )
+    }
+
+    private func presentLegacyBackgroundImageActionAfterChooserDismissal() {
+        guard let action = legacyBackgroundImageSequence.consumeAfterDismissal() else {
+            return
+        }
+        switch action {
+        case .photos:
+            showBackgroundPhotosPicker = true
+        case .files:
+            isImportingBackgroundFile = true
+        }
     }
 
     private func imageOpacityDisplayValue(scheme: ColorScheme) -> Double {

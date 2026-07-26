@@ -86,11 +86,15 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
+        // Same reason as JsBridgeBrowserView: a widget that opens its own window
+        // (captcha / OAuth) is blocked before the UI delegate is consulted.
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
 
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.customUserAgent =
             "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         wv.navigationDelegate = context.coordinator
+        wv.uiDelegate = context.coordinator.uiDelegate  // weak on WKWebView
 
         // Give the Coordinator a weak reference so the bridge closure can reach it
         context.coordinator.webView = wv
@@ -143,6 +147,8 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
         private let source: BookSource
         /// Weak reference set in makeUIView; used by the bridge closure.
         weak var webView: WKWebView?
+        /// Strongly held: `WKWebView.uiDelegate` is weak.
+        let uiDelegate = SourceWebUIDelegate()
 
         init(source: BookSource) { self.source = source }
 

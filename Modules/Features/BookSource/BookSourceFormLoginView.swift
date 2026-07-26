@@ -20,6 +20,17 @@ struct BookSourceFormLoginView: View {
     @State private var errorMessage: String? = nil
     @State private var successMessage: String? = nil
     @State private var showFanqieLogin = false
+    /// What a menu button's run reported when the source itself said nothing.
+    /// Alert only, never the inline error Section: that Section sits below the whole
+    /// form, which on a long source menu is far off-screen — the button still read
+    /// as dead even once it had something to say.
+    @State private var menuAlert: MenuActionAlert? = nil
+
+    struct MenuActionAlert: Identifiable {
+        let id = UUID()
+        let title: String
+        let detail: String
+    }
 
     var body: some View {
         NavigationStack {
@@ -135,6 +146,18 @@ struct BookSourceFormLoginView: View {
             }
         }
         .onAppear { loadUI() }
+        .alert(
+            menuAlert?.title ?? "",
+            isPresented: Binding(
+                get: { menuAlert != nil },
+                set: { if !$0 { menuAlert = nil } }
+            ),
+            presenting: menuAlert
+        ) { _ in
+            Button(localized("好"), role: .cancel) { menuAlert = nil }
+        } message: { alert in
+            Text(alert.detail)
+        }
         .sheet(isPresented: $showFanqieLogin) {
             JsBridgeBrowserView(urlString: "https://fanqienovel.com", title: localized("番茄登入")) { _ in
                 showFanqieLogin = false
@@ -420,13 +443,16 @@ struct BookSourceFormLoginView: View {
         let rawLogin = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         let loginJS = LoginManager.shared.extractLoginJs(rawLogin) ?? ""
         let combined = "\(loginJS)\n\(action)"
+        errorMessage = nil
 
         Task.detached(priority: .userInitiated) {
             let engine = JSCoreEngine()
             engine.bookSource = source
             Self.configureLegadoRuntime(engine, source: source)
+            let spoke = MenuActionSpokeFlag()
 
             engine.browserPresentHandler = { url, title, completion in
+                spoke.fired = true
                 DispatchQueue.main.async {
                     // Same contract as in runLoginJS: the awaiting JS thread is released
                     // exactly once, whichever way the browser sheet goes away.
@@ -449,6 +475,7 @@ struct BookSourceFormLoginView: View {
                 }
             }
             engine.toastHandler = { msg in
+                spoke.fired = true
                 Task { @MainActor in
                     BookSourceFormLoginView.presentToastAlert(message: msg)
                 }
@@ -483,8 +510,37 @@ struct BookSourceFormLoginView: View {
                 "result": credentials,
                 "baseUrl": source.bookSourceUrl
             ]
+            SourceAPIErrorLog.shared.clear(for: source.bookSourceUrl)
             _ = engine.evaluate(combined, bindings: bindings)
+
+            // A menu action that finishes without saying anything is the failure mode
+            // this reports: 同人小说网's `registerByInvite()` returns early when its API
+            // answers `{"error":…}` (wrong/used 邀请码, rejected device id), so
+            // 「邀请码注册Token」 looked like a dead button. Only speak when the source
+            // itself stayed silent — its own toast is the better message when it has one.
+            guard !spoke.fired else { return }
+            let report: MenuActionAlert?
+            if let jsError = engine.lastError {
+                report = MenuActionAlert(title: localized("書源腳本錯誤"), detail: jsError)
+            } else if let failure = SourceAPIErrorLog.shared.last(for: source.bookSourceUrl) {
+                report = MenuActionAlert(
+                    title: localized("書源伺服器回應失敗"), detail: failure.displayText)
+            } else {
+                report = nil
+            }
+            guard let report else { return }
+            AppLogger.parse("⟐ menuButton silent", context: [
+                "title": report.title, "detail": report.detail
+            ])
+            Task { @MainActor in self.menuAlert = report }
         }
+    }
+
+    /// Whether a menu action produced any user-visible response of its own.
+    /// A reference box: the JS runs on the engine's own thread and sets this
+    /// through escaping handlers, then `runButtonJS` reads it once JS has finished.
+    private final class MenuActionSpokeFlag: @unchecked Sendable {
+        var fired = false
     }
 
     nonisolated private static func configureLegadoRuntime(_ engine: JSCoreEngine, source: BookSource) {
@@ -577,13 +633,22 @@ struct BookSourceFormLoginView: View {
             }
             let semaphore = DispatchSemaphore(value: 0)
             var body = ""
-            URLSession.shared.dataTask(with: request) { data, _, _ in
+            var statusCode: Int?
+            URLSession.shared.dataTask(with: request) { data, response, _ in
+                statusCode = (response as? HTTPURLResponse)?.statusCode
                 if let data {
                     body = String(data: data, encoding: .utf8) ?? ""
                 }
                 semaphore.signal()
             }.resume()
-            _ = semaphore.wait(timeout: .now() + 30)
+            let timedOut = semaphore.wait(timeout: .now() + 30) == .timedOut
+            // Menu actions are the one place a source's API failure has no other way
+            // to reach the user: the rule JS returns early on a bad reply, so the
+            // button just looks dead. `runButtonJS` reports whatever lands here.
+            SourceAPIErrorLog.shared.record(
+                sourceUrl: sourceUrl, requestUrl: request.url?.absoluteString,
+                statusCode: statusCode, body: body, timedOut: timedOut
+            )
             return body
         }
         engine.upLoginDataHandler = { mapValue in

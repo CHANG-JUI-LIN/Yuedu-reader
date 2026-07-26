@@ -382,24 +382,46 @@ final class DiscoverViewModel: ObservableObject {
     /// answers `[{"title":"请先于【源变量】处填写共享Token","url":""}]` until a token
     /// is stored. `mapItem` correctly drops such items as non-navigable, so
     /// without surfacing them here the 發現頁 just looks broken.
+    ///
+    /// When the source's rule JS produced nothing at all, fall through to what its
+    /// API actually answered: the same source replies `{"error":"无效JWT…"}` once a
+    /// *wrong* token is stored, and `requestApiUrl` returns null for it without a
+    /// word — an empty page whose only explanation was in the device log.
     var sourceNotice: String? {
-        guard items.isEmpty, !rawItems.isEmpty else { return nil }
-        let labels = rawItems.compactMap { item -> String? in
-            guard (item.type ?? "") != "select" else { return nil }  // filters render on their own
-            let title = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return title.isEmpty || title == "--" ? nil : title
+        guard items.isEmpty else { return nil }
+        if !rawItems.isEmpty {
+            let labels = rawItems.compactMap { item -> String? in
+                guard (item.type ?? "") != "select" else { return nil }  // filters render on their own
+                let title = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return title.isEmpty || title == "--" ? nil : title
+            }
+            if !labels.isEmpty {
+                return labels.prefix(4).joined(separator: "\n")
+            }
         }
-        guard !labels.isEmpty else { return nil }
-        return labels.prefix(4).joined(separator: "\n")
+        guard let sourceUrl = selectedSource?.bookSourceUrl,
+              let failure = SourceAPIErrorLog.shared.last(for: sourceUrl)
+        else { return nil }
+        return "\(localized("書源伺服器回應失敗"))\n\(failure.displayText)"
     }
 
     /// Cache key for the current (source, discover runtime variables) pair.
     private func discoverKindsCacheKey(for source: BookSource) -> String {
+        // Fingerprint whatever the source variable actually IS. Keying only off a
+        // parsed *dictionary* made a bare-string variable invisible — 同人小说网 stores
+        // its share Token as a plain JWT, `currentVariableDict` returns `[:]` for it,
+        // and the key came out identical before and after the user pasted the token.
+        // The 發現頁 then kept serving the 「请先于【源变量】处填写共享Token」 list it had
+        // cached while there was no token. Canonical JSON stays the fingerprint for
+        // object variables so key order can't cause spurious misses.
         let variableDict = currentVariableDict(for: source)
+        let fingerprint = variableDict.isEmpty
+            ? runtimeStore.sourceVariableJSON(for: source.bookSourceUrl)
+            : Self.canonicalJSON(variableDict)
         return DiscoverKindsCache.key(
             sourceUrl: source.bookSourceUrl,
             exploreUrl: source.exploreUrl,
-            variableJSON: variableDict.isEmpty ? nil : Self.canonicalJSON(variableDict)
+            variableJSON: fingerprint
         )
     }
 

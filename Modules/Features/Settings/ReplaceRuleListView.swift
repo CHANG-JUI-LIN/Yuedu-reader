@@ -1,6 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum ReplaceRulePresentationRoute: Hashable {
+    case add
+    case importFile
+}
+
 // MARK: - List View
 
 /// Manage user-configurable global replace rules.
@@ -11,6 +16,9 @@ struct ReplaceRuleListView: View {
     @ObservedObject private var gs = GlobalSettings.shared
     @State private var showingAdd = false
     @State private var showingImportFile = false
+    @State private var showLegacyActionChooser = false
+    @State private var legacyActionSequence =
+        DismissalSequencedPresentation<ReplaceRulePresentationRoute>()
     @State private var editingRule: ReplaceRule?
     @State private var importAlert: ReplaceRuleImportAlert?
     @Environment(\.dismiss) private var dismiss
@@ -49,21 +57,7 @@ struct ReplaceRuleListView: View {
             .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        Button {
-                            showingAdd = true
-                        } label: {
-                            Label(localized("新增規則"), systemImage: "plus")
-                        }
-
-                        Button {
-                            showingImportFile = true
-                        } label: {
-                            Label(localized("匯入替換規則 JSON"), systemImage: "square.and.arrow.down")
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                    }
+                    addOrImportToolbarControl
                     .accessibilityLabel(localized("新增或匯入"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -72,6 +66,29 @@ struct ReplaceRuleListView: View {
                     } label: {
                         Image(systemName: "checkmark")
                     }
+                }
+            }
+            .sheet(
+                isPresented: $showLegacyActionChooser,
+                onDismiss: presentLegacyActionAfterChooserDismissal
+            ) {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                    DismissalSequencedActionChooser(
+                        title: localized("新增或匯入"),
+                        actions: [
+                            DismissalSequencedAction(
+                                route: .add,
+                                title: localized("新增規則"),
+                                systemImage: "plus"
+                            ),
+                            DismissalSequencedAction(
+                                route: .importFile,
+                                title: localized("匯入替換規則 JSON"),
+                                systemImage: "square.and.arrow.down"
+                            ),
+                        ],
+                        onSelect: { legacyActionSequence.select($0) }
+                    )
                 }
             }
             .sheet(isPresented: $showingAdd) {
@@ -93,6 +110,49 @@ struct ReplaceRuleListView: View {
                     dismissButton: .default(Text(localized("完成")))
                 )
             }
+        }
+    }
+
+    @ViewBuilder
+    private var addOrImportToolbarControl: some View {
+        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+            Button {
+                legacyActionSequence.cancel()
+                showLegacyActionChooser = true
+            } label: {
+                Image(systemName: "plus")
+            }
+        } else {
+            Menu {
+                Button {
+                    showingAdd = true
+                } label: {
+                    Label(localized("新增規則"), systemImage: "plus")
+                }
+
+                Button {
+                    showingImportFile = true
+                } label: {
+                    Label(
+                        localized("匯入替換規則 JSON"),
+                        systemImage: "square.and.arrow.down"
+                    )
+                }
+            } label: {
+                Image(systemName: "plus")
+            }
+        }
+    }
+
+    private func presentLegacyActionAfterChooserDismissal() {
+        guard let route = legacyActionSequence.consumeAfterDismissal() else {
+            return
+        }
+        switch route {
+        case .add:
+            showingAdd = true
+        case .importFile:
+            showingImportFile = true
         }
     }
 
