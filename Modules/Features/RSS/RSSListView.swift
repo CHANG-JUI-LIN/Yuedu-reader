@@ -621,43 +621,6 @@ struct RSSListView: View {
     private func copyURLString(_ urlString: String) {
         UIPasteboard.general.string = urlString
     }
-}
-
-private struct RSSRefreshProgress: Equatable {
-    var completed: Int = 0
-    var total: Int = 0
-}
-
-private enum RSSDeleteTarget: Identifiable {
-    case source(RSSSource)
-    case folder(RSSFolder)
-
-    var id: String {
-        switch self {
-        case .source(let source):
-            return "source-\(source.id)"
-        case .folder(let folder):
-            return "folder-\(folder.id)"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .source:
-            return localized("刪除訂閱源")
-        case .folder:
-            return localized("刪除資料夾")
-        }
-    }
-
-    var message: String {
-        switch self {
-        case .source(let source):
-            return String(format: localized("確定要刪除「%@」訂閱源嗎？"), source.name)
-        case .folder(let folder):
-            return String(format: localized("確定要刪除「%@」資料夾以及其中的訂閱源嗎？"), folder.name)
-        }
-    }
 
     @ViewBuilder
     private var rssAddToolbarControl: some View {
@@ -699,6 +662,44 @@ private enum RSSDeleteTarget: Identifiable {
             Task { await refreshAllSources() }
         }
     }
+}
+
+private struct RSSRefreshProgress: Equatable {
+    var completed: Int = 0
+    var total: Int = 0
+}
+
+private enum RSSDeleteTarget: Identifiable {
+    case source(RSSSource)
+    case folder(RSSFolder)
+
+    var id: String {
+        switch self {
+        case .source(let source):
+            return "source-\(source.id)"
+        case .folder(let folder):
+            return "folder-\(folder.id)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .source:
+            return localized("刪除訂閱源")
+        case .folder:
+            return localized("刪除資料夾")
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .source(let source):
+            return String(format: localized("確定要刪除「%@」訂閱源嗎？"), source.name)
+        case .folder(let folder):
+            return String(format: localized("確定要刪除「%@」資料夾以及其中的訂閱源嗎？"), folder.name)
+        }
+    }
+
 }
 
 private struct RSSHomeCard<Content: View>: View {

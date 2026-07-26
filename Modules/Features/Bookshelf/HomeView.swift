@@ -537,8 +537,8 @@ struct HomeView: View {
                     .font(DSFont.toolbarIcon)
                     .foregroundColor(.black)
             }
+            .id("\(Locale.autoupdatingCurrent.identifier)_add_menu")
         }
-        .id("\(Locale.autoupdatingCurrent.identifier)_add_menu")
     }
 
     private var bookshelfOptionsMenu: some View {
