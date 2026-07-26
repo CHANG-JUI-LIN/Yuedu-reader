@@ -169,6 +169,26 @@ final class SearchBook: Identifiable {
         rowPresentation.displayIntro
     }
 
+    var detailIntro: String {
+        guard
+            let index = rowPresentation.primaryIntroIndex,
+            index < originPresentations.count
+        else {
+            return ""
+        }
+        return originPresentations[index].detailIntro
+    }
+
+    func detailIntro(for origin: BookOrigin) -> String {
+        guard
+            let index = origins.firstIndex(where: { $0.id == origin.id }),
+            index < originPresentations.count
+        else {
+            return detailIntro
+        }
+        return originPresentations[index].detailIntro
+    }
+
     var displayName: String {
         rowPresentation.displayName
     }

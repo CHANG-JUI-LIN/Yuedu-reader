@@ -1,6 +1,8 @@
 import SwiftUI
 
-/// Navigation route for one search result.
+private typealias BookSearchResultRoute = SearchResultRoute<SearchBook>
+
+/// Navigation route for one frozen search-result snapshot.
 ///
 /// Value-based navigation is deliberate. The closure form
 /// `NavigationLink { destination } label: { … }` builds its destination for every
@@ -10,12 +12,9 @@ import SwiftUI
 /// destination creation out of the streaming list's redraw path.
 ///
 /// The discover page never had this: it routes through `.navigationDestination`,
-/// which resolves the destination once, on tap. This keeps both paths on that
-/// shape. Keyed by `SearchBook.id` so nothing here has to reach into
-/// `SearchAggregator`.
-private struct SearchResultRoute: Hashable {
-    let bookId: UUID
-}
+/// which resolves the destination once, on tap. The route retains that tapped
+/// snapshot so later `SearchAggregator` publications cannot replace the data
+/// under an active iOS 17 destination.
 
 /// Installs only the navigation mechanism used by the active result renderer.
 ///
@@ -25,8 +24,8 @@ private struct SearchResultRoute: Hashable {
 /// iOS 18.
 private struct SearchResultNavigationModifier<Destination: View>: ViewModifier {
     let mode: SearchResultNavigationMode
-    @Binding var selectedRoute: SearchResultRoute?
-    let destination: (SearchResultRoute) -> Destination
+    @Binding var selectedRoute: BookSearchResultRoute?
+    let destination: (BookSearchResultRoute) -> Destination
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -34,7 +33,30 @@ private struct SearchResultNavigationModifier<Destination: View>: ViewModifier {
         case .selectedItem:
             content.navigationDestination(item: $selectedRoute, destination: destination)
         case .valueRoute:
-            content.navigationDestination(for: SearchResultRoute.self, destination: destination)
+            content.navigationDestination(
+                for: BookSearchResultRoute.self,
+                destination: destination
+            )
+        }
+    }
+}
+
+/// Resolves a frozen route without capturing `BookSearchView` or its live
+/// `SearchAggregator`. The inherited store is forwarded explicitly to preserve
+/// the existing detail-view environment contract.
+private struct SearchResultDestination: View {
+    let route: BookSearchResultRoute
+    @EnvironmentObject private var bookStore: BookStore
+
+    @ViewBuilder
+    var body: some View {
+        let book = route.snapshot
+        if BookSourceStore.shared.isAudiobook(book) {
+            AudiobookDetailView(searchBook: book)
+                .environmentObject(bookStore)
+        } else {
+            OnlineBookView(searchBook: book)
+                .environmentObject(bookStore)
         }
     }
 }
@@ -54,7 +76,7 @@ struct BookSearchView: View {
     @State private var selectedSourceId: UUID? = nil  // nil = all
     @State private var errorMsg: String? = nil
     @State private var submittedQuery = ""
-    @State private var selectedIOS17ResultRoute: SearchResultRoute?
+    @State private var selectedIOS17ResultRoute: BookSearchResultRoute?
     private var sourceStore: BookSourceStore { BookSourceStore.shared }
 
     var enabledSources: [BookSource] { sourceStore.enabledSources }
@@ -116,7 +138,7 @@ struct BookSearchView: View {
             SearchResultNavigationModifier(
                 mode: .current,
                 selectedRoute: $selectedIOS17ResultRoute,
-                destination: resultDestination(for:)
+                destination: SearchResultDestination.init(route:)
             )
         )
         .searchable(text: $query, prompt: localized("輸入書名或作者"))
@@ -311,7 +333,13 @@ struct BookSearchView: View {
                 showsLoadMore: canLoadMore
             ),
             onSelect: { id in
-                selectedIOS17ResultRoute = SearchResultRoute(bookId: id)
+                guard let book = aggregator.results.first(where: { $0.id == id }) else {
+                    return
+                }
+                selectedIOS17ResultRoute = BookSearchResultRoute(
+                    id: id,
+                    snapshot: book
+                )
             },
             onLoadMore: {
                 aggregator.loadMore()
@@ -319,26 +347,10 @@ struct BookSearchView: View {
         )
     }
 
-    @ViewBuilder
-    private func resultDestination(for route: SearchResultRoute) -> some View {
-        if let book = aggregator.results.first(where: { $0.id == route.bookId }) {
-            if BookSourceStore.shared.isAudiobook(book) {
-                AudiobookDetailView(searchBook: book)
-                    .environmentObject(bookStore)
-            } else {
-                OnlineBookView(searchBook: book)
-                    .environmentObject(bookStore)
-            }
-        } else {
-            ContentUnavailableView(
-                localized("暫無發現內容"),
-                systemImage: "books.vertical"
-            )
-        }
-    }
-
     private func resultLink(for book: SearchBook) -> some View {
-        NavigationLink(value: SearchResultRoute(bookId: book.id)) {
+        NavigationLink(
+            value: BookSearchResultRoute(id: book.id, snapshot: book)
+        ) {
             AggregatedResultRow(book: book)
         }
     }
@@ -506,8 +518,10 @@ struct SourcePickerSheet: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(searchBook.displayName).font(DSFont.headline)
                         Text(searchBook.author).font(DSFont.subheadline).foregroundColor(.secondary)
-                        if !searchBook.intro.isEmpty {
-                            Text(ReaderHTMLUtilities.displayText(fromHTMLFragment: searchBook.intro)).font(DSFont.caption).foregroundColor(.secondary)
+                        if !searchBook.detailIntro.isEmpty {
+                            Text(searchBook.detailIntro)
+                                .font(DSFont.caption)
+                                .foregroundColor(.secondary)
                                 .lineLimit(2)
                         }
                     }

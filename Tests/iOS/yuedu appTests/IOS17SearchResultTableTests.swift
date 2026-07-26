@@ -4,6 +4,66 @@ import Testing
 
 @Suite("iOS 17 native search result table")
 struct IOS17SearchResultTableTests {
+    @Test("navigation route freezes the tapped search snapshot")
+    func navigationRouteFreezesTappedSnapshot() {
+        let id = UUID(uuidString: "B1111111-2222-3333-4444-555555555555")!
+        let tapped = SearchBook(id: id, name: "點擊時書名", author: "作者")
+        let replacement = SearchBook(id: id, name: "後續發布書名", author: "作者")
+
+        let route = SearchResultRoute(id: id, snapshot: tapped)
+        let replacementRoute = SearchResultRoute(id: id, snapshot: replacement)
+
+        #expect(route.snapshot === tapped)
+        #expect(route.snapshot !== replacement)
+        #expect(route == replacementRoute)
+        #expect(Set([route, replacementRoute]).count == 1)
+    }
+
+    @Test("detail intro is sanitized and bounded before SwiftUI layout")
+    func detailIntroIsSanitizedAndBounded() {
+        let raw = String(
+            repeating: "<p>這是一段不應在詳情頁重複排版的原始 HTML。</p>",
+            count: 10_000
+        )
+
+        let intro = OnlineBookDetailPresentationPolicy.sanitizeIntro(raw)
+
+        #expect(!intro.contains("<p>"))
+        #expect(
+            intro.count
+                <= OnlineBookDetailPresentationPolicy.maximumIntroCharacters + 1
+        )
+        #expect(intro.hasSuffix("…"))
+    }
+
+    @Test("sanitized detail book does not retain raw HTML intro")
+    func sanitizedDetailBookDoesNotRetainRawIntro() {
+        let raw = String(repeating: "<p>完整網頁</p>", count: 10_000)
+        let book = OnlineBook(
+            name: "測試書",
+            author: "作者",
+            intro: raw,
+            coverUrl: "",
+            bookUrl: "https://example.com/book",
+            tocUrl: "",
+            wordCount: "",
+            lastChapter: "",
+            kind: "",
+            sourceId: UUID(),
+            sourceName: "測試書源"
+        )
+
+        let sanitized = OnlineBookDetailPresentationPolicy.sanitized(book)
+
+        #expect(book.intro == raw)
+        #expect(sanitized.intro != raw)
+        #expect(!sanitized.intro.contains("<p>"))
+        #expect(
+            sanitized.intro.count
+                <= OnlineBookDetailPresentationPolicy.maximumIntroCharacters + 1
+        )
+    }
+
     @Test("search detail identity stays stable across destination rebuilds")
     func searchDetailIdentityStaysStable() {
         let searchBookID = UUID(
@@ -98,6 +158,7 @@ struct IOS17SearchResultTableTests {
                     presentation: SearchOriginPresentation(
                         contentKind: .audio,
                         displayIntro: "已截斷簡介",
+                        detailIntro: "已清洗且有界的詳情簡介",
                         introCharacterCount: origin.intro.count,
                         lastChapterTitleCandidate: "第十章",
                         introTitleCandidate: ""
@@ -114,6 +175,8 @@ struct IOS17SearchResultTableTests {
         #expect(row.coverURL == "https://example.com/cover.jpg")
         #expect(row.sourceCount == 1)
         #expect(row.showsAudiobookBadge)
+        #expect(book.detailIntro == "已清洗且有界的詳情簡介")
+        #expect(book.detailIntro(for: origin) == "已清洗且有界的詳情簡介")
     }
 
     private func makeRow(title: String = "第一本書") -> IOS17SearchResultTableRow {

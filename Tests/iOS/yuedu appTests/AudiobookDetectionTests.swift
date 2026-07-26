@@ -186,6 +186,7 @@ struct AudiobookDetectionTests {
             presentation: SearchOriginPresentation(
                 contentKind: .text,
                 displayIntro: "預先清理的簡介",
+                detailIntro: "預先清理的詳情簡介",
                 introCharacterCount: rawIntro.count,
                 lastChapterTitleCandidate: "",
                 introTitleCandidate: "整頁 HTML"
@@ -239,6 +240,7 @@ struct AudiobookDetectionTests {
                     presentation: SearchOriginPresentation(
                         contentKind: .text,
                         displayIntro: "短簡介",
+                        detailIntro: "短詳情簡介",
                         introCharacterCount: textOrigin.intro.count,
                         lastChapterTitleCandidate: "",
                         introTitleCandidate: "短簡介"
@@ -254,6 +256,7 @@ struct AudiobookDetectionTests {
                 presentation: SearchOriginPresentation(
                     contentKind: .audio,
                     displayIntro: "這是一段比較長的有聲書簡介",
+                    detailIntro: "這是一段比較長的有聲書詳情簡介",
                     introCharacterCount: audioOrigin.intro.count,
                     lastChapterTitleCandidate: "",
                     introTitleCandidate: "這是一段比較長的有聲書簡介"

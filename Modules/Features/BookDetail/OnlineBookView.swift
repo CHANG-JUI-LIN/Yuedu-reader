@@ -34,7 +34,9 @@ struct OnlineBookView: View {
     /// Single-source entry (Discover). No source switching.
     init(book: OnlineBook) {
         self.searchBook = nil
-        _currentBook = State(initialValue: book)
+        _currentBook = State(
+            initialValue: OnlineBookDetailPresentationPolicy.sanitized(book)
+        )
     }
 
     /// Search entry — defaults to the first origin, keeps the rest for 換源.
@@ -49,7 +51,7 @@ struct OnlineBookView: View {
                     originID: nil
                 ),
                 name: searchBook.name, author: searchBook.author,
-                intro: searchBook.intro, coverUrl: searchBook.coverUrl,
+                intro: searchBook.detailIntro, coverUrl: searchBook.coverUrl,
                 bookUrl: "", tocUrl: "", wordCount: "",
                 lastChapter: searchBook.lastChapter, kind: searchBook.kind,
                 sourceId: searchBook.id, sourceName: ""
@@ -58,14 +60,15 @@ struct OnlineBookView: View {
     }
 
     private static func makeOnlineBook(from book: SearchBook, origin: BookOrigin) -> OnlineBook {
-        OnlineBook(
+        let selectedIntro = book.detailIntro(for: origin)
+        return OnlineBook(
             id: SearchResultDetailIdentity.onlineBookID(
                 searchBookID: book.id,
                 originID: origin.id
             ),
             name: book.name,
             author: book.author,
-            intro: origin.intro.isEmpty ? book.intro : origin.intro,
+            intro: selectedIntro.isEmpty ? book.detailIntro : selectedIntro,
             coverUrl: origin.coverUrl.isEmpty ? book.coverUrl : origin.coverUrl,
             bookUrl: origin.bookUrl,
             tocUrl: origin.tocUrl,
@@ -82,7 +85,9 @@ struct OnlineBookView: View {
         OnlineBook(
             name: name,
             author: author,
-            intro: origin.intro,
+            intro: OnlineBookDetailPresentationPolicy.sanitizeIntro(
+                origin.intro
+            ),
             coverUrl: origin.coverUrl,
             bookUrl: origin.bookUrl,
             tocUrl: origin.tocUrl,
@@ -143,10 +148,10 @@ struct OnlineBookView: View {
     }
 
     private var displayIntro: String {
-        let d = detailInfo?.intro.trimmingCharacters(in: .whitespacesAndNewlines)
-        let b = currentBook.intro.trimmingCharacters(in: .whitespacesAndNewlines)
-        let raw = if let d, !d.isEmpty { d } else { b }
-        return ReaderHTMLUtilities.displayText(fromHTMLFragment: raw, preservingLineBreaks: true)
+        if let detail = detailInfo?.intro, !detail.isEmpty {
+            return detail
+        }
+        return currentBook.intro
     }
 
     private var displayWordCount: String {
@@ -337,7 +342,6 @@ struct OnlineBookView: View {
                 .foregroundStyle(.secondary)
                 .lineSpacing(3)
                 .lineLimit(introExpanded ? nil : 4)
-                .fixedSize(horizontal: false, vertical: true)
 
             if displayIntro.count > 80 {
                 Button {
@@ -685,7 +689,9 @@ struct OnlineBookView: View {
                 currentRuntimeVariables = infoPackage.runtimeVariables
                 await MainActor.run {
                     guard requestBook.bookUrl == currentBook.bookUrl else { return }
-                    detailInfo = infoPackage.onlineBook
+                    detailInfo = OnlineBookDetailPresentationPolicy.sanitized(
+                        infoPackage.onlineBook
+                    )
                 }
                 var tocPackage = try await tocTask
                 // Detail resolved a different TOC URL (rare) — it wins.
@@ -719,7 +725,9 @@ struct OnlineBookView: View {
                 currentRuntimeVariables = infoPackage.runtimeVariables
                 await MainActor.run {
                     guard requestBook.bookUrl == currentBook.bookUrl else { return }
-                    detailInfo = infoPackage.onlineBook
+                    detailInfo = OnlineBookDetailPresentationPolicy.sanitized(
+                        infoPackage.onlineBook
+                    )
                 }
                 if !infoPackage.tocUrl.isEmpty {
                     finalTocURL = infoPackage.tocUrl

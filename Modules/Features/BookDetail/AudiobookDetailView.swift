@@ -42,20 +42,26 @@ struct AudiobookDetailView: View {
     /// Single-source entry (Discover).
     init(book: OnlineBook) {
         self.searchBook = nil
-        _currentBook = State(initialValue: book)
+        _currentBook = State(
+            initialValue: OnlineBookDetailPresentationPolicy.sanitized(book)
+        )
     }
 
     /// Search entry — defaults to the first audio origin, then falls back to the first origin.
     init(searchBook: SearchBook) {
         self.searchBook = searchBook
         if let origin = searchBook.preferredOrigin(for: .audio) ?? searchBook.origins.first {
+            let selectedIntro = searchBook.detailIntro(for: origin)
             _currentBook = State(initialValue: OnlineBook(
                 id: SearchResultDetailIdentity.onlineBookID(
                     searchBookID: searchBook.id,
                     originID: origin.id
                 ),
                 name: searchBook.name, author: searchBook.author,
-                intro: origin.intro, coverUrl: origin.coverUrl,
+                intro: selectedIntro.isEmpty
+                    ? searchBook.detailIntro
+                    : selectedIntro,
+                coverUrl: origin.coverUrl,
                 bookUrl: origin.bookUrl, tocUrl: origin.tocUrl,
                 wordCount: origin.wordCount, lastChapter: origin.lastChapter,
                 kind: origin.kind, sourceId: origin.sourceId,
@@ -85,14 +91,15 @@ struct AudiobookDetailView: View {
     }
 
     private static func makeOnlineBook(from book: SearchBook, origin: BookOrigin) -> OnlineBook {
-        OnlineBook(
+        let selectedIntro = book.detailIntro(for: origin)
+        return OnlineBook(
             id: SearchResultDetailIdentity.onlineBookID(
                 searchBookID: book.id,
                 originID: origin.id
             ),
             name: book.name,
             author: book.author,
-            intro: origin.intro.isEmpty ? book.intro : origin.intro,
+            intro: selectedIntro.isEmpty ? book.detailIntro : selectedIntro,
             coverUrl: origin.coverUrl.isEmpty ? book.coverUrl : origin.coverUrl,
             bookUrl: origin.bookUrl,
             tocUrl: origin.tocUrl,
@@ -109,7 +116,9 @@ struct AudiobookDetailView: View {
         OnlineBook(
             name: name,
             author: author,
-            intro: origin.intro,
+            intro: OnlineBookDetailPresentationPolicy.sanitizeIntro(
+                origin.intro
+            ),
             coverUrl: origin.coverUrl,
             bookUrl: origin.bookUrl,
             tocUrl: origin.tocUrl,
@@ -142,12 +151,10 @@ struct AudiobookDetailView: View {
     }
 
     private var displayIntro: String {
-        let raw = if let d = detailInfo?.intro.trimmingCharacters(in: .whitespacesAndNewlines), !d.isEmpty {
-            d
-        } else {
-            currentBook.intro.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let detail = detailInfo?.intro, !detail.isEmpty {
+            return detail
         }
-        return ReaderHTMLUtilities.displayText(fromHTMLFragment: raw, preservingLineBreaks: true)
+        return currentBook.intro
     }
 
     private var displayLatestChapter: String {
@@ -344,7 +351,6 @@ struct AudiobookDetailView: View {
                 .foregroundStyle(.secondary)
                 .lineSpacing(3)
                 .lineLimit(introExpanded ? nil : 4)
-                .fixedSize(horizontal: false, vertical: true)
             if displayIntro.count > 80 {
                 Button {
                     withAnimation(DSAnimation.standard) { introExpanded.toggle() }
@@ -565,7 +571,9 @@ struct AudiobookDetailView: View {
                     runtimeVars = Self.mergedRuntimeVariables(runtimeVars, pkg.runtimeVariables)
                     await MainActor.run {
                         guard request.bookUrl == currentBook.bookUrl else { return }
-                        detailInfo = pkg.onlineBook
+                        detailInfo = OnlineBookDetailPresentationPolicy.sanitized(
+                            pkg.onlineBook
+                        )
                     }
                     if !pkg.tocUrl.isEmpty { tocURL = pkg.tocUrl }
                 }

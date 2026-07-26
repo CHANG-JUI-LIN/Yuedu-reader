@@ -3,11 +3,13 @@ import Foundation
 /// Immutable, bounded data derived from one search origin before SwiftUI renders it.
 ///
 /// `BookOrigin.intro` is controlled by imported source rules and can contain an
-/// entire HTML document. Keep that unbounded payload out of `View.body`: rows read
-/// this snapshot instead of normalizing the raw metadata again on every redraw.
+/// entire HTML document. Keep that unbounded payload out of `View.body`: rows and
+/// detail destinations read this snapshot instead of normalizing raw metadata on
+/// every redraw.
 struct SearchOriginPresentation: Sendable {
     let contentKind: OnlineBookContentKind
     let displayIntro: String
+    let detailIntro: String
     let introCharacterCount: Int
     let lastChapterTitleCandidate: String
     let introTitleCandidate: String
@@ -273,12 +275,18 @@ enum SearchResultPresentationBuilder {
         _ origin: BookOrigin,
         _ contentKind: OnlineBookContentKind
     ) -> SearchOriginPresentation {
-        SearchOriginPresentation(
+        let detailIntro = OnlineBookDetailPresentationPolicy.sanitizeIntro(
+            origin.intro
+        )
+        return SearchOriginPresentation(
             contentKind: contentKind,
-            displayIntro: SearchResultIPSDiagnostics.sanitizeIntroForSearchRow(origin.intro),
+            displayIntro: SearchResultIPSDiagnostics.sanitizeIntroForSearchRow(
+                detailIntro
+            ),
+            detailIntro: detailIntro,
             introCharacterCount: origin.intro.count,
             lastChapterTitleCandidate: cleanDisplayTitle(origin.lastChapter),
-            introTitleCandidate: introTitleCandidate(origin.intro)
+            introTitleCandidate: introTitleCandidate(detailIntro)
         )
     }
 
