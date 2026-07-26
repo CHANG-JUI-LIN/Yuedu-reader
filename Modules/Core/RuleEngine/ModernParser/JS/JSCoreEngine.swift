@@ -665,6 +665,17 @@ class JSCoreEngine {
             }
         """)
 
+        // Legado overloads `java.get` by arity — Rhino dispatches on argument count:
+        //   java.get(key)          → the source's variable store
+        //   java.get(url, headers) → an HTTP GET returning a response with `.body()`
+        // JSExport maps one selector to one JS name, so only the variable getter
+        // existed. 同人小说网's 段评 does `java.get(url, {}).body()`; `.body()` on a
+        // String threw straight into the rule's own `catch`, which returns the
+        // paragraph text unchanged — 段评 silently never appeared.
+        // Shadows the exported method with a dispatcher (verified: an own property on
+        // a JSExport-backed object wins over its prototype).
+        Self.installJavaGetOverload(in: ctx)
+
         // Java crypto interop shim (Rhino `Packages.*` / `JavaImporter`).
         // Some Legado sources decrypt chapter content with RAW Java crypto, e.g.:
         //   var ji = new JavaImporter(); ji.importPackage(Packages.javax.crypto, ...);
@@ -821,10 +832,21 @@ class JSCoreEngine {
                     getEncoder: function () { return { encodeToString: function (bytes) { return bytesToB64(bytes); } }; }
                 };
                 var Arrays = { copyOfRange: function (arr, from, to) { return Array.prototype.slice.call(arr, from, to); } };
+                // `Packages.java.lang.System.nanoTime()` — sources use it as a cache
+                // buster inside the 段评 bubble's click payload. The generic namespace
+                // proxy answers calls with `undefined`, which stringified into
+                // `createSvg(bid,cid,pid,count,undefined)`; `imageDecode`'s
+                // `\\d+,\\d+\\)` pattern then never matched, so the bubble's memory flag
+                // was never cleared and tapping it stopped opening the comments.
+                var System = {
+                    nanoTime: function () { return Date.now() * 1000000; },
+                    currentTimeMillis: function () { return Date.now(); }
+                };
                 var members = {
                     'javax.crypto': { Cipher: Cipher },
                     'javax.crypto.spec': { SecretKeySpec: SecretKeySpec, IvParameterSpec: IvParameterSpec },
-                    'java.util': { Base64: Base64, Arrays: Arrays }
+                    'java.util': { Base64: Base64, Arrays: Arrays },
+                    'java.lang': { System: System }
                 };
                 function makeNamespace(path) {
                     var mem = members[path] || {};
@@ -1054,6 +1076,26 @@ class JSCoreEngine {
     /// (`title`, `url`, `index`) instead of going through `chapter.title`.
     /// JavaScriptCore does not synthesize those globals from the exported `chapter` object,
     /// so keep them explicitly mirrored whenever the chapter bridge changes.
+    /// Restores Legado's arity overload of `java.get` (see the call site for why).
+    /// Idempotent: re-running it re-binds the already-installed dispatcher, and it
+    /// no-ops if the native `httpGet` is missing rather than clobbering `java.get`.
+    private static func installJavaGetOverload(in ctx: JSContext) {
+        ctx.evaluateScript("""
+        (function () {
+            if (typeof java === 'undefined' || typeof java.httpGet !== 'function') { return; }
+            if (java.__yueduGetOverloaded) { return; }
+            var storeGet = (typeof java.get === 'function')
+                ? java.get.bind(java)
+                : function () { return ''; };
+            var httpGet = java.httpGet.bind(java);
+            java.get = function (a, b) {
+                return arguments.length >= 2 ? httpGet(String(a), b) : storeGet(String(a));
+            };
+            java.__yueduGetOverloaded = true;
+        })();
+        """)
+    }
+
     private func injectChapterGlobals(_ bridge: LegadoChapterBridge, into ctx: JSContext) {
         ctx.setObject(bridge.title, forKeyedSubscript: "title" as NSString)
         ctx.setObject(bridge.title, forKeyedSubscript: "chapterTitle" as NSString)

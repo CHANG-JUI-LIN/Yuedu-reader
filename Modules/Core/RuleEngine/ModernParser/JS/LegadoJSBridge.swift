@@ -21,6 +21,8 @@ extension Notification.Name {
     func ajaxAll(_ urlArray: [String]) -> [LegadoStrResponse]
     func connect(_ urlStr: String) -> String
     func post(_ urlStr: String, _ body: String, _ headers: JSValue) -> LegadoStrResponse
+    /// Backs the two-argument `java.get(url, headers)`; see `installJavaGetOverload`.
+    func httpGet(_ urlStr: String, _ headers: JSValue) -> LegadoStrResponse
     func importScript(_ url: String) -> String
 
     // Headless WebView (Legado java.webView(html, url, js) — runs js after load, returns result)
@@ -120,6 +122,7 @@ extension Notification.Name {
     func getKey(_ url: String, _ key: String) -> String
     func set(_ url: String, _ cookie: String)
     func setCookie(_ url: String, _ cookie: String)
+    func replaceCookie(_ url: String, _ cookie: String)
     func remove(_ url: String)
     func removeCookie(_ url: String)
 }
@@ -144,6 +147,15 @@ extension Notification.Name {
     }
 
     func setCookie(_ url: String, _ cookie: String) {
+        CookieStore.shared.set(url: url, cookie: cookie)
+    }
+
+    /// Legado `cookie.replaceCookie(url, cookie)` — merge these key=value pairs over
+    /// whatever is stored for the domain. `CookieStore.set` already merges per key, so
+    /// this is `set` under Legado's name; it existed only under ours, and the missing
+    /// name threw. 同人小说网's 段评 mints a `_csrfToken` with it when 起点 has not set
+    /// one yet, and the throw landed in the rule's own catch → no 段评, no message.
+    func replaceCookie(_ url: String, _ cookie: String) {
         CookieStore.shared.set(url: url, cookie: cookie)
     }
 
@@ -548,6 +560,37 @@ extension Notification.Name {
 
     func get(_ key: String) -> String {
         return getData?(key) ?? ""
+    }
+
+    /// Legado's `java.get(urlStr, headers)` — an HTTP GET returning a response the
+    /// source calls `.body()` on. Legado overloads by arity (Rhino dispatches on
+    /// argument count); JSExport cannot, so the JS shim in `installJavaGetOverload`
+    /// routes the two-argument call here and leaves the one-argument variable getter
+    /// above alone.
+    ///
+    /// Routed through `performRequest` with Legado URL options rather than building a
+    /// request here: that is the path that attaches the cookie jar, and 同人小说网's
+    /// 段评 fetch (`m.qidian.com/majax/chapterReview/reviewSummary`) is rejected unless
+    /// the `_csrfToken` cookie matches the one the rule put in the query string.
+    func httpGet(_ urlStr: String, _ headers: JSValue) -> LegadoStrResponse {
+        let started = Date()
+        let trimmed = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        var requestUrl = trimmed
+        // Only when a handler can parse them — otherwise the options would reach
+        // `URL(string:)` verbatim and fail, which is worse than losing per-call headers.
+        if analyzeUrlHandler != nil {
+            var options: [String: Any] = ["method": "GET"]
+            let headerMap = headers.isUndefined || headers.isNull
+                ? [:] : Self.headerDict(from: headers)
+            if !headerMap.isEmpty { options["headers"] = headerMap }
+            if let data = try? JSONSerialization.data(withJSONObject: options),
+               let json = String(data: data, encoding: .utf8) {
+                requestUrl = "\(trimmed),\(json)"
+            }
+        }
+        let body = performRequest(requestUrl)
+        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
+        return LegadoStrResponse(url: trimmed, body: body)
     }
 
     // MARK: Rule Evaluation (placeholder)
@@ -1071,8 +1114,32 @@ extension Notification.Name {
         return UIDevice.current.identifierForVendor?.uuidString ?? "ios-device"
     }
 
+    /// Legado `java.androidId()` — Android's `Settings.Secure.ANDROID_ID`, which is
+    /// **16 lowercase hex characters** (`9774d56d682e549c`).
+    ///
+    /// This used to return `deviceID()`, i.e. `identifierForVendor` — a 36-character
+    /// UPPERCASE UUID with dashes. Sources send it to their own backends as a device
+    /// key and validate the shape; 知秋番茄's author states uppercase ids are rejected,
+    /// and it is what its `x-android-id` header and `/user/temp` registration carry.
+    ///
+    /// Derived from the vendor id so it stays constant for this install (and changes
+    /// only when `identifierForVendor` itself does, which is the same lifetime an
+    /// ANDROID_ID has). `deviceID()` is left alone — 光遇's `checkEnv()` wants the
+    /// real vendor UUID.
     func androidId() -> String {
-        deviceID()
+        let digest = SHA256.hash(data: Data(deviceID().utf8))
+        return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// True for the 36-character uppercase vendor UUID `androidId()` used to hand out.
+    /// Sources cache whatever it returned (知秋番茄 does `source.put('androidId', …)`),
+    /// so the bad value outlives the fix unless it is cleared — see
+    /// `BookSourceRuntimeStateStore.purgeLegacyAndroidIds`. Delete both once no
+    /// install can still be carrying a value written before this change.
+    static func isLegacyVendorUUIDAndroidId(_ value: String) -> Bool {
+        value.count == 36
+            && value == value.uppercased()
+            && UUID(uuidString: value) != nil
     }
 
     /// Opens a video player (stub — falls back to browser).

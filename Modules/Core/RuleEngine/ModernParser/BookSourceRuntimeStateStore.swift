@@ -68,6 +68,41 @@ final class BookSourceRuntimeStateStore: @unchecked Sendable {
         }
     }
 
+    /// One-shot cleanup of device ids this app wrote wrongly.
+    ///
+    /// `java.androidId()` used to return `identifierForVendor` — a 36-char uppercase
+    /// UUID — where Android hands out 16 lowercase hex characters. Sources cache it in
+    /// their own key/value store (知秋番茄: `source.put('androidId', …)`) and read that
+    /// back before ever calling us again, so fixing `androidId()` alone would never
+    /// reach a device that had already run the source once. Drops only entries whose
+    /// key names a device id AND whose value is exactly that old shape — a source's own
+    /// settings are never touched.
+    ///
+    /// Delete this (and `LegadoJSBridge.isLegacyVendorUUIDAndroidId`) once no install
+    /// can still be carrying a pre-fix value.
+    func purgeLegacyAndroidIds() {
+        let flag = "bookSourceRuntime.didPurgeLegacyAndroidIds"
+        queue.sync {
+            guard !defaults.bool(forKey: flag) else { return }
+            defer { defaults.set(true, forKey: flag) }
+            for (storageKey, value) in defaults.dictionaryRepresentation()
+            where storageKey.hasPrefix("bookSourceRuntime.")
+                && storageKey.hasSuffix(".sourceKeyValues") {
+                guard var entries = value as? [String: String] else { continue }
+                let stale = entries.filter { entry in
+                    entry.key.lowercased().contains("androidid")
+                        && LegadoJSBridge.isLegacyVendorUUIDAndroidId(entry.value)
+                }
+                guard !stale.isEmpty else { continue }
+                stale.keys.forEach { entries.removeValue(forKey: $0) }
+                defaults.set(entries, forKey: storageKey)
+                AppLogger.parse("⟐ purged legacy androidId", context: [
+                    "keys": stale.keys.sorted().joined(separator: ",")
+                ])
+            }
+        }
+    }
+
     private func key(sourceUrl: String, suffix: String) -> String {
         let data = Data(sourceUrl.utf8)
         let digest = SHA256.hash(data: data)

@@ -12,6 +12,9 @@ struct yuedu_appApp: App {
     init() {
         UserFontStorageManager.shared.registerAllOnLaunch()
         GlobalSettings.shared.validateGlobalFontSelection()
+        // Must run before any source JS does: a source reads its cached device id
+        // straight back out of its own key/value store.
+        BookSourceRuntimeStateStore.shared.purgeLegacyAndroidIds()
     }
 
     /// Presents the book-source import sheet whenever the deep-link handler
