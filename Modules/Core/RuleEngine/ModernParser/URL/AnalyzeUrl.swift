@@ -40,6 +40,16 @@ class AnalyzeUrl {
     /// Optional server identifier for multi-server setups.
     private(set) var serverID: String?
 
+    /// The rule URL after template/JS resolution but **before** the `,{json}` options
+    /// are split off — i.e. exactly the string the source's own rules produced.
+    ///
+    /// `url` is the option-stripped form, which is right for building a request and
+    /// wrong as a `baseUrl` handed back to rule JS: sources stash state in those
+    /// options and read it back out of `baseUrl`. 同人小说网's TOC does
+    /// `JSON.parse(baseUrl.slice(baseUrl.indexOf('{'))).type` on a
+    /// `data:;base64,<id>,{"type":"novel"}` tocUrl.
+    private(set) var evaluatedRuleUrl: String = ""
+
     // MARK: - Internal State
 
     /// URL portion without query string (used for GET requests).
@@ -159,6 +169,7 @@ class AnalyzeUrl {
 
         // Step 2: Replace template variables and page rules
         ruleUrl = replaceKeyPageJs(ruleUrl)
+        evaluatedRuleUrl = ruleUrl
 
         // Step 3: Parse URL, options, and build request components
         analyzeUrl(ruleUrl)

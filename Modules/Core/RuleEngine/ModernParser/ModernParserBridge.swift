@@ -1549,7 +1549,17 @@ class ModernParserBridge {
         )
 
         if analyzeUrl.isDataUri {
-            return (Self.bodyForDataURI(analyzeUrl), analyzeUrl.url)
+            // Hand back the FULL rule URL, options included. A `data:` URI has no
+            // redirect chain, so there is no "final URL" to report — and its `,{json}`
+            // options are the only place the source can stash state to read back from
+            // `baseUrl`. Returning `analyzeUrl.url` (options stripped) meant
+            // 同人小说网's TOC rule ran `JSON.parse(baseUrl.slice(baseUrl.indexOf('{')))`
+            // on a string with no `{`: `indexOf` → -1, `slice(-1)` → the last base64
+            // character, which parses as a bare JSON number, so `type` came out
+            // `undefined`, the rule fetched `/undefined/catalog`, and every branch of
+            // its `if (type === 'novel')` chain missed → 目录为空, with nothing thrown.
+            // Same rule shape drives its ruleContent, so chapters were next.
+            return (Self.bodyForDataURI(analyzeUrl), analyzeUrl.evaluatedRuleUrl)
         }
 
         guard var request = analyzeUrl.toURLRequest() else {
