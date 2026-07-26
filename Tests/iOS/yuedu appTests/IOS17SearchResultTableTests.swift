@@ -4,6 +4,22 @@ import Testing
 
 @Suite("iOS 17 native search result table")
 struct IOS17SearchResultTableTests {
+    @Test("search result navigation uses one presentation mechanism per iOS version")
+    func navigationUsesOnePresentationMechanismPerOSVersion() {
+        #expect(
+            SearchResultNavigationMode.mode(forIOSMajorVersion: 17)
+                == .selectedItem
+        )
+        #expect(
+            SearchResultNavigationMode.mode(forIOSMajorVersion: 18)
+                == .valueRoute
+        )
+        #expect(
+            SearchResultNavigationMode.mode(forIOSMajorVersion: 26)
+                == .valueRoute
+        )
+    }
+
     @Test("unchanged content does not reload the UIKit table")
     func unchangedContentDoesNotReload() {
         let row = makeRow()

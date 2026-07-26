@@ -17,6 +17,30 @@ private struct SearchResultRoute: Hashable {
     let bookId: UUID
 }
 
+/// Installs only the navigation mechanism used by the active result renderer.
+///
+/// Keeping both destination styles in the same iOS 17 view graph makes
+/// `NavigationStack` reconcile two presentations of the same route after a
+/// UIKit row selection. Build 46 watchdogs captured that reconciliation looping
+/// in SwiftUI/AttributeGraph and UIKit trait propagation. Delete the
+/// item-based branch together with the native iOS 17 table when the deployment
+/// target reaches iOS 18.
+private struct SearchResultNavigationModifier<Destination: View>: ViewModifier {
+    let mode: SearchResultNavigationMode
+    @Binding var selectedRoute: SearchResultRoute?
+    let destination: (SearchResultRoute) -> Destination
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        switch mode {
+        case .selectedItem:
+            content.navigationDestination(item: $selectedRoute, destination: destination)
+        case .valueRoute:
+            content.navigationDestination(for: SearchResultRoute.self, destination: destination)
+        }
+    }
+}
+
 // MARK: - Book Search View
 
 struct BookSearchView: View {
@@ -88,14 +112,15 @@ struct BookSearchView: View {
         .pageBackgroundToolbar(for: .search)
         .navigationTitle(localized("搜索書籍"))
         .toolbarTitleDisplayMode(.inline)
-        // Declared here, outside the `List`, because `.navigationDestination`
-        // must not sit inside a lazy container.
-        .navigationDestination(for: SearchResultRoute.self) { route in
-            resultDestination(for: route)
-        }
-        .navigationDestination(item: $selectedIOS17ResultRoute) { route in
-            resultDestination(for: route)
-        }
+        // Declared here, outside the lazy result containers, so the navigation
+        // stack can always see the active destination.
+        .modifier(
+            SearchResultNavigationModifier(
+                mode: .current,
+                selectedRoute: $selectedIOS17ResultRoute,
+                destination: resultDestination(for:)
+            )
+        )
         .searchable(text: $query, prompt: localized("輸入書名或作者"))
         .onSubmit(of: .search) { doSearch() }
         .onChange(of: query) { _, newValue in

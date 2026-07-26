@@ -1,5 +1,21 @@
 import Foundation
 
+enum SearchResultNavigationMode: Equatable {
+    case selectedItem
+    case valueRoute
+
+    static var current: Self {
+        mode(
+            forIOSMajorVersion:
+                ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        )
+    }
+
+    static func mode(forIOSMajorVersion majorVersion: Int) -> Self {
+        majorVersion >= 18 ? .valueRoute : .selectedItem
+    }
+}
+
 struct IOS17SearchResultTableRow: Identifiable, Equatable {
     let id: UUID
     let title: String
