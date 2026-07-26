@@ -42,59 +42,13 @@ struct ChapterFetcher {
         )
     }
 
-    /// `<img src="data:image/svg+xml;base64,<payload>,{"style":"TEXT","js":"createSvg(…)"}">`
-    ///
-    /// That is how Legado sources emit a 段評 bubble: a JSON blob inside a double-quoted
-    /// attribute, with its own quotes unescaped. Any conformant HTML parser ends the
-    /// attribute at the JSON's first `"`, so `src` reaches the renderer as a bare
-    /// `data:image/svg+xml;base64,` with the payload and the `js` field gone (device log:
-    /// `⟐ bubble reject:no-svg` → `recognized=false`), while `style`/`type`/`click`/`js`
-    /// become stray element attributes. The bubble then resolves to a nil image but still
-    /// holds its place in the line — 109 of those in one 同人小说网 chapter is what tore
-    /// the page layout into overlapping text.
-    ///
-    /// Re-quoting the blob lets it survive to `CommentBubbleSVGRecognizer`, which already
-    /// handles it: the bubbles that happen to arrive intact draw correctly at 20×20pt.
-    /// Deliberately narrow — only `<img>`, only a `data:image/…;base64,` src, only when the
-    /// value runs on to a `}`. Any other markup is returned untouched.
-    static func escapingLegadoBubbleImageSrc(_ html: String) -> String {
-        guard html.contains("data:image/"), html.contains(",{") else { return html }
-        let range = NSRange(html.startIndex..., in: html)
-        let matches = Self.legadoBubbleImgPattern.matches(in: html, range: range)
-        guard !matches.isEmpty else { return html }
-
-        var result = ""
-        var cursor = html.startIndex
-        for match in matches {
-            guard let whole = Range(match.range, in: html),
-                  let srcRange = Range(match.range(at: 1), in: html),
-                  whole.lowerBound >= cursor
-            else { continue }
-            result += html[cursor..<whole.lowerBound]
-            // Only the quotes need escaping — SwiftSoup decodes the entity back to `"`
-            // when it hands the attribute over, so the recognizer sees the original blob.
-            let escaped = String(html[srcRange])
-                .replacingOccurrences(of: "\"", with: "&quot;")
-            result += "<img src=\"\(escaped)\">"
-            cursor = whole.upperBound
-        }
-        result += html[cursor...]
-        return result
-    }
-
-    /// `<img src="data:image/…;base64,…}">` — the value is allowed to contain quotes (that
-    /// is the whole problem) but never `>`, which is what bounds the match.
-    private static let legadoBubbleImgPattern = try! NSRegularExpression(
-        pattern: #"<img\s+src="(data:image/[a-zA-Z+]+;base64,[^>]*?\})"\s*/?>"#
-    )
-
     func buildRenderableNormalizedHTML(
         title: String,
         plainTextContent: String,
         rawHTMLContent: String?,
         reviewContext: ReaderHTMLUtilities.LegadoReviewContext? = nil
     ) async -> String {
-        let raw = Self.escapingLegadoBubbleImageSrc(rawHTMLContent ?? "")
+        let raw = rawHTMLContent ?? ""
         let rawTrimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let looksHTML = !rawTrimmed.isEmpty && Self.containsLikelyHTMLTags(raw)
         AppLogger.parse("⟐ buildRenderableNormalizedHTML", context: [
