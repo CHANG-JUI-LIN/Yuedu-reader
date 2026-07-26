@@ -1535,6 +1535,12 @@ class ModernParserBridge {
     func fetch(
         ruleUrl: String, key: String? = nil, page: Int? = nil
     ) async throws -> (String, String) {
+        // The rule URL itself can be `@js:` calling into jsLib — a 發現頁 item's url is
+        // literally `@js:getApiUrl('/novel/novels', {…})`. jsLib is evaluated when the
+        // bridge is built, but a JS timeout resets the engine and only the paths that ask
+        // get it back; this one never did, so the call evaluated to nothing and surfaced
+        // as "Invalid URL: @js:getApiUrl(…)". Hash-guarded, so it is a no-op once loaded.
+        evaluateJsLibIfNeeded()
         ensureCloudSettingsIfNeeded()
         let analyzeUrl = AnalyzeUrl(
             ruleUrl: ruleUrl,

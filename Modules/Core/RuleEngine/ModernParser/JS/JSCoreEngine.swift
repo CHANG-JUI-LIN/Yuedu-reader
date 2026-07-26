@@ -842,11 +842,32 @@ class JSCoreEngine {
                     nanoTime: function () { return Date.now() * 1000000; },
                     currentTimeMillis: function () { return Date.now(); }
                 };
+                // Hutool, imported by 番茄-family sources to sign their API requests:
+                //   javaImport.importPackage(Packages.cn.hutool.crypto.digest, …)
+                //   md5 = (str) => DigestUtil.md5Hex(str);  rStr = (str) => StrUtil.reverse(str)
+                // Unknown packages import nothing, so `DigestUtil` was undefined and the
+                // whole `xGorgon` signature threw — the discover item's `@js:` URL then
+                // evaluated to "" and surfaced as "Invalid URL: @js:…". `md5Encode` is
+                // lowercase 32-hex, same as `md5Hex`. Only the GET path of xGorgon needs
+                // these; its POST path still wants real OkHttp, which is out of scope.
+                var DigestUtil = {
+                    md5Hex: function (s) { return java.md5Encode(String(s)); }
+                };
+                var StrUtil = {
+                    reverse: function (s) { return String(s).split('').reverse().join(''); }
+                };
+                var HutoolBase64 = {
+                    encode: function (s) { return java.base64Encode(String(s)); },
+                    decode: function (s) { return java.base64Decode(String(s)); }
+                };
                 var members = {
                     'javax.crypto': { Cipher: Cipher },
                     'javax.crypto.spec': { SecretKeySpec: SecretKeySpec, IvParameterSpec: IvParameterSpec },
                     'java.util': { Base64: Base64, Arrays: Arrays },
-                    'java.lang': { System: System }
+                    'java.lang': { System: System },
+                    'cn.hutool.crypto.digest': { DigestUtil: DigestUtil },
+                    'cn.hutool.core.util': { StrUtil: StrUtil },
+                    'cn.hutool.core.codec': { Base64: HutoolBase64 }
                 };
                 function makeNamespace(path) {
                     var mem = members[path] || {};
