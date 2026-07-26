@@ -33,6 +33,20 @@ final class BookSourceRuntimeStateStore {
         }
     }
 
+    /// Parsed `source.setVariable(...)` payload for this source.
+    ///
+    /// Empty when the source has no variables yet, or when the stored payload is
+    /// not a JSON object — some sources persist a JSON *array* (their rules read
+    /// it as `JSON.parse(source.getVariable())[0]`), and those carry no keyed
+    /// settings for callers of this method to read.
+    func sourceVariables(for sourceUrl: String) -> [String: Any] {
+        guard let json = sourceVariableJSON(for: sourceUrl),
+              let data = json.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [:] }
+        return dict
+    }
+
     func sourceValue(for sourceUrl: String, key entryKey: String) -> String? {
         queue.sync {
             let values = defaults.dictionary(

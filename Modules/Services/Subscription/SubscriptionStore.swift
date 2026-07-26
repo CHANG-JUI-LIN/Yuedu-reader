@@ -3,6 +3,19 @@ import Foundation
 import StoreKit
 import SwiftUI
 
+enum SubscriptionProductReloadPolicy {
+    static func shouldReload(
+        loadedProductCount: Int,
+        expectedProductCount: Int,
+        loadedStorefrontID: String?,
+        currentStorefrontID: String?
+    ) -> Bool {
+        guard loadedProductCount >= expectedProductCount else { return true }
+        guard let currentStorefrontID else { return false }
+        return loadedStorefrontID != currentStorefrontID
+    }
+}
+
 /// Single source of truth for the `Yuedu Pro` subscription.
 ///
 /// Wraps StoreKit 2: loads the monthly/lifetime products, drives purchase and
@@ -44,6 +57,9 @@ final class SubscriptionStore: ObservableObject {
     // MARK: - Private
 
     private var updatesListenerTask: Task<Void, Never>?
+    private var storefrontUpdatesListenerTask: Task<Void, Never>?
+    private var loadedStorefrontID: String?
+    private var productLoadGeneration = 0
     private let accountService = SubscriptionAccountService.shared
 
     private init() {
@@ -51,11 +67,13 @@ final class SubscriptionStore: ObservableObject {
         // an update delivered while the app was backgrounded or during a
         // purchase interrupted by an Ask-to-Buy / SCA prompt.
         updatesListenerTask = listenForTransactions()
+        storefrontUpdatesListenerTask = listenForStorefrontChanges()
         Task { await refreshEntitlements() }
     }
 
     deinit {
         updatesListenerTask?.cancel()
+        storefrontUpdatesListenerTask?.cancel()
     }
 
     // MARK: - Feature gating
@@ -68,21 +86,46 @@ final class SubscriptionStore: ObservableObject {
     // MARK: - Product loading
 
     func loadProducts() async {
-        guard products.count < ProProduct.allCases.count, !isLoadingProducts else { return }
+        let storefront = await Storefront.current
+        await loadProducts(forStorefrontID: storefront?.id, forceReload: false)
+    }
+
+    private func loadProducts(forStorefrontID storefrontID: String?, forceReload: Bool) async {
+        guard forceReload || SubscriptionProductReloadPolicy.shouldReload(
+            loadedProductCount: products.count,
+            expectedProductCount: ProProduct.allCases.count,
+            loadedStorefrontID: loadedStorefrontID,
+            currentStorefrontID: storefrontID
+        ) else { return }
+
+        productLoadGeneration += 1
+        let generation = productLoadGeneration
+        if let storefrontID, loadedStorefrontID != storefrontID {
+            // A cached Product keeps its original localized price. Hide stale
+            // prices while StoreKit fetches products for the new storefront.
+            products = []
+        }
         isLoadingProducts = true
         lastErrorMessage = nil
-        defer { isLoadingProducts = false }
+        defer {
+            if generation == productLoadGeneration {
+                isLoadingProducts = false
+            }
+        }
         do {
             let ids = ProProduct.allCases.map(\.rawValue)
             let loaded = try await Product.products(for: ids)
+            guard generation == productLoadGeneration else { return }
             // Preserve the ProProduct.allCases display order.
             products = ProProduct.allCases.compactMap { pp in
                 loaded.first { $0.id == pp.rawValue }
             }
+            loadedStorefrontID = storefrontID
             if products.count != ProProduct.allCases.count {
                 lastErrorMessage = localized("無法載入訂閱項目，請稍後再試")
             }
         } catch {
+            guard generation == productLoadGeneration else { return }
             lastErrorMessage = localized("無法載入訂閱項目，請稍後再試")
         }
     }
@@ -261,6 +304,15 @@ final class SubscriptionStore: ObservableObject {
                 guard let transaction = try? self.checkVerified(result) else { continue }
                 await transaction.finish()
                 await self.refreshEntitlements()
+            }
+        }
+    }
+
+    private func listenForStorefrontChanges() -> Task<Void, Never> {
+        Task { [weak self] in
+            for await storefront in Storefront.updates {
+                guard let self else { return }
+                await self.loadProducts(forStorefrontID: storefront.id, forceReload: true)
             }
         }
     }

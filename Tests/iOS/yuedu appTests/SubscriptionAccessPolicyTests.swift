@@ -32,4 +32,34 @@ struct SubscriptionAccessPolicyTests {
         #expect(lifetime.isActive(at: now.addingTimeInterval(1_000_000)))
         #expect(!CachedSubscriptionEntitlement(isProActive: false, expiresAt: nil).isActive(at: now))
     }
+
+    @Test("complete product cache reloads after the App Store storefront changes")
+    func productCacheReloadsForChangedStorefront() {
+        #expect(SubscriptionProductReloadPolicy.shouldReload(
+            loadedProductCount: 2,
+            expectedProductCount: 2,
+            loadedStorefrontID: "USA",
+            currentStorefrontID: "TWN"
+        ))
+    }
+
+    @Test("complete product cache remains valid for the same storefront")
+    func productCacheRemainsValidForSameStorefront() {
+        #expect(!SubscriptionProductReloadPolicy.shouldReload(
+            loadedProductCount: 2,
+            expectedProductCount: 2,
+            loadedStorefrontID: "TWN",
+            currentStorefrontID: "TWN"
+        ))
+    }
+
+    @Test("incomplete product cache reloads without storefront information")
+    func incompleteProductCacheReloadsWithoutStorefront() {
+        #expect(SubscriptionProductReloadPolicy.shouldReload(
+            loadedProductCount: 1,
+            expectedProductCount: 2,
+            loadedStorefrontID: nil,
+            currentStorefrontID: nil
+        ))
+    }
 }

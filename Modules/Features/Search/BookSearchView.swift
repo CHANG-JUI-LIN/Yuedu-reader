@@ -1,5 +1,25 @@
 import SwiftUI
 
+/// Navigation route for one search result.
+///
+/// Value-based navigation is deliberate. The closure form
+/// `NavigationLink { destination } label: { … }` builds its destination for every
+/// visible row on *every* list body evaluation, so the audio/text routing check
+/// (`isAudiobook`, which reads source runtime state through a serial queue) kept
+/// running while the pushed detail page's book-source JS was writing source
+/// variables onto that same queue — the search list stays alive behind the detail
+/// page and the aggregator keeps publishing into it. The main thread contended
+/// with those writes during the push transition until the scene-update watchdog
+/// killed the app.
+///
+/// The discover page never had this: it routes through `.navigationDestination`,
+/// which resolves the destination once, on tap. This keeps both paths on that
+/// shape. Keyed by `SearchBook.id` so nothing here has to reach into
+/// `SearchAggregator`.
+private struct SearchResultRoute: Hashable {
+    let bookId: UUID
+}
+
 // MARK: - Book Search View
 
 struct BookSearchView: View {
@@ -71,6 +91,22 @@ struct BookSearchView: View {
         .pageBackgroundToolbar(for: .search)
         .navigationTitle(localized("搜索書籍"))
         .toolbarTitleDisplayMode(.inline)
+        // Declared here, outside the `List`, because `.navigationDestination`
+        // must not sit inside a lazy container.
+        .navigationDestination(for: SearchResultRoute.self) { route in
+            if let book = aggregator.results.first(where: { $0.id == route.bookId }) {
+                if BookSourceStore.shared.isAudiobook(book) {
+                    AudiobookDetailView(searchBook: book)
+                        .environmentObject(bookStore)
+                } else {
+                    OnlineBookView(searchBook: book)
+                        .environmentObject(bookStore)
+                }
+            } else {
+                ContentUnavailableView(
+                    localized("暫無發現內容"), systemImage: "books.vertical")
+            }
+        }
         .searchable(text: $query, prompt: localized("輸入書名或作者"))
         .onSubmit(of: .search) { doSearch() }
         .onChange(of: query) { _, newValue in
@@ -223,15 +259,7 @@ struct BookSearchView: View {
     private var resultList: some View {
         List {
             ForEach(aggregator.results) { book in
-                NavigationLink {
-                    if BookSourceStore.shared.isAudiobook(book) {
-                        AudiobookDetailView(searchBook: book)
-                            .environmentObject(bookStore)
-                    } else {
-                        OnlineBookView(searchBook: book)
-                            .environmentObject(bookStore)
-                    }
-                } label: {
+                NavigationLink(value: SearchResultRoute(bookId: book.id)) {
                     AggregatedResultRow(book: book)
                 }
                 .listRowSeparator(.hidden)
