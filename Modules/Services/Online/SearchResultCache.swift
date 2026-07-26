@@ -124,7 +124,7 @@ final class SearchResultCache {
     private func cacheKey(query: String, source: BookSource) -> String? {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalizedQuery.isEmpty else { return nil }
-        let rawKey = [
+        var parts = [
             normalizedQuery,
             source.bookSourceUrl,
             source.searchUrl,
@@ -133,8 +133,32 @@ final class SearchResultCache {
             source.ruleSearch.author,
             source.ruleSearch.bookUrl,
             source.lastUpdateTime.description
-        ].joined(separator: "\u{1f}")
-        let digest = SHA256.hash(data: Data(rawKey.utf8))
+        ]
+        if let settings = Self.searchScopeSettings(for: source) {
+            parts.append(settings)
+        }
+        let digest = SHA256.hash(data: Data(parts.joined(separator: "\u{1f}").utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The rule text alone does not determine what a source searches: aggregate sources
+    /// (光遇/大灰狼/书山…) resolve their sub-site filter from the `更多设置` bucket the user
+    /// edits in the source's own 书源设置 page (`sourcesKey = 更多设置[搜索模式]`). Ticking
+    /// 默认搜索网站 therefore has to change the cache key, or the previously cached 全部
+    /// results keep being served for the whole TTL and the setting looks broken.
+    ///
+    /// Only this bucket is included: the rest of the runtime variable is churn (线路,
+    /// 云端配置, tokens, 发现页 state) that would make the cache useless without ever
+    /// changing what search returns. Nothing to include for sources that don't use it.
+    private static func searchScopeSettings(for source: BookSource) -> String? {
+        let variables = BookSourceRuntimeStateStore.shared.sourceVariables(for: source.bookSourceUrl)
+        guard let settings = variables["更多设置"] as? [String: Any], !settings.isEmpty,
+              JSONSerialization.isValidJSONObject(settings),
+              let data = try? JSONSerialization.data(
+                  withJSONObject: settings, options: [.sortedKeys]
+              ),
+              let json = String(data: data, encoding: .utf8)
+        else { return nil }
+        return json
     }
 }

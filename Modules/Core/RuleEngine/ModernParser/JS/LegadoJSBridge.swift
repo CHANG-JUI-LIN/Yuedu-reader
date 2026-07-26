@@ -619,9 +619,19 @@ import UIKit
     }
 
     /// Opens a browser WebView and blocks the JS thread, with optional refetch-after-success.
+    ///
+    /// Waits for the actual dismissal — no deadline. A settings page (光遇's 书源设置,
+    /// where the user ticks 默认搜索网站) is easily open for minutes; the old 60s cap
+    /// resumed the JS with an empty body, and source JS reads its `<span>` values out of
+    /// that body, so it saved every setting as "" and search silently fell back to 全部.
+    /// Dismissal is guaranteed to be signalled by the presenter (see `BrowserAwaitBox`).
+    ///
+    /// A cancelled browser (no body: ✕, swipe-away, or nothing to present) throws into JS
+    /// exactly like Legado does, instead of handing back an empty page: source JS wraps
+    /// this call in try/catch precisely so it can skip saving when the user didn't confirm.
     func startBrowserAwait(_ url: String, _ title: String, _ refetchAfterSuccess: Bool) -> LegadoStrResponse {
         guard let handler = browserPresentHandler else {
-            return LegadoStrResponse(url: url, body: "")
+            return throwBrowserCancelled(url: url)
         }
         let sem = DispatchSemaphore(value: 0)
         var capturedBody: String?
@@ -629,8 +639,23 @@ import UIKit
             capturedBody = body
             sem.signal()
         }
-        _ = sem.wait(timeout: .now() + 60)
-        return LegadoStrResponse(url: url, body: capturedBody ?? "")
+        sem.wait()
+        guard let body = capturedBody else {
+            return throwBrowserCancelled(url: url)
+        }
+        return LegadoStrResponse(url: url, body: body)
+    }
+
+    /// Raise a JS exception at the `java.startBrowserAwait(...)` call site. The returned
+    /// value is never consumed: the exception propagates as soon as the bridge call returns.
+    private func throwBrowserCancelled(url: String) -> LegadoStrResponse {
+        if let context = JSContext.current() {
+            context.exception = JSValue(
+                newErrorFromMessage: "startBrowserAwait: dismissed without confirmation",
+                in: context
+            )
+        }
+        return LegadoStrResponse(url: url, body: "")
     }
 
     /// Show a short toast. Delegates to `toastHandler` on MainThread.
@@ -1280,6 +1305,31 @@ import UIKit
     func body() -> String {
         return responseBody
     }
+}
+
+// MARK: - Browser Await Completion
+
+/// One-shot completion for `java.startBrowserAwait`. The JS thread blocks on it with no
+/// deadline, so it must fire exactly once on every way the browser can go away. The two
+/// toolbar buttons call `finish` explicitly; `deinit` covers the paths that have no
+/// callback at all — a sheet swiped away, or a host controller released before the user
+/// decided — by reporting cancellation, which the bridge turns into a JS exception.
+///
+/// Create and use it on the main thread (it is not internally synchronized).
+final class BrowserAwaitBox {
+    private var completion: ((String?) -> Void)?
+
+    init(_ completion: @escaping (String?) -> Void) {
+        self.completion = completion
+    }
+
+    func finish(_ body: String?) {
+        guard let completion else { return }
+        self.completion = nil
+        completion(body)
+    }
+
+    deinit { finish(nil) }
 }
 
 // MARK: - WebView Result Box

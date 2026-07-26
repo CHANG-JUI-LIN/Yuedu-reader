@@ -2924,8 +2924,10 @@ struct DiscoverFilterTests {
 
         #expect(dict["发现页类型"] as? String == "漫画")
         #expect(dict["发现页来源"] as? String == "全面漫画")
-        #expect(more["搜索模式"] as? String == "漫画")
-        #expect(!more.keys.contains("漫画"))
+        // 更多设置 belongs to the source: the 默认搜索网站 the user picked for 漫画 and
+        // the 搜索模式 that selects which row search reads must both survive untouched.
+        #expect(more["漫画"] as? String == "全面漫画")
+        #expect(more["搜索模式"] as? String == "小说")
         #expect(memory["漫画"] as? String == "全面漫画")
     }
 
@@ -2967,7 +2969,7 @@ struct DiscoverFilterTests {
 
         #expect(dict["发现页类型"] as? String == "听书")
         #expect(dict["发现页来源"] as? String == "全部")
-        #expect(more["搜索模式"] as? String == "听书")
+        #expect(more["搜索模式"] as? String == "小说")
         #expect(!more.keys.contains("听书"))
         #expect(memory["听书"] as? String == "全部")
     }

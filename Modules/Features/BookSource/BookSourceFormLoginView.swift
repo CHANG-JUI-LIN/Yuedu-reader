@@ -340,13 +340,20 @@ struct BookSourceFormLoginView: View {
             // Wire browser pop-up for java.startBrowser / java.startBrowserAwait
             engine.browserPresentHandler = { url, title, completion in
                 DispatchQueue.main.async {
+                    // Awaiting JS is blocked until this fires; the box guarantees it does,
+                    // including when the sheet is swiped away instead of dismissed by a button.
+                    let awaitBox = BrowserAwaitBox(completion)
                     guard let topVC = BookSourceFormLoginView.topViewController() else {
-                        completion(nil); return
+                        awaitBox.finish(nil); return
                     }
+                    // `topVC` weakly: a strong capture would form a presenter ⇄ presented
+                    // cycle that outlives dismissal, and the box's deinit is what releases
+                    // the JS thread when the sheet goes away without a button tap.
                     let hostVC = UIHostingController(
-                        rootView: JsBridgeBrowserView(urlString: url, title: title) { body in
+                        rootView: JsBridgeBrowserView(urlString: url, title: title) { [weak topVC] body in
+                            guard let topVC else { awaitBox.finish(body); return }
                             topVC.dismiss(animated: true) {
-                                completion(body)
+                                awaitBox.finish(body)
                             }
                         }
                     )
@@ -421,13 +428,20 @@ struct BookSourceFormLoginView: View {
 
             engine.browserPresentHandler = { url, title, completion in
                 DispatchQueue.main.async {
+                    // Same contract as in runLoginJS: the awaiting JS thread is released
+                    // exactly once, whichever way the browser sheet goes away.
+                    let awaitBox = BrowserAwaitBox(completion)
                     guard let topVC = BookSourceFormLoginView.topViewController() else {
-                        completion(nil); return
+                        awaitBox.finish(nil); return
                     }
+                    // `topVC` weakly: a strong capture would form a presenter ⇄ presented
+                    // cycle that outlives dismissal, and the box's deinit is what releases
+                    // the JS thread when the sheet goes away without a button tap.
                     let hostVC = UIHostingController(
-                        rootView: JsBridgeBrowserView(urlString: url, title: title) { body in
+                        rootView: JsBridgeBrowserView(urlString: url, title: title) { [weak topVC] body in
+                            guard let topVC else { awaitBox.finish(body); return }
                             topVC.dismiss(animated: true) {
-                                completion(body)
+                                awaitBox.finish(body)
                             }
                         }
                     )

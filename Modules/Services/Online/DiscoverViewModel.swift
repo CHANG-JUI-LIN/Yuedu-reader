@@ -138,6 +138,11 @@ final class DiscoverViewModel: ObservableObject {
     private let runtimeStore = BookSourceRuntimeStateStore.shared
     private let selectedSourceKey = "discover.selectedSourceId"
     private let categorySelectionPrefix = "discover.categorySelection."
+    /// Runtime-variable keys this source's own filters target (learned from every
+    /// healthy explore load, plus whatever the user picks). App-private bookkeeping,
+    /// deliberately outside the source variable JSON so nothing the source's JS reads
+    /// changes. Keyed by bookSourceUrl to match the runtime variable store.
+    private let filterKeysPrefix = "discover.filterKeys."
     private let defaultDiscoverPlatform = "全部"
     private var loadItemsTask: Task<Void, Never>?
     /// Guards the one-shot "reset poisoned discover variable + reload" recovery so a source
@@ -186,33 +191,32 @@ final class DiscoverViewModel: ObservableObject {
 
     /// Apply a filter choice: persist it as the source's Legado runtime variable
     /// (read by the JS on its next run), then reload. Mirrors the source's own
-    /// `show()` — switching 类型 resets the platform and syncs the search mode,
-    /// because each 类型 has its own platform list.
+    /// `show(m, t)`, which writes `t = m` and — for 发现页类型 only — resets the
+    /// platform, because each 类型 has its own platform list.
     ///
-    /// Important: the per-类型 platform the user picks on the *discover* page is
-    /// kept in the app-private `__discoverSourceByMode` key, NOT in `更多设置[类型]`.
-    /// Aggregate sources (光遇/大灰狼…) read `更多设置[类型]` as their *search*
-    /// sub-site filter (`sourcesKey`), so writing a single platform there would
-    /// pin search to one site instead of `全部`. Discover itself reads
-    /// `发现页来源`/`发现页类型`, so it is unaffected.
+    /// The discover page writes exactly the variables the source's filter actions
+    /// name (`发现页类型`/`发现页来源`) plus its own per-类型 memory. It must NOT touch
+    /// `更多设置`: that dictionary is the source's, holding the 默认搜索网站 the user
+    /// picks per 类型 in 书源设置 (read back by searchUrl as `sourcesKey`) and the
+    /// 搜索模式 that selects which of those rows search uses. Writing either from
+    /// here silently redirects search away from what the user configured — and the
+    /// source's own JS keeps 发现页类型 separate from 搜索模式 for exactly that reason.
     func selectFilter(_ filter: DiscoverFilter, value: String) {
         guard value != filter.selected, let source = selectedSource else { return }
-        var dict = Self.sanitizeDiscoverVariable(currentVariableDict(for: source))
-        var moreSettings = (dict["更多设置"] as? [String: Any]) ?? [:]
+        var dict = currentVariableDict(for: source)
+        let moreSettings = (dict["更多设置"] as? [String: Any]) ?? [:]
         let currentMode = discoverMode(from: dict, moreSettings: moreSettings)
 
         dict[filter.paramKey] = value
+        rememberFilterKeys([filter.paramKey], for: source)
 
         switch filter.paramKey {
         case "发现页类型":
             let platform = discoverPlatform(for: value, dict: dict)
             dict["发现页来源"] = platform
-            moreSettings["搜索模式"] = value
-            dict["更多设置"] = moreSettings
+            rememberFilterKeys(["发现页来源"], for: source)
             Self.setDiscoverPlatform(platform, forMode: value, in: &dict)
         case "发现页来源":
-            moreSettings["搜索模式"] = currentMode
-            dict["更多设置"] = moreSettings
             Self.setDiscoverPlatform(value, forMode: currentMode, in: &dict)
         default:
             break
@@ -331,14 +335,17 @@ final class DiscoverViewModel: ObservableObject {
             // `sort`/筛选 value no longer matches the source's category table, so its
             // `csh()` keeps the stale value and throws. The runtime variable is keyed by
             // bookSourceUrl, so this survives re-import and silently degrades 发现页 to the
-            // bare 榜单 fallback. Reset it once and re-fetch INLINE (re-entrant reload() could
-            // cancel its own task and leave sections empty) so `csh()` re-initialises.
+            // bare 榜单 fallback. Drop only the filter values *we* wrote and re-fetch INLINE
+            // (re-entrant reload() could cancel its own task and leave sections empty) so
+            // `csh()` re-initialises. Never clear the whole variable: it also holds the
+            // source's own state (云端配置/线路/更多设置 — the user's 默认搜索网站 lives there).
             if !self.didAutoResetDiscoverVariable,
                Self.exploreLikelyDegraded(source: source, items: raw) {
                 self.didAutoResetDiscoverVariable = true
-                self.runtimeStore.setSourceVariableJSON(nil, for: source.bookSourceUrl)
-                raw = await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
-                guard !Task.isCancelled else { return }
+                if self.resetDiscoverFilterValues(for: source) {
+                    raw = await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
+                    guard !Task.isCancelled else { return }
+                }
             }
 
             // Only persist a healthy category list; caching the degraded 榜单
@@ -357,6 +364,11 @@ final class DiscoverViewModel: ObservableObject {
     private func applyDiscoverItems(_ raw: [ModernParserBridge.DiscoverItem]) {
         rawItems = raw
         filters = Self.extractFilters(from: raw)
+        // Learn which runtime variables this source's filters target, so a later
+        // degraded load can reset exactly those and nothing else.
+        if let source = selectedSource, !filters.isEmpty {
+            rememberFilterKeys(filters.map(\.paramKey), for: source)
+        }
         let mapped = raw.compactMap(Self.mapItem)
         items = mapped
         isLoadingItems = false
@@ -383,7 +395,7 @@ final class DiscoverViewModel: ObservableObject {
 
     /// Cache key for the current (source, discover runtime variables) pair.
     private func discoverKindsCacheKey(for source: BookSource) -> String {
-        let variableDict = Self.sanitizeDiscoverVariable(currentVariableDict(for: source))
+        let variableDict = currentVariableDict(for: source)
         return DiscoverKindsCache.key(
             sourceUrl: source.bookSourceUrl,
             exploreUrl: source.exploreUrl,
@@ -772,11 +784,14 @@ final class DiscoverViewModel: ObservableObject {
         if let saved = Self.nonEmptyString(memory[mode]) {
             return saved
         }
-        // Back-compat: honor a legacy per-类型 platform still sitting in 更多设置
-        // (sanitize will have moved it out, but be defensive).
+        // Mirror the source's own fallback (`sources = 发现页来源 || 更多设置[tab] || '全部'`):
+        // with no discover pick yet, start from the 默认搜索网站 the user configured for
+        // this 类型. A multi-site list (「番茄,七猫」) is meaningless as a single discover
+        // platform, so those fall through to 全部.
         if let moreSettings = dict["更多设置"] as? [String: Any],
-           let legacy = Self.nonEmptyString(moreSettings[mode]) {
-            return legacy
+           let configured = Self.nonEmptyString(moreSettings[mode]),
+           !configured.contains(",") {
+            return configured
         }
         return defaultDiscoverPlatform
     }
@@ -787,12 +802,6 @@ final class DiscoverViewModel: ObservableObject {
     /// Aggregate-source JS never reads this, so it cannot leak into search.
     nonisolated static let discoverPlatformMemoryKey = "__discoverSourceByMode"
 
-    /// Keys inside `更多设置` that are the source's own meta-settings (read by its
-    /// search/discover JS) rather than an app-written per-类型 platform selection.
-    /// Everything else the app previously persisted under 更多设置 was a single
-    /// discover platform that the search JS misreads as its sub-site filter.
-    nonisolated private static let moreSettingsMetaKeys: Set<String> = ["搜索模式", "强制搜索"]
-
     private static func setDiscoverPlatform(
         _ platform: String, forMode mode: String, in dict: inout [String: Any]
     ) {
@@ -802,42 +811,55 @@ final class DiscoverViewModel: ObservableObject {
         dict[discoverPlatformMemoryKey] = memory
     }
 
-    /// One-time normalization: move any legacy per-类型 platform entries out of
-    /// `更多设置` (where an aggregate source's search JS reads them as `sourcesKey`)
-    /// into the app-private memory key. This restores search to `全部` for users
-    /// whose runtime state was polluted by earlier builds. No-op once clean.
-    nonisolated static func sanitizeDiscoverVariable(_ dict: [String: Any]) -> [String: Any] {
-        guard var moreSettings = dict["更多设置"] as? [String: Any] else { return dict }
-        var memory = (dict[discoverPlatformMemoryKey] as? [String: Any]) ?? [:]
-        var moved = false
-        for (key, value) in moreSettings {
-            guard !moreSettingsMetaKeys.contains(key), value is String else { continue }
-            if memory[key] == nil { memory[key] = value }
-            moreSettings.removeValue(forKey: key)
-            moved = true
+    // MARK: - Filter variable bookkeeping
+
+    private func filterKeysStorageKey(for source: BookSource) -> String {
+        filterKeysPrefix + source.bookSourceUrl
+    }
+
+    private func knownFilterKeys(for source: BookSource) -> [String] {
+        UserDefaults.standard.stringArray(forKey: filterKeysStorageKey(for: source)) ?? []
+    }
+
+    private func rememberFilterKeys(_ keys: [String], for source: BookSource) {
+        let incoming = keys.filter { !$0.isEmpty }
+        guard !incoming.isEmpty else { return }
+        var known = knownFilterKeys(for: source)
+        let added = incoming.filter { !known.contains($0) }
+        guard !added.isEmpty else { return }
+        known.append(contentsOf: added)
+        UserDefaults.standard.set(known, forKey: filterKeysStorageKey(for: source))
+    }
+
+    /// Drop the filter values the discover page owns for this source (the poisoned-`csh()`
+    /// recovery in `reload()`). Returns whether anything changed, so the caller only
+    /// re-fetches when a retry can actually produce a different result.
+    private func resetDiscoverFilterValues(for source: BookSource) -> Bool {
+        let keys = knownFilterKeys(for: source)
+        guard !keys.isEmpty else { return false }
+        var dict = currentVariableDict(for: source)
+        var changed = false
+        for key in keys where dict[key] != nil {
+            dict.removeValue(forKey: key)
+            changed = true
         }
-        guard moved else { return dict }
-        var result = dict
-        result["更多设置"] = moreSettings
-        result[discoverPlatformMemoryKey] = memory
-        return result
+        guard changed else { return false }
+        writeVariableDict(dict, for: source)
+        return true
     }
 
     private func repairHardcodedDiscoverSourceIfNeeded(for source: BookSource) {
         let dict = currentVariableDict(for: source)
-        // Strip legacy per-类型 platform keys out of 更多设置 first (fixes aggregate
-        // search pinned to one sub-site on already-polluted state), then apply the
-        // hardcoded-source repair. Persist if either step changed anything.
-        let sanitized = Self.sanitizeDiscoverVariable(dict)
-        let repaired = Self.repairHardcodedDiscoverSource(in: sanitized)
+        let repaired = Self.repairHardcodedDiscoverSource(in: dict)
         guard Self.canonicalJSON(dict) != Self.canonicalJSON(repaired) else { return }
         writeVariableDict(repaired, for: source)
     }
 
     /// Older builds mirrored the source JS too literally and persisted
-    /// `发现页来源 = 番茄` whenever the mode changed. If a per-mode source is
-    /// remembered (now in the app-private memory key, legacy: in `更多设置`),
-    /// treat that as the user's intended source.
+    /// `发现页来源 = 番茄` whenever the mode changed. Prefer the platform the user
+    /// actually chose for this 类型 — their discover pick (app-private memory), else
+    /// the 默认搜索网站 they set in the source's own settings page (`更多设置[类型]`).
+    /// A discover pick of 番茄 lands in memory, so a deliberate 番茄 is never rewritten.
     nonisolated static func repairHardcodedDiscoverSource(in dict: [String: Any]) -> [String: Any] {
         guard (dict["发现页来源"] as? String) == "番茄" else { return dict }
 
@@ -846,7 +868,10 @@ final class DiscoverViewModel: ObservableObject {
         let mode = nonEmptyString(dict["发现页类型"])
             ?? nonEmptyString(moreSettings["搜索模式"])
             ?? "小说"
-        guard let saved = nonEmptyString(memory[mode]) ?? nonEmptyString(moreSettings[mode]),
+        let configured = nonEmptyString(moreSettings[mode]).flatMap {
+            $0.contains(",") ? nil : $0
+        }
+        guard let saved = nonEmptyString(memory[mode]) ?? configured,
               saved != "番茄"
         else { return dict }
 
