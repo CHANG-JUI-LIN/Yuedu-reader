@@ -1558,3 +1558,9 @@
 /* Paragraph review (段評) source-JS actions */
 "找不到這則段評所屬的書源，可能已被刪除。" = "The book source for this comment could not be found — it may have been deleted.";
 "「%@」沒有回應這則段評，可能需要先在書源設定填寫 Token。" = "\"%@\" did not respond to this comment. You may need to enter a token in its book-source settings first.";
+
+/* Now-playing mini player accessibility */
+"播放" = "Play";
+"暫停" = "Pause";
+"停止播放" = "Stop Playback";
+"打開播放控制面板" = "Open playback controls";

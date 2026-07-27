@@ -44,6 +44,7 @@
 | H7 | 一般互動的 **hit region** 預設至少 **44×44pt**；**28×28pt** 只描述受限 compact 情境的最小 visible control size，必須搭配充分 spacing，不能當作縮小一般 hit target 的理由；reader chrome 與 primary actions 維持至少 44×44pt hit region | 擴大 hit region 且控制間保留間距 | 把 28pt visible control 直接當一般 hit target |
 | H8 | 每個資料畫面都要設計 **空 / 載入 / 錯誤** 三態 | 見 §9 | 只做 happy path |
 | H9 | 不得做成網頁式 UI（dashboard 卡片牆、側欄、Landing） | 見 §13 | Tailwind 風格 |
+| H10 | accessibility modifier 只能加在**該元素本身**，不能加在容器上（會往下傳給每個子元素） | 每顆 `Button` 各自 `.accessibilityLabel` | 在包住三顆按鈕的 `HStack` 上加一個 label |
 
 ---
 
@@ -240,6 +241,27 @@ ItemRow(item: item)
 - [ ] VoiceOver 能依合理 order 朗讀標題、內容與動作，並在儲存、刪除、載入或錯誤後說明 outcome；必要時用 announcement 或 focus 管理。
 - [ ] 閱讀頁避免動畫、透明、背景紋理干擾文字辨識。
 - [ ] 純裝飾元素使用 `.accessibilityHidden(true)`；同一語意的標題、metadata 與狀態適當 grouping（例如 `.accessibilityElement(children: .combine)`），但不要合併需要獨立操作的控制。
+
+### 7.1 SwiftUI 已經踩過的三個坑
+
+這三個不是理論風險，都是實際出貨後由使用者回報的 VoiceOver bug（TTS 迷你播放器與語速滑桿）：
+
+- **accessibility modifier 加在容器上會往下傳。** 套在 `HStack` / `VStack` 上的 `.accessibilityLabel`、`.accessibilityHint` 會傳給底下**每一個**子元素。迷你播放器因此把封面、播放/暫停、關閉三顆按鈕全部命名成書名，旁白連念三次同一個名字。→ 標在各自的 `Button` 上（見 H10）。
+- **`Image(systemName:)` 預設就是可聚焦元素。** SF Symbol 自帶名稱，旁白會念出「speedometer」這種符號名。裝飾用的圖示（滑桿兩端的慢/快圖示、列尾自繪的 `chevron.right`）一律 `.accessibilityHidden(true)`。
+- **`Slider` 不會自己有語意。** 預設 label 是空的、value 是「相對於 range 的百分比」，跟畫面上顯示的數值對不上（語速 range 是 0.1–2.5，畫面卻顯示 `rate / 0.5 * 100`%）。務必自己給 `.accessibilityLabel` 與 `.accessibilityValue`，且 value 與畫面上那行說明文字**共用同一個計算屬性**，不要各算各的。
+
+```swift
+HStack {
+    Image(systemName: "tortoise")
+        .accessibilityHidden(true)          // 裝飾用，不進 VoiceOver
+    Slider(value: $rate, in: 0.1...2.5, step: 0.05)
+        .accessibilityLabel(localized("語速"))
+        .accessibilityValue(speechRateText) // 與下方說明文字同一來源
+    Image(systemName: "hare")
+        .accessibilityHidden(true)
+}
+Text("\(localized("當前速度"))：\(speechRateText)")
+```
 
 ---
 

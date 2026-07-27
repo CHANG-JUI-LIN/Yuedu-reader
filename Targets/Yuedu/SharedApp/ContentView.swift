@@ -396,6 +396,8 @@ struct NowPlayingMiniPlayer: View {
                 leadingArtwork
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(nowPlayingLabel)
+            .accessibilityHint(localized("打開播放控制面板"))
 
             Button {
                 performTapAction {
@@ -409,6 +411,7 @@ struct NowPlayingMiniPlayer: View {
                     .background(.thinMaterial, in: Circle())
                     .overlay(Circle().stroke(Color.secondary.opacity(0.35), lineWidth: 2))
             }
+            .accessibilityLabel(localized(hub.playbackState == .playing ? "暫停" : "播放"))
 
             Button {
                 performTapAction {
@@ -420,6 +423,7 @@ struct NowPlayingMiniPlayer: View {
                     .foregroundColor(.secondary)
                     .frame(width: 34, height: 48)
             }
+            .accessibilityLabel(localized("停止播放"))
         }
         .buttonStyle(.borderless)
         .padding(.leading, 4)
@@ -428,7 +432,14 @@ struct NowPlayingMiniPlayer: View {
         .background(.regularMaterial, in: Capsule())
         .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
         .contentShape(Capsule())
-        .accessibilityLabel(hub.title.isEmpty ? localized("語音朗讀") : hub.title)
+    }
+
+    /// What VoiceOver announces for the artwork button — the title of whatever is
+    /// playing. Labelling each button individually matters: an `.accessibilityLabel`
+    /// on the enclosing `HStack` propagates down and gives all three buttons the same
+    /// name, so VoiceOver read the book title three times over play/pause and stop.
+    private var nowPlayingLabel: String {
+        hub.title.isEmpty ? localized("語音朗讀") : hub.title
     }
 
     /// The leading 56pt tappable artwork: both TTS and audiobook spin the book cover
