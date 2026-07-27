@@ -64,6 +64,27 @@ struct IOS17SearchResultTableTests {
         )
     }
 
+    @Test("detail metadata treats JavaScript sentinel title as missing")
+    func detailMetadataDropsUndefinedTitle() {
+        let book = OnlineBook(
+            name: "undefined",
+            author: "作者",
+            intro: "簡介",
+            coverUrl: "",
+            bookUrl: "https://example.com/book",
+            tocUrl: "",
+            wordCount: "",
+            lastChapter: "",
+            kind: "",
+            sourceId: UUID(),
+            sourceName: "書山聚合"
+        )
+
+        let sanitized = OnlineBookDetailPresentationPolicy.sanitized(book)
+
+        #expect(sanitized.name.isEmpty)
+    }
+
     @Test("search detail identity stays stable across destination rebuilds")
     func searchDetailIdentityStaysStable() {
         let searchBookID = UUID(

@@ -20,16 +20,17 @@ enum OnlineChapterCacheWritePolicy {
         hasBookSource && (package.rawHTMLFilename != nil || package.normalizedHTMLFilename != nil)
     }
 
-    /// Legacy caches written before the reader stopped re-saving chapters from
-    /// plain text: they kept a normalized copy but lost the raw HTML, so their
-    /// normalized copy is missing HTML-only inline markers (段評 badges).
-    /// `ChapterCacheRepository.saveChapterArtifact` no longer produces this shape,
-    /// so a refetch always lands somewhere better than where it started.
+    /// Rejects normalized source render artifacts that cannot preserve current
+    /// HTML-only semantics (such as 段評 badges). This includes the legacy
+    /// normalized-without-raw shape and artifacts written before the current
+    /// marker conversion version. A refetch writes the current version once.
     static func shouldRefetchStrippedRenderArtifacts(
         package: ChapterPackage,
         hasBookSource: Bool
     ) -> Bool {
-        hasBookSource && package.rawHTMLFilename == nil && package.normalizedHTMLFilename != nil
+        guard hasBookSource, package.normalizedHTMLFilename != nil else { return false }
+        return package.rawHTMLFilename == nil
+            || package.renderArtifactVersion != OnlineChapterRenderArtifact.currentVersion
     }
 
     /// The single definition of "this cached chapter is good enough to read".

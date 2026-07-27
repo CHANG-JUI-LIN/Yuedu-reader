@@ -57,6 +57,7 @@ struct ChapterCacheRepositoryWriteTests {
         )
         #expect(reloaded?.content == "durable body")
         #expect(reloaded?.state == .cached)
+        #expect(reloaded?.renderArtifactVersion == OnlineChapterRenderArtifact.currentVersion)
     }
 
     private func temporaryRoot() -> URL {

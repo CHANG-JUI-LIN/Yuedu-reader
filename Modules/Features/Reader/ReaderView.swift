@@ -1952,7 +1952,7 @@ struct ReaderView: View {
         .sheet(item: $reviewTarget) { target in
             JsBridgeBrowserView(
                 urlString: target.url,
-                hidesToolbar: true
+                hidesToolbar: ParagraphReviewBrowserPresentationPolicy.hidesToolbar
             ) { _ in
                 reviewTarget = nil
             }

@@ -66,6 +66,30 @@ struct ParagraphReviewMarkerTests {
         #expect(marker.title == "")
     }
 
+    @Test("rewrites Shushan startBrowser comment markers")
+    func rewritesShushanStartBrowserMarker() throws {
+        let raw = #"<p>正文<comment count="74" onPress="java.startBrowser('https://v1.vossc.com/idea_comment?item_id=2&amp;book_id=1&amp;para=3&amp;sessionid=abc','番茄段评')" /></p>"#
+        let rewritten = ReaderHTMLUtilities.rewriteReviewComments(raw)
+
+        #expect(!rewritten.localizedCaseInsensitiveContains("<comment"))
+        let href = try #require(firstReviewHref(in: rewritten))
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
+        #expect(marker.count == "74")
+        #expect(marker.url == "https://v1.vossc.com/idea_comment?item_id=2&book_id=1&para=3&sessionid=abc")
+        #expect(marker.title == "番茄段评")
+    }
+
+    @Test("rewrites Shushan startBrowserDp comment markers")
+    func rewritesShushanStartBrowserDpMarker() throws {
+        let raw = #"<p>正文<comment count="9" onPress="java.startBrowserDp('https://v1.vossc.com/idea_comment?item_id=2','番茄段评')" /></p>"#
+        let rewritten = ReaderHTMLUtilities.rewriteReviewComments(raw)
+
+        let href = try #require(firstReviewHref(in: rewritten))
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
+        #expect(marker.count == "9")
+        #expect(marker.url == "https://v1.vossc.com/idea_comment?item_id=2")
+    }
+
     @Test("leaves HTML without comment markers unchanged and is idempotent")
     func leavesPlainHTMLUnchangedAndIdempotent() {
         let plain = "<p>沒有段評的普通段落</p>"
@@ -159,6 +183,36 @@ struct ParagraphReviewMarkerTests {
 
         let target = try #require(ReaderHTMLUtilities.reviewTarget(fromHref: href))
         #expect(target.requiresSourceJS)
+    }
+
+    @Test("carries Shushan SVG showCmt as its source runtime action")
+    func carriesShushanSVGShowCmtAsSourceAction() throws {
+        let svg = #"<svg width="96" height="72"><rect width="96" height="72"/><text x="48" y="46">12</text></svg>"#
+        let base64 = Data(svg.utf8).base64EncodedString()
+        let raw = #"<p>段落<img src="data:image/svg+xml;base64,\#(base64),{'js':'showCmt("7636702239288986649","752123","7","123456")','style':'TEXT'}"></p>"#
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "📚书山聚合",
+                sourceURL: "https://v1.vossc.com"
+            )
+        )
+
+        #expect(cleaned.contains(#"class="yd-review-image""#))
+        #expect(cleaned.contains(#"data-yd-imgstyle="text""#))
+        let href = try #require(firstReviewHref(in: cleaned))
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
+        #expect(marker.url.isEmpty)
+        #expect(marker.sourceJS.contains("startCommentBrowser.call"))
+        #expect(marker.sourceJS.contains("buildCommentUrl.call"))
+        #expect(marker.sourceJS.contains("7636702239288986649"))
+        #expect(marker.sourceJS.contains("752123"))
+        #expect(marker.sourceURL == "https://v1.vossc.com")
+    }
+
+    @Test("paragraph review browser presentation hides app title and toolbar")
+    func paragraphReviewBrowserHidesAppChrome() {
+        #expect(ParagraphReviewBrowserPresentationPolicy.hidesToolbar)
     }
 
     /// The source-JS fallback must stay a *function call* gate — a click config carrying prose,
@@ -295,6 +349,46 @@ struct ParagraphReviewMarkerTests {
         #expect(!OnlineChapterCacheWritePolicy.shouldRefetchStrippedRenderArtifacts(
             package: strippedPackage,
             hasBookSource: false
+        ))
+
+        let staleRenderPackage = ChapterPackage(
+            bookId: UUID(),
+            chapterIndex: 7,
+            sourceURL: "https://example.com/stale-render",
+            tocTitle: "Stale render",
+            canonicalTitle: "Stale render",
+            content: "舊版渲染產物",
+            contentChecksum: "checksum",
+            rawHTMLFilename: "7.raw.html",
+            normalizedHTMLFilename: "7.normalized.xhtml",
+            renderArtifactVersion: nil,
+            savedAt: Date(),
+            state: .cached,
+            failureReason: nil
+        )
+        #expect(OnlineChapterCacheWritePolicy.shouldRefetchStrippedRenderArtifacts(
+            package: staleRenderPackage,
+            hasBookSource: true
+        ))
+
+        let currentRenderPackage = ChapterPackage(
+            bookId: UUID(),
+            chapterIndex: 8,
+            sourceURL: "https://example.com/current-render",
+            tocTitle: "Current render",
+            canonicalTitle: "Current render",
+            content: "新版渲染產物",
+            contentChecksum: "checksum",
+            rawHTMLFilename: "8.raw.html",
+            normalizedHTMLFilename: "8.normalized.xhtml",
+            renderArtifactVersion: OnlineChapterRenderArtifact.currentVersion,
+            savedAt: Date(),
+            state: .cached,
+            failureReason: nil
+        )
+        #expect(!OnlineChapterCacheWritePolicy.shouldRefetchStrippedRenderArtifacts(
+            package: currentRenderPackage,
+            hasBookSource: true
         ))
     }
 }

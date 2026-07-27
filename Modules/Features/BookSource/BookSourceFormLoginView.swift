@@ -511,7 +511,26 @@ struct BookSourceFormLoginView: View {
                 "baseUrl": source.bookSourceUrl
             ]
             SourceAPIErrorLog.shared.clear(for: source.bookSourceUrl)
+            if source.bookSourceName.contains("书山聚合") {
+                let before = engine.evaluate("java.get('yunpara')") ?? "<nil>"
+                NSLog(
+                    "❖SHUSHAN TRACE❖ stage=menu.before action=%@ yunpara=%@ jsError=%@",
+                    action,
+                    before.isEmpty ? "<empty>" : before,
+                    engine.lastError ?? "none"
+                )
+            }
             _ = engine.evaluate(combined, bindings: bindings)
+            if source.bookSourceName.contains("书山聚合") {
+                let actionError = engine.lastError
+                let after = engine.evaluate("java.get('yunpara')") ?? "<nil>"
+                NSLog(
+                    "❖SHUSHAN TRACE❖ stage=menu.after action=%@ yunpara=%@ actionError=%@",
+                    action,
+                    after.isEmpty ? "<empty>" : after,
+                    actionError ?? "none"
+                )
+            }
 
             // A menu action that finishes without saying anything is the failure mode
             // this reports: 同人小说网's `registerByInvite()` returns early when its API
@@ -548,6 +567,14 @@ struct BookSourceFormLoginView: View {
         let runtimeStore = BookSourceRuntimeStateStore.shared
         let ruleData = BookSourceRuleData(source: source)
 
+        // Settings actions and chapter parsing use separate JS engines. Persist
+        // Legado `java.put/get` state (书山's `yunpara`) at source scope.
+        engine.getData = { key in
+            runtimeStore.sourceValue(for: sourceUrl, key: key)
+        }
+        engine.putData = { key, value in
+            runtimeStore.setSourceValue(value, for: sourceUrl, key: key)
+        }
         engine.sourceBridge.getVariableHandler = {
             runtimeStore.sourceVariableJSON(for: sourceUrl) ?? ""
         }

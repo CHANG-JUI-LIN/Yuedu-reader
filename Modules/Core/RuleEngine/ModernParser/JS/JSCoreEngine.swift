@@ -129,7 +129,7 @@ class JSCoreEngine {
     var bookSource: BookSource? {
         didSet {
             onJSQueue {
-                resolvedHeaderCache = nil
+                clearResolvedHeaderCache()
                 guard let src = bookSource else {
                     sourceBridge = LegadoSourceBridge(
                         bookSourceUrl: "", bookSourceName: "", bookSourceGroup: "",
@@ -155,6 +155,7 @@ class JSCoreEngine {
     // MARK: - Resolved source headers
 
     private var resolvedHeaderCache: [String: String]?
+    private let resolvedHeaderCacheLock = NSLock()
     private var isResolvingHeaders = false
 
     /// The source's `header` rule resolved to request headers (Legado
@@ -165,15 +166,34 @@ class JSCoreEngine {
     /// re-run for every `java.get`/`java.ajax` (段評 fires hundreds), and guarded
     /// against re-entry because a header rule may itself issue a request.
     func resolvedSourceHeaders() -> [String: String] {
-        onJSQueue { [self] () -> [String: String] in
-            if let resolvedHeaderCache { return resolvedHeaderCache }
+        // `java.ajaxAll` waits on worker requests while occupying the JS queue.
+        // Those workers still need the already-resolved headers; hopping back to
+        // the occupied queue here deadlocks the batch until its timeout.
+        resolvedHeaderCacheLock.lock()
+        let cached = resolvedHeaderCache
+        resolvedHeaderCacheLock.unlock()
+        if let cached { return cached }
+
+        return onJSQueue { [self] () -> [String: String] in
+            resolvedHeaderCacheLock.lock()
+            let cached = resolvedHeaderCache
+            resolvedHeaderCacheLock.unlock()
+            if let cached { return cached }
             guard !isResolvingHeaders, let header = bookSource?.header else { return [:] }
             isResolvingHeaders = true
             let headers = parseHeaders(header)
             isResolvingHeaders = false
+            resolvedHeaderCacheLock.lock()
             resolvedHeaderCache = headers
+            resolvedHeaderCacheLock.unlock()
             return headers
         }
+    }
+
+    private func clearResolvedHeaderCache() {
+        resolvedHeaderCacheLock.lock()
+        resolvedHeaderCache = nil
+        resolvedHeaderCacheLock.unlock()
     }
 
     /// Called when JS evaluation fails, with the error message and the script that caused it.

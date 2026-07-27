@@ -166,6 +166,46 @@ struct RuleAnalyzerTests {
 
 @Suite("ModernParserBridge Chapter Compatibility", .serialized)
 struct ModernParserBridgeChapterCompatibilityTests {
+    @Test("single-function iOS comment branch is routed through source SVG")
+    func singleFunctionIOSCommentBranchUsesSourceSVG() throws {
+        var source = BookSource()
+        source.bookSourceName = "📚书山聚合"
+        source.bookSourceUrl = "shushan-svg-\(UUID().uuidString)"
+        source.jsLib = """
+        function deviceType() {
+            try {
+                java.deviceID();
+                return false;
+            } catch (e) {
+                return true;
+            }
+        }
+        function createCommentHtmlTag(count) {
+            return '<comment count="' + count
+                + '" onPress="java.startBrowser(\\'https://example.com/review\\',\\'番茄段评\\')" />';
+        }
+        function createSvg(count) {
+            if (!deviceType()) return createCommentHtmlTag(count);
+            var svg = '<svg width="96" height="72" xmlns="http://www.w3.org/2000/svg">'
+                + '<rect x="8" y="8" width="80" height="56" />'
+                + '<text x="48" y="46">' + count + '</text></svg>';
+            return '<img src="data:image/svg+xml;base64,' + java.base64Encode(svg)
+                + ',{\\'js\\':\\'showCmt(\"1\",\"2\",\"3\",\"4\")\\',\\'style\\':\\'TEXT\\'}">';
+        }
+        """
+        source.ruleContent.content = "<js>createSvg(12)</js>"
+
+        let payload = try ModernParserBridge(source: source).parseChapterResult(
+            html: "正文",
+            baseURL: "https://example.com/chapter",
+            source: source
+        )
+
+        #expect(payload.content.contains("<img"))
+        #expect(payload.content.contains("data:image/svg+xml;base64,"))
+        #expect(!payload.content.localizedCaseInsensitiveContains("<comment"))
+    }
+
     @Test("chapter JS receives the original response as src")
     func chapterJSReceivesOriginalResponseAsSrc() throws {
         var source = BookSource()
@@ -2607,6 +2647,58 @@ struct ModernParserBridgeExploreTests {
                 for: source.bookSourceUrl
             ) == token
         )
+    }
+
+    @Test("java variables survive a new parser bridge")
+    func javaVariablesPersistAcrossParserBridges() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "java-variable-\(UUID().uuidString)"
+        source.bookSourceName = "Persistent java variable"
+
+        let writer = ModernParserBridge(source: source)
+        _ = writer.evaluateSourceScript("java.put('yunpara', 'on')")
+
+        let reader = ModernParserBridge(source: source)
+        #expect(reader.evaluateSourceScript("java.get('yunpara')") == "on")
+    }
+
+    @Test("cached source headers remain readable while the JS queue is busy")
+    func cachedSourceHeadersDoNotWaitForJSQueue() {
+        var source = BookSource()
+        source.bookSourceUrl = "header-cache-\(UUID().uuidString)"
+        source.header = #"{"X-Test":"cached"}"#
+        let engine = JSCoreEngine()
+        engine.bookSource = source
+        #expect(engine.resolvedSourceHeaders()["X-Test"] == "cached")
+
+        let networkStarted = DispatchSemaphore(value: 0)
+        let releaseNetwork = DispatchSemaphore(value: 0)
+        engine.networkHandler = { _ in
+            networkStarted.signal()
+            _ = releaseNetwork.wait(timeout: .now() + 2)
+            return "{}"
+        }
+
+        let evaluationDone = DispatchGroup()
+        evaluationDone.enter()
+        DispatchQueue.global().async {
+            _ = engine.evaluate("java.ajax('https://example.com/blocked')")
+            evaluationDone.leave()
+        }
+        #expect(networkStarted.wait(timeout: .now() + 1) == .success)
+
+        let headerRead = DispatchGroup()
+        headerRead.enter()
+        DispatchQueue.global().async {
+            _ = engine.resolvedSourceHeaders()
+            headerRead.leave()
+        }
+        let readFinishedWithoutWaitingForJS = headerRead.wait(timeout: .now() + 0.2) == .success
+        releaseNetwork.signal()
+        _ = evaluationDone.wait(timeout: .now() + 2)
+        _ = headerRead.wait(timeout: .now() + 2)
+
+        #expect(readFinishedWithoutWaitingForJS)
     }
 
     @Test("plain text exploreUrl is parsed as Legado explore kinds without fetching")

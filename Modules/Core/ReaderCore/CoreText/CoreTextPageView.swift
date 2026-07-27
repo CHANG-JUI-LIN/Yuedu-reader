@@ -2042,9 +2042,11 @@ final class CoreTextPageViewController: UIViewController {
             }
             return
         }
-        let sheetTitle = target.title.isEmpty ? localized("段評") : target.title
         weak var weakHost: UIViewController?
-        let view = JsBridgeBrowserView(urlString: target.url, title: sheetTitle) { _ in
+        let view = JsBridgeBrowserView(
+            urlString: target.url,
+            hidesToolbar: ParagraphReviewBrowserPresentationPolicy.hidesToolbar
+        ) { _ in
             weakHost?.dismiss(animated: true)
         }
         let host = UIHostingController(rootView: view)

@@ -165,10 +165,38 @@ class ModernParserBridge {
         }
 
         jsEngine.getData = { [weak self] key in
-            self?.sourceRuleData.getVariable(key: key)
+            guard let self else { return nil }
+            let localValue = self.sourceRuleData.getVariable(key: key)
+            let value = localValue.isEmpty
+                ? (self.runtimeStateStore.sourceValue(
+                    for: self.sourceRuleData.source.bookSourceUrl,
+                    key: key
+                ) ?? "")
+                : localValue
+            if self.sourceRuleData.source.bookSourceName.contains("书山聚合"),
+               key == "yunpara" {
+                NSLog(
+                    "❖SHUSHAN TRACE❖ stage=variable.get key=yunpara value=%@",
+                    value.isEmpty ? "<empty>" : value
+                )
+            }
+            return value
         }
         jsEngine.putData = { [weak self] key, value in
-            self?.sourceRuleData.putVariable(key: key, value: value)
+            guard let self else { return }
+            self.sourceRuleData.putVariable(key: key, value: value)
+            self.runtimeStateStore.setSourceValue(
+                value,
+                for: self.sourceRuleData.source.bookSourceUrl,
+                key: key
+            )
+            if self.sourceRuleData.source.bookSourceName.contains("书山聚合"),
+               key == "yunpara" {
+                NSLog(
+                    "❖SHUSHAN TRACE❖ stage=variable.put key=yunpara value=%@",
+                    value
+                )
+            }
         }
 
         // ── Source Bridge Wiring ──
@@ -287,6 +315,16 @@ class ModernParserBridge {
                 timedOut: waitResult == .timedOut,
                 body: result
             )
+            if self.sourceRuleData.source.bookSourceName.contains("书山聚合") {
+                NSLog(
+                    "❖SHUSHAN TRACE❖ stage=js.ajax path=%@ status=%d timedOut=%@ bodyLen=%d bodyHead=%@",
+                    request.url?.path ?? "nil",
+                    responseStatusCode ?? -1,
+                    waitResult == .timedOut ? "true" : "false",
+                    result?.count ?? -1,
+                    String((result ?? "nil").prefix(180)).replacingOccurrences(of: "\n", with: " ")
+                )
+            }
             if waitResult == .timedOut {
                 AppLogger.parse("⟐ ajax IN timeout", context: [
                     "url": request.url?.absoluteString ?? analyzeUrl.url,
@@ -370,6 +408,16 @@ class ModernParserBridge {
                 timedOut: timedOut,
                 body: result
             )
+            if self?.sourceRuleData.source.bookSourceName.contains("书山聚合") == true {
+                NSLog(
+                    "❖SHUSHAN TRACE❖ stage=js.network path=%@ status=%d timedOut=%@ bodyLen=%d bodyHead=%@",
+                    request.url?.path ?? "nil",
+                    statusCode ?? -1,
+                    timedOut ? "true" : "false",
+                    result?.count ?? -1,
+                    String((result ?? "nil").prefix(180)).replacingOccurrences(of: "\n", with: " ")
+                )
+            }
             // This is the path a plain `java.ajax(url)` takes — 书山聚合 fetches chapter
             // *content* here — and the transport error used to be discarded outright, so
             // a failed chapter left no trace at all. Same failure rule as the AnalyzeUrl
@@ -789,6 +837,17 @@ class ModernParserBridge {
         // ruleContent JS (getComments→ajaxAll) hung; if it logs empty the JS returned
         // nothing; if it logs content+0 bubbles the comment injection silently failed.
         let paraState = BookSourceRuntimeStateStore.shared.sourceVariableJSON(for: source.bookSourceUrl) ?? ""
+        if source.bookSourceName.contains("书山聚合") {
+            let yunpara = sourceRuleData.getVariable(key: "yunpara")
+            NSLog(
+                "❖SHUSHAN TRACE❖ stage=content.begin title=%@ yunpara=%@ runtimeKeys=%@ inputLen=%d baseHost=%@",
+                chapterRef?.title ?? "",
+                yunpara.isEmpty ? "<empty>" : yunpara,
+                sourceRuleData.variableMap.keys.sorted().joined(separator: ","),
+                html.count,
+                URL(string: baseURL)?.host ?? "nil"
+            )
+        }
         AppLogger.parse("⟐ contentJS start", context: [
             "title": chapterRef?.title ?? "",
             "vars": String(paraState.prefix(160))
@@ -799,6 +858,9 @@ class ModernParserBridge {
         // 「Android 变体」，让 iOS 也按书源段评样式产出 SVG <img>，再由 CommentBubbleSVGRecognizer
         // 原生重绘、跟随阅读字体。仅同时定义两者的源会被改写；只定义 iOS 变体的源维持原状。
         // 覆盖两套常见命名: paraForiOS/paraForAndroid 与 getCommentsios/getComments。
+        // 书山这类单一 createSvg 函数则在内部用 deviceType() 二选一：iOS <comment>
+        // 或带点击配置的来源 SVG。仅当函数源码明确同时引用 deviceType 和
+        // createCommentHtmlTag 时，才在本次 content 求值期间切到 SVG 分支。
         // 注意: createSvg 用 java.get('dev') 选气泡变体，dev='ios'(见 qread 移除)→ios 变体(方形/紧凑)，
         // dev='android-轻阅读'→轻阅读变体(偏宽)。
         let aliasedParaForiOS = jsEngine.evaluate(
@@ -811,6 +873,17 @@ class ModernParserBridge {
                 if (typeof getComments === 'function' && typeof getCommentsios === 'function') {
                     getCommentsios = getComments; done.push('getComments');
                 }
+                if (typeof deviceType === 'function'
+                    && typeof createSvg === 'function'
+                    && typeof createCommentHtmlTag === 'function') {
+                    var createSvgSource = String(createSvg);
+                    if (createSvgSource.indexOf('deviceType') >= 0
+                        && createSvgSource.indexOf('createCommentHtmlTag') >= 0) {
+                        globalThis.__ydOriginalCommentDeviceType = deviceType;
+                        deviceType = function () { return true; };
+                        done.push('sourceSVG');
+                    }
+                }
                 return done.length ? done.join('+') : 'false';
             })()
             """
@@ -820,10 +893,19 @@ class ModernParserBridge {
         lastJSNetworkExchange = nil
         let _contentStart = Date()
         var content = engine.getString(ruleStr: source.ruleContent.content)
-        // Snapshot the error HERE: every later `jsEngine.evaluate` (the replaceRegex
-        // pass below runs one) starts by clearing `lastError`, so reading it at log
-        // time reported `jsError=none` for a content rule that had actually thrown.
+        // Snapshot before restoring the temporary deviceType override: every
+        // `jsEngine.evaluate` clears the previous rule error.
         let contentRuleError = jsEngine.lastError
+        _ = jsEngine.evaluate(
+            """
+            (function () {
+                if (typeof globalThis.__ydOriginalCommentDeviceType === 'function') {
+                    deviceType = globalThis.__ydOriginalCommentDeviceType;
+                    delete globalThis.__ydOriginalCommentDeviceType;
+                }
+            })()
+            """
+        )
         // 全文替换 — Legado `BookContent.analyzeContent`: line-trim, then run the source's own
         // `replaceRegex` **through the rule engine**, which is what expands `{{chapter.title}}`
         // templates and splits `##pattern##replacement`. Handing the raw string to a regex API
@@ -874,6 +956,17 @@ class ModernParserBridge {
             "jsError": contentRuleError ?? "none",
             "head": String(content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(180))
         ])
+        if source.bookSourceName.contains("书山聚合") {
+            NSLog(
+                "❖SHUSHAN TRACE❖ stage=content.end len=%d bubbles=%d commentTags=%d showCmt=%d jsNetMs=%d jsError=%@",
+                content.count,
+                bubbleCount,
+                lowerContent.components(separatedBy: "<comment").count - 1,
+                lowerContent.components(separatedBy: "showcmt").count - 1,
+                Int(_jsNetMs),
+                contentRuleError ?? "none"
+            )
+        }
         // An empty chapter is almost always the source's own HTTP call coming back
         // with something its JS couldn't use. The exchange is recorded (not logged)
         // per request, and only dumped here — otherwise every 段評 `ajaxAll` call
@@ -1259,6 +1352,17 @@ class ModernParserBridge {
         let source = sourceRuleData.source
         let rawExploreUrl = source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rawExploreUrl.isEmpty else { return [] }
+        let traceShushanDiscover = source.bookSourceName.contains("书山聚合")
+        if traceShushanDiscover {
+            let variable = runtimeStateStore.sourceVariableJSON(for: source.bookSourceUrl) ?? ""
+            NSLog(
+                "❖SHUSHAN TRACE❖ stage=explore.begin page=%d jsLibLen=%d sourceVariableLen=%d engineGen=%llu",
+                page,
+                source.jsLib.count,
+                variable.count,
+                jsEngine.generation
+            )
+        }
         let traceQidianDiscover = rawExploreUrl.contains("_csrfToken")
         if traceQidianDiscover {
             let variable = runtimeStateStore.sourceVariableJSON(for: source.bookSourceUrl) ?? ""
@@ -1286,6 +1390,14 @@ class ModernParserBridge {
             // Snapshot now: any later `jsEngine.evaluate` clears `lastError`, so
             // reading it at log time would report "none" for a rule that threw.
             exploreJSError = jsEngine.lastError
+        }
+        if traceShushanDiscover {
+            NSLog(
+                "❖SHUSHAN TRACE❖ stage=explore.evaluated payloadLen=%d jsError=%@ payloadHead=%@",
+                ruleStr.count,
+                exploreJSError ?? "none",
+                String(ruleStr.prefix(180)).replacingOccurrences(of: "\n", with: " ")
+            )
         }
         if traceQidianDiscover {
             NSLog(
@@ -1346,6 +1458,14 @@ class ModernParserBridge {
             NSLog(
                 "❖DISC TRACE❖ source=%@ stage=explore.decoded items=%d filters=%d navigable=%d",
                 source.bookSourceName,
+                result.count,
+                result.filter { ($0.type ?? "") == "select" }.count,
+                result.filter { !($0.url ?? "").isEmpty }.count
+            )
+        }
+        if traceShushanDiscover {
+            NSLog(
+                "❖SHUSHAN TRACE❖ stage=explore.decoded items=%d filters=%d navigable=%d",
                 result.count,
                 result.filter { ($0.type ?? "") == "select" }.count,
                 result.filter { !($0.url ?? "").isEmpty }.count

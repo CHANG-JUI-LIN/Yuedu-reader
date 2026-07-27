@@ -2,6 +2,13 @@ import SwiftUI
 import WebKit
 import Combine
 import ObjectiveC
+
+/// Paragraph-review sheets deliberately use only the source page's own UI.
+/// Login and other source browsers keep `JsBridgeBrowserView`'s normal toolbar.
+enum ParagraphReviewBrowserPresentationPolicy {
+    static let hidesToolbar = true
+}
+
 // Modal WebView launched by `java.startBrowser` / `java.startBrowserAwait`.
 // Shows a loading state (spinner + top progress bar) while the page loads so
 // slow login/key servers don't appear as a frozen blank sheet, plus an error
@@ -37,7 +44,16 @@ struct JsBridgeBrowserView: View {
                     .toolbar {
                         ToolbarItem(placement: .navigationBarLeading) {
                             Button {
-                                onDismiss(nil)
+                                // XHR-based login can set cookies after the last
+                                // navigation finished. Persist that final jar even
+                                // on cancellation; nil still tells source JS that
+                                // the browser was dismissed without confirmation.
+                                isSyncing = true
+                                guard let sync = bridge.syncCookiesAndDismiss else {
+                                    onDismiss(nil)
+                                    return
+                                }
+                                sync { _ in onDismiss(nil) }
                             } label: {
                                 Label(localized("取消"), systemImage: "xmark")
                                     .labelStyle(.iconOnly)

@@ -32,6 +32,15 @@ enum OnlineBookDetailPresentationPolicy {
 
     static func sanitized(_ book: OnlineBook) -> OnlineBook {
         var result = book
+        let normalizedName = book.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalizedName.caseInsensitiveCompare("undefined") == .orderedSame
+            || normalizedName.caseInsensitiveCompare("null") == .orderedSame
+        {
+            // Missing JSON fields can cross a source-JS rule boundary as these
+            // literal sentinel strings. Treat them as absent so the detail view
+            // keeps the valid search-result title instead of displaying the sentinel.
+            result.name = ""
+        }
         result.intro = sanitizeIntro(book.intro)
         return result
     }

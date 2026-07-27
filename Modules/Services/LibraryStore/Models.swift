@@ -527,6 +527,12 @@ struct BookPackage {
     let parsedBook: EPUBParsedBook
 }
 
+enum OnlineChapterRenderArtifact {
+    /// Bump when normalized chapter HTML semantics change in a way that cannot
+    /// be reconstructed from the persisted plain-text chapter body.
+    static let currentVersion = 2
+}
+
 struct ChapterPackageArtifact: Codable, Equatable {
     let sourceURL: String?
     let tocTitle: String?
@@ -534,6 +540,7 @@ struct ChapterPackageArtifact: Codable, Equatable {
     let contentChecksum: String
     let rawHTMLFilename: String?
     let normalizedHTMLFilename: String?
+    var renderArtifactVersion: Int? = nil
     let savedAt: Date
 }
 
@@ -552,6 +559,7 @@ struct ChapterPackage: Codable, Equatable {
     let contentChecksum: String
     let rawHTMLFilename: String?
     let normalizedHTMLFilename: String?
+    var renderArtifactVersion: Int? = nil
     let savedAt: Date
     let state: ChapterPackageState
     let failureReason: String?

@@ -638,9 +638,12 @@ enum ReaderHTMLUtilities {
     }
 
     private static func showReadingBrowserArgs(in tag: String) -> (url: String, title: String)? {
-        // Try showReadingBrowser('url', 'title') or showCmt('url'[,'title'])
+        // Legado forks use several equivalent browser entry points for paragraph
+        // reviews. 书山 v5.33 emits `startBrowser` on iOS and `startBrowserDp`
+        // under its QingRead branch; older sources use `showReadingBrowser` or
+        // `showCmt`. They all carry the same (url, optional title) payload.
         guard let regex = try? NSRegularExpression(
-            pattern: #"(?:showReadingBrowser|showCmt)\(\s*'([^']*)'(?:\s*,\s*'([^']*)')?\s*\)"#,
+            pattern: #"(?:showReadingBrowser|showCmt|startBrowser(?:Dp)?)\(\s*'([^']*)'(?:\s*,\s*'([^']*)')?\s*\)"#,
             options: [.caseInsensitive]
         ) else { return nil }
         let ns = tag as NSString
@@ -728,6 +731,7 @@ enum ReaderHTMLUtilities {
                 // call there, but it is also Legado's *render* option (`UrlOption.js`, which
                 // produces the image URL) — running that on tap would just redraw the bubble.
                 allowsSourceJSFallback: legadoConfigHasClickDirective(suffix)
+                    || usesShushanCommentRuntime(reviewContext)
               ),
               let href = reviewHref(
                 count: "",
@@ -869,6 +873,34 @@ enum ReaderHTMLUtilities {
                 let sources = args.count >= 2 ? cleanLegadoArgument(args[1]) : ""
                 return ReviewTarget(url: url, title: sources.isEmpty ? "段評" : "\(sources)段評")
             }
+            // 书山 uses the same numeric `showCmt(bid,cid,para,date)` spelling as
+            // Qidian, but its jsLib builds `/idea_comment` with the current 番茄
+            // session. Static Qidian URL derivation loses both endpoint and login;
+            // run this source-owned action in its existing session instead.
+            if allowsSourceJSFallback,
+               usesShushanCommentRuntime(context),
+               let context,
+               args.count >= 3,
+               isIntegerLegadoArgument(args[0]),
+               isIntegerLegadoArgument(args[1]),
+               isIntegerLegadoArgument(args[2]) {
+                let bookId = cleanLegadoArgument(args[0])
+                let chapterId = cleanLegadoArgument(args[1])
+                let paragraphId = cleanLegadoArgument(args[2])
+                // Shushan's showCmt first-tap guard deliberately returns before
+                // opening anything. Invoke its URL builder/browser functions
+                // directly so one native bubble tap has one deterministic result,
+                // while the source still supplies the live 番茄 session.
+                let directAction = """
+                startCommentBrowser.call(this,buildCommentUrl.call(this,'fq','\(bookId)','\(chapterId)','\(paragraphId)'),'番茄段评')
+                """
+                return ReviewTarget(
+                    url: "",
+                    title: "番茄段評",
+                    sourceJS: directAction,
+                    sourceURL: context.sourceURL
+                )
+            }
             // 起點: showCmt(bookId, chapterId, paragraphId, …) → build the qidian review URL.
             if args.count >= 3,
                isIntegerLegadoArgument(args[0]),
@@ -932,6 +964,11 @@ enum ReaderHTMLUtilities {
         }
 
         return nil
+    }
+
+    private static func usesShushanCommentRuntime(_ context: LegadoReviewContext?) -> Bool {
+        guard let name = context?.sourceName else { return false }
+        return name.contains("书山") || name.contains("書山")
     }
 
     /// Whether an action is a bare source-function call (`name(args…)`) we can hand back to the

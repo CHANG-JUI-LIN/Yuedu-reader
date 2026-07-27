@@ -356,6 +356,7 @@ struct ChapterCacheRepository: Sendable {
                 contentChecksum: artifact.contentChecksum,
                 rawHTMLFilename: artifact.rawHTMLFilename,
                 normalizedHTMLFilename: artifact.normalizedHTMLFilename,
+                renderArtifactVersion: artifact.renderArtifactVersion,
                 savedAt: artifact.savedAt,
                 state: .cached,
                 failureReason: nil
@@ -372,6 +373,7 @@ struct ChapterCacheRepository: Sendable {
             contentChecksum: metadata.contentChecksum,
             rawHTMLFilename: artifact?.rawHTMLFilename,
             normalizedHTMLFilename: artifact?.normalizedHTMLFilename,
+            renderArtifactVersion: artifact?.renderArtifactVersion,
             savedAt: metadata.savedAt,
             state: .failed,
             failureReason: metadata.failureReason
@@ -564,6 +566,7 @@ struct ChapterCacheRepository: Sendable {
             contentChecksum: contentChecksum,
             rawHTMLFilename: rawFilename,
             normalizedHTMLFilename: normalizedFilename,
+            renderArtifactVersion: OnlineChapterRenderArtifact.currentVersion,
             savedAt: package.savedAt
         )
         let data = try JSONEncoder().encode(artifact)
