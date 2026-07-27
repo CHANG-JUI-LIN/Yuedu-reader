@@ -596,12 +596,18 @@ struct ReaderView: View {
             return true
         }
         guard let package = cachedChapterPackage(for: chapterIndex) else {
-            print("[CacheDebug] isChapterContentAvailable ch=\(chapterIndex) → false (no package)")
+            // Not cached yet is the ordinary case here; only an unusable package
+            // (below) is worth a log line.
             return false
         }
         let ok = package.state == .cached && !package.content.isEmpty
         if !ok {
-            print("[CacheDebug] isChapterContentAvailable ch=\(chapterIndex) → false pkgState=\(package.state) contentLen=\(package.content.count)")
+            AppLogger.cache("⟐ chapterCache unavailable", context: [
+                "index": chapterIndex,
+                "reason": "packageState",
+                "state": "\(package.state)",
+                "contentLen": package.content.count,
+            ])
         }
         return ok
     }

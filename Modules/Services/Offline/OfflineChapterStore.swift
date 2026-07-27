@@ -126,7 +126,8 @@ protocol OfflineChapterStoring: Sendable {
         chapterIndex: Int,
         expectedSourceURL: String?,
         expectedTOCTitle: String?,
-        requiresManga: Bool
+        requiresManga: Bool,
+        hasBookSource: Bool
     ) async -> OfflineChapterValidation
     func persistMangaImages(_ request: OfflineMangaChapterRequest) async throws
     func removeBook(bookId: UUID) async throws
@@ -160,7 +161,8 @@ actor OfflineChapterStore: OfflineChapterStoring {
         chapterIndex: Int,
         expectedSourceURL: String?,
         expectedTOCTitle: String?,
-        requiresManga: Bool = false
+        requiresManga: Bool = false,
+        hasBookSource: Bool = false
     ) -> OfflineChapterValidation {
         let repository = ChapterCacheRepository(rootDirectory: roots.textRoot)
         guard let package = repository.loadChapterPackageSync(
@@ -168,6 +170,16 @@ actor OfflineChapterStore: OfflineChapterStoring {
             chapterIndex: chapterIndex,
             expectedSourceURL: expectedSourceURL,
             expectedTOCTitle: expectedTOCTitle
+        ) else {
+            return .incomplete
+        }
+        // The loader also hands back failure markers (state == .failed, empty body)
+        // and packages the read path purges on open. Accepting those meant a
+        // download could skip a chapter it never fetched, report 完成, and then be
+        // re-queued in full on the next launch once the reader deleted them.
+        guard OnlineChapterCacheWritePolicy.isReusableCachedPackage(
+            package,
+            hasBookSource: hasBookSource
         ) else {
             return .incomplete
         }

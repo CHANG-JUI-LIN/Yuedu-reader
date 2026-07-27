@@ -132,6 +132,11 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
             bookId: bookId,
             offlineChapterStore: chapterStore
         )
+        // A reconcile pass suspended inside its validation loop can queue this book
+        // again while the awaits above run. Its job would exit immediately (the task
+        // is gone), but dropping the entry keeps the queue honest for the books
+        // still waiting behind it.
+        waitingBooks.removeAll { $0.book.id == bookId }
     }
 
     func reconcileInterruptedDownloads(store: BookStore) async {
@@ -143,16 +148,19 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         }
         for book in books {
             guard let refs = book.onlineChapters else { continue }
-            var task = await MainActor.run {
-                store.books.first(where: { $0.id == book.id })?.offlineDownloadTask
-            } ?? BookOfflineDownloadTask(requestedIndices: [])
-            let invalidIndices = Set(task.requestedIndices.filter { !refs.indices.contains($0) })
-            task.removeRequestedIndices(invalidIndices)
+            let requestedIndices = await MainActor.run {
+                store.books.first(where: { $0.id == book.id })?.offlineDownloadTask?.requestedIndices
+            }
+            guard let requestedIndices else { continue }
 
-            for index in task.requestedIndices.sorted() {
+            var droppedIndices = Set(requestedIndices.filter { !refs.indices.contains($0) })
+            var verifiedIndices: Set<Int> = []
+            var missingIndices: Set<Int> = []
+
+            for index in requestedIndices.subtracting(droppedIndices).sorted() {
                 let ref = refs[index]
                 if ref.shouldRenderAsVolumeSeparator {
-                    task.removeRequestedIndices([index])
+                    droppedIndices.insert(index)
                     continue
                 }
                 let validation = await SourcePerfTrace.spanAsync(
@@ -164,22 +172,40 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                         chapterIndex: index,
                         expectedSourceURL: ref.url,
                         expectedTOCTitle: ref.title,
-                        requiresManga: book.contentPipelineKind == .manga
+                        requiresManga: book.contentPipelineKind == .manga,
+                        hasBookSource: book.bookSourceId != nil
                     )
                 }
                 if validation == .complete {
-                    task.markCompleted(index)
-                } else if task.completedIndices.contains(index) {
-                    task.markPending(index)
+                    verifiedIndices.insert(index)
+                } else {
+                    missingIndices.insert(index)
                 }
             }
 
-            await MainActor.run {
+            // Validating a long book is one await per chapter, and 移除下載 can
+            // land in the middle of them (下載管理 even starts this pass on the
+            // same screen as the 移除 button). Merging into the task that is live
+            // *now* is what keeps a removal removed: writing the pre-validation
+            // snapshot back resurrected the task, and because removal had just
+            // deleted the artifacts it still listed as completed, the follow-up
+            // enqueue restarted the whole download.
+            let merged = await MainActor.run { () -> BookOfflineDownloadTask? in
+                guard var task = store.books
+                    .first(where: { $0.id == book.id })?.offlineDownloadTask
+                else { return nil }
+                task.removeRequestedIndices(droppedIndices)
+                for index in verifiedIndices where task.requestedIndices.contains(index) {
+                    task.markCompleted(index)
+                }
+                for index in missingIndices where task.completedIndices.contains(index) {
+                    task.markPending(index)
+                }
                 store.replaceOfflineDownloadTask(bookId: book.id, task: task, isRunning: false)
+                return task
             }
-            if !task.isPaused && !task.pendingIndices.isEmpty {
-                enqueue(book, store: store)
-            }
+            guard let merged, !merged.isPaused, !merged.pendingIndices.isEmpty else { continue }
+            enqueue(book, store: store)
         }
     }
 
@@ -264,7 +290,8 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                         chapterIndex: index,
                         expectedSourceURL: ref.url,
                         expectedTOCTitle: ref.title,
-                        requiresManga: book.contentPipelineKind == .manga
+                        requiresManga: book.contentPipelineKind == .manga,
+                        hasBookSource: book.bookSourceId != nil
                     )
                 }
                 if validation != .complete {
@@ -305,7 +332,8 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                     chapterIndex: index,
                     expectedSourceURL: ref.url,
                     expectedTOCTitle: ref.title,
-                    requiresManga: book.contentPipelineKind == .manga
+                    requiresManga: book.contentPipelineKind == .manga,
+                    hasBookSource: book.bookSourceId != nil
                 )
                 guard finalValidation == .complete else {
                     throw OfflineDownloadManagerError.invalidPackage

@@ -109,16 +109,34 @@ final class OnlineChapterContentService {
                 expectedTOCTitle: ref.title
             )
             : nil
-        ) ?? ChapterFetcher.shared.buildNormalizedHTML(
+        )
+
+        // `buildNormalizedHTML` ESCAPES its input, so a chapter whose plain text still carries
+        // source markup (同人小说网 keeps `<img src="data:…,{json}">` 段評 bubbles inline) renders
+        // that markup as literal text. That is only ever correct for genuinely plain content, so
+        // log which branch produced the payload — a `fallback` line on a chapter whose package
+        // claims a normalized artifact means the artifact is missing from disk, not that the
+        // chapter is plain.
+        let resolved = html ?? ChapterFetcher.shared.buildNormalizedHTML(
             title: ref.title,
             content: package.content
         )
+        if html == nil {
+            AppLogger.cache("⟐ payload fallback", context: [
+                "index": index,
+                "claimsNormalized": package.normalizedHTMLFilename != nil,
+                "claimsRaw": package.rawHTMLFilename != nil,
+                "sanitizedMatchesRef": sanitizedURL == ref.url,
+                "sourceURL": String(sanitizedURL.prefix(120)),
+                "contentHasImg": package.content.contains("<img")
+            ])
+        }
 
         return ChapterContentPayload(
             index: index,
             title: title(at: index),
             plainText: package.content,
-            body: .html(html),
+            body: .html(resolved),
             sourceHref: sanitizedURL
         )
     }

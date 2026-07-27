@@ -97,6 +97,37 @@ struct OfflineDownloadManagerTests {
         #expect(fixture.store.books.first?.offlineDownloadState == .available)
     }
 
+    @Test("removing a download survives a reconcile pass that is mid-validation")
+    @MainActor
+    func removalBeatsConcurrentReconcile() async throws {
+        let fixture = makeFixture(chapters: 2)
+        defer { fixture.cleanup() }
+
+        await fixture.manager.start(
+            book: fixture.book,
+            selection: .range(0...1),
+            store: fixture.store
+        )
+        await fixture.manager.waitUntilIdle()
+        #expect(fixture.store.books.first?.offlineDownloadState == .available)
+
+        // Reconcile validates one chapter per await, and 下載管理 starts a pass on
+        // the same screen as the 移除 button. Hold the pass inside its first
+        // validation, remove the download, then let it finish: it must not write
+        // its pre-removal snapshot back (which also re-queued the download).
+        await fixture.artifactStore.holdValidations()
+        let reconcile = Task { await fixture.manager.reconcileInterruptedDownloads(store: fixture.store) }
+        await fixture.artifactStore.waitUntilValidating()
+        try await fixture.manager.remove(bookId: fixture.book.id, store: fixture.store)
+        await fixture.artifactStore.releaseValidations()
+        await reconcile.value
+        await fixture.manager.waitUntilIdle()
+
+        #expect(fixture.store.books.first?.offlineDownloadTask == nil)
+        #expect(fixture.store.books.first?.offlineDownloadState == BookOfflineDownloadState.none)
+        #expect(await fixture.fetcher.requestedIndices == [0, 1])
+    }
+
     @MainActor
     private func makeFixture(
         chapters: Int,
@@ -141,6 +172,7 @@ struct OfflineDownloadManagerTests {
             book: book,
             store: store,
             fetcher: fetcher,
+            artifactStore: artifactStore,
             manager: manager
         )
     }
@@ -151,6 +183,7 @@ private struct ManagerFixture {
     var book: ReadingBook
     var store: BookStore
     var fetcher: TestOfflineChapterFetcher
+    var artifactStore: TestOfflineChapterStore
     var manager: OfflineDownloadManager
 
     func cleanup() {
@@ -218,9 +251,32 @@ private actor TestOfflineChapterFetcher: ChapterFetching {
 
 private actor TestOfflineChapterStore: OfflineChapterStoring {
     private let ledger: TestArtifactLedger
+    private var holdsValidations = false
+    private var didEnterValidation = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var heldValidations: [CheckedContinuation<Void, Never>] = []
 
     init(ledger: TestArtifactLedger) {
         self.ledger = ledger
+    }
+
+    /// Suspends every subsequent `validationState` call until `releaseValidations()`.
+    func holdValidations() {
+        holdsValidations = true
+        didEnterValidation = false
+    }
+
+    /// Returns once a caller is parked inside `validationState`.
+    func waitUntilValidating() async {
+        guard !didEnterValidation else { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func releaseValidations() {
+        holdsValidations = false
+        let parked = heldValidations
+        heldValidations.removeAll()
+        for continuation in parked { continuation.resume() }
     }
 
     func validationState(
@@ -228,9 +284,19 @@ private actor TestOfflineChapterStore: OfflineChapterStoring {
         chapterIndex: Int,
         expectedSourceURL: String?,
         expectedTOCTitle: String?,
-        requiresManga: Bool
+        requiresManga: Bool,
+        hasBookSource: Bool
     ) async -> OfflineChapterValidation {
-        await ledger.contains(chapterIndex) ? .complete : .incomplete
+        if holdsValidations {
+            if !didEnterValidation {
+                didEnterValidation = true
+                let waiters = entryWaiters
+                entryWaiters.removeAll()
+                for continuation in waiters { continuation.resume() }
+            }
+            await withCheckedContinuation { heldValidations.append($0) }
+        }
+        return await ledger.contains(chapterIndex) ? .complete : .incomplete
     }
 
     func persistMangaImages(_ request: OfflineMangaChapterRequest) async throws {

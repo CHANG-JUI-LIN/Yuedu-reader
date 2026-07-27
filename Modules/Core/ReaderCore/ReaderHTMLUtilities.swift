@@ -243,10 +243,28 @@ enum ReaderHTMLUtilities {
     // MARK: - Paragraph review (段評) markers
 
     /// A tappable paragraph-review target, used to present the source's review web page.
+    ///
+    /// Most sources encode the review page as a URL we can derive up front. Some instead ship a
+    /// jsLib call that builds the URL itself at tap time (同人小说网's `createSvg(bid,cid,pid,…)`
+    /// signs it with the user's shared token) — those arrive with an empty `url` and a `sourceJS`
+    /// expression for `LegadoReviewActionRunner` to run against `sourceURL`'s session.
     struct ReviewTarget: Identifiable, Hashable {
         let url: String
         let title: String
-        var id: String { url }
+        let sourceJS: String
+        let sourceURL: String
+
+        init(url: String, title: String, sourceJS: String = "", sourceURL: String = "") {
+            self.url = url
+            self.title = title
+            self.sourceJS = sourceJS
+            self.sourceURL = sourceURL
+        }
+
+        /// True when the review page can only be obtained by running the source's own JS.
+        var requiresSourceJS: Bool { url.isEmpty && !sourceJS.isEmpty }
+
+        var id: String { url.isEmpty ? "\(sourceURL)#\(sourceJS)" : url }
     }
 
     /// Minimal source context needed to recover Legado image click-configs into tappable review links.
@@ -279,10 +297,22 @@ enum ReaderHTMLUtilities {
     }
 
     /// Decoded payload of a `ydreview://` review anchor: comment count + review URL + title.
+    /// `sourceJS`/`sourceURL` are set instead of `url` for bubbles whose review page is produced
+    /// by the source's own JS — see `ReviewTarget`.
     struct ReviewMarker: Equatable {
         let count: String
         let url: String
         let title: String
+        let sourceJS: String
+        let sourceURL: String
+
+        init(count: String, url: String, title: String, sourceJS: String = "", sourceURL: String = "") {
+            self.count = count
+            self.url = url
+            self.title = title
+            self.sourceJS = sourceJS
+            self.sourceURL = sourceURL
+        }
     }
 
     /// Custom URL scheme used internally to carry a paragraph-review action through the
@@ -490,16 +520,30 @@ enum ReaderHTMLUtilities {
         guard let dRange = href.range(of: "d=") else { return nil }
         let encoded = String(href[dRange.upperBound...])
         guard let data = base64URLDecode(encoded),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-              let url = obj["u"], !url.isEmpty
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String]
         else { return nil }
-        return ReviewMarker(count: obj["c"] ?? "", url: url, title: obj["t"] ?? "")
+        let url = obj["u"] ?? ""
+        let sourceJS = obj["j"] ?? ""
+        // A marker is meaningful with either a ready URL or a source-JS action to run.
+        guard !url.isEmpty || !sourceJS.isEmpty else { return nil }
+        return ReviewMarker(
+            count: obj["c"] ?? "",
+            url: url,
+            title: obj["t"] ?? "",
+            sourceJS: sourceJS,
+            sourceURL: obj["s"] ?? ""
+        )
     }
 
     /// Convenience wrapper producing a `ReviewTarget` for sheet presentation.
     static func reviewTarget(fromHref href: String) -> ReviewTarget? {
         guard let marker = decodeReviewHref(href) else { return nil }
-        return ReviewTarget(url: marker.url, title: marker.title)
+        return ReviewTarget(
+            url: marker.url,
+            title: marker.title,
+            sourceJS: marker.sourceJS,
+            sourceURL: marker.sourceURL
+        )
     }
 
     /// Title-level Qidian reviews use the sentinel paragraph ID `-1`. Recognizing the decoded
@@ -676,8 +720,22 @@ enum ReaderHTMLUtilities {
         }
 
         guard let action = legadoClickAction(fromConfigSuffix: suffix),
-              let target = reviewTarget(forLegadoAction: action, context: reviewContext),
-              let href = reviewHref(count: "", url: target.url, title: target.title)
+              let target = reviewTarget(
+                forLegadoAction: action,
+                context: reviewContext,
+                // Only a genuine click directive may be handed back to the source runtime on tap.
+                // `js` is in `legadoClickAction`'s key list because some sources put the review
+                // call there, but it is also Legado's *render* option (`UrlOption.js`, which
+                // produces the image URL) — running that on tap would just redraw the bubble.
+                allowsSourceJSFallback: legadoConfigHasClickDirective(suffix)
+              ),
+              let href = reviewHref(
+                count: "",
+                url: target.url,
+                title: target.title,
+                sourceJS: target.sourceJS,
+                sourceURL: target.sourceURL
+              )
         else {
             return cleanedTag
         }
@@ -701,7 +759,7 @@ enum ReaderHTMLUtilities {
     /// (`{'style':'FULL','type':'qd',"js":"showCmt('u','本章说' )"}`), which is invalid strict
     /// JSON — so the tap was silently dropped. GSON (Legado on Android) accepts the lenient
     /// form; we try strict JSON first, then normalize single-quoted tokens and retry.
-    private static func legadoClickConfigObject(fromConfigSuffix suffix: String) -> [String: Any]? {
+    static func legadoClickConfigObject(fromConfigSuffix suffix: String) -> [String: Any]? {
         var json = suffix.trimmingCharacters(in: .whitespacesAndNewlines)
         if json.hasPrefix(",") { json.removeFirst() }
         json = json.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -788,9 +846,19 @@ enum ReaderHTMLUtilities {
         return nil
     }
 
+    /// Whether a `,{json}` click-config carries an explicit click directive (as opposed to only
+    /// the `js` render option).
+    private static func legadoConfigHasClickDirective(_ suffix: String) -> Bool {
+        guard let object = legadoClickConfigObject(fromConfigSuffix: suffix) else { return false }
+        return ["click", "action"].contains {
+            ((object[$0] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        }
+    }
+
     private static func reviewTarget(
         forLegadoAction action: String,
-        context: LegadoReviewContext?
+        context: LegadoReviewContext?,
+        allowsSourceJSFallback: Bool = false
     ) -> ReviewTarget? {
         let trimmed = action.trimmingCharacters(in: .whitespacesAndNewlines)
         if let args = legadoFunctionArgs(named: "showCmt", in: trimmed)
@@ -851,7 +919,30 @@ enum ReaderHTMLUtilities {
             }
         }
 
+        // Legado never special-cases the click action: it evaluates the click-config JS in the
+        // source's own runtime and lets the source decide what to open (`java.showBrowser`). The
+        // named handlers above only exist because those URLs can be derived statically, which is
+        // cheaper. Everything else is still a real, tappable review — 同人小说网's 段評 bubbles are
+        // `createSvg(bid,cid,pid,count,nano)`, a jsLib call that signs its own URL with the user's
+        // shared token, so nothing here could reconstruct it. Returning nil dropped all 67 bubbles
+        // per chapter: not tappable, and — because the 氣泡設定 entry is gated on the chapter
+        // carrying review links — the bubble settings screen never appeared either.
+        if allowsSourceJSFallback, let context, isSourceFunctionCall(trimmed) {
+            return ReviewTarget(url: "", title: "段評", sourceJS: trimmed, sourceURL: context.sourceURL)
+        }
+
         return nil
+    }
+
+    /// Whether an action is a bare source-function call (`name(args…)`) we can hand back to the
+    /// source's runtime. Keeps arbitrary click-config junk — URLs, statements, empty strings —
+    /// from being sent to `eval`-adjacent evaluation.
+    private static func isSourceFunctionCall(_ action: String) -> Bool {
+        guard action.count <= 512, !action.contains("\n"), action.hasSuffix(")") else { return false }
+        return action.range(
+            of: #"^[A-Za-z_$][A-Za-z0-9_$.]*\s*\(.*\)$"#,
+            options: .regularExpression
+        ) != nil
     }
 
     private enum QidianReviewKind {
@@ -1121,8 +1212,19 @@ enum ReaderHTMLUtilities {
         return components.string ?? cleanBase + path
     }
 
-    private static func reviewHref(count: String, url: String, title: String) -> String? {
-        let payload: [String: String] = ["c": count, "u": url, "t": title]
+    private static func reviewHref(
+        count: String,
+        url: String,
+        title: String,
+        sourceJS: String = "",
+        sourceURL: String = ""
+    ) -> String? {
+        guard !url.isEmpty || !sourceJS.isEmpty else { return nil }
+        var payload: [String: String] = ["c": count, "u": url, "t": title]
+        if !sourceJS.isEmpty {
+            payload["j"] = sourceJS
+            payload["s"] = sourceURL
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let encoded = base64URLEncode(data)
         else { return nil }

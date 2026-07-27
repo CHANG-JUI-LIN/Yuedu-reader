@@ -128,7 +128,11 @@ struct ChapterCacheRepository: Sendable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
         let effectiveTitle = canonicalTitle?.isEmpty == false ? canonicalTitle! : (displayTOCTitle ?? "")
-        let normalizedHTML = storeNormalizedHTML
+        let hasRawHTML = rawHTML?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        // A plain-text rebuild is only persisted alongside its raw HTML — see
+        // `saveChapterArtifact`, which enforces the same rule for every writer.
+        let persistsNormalizedHTML = storeNormalizedHTML && hasRawHTML
+        let normalizedHTML = persistsNormalizedHTML
             ? ChapterFetcher.shared.buildNormalizedHTML(title: effectiveTitle, content: content)
             : nil
         let package = ChapterPackage(
@@ -139,8 +143,8 @@ struct ChapterCacheRepository: Sendable {
             canonicalTitle: canonicalTitle?.isEmpty == false ? canonicalTitle : nil,
             content: content,
             contentChecksum: cacheChecksum(for: content),
-            rawHTMLFilename: rawHTML?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? "\(chapterIndex).raw.html" : nil,
-            normalizedHTMLFilename: storeNormalizedHTML ? "\(chapterIndex).normalized.xhtml" : nil,
+            rawHTMLFilename: hasRawHTML ? "\(chapterIndex).raw.html" : nil,
+            normalizedHTMLFilename: persistsNormalizedHTML ? "\(chapterIndex).normalized.xhtml" : nil,
             savedAt: Date(),
             state: .cached,
             failureReason: nil
@@ -278,14 +282,21 @@ struct ChapterCacheRepository: Sendable {
         // old offline downloads here (not only from `isChapterCached`) so opening
         // an already-downloaded chapter can never miss its valid `.txt` body.
         upgradeLegacyChapterCacheIfNeeded(bookId: bookId, chapterIndex: chapterIndex)
+        // "No metadata at all" is the ordinary not-cached-yet path and is checked
+        // once per chapter by the offline validator — logging it would drown the
+        // rejections below, which are the ones that mean a cache went bad.
         guard let metadata = loadCachedChapterMetadataSync(bookId: bookId, chapterIndex: chapterIndex) else {
-            print("[CacheDebug] ch=\(chapterIndex) FAIL: no metadata")
             return nil
         }
         if let expectedSourceURL,
             normalizedURLKey(metadata.sourceURL) != normalizedURLKey(expectedSourceURL)
         {
-            print("[CacheDebug] ch=\(chapterIndex) FAIL: URL mismatch saved=\(metadata.sourceURL ?? "nil") expected=\(expectedSourceURL)")
+            AppLogger.cache("⟐ chapterPackage miss", context: [
+                "index": chapterIndex,
+                "reason": "urlMismatch",
+                "saved": String((metadata.sourceURL ?? "nil").prefix(120)),
+                "expected": String(expectedSourceURL.prefix(120)),
+            ])
             return nil
         }
         if let expectedTOCTitle,
@@ -298,7 +309,12 @@ struct ChapterCacheRepository: Sendable {
                 && !normalizedExpected.contains(normalizedCached)
                 && !normalizedCached.contains(normalizedExpected)
             {
-                print("[CacheDebug] ch=\(chapterIndex) FAIL: title mismatch saved='\(normalizedCached)' expected='\(normalizedExpected)'")
+                AppLogger.cache("⟐ chapterPackage miss", context: [
+                    "index": chapterIndex,
+                    "reason": "titleMismatch",
+                    "saved": String(normalizedCached.prefix(60)),
+                    "expected": String(normalizedExpected.prefix(60)),
+                ])
                 return nil
             }
         }
@@ -312,11 +328,22 @@ struct ChapterCacheRepository: Sendable {
 
         if metadata.state == .cached {
             guard let artifact, !body.isEmpty, artifact.contentChecksum == cacheChecksum(for: body) else {
-                print("[CacheDebug] ch=\(chapterIndex) FAIL: artifact=\(artifact != nil) bodyLen=\(body.count) checksumMatch=\(artifact.map { $0.contentChecksum == cacheChecksum(for: body) } ?? false)")
+                AppLogger.cache("⟐ chapterPackage miss", context: [
+                    "index": chapterIndex,
+                    "reason": "artifact",
+                    "hasArtifact": artifact != nil,
+                    "bodyLen": body.count,
+                    "checksumMatch": artifact.map { $0.contentChecksum == cacheChecksum(for: body) } ?? false,
+                ])
                 return nil
             }
             if ChapterFetcher.shared.isRejectedChapterContent(body, title: cachedTitle) {
-                print("[CacheDebug] ch=\(chapterIndex) FAIL: content rejected bodyLen=\(body.count) title='\(cachedTitle)'")
+                AppLogger.cache("⟐ chapterPackage miss", context: [
+                    "index": chapterIndex,
+                    "reason": "contentRejected",
+                    "bodyLen": body.count,
+                    "title": String(cachedTitle.prefix(60)),
+                ])
                 return nil
             }
             return ChapterPackage(
@@ -508,8 +535,15 @@ struct ChapterCacheRepository: Sendable {
             rawFilename = nil
         }
 
+        // A normalized copy without its raw HTML is exactly the legacy shape
+        // `shouldRefetchStrippedRenderArtifacts` purges and refetches. Writing one
+        // here made the read path delete and refetch the chapter on *every* open,
+        // and re-queued it for any offline download that had counted it complete —
+        // the refetch reproduced the same shape, so the loop never terminated.
+        // Without raw HTML the normalized copy is always the plain-text rebuild the
+        // reader falls back to on its own, so dropping it changes no rendering.
         let normalizedFilename: String?
-        if let normalizedHTML {
+        if let normalizedHTML, rawFilename != nil {
             do {
                 try normalizedHTML.write(to: normalizedPath, atomically: true, encoding: .utf8)
             } catch {

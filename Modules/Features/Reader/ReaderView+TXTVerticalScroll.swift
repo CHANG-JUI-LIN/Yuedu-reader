@@ -41,7 +41,15 @@ extension ReaderView {
                 },
                 onInternalLinkTap: { href in
                     if let target = ReaderHTMLUtilities.reviewTarget(fromHref: href) {
-                        reviewTarget = target
+                        // Sources that build their review URL in jsLib (同人小说网) resolve through
+                        // their own runtime first; `reviewTarget` only ever holds a real URL.
+                        guard target.requiresSourceJS else {
+                            reviewTarget = target
+                            return
+                        }
+                        Task { @MainActor in
+                            reviewTarget = try? await LegadoReviewActionRunner.shared.resolve(target)
+                        }
                         return
                     }
                     // duokan popup footnote: show the note in place rather than jumping to the tail.

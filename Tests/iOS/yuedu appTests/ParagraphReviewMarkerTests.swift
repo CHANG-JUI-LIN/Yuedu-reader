@@ -132,6 +132,52 @@ struct ParagraphReviewMarkerTests {
         #expect(marker.title == "起點段評")
     }
 
+    /// 同人小说网 ships 段評 bubbles whose click action is a jsLib call, not a URL: the source
+    /// signs the review page with the user's shared token inside `createSvg`. Before this was
+    /// handled, all 67 bubbles in a chapter came out as bare `<img>` — untappable, and the 氣泡設定
+    /// entry (gated on the chapter carrying review links) never appeared.
+    @Test("carries a source-JS image click config as a runnable review action")
+    func carriesSourceJSImageClickConfigAsReviewAction() throws {
+        let raw = #"<p>段落<img src="data:image/svg+xml;base64,PHN2Zy8+,{"style":"TEXT","type":"qdzw","click":"createSvg(123,456,7,99,111222)","js":"createSvg(123,456,7,99,111222)"}"></p>"#
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "起点限免（同人小说网）",
+                sourceURL: "https://m.qidian.com#同人小说网"
+            )
+        )
+
+        #expect(cleaned.contains(#"class="yd-review-image""#))
+        #expect(cleaned.contains(#"data-yd-imgstyle="text""#))
+        #expect(!cleaned.contains(#""click":"#))
+
+        let href = try #require(firstReviewHref(in: cleaned))
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
+        #expect(marker.url.isEmpty)
+        #expect(marker.sourceJS == "createSvg(123,456,7,99,111222)")
+        #expect(marker.sourceURL == "https://m.qidian.com#同人小说网")
+
+        let target = try #require(ReaderHTMLUtilities.reviewTarget(fromHref: href))
+        #expect(target.requiresSourceJS)
+    }
+
+    /// The source-JS fallback must stay a *function call* gate — a click config carrying prose,
+    /// a bare URL, or a multi-statement script is not something to hand back to the runtime.
+    @Test("does not turn a non-call click config into a review action")
+    func ignoresNonCallClickConfig() throws {
+        let raw = #"<p>段落<img src="data:image/svg+xml;base64,PHN2Zy8+,{"style":"text","click":"https://example.com/notes"}"></p>"#
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "測試源",
+                sourceURL: "https://example.com"
+            )
+        )
+
+        #expect(!cleaned.contains(#"class="yd-review-image""#))
+        #expect(cleaned.contains(#"src="data:image/svg+xml;base64,PHN2Zy8+""#))
+    }
+
     @Test("rewrites qidian title review image with a negative paragraph id")
     func rewritesQidianTitleReviewImageWithNegativeParagraphID() throws {
         let svg = ##"<svg width="850" height="850" xmlns="http://www.w3.org/2000/svg"><rect width="850" height="850" rx="180" fill="#A9A9A9"/><text x="425" y="425">2</text></svg>"##

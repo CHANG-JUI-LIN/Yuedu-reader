@@ -1150,8 +1150,13 @@ class BookStore: ObservableObject, BookProvider {
         bookId: UUID,
         offlineChapterStore: any OfflineChapterStoring = OfflineChapterStore()
     ) async throws {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        guard books.contains(where: { $0.id == bookId }) else { return }
         try await offlineChapterStore.removeBook(bookId: bookId)
+        // `books` can be mutated while the artifact removal is in flight (imports
+        // insert at 0, deletions remove rows), so the row has to be located again:
+        // an index resolved before the await could now address a different book,
+        // or be past the end of the array.
+        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
         if var chapters = books[idx].onlineChapters {
             for chapterIndex in chapters.indices {
                 chapters[chapterIndex].cachedFilename = nil

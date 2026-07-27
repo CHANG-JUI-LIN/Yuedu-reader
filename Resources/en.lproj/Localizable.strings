@@ -153,6 +153,7 @@
 "已解析 EPUB 結構，點擊下方按鈕匯入" = "EPUB parsed. Tap below to import.";
 "已讀取" = "Read";
 "已讀完" = "Finished";
+"已讀 %d%%" = "%d%% read";
 "已開啟" = "On";
 "帳號" = "Account";
 "引擎" = "Engine";
@@ -1553,3 +1554,7 @@
 "更多客製化功能" = "More Customization";
 "更多個人化設定正在開發中，敬請期待" = "More personalization features are on the way.";
 "系統語音最快 %@（iOS 限制），需要更快請改用網路語音" = "System voice tops out at %@ (iOS limit); use a network voice to go faster";
+
+/* Paragraph review (段評) source-JS actions */
+"找不到這則段評所屬的書源，可能已被刪除。" = "The book source for this comment could not be found — it may have been deleted.";
+"「%@」沒有回應這則段評，可能需要先在書源設定填寫 Token。" = "\"%@\" did not respond to this comment. You may need to enter a token in its book-source settings first.";

@@ -2025,7 +2025,23 @@ final class CoreTextPageViewController: UIViewController {
     }
 
     /// Presents the book source's paragraph-review (段評) web page in a bottom sheet.
+    ///
+    /// Some sources don't publish a review URL — they publish a jsLib call that builds one at tap
+    /// time (同人小说网 signs it with the user's shared token). Those resolve through the source's
+    /// runtime first; the failure is reported rather than swallowed, because a bubble that does
+    /// nothing when tapped is indistinguishable from a broken reader.
     private func presentReviewSheet(target: ReaderHTMLUtilities.ReviewTarget) {
+        guard !target.requiresSourceJS else {
+            Task { @MainActor in
+                do {
+                    let resolved = try await LegadoReviewActionRunner.shared.resolve(target)
+                    self.presentReviewSheet(target: resolved)
+                } catch {
+                    self.presentReviewFailure(error)
+                }
+            }
+            return
+        }
         let sheetTitle = target.title.isEmpty ? localized("段評") : target.title
         weak var weakHost: UIViewController?
         let view = JsBridgeBrowserView(urlString: target.url, title: sheetTitle) { _ in
@@ -2038,6 +2054,16 @@ final class CoreTextPageViewController: UIViewController {
             sheet.prefersGrabberVisible = true
         }
         present(host, animated: true)
+    }
+
+    private func presentReviewFailure(_ error: Error) {
+        let alert = UIAlertController(
+            title: localized("段評"),
+            message: error.localizedDescription,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: localized("好"), style: .default))
+        present(alert, animated: true)
     }
 }
 

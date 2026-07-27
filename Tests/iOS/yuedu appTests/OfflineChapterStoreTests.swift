@@ -134,6 +134,63 @@ struct OfflineChapterStoreTests {
         #expect(!FileManager.default.fileExists(atPath: mangaDirectory.path))
     }
 
+    @Test("a readable cached chapter counts as downloaded")
+    func cachedChapterIsComplete() async throws {
+        let roots = try makeRoots()
+        defer { try? FileManager.default.removeItem(at: roots.container) }
+        let bookId = UUID()
+        let repository = ChapterCacheRepository(rootDirectory: roots.storage.textRoot)
+        _ = try repository.saveToCache(
+            content: "第一章的內文，足夠長到不會被拒絕。",
+            bookId: bookId,
+            chapterIndex: 0,
+            sourceURL: "https://example.com/1",
+            tocTitle: "第一章"
+        )
+        let store = OfflineChapterStore(roots: roots.storage, imageDownloader: StubImageDownloader())
+
+        let state = await store.validationState(
+            bookId: bookId,
+            chapterIndex: 0,
+            expectedSourceURL: "https://example.com/1",
+            expectedTOCTitle: "第一章",
+            requiresManga: false,
+            hasBookSource: true
+        )
+
+        #expect(state == .complete)
+    }
+
+    @Test("a failed-chapter marker is not a downloaded chapter")
+    func failureMarkerIsIncomplete() async throws {
+        let roots = try makeRoots()
+        defer { try? FileManager.default.removeItem(at: roots.container) }
+        let bookId = UUID()
+        let repository = ChapterCacheRepository(rootDirectory: roots.storage.textRoot)
+        repository.saveFailureMarker(
+            bookId: bookId,
+            chapterIndex: 0,
+            sourceURL: "https://example.com/1",
+            tocTitle: "第一章",
+            reason: "network"
+        )
+        let store = OfflineChapterStore(roots: roots.storage, imageDownloader: StubImageDownloader())
+
+        // The package loader hands failure markers back as `.failed` packages with
+        // an empty body. Counting one as downloaded let a download skip the chapter
+        // entirely and still report 完成.
+        let state = await store.validationState(
+            bookId: bookId,
+            chapterIndex: 0,
+            expectedSourceURL: "https://example.com/1",
+            expectedTOCTitle: "第一章",
+            requiresManga: false,
+            hasBookSource: true
+        )
+
+        #expect(state == .incomplete)
+    }
+
     private func makeMangaRequest(bookId: UUID) -> OfflineMangaChapterRequest {
         OfflineMangaChapterRequest(
             bookId: bookId,

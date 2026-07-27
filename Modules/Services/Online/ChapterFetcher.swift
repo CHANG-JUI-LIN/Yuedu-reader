@@ -48,7 +48,16 @@ struct ChapterFetcher {
         rawHTMLContent: String?,
         reviewContext: ReaderHTMLUtilities.LegadoReviewContext? = nil
     ) async -> String {
-        let raw = rawHTMLContent ?? ""
+        // Images whose real URL is produced by the source's own JS (Legado `UrlOption.js`) have to
+        // be resolved HERE, while the session that just parsed this chapter still holds the
+        // per-image state the source set during parsing — see `LegadoImageSourceResolver`.
+        // Detached because resolution blocks on the JS engine's serial queue.
+        let raw = await Task.detached(priority: .userInitiated) { [rawHTMLContent, reviewContext] in
+            LegadoImageSourceResolver.resolveDeferredSources(
+                in: rawHTMLContent ?? "",
+                reviewContext: reviewContext
+            )
+        }.value
         let rawTrimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let looksHTML = !rawTrimmed.isEmpty && Self.containsLikelyHTMLTags(raw)
         AppLogger.parse("⟐ buildRenderableNormalizedHTML", context: [

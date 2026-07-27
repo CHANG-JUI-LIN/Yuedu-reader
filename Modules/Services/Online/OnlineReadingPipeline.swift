@@ -20,11 +20,39 @@ enum OnlineChapterCacheWritePolicy {
         hasBookSource && (package.rawHTMLFilename != nil || package.normalizedHTMLFilename != nil)
     }
 
+    /// Legacy caches written before the reader stopped re-saving chapters from
+    /// plain text: they kept a normalized copy but lost the raw HTML, so their
+    /// normalized copy is missing HTML-only inline markers (段評 badges).
+    /// `ChapterCacheRepository.saveChapterArtifact` no longer produces this shape,
+    /// so a refetch always lands somewhere better than where it started.
     static func shouldRefetchStrippedRenderArtifacts(
         package: ChapterPackage,
         hasBookSource: Bool
     ) -> Bool {
         hasBookSource && package.rawHTMLFilename == nil && package.normalizedHTMLFilename != nil
+    }
+
+    /// The single definition of "this cached chapter is good enough to read".
+    ///
+    /// The read path deletes any cached chapter this rejects and refetches it, so
+    /// the offline-download validator must ask the same question. When it did not,
+    /// a download could report 完成 for chapters the reader then purged on open,
+    /// and the next reconcile pass re-queued the whole book.
+    static func isReusableCachedPackage(
+        _ package: ChapterPackage,
+        hasBookSource: Bool
+    ) -> Bool {
+        guard package.state == .cached, !package.content.isEmpty else { return false }
+        if ChapterFetchManager.isSuspiciousChapterContent(package.content) { return false }
+        if !hasBookSource,
+            ChapterFetchManager.isCollapsedBrowserImportedChapterContent(package.content)
+        {
+            return false
+        }
+        return !shouldRefetchStrippedRenderArtifacts(
+            package: package,
+            hasBookSource: hasBookSource
+        )
     }
 
     static func contentFilename(chapterIndex: Int) -> String {
@@ -128,18 +156,10 @@ actor ChapterFetchManager {
     }
 
     private func isReusableCachedPackage(_ package: ChapterPackage, for book: ReadingBook) -> Bool {
-        guard package.state == .cached, !package.content.isEmpty else { return false }
-        if Self.isSuspiciousChapterContent(package.content) { return false }
-        if book.bookSourceId == nil, Self.isCollapsedBrowserImportedChapterContent(package.content) {
-            return false
-        }
-        if OnlineChapterCacheWritePolicy.shouldRefetchStrippedRenderArtifacts(
-            package: package,
+        OnlineChapterCacheWritePolicy.isReusableCachedPackage(
+            package,
             hasBookSource: book.bookSourceId != nil
-        ) {
-            return false
-        }
-        return true
+        )
     }
 
     func chapterState(bookId: UUID, chapterIndex: Int) -> OnlineChapterLoadState {

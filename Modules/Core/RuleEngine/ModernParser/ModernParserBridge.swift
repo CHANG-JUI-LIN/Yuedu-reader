@@ -407,6 +407,46 @@ class ModernParserBridge {
         return jsEngine.evaluateBytes(script, data: data, bindings: ["src": src])
     }
 
+    /// Runs `ruleContent.imageDecode` purely for its side effects, with no image bytes to hand.
+    ///
+    /// Legado calls the rule after an image is decoded, and sources hang per-image bookkeeping off
+    /// it — 同人小说网 clears the memory flag that makes `createSvg()` draw the 段評 bubble, so the
+    /// next call (the user's tap) opens the review page instead. Images whose bytes we never
+    /// downloaded because the source's own JS produced them (`LegadoImageSourceResolver`) still owe
+    /// the source that call. `result` is bound to an empty byte array: the rules that use this hook
+    /// return `result` untouched, and the return value is irrelevant here.
+    func runImageDecodeHook(src: String, ruleJs: String) {
+        var script = ruleJs.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !script.isEmpty else { return }
+        if script.hasPrefix("@js:") {
+            script = String(script.dropFirst(4))
+        } else if script.lowercased().hasPrefix("<js>"),
+                  let closeRange = script.range(of: "</js>", options: [.caseInsensitive, .backwards]) {
+            script = String(script[script.index(script.startIndex, offsetBy: 4)..<closeRange.lowerBound])
+        }
+        _ = jsEngine.evaluate(script, result: [Int](), bindings: ["src": src])
+    }
+
+    /// Evaluates a bare source-JS expression with `jsLib` in scope and returns its string result.
+    ///
+    /// This is Legado's `AnalyzeUrl` `UrlOption.js` / image click-config contract: the source ships
+    /// a function call, we run it in the source's own runtime, and what it returns is the answer.
+    /// jsLib is hash-guarded, so the ensure call is a no-op once loaded.
+    func evaluateSourceScript(_ script: String, bindings: [String: Any] = [:]) -> String? {
+        let trimmed = script.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        evaluateJsLibIfNeeded()
+        return jsEngine.evaluate(trimmed, bindings: bindings)
+    }
+
+    /// Presents URLs that source JS opens via `java.showBrowser` / `java.startBrowser`.
+    /// Reading a 段評 bubble's click action means running the source's JS and seeing where it
+    /// wants to send the user, so this has to be reachable from outside the parsing pipeline.
+    var browserPresentHandler: ((String, String, @escaping (String?) -> Void) -> Void)? {
+        get { jsEngine.browserPresentHandler }
+        set { jsEngine.browserPresentHandler = newValue }
+    }
+
     /// Legado-fork `hasMoreRule`: a JS expression run against the fetched page
     /// body (`result`) that answers whether a next result page exists.
     /// Returns nil when evaluation fails so callers fall back to heuristics.
