@@ -129,6 +129,52 @@ final class CookieStore {
         save()
     }
 
+    /// Removes one cookie while preserving every other cookie for the site.
+    ///
+    /// When `includingRelatedDomains` is true, parent and sibling hosts are included.
+    /// This is needed for double-submit CSRF sites: a source may mint a host-only token
+    /// on `m.example.com` but another rule reads it through `example.com`. Removing only
+    /// the parent-domain copy leaves the stale sibling value available to that lookup.
+    func remove(
+        url: String,
+        key: String,
+        includingRelatedDomains: Bool = false
+    ) {
+        guard !key.isEmpty,
+              let cookieURL = URL(string: Self.normalizedURLString(url)),
+              let host = cookieURL.host
+        else { return }
+
+        let domainMatches: (String) -> Bool = { rawDomain in
+            let domain = rawDomain.hasPrefix(".")
+                ? String(rawDomain.dropFirst())
+                : rawDomain
+            if includingRelatedDomains {
+                return domain == host
+                    || domain.hasSuffix("." + host)
+                    || host.hasSuffix("." + domain)
+            }
+            return domain == host
+        }
+
+        for cookie in HTTPCookieStorage.shared.cookies ?? []
+        where cookie.name == key && domainMatches(cookie.domain) {
+            HTTPCookieStorage.shared.deleteCookie(cookie)
+        }
+
+        lock.lock()
+        for domain in Array(store.keys) where domainMatches(domain) {
+            let remaining = removingCookie(named: key, from: store[domain] ?? "")
+            if remaining.isEmpty {
+                store.removeValue(forKey: domain)
+            } else {
+                store[domain] = remaining
+            }
+        }
+        lock.unlock()
+        save()
+    }
+
     /// Wipes all persisted cookies and clears HTTPCookieStorage.
     func clearAll() {
         HTTPCookieStorage.shared.removeCookies(since: .distantPast)
@@ -220,5 +266,15 @@ final class CookieStore {
             }
         }
         return dict.map { "\($0.key)=\($0.value)" }.joined(separator: "; ")
+    }
+
+    private func removingCookie(named key: String, from raw: String) -> String {
+        raw.components(separatedBy: ";").compactMap { segment -> String? in
+            let trimmed = segment.trimmingCharacters(in: .whitespaces)
+            let parts = trimmed.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2 else { return trimmed.isEmpty ? nil : trimmed }
+            let name = parts[0].trimmingCharacters(in: .whitespaces)
+            return name == key ? nil : trimmed
+        }.joined(separator: "; ")
     }
 }

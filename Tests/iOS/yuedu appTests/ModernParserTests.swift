@@ -1971,6 +1971,30 @@ struct JSCoreEngineTests {
         #expect(engine.evaluate("cookie.getKey('\(domain)', 'token')") == "t123")
     }
 
+    @Test("named cookie removal clears related domains without deleting login cookies")
+    func namedCookieRemovalPreservesOtherCookies() {
+        let root = "csrf-\(UUID().uuidString.prefix(8)).example.com"
+        let parent = "https://\(root)"
+        let mobile = "https://m.\(root)"
+        CookieStore.shared.set(url: parent, cookie: "_csrfToken=parent-stale; login=parent-login")
+        CookieStore.shared.set(url: mobile, cookie: "_csrfToken=mobile-stale; session=mobile-session")
+        defer {
+            CookieStore.shared.remove(url: parent)
+            CookieStore.shared.remove(url: mobile)
+        }
+
+        CookieStore.shared.remove(
+            url: parent,
+            key: "_csrfToken",
+            includingRelatedDomains: true
+        )
+
+        #expect(CookieStore.shared.getKey(url: parent, key: "_csrfToken").isEmpty)
+        #expect(CookieStore.shared.getKey(url: mobile, key: "_csrfToken").isEmpty)
+        #expect(CookieStore.shared.getKey(url: parent, key: "login") == "parent-login")
+        #expect(CookieStore.shared.getKey(url: mobile, key: "session") == "mobile-session")
+    }
+
     @Test("source.getLoginHeader bridges to handler")
     func sourceGetLoginHeader() {
         let engine = JSCoreEngine()

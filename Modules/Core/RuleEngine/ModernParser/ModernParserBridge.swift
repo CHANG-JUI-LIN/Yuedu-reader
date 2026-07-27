@@ -1259,6 +1259,18 @@ class ModernParserBridge {
         let source = sourceRuleData.source
         let rawExploreUrl = source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rawExploreUrl.isEmpty else { return [] }
+        let traceQidianDiscover = rawExploreUrl.contains("_csrfToken")
+        if traceQidianDiscover {
+            let variable = runtimeStateStore.sourceVariableJSON(for: source.bookSourceUrl) ?? ""
+            NSLog(
+                "❖DISC TRACE❖ source=%@ stage=explore.begin page=%d jsLibLen=%d variableLen=%d engineGen=%llu",
+                source.bookSourceName,
+                page,
+                source.jsLib.count,
+                variable.count,
+                jsEngine.generation
+            )
+        }
 
         var ruleStr = rawExploreUrl
         let isJS = Self.isJSExploreRule(rawExploreUrl)
@@ -1274,6 +1286,15 @@ class ModernParserBridge {
             // Snapshot now: any later `jsEngine.evaluate` clears `lastError`, so
             // reading it at log time would report "none" for a rule that threw.
             exploreJSError = jsEngine.lastError
+        }
+        if traceQidianDiscover {
+            NSLog(
+                "❖DISC TRACE❖ source=%@ stage=explore.evaluated isJS=%@ payloadLen=%d jsError=%@",
+                source.bookSourceName,
+                isJS ? "true" : "false",
+                ruleStr.count,
+                exploreJSError ?? "none"
+            )
         }
 
         let result: [DiscoverItem]
@@ -1321,6 +1342,15 @@ class ModernParserBridge {
             "selects": result.filter { ($0.type ?? "") == "select" }.count,
             "head": String(ruleStr.prefix(240)).replacingOccurrences(of: "\n", with: " ")
         ])
+        if traceQidianDiscover {
+            NSLog(
+                "❖DISC TRACE❖ source=%@ stage=explore.decoded items=%d filters=%d navigable=%d",
+                source.bookSourceName,
+                result.count,
+                result.filter { ($0.type ?? "") == "select" }.count,
+                result.filter { !($0.url ?? "").isEmpty }.count
+            )
+        }
 
         return result
     }
@@ -1569,7 +1599,44 @@ class ModernParserBridge {
         guard source.exploreUrl.contains("_csrfToken") else { return }
         let searchUrl = source.searchUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !searchUrl.isEmpty else { return }
-        _ = try? await fetch(ruleUrl: searchUrl, key: "1", page: 1)
+        let cookieHost = "https://qidian.com"
+        let before = CookieStore.shared.getKey(url: cookieHost, key: "_csrfToken")
+        NSLog(
+            "❖DISC TRACE❖ source=%@ stage=csrf.prime.begin tokenBefore=%d searchRuleLen=%d",
+            source.bookSourceName,
+            before.count,
+            searchUrl.count
+        )
+        // 同人小說網 can mint a random `_csrfToken` for its review API. 起點's
+        // ranking API instead requires a token issued by the current web session.
+        // Merely loading the search page while the random token is present does not
+        // replace it, leaving query and cookie populated but session-invalid. Remove
+        // only this named cookie across qidian's related hosts, preserving login and
+        // every other site cookie, then let the search page issue a fresh token.
+        CookieStore.shared.remove(
+            url: cookieHost,
+            key: "_csrfToken",
+            includingRelatedDomains: true
+        )
+        do {
+            let (body, finalURL) = try await fetch(ruleUrl: searchUrl, key: "1", page: 1)
+            let after = CookieStore.shared.getKey(url: cookieHost, key: "_csrfToken")
+            NSLog(
+                "❖DISC TRACE❖ source=%@ stage=csrf.prime.end tokenAfter=%d bodyLen=%d finalHost=%@",
+                source.bookSourceName,
+                after.count,
+                body.count,
+                URL(string: finalURL)?.host ?? "nil"
+            )
+        } catch {
+            let after = CookieStore.shared.getKey(url: cookieHost, key: "_csrfToken")
+            NSLog(
+                "❖DISC TRACE❖ source=%@ stage=csrf.prime.error tokenAfter=%d error=%@",
+                source.bookSourceName,
+                after.count,
+                error.localizedDescription
+            )
+        }
     }
 
     func fetch(
@@ -1685,6 +1752,18 @@ class ModernParserBridge {
             ?? String(data: data, encoding: .utf8) ?? ""
         let finalUrl = (response as? HTTPURLResponse)?.url?.absoluteString
             ?? analyzeUrl.url
+        if sourceRuleData.source.exploreUrl.contains("_csrfToken"),
+           let path = request.url?.path,
+           path.contains("/majax/") {
+            NSLog(
+                "❖DISC TRACE❖ source=%@ stage=section.response path=%@ status=%d bodyLen=%d bodyHead=%@",
+                sourceRuleData.source.bookSourceName,
+                path,
+                (response as? HTTPURLResponse)?.statusCode ?? -1,
+                body.count,
+                String(body.prefix(160)).replacingOccurrences(of: "\n", with: " ")
+            )
+        }
 
         // The status is otherwise dropped here: a 403 error envelope reaches the rule
         // engine as an ordinary body, matches no rule, and search/TOC just come back
@@ -1866,6 +1945,15 @@ class ModernParserBridge {
         guard newHash != evaluatedJsLibHash else { return }
 
         _ = jsEngine.evaluate(jsLib)
+        if sourceRuleData.source.exploreUrl.contains("_csrfToken") {
+            NSLog(
+                "❖DISC TRACE❖ source=%@ stage=jsLib.evaluated jsLibLen=%d engineGen=%llu jsError=%@",
+                sourceRuleData.source.bookSourceName,
+                jsLib.count,
+                jsEngine.generation,
+                jsEngine.lastError ?? "none"
+            )
+        }
         evaluatedJsLibHash = newHash
     }
 
