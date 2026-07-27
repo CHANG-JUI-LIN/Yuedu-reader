@@ -23,26 +23,12 @@ enum AppleBooksProgressScrubber {
     }
 }
 
-struct AppleBooksReaderAction: Identifiable {
-    enum ID: String {
-        case playback
-        case download
-        case changeSource
-        case refresh
-    }
-
-    let id: ID
-    let icon: String
-    let label: String
-    let action: () -> Void
-}
-
 struct AppleBooksReaderControls: View {
     @Binding var activePanel: AppleBooksReaderControlPanel?
     let progressValue: () -> Double
     let applyProgress: (Double) -> Void
     let progressDescription: (Double) -> String
-    let secondaryActions: [AppleBooksReaderAction]
+    let secondaryActions: [ReaderSecondaryAction]
     let onOpenTOC: () -> Void
     let onOpenSearch: () -> Void
     let onOpenSettings: () -> Void
@@ -310,25 +296,25 @@ struct AppleBooksReaderControls: View {
                 String(format: localized("第 %d 章"), 5)
             },
             secondaryActions: [
-                AppleBooksReaderAction(
+                ReaderSecondaryAction(
                     id: .playback,
                     icon: "headphones",
                     label: localized("聽書"),
                     action: {}
                 ),
-                AppleBooksReaderAction(
+                ReaderSecondaryAction(
                     id: .download,
                     icon: "arrow.down.circle",
                     label: localized("下載"),
                     action: {}
                 ),
-                AppleBooksReaderAction(
+                ReaderSecondaryAction(
                     id: .changeSource,
                     icon: "arrow.left.and.right",
                     label: localized("換源"),
                     action: {}
                 ),
-                AppleBooksReaderAction(
+                ReaderSecondaryAction(
                     id: .refresh,
                     icon: "arrow.clockwise",
                     label: localized("刷新"),

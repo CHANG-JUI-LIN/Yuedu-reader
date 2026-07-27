@@ -9,6 +9,16 @@ extension ReaderView {
         case .classic:
             topBar
             bottomBar
+        case .modern:
+            // Only the bottom panel is drawn here — 現代's top chrome is a real
+            // `.toolbar` (`modernToolbarContent`), which on iOS 26 already renders as
+            // the floating glass controls this interface is modelled on.
+            //
+            // The glass follows the *system* appearance, not the reader theme, so a
+            // night-theme page under a light system would get light chrome. Pin the
+            // scheme to the theme — the same thing appleBooksControls does.
+            modernBottomBar
+                .environment(\.colorScheme, readerTheme == .night ? .dark : .light)
         case .appleBooks:
             EmptyView()
         }
@@ -129,13 +139,182 @@ extension ReaderView {
         )
     }
 
+    // MARK: - 現代 Chrome
+
+    var showsModernToolbars: Bool {
+        showBars && settings.appearanceReaderInterface == .modern
+    }
+
+    /// 現代's top chrome: three separate glass controls — 返回 / 書名+作者 / 封面.
+    ///
+    /// Each one needs its own placement. Putting all three in `.topBarLeading` and
+    /// splitting them with `ToolbarSpacer` does not spread them: the leading group is
+    /// width-constrained, so the three ended up crushed together against the left edge
+    /// with the title truncated to one character. Leading / principal / trailing are
+    /// what the bar spreads.
+    ///
+    /// All three are `Button`s on purpose. iOS 26 puts glass behind toolbar *controls*
+    /// only — the title was a plain `Text` before and rendered bare over the page.
+    /// Tapping the title opens the same book card the cover does.
+    @ToolbarContentBuilder
+    var modernToolbarContent: some ToolbarContent {
+        if settings.appearanceReaderInterface == .modern {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    closeReader()
+                } label: {
+                    Label(localized("退出閱讀"), systemImage: "chevron.left")
+                        .labelStyle(.iconOnly)
+                }
+                .accessibilityIdentifier("reader_back_button")
+                .accessibilityLabel(localized("退出閱讀"))
+            }
+
+            ToolbarItem(placement: .principal) {
+                Button {
+                    showModernBookCard = true
+                } label: {
+                    VStack(spacing: 1) {
+                        Text(modernBookTitle)
+                            .font(DSFont.subheadline)
+                            .lineLimit(1)
+                        if !modernBookAuthor.isEmpty {
+                            Text(modernBookAuthor)
+                                .font(DSFont.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .accessibilityLabel(
+                    modernBookAuthor.isEmpty
+                        ? modernBookTitle
+                        : "\(modernBookTitle), \(modernBookAuthor)"
+                )
+                .accessibilityHint(localized("書籍詳情"))
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showModernBookCard = true
+                } label: {
+                    modernCoverThumbnail
+                }
+                .accessibilityLabel(localized("書籍詳情"))
+                // Arrow on the thumbnail's bottom edge, so the card hangs under the
+                // cover it belongs to rather than covering it.
+                .popover(isPresented: $showModernBookCard, arrowEdge: .bottom) {
+                    modernBookCard
+                        // Keep it a popover on iPhone too — the card belongs to the
+                        // cover it hangs off, which a sheet would break.
+                        .presentationCompactAdaptation(.popover)
+                }
+            }
+        }
+    }
+
+    private var modernCoverThumbnail: some View {
+        Group {
+            if let modernCoverImage {
+                Image(uiImage: modernCoverImage)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                TitleCardPlaceholder(title: modernBookTitle)
+            }
+        }
+        .frame(width: 30, height: 30)
+        .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
+    }
+
+    var modernBottomBar: some View {
+        ReaderModernBottomControlBar(
+            readerTheme: Binding(
+                get: { readerTheme },
+                set: { readerTheme = $0 }
+            ),
+            overlayContentMaxWidth: overlayContentMaxWidth,
+            canGoPrevChapter: canGoPrevChapter,
+            canGoNextChapter: canGoNextChapter,
+            chapterTitle: currentChapterTitle.converted(to: settings.textConversion),
+            chapterPageInfo: chapterPageInfo,
+            chapterSliderProgressValue: { chapterSliderProgressValue() },
+            applyChapterSliderProgress: { applyChapterSliderProgress($0) },
+            chapterTitleForProgress: { chapterTitle(forProgress: $0) },
+            onPrevChapter: { jumpToChapter(currentChapterIndex - 1) },
+            onNextChapter: { jumpToChapter(currentChapterIndex + 1) },
+            onOpenTOC: { readerMenuTab = .toc; showTOC = true },
+            onOpenBookmarks: { readerMenuTab = .bookmark; showTOC = true },
+            onOpenSettings: { showQuickThemePanel = true }
+        )
+    }
+
+    var modernBookCard: some View {
+        ReaderModernBookCard(
+            coverImage: modernCoverImage,
+            bookTitle: modernBookTitle,
+            author: modernBookAuthor,
+            formatText: modernFormatText,
+            progressText: modernChapterProgressText,
+            // Reversed for the same reason the Apple Books menu reverses it: the list is
+            // built most-specific-first (聽書 … 刷新) and reads better the other way round.
+            actions: readerSecondaryActions.reversed().map { action in
+                // Close the popover before running the action — every one of them opens
+                // its own sheet or panel, and iOS won't present a second modal from a
+                // popover that is still up.
+                ReaderSecondaryAction(id: action.id, icon: action.icon, label: action.label) {
+                    showModernBookCard = false
+                    action.action()
+                }
+            },
+            onOpenDetail: onlineBookDetail == nil ? nil : {
+                showModernBookCard = false
+                showOnlineBookDetail = true
+            }
+        )
+    }
+
+    var modernBookTitle: String {
+        book?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    var modernBookAuthor: String {
+        book?.author.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    /// The 格式 chip. Online books resolve to `.html` internally, which is true but
+    /// meaningless to a reader, so they get 「線上」 instead of "HTML".
+    var modernFormatText: String {
+        guard let book else { return "" }
+        return book.isOnline ? localized("線上") : book.resolvedPipelineKind.displayFormat
+    }
+
+    /// "current chapter / total chapters" — the 進度 chip in the book card. Chapters,
+    /// not pages: pages shift as chapters load, chapter position doesn't.
+    var modernChapterProgressText: String {
+        guard !chapters.isEmpty else { return "" }
+        return "\(min(currentChapterIndex + 1, chapters.count)) / \(chapters.count)"
+    }
+
+    /// Reads the book's cover off disk for the 現代 chrome. Same file the TTS
+    /// now-playing artwork uses; kept in `modernCoverImage` so neither the top bar nor
+    /// the book card decodes it during layout.
+    func loadModernCoverImage() {
+        guard settings.appearanceReaderInterface == .modern,
+              let coverPath = book?.coverImagePath else {
+            modernCoverImage = nil
+            return
+        }
+        modernCoverImage = loadTOCStyleCoverImage(filename: coverPath)
+    }
+
     var appleBooksControls: some View {
         AppleBooksReaderControls(
             activePanel: $appleBooksActivePanel,
             progressValue: { chapterSliderProgressValue() },
             applyProgress: { applyChapterSliderProgress($0) },
             progressDescription: { chapterTitle(forProgress: $0) },
-            secondaryActions: appleBooksSecondaryActions,
+            secondaryActions: readerSecondaryActions,
             onOpenTOC: { readerMenuTab = .toc; showTOC = true },
             onOpenSearch: { showReaderSearch = true },
             onOpenSettings: { showQuickThemePanel = true }
@@ -143,9 +322,9 @@ extension ReaderView {
         .environment(\.colorScheme, readerTheme == .night ? .dark : .light)
     }
 
-    var appleBooksSecondaryActions: [AppleBooksReaderAction] {
+    var readerSecondaryActions: [ReaderSecondaryAction] {
         var actions = [
-            AppleBooksReaderAction(
+            ReaderSecondaryAction(
                 id: .playback,
                 icon: "headphones",
                 label: localized("聽書"),
@@ -155,7 +334,7 @@ extension ReaderView {
 
         if book?.isOnline == true {
             actions.append(
-                AppleBooksReaderAction(
+                ReaderSecondaryAction(
                     id: .download,
                     icon: downloadButtonIcon,
                     label: localized("下載"),
@@ -166,7 +345,7 @@ extension ReaderView {
 
         if book?.isOnline == true, book?.bookSourceId != nil {
             actions.append(
-                AppleBooksReaderAction(
+                ReaderSecondaryAction(
                     id: .changeSource,
                     icon: "arrow.left.and.right",
                     label: localized("換源"),
@@ -177,7 +356,7 @@ extension ReaderView {
 
         if !(book?.onlineChapters?.isEmpty ?? true) {
             actions.append(
-                AppleBooksReaderAction(
+                ReaderSecondaryAction(
                     id: .refresh,
                     icon: "arrow.clockwise",
                     label: localized("刷新"),

@@ -1569,3 +1569,8 @@
 /* Reader bottom bar floating actions */
 "刷新" = "刷新";
 "下載" = "下载";
+
+/* Reader interface styles */
+"現代" = "现代";
+"線上" = "在线";
+"返回書架" = "返回书架";

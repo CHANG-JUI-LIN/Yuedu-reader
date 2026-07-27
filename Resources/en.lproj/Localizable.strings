@@ -1568,3 +1568,8 @@
 /* Reader bottom bar floating actions */
 "刷新" = "Refresh";
 "下載" = "Download";
+
+/* Reader interface styles */
+"現代" = "Modern";
+"線上" = "Online";
+"返回書架" = "Back to Library";

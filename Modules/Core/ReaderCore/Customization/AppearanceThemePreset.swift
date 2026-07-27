@@ -4,6 +4,7 @@ import UIKit
 
 enum AppearanceReaderInterface: String, CaseIterable, Identifiable, Codable {
     case classic
+    case modern
     case appleBooks
 
     var id: String { rawValue }
@@ -12,6 +13,8 @@ enum AppearanceReaderInterface: String, CaseIterable, Identifiable, Codable {
         switch rawValue {
         case "classic":
             self = .classic
+        case "modern":
+            self = .modern
         case "appleBooks", "compact", "immersive":
             self = .appleBooks
         default:
@@ -22,6 +25,7 @@ enum AppearanceReaderInterface: String, CaseIterable, Identifiable, Codable {
     var titleKey: String {
         switch self {
         case .classic: return "經典"
+        case .modern: return "現代"
         case .appleBooks: return "Apple Books"
         }
     }

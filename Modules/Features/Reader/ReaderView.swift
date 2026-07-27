@@ -109,6 +109,11 @@ struct ReaderView: View {
     @State var showTTSPanel = false
     @State var showDownloadOptions = false
     @State var showOnlineBookDetail = false
+    /// 現代 interface: the card hanging off the cover thumbnail in the top bar.
+    @State var showModernBookCard = false
+    /// Cover art for the 現代 chrome, read from disk once instead of on every body
+    /// pass (the top bar and the book card both draw it).
+    @State var modernCoverImage: UIImage?
     @State private var showAutoReadPanel = false
     @State var ttsChapterIndex: Int? = nil
     @State var showTTSJumpPrompt = false
@@ -1199,8 +1204,12 @@ struct ReaderView: View {
                 .navigationBarBackButtonHidden(true)
                 .toolbar {
                     appleBooksToolbarContent
+                    modernToolbarContent
                 }
-                .toolbar(showsAppleBooksToolbars ? .visible : .hidden, for: .navigationBar)
+                .toolbar(
+                    showsAppleBooksToolbars || showsModernToolbars ? .visible : .hidden,
+                    for: .navigationBar
+                )
                 .toolbar(showsAppleBooksBottomToolbar ? .visible : .hidden, for: .bottomBar)
                 .toolbarBackground(.hidden, for: .navigationBar, .bottomBar)
         }
@@ -1217,6 +1226,13 @@ struct ReaderView: View {
             }
             isRestoringPosition = false
         }
+        .task(id: modernCoverSourceID) { loadModernCoverImage() }
+    }
+
+    /// Changes when the 現代 chrome needs a different cover — a different file, or the
+    /// interface being switched to (or away from) 現代.
+    private var modernCoverSourceID: String {
+        "\(settings.appearanceReaderInterface.rawValue)|\(book?.coverImagePath ?? "")"
     }
 
     private func buildBody() -> AnyView {
@@ -1430,6 +1446,15 @@ struct ReaderView: View {
             )
         )
         .animation(.easeInOut(duration: 0.25), value: showBars)
+        // Chrome-owned panels close with the chrome, wherever the chrome was hidden
+        // from — the tap zone, the touch-zone editor, or a search result jump. Clearing
+        // this at each `showBars = false` site left panels that popped back up the next
+        // time the bars were shown.
+        .onChange(of: showBars) { _, visible in
+            guard !visible else { return }
+            appleBooksActivePanel = nil
+            showModernBookCard = false
+        }
         .modifier(HideTabBarModifier())
         .alert(
             localized("頁首頁尾編輯"),
@@ -1850,6 +1875,17 @@ struct ReaderView: View {
                 }
             }
         }
+        // Modal, NOT a `navigationDestination`. Verified twice on device: pushing the
+        // detail onto the reader's own NavigationStack pops the reader itself off the
+        // shelf's stack, so 返回 lands on the bookshelf instead of the page — and
+        // because that removal never goes through `ReaderNavigationCoordinator`, the
+        // coordinator stays convinced a reader is presented and refuses every later
+        // open ("can't get back into the reader", see HomeView.openBook and
+        // ReaderNavigationCoordinator.reconcileIfReaderDetached).
+        //
+        // The reader is a UIKit controller pushed directly onto the shelf's SwiftUI
+        // NavigationStack (BookCardNavigationGate), and its inner NavigationStack is
+        // not insulated from that. Do not reintroduce a push here.
         .fullScreenCover(isPresented: $showOnlineBookDetail) {
             if let detail = onlineBookDetail {
                 NavigationStack {
@@ -1999,9 +2035,6 @@ struct ReaderView: View {
         case .toggleMenu:
             withAnimation(.easeInOut(duration: uiFeedbackDuration)) {
                 showBars.toggle()
-                if !showBars {
-                    appleBooksActivePanel = nil
-                }
             }
         case .previousPage:
             guard !showBars else { return }
