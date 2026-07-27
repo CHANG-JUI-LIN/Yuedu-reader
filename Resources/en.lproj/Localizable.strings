@@ -1564,3 +1564,7 @@
 "暫停" = "Pause";
 "停止播放" = "Stop Playback";
 "打開播放控制面板" = "Open playback controls";
+
+/* Reader bottom bar floating actions */
+"刷新" = "Refresh";
+"下載" = "Download";
