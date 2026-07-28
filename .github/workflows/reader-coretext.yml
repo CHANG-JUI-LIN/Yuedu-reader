@@ -34,7 +34,7 @@ jobs:
       - name: Create non-secret Firebase build fixture
         run: |
           plutil -create xml1 GoogleService-Info.plist
-          plutil -insert API_KEY -string "ci-placeholder" GoogleService-Info.plist
+          plutil -insert API_KEY -string "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" GoogleService-Info.plist
           plutil -insert CLIENT_ID -string "000000000000-ci.apps.googleusercontent.com" GoogleService-Info.plist
           plutil -insert REVERSED_CLIENT_ID -string "com.googleusercontent.apps.000000000000-ci" GoogleService-Info.plist
           plutil -insert GCM_SENDER_ID -string "000000000000" GoogleService-Info.plist
