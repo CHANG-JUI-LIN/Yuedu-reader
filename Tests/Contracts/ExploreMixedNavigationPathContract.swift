@@ -9,7 +9,7 @@ struct OnlineBook: Hashable {
 enum ExploreMixedNavigationPathContract {
     static func main() {
         var navigation = ExploreNavigationPath()
-        navigation.push(ExploreNavigationRoute.category(UUID()))
+        navigation.push(.search("三體"))
         navigation.path.append(
             SearchResultRoute(
                 id: UUID(),
@@ -20,5 +20,7 @@ enum ExploreMixedNavigationPathContract {
         precondition(navigation.path.count == 2)
         navigation.pop()
         precondition(navigation.path.count == 1)
+        navigation.pop()
+        precondition(navigation.path.isEmpty)
     }
 }

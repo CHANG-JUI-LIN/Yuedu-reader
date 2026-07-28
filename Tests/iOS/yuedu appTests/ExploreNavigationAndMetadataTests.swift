@@ -6,9 +6,8 @@ import Testing
 struct ExploreNavigationAndMetadataTests {
     @Test("explore and search result routes can share one navigation path")
     func exploreAndSearchRoutesShareNavigationPath() {
-        let sectionID = UUID()
         var navigation = ExploreNavigationPath()
-        navigation.push(.category(sectionID))
+        navigation.push(.search("三體"))
         navigation.path.append(
             SearchResultRoute(
                 id: UUID(),
@@ -19,6 +18,8 @@ struct ExploreNavigationAndMetadataTests {
         #expect(navigation.path.count == 2)
         navigation.pop()
         #expect(navigation.path.count == 1)
+        navigation.pop()
+        #expect(navigation.path.isEmpty)
     }
 
     @Test("detail tags augment rather than erase discover tags")
