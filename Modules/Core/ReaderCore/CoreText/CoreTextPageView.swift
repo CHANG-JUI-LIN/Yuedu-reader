@@ -368,6 +368,18 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     ) {
         guard pageIndex < layout.pageRanges.count else { return }
 
+        let renderTrace = ReaderPerfTrace.begin(
+            .renderPage,
+            metadata: ReaderPerfMetadata(
+                spineIndex: layout.spineIndex,
+                characterCount: layout.pageRanges[pageIndex].length,
+                pageCount: layout.pageRanges.count,
+                writingMode: String(describing: layout.writingMode),
+                executor: Thread.isMainThread ? "main" : "background"
+            )
+        )
+        defer { ReaderPerfTrace.end(renderTrace) }
+
         let layoutSize = CGSize(
             width: max(1, layout.renderSize.width),
             height: max(1, layout.renderSize.height)

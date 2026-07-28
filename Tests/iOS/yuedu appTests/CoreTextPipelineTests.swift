@@ -290,6 +290,7 @@ struct CSSPropertyApplierTests {
             },
             cssAlignment: { value in
                 switch value {
+                case "left": return .left
                 case "center": return .center
                 case "right": return .right
                 case "justify": return .justified

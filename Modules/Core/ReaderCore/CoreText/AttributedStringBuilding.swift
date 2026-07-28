@@ -1,25 +1,40 @@
 import Foundation
 import UIKit
 
+/// Opaque identity for one attributed-content build.
+///
+/// Create a new revision whenever any layout-affecting output changes. Reuse a
+/// revision only for first-page, full, and warm pagination of that same build result.
+struct ContentRevision: Hashable, Sendable {
+    private let identity: UUID
+
+    init() {
+        identity = UUID()
+    }
+}
+
 struct AttributedChapterBuildResult {
     let attributedString: NSAttributedString
     let imagePage: HTMLAttributedStringBuilder.ImagePage?
     let pageBackgroundImage: UIImage?
     let pageBackgroundColor: UIColor?
     let anchorOffsets: [String: Int]
+    let revision: ContentRevision
 
     init(
         attributedString: NSAttributedString,
         imagePage: HTMLAttributedStringBuilder.ImagePage?,
         pageBackgroundImage: UIImage?,
         pageBackgroundColor: UIColor? = nil,
-        anchorOffsets: [String: Int]
+        anchorOffsets: [String: Int],
+        revision: ContentRevision = ContentRevision()
     ) {
         self.attributedString = attributedString
         self.imagePage = imagePage
         self.pageBackgroundImage = pageBackgroundImage
         self.pageBackgroundColor = pageBackgroundColor
         self.anchorOffsets = anchorOffsets
+        self.revision = revision
     }
 }
 

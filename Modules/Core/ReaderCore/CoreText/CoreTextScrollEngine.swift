@@ -226,13 +226,37 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         defer { slicingChapters.remove(chapterIndex) }
 
         do {
-            let result = try await builder.buildChapter(
-                at: chapterIndex,
-                settings: renderSettings,
-                themeTextColor: renderSettings.textColor,
-                themeBackgroundColor: renderSettings.backgroundColor
-            )
-            let attrStr = prepareAttributedString(result.attributedString)
+            let result = try await ReaderPerfTrace.spanAsync(
+                .chapterLoad,
+                metadata: ReaderPerfMetadata(
+                    spineIndex: chapterIndex,
+                    writingMode: String(describing: renderSettings.writingMode),
+                    executor: Thread.isMainThread ? "main" : "background"
+                )
+            ) {
+                try await builder.buildChapter(
+                    at: chapterIndex,
+                    settings: renderSettings,
+                    themeTextColor: renderSettings.textColor,
+                    themeBackgroundColor: renderSettings.backgroundColor
+                )
+            }
+            let attrStr: NSAttributedString
+            if renderSettings.writingMode.isVertical {
+                attrStr = ReaderPerfTrace.span(
+                    .layoutVerticalPrepare,
+                    metadata: ReaderPerfMetadata(
+                        spineIndex: chapterIndex,
+                        characterCount: result.attributedString.length,
+                        writingMode: String(describing: renderSettings.writingMode),
+                        executor: Thread.isMainThread ? "main" : "background"
+                    )
+                ) {
+                    prepareAttributedString(result.attributedString)
+                }
+            } else {
+                attrStr = prepareAttributedString(result.attributedString)
+            }
             chapterCharacterCounts[chapterIndex] = attrStr.length
             let width = contentWidth
             let cIdx = chapterIndex
@@ -261,6 +285,15 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             }
 
             let writingMode = renderSettings.writingMode
+            let slicingTrace = ReaderPerfTrace.begin(
+                .layoutPageRanges,
+                metadata: ReaderPerfMetadata(
+                    spineIndex: chapterIndex,
+                    characterCount: attrStr.length,
+                    writingMode: String(describing: writingMode),
+                    executor: "background"
+                )
+            )
             let output: CoreTextChunkSlicer.Output = await Task.detached(priority: .userInitiated) {
                 CoreTextChunkSlicer.slice(
                     attributedString: attrStr,
@@ -271,6 +304,16 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                     pageBackgroundImage: pageBackgroundImage
                 )
             }.value
+            ReaderPerfTrace.end(
+                slicingTrace,
+                metadata: ReaderPerfMetadata(
+                    spineIndex: chapterIndex,
+                    characterCount: attrStr.length,
+                    chunkCount: output.chunks.count,
+                    writingMode: String(describing: writingMode),
+                    executor: "background"
+                )
+            )
 
             insert(chunks: output.chunks, chapterIndex: chapterIndex, prepend: prepend)
             if let range = chapterRanges[chapterIndex] {

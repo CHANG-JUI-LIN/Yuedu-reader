@@ -13,6 +13,7 @@ struct PaginationRequest {
     let paragraphSpacing: CGFloat
     let letterSpacing: CGFloat
     let contentInsets: UIEdgeInsets
+    let revision: ContentRevision
     var writingMode: ReaderWritingMode = .horizontal
 }
 
@@ -42,7 +43,8 @@ final class PaginationManager {
             paragraphSpacing: request.paragraphSpacing,
             letterSpacing: request.letterSpacing,
             contentInsets: request.contentInsets,
-            writingMode: request.writingMode
+            writingMode: request.writingMode,
+            revision: request.revision
         )
         return PaginationResult(layout: layout)
     }
@@ -63,7 +65,8 @@ final class PaginationManager {
             paragraphSpacing: request.paragraphSpacing,
             letterSpacing: request.letterSpacing,
             contentInsets: request.contentInsets,
-            writingMode: request.writingMode
+            writingMode: request.writingMode,
+            revision: request.revision
         )
         return layout.map { PaginationResult(layout: $0) }
     }

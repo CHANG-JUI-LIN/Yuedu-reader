@@ -464,36 +464,46 @@ final class HTMLAttributedStringBuilder {
         var mergedConfig = config
         mergedConfig.firstLetterRules = parsed.firstLetterRules
 
-        let ast = await styleResolver.buildAST(
-            from: parsed,
-            config: mergedConfig,
-            makeRootStyle: { config in
-                self.makeRootStyle(config: config)
-            },
-            resolveStyle: { element, parent, rules, rootFontSize, parentElement, config in
-                self.resolvedStyle(
-                    for: element,
-                    parent: parent,
-                    rules: rules,
-                    rootFontSize: rootFontSize,
-                    parentElement: parentElement,
-                    config: config
-                )
-            },
-            buildChildren: { nodes, parentStyle, rules, rootFontSize, parentElement, config in
-                return await self.buildChildren(
-                    from: nodes,
-                    parentStyle: parentStyle,
-                    rules: rules,
-                    rootFontSize: rootFontSize,
-                    parentElement: parentElement,
-                    config: config
-                )
-            },
-            makeAttributeMap: { element in
-                self.makeAttributeMap(for: element)
-            }
-        )
+        let ast = await ReaderPerfTrace.spanAsync(
+            .astBuild,
+            metadata: ReaderPerfMetadata(
+                characterCount: sanitizedHTML.utf16.count,
+                ruleCount: parsed.rules.count + parsed.firstLetterRules.count,
+                writingMode: String(describing: config.writingMode),
+                executor: Thread.isMainThread ? "main" : "background"
+            )
+        ) {
+            await styleResolver.buildAST(
+                from: parsed,
+                config: mergedConfig,
+                makeRootStyle: { config in
+                    self.makeRootStyle(config: config)
+                },
+                resolveStyle: { element, parent, rules, rootFontSize, parentElement, config in
+                    self.resolvedStyle(
+                        for: element,
+                        parent: parent,
+                        rules: rules,
+                        rootFontSize: rootFontSize,
+                        parentElement: parentElement,
+                        config: config
+                    )
+                },
+                buildChildren: { nodes, parentStyle, rules, rootFontSize, parentElement, config in
+                    return await self.buildChildren(
+                        from: nodes,
+                        parentStyle: parentStyle,
+                        rules: rules,
+                        rootFontSize: rootFontSize,
+                        parentElement: parentElement,
+                        config: config
+                    )
+                },
+                makeAttributeMap: { element in
+                    self.makeAttributeMap(for: element)
+                }
+            )
+        }
 
         if ast.resolvedStyle.isVerticalWritingMode {
             detectedVerticalWritingMode = true
@@ -525,6 +535,12 @@ final class HTMLAttributedStringBuilder {
     }
 
     private func collectStyles(from document: Document) async -> [String] {
+        let collectTrace = ReaderPerfTrace.begin(
+            .cssCollect,
+            metadata: ReaderPerfMetadata(
+                executor: Thread.isMainThread ? "main" : "background"
+            )
+        )
         var styles: [String] = []
         if let head = document.head() {
             let styleTags = (try? head.select("style").array()) ?? []
@@ -555,6 +571,13 @@ final class HTMLAttributedStringBuilder {
                 styles.append(cssText)
             }
         }
+        ReaderPerfTrace.end(
+            collectTrace,
+            metadata: ReaderPerfMetadata(
+                characterCount: styles.reduce(0) { $0 + $1.utf16.count },
+                executor: Thread.isMainThread ? "main" : "background"
+            )
+        )
         return styles
     }
 

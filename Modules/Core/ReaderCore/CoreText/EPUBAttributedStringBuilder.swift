@@ -168,7 +168,17 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             )
         }
 
-        let nodes = HTMLStyledASTRenderableNodeConverter.convert(body: ast)
+        let nodes = ReaderPerfTrace.span(
+            .irConvert,
+            metadata: ReaderPerfMetadata(
+                spineIndex: index,
+                characterCount: html.utf16.count,
+                writingMode: String(describing: settings.writingMode),
+                executor: Thread.isMainThread ? "main" : "background"
+            )
+        ) {
+            HTMLStyledASTRenderableNodeConverter.convert(body: ast)
+        }
         let renderer = NodeAttributedStringRenderer(
             config: NodeAttributedStringRenderer.Config(
                 from: settings,
@@ -203,7 +213,16 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         }
         CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.ast index=\(index) href=\(chapterHref) bodyClass=\(ast.classes.joined(separator: ".")) bodyVertical=\(ast.resolvedStyle.isVerticalWritingMode) cssDetectedVertical=\(localBuilder.detectedVerticalWritingMode) nodeCount=\(nodes.count)")
 
-        let attributedString = await renderer.render(nodes)
+        let attributedString = await ReaderPerfTrace.spanAsync(
+            .attributedRender,
+            metadata: ReaderPerfMetadata(
+                spineIndex: index,
+                writingMode: String(describing: settings.writingMode),
+                executor: Thread.isMainThread ? "main" : "background"
+            )
+        ) {
+            await renderer.render(nodes)
+        }
         CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.rendered index=\(index) href=\(chapterHref) attrLen=\(attributedString.length) cssDetectedVerticalGlobal=\(cssDetectedVerticalWritingMode) prefix=\"\(debugTextPreview(attributedString.string))\"")
         let anchorOffsets = localBuilder.anchorOffsets(in: attributedString)
 
@@ -219,19 +238,26 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
     // MARK: - Private Helpers
 
     private func loadImage(src: String, chapterHref: String) async -> UIImage? {
-        // CSS url() values arrive pre-resolved by EPUBStyleResolver.rewriteResourceURLs into the
-        // resource provider's absolute form (reader-book://…). Fetch those directly — running
-        // them through the chapter-relative resolution below would mangle the URL.
-        if let absolute = URL(string: src),
-           let scheme = absolute.scheme,
-           scheme != "http", scheme != "https", scheme != "data" {
-            guard let response = try? await resourceProvider.response(for: absolute) else { return nil }
+        await ReaderPerfTrace.spanAsync(
+            .imageLoad,
+            metadata: ReaderPerfMetadata(
+                executor: Thread.isMainThread ? "main" : "background"
+            )
+        ) {
+            // CSS url() values arrive pre-resolved by EPUBStyleResolver.rewriteResourceURLs into the
+            // resource provider's absolute form (reader-book://…). Fetch those directly — running
+            // them through the chapter-relative resolution below would mangle the URL.
+            if let absolute = URL(string: src),
+               let scheme = absolute.scheme,
+               scheme != "http", scheme != "https", scheme != "data" {
+                guard let response = try? await resourceProvider.response(for: absolute) else { return nil }
+                return UIImage(data: response.data)
+            }
+            let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
+            let url = resourceProvider.resourceURL(for: resolved)
+            guard let response = try? await resourceProvider.response(for: url) else { return nil }
             return UIImage(data: response.data)
         }
-        let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
-        let url = resourceProvider.resourceURL(for: resolved)
-        guard let response = try? await resourceProvider.response(for: url) else { return nil }
-        return UIImage(data: response.data)
     }
 
     private func loadCSS(href: String, chapterHref: String) async -> String? {
