@@ -234,8 +234,7 @@ extension ReaderView {
             let settings = currentRenderSettings(marginH: marginH)
             let targetBook = b
             let targetBookID = targetBook.id
-            let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let txtURL = docsURL.appendingPathComponent(targetBook.contentFilename)
+            let txtURL = StorageLocations.bookFile(targetBook.contentFilename)
             let lowercasedFilename = targetBook.contentFilename.lowercased()
             let isMarkdownFile = lowercasedFilename.hasSuffix(".md")
                 || lowercasedFilename.hasSuffix(".markdown")

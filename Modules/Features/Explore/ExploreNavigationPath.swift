@@ -1,8 +1,10 @@
 import Foundation
+import SwiftUI
 
 enum ExploreNavigationRoute: Hashable {
     case category(UUID)
     case book(OnlineBook)
+    case search(String)
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
@@ -10,6 +12,8 @@ enum ExploreNavigationRoute: Hashable {
             return lhsID == rhsID
         case (.book(let lhsBook), .book(let rhsBook)):
             return lhsBook.id == rhsBook.id
+        case (.search(let lhsQuery), .search(let rhsQuery)):
+            return lhsQuery == rhsQuery
         default:
             return false
         }
@@ -23,12 +27,18 @@ enum ExploreNavigationRoute: Hashable {
         case .book(let book):
             hasher.combine(1)
             hasher.combine(book.id)
+        case .search(let query):
+            hasher.combine(2)
+            hasher.combine(query)
         }
     }
 }
 
 struct ExploreNavigationPath {
-    var path: [ExploreNavigationRoute] = []
+    // SearchView itself occupies this path before its result links append
+    // SearchResultRoute values. Keep the stack heterogeneous and do not present
+    // SearchView through a separate item-driven navigation state.
+    var path = NavigationPath()
 
     mutating func push(_ route: ExploreNavigationRoute) {
         path.append(route)

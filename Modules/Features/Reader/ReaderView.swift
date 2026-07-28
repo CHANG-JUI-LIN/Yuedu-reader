@@ -1177,10 +1177,7 @@ struct ReaderView: View {
     }
 
     func loadTOCStyleCoverImage(filename: String) -> UIImage? {
-        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(filename)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return UIImage(data: data)
+        BookshelfCoverLoader.load(filename: filename)
     }
 
     func makeTOCStyleTitleCardArtwork(title: String) -> UIImage? {

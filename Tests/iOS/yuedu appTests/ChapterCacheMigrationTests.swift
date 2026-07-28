@@ -12,9 +12,7 @@ struct ChapterCacheMigrationTests {
         let sourceURL = "https://example.com/book/3"
         let tocTitle = "第三章 舊下載"
         let content = "這是已經下載到本機的章節正文。"
-        let cacheDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("online_cache")
-            .appendingPathComponent(bookId.uuidString)
+        let cacheDirectory = StorageLocations.onlineCache.appendingPathComponent(bookId.uuidString)
         defer { try? FileManager.default.removeItem(at: cacheDirectory) }
 
         try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)

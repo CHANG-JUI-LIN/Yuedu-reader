@@ -4,16 +4,22 @@ import Testing
 
 @Suite("Explore navigation and metadata")
 struct ExploreNavigationAndMetadataTests {
-    @Test("closing a book opened from a category returns to that category")
-    func closingBookReturnsToCategory() {
-        let sectionID = UUID()
+    @Test("explore and search result routes can share one navigation path")
+    func exploreAndSearchRoutesShareNavigationPath() {
         var navigation = ExploreNavigationPath()
-        navigation.push(.category(sectionID))
-        navigation.push(.book(makeBook()))
+        navigation.push(.search("三體"))
+        navigation.path.append(
+            SearchResultRoute(
+                id: UUID(),
+                snapshot: makeBook()
+            )
+        )
 
+        #expect(navigation.path.count == 2)
         navigation.pop()
-
-        #expect(navigation.path == [.category(sectionID)])
+        #expect(navigation.path.count == 1)
+        navigation.pop()
+        #expect(navigation.path.isEmpty)
     }
 
     @Test("detail tags augment rather than erase discover tags")

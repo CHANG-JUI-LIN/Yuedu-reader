@@ -120,7 +120,7 @@ struct AppleBooksReaderControls: View {
                                         width: DSLayout.readerAppleBooksActionWidth,
                                         height: DSLayout.readerAppleBooksActionHeight
                                     )
-                                    .background(.regularMaterial, in: Capsule())
+                                    .floatingSurface(in: Capsule())
                                     // Same trap the 經典 bar hit: an unhidden SF Symbol stays
                                     // its own element and reads out as "arrow.left.and.right"
                                     // instead of 「換源」. docs/design.md §7.1.
@@ -241,7 +241,7 @@ struct AppleBooksReaderControls: View {
             .foregroundStyle(DSColor.textPrimary)
             .padding(.horizontal, DSSpacing.lg)
             .frame(height: DSLayout.readerAppleBooksMenuRowHeight)
-            .background(.regularMaterial, in: Capsule())
+            .floatingSurface(in: Capsule())
         }
         .buttonStyle(.plain)
     }

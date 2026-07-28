@@ -56,6 +56,15 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<!-- Shows the app's Documents directory under "On My iPhone" in the Files app, so
+	     users can get at the books they imported (and back them up or copy them off).
+	     Documents therefore holds ONLY user-owned files — book files, imported fonts,
+	     tab icons. App-internal data (the books_meta.json shelf index, covers, caches)
+	     lives under Application Support; see AppStorage and AppStorageMigration. Do not
+	     write app-internal files to Documents while this key is set: deleting
+	     books_meta.json by hand empties the user's shelf. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>UIPrefersShowingLanguageSettings</key>
 	<true/>
 </dict>

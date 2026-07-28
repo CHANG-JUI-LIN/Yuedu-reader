@@ -13,9 +13,7 @@ final class JSONFileReadingPositionStore: ReadingPositionStore {
     private let decoder = JSONDecoder()
 
     init() {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        self.baseURL = docs.appendingPathComponent("reading_position", isDirectory: true)
-        try? FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
+        self.baseURL = StorageLocations.readingPosition
     }
 
     private func fileURL(for bookId: String) -> URL {

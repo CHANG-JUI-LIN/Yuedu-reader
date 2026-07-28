@@ -37,18 +37,22 @@ private struct CloudSyncMergeResult<T> {
 }
 
 enum ICloudSyncPayload {
+    /// `recordName` is the sync identity and is deliberately unchanged by the move of
+    /// these two files out of Documents — a device on an older build syncs the same
+    /// records, it just keeps them at the legacy path locally.
     static func defaultFiles(
-        documentsDirectory: URL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0],
+        bookSourcesFile: URL = StorageLocations.bookSourcesFile,
+        booksMetadataFile: URL = StorageLocations.booksMetadataFile,
         libraryDirectory: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
     ) -> [ICloudSyncPayloadFile] {
         [
             ICloudSyncPayloadFile(
                 recordName: "book_sources",
-                localURL: documentsDirectory.appendingPathComponent("book_sources.json")
+                localURL: bookSourcesFile
             ),
             ICloudSyncPayloadFile(
                 recordName: "books_meta",
-                localURL: documentsDirectory.appendingPathComponent("books_meta.json")
+                localURL: booksMetadataFile
             ),
             ICloudSyncPayloadFile(
                 recordName: "replace_rules",
@@ -704,25 +708,31 @@ final class ICloudSyncManager: ObservableObject {
     /// online books show a blank cover and never re-download it (the cover path
     /// is non-nil, so `downloadCoverIfNeeded` is skipped on the other device).
     private func dynamicBookFilePayloads() -> [ICloudSyncPayloadFile] {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        guard let data = try? Data(contentsOf: docs.appendingPathComponent("books_meta.json")),
+        guard let data = try? Data(contentsOf: StorageLocations.booksMetadataFile),
               let books = try? JSONDecoder().decode([ReadingBook].self, from: data) else {
             return []
         }
         var payloads: [ICloudSyncPayloadFile] = []
         var seen = Set<String>()
+
+        // Content files and covers no longer share a directory: content stays in
+        // Documents (the user's own files), covers moved to Application Support.
+        // `recordName` still hashes the bare filename, so the relocation does not
+        // change any record's sync identity.
+        func append(_ name: String?, resolvedBy locate: (String) -> URL) {
+            guard let name, !name.isEmpty, seen.insert(name).inserted else { return }
+            payloads.append(
+                ICloudSyncPayloadFile(
+                    recordName: "bookfile_" + Self.shortHash(name),
+                    localURL: locate(name)
+                )
+            )
+        }
+
         for book in books {
             // Content file only for syncable local books; cover for every book.
-            let names = [Self.syncableContentFilename(for: book), book.coverImagePath]
-            for name in names.compactMap({ $0 }) where !name.isEmpty {
-                guard seen.insert(name).inserted else { continue }
-                payloads.append(
-                    ICloudSyncPayloadFile(
-                        recordName: "bookfile_" + Self.shortHash(name),
-                        localURL: docs.appendingPathComponent(name)
-                    )
-                )
-            }
+            append(Self.syncableContentFilename(for: book), resolvedBy: StorageLocations.bookFile)
+            append(book.coverImagePath, resolvedBy: StorageLocations.coverFile)
         }
         return payloads
     }

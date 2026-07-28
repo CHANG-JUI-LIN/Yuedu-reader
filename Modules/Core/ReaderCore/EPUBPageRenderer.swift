@@ -103,12 +103,7 @@ final class EPUBPageRenderer: ObservableObject {
             return
         }
 
-        let docsURL = FileManager.default.urls(
-            for: .documentDirectory, in: .userDomainMask
-        ).first!
-        let progressDir = docsURL.appendingPathComponent(
-            "epub_charoffsets/\(bookIdentifier)"
-        )
+        let progressDir = StorageLocations.epubCharOffsets.appendingPathComponent(bookIdentifier)
         let store = CharOffsetStore(directoryURL: progressDir)
 
         self.onlineBuilder = nil
@@ -181,12 +176,7 @@ final class EPUBPageRenderer: ObservableObject {
         pageProgressionDirection = .default
         layoutMode = .reflowable
         publicationSession = nil
-        let docsURL = FileManager.default.urls(
-            for: .documentDirectory, in: .userDomainMask
-        ).first!
-        let progressDir = docsURL.appendingPathComponent(
-            "epub_charoffsets/\(bookIdentifier)"
-        )
+        let progressDir = StorageLocations.epubCharOffsets.appendingPathComponent(bookIdentifier)
         let store = CharOffsetStore(directoryURL: progressDir)
         let chapterDocumentStore = ChapterDocumentStore(builder: attributedBuilder)
         let newEngine = CoreTextPageEngine(
@@ -234,12 +224,7 @@ final class EPUBPageRenderer: ObservableObject {
         customScheme: String = "reader-online",
         imageDecode: (@Sendable (Data, String) -> Data?)? = nil
     ) {
-        let docsURL = FileManager.default.urls(
-            for: .documentDirectory, in: .userDomainMask
-        ).first!
-        let progressDir = docsURL.appendingPathComponent(
-            "epub_charoffsets/\(bookIdentifier)"
-        )
+        let progressDir = StorageLocations.epubCharOffsets.appendingPathComponent(bookIdentifier)
         let store = CharOffsetStore(directoryURL: progressDir)
         let resourceAdapter = UniversalBookResourceAdapter(
             contentProvider: contentProvider,

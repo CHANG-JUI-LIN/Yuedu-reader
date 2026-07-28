@@ -62,12 +62,13 @@ class BookStore: ObservableObject, BookProvider {
     private static let maximumPositionMetadataWriteInterval: TimeInterval = 60
 
     /// Persistent storage location for the book-library JSON.
-    /// Stored in Documents so it is included in iTunes / iCloud backups and is
-    /// excluded from the UserDefaults domain plist (which is loaded synchronously
-    /// at launch into memory in its entirety).
+    /// Kept out of the UserDefaults domain plist (which is loaded synchronously at
+    /// launch into memory in its entirety) and under Application Support rather than
+    /// Documents: this file *is* the bookshelf, and Documents is user-visible in the
+    /// Files app, where deleting it would empty the shelf. Still backed up.
+    /// `StorageMigration` moves it out of the legacy Documents location.
     static var booksMetaFileURL: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("books_meta.json")
+        StorageLocations.booksMetadataFile
     }
 
     init(metadataFileURL: URL = BookStore.booksMetaFileURL) {
@@ -925,7 +926,7 @@ class BookStore: ObservableObject, BookProvider {
             let book = books[idx]
             if book.isOnline {
                 // Delete cache directory
-                let cacheDir = documentsURL(for: "online_cache/\(bookId.uuidString)")
+                let cacheDir = StorageLocations.onlineCache.appendingPathComponent(bookId.uuidString)
                 do {
                     try FileManager.default.removeItem(at: cacheDir)
                 } catch {
@@ -1494,9 +1495,10 @@ class BookStore: ObservableObject, BookProvider {
         return book
     }
 
+    /// Book content files stay in Documents: they are the user's own files, and being
+    /// visible in the Files app is the point.
     private func documentsURL(for filename: String) -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(filename)
+        StorageLocations.bookFile(filename)
     }
 
     func localEPUBURL(for book: ReadingBook) -> URL {

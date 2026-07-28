@@ -6,13 +6,11 @@ import Foundation
 extension BookSourceFetcher {
 
     nonisolated func tocCacheDir() -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("toc_cache")
+        StorageLocations.tocCache
     }
 
     nonisolated func bookInfoCacheDir() -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("book_info_cache")
+        StorageLocations.bookInfoCache
     }
 
     nonisolated func loadTOCPackageSync(tocUrl: String, source: BookSource) -> TOCPackage? {

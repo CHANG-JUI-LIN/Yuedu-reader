@@ -132,11 +132,17 @@ When editing search or online detail presentation:
 8. Symbolicate new reports only with an archive/dSYM whose UUID matches the IPS slice.
 9. Treat a system-only stack as the end of the causal chain; trace app data dependencies backward.
 10. Require iOS 17 regression evidence before simplifying this compatibility path.
+11. Any parent feature that embeds `SearchView` must put both the search screen and its
+    `SearchResultRoute` into one heterogeneous `NavigationPath`. Do not push `SearchView` with
+    `navigationDestination(item:)` while pushing its result into a separate bound path: that
+    corrupts the back-stack order on every iOS version.
 
 ## Relevant Files
 
 - `Modules/Features/Search/BookSearchView.swift`
 - `Modules/Features/Search/SearchResultRoute.swift`
+- `Modules/Features/Explore/ExploreHomeView.swift`
+- `Modules/Features/Explore/ExploreNavigationPath.swift`
 - `Modules/Features/Search/IOS17SearchResultTable.swift`
 - `Modules/Features/Search/SearchResultDetailIdentity.swift`
 - `Modules/Services/Online/SearchAggregator.swift`

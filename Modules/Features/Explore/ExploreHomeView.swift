@@ -25,7 +25,6 @@ struct ExploreHomeView: View {
     @AppStorage("exploreSelectedTab") private var tabRaw = ExploreTab.discover.rawValue
 
     @State private var query = ""
-    @State private var bookSearchRoute: BookSearchRoute?
     @State private var showSourceManager = false
     @State private var showDiscoverSettings = false
     @State private var showDiscoverSourcePicker = false
@@ -67,10 +66,6 @@ struct ExploreHomeView: View {
             .onSubmit(of: .search, submitSearch)
             .onAppear { discover.refreshSources() }
             .onChange(of: sourceStore.sources.count) { _, _ in discover.refreshSources() }
-            .navigationDestination(item: $bookSearchRoute) { route in
-                SearchView(initialQuery: route.query)
-                    .environmentObject(store)
-            }
             .navigationDestination(isPresented: pushedSourceManagerBinding) {
                 BookSourceListView(embedsNavigationStack: false)
             }
@@ -123,6 +118,9 @@ struct ExploreHomeView: View {
                     } else {
                         OnlineBookView(book: book).environmentObject(store)
                     }
+                case .search(let query):
+                    SearchView(initialQuery: query)
+                        .environmentObject(store)
                 }
             }
         }
@@ -161,7 +159,7 @@ struct ExploreHomeView: View {
         guard !trimmed.isEmpty else { return }
         switch tab {
         case .discover:
-            bookSearchRoute = BookSearchRoute(query: trimmed)
+            navigation.push(.search(trimmed))
             query = ""
         case .web:
             onNavigate(trimmed)
@@ -912,13 +910,6 @@ private struct HistoryRow: View {
         formatter.dateFormat = "yyyy/MM/dd"
         return formatter.string(from: date)
     }
-}
-
-// MARK: - Book Search Route
-
-private struct BookSearchRoute: Identifiable, Hashable {
-    let id = UUID()
-    let query: String
 }
 
 #Preview {

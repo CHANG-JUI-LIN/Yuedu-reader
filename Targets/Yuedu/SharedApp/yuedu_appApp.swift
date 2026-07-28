@@ -10,6 +10,11 @@ struct yuedu_appApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // First statement on purpose: this relocates books_meta.json, book_sources.json,
+        // covers and the caches out of the now user-visible Documents directory, and
+        // every store below reads from the new locations. A launch that touched a store
+        // before this ran would come up with an empty shelf.
+        StorageMigration.runIfNeeded()
         UserFontStorageManager.shared.registerAllOnLaunch()
         GlobalSettings.shared.validateGlobalFontSelection()
         // Must run before any source JS does: a source reads its cached device id

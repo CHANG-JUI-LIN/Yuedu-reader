@@ -263,8 +263,7 @@ enum TXTChapterParser {
     }
 
     private static func cacheDirectoryURL() -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("txt_chapter_cache", isDirectory: true)
+        StorageLocations.txtChapterCache
     }
 
     private static func cacheURL(for bookId: UUID) -> URL {

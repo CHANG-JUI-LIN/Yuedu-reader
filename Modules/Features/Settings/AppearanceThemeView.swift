@@ -67,6 +67,7 @@ struct AppearanceThemeView: View {
                 togglesSection
                 globalFontRow
                 readerInterfaceRow
+                interfaceEffectsRow
                 launchImageRow
                 if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsBottomTabCustomization {
                     rootTabRow
@@ -409,6 +410,45 @@ struct AppearanceThemeView: View {
         .buttonStyle(.plain)
     }
 
+    private var interfaceEffectsRow: some View {
+        NavigationLink {
+            AppearanceInterfaceEffectsView()
+        } label: {
+            HStack {
+                Text(localized("界面效果"))
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                Spacer(minLength: DSSpacing.md)
+                Text(interfaceEffectsSummary)
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textSecondary)
+                Image(systemName: "chevron.right")
+                    .font(DSFont.subheadline)
+                    .foregroundStyle(DSColor.textSecondary)
+            }
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.lg)
+            .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Names whichever effects are on, so the row says something useful without
+    /// opening it. Both off reads 已關閉.
+    private var interfaceEffectsSummary: String {
+        var parts: [String] = []
+        if settings.interfaceGlowIntensity > 0 {
+            parts.append(localized("光暈"))
+        }
+        if settings.interfaceFrostedGlass {
+            parts.append(localized("毛玻璃"))
+        }
+        guard !parts.isEmpty else { return localized("已關閉") }
+        // Locale-correct joiner ("光暈、毛玻璃" / "Glow, Frosted Glass") instead of a
+        // hardcoded separator that only reads right in one language.
+        return parts.formatted(.list(type: .and, width: .narrow))
+    }
+
     /// Launch-image entry. Pro users push the settings page; free users tapping
     /// it get the paywall highlighting the launch-screen feature.
     private var launchImageRow: some View {
@@ -704,7 +744,16 @@ struct AppearanceThemeView: View {
                         .foregroundStyle(DSColor.textPrimary)
                     Slider(value: imageOpacityBinding(scheme: scheme), in: 0...1, step: 0.05)
                         .tint(DSColor.accent)
-                    Text(String(format: "%.0f%%", imageOpacityDisplayValue(scheme: scheme) * 100))
+                        // A bare Slider has no name and announces a fraction of its
+                        // range. The label carries the appearance too, because this
+                        // screen shows two of these rows (亮色 / 深色) at once and
+                        // 「不透明度」 alone would name them identically.
+                        // docs/design.md §7.1, third trap.
+                        .accessibilityLabel(
+                            String(format: localized("%@ 不透明度"), localized(titleKey))
+                        )
+                        .accessibilityValue(imageOpacityPercentText(scheme: scheme))
+                    Text(imageOpacityPercentText(scheme: scheme))
                         .font(DSFont.monospaced(size: 13))
                         .foregroundStyle(DSColor.textSecondary)
                         .frame(width: 44, alignment: .trailing)
@@ -750,6 +799,12 @@ struct AppearanceThemeView: View {
 
     private func imageOpacityDisplayValue(scheme: ColorScheme) -> Double {
         imageOpacityBinding(scheme: scheme).wrappedValue
+    }
+
+    /// The one source for both the printed percentage and the slider's VoiceOver
+    /// value, so what is spoken can never drift from what is shown.
+    private func imageOpacityPercentText(scheme: ColorScheme) -> String {
+        String(format: "%.0f%%", imageOpacityDisplayValue(scheme: scheme) * 100)
     }
 
     /// Live preview of the effective background for the edited scope in the

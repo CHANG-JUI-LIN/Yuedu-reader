@@ -412,6 +412,9 @@ class GlobalSettings: ObservableObject {
     private static let appearanceSeparateDarkThemeKey = "yd_appearance_separate_dark_theme"
     private static let appearanceBindReaderThemeKey = "yd_appearance_bind_reader_theme"
     private static let appearanceReaderInterfaceKey = "yd_appearance_reader_interface"
+    private static let interfaceGlowIntensityKey = "yd_interface_glow_intensity"
+    private static let interfaceFrostedGlassKey = "yd_interface_frosted_glass"
+    private static let interfaceGlassTransparencyKey = "yd_interface_glass_transparency"
     private static let customAppearanceThemesKey = "yd_custom_appearance_themes"
     private static let appearancePageBackgroundsKey = "yd_appearance_page_backgrounds"
     private static let globalFontPostScriptKey = "yd_global_font_postscript"
@@ -454,6 +457,16 @@ class GlobalSettings: ObservableObject {
     private static let rootTabHidesLabelsKey = "yd_root_tab_hides_labels"
     private static let rootTabIconSizeKey = "yd_root_tab_icon_size"
     static let rootTabIconAssetsKey = "yd_root_tab_icon_assets"
+    // 界面效果 — see `InterfaceEffects.swift` for what each value paints.
+    static let interfaceGlowIntensityRange: ClosedRange<Double> = 0...1
+    static let interfaceGlassTransparencyRange: ClosedRange<Double> = 0...1
+    /// A restrained glow out of the box: enough to read as an intentional effect
+    /// on first launch, well short of the neon end of the slider.
+    static let defaultInterfaceGlowIntensity: Double = 0.3
+    /// On by default — frosted glass is what every floating element already used
+    /// before 界面效果 existed, and 透明度 100% reproduces that look exactly.
+    static let defaultInterfaceFrostedGlass = true
+    static let defaultInterfaceGlassTransparency: Double = 1.0
     static let commentBubbleScaleRange: ClosedRange<Double> = 0.5...2.0
     static let commentBubbleTextScaleRange: ClosedRange<Double> = 0.2...0.8
     static let defaultCommentBubbleScale = 1.0
@@ -837,6 +850,35 @@ class GlobalSettings: ObservableObject {
     }
     @Published var appearanceReaderInterface: AppearanceReaderInterface {
         didSet { UserDefaults.standard.set(appearanceReaderInterface.rawValue, forKey: Self.appearanceReaderInterfaceKey) }
+    }
+
+    // MARK: - 界面效果 (Interface Effects)
+
+    /// Strength of the glow bleeding out of every floating element's edge, 0...1.
+    @Published var interfaceGlowIntensity: Double {
+        didSet {
+            let sanitized = Self.sanitizedInterfaceGlowIntensity(interfaceGlowIntensity)
+            if sanitized != interfaceGlowIntensity {
+                interfaceGlowIntensity = sanitized
+            } else {
+                UserDefaults.standard.set(interfaceGlowIntensity, forKey: Self.interfaceGlowIntensityKey)
+            }
+        }
+    }
+    /// Whether floating elements blur what is behind them. Off = the solid fill.
+    @Published var interfaceFrostedGlass: Bool {
+        didSet { UserDefaults.standard.set(interfaceFrostedGlass, forKey: Self.interfaceFrostedGlassKey) }
+    }
+    /// How much of the blur shows through, 0...1. 1 = untouched material.
+    @Published var interfaceGlassTransparency: Double {
+        didSet {
+            let sanitized = Self.sanitizedInterfaceGlassTransparency(interfaceGlassTransparency)
+            if sanitized != interfaceGlassTransparency {
+                interfaceGlassTransparency = sanitized
+            } else {
+                UserDefaults.standard.set(interfaceGlassTransparency, forKey: Self.interfaceGlassTransparencyKey)
+            }
+        }
     }
     @Published var customAppearanceThemes: [AppearanceCustomTheme] {
         didSet { Self.saveCustomAppearanceThemes(customAppearanceThemes) }
@@ -1320,6 +1362,17 @@ class GlobalSettings: ObservableObject {
         launchImageDarkFileName = UserDefaults.standard.string(forKey: Self.launchImageDarkFileNameKey)
         let rawReaderInterface = UserDefaults.standard.string(forKey: Self.appearanceReaderInterfaceKey) ?? ""
         appearanceReaderInterface = AppearanceReaderInterface(rawValue: rawReaderInterface) ?? .classic
+        interfaceGlowIntensity = Self.sanitizedInterfaceGlowIntensity(
+            (UserDefaults.standard.object(forKey: Self.interfaceGlowIntensityKey) as? Double)
+                ?? Self.defaultInterfaceGlowIntensity
+        )
+        interfaceFrostedGlass =
+            (UserDefaults.standard.object(forKey: Self.interfaceFrostedGlassKey) as? Bool)
+            ?? Self.defaultInterfaceFrostedGlass
+        interfaceGlassTransparency = Self.sanitizedInterfaceGlassTransparency(
+            (UserDefaults.standard.object(forKey: Self.interfaceGlassTransparencyKey) as? Double)
+                ?? Self.defaultInterfaceGlassTransparency
+        )
         rootTabVisibleIDs = Self.sanitizedRootTabVisibleIDs(
             UserDefaults.standard.stringArray(forKey: Self.rootTabVisibleIDsKey)
                 ?? Self.defaultRootTabVisibleIDs
@@ -1523,6 +1576,14 @@ class GlobalSettings: ObservableObject {
 
     static func sanitizedCommentBubbleTextScale(_ value: Double) -> Double {
         min(max(value, commentBubbleTextScaleRange.lowerBound), commentBubbleTextScaleRange.upperBound)
+    }
+
+    static func sanitizedInterfaceGlowIntensity(_ value: Double) -> Double {
+        min(max(value, interfaceGlowIntensityRange.lowerBound), interfaceGlowIntensityRange.upperBound)
+    }
+
+    static func sanitizedInterfaceGlassTransparency(_ value: Double) -> Double {
+        min(max(value, interfaceGlassTransparencyRange.lowerBound), interfaceGlassTransparencyRange.upperBound)
     }
 
     private static func loadImportedTTSSources() -> [ImportedTTSSource] {
