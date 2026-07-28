@@ -25,7 +25,13 @@ extension ReaderView {
                         Image(systemName: "checkmark")
                             .font(DSFont.body.weight(.semibold))
                             .foregroundColor(.accentColor)
+                            // The tick is the visual form of 「使用中」; the `.isSelected`
+                            // trait below says it, so leaving it focusable only got the
+                            // symbol name read out.
+                            .accessibilityHidden(true)
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isSelected)
                 }
 
                 // 其他可切換的書源。Results stream in one source at a time, so show them
@@ -96,6 +102,7 @@ extension ReaderView {
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
+                    .accessibilityLabel(localized("更多"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(localized("關閉")) { showChangeSourceSheet = false }
@@ -191,8 +198,10 @@ extension ReaderView {
                 Image(systemName: "chevron.right")
                     .font(DSFont.caption)
                     .foregroundColor(.secondary)
+                    .accessibilityHidden(true)   // 純裝飾，否則旁白念出 "chevron.right"
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
     /// Switches the book to the chosen origin. On success dismisses the sheet and
@@ -523,6 +532,16 @@ extension ReaderView {
     @discardableResult
     func startTTSChapter(_ chapterIndex: Int, syncReader: Bool, startCharOffset: Int = 0) -> Bool {
         guard chapters.indices.contains(chapterIndex) else { return false }
+        // Starting on a volume separator (the reader is parked on one, or the user picked one
+        // in the TOC) has nothing to read: begin at the next real chapter instead of failing
+        // silently. The offset belongs to the separator, so it is dropped.
+        if isVolumeSeparatorChapter(chapterIndex) {
+            guard let target = narratableTTSChapter(from: chapterIndex, direction: 1) else {
+                ttsLog("[TTS][Reader] startTTSChapter: no narratable chapter after separator=\(chapterIndex)")
+                return false
+            }
+            return startTTSChapter(target, syncReader: syncReader)
+        }
         let shouldSyncReader = syncReader && readerHeaderFooterEditorModel == nil
         mediaOverlayCoordinator.stop()
         let narration = narrationForTTSChapter(chapterIndex)
@@ -550,11 +569,13 @@ extension ReaderView {
         }
 
         ttsChapterIndex = chapterIndex
+        ttsPendingChapterIndex = nil
         let anchor = startCharOffset > 0
             ? CoreTextReadingPosition(spineIndex: chapterIndex, charOffset: startCharOffset)
             : .chapterStart(chapterIndex)
         setActiveTTSAnchor(anchor, alignReader: shouldSyncReader)
         ensureChapterReady(chapterIndex: chapterIndex, priority: .jump)
+        prepareNextTTSChapter(after: chapterIndex)
         ttsCoordinator.speak(
             text: text,
             title: chapters[chapterIndex].title,
@@ -570,31 +591,166 @@ extension ReaderView {
     @discardableResult
     func startAdjacentTTSChapter(delta: Int) -> Bool {
         let baseChapter = ttsChapterIndex ?? currentChapterIndex
-        let target = baseChapter + delta
-        guard chapters.indices.contains(target) else { return false }
+        // Skip separators in both directions: next/previous-track should land on something
+        // that can actually be read aloud.
+        guard let target = narratableTTSChapter(from: baseChapter, direction: delta) else {
+            return false
+        }
         return startTTSChapter(target, syncReader: true)
     }
 
-    func advanceTTSChapterFromEngine() -> TTSNarrationUnit? {
+    func advanceTTSChapterFromEngine() -> TTSNextUnitOutcome {
         let baseChapter = ttsChapterIndex ?? currentChapterIndex
-        let target = baseChapter + 1
-        guard chapters.indices.contains(target) else {
+        guard let target = narratableTTSChapter(from: baseChapter, direction: 1) else {
             ttsChapterIndex = nil
-            return nil
+            return .finished
         }
         let narration = narrationForTTSChapter(target)
         let text = narration.text
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            ensureChapterReady(chapterIndex: target, priority: .jump)
-            return nil
+            // Not "the book ended" — the chapter just isn't fetched/laid out yet. Hold the
+            // session open and let `resolveWaitingTTSChapter` finish the job.
+            beginWaitingForTTSChapter(target)
+            return .waiting
         }
+        commitTTSChapterAdvance(to: target, text: text)
+        return .ready(narration)
+    }
+
+    /// Shared tail of both advance paths (immediate and post-wait): move the anchor, retitle
+    /// Now Playing, and start preparing the chapter after this one.
+    private func commitTTSChapterAdvance(to target: Int, text: String) {
         ttsChapterIndex = target
+        ttsPendingChapterIndex = nil
         setActiveTTSAnchor(
             .chapterStart(target),
             alignReader: readerHeaderFooterEditorModel == nil
         )
         ttsCoordinator.updateNowPlayingChapter(title: chapters[target].title, text: text)
-        return narration
+        prepareNextTTSChapter(after: target)
+    }
+
+    // MARK: - TTS chapter readiness
+
+    /// A TOC entry that structurally has no prose to read: 「第N卷」/「正文」/「番外」 headers,
+    /// which carry no fetchable content URL and render as a divider page.
+    ///
+    /// This is a structural test (`shouldRenderAsVolumeSeparator`), never "the text came back
+    /// empty" — an empty result from a real chapter means the fetch or parse failed, and that
+    /// case must still wait/report rather than be silently skipped.
+    func isVolumeSeparatorChapter(_ index: Int) -> Bool {
+        guard let refs = book?.onlineChapters, refs.indices.contains(index) else { return false }
+        return refs[index].shouldRenderAsVolumeSeparator
+    }
+
+    /// Next chapter in `direction` (+1 / -1) that actually has prose, skipping volume
+    /// separators. Returns nil at the ends of the book. Bounded by `chapters.indices`, so a
+    /// run of consecutive separators terminates instead of looping.
+    func narratableTTSChapter(from base: Int, direction: Int) -> Int? {
+        guard direction != 0 else { return nil }
+        var candidate = base + direction
+        while chapters.indices.contains(candidate) {
+            if !isVolumeSeparatorChapter(candidate) { return candidate }
+            ttsLog("[TTS][Reader] skipping volume separator chapter=\(candidate)")
+            candidate += direction
+        }
+        return nil
+    }
+
+    /// Prepare the chapter after the one being narrated, driven by the *playback* position
+    /// rather than by page turns.
+    ///
+    /// Both preparation steps are required and neither was previously performed for TTS:
+    /// `ensureChapterReady` fetches an online chapter's content into the cache, and
+    /// `preloadChapter` builds the CoreText layout — and the layout is the only thing
+    /// `narrationForTTSChapter` can read for an online book, whose `chapters[i].content` is
+    /// always empty. Page-turn-driven `warmUpNext` never runs while the screen is locked, so
+    /// without this the next chapter is simply never ready in the listening-only case.
+    func prepareNextTTSChapter(after chapterIndex: Int) {
+        // Prepare the chapter narration will actually reach, not a separator it will skip.
+        guard let next = narratableTTSChapter(from: chapterIndex, direction: 1) else { return }
+        ensureChapterReady(chapterIndex: next, priority: .prefetch)
+        guard let engine = epubRenderer.engine, usesCoreTextEPUB else { return }
+        Task { @MainActor in
+            await engine.preloadChapter(at: next)
+        }
+    }
+
+    /// Enter the wait for `target`. Kicks the fetch if the content isn't cached; otherwise
+    /// goes straight to layout. Resolution happens on the real readiness signal — either the
+    /// `chapterStates` publisher (content arrived) or `preloadChapter`'s completion (layout
+    /// built) — never on a timer.
+    func beginWaitingForTTSChapter(_ target: Int) {
+        ttsLog("[TTS][Reader] begin waiting for chapter=\(target) contentAvailable=\(isChapterContentAvailable(at: target))")
+        ttsPendingChapterIndex = target
+
+        if isChapterContentAvailable(at: target) {
+            resolveWaitingTTSChapter(target)
+        } else {
+            // .jump: the listener is blocked on this chapter right now, so it outranks any
+            // in-flight prefetch for a chapter nobody is waiting on.
+            ensureChapterReady(chapterIndex: target, priority: .jump)
+        }
+    }
+
+    /// Content for `target` is in the cache: build its layout, then hand the text to the
+    /// engine that is holding the session open.
+    func resolveWaitingTTSChapter(_ target: Int) {
+        guard ttsPendingChapterIndex == target else { return }
+        guard let engine = epubRenderer.engine, usesCoreTextEPUB else {
+            // Non-CoreText books read from `allPages` / `chapters[i].content`, which need no
+            // layout pass — if the text is still empty here there is nothing left to wait for.
+            let narration = narrationForTTSChapter(target)
+            finishWaitingTTSChapter(target, narration: narration)
+            return
+        }
+        Task { @MainActor in
+            // Completion of the layout task IS the signal; no polling, no delay.
+            await engine.preloadChapter(at: target)
+            guard ttsPendingChapterIndex == target else {
+                ttsLog("[TTS][Reader] chapter wait for \(target) superseded during layout")
+                return
+            }
+            finishWaitingTTSChapter(target, narration: narrationForTTSChapter(target))
+        }
+    }
+
+    private func finishWaitingTTSChapter(_ target: Int, narration: TTSNarrationUnit) {
+        guard ttsPendingChapterIndex == target else { return }
+        guard ttsCoordinator.isWaitingForNextChapter else {
+            // Playback was stopped or restarted while we were preparing; drop the result.
+            ttsPendingChapterIndex = nil
+            return
+        }
+        let text = narration.text
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Content cached and layout built, yet still no text: this chapter is genuinely
+            // unreadable (empty body, parse failure), so waiting longer cannot help.
+            ttsLog("[TTS][Reader] chapter \(target) still empty after layout; aborting wait")
+            ttsPendingChapterIndex = nil
+            ttsCoordinator.abortWaitingForNextChapter(reason: "empty chapter \(target)")
+            return
+        }
+        ttsLog("[TTS][Reader] chapter wait resolved chapter=\(target) textCount=\(text.count)")
+        commitTTSChapterAdvance(to: target, text: text)
+        ttsCoordinator.supplyPendingNarration(narration, chapterTitle: chapters[target].title)
+    }
+
+    /// Called from the `chapterStates` observer. Drives the pending wait forward on the real
+    /// fetch outcome: `.ready` proceeds to layout, `.failed` ends the session with the reason
+    /// (an unreachable source can't be waited out).
+    func handleTTSChapterWaitStateChange(_ state: ChapterLoadState, at chapterIndex: Int) {
+        guard ttsPendingChapterIndex == chapterIndex else { return }
+        switch state {
+        case .ready:
+            resolveWaitingTTSChapter(chapterIndex)
+        case let .failed(reason):
+            ttsLog("[TTS][Reader] chapter wait failed chapter=\(chapterIndex) reason=\(reason)")
+            ttsPendingChapterIndex = nil
+            ttsCoordinator.abortWaitingForNextChapter(reason: reason)
+        case .idle, .loading:
+            break
+        }
     }
 
     func handleReaderPositionChangedForTTS() {

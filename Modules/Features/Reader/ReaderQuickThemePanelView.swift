@@ -84,8 +84,8 @@ struct ReaderQuickThemePanelView: View {
     @State private var showCustomBackgroundOptions = false
     @State private var customBackgroundColor = Color(uiColor: ReaderTheme.white.uiBackgroundColor)
 
-    private let minFontSize: CGFloat = 12
-    private let maxFontSize: CGFloat = 32
+    private let minFontSize = GlobalSettings.readerFontSizeRange.lowerBound
+    private let maxFontSize = GlobalSettings.readerFontSizeRange.upperBound
     /// Diameter of each dot in the font-size scale indicator.
     private let fontScaleDotSize: CGFloat = 5
 
@@ -485,7 +485,7 @@ struct ReaderQuickThemePanelView: View {
     // MARK: - Actions
 
     private func adjustFontSize(_ delta: CGFloat) {
-        fontSize = min(maxFontSize, max(minFontSize, (fontSize + delta).rounded()))
+        fontSize = GlobalSettings.clampedReaderFontSize((fontSize + delta).rounded())
         withAnimation(DSAnimation.standard) { showsFontSizeScale = true }
         fontScaleToken &+= 1
     }

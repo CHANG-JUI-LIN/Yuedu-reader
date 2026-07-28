@@ -1,4 +1,5 @@
 import Testing
+@testable import yuedu_app
 
 @Suite("Dismissal-sequenced modal presentation")
 struct DismissalSequencedPresentationTests {

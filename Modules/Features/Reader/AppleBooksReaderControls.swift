@@ -23,26 +23,12 @@ enum AppleBooksProgressScrubber {
     }
 }
 
-struct AppleBooksReaderAction: Identifiable {
-    enum ID: String {
-        case playback
-        case download
-        case changeSource
-        case refresh
-    }
-
-    let id: ID
-    let icon: String
-    let label: String
-    let action: () -> Void
-}
-
 struct AppleBooksReaderControls: View {
     @Binding var activePanel: AppleBooksReaderControlPanel?
     let progressValue: () -> Double
     let applyProgress: (Double) -> Void
     let progressDescription: (Double) -> String
-    let secondaryActions: [AppleBooksReaderAction]
+    let secondaryActions: [ReaderSecondaryAction]
     let onOpenTOC: () -> Void
     let onOpenSearch: () -> Void
     let onOpenSettings: () -> Void
@@ -135,6 +121,10 @@ struct AppleBooksReaderControls: View {
                                         height: DSLayout.readerAppleBooksActionHeight
                                     )
                                     .background(.regularMaterial, in: Capsule())
+                                    // Same trap the 經典 bar hit: an unhidden SF Symbol stays
+                                    // its own element and reads out as "arrow.left.and.right"
+                                    // instead of 「換源」. docs/design.md §7.1.
+                                    .accessibilityHidden(true)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(item.label)
@@ -214,6 +204,7 @@ struct AppleBooksReaderControls: View {
                         height: DSLayout.readerAppleBooksMenuRowHeight
                     )
                     .contentShape(Rectangle())
+                    .accessibilityHidden(true)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(localized("目錄"))
@@ -310,25 +301,25 @@ struct AppleBooksReaderControls: View {
                 String(format: localized("第 %d 章"), 5)
             },
             secondaryActions: [
-                AppleBooksReaderAction(
+                ReaderSecondaryAction(
                     id: .playback,
                     icon: "headphones",
                     label: localized("聽書"),
                     action: {}
                 ),
-                AppleBooksReaderAction(
+                ReaderSecondaryAction(
                     id: .download,
                     icon: "arrow.down.circle",
                     label: localized("下載"),
                     action: {}
                 ),
-                AppleBooksReaderAction(
+                ReaderSecondaryAction(
                     id: .changeSource,
                     icon: "arrow.left.and.right",
                     label: localized("換源"),
                     action: {}
                 ),
-                AppleBooksReaderAction(
+                ReaderSecondaryAction(
                     id: .refresh,
                     icon: "arrow.clockwise",
                     label: localized("刷新"),

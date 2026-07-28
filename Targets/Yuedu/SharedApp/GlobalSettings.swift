@@ -933,6 +933,20 @@ class GlobalSettings: ObservableObject {
         didSet { UserDefaults.standard.set(readerFontSize, forKey: "yd_reader_font_size") }
     }
 
+    /// The one allowed range for the reader body font size, in points. Every editor and
+    /// every importer clamps through this.
+    ///
+    /// It used to be copied into four places. When the settings stepper's declared range
+    /// was widened to 10–40, the separate `min(32, max(12, …))` clamp inside
+    /// `ReaderSettingsView.fontSizeBinding` kept squashing each write back into 12–32, so
+    /// the control looked frozen at the old bounds. Add new call sites here, never a
+    /// fresh literal.
+    static let readerFontSizeRange: ClosedRange<CGFloat> = 10...40
+
+    static func clampedReaderFontSize(_ value: CGFloat) -> CGFloat {
+        min(readerFontSizeRange.upperBound, max(readerFontSizeRange.lowerBound, value))
+    }
+
     /// Additional inter-line spacing derived from the line-height multiplier (pt).
     var lineSpacing: Double {
         max(0, (lineHeightMultiple - 1.0) * readerFontSize)

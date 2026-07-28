@@ -9,13 +9,13 @@ import CoreText
 /// Readest / Apple Books, which render EPUB in a web view) keep justified English tight.
 ///
 /// CJK needs none of this: it wraps per character, so every line already fills the column.
-enum ReaderHyphenation {
+public enum ReaderHyphenation {
 
     /// Attribute carrying the language CoreText uses to pick hyphenation rules.
-    static let languageAttributeKey = NSAttributedString.Key(kCTLanguageAttributeName as String)
+    public static let languageAttributeKey = NSAttributedString.Key(kCTLanguageAttributeName as String)
 
     /// Paragraph hyphenation strength (0…1). 1.0 = always prefer breaking a word over leaving a gap.
-    static let factor: Float = 1.0
+    public static let factor: Float = 1.0
 
     /// Language tag to attach to `text` so CoreText will hyphenate it, or nil to leave it untagged.
     ///
@@ -32,7 +32,7 @@ enum ReaderHyphenation {
     /// is not carried through the render pipeline. A German/French book therefore hyphenates by
     /// English rules — imperfect, but better than not breaking at all. Reading the publication
     /// language from EPUB metadata is the upgrade path if that ever matters.
-    static func language(for text: String) -> String? {
+    public static func language(for text: String) -> String? {
         var latinLetters = 0
         for scalar in text.unicodeScalars {
             switch scalar.value {
@@ -52,7 +52,7 @@ enum ReaderHyphenation {
     }
 
     /// Adds the language tag to `attributes` when `text` is hyphenatable Latin script.
-    static func tagging(
+    public static func tagging(
         _ attributes: [NSAttributedString.Key: Any],
         forText text: String
     ) -> [NSAttributedString.Key: Any] {

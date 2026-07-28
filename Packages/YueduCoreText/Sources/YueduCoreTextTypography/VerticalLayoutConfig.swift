@@ -9,7 +9,7 @@ extension CTFont {
     /// resolves a different glyph for `character` — meaning the font has a
     /// vertical alternate.  Returns false if the glyph is unchanged (upright
     /// fallback) or the font lacks the character entirely.
-    func hasVerticalAlternate(for character: Character) -> Bool {
+    public func hasVerticalAlternate(for character: Character) -> Bool {
         guard let scalar = character.unicodeScalars.first else { return false }
 
         let str = String(character)
@@ -54,13 +54,13 @@ extension CTFont {
 /// left alone; only missing ones get a presentation-form fallback.  This
 /// preserves searchability and copy-paste for characters the font handles
 /// natively.
-final class VerticalLayoutConfig {
+public final class VerticalLayoutConfig {
 
     /// Horizontal → vertical presentation form.  Applied only when the font
     /// is confirmed to lack a vertical alternate for the horizontal codepoint.
-    let substitutionMap: [String: String]
+    public let substitutionMap: [String: String]
 
-    init(font: CTFont) {
+    public init(font: CTFont) {
         substitutionMap = Self.buildMap(for: font)
     }
 
@@ -84,7 +84,10 @@ final class VerticalLayoutConfig {
 
     // MARK: - Cache
 
-    private static var cache: [FontKey: [String: String]] = [:]
+    // Every read and write is protected by `lock`; `nonisolated(unsafe)` tells
+    // Swift 6 about that external synchronization without actor-hopping the
+    // synchronous typography API.
+    private nonisolated(unsafe) static var cache: [FontKey: [String: String]] = [:]
     private static let lock = NSLock()
 
     private struct FontKey: Hashable {
@@ -117,4 +120,3 @@ final class VerticalLayoutConfig {
         return map
     }
 }
-

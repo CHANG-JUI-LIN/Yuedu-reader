@@ -83,6 +83,18 @@ final class CoreTextChunkDrawView: UIView {
     override func draw(_ rect: CGRect) {
         guard let chunk = chunk else { return }
 
+        let renderTrace = ReaderPerfTrace.begin(
+            .renderChunk,
+            metadata: ReaderPerfMetadata(
+                spineIndex: chunk.chapterIndex,
+                characterCount: chunk.charRange.length,
+                chunkCount: 1,
+                writingMode: String(describing: chunk.writingMode),
+                executor: Thread.isMainThread ? "main" : "background"
+            )
+        )
+        defer { ReaderPerfTrace.end(renderTrace) }
+
         // Image-only chunk (cover / full-page illustration): draw attachments directly.
         if chunk.isImageOnly {
             for attachment in chunk.attachments {

@@ -1,0 +1,11 @@
+YueduCoreText
+Copyright 2025-2026 Zhang Ruilin and Yuedu contributors
+
+This package was extracted from the Yuedu Reader project:
+https://github.com/CHANG-JUI-LIN/Yuedu-reader
+
+No third-party source code, fonts, sample publications, or runtime dependencies
+are bundled in this package.
+
+"Yuedu" identifies the project's origin. The source license does not grant
+rights to Yuedu Reader names, logos, icons, screenshots, or other branding.

@@ -1,5 +1,5 @@
 import Combine
-import SwiftUI
+    import SwiftUI
 import UIKit
 
 let uiFeedbackDuration: Double = 0.25
@@ -109,8 +109,16 @@ struct ReaderView: View {
     @State var showTTSPanel = false
     @State var showDownloadOptions = false
     @State var showOnlineBookDetail = false
+    /// 現代 interface: the card hanging off the cover thumbnail in the top bar.
+    @State var showModernBookCard = false
+    /// Cover art for the 現代 chrome, read from disk once instead of on every body
+    /// pass (the top bar and the book card both draw it).
+    @State var modernCoverImage: UIImage?
     @State private var showAutoReadPanel = false
     @State var ttsChapterIndex: Int? = nil
+    /// Chapter the narration is blocked on at a chapter boundary, while the engine holds the
+    /// audio session open. Non-nil only between `beginWaitingForTTSChapter` and its resolution.
+    @State var ttsPendingChapterIndex: Int? = nil
     @State var showTTSJumpPrompt = false
     @State var ttsJumpPromptChapterIndex: Int? = nil
     @State var ttsPlaybackAnchor: CoreTextReadingPosition?
@@ -585,6 +593,20 @@ struct ReaderView: View {
                 )
                 : nil
         )
+    }
+
+    /// Drop queued pagination when the app leaves the foreground — except while TTS is
+    /// narrating. Backgrounding used to cancel unconditionally, which killed the layout pass
+    /// for the chapter TTS was about to need; because layout is otherwise only scheduled by
+    /// page turns (`warmUpNext`), and a locked screen turns no pages, nothing ever rebuilt it
+    /// and narration stopped dead at the chapter boundary. Listening is precisely the case
+    /// where offscreen pagination still has to run.
+    func cancelPendingRenderWorkUnlessNarrating() {
+        guard ttsCoordinator.playbackState == .stopped else {
+            ttsLog("[TTS][Reader] keeping pagination alive while narrating (phase change)")
+            return
+        }
+        epubRenderer.engine?.cancelPendingWork()
     }
 
     func isChapterContentAvailable(at chapterIndex: Int) -> Bool {
@@ -1199,8 +1221,12 @@ struct ReaderView: View {
                 .navigationBarBackButtonHidden(true)
                 .toolbar {
                     appleBooksToolbarContent
+                    modernToolbarContent
                 }
-                .toolbar(showsAppleBooksToolbars ? .visible : .hidden, for: .navigationBar)
+                .toolbar(
+                    showsAppleBooksToolbars || showsModernToolbars ? .visible : .hidden,
+                    for: .navigationBar
+                )
                 .toolbar(showsAppleBooksBottomToolbar ? .visible : .hidden, for: .bottomBar)
                 .toolbarBackground(.hidden, for: .navigationBar, .bottomBar)
         }
@@ -1217,6 +1243,13 @@ struct ReaderView: View {
             }
             isRestoringPosition = false
         }
+        .task(id: modernCoverSourceID) { loadModernCoverImage() }
+    }
+
+    /// Changes when the 現代 chrome needs a different cover — a different file, or the
+    /// interface being switched to (or away from) 現代.
+    private var modernCoverSourceID: String {
+        "\(settings.appearanceReaderInterface.rawValue)|\(book?.coverImagePath ?? "")"
     }
 
     private func buildBody() -> AnyView {
@@ -1224,7 +1257,7 @@ struct ReaderView: View {
             isScrolling: effectiveScrollMode,
             isEditing: readerHeaderFooterEditorModel != nil
         )
-        return AnyView(
+        let readerLayers = AnyView(
             ZStack(alignment: .top) {
             readerSurfaceBackground
                 .animation(.easeInOut(duration: uiFeedbackDuration), value: readerTheme)
@@ -1399,8 +1432,11 @@ struct ReaderView: View {
                 .transition(.opacity)
                 .zIndex(110)
             }
-        }
-        .background(
+            }
+        )
+        let configuredLayers = AnyView(
+            readerLayers
+                .background(
             GeometryReader { g in
                 Color.clear
                     .preference(key: ReaderSafeAreaTopKey.self, value: g.safeAreaInsets.top)
@@ -1430,6 +1466,15 @@ struct ReaderView: View {
             )
         )
         .animation(.easeInOut(duration: 0.25), value: showBars)
+        // Chrome-owned panels close with the chrome, wherever the chrome was hidden
+        // from — the tap zone, the touch-zone editor, or a search result jump. Clearing
+        // this at each `showBars = false` site left panels that popped back up the next
+        // time the bars were shown.
+        .onChange(of: showBars) { _, visible in
+            guard !visible else { return }
+            appleBooksActivePanel = nil
+            showModernBookCard = false
+        }
         .modifier(HideTabBarModifier())
         .alert(
             localized("頁首頁尾編輯"),
@@ -1459,7 +1504,10 @@ struct ReaderView: View {
                 dismissReaderPresentation()
             }
         }
-        .onAppear {
+        )
+        let lifecycleLayers = AnyView(
+            configuredLayers
+                .onAppear {
             ensureReaderOverlaySVGAssetStore()
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             readerViewModel.configure(
@@ -1507,7 +1555,8 @@ struct ReaderView: View {
             // Allow the in-reader mini-player the whole time the reader is on screen,
             // independent of the bars — bar visibility only repositions it now.
             setTTSFloatingOverlayVisible(true)
-            ttsCoordinator.onPageFinishedWithPronunciation = {
+            ttsCoordinator.nextChapterLoadingStatusTitle = localized("正在載入下一章…")
+            ttsCoordinator.onNextNarrationUnit = {
                 ttsLog("[TTS][Reader] onChapterFinished ttsChapter=\(ttsChapterIndex.map(String.init) ?? "nil") currentChapter=\(currentChapterIndex)")
                 return advanceTTSChapterFromEngine()
             }
@@ -1522,6 +1571,7 @@ struct ReaderView: View {
             }
             ttsCoordinator.onStop = {
                 ttsChapterIndex = nil
+                ttsPendingChapterIndex = nil
                 ttsPlaybackAnchor = nil
                 showTTSJumpPrompt = false
                 ttsJumpPromptChapterIndex = nil
@@ -1529,14 +1579,19 @@ struct ReaderView: View {
         }
         .onDisappear {
             ttsLog("[TTS][Reader] onDisappear cleanup only ttsPlaying=\(ttsCoordinator.isPlaying)")
-            epubRenderer.engine?.cancelPendingWork()
+            cancelPendingRenderWorkUnlessNarrating()
             if !settings.followSystemBrightness {
                 UIScreen.main.brightness = CGFloat(systemBrightness)
             }
             saveProgress()
             finishReadingStatsSession()
             restoreFixedLayoutOrientationPreference()
-            if let b = book, b.isOnline {
+            // Same invariant as the pagination guard above: while TTS is narrating, the
+            // chapter-supply pipeline must stay up. `onDisappear` also fires when the reader
+            // is merely covered (a pushed page, a full-screen cover), and cancelling the
+            // in-flight fetch there would strand a chapter-boundary wait with no fetch left
+            // to complete it. A real teardown stops the coordinator, which releases these.
+            if let b = book, b.isOnline, ttsCoordinator.playbackState == .stopped {
                 Task {
                     await readerViewModel.cancelAll(for: b.id)
                 }
@@ -1552,7 +1607,7 @@ struct ReaderView: View {
             ttsLog("[TTS][Reader] scenePhase=\(String(describing: phase)) ttsPlaying=\(ttsCoordinator.isPlaying)")
             if phase == .background || phase == .inactive {
                 ttsCoordinator.refreshNowPlayingForSystemSurfaces()
-                epubRenderer.engine?.cancelPendingWork()
+                cancelPendingRenderWorkUnlessNarrating()
                 saveProgress()
                 finishReadingStatsSession()
             } else if phase == .active {
@@ -1567,7 +1622,7 @@ struct ReaderView: View {
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
         ) { _ in
-            epubRenderer.engine?.cancelPendingWork()
+            cancelPendingRenderWorkUnlessNarrating()
             saveProgress()
             finishReadingStatsSession()
         }
@@ -1609,7 +1664,10 @@ struct ReaderView: View {
         .onChanged(of: settings.readerCustomBackgroundImageFileName) { _ in
             syncActiveThemePreset()
         }
-        .onChanged(of: settings.commentBubbleFollowsSourceSVG) { _ in
+        )
+        let settingsObservationLayers = AnyView(
+            lifecycleLayers
+                .onChanged(of: settings.commentBubbleFollowsSourceSVG) { _ in
             forceReaderRenderableContentRefresh()
         }
         .onChanged(of: settings.commentBubblePresetMode) { _ in
@@ -1750,7 +1808,10 @@ struct ReaderView: View {
                 Task { await backgroundAudioCoordinator.update(session: session, chapterIndex: newChapter) }
             }
         }
-        .sheet(isPresented: $showSettings) {
+        )
+        let presentationLayers = AnyView(
+            settingsObservationLayers
+                .sheet(isPresented: $showSettings) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 ReaderSettingsView(
                     fontSize: Binding(
@@ -1850,6 +1911,17 @@ struct ReaderView: View {
                 }
             }
         }
+        // Modal, NOT a `navigationDestination`. Verified twice on device: pushing the
+        // detail onto the reader's own NavigationStack pops the reader itself off the
+        // shelf's stack, so 返回 lands on the bookshelf instead of the page — and
+        // because that removal never goes through `ReaderNavigationCoordinator`, the
+        // coordinator stays convinced a reader is presented and refuses every later
+        // open ("can't get back into the reader", see HomeView.openBook and
+        // ReaderNavigationCoordinator.reconcileIfReaderDetached).
+        //
+        // The reader is a UIKit controller pushed directly onto the shelf's SwiftUI
+        // NavigationStack (BookCardNavigationGate), and its inner NavigationStack is
+        // not insulated from that. Do not reintroduce a push here.
         .fullScreenCover(isPresented: $showOnlineBookDetail) {
             if let detail = onlineBookDetail {
                 NavigationStack {
@@ -1964,7 +2036,10 @@ struct ReaderView: View {
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
-        .onChanged(of: showChangeSourceSheet) { show in
+        )
+        return AnyView(
+            presentationLayers
+                .onChanged(of: showChangeSourceSheet) { show in
             if show { loadOtherOrigins() }
         }
         .onChanged(of: epubRenderer.isCoreTextReady) { ready in
@@ -1999,9 +2074,6 @@ struct ReaderView: View {
         case .toggleMenu:
             withAnimation(.easeInOut(duration: uiFeedbackDuration)) {
                 showBars.toggle()
-                if !showBars {
-                    appleBooksActivePanel = nil
-                }
             }
         case .previousPage:
             guard !showBars else { return }

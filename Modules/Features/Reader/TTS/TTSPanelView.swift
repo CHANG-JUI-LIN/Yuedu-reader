@@ -50,6 +50,12 @@ struct TTSPanelView: View {
         return Double(tts.currentSegmentIndex) / Double(tts.totalSegments - 1)
     }
 
+    /// Speech rate as the percentage shown under the slider; also what VoiceOver reads
+    /// as the slider's value, so it doesn't fall back to a raw fraction of the range.
+    private var speechRateText: String {
+        String(format: "%.0f%%", tts.speechRate / 0.5 * 100)
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -188,8 +194,13 @@ struct TTSPanelView: View {
 
                 Section(header: Text(localized("語速"))) {
                     HStack {
-                        Image(systemName: "speedometer")
+                        // Slow/fast end-caps, the same tortoise/hare pair Apple uses for
+                        // playback speed. Hidden from VoiceOver: as plain images they were
+                        // two focusable elements announcing a raw SF Symbol name on either
+                        // side of the control they only illustrate.
+                        Image(systemName: "tortoise")
                             .foregroundColor(DSColor.textSecondary)
+                            .accessibilityHidden(true)
                         Slider(
                             value: Binding(
                                 get: { tts.speechRate },
@@ -201,10 +212,13 @@ struct TTSPanelView: View {
                                 if !editing { tts.applyRateToActivePlayback() }
                             }
                         )
-                        Image(systemName: "speedometer")
+                        .accessibilityLabel(localized("語速"))
+                        .accessibilityValue(speechRateText)
+                        Image(systemName: "hare")
                             .foregroundColor(DSColor.textSecondary)
+                            .accessibilityHidden(true)
                     }
-                    Text("\(localized("當前速度"))：\(String(format: "%.0f%%", tts.speechRate / 0.5 * 100))")
+                    Text("\(localized("當前速度"))：\(speechRateText)")
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                     if systemVoiceRateIsCapped {
@@ -409,8 +423,11 @@ struct AutoReadPanelView: View {
 
                 Section(header: Text(localized("翻頁速度"))) {
                     HStack {
-                        Image(systemName: "speedometer")
+                        // Slow/fast end-caps — same pairing and same VoiceOver treatment as
+                        // the 語速 slider above.
+                        Image(systemName: "tortoise")
                             .foregroundColor(DSColor.textSecondary)
+                            .accessibilityHidden(true)
                         Slider(
                             value: Binding(
                                 get: { autoReader.speed },
@@ -419,8 +436,11 @@ struct AutoReadPanelView: View {
                             in: 0.5...5.0,
                             step: 0.5
                         )
-                        Image(systemName: "speedometer")
+                        .accessibilityLabel(localized("翻頁速度"))
+                        .accessibilityValue(String(format: "%.1fx", autoReader.speed))
+                        Image(systemName: "hare")
                             .foregroundColor(DSColor.textSecondary)
+                            .accessibilityHidden(true)
                     }
                     Text(
                         "\(localized("速度")) \(String(format: "%.1fx", autoReader.speed))（\(localized("約每")) \(String(format: "%.1f", max(0.5, 4.0 / autoReader.speed))) \(localized("秒翻一頁") )）"

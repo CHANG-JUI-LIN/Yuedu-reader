@@ -35,15 +35,17 @@ struct ReaderBottomControlBar: View {
             HStack(spacing: 12) {
                 Spacer()
                 if showRefreshButton {
-                    circleBtn(icon: "arrow.clockwise") { onRefresh() }
+                    circleBtn(icon: "arrow.clockwise", label: localized("刷新")) { onRefresh() }
                 }
                 if showChangeSourceButton {
-                    circleBtn(icon: "arrow.left.and.right") { onOpenChangeSource() }
+                    circleBtn(icon: "arrow.left.and.right", label: localized("換源")) {
+                        onOpenChangeSource()
+                    }
                 }
                 if showDownloadButton {
-                    circleBtn(icon: downloadButtonIcon) { onDownloadAction() }
+                    circleBtn(icon: downloadButtonIcon, label: localized("下載")) { onDownloadAction() }
                 }
-                circleBtn(icon: "headphones") { onOpenTTS() }
+                circleBtn(icon: "headphones", label: localized("聽書")) { onOpenTTS() }
             }
             .padding(.trailing, 20)
             .padding(.bottom, 20)
@@ -86,17 +88,34 @@ struct ReaderBottomControlBar: View {
         }
     }
 
+    /// A floating secondary action, sitting directly on top of the CoreText page —
+    /// unlike the tool row below, it has no bar behind it. The fill must therefore stay
+    /// opaque: with `Color.clear` the body text (and 段評 bubbles) showed straight
+    /// through the circles and the icons were unreadable against any paragraph behind
+    /// them. `barColor` matches the control bar underneath, so the row reads as one
+    /// piece of chrome.
     @ViewBuilder
-    private func circleBtn(icon: String, action: @escaping () -> Void) -> some View {
+    private func circleBtn(icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(DSFont.fixed(size: 18, weight: .light))
-                .foregroundColor(readerTheme.textColor.opacity(0.8))
+                .font(DSFont.fixed(size: 18))
+                .foregroundColor(readerTheme.textColor.opacity(0.9))
                 .frame(width: 40, height: 40)
-                .background(Color.clear)
-                .clipShape(Circle())
-                .overlay(Circle().stroke(readerTheme.textColor.opacity(0.3), lineWidth: 1))
+                .background(readerTheme.barColor, in: Circle())
+                .overlay(Circle().stroke(readerTheme.textColor.opacity(0.35), lineWidth: 1))
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                // The symbol stayed a focusable element of its own next to the button, so
+                // VoiceOver read 「換源」 out as "arrow.left.and.right" — the button's label
+                // never won. The icon is decorative here: the name lives on the Button.
+                // docs/design.md §7.1, second trap.
+                .accessibilityHidden(true)
         }
+        .accessibilityLabel(label)
+    }
+
+    /// The one source for both the printed progress line and the slider's VoiceOver value.
+    private var progressStatusText: String {
+        "\(chapterPageInfo)  ·  \(totalProgressPercent)"
     }
 
     private var progressSliderRow: some View {
@@ -106,13 +125,16 @@ struct ReaderBottomControlBar: View {
             } label: {
                 HStack(spacing: 3) {
                     Image(systemName: "chevron.left").font(DSFont.fixed(size: 12))
+                        .accessibilityHidden(true)
                     Text(localized("上一章")).font(DSFont.fixed(size: 14))
                 }
                 .foregroundColor(
                     canGoPrevChapter ? readerTheme.textColor : readerTheme.textColor.opacity(0.22)
                 )
                 .padding(.leading, 14).padding(.vertical, 18)
-            }.disabled(!canGoPrevChapter)
+            }
+            .disabled(!canGoPrevChapter)
+            .accessibilityLabel(localized("上一章"))
 
             VStack(spacing: 2) {
                 Slider(
@@ -130,10 +152,16 @@ struct ReaderBottomControlBar: View {
                         }
                     }
                 ).accentColor(readerTheme.accentColor)
+                // A bare Slider announces a percentage of its 0…1 range and no name at all
+                // (docs/design.md §7.1, third trap). Value shares `progressStatusText` with
+                // the line printed underneath so the two can't drift apart.
+                .accessibilityLabel(localized("閱讀進度"))
+                .accessibilityValue(progressStatusText)
 
-                Text("\(chapterPageInfo)  ·  \(totalProgressPercent)")
+                Text(progressStatusText)
                     .font(DSFont.fixed(size: 10).monospacedDigit())
                     .foregroundColor(readerTheme.textColor.opacity(0.4))
+                    .accessibilityHidden(true)   // 已由滑桿的 value 念出
             }.padding(.horizontal, 6)
 
             Button {
@@ -142,12 +170,15 @@ struct ReaderBottomControlBar: View {
                 HStack(spacing: 3) {
                     Text(localized(canGoNextChapter ? "下一章" : "書末頁")).font(DSFont.fixed(size: 14))
                     Image(systemName: "chevron.right").font(DSFont.fixed(size: 12))
+                        .accessibilityHidden(true)
                 }
                 .foregroundColor(
                     canGoNextChapter ? readerTheme.textColor : readerTheme.textColor.opacity(0.22)
                 )
                 .padding(.trailing, 14).padding(.vertical, 18)
-            }.disabled(!canGoNextChapter)
+            }
+            .disabled(!canGoNextChapter)
+            .accessibilityLabel(localized(canGoNextChapter ? "下一章" : "書末頁"))
         }
         .background(readerTheme.barColor)
     }
@@ -186,6 +217,7 @@ struct ReaderBottomControlBar: View {
             VStack(spacing: 2) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon).font(DSFont.fixed(size: 20))
+                        .accessibilityHidden(true)   // 名稱在按鈕上，符號名不進旁白
                     if let count = badge, count > 0 {
                         Text("\(count)")
                             .font(DSFont.fixed(size: 9, weight: .semibold))
@@ -199,5 +231,48 @@ struct ReaderBottomControlBar: View {
             .foregroundColor(active ? readerTheme.accentColor : readerTheme.textColor.opacity(0.85))
             .frame(maxWidth: .infinity)
         }
+        .accessibilityLabel(label)
+        .accessibilityValue(badge.map { "\($0)" } ?? "")
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+}
+
+// Page text sits behind the floating circle buttons on purpose: that is the case where
+// a transparent fill made them unreadable.
+#Preview("Classic Bottom Control Bar") {
+    @Previewable @State var theme: ReaderTheme = .sepia
+
+    ZStack {
+        theme.backgroundColor.ignoresSafeArea()
+
+        Text(String(repeating: "書頁正文擋在浮動按鈕後面，檢查按鈕是否仍清楚可辨。", count: 12))
+            .font(DSFont.fixed(size: 17))
+            .foregroundColor(theme.textColor)
+            .padding(24)
+
+        ReaderBottomControlBar(
+            readerTheme: $theme,
+            overlayContentMaxWidth: 520,
+            showRefreshButton: true,
+            showChangeSourceButton: true,
+            showDownloadButton: true,
+            downloadButtonIcon: "arrow.down.circle",
+            canGoPrevChapter: true,
+            canGoNextChapter: true,
+            chapterPageInfo: "3 / 12",
+            totalProgressPercent: "24%",
+            chapterSliderProgressValue: { 0.24 },
+            applyChapterSliderProgress: { _ in },
+            chapterTitleForProgress: { _ in "第五章" },
+            onPrevChapter: {},
+            onNextChapter: {},
+            onRefresh: {},
+            onOpenChangeSource: {},
+            onDownloadAction: {},
+            onOpenTTS: {},
+            onOpenTOC: {},
+            onOpenBookmarks: {},
+            onOpenSettings: {}
+        )
     }
 }

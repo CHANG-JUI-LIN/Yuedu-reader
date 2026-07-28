@@ -8,11 +8,15 @@ import SwiftUI
 /// earlier systems (deployment target is iOS 18.0).
 struct RootTabBarMinimizeStyle: ViewModifier {
     func body(content: Content) -> some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom == .phone {
             content.tabBarMinimizeBehavior(.onScrollDown)
         } else {
             content
         }
+        #else
+        content
+        #endif
     }
 }
 

@@ -242,10 +242,17 @@ protocol BookResourceProvider: AnyObject {
     var chapters: [BookResourceChapterDescriptor] { get }
     func cssResourceHrefs() -> [String]
     func resourceURL(for href: String) -> URL
+    func resourceAvailability(for requestURL: URL) -> Bool?
     func chapterDataSize(at index: Int) async throws -> Int
     func chapterIndex(for href: String) -> Int?
     func chapterHTML(at index: Int) async throws -> String
     func response(for requestURL: URL) async throws -> PublicationResourceResponse
+}
+
+extension BookResourceProvider {
+    func resourceAvailability(for requestURL: URL) -> Bool? {
+        nil
+    }
 }
 
 final class ReadiumBookResourceAdapter: BookResourceProvider {
@@ -279,6 +286,10 @@ final class ReadiumBookResourceAdapter: BookResourceProvider {
 
     func resourceURL(for href: String) -> URL {
         session.resourceURL(for: href)
+    }
+
+    func resourceAvailability(for requestURL: URL) -> Bool? {
+        session.resourceAvailability(for: requestURL)
     }
 
     func chapterDataSize(at index: Int) async throws -> Int {
@@ -435,6 +446,7 @@ final class PublicationSession {
     let cachedChapterByteSizes: [Int]?
     private let obfuscationIdentifier: String?
     private let encryptionAlgorithmsByHref: [String: String]
+    private let manifestResourceHrefs: Set<String>
     private let resourceLock = NSLock()
     private var transformedResourceCache: [String: Data] = [:]
     private let cacheURL: URL
@@ -481,6 +493,9 @@ final class PublicationSession {
         self.fixedLayoutViewport = fixedLayoutViewport
         self.opfManifestItemsByID = opfManifestItemsByID
         self.opfSpineReferences = opfSpineReferences
+        self.manifestResourceHrefs = Set(
+            opfManifestItemsByID.values.map { Self.normalizedHREF($0.href) }
+        )
         self.pronunciationLexicons = pronunciationLexicons
         self.mediaOverlaysByChapter = mediaOverlaysByChapter
         self.cachedChapterByteSizes = cachedChapterByteSizes
@@ -865,7 +880,12 @@ final class PublicationSession {
             ?? algorithmForHref(href)
         switch await resource.read() {
         case .success(let value):
-            let rawData = await rawArchiveData(for: href) ?? value
+            let rawData: Data
+            if Self.requiresRawArchiveData(encryptionAlgorithm: encryptionAlgorithm) {
+                rawData = await rawArchiveData(for: href) ?? value
+            } else {
+                rawData = value
+            }
             data = transformedDataIfNeeded(
                 rawData,
                 href: href,
@@ -891,6 +911,17 @@ final class PublicationSession {
             mimeType: mimeType,
             textEncodingName: isText ? "utf-8" : nil
         )
+    }
+
+    func resourceAvailability(for requestURL: URL) -> Bool? {
+        guard requestURL.scheme == Self.scheme, requestURL.host == id else {
+            return nil
+        }
+        guard !manifestResourceHrefs.isEmpty else {
+            return nil
+        }
+        let href = Self.normalizedHREF(resolvedHREF(from: requestURL))
+        return manifestResourceHrefs.contains(href)
     }
 
     func readerLocator(
@@ -1026,6 +1057,10 @@ final class PublicationSession {
         transformedResourceCache[href] = transformed
         resourceLock.unlock()
         return transformed
+    }
+
+    static func requiresRawArchiveData(encryptionAlgorithm: String?) -> Bool {
+        encryptionAlgorithm != nil
     }
 
     private func deobfuscate(data: Data, algorithm: String) -> Data? {

@@ -144,9 +144,15 @@ struct HomeView: View {
                 }
                 pendingReaderOpenToken = nil
                 AppLogger.info("⟐ openBook direction resolved=\(direction) calling coordinator.open")
+                #if compiler(>=6.2)
                 weak let geometryStore = readerGeometryStore
                 weak let transitionBookStore = store
                 weak let navigator = readerCoordinator
+                #else
+                weak var geometryStore = readerGeometryStore
+                weak var transitionBookStore = store
+                weak var navigator = readerCoordinator
+                #endif
                 let source = ReaderTransitionSource(
                     bookID: book.id,
                     cornerRadius: sourceGeometry?.cornerRadius ?? DSRadius.md,
@@ -343,9 +349,11 @@ struct HomeView: View {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         bookshelfOptionsMenu
                     }
+                    #if compiler(>=6.2)
                     if #available(iOS 26.0, *) {
                         ToolbarSpacer(.fixed, placement: .navigationBarTrailing)
                     }
+                    #endif
                     ToolbarItem(placement: .navigationBarTrailing) {
                         addBookMenu
                     }

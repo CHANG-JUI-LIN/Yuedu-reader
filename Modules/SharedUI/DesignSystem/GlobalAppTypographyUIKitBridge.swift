@@ -2,21 +2,19 @@ import UIKit
 
 @MainActor
 enum GlobalAppTypographyUIKitBridge {
+    /// Pushes the user's global font choice into the UIKit chrome (navigation
+    /// bars, tab bars) that SwiftUI's `.font` cannot reach.
+    ///
+    /// A `nil` font means "no custom font selected" — the default — and
+    /// *removes* the override instead of re-stating the system font. Writing
+    /// any explicit font into `titleTextAttributes` replaces UIKit's own
+    /// Dynamic-Type-clamped title font with an unclamped scaled one, while the
+    /// bar keeps laying out at its normal height; at large text sizes the tab
+    /// title then grows over the tab icon.
     static func apply(postScriptName: String?) {
-        let titleFont = GlobalAppTypography.uiFont(
-            .headline,
-            postScriptName: postScriptName,
-            weight: .semibold
-        )
-        let largeTitleFont = GlobalAppTypography.uiFont(
-            .largeTitle,
-            postScriptName: postScriptName,
-            weight: .bold
-        )
-        let tabFont = GlobalAppTypography.uiFont(
-            .caption2,
-            postScriptName: postScriptName
-        )
+        let titleFont = chromeFont(.headline, postScriptName: postScriptName, weight: .semibold)
+        let largeTitleFont = chromeFont(.largeTitle, postScriptName: postScriptName, weight: .bold)
+        let tabFont = chromeFont(.caption2, postScriptName: postScriptName)
 
         updateAppearanceProxies(
             titleFont: titleFont,
@@ -40,10 +38,27 @@ enum GlobalAppTypographyUIKitBridge {
         }
     }
 
+    /// Bar chrome lays out at a fixed height, so a custom font has to stop
+    /// growing where the system's own bar title does rather than scaling
+    /// without bound.
+    private static func chromeFont(
+        _ style: GlobalAppTypography.Style,
+        postScriptName: String?,
+        weight: UIFont.Weight? = nil
+    ) -> UIFont? {
+        guard let postScriptName else { return nil }
+        return GlobalAppTypography.uiFont(
+            style,
+            postScriptName: postScriptName,
+            weight: weight,
+            maximumPointSize: GlobalAppTypography.chromeMaximumPointSize(style)
+        )
+    }
+
     private static func updateAppearanceProxies(
-        titleFont: UIFont,
-        largeTitleFont: UIFont,
-        tabFont: UIFont
+        titleFont: UIFont?,
+        largeTitleFont: UIFont?,
+        tabFont: UIFont?
     ) {
         let navigationBar = UINavigationBar.appearance()
         navigationBar.titleTextAttributes = merging(
@@ -56,15 +71,20 @@ enum GlobalAppTypographyUIKitBridge {
         )
 
         let tabItem = UITabBarItem.appearance()
-        tabItem.setTitleTextAttributes([.font: tabFont], for: .normal)
-        tabItem.setTitleTextAttributes([.font: tabFont], for: .selected)
+        if let tabFont {
+            tabItem.setTitleTextAttributes([.font: tabFont], for: .normal)
+            tabItem.setTitleTextAttributes([.font: tabFont], for: .selected)
+        } else {
+            tabItem.setTitleTextAttributes(nil, for: .normal)
+            tabItem.setTitleTextAttributes(nil, for: .selected)
+        }
     }
 
     private static func apply(
         to controller: UIViewController,
-        titleFont: UIFont,
-        largeTitleFont: UIFont,
-        tabFont: UIFont,
+        titleFont: UIFont?,
+        largeTitleFont: UIFont?,
+        tabFont: UIFont?,
         visited: inout Set<ObjectIdentifier>
     ) {
         let identifier = ObjectIdentifier(controller)
@@ -103,8 +123,8 @@ enum GlobalAppTypographyUIKitBridge {
 
     private static func update(
         _ navigationBar: UINavigationBar,
-        titleFont: UIFont,
-        largeTitleFont: UIFont
+        titleFont: UIFont?,
+        largeTitleFont: UIFont?
     ) {
         navigationBar.titleTextAttributes = merging(
             font: titleFont,
@@ -144,8 +164,8 @@ enum GlobalAppTypographyUIKitBridge {
 
     private static func navigationAppearance(
         _ source: UINavigationBarAppearance,
-        titleFont: UIFont,
-        largeTitleFont: UIFont
+        titleFont: UIFont?,
+        largeTitleFont: UIFont?
     ) -> UINavigationBarAppearance {
         let copy = source.copy()
         copy.titleTextAttributes = merging(
@@ -159,10 +179,16 @@ enum GlobalAppTypographyUIKitBridge {
         return copy
     }
 
-    private static func update(_ tabBar: UITabBar, font: UIFont) {
+    private static func update(_ tabBar: UITabBar, font: UIFont?) {
         tabBar.items?.forEach { item in
-            item.setTitleTextAttributes([.font: font], for: .normal)
-            item.setTitleTextAttributes([.font: font], for: .selected)
+            item.setTitleTextAttributes(
+                merging(font: font, into: item.titleTextAttributes(for: .normal)),
+                for: .normal
+            )
+            item.setTitleTextAttributes(
+                merging(font: font, into: item.titleTextAttributes(for: .selected)),
+                for: .selected
+            )
         }
         let newStandard = tabAppearance(tabBar.standardAppearance, font: font)
         tabBar.standardAppearance = newStandard
@@ -175,7 +201,7 @@ enum GlobalAppTypographyUIKitBridge {
 
     private static func tabAppearance(
         _ source: UITabBarAppearance,
-        font: UIFont
+        font: UIFont?
     ) -> UITabBarAppearance {
         let copy = source.copy()
         let itemAppearances = [
@@ -196,12 +222,18 @@ enum GlobalAppTypographyUIKitBridge {
         return copy
     }
 
+    /// Merges `font` into `attributes`, or strips the font key when `font` is
+    /// `nil` so UIKit falls back to its own clamped bar title font.
     private static func merging(
-        font: UIFont,
+        font: UIFont?,
         into attributes: [NSAttributedString.Key: Any]?
     ) -> [NSAttributedString.Key: Any] {
         var result = attributes ?? [:]
-        result[.font] = font
+        if let font {
+            result[.font] = font
+        } else {
+            result.removeValue(forKey: .font)
+        }
         return result
     }
 }

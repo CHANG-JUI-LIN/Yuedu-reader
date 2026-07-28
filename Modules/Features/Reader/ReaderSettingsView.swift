@@ -310,7 +310,7 @@ struct ReaderSettingsView: View {
                     title: localized("字體大小"),
                     valueText: "\(Int(fontSize)) pt",
                     value: fontSizeBinding,
-                    range: 10...40,
+                    range: GlobalSettings.readerFontSizeRange,
                     step: 1
                 )
             }
@@ -648,7 +648,7 @@ struct ReaderSettingsView: View {
     private var fontSizeBinding: Binding<CGFloat> {
         Binding(
             get: { fontSize },
-            set: { fontSize = min(32, max(12, $0)) }
+            set: { fontSize = GlobalSettings.clampedReaderFontSize($0) }
         )
     }
 

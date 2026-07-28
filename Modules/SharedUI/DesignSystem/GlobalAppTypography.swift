@@ -137,10 +137,25 @@ enum GlobalAppTypography {
         return Font.custom(activePostScriptName, fixedSize: size).weight(weight)
     }
 
+    /// The point size UIKit's own font for `style` reaches at
+    /// `.extraExtraExtraLarge` — the largest non-accessibility category, and
+    /// where the system stops growing bar chrome.
+    ///
+    /// Bar chrome (tab bar, navigation bar) lays out at a fixed height, so its
+    /// labels must stop growing where UIKit's do. An unclamped scaled font
+    /// overflows the item and draws on top of the tab icon.
+    static func chromeMaximumPointSize(_ style: Style) -> CGFloat {
+        UIFont.preferredFont(
+            forTextStyle: style.uiKitStyle,
+            compatibleWith: UITraitCollection(preferredContentSizeCategory: .extraExtraExtraLarge)
+        ).pointSize
+    }
+
     static func uiFont(
         _ style: Style,
         postScriptName: String?,
         weight: UIFont.Weight? = nil,
+        maximumPointSize: CGFloat? = nil,
         compatibleWith traits: UITraitCollection? = nil
     ) -> UIFont {
         let resolvedWeight = weight ?? style.defaultUIKitWeight
@@ -158,7 +173,14 @@ enum GlobalAppTypography {
             baseFont = UIFont.systemFont(ofSize: style.basePointSize, weight: resolvedWeight)
         }
 
-        return UIFontMetrics(forTextStyle: style.uiKitStyle)
-            .scaledFont(for: baseFont, compatibleWith: traits)
+        let metrics = UIFontMetrics(forTextStyle: style.uiKitStyle)
+        guard let maximumPointSize else {
+            return metrics.scaledFont(for: baseFont, compatibleWith: traits)
+        }
+        return metrics.scaledFont(
+            for: baseFont,
+            maximumPointSize: maximumPointSize,
+            compatibleWith: traits
+        )
     }
 }

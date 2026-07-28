@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import YueduCoreTextTypography
 
 /// Removes the source-provided title before an advanced-CSS title template is
 /// prepended. Online review markup can represent `div` wrappers as paragraph

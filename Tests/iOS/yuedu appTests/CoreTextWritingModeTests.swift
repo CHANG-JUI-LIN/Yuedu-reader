@@ -2,6 +2,7 @@ import CoreText
 import Foundation
 import Testing
 import UIKit
+import YueduCoreTextTypography
 @testable import yuedu_app
 
 @Suite("CoreText writing mode", .serialized)

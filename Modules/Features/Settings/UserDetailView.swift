@@ -28,6 +28,13 @@ struct UserDetailView: View {
     @State private var showLinkEmailAlert = false
     @State private var linkEmail = ""
     @State private var linkPassword = ""
+    @State private var unlinkTarget: UnlinkTarget?
+
+    /// Identifies which sign-in method the unlink confirmation is about.
+    private struct UnlinkTarget: Identifiable {
+        let id: String
+        let title: String
+    }
 
     var body: some View {
         List {
@@ -179,14 +186,24 @@ struct UserDetailView: View {
                     linkRow(title: localized("電子郵件"), providerID: "password")
 
                     if let linkErrorMessage {
-                        Text(linkErrorMessage)
-                            .font(DSFont.footnote)
-                            .foregroundColor(.red)
+                        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                            Text(linkErrorMessage)
+                                .font(DSFont.footnote)
+                                .foregroundColor(.red)
+
+                            if auth.hasPendingSignInCredential {
+                                Button(localized("改用該帳號登入")) {
+                                    switchToPendingAccount()
+                                }
+                                .font(DSFont.fixed(size: 15, weight: .semibold))
+                                .disabled(isLinking)
+                            }
+                        }
                     }
                 } header: {
                     Text(localized("連結登入方式"))
                 } footer: {
-                    Text(localized("連結後可用任一方式登入同一個帳號"))
+                    Text(localized("連結後可用任一方式登入同一個帳號，並且至少要保留一種。"))
                 }
 
                 Section {
@@ -302,6 +319,23 @@ struct UserDetailView: View {
         } message: {
             Text(localized("請輸入密碼以確認刪除帳號"))
         }
+        .confirmationDialog(
+            localized("解除連結"),
+            isPresented: Binding(
+                get: { unlinkTarget != nil },
+                set: { if !$0 { unlinkTarget = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: unlinkTarget
+        ) { target in
+            Button(localized("解除連結"), role: .destructive) {
+                performUnlink(target.id)
+                unlinkTarget = nil
+            }
+            Button(localized("取消"), role: .cancel) { unlinkTarget = nil }
+        } message: { target in
+            Text("\(target.title)\n\(localized("解除後就不能再用這個方式登入此帳號，帳號本身與已同步的資料不受影響。"))")
+        }
         .alert(localized("連結電子郵件"), isPresented: $showLinkEmailAlert) {
             TextField(localized("請輸入您的 Email"), text: $linkEmail)
                 .keyboardType(.emailAddress)
@@ -326,25 +360,37 @@ struct UserDetailView: View {
 
     @ViewBuilder
     private func linkRow(title: String, providerID: String) -> some View {
-        HStack {
+        HStack(spacing: DSSpacing.md) {
             Text(title)
-            Spacer()
+            Spacer(minLength: 0)
             if auth.linkedProviderIDs.contains(providerID) {
                 Label(localized("已連結"), systemImage: "checkmark.circle.fill")
                     .font(DSFont.fixed(size: 13, weight: .semibold))
                     .foregroundColor(.green)
+
+                if auth.canUnlinkProvider {
+                    Button(localized("解除連結"), role: .destructive) {
+                        unlinkTarget = UnlinkTarget(id: providerID, title: title)
+                    }
+                    .font(DSFont.fixed(size: 15, weight: .semibold))
+                    .disabled(isLinking)
+                    .accessibilityLabel("\(title) \(localized("解除連結"))")
+                }
             } else if isLinking {
                 ProgressView()
             } else {
                 Button(localized("連結")) { startLink(providerID) }
                     .font(DSFont.fixed(size: 15, weight: .semibold))
+                    .accessibilityLabel("\(title) \(localized("連結"))")
             }
         }
+        .buttonStyle(.borderless)
     }
 
     private func startLink(_ providerID: String) {
         if providerID == "password" {
             linkErrorMessage = nil
+            auth.clearPendingSignInCredential()
             showLinkEmailAlert = true
             return
         }
@@ -360,9 +406,38 @@ struct UserDetailView: View {
     private func performLink(_ operation: @escaping () async throws -> Void) {
         isLinking = true
         linkErrorMessage = nil
+        auth.clearPendingSignInCredential()
         Task {
             do {
                 try await operation()
+            } catch {
+                linkErrorMessage = AuthErrorReporter.describe(error)
+            }
+            isLinking = false
+        }
+    }
+
+    private func performUnlink(_ providerID: String) {
+        isLinking = true
+        linkErrorMessage = nil
+        Task {
+            do {
+                try await auth.unlink(providerID: providerID)
+            } catch {
+                linkErrorMessage = AuthErrorReporter.describe(error)
+            }
+            isLinking = false
+        }
+    }
+
+    /// Escape hatch for "this identity belongs to another account": sign into that
+    /// account rather than leaving the user with no way forward.
+    private func switchToPendingAccount() {
+        isLinking = true
+        linkErrorMessage = nil
+        Task {
+            do {
+                try await auth.signInWithPendingCredential()
             } catch {
                 linkErrorMessage = AuthErrorReporter.describe(error)
             }

@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import YueduCoreTextTypography
 
 struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
     private let text: String?

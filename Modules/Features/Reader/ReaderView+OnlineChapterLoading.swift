@@ -30,6 +30,8 @@ extension ReaderView {
             #if DEBUG
             AppLogger.render("[StateDebug] chapterStates[\(chapterIndex)] \(String(describing: previousStates[chapterIndex])) → \(newState) currentChapter=\(currentChapterIndex) usesCoreText=\(usesCoreTextEPUB) isCoreTextReady=\(epubRenderer.isCoreTextReady)")
             #endif
+            // Narration stalled at a chapter boundary waits on exactly this signal.
+            handleTTSChapterWaitStateChange(newState, at: chapterIndex)
             if newState == .ready {
                 if let package = cachedChapterPackage(for: chapterIndex),
                    containsParagraphReview(in: package.content) {

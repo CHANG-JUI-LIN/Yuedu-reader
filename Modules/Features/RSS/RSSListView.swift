@@ -85,9 +85,11 @@ struct RSSListView: View {
                     rssAddToolbarControl
                 }
 
+                #if compiler(>=6.2)
                 if #available(iOS 26.0, *) {
                     ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 }
+                #endif
 
                 ToolbarItem(placement: .topBarTrailing) {
                     RSSHomeTopMenu(

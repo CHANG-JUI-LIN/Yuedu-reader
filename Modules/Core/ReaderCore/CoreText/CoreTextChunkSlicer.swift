@@ -1,6 +1,7 @@
 import CoreText
 import Foundation
 import UIKit
+import YueduCoreTextTypography
 
 /// Slices a chapter's NSAttributedString into multiple chunks of approximately heightCap height each.
 /// Pure function, safe to run on background threads.

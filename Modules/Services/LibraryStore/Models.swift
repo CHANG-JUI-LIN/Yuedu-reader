@@ -369,6 +369,19 @@ enum BookPipelineKind: String, Codable {
             return false
         }
     }
+
+    /// Short label for the 格式 chip in the reader's book card. File-format names stay
+    /// untranslated; the two content kinds that aren't a file extension are localized.
+    var displayFormat: String {
+        switch self {
+        case .epub: return "EPUB"
+        case .txt: return "TXT"
+        case .html: return "HTML"
+        case .fixedPage: return "PDF"
+        case .manga: return localized("漫畫")
+        case .audio: return localized("有聲書")
+        }
+    }
 }
 
 enum BookRendererPreference: String, Codable {

@@ -63,6 +63,7 @@ struct TTSSettingsView: View {
                     Button { dismissSettings() } label: {
                         Image(systemName: "xmark")
                     }
+                    .accessibilityLabel(localized("關閉"))
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     importToolbarControl
@@ -137,6 +138,7 @@ struct TTSSettingsView: View {
             } label: {
                 Image(systemName: "plus")
             }
+            .accessibilityLabel(localized("匯入"))
         } else {
             Menu {
                 Button {
@@ -152,6 +154,7 @@ struct TTSSettingsView: View {
             } label: {
                 Image(systemName: "plus")
             }
+            .accessibilityLabel(localized("匯入"))
         }
     }
 
@@ -185,7 +188,64 @@ struct TTSSettingsView: View {
         .scrollContentBackground(.hidden)
     }
 
+    /// One VoiceOver element per voice source — same contract as 書源管理's row
+    /// (`BookSourceListView.sourceRow`): the 核取方塊 / 名稱區 / 更多選單 collapse into a
+    /// single focus, every control comes back as a rotor action, and the 網址 moves to
+    /// rotor custom content so it isn't re-read on every swipe. `docs/design.md` §7.
+    @ViewBuilder
     private func sourceRow(_ source: ImportedTTSSource) -> some View {
+        sourceRowContent(source)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(source.name)
+            .accessibilityValue(sourceAccessibilityValue(source))
+            .accessibilityAddTraits(sourceAccessibilityTraits(source))
+            .accessibilityHint(localized("點兩下設為使用中"))
+            .accessibilityCustomContent(Text(localized("網址")), Text(source.urlTemplate))
+            .accessibilityAction { selectSource(source) }
+            .accessibilityActions { sourceRotorActions(source) }
+    }
+
+    /// State the row shows visually: the 使用中 badge and the 需設定帳號 note.
+    /// Checkbox selection rides on the `.isSelected` trait instead.
+    private func sourceAccessibilityValue(_ source: ImportedTTSSource) -> String {
+        var parts: [String] = []
+        if isSelected(source) { parts.append(localized("使用中")) }
+        if source.loginUi != nil { parts.append(localized("需設定帳號")) }
+        return parts.joined(separator: "，")
+    }
+
+    private func sourceAccessibilityTraits(_ source: ImportedTTSSource) -> AccessibilityTraits {
+        var traits: AccessibilityTraits = .isButton
+        if selectedSourceIds.contains(source.id) {
+            traits.insert(.isSelected)
+        }
+        return traits
+    }
+
+    /// Everything the row's checkbox and menu can do. Must stay in sync with the visible
+    /// controls in `sourceRowContent` — the merged element is VoiceOver's only route to them.
+    @ViewBuilder
+    private func sourceRotorActions(_ source: ImportedTTSSource) -> some View {
+        Button(localized(selectedSourceIds.contains(source.id) ? "取消選取" : "選取")) {
+            toggleSelection(source.id)
+        }
+        Button(localized("測試播放")) {
+            testPlayback(source)
+        }
+        if source.loginUi != nil {
+            Button(localized("帳號設定")) {
+                openLoginForm(source)
+            }
+        }
+        Button(localized("複製 JSON")) {
+            copySourceJSON(source)
+        }
+        Button(localized("刪除"), role: .destructive) {
+            deleteSource(source)
+        }
+    }
+
+    private func sourceRowContent(_ source: ImportedTTSSource) -> some View {
         HStack(spacing: 0) {
             Button {
                 toggleSelection(source.id)
@@ -298,6 +358,7 @@ struct TTSSettingsView: View {
                         selectedSourceIds == filteredSourceIds && !filteredSources.isEmpty
                             ? DSColor.accent : Color(UIColor.systemGray3)
                     )
+                    .accessibilityHidden(true)
                     Text(localized("全選") + "(\(selectedSourceIds.count)/\(gs.importedTTSSources.count))")
                         .font(DSFont.fixed(size: 13))
                         .foregroundColor(DSColor.textPrimary)
@@ -305,6 +366,8 @@ struct TTSSettingsView: View {
             }
             .buttonStyle(.plain)
             .padding(.leading, 16)
+            .accessibilityLabel(localized("全選"))
+            .accessibilityValue("\(selectedSourceIds.count)/\(gs.importedTTSSources.count)")
 
             Spacer()
 
@@ -353,6 +416,7 @@ struct TTSSettingsView: View {
                     .frame(width: 32, height: 32)
                     .rotationEffect(.degrees(90))
             }
+            .accessibilityLabel(localized("更多"))
             .padding(.trailing, 12)
         }
         .padding(.vertical, 8)
@@ -446,7 +510,26 @@ struct TTSSettingsView: View {
         gs.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Merged the same way as the imported-source rows, so the list reads uniformly:
+    /// the 試聽 button becomes a rotor action instead of a second focus stop.
     private var systemVoiceSourceRow: some View {
+        systemVoiceSourceRowContent
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(localized("系統離線語音"))
+            .accessibilityValue(
+                isSystemVoiceSelected
+                    ? localized("使用中")
+                    : localized("免網路，使用裝置內建語音朗讀")
+            )
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint(localized("點兩下設為使用中"))
+            .accessibilityAction { selectSystemVoice() }
+            .accessibilityActions {
+                Button(localized("測試播放")) { testSystemPlayback() }
+            }
+    }
+
+    private var systemVoiceSourceRowContent: some View {
         HStack(spacing: 0) {
             Button {
                 selectSystemVoice()

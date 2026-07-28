@@ -400,8 +400,15 @@ struct OnlineBookView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(localized("來源") + " " + sourceName)
-            .accessibilityHint(localized("換源"))
+            // 來源 is what the row *is*; 起点中文网 is its current value; switching is what
+            // activating it *does*. The old label read "來源 起点中文网" with 「換源」 as the
+            // hint, which named the action as if it were the row's identity and left the
+            // button's own on-screen word unreachable to Voice Control — hence the input
+            // label below.
+            .accessibilityLabel(localized("來源"))
+            .accessibilityValue(sourceName)
+            .accessibilityHint(localized("點兩下切換書源"))
+            .accessibilityInputLabels([localized("換源"), localized("來源")])
         }
         .padding(.horizontal, DSSpacing.lg)
     }
