@@ -248,6 +248,7 @@ ItemRow(item: item)
 
 - **accessibility modifier 加在容器上會往下傳。** 套在 `HStack` / `VStack` 上的 `.accessibilityLabel`、`.accessibilityHint` 會傳給底下**每一個**子元素。迷你播放器因此把封面、播放/暫停、關閉三顆按鈕全部命名成書名，旁白連念三次同一個名字。→ 標在各自的 `Button` 上（見 H10）。
 - **`Image(systemName:)` 預設就是可聚焦元素。** SF Symbol 自帶名稱，旁白會念出「speedometer」這種符號名。裝飾用的圖示（滑桿兩端的慢/快圖示、列尾自繪的 `chevron.right`）一律 `.accessibilityHidden(true)`。
+  **只在 `Button` 上加 `.accessibilityLabel` 不夠。** 閱讀器經典底欄的換源鈕就是 `Button { Image(systemName: "arrow.left.and.right") } .accessibilityLabel(localized("換源"))`，旁白仍念「arrow.left.and.right」——符號在按鈕旁自成一個元素，把按鈕的名字蓋掉了。**icon-only 按鈕要兩件事一起做**：圖示 `.accessibilityHidden(true)` ＋ 按鈕 `.accessibilityLabel`。改用 `Label(text, systemImage:).labelStyle(.iconOnly)` 也可以，它念的是 text 不是符號名。
 - **`Slider` 不會自己有語意。** 預設 label 是空的、value 是「相對於 range 的百分比」，跟畫面上顯示的數值對不上（語速 range 是 0.1–2.5，畫面卻顯示 `rate / 0.5 * 100`%）。務必自己給 `.accessibilityLabel` 與 `.accessibilityValue`，且 value 與畫面上那行說明文字**共用同一個計算屬性**，不要各算各的。
 
 ```swift

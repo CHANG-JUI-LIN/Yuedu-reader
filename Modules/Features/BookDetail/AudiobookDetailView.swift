@@ -408,8 +408,13 @@ struct AudiobookDetailView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(localized("來源") + " " + sourceName)
-            .accessibilityHint(localized("換源"))
+            // Same contract as OnlineBookView's 來源 row: label = what it is, value =
+            // current source, hint = what activating it does, input label so Voice Control
+            // still matches the visible 「換源」.
+            .accessibilityLabel(localized("來源"))
+            .accessibilityValue(sourceName)
+            .accessibilityHint(localized("點兩下切換書源"))
+            .accessibilityInputLabels([localized("換源"), localized("來源")])
         }
         .padding(.horizontal, DSSpacing.lg)
     }

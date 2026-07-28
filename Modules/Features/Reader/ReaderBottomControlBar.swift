@@ -104,8 +104,18 @@ struct ReaderBottomControlBar: View {
                 .background(readerTheme.barColor, in: Circle())
                 .overlay(Circle().stroke(readerTheme.textColor.opacity(0.35), lineWidth: 1))
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                // The symbol stayed a focusable element of its own next to the button, so
+                // VoiceOver read 「換源」 out as "arrow.left.and.right" — the button's label
+                // never won. The icon is decorative here: the name lives on the Button.
+                // docs/design.md §7.1, second trap.
+                .accessibilityHidden(true)
         }
         .accessibilityLabel(label)
+    }
+
+    /// The one source for both the printed progress line and the slider's VoiceOver value.
+    private var progressStatusText: String {
+        "\(chapterPageInfo)  ·  \(totalProgressPercent)"
     }
 
     private var progressSliderRow: some View {
@@ -115,13 +125,16 @@ struct ReaderBottomControlBar: View {
             } label: {
                 HStack(spacing: 3) {
                     Image(systemName: "chevron.left").font(DSFont.fixed(size: 12))
+                        .accessibilityHidden(true)
                     Text(localized("上一章")).font(DSFont.fixed(size: 14))
                 }
                 .foregroundColor(
                     canGoPrevChapter ? readerTheme.textColor : readerTheme.textColor.opacity(0.22)
                 )
                 .padding(.leading, 14).padding(.vertical, 18)
-            }.disabled(!canGoPrevChapter)
+            }
+            .disabled(!canGoPrevChapter)
+            .accessibilityLabel(localized("上一章"))
 
             VStack(spacing: 2) {
                 Slider(
@@ -139,10 +152,16 @@ struct ReaderBottomControlBar: View {
                         }
                     }
                 ).accentColor(readerTheme.accentColor)
+                // A bare Slider announces a percentage of its 0…1 range and no name at all
+                // (docs/design.md §7.1, third trap). Value shares `progressStatusText` with
+                // the line printed underneath so the two can't drift apart.
+                .accessibilityLabel(localized("閱讀進度"))
+                .accessibilityValue(progressStatusText)
 
-                Text("\(chapterPageInfo)  ·  \(totalProgressPercent)")
+                Text(progressStatusText)
                     .font(DSFont.fixed(size: 10).monospacedDigit())
                     .foregroundColor(readerTheme.textColor.opacity(0.4))
+                    .accessibilityHidden(true)   // 已由滑桿的 value 念出
             }.padding(.horizontal, 6)
 
             Button {
@@ -151,12 +170,15 @@ struct ReaderBottomControlBar: View {
                 HStack(spacing: 3) {
                     Text(localized(canGoNextChapter ? "下一章" : "書末頁")).font(DSFont.fixed(size: 14))
                     Image(systemName: "chevron.right").font(DSFont.fixed(size: 12))
+                        .accessibilityHidden(true)
                 }
                 .foregroundColor(
                     canGoNextChapter ? readerTheme.textColor : readerTheme.textColor.opacity(0.22)
                 )
                 .padding(.trailing, 14).padding(.vertical, 18)
-            }.disabled(!canGoNextChapter)
+            }
+            .disabled(!canGoNextChapter)
+            .accessibilityLabel(localized(canGoNextChapter ? "下一章" : "書末頁"))
         }
         .background(readerTheme.barColor)
     }
@@ -195,6 +217,7 @@ struct ReaderBottomControlBar: View {
             VStack(spacing: 2) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon).font(DSFont.fixed(size: 20))
+                        .accessibilityHidden(true)   // 名稱在按鈕上，符號名不進旁白
                     if let count = badge, count > 0 {
                         Text("\(count)")
                             .font(DSFont.fixed(size: 9, weight: .semibold))
@@ -208,6 +231,9 @@ struct ReaderBottomControlBar: View {
             .foregroundColor(active ? readerTheme.accentColor : readerTheme.textColor.opacity(0.85))
             .frame(maxWidth: .infinity)
         }
+        .accessibilityLabel(label)
+        .accessibilityValue(badge.map { "\($0)" } ?? "")
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }
 

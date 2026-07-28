@@ -253,10 +253,9 @@ final class TTSCoordinator: ObservableObject {
     var showsGlobalFloatingPlayer = false
 
     // MARK: - Callbacks (set by ReaderView)
-    var onPageFinished: (() -> String?)? {
-        didSet { rewireCallbacks() }
-    }
-    var onPageFinishedWithPronunciation: (() -> TTSNarrationUnit?)? {
+    /// Asked for the next chapter when the current one finishes. Returning `.waiting` keeps
+    /// the session alive until `supplyPendingNarration` delivers the text.
+    var onNextNarrationUnit: (() -> TTSNextUnitOutcome)? {
         didSet { rewireCallbacks() }
     }
     var onStop: (() -> Void)? {
@@ -473,6 +472,60 @@ final class TTSCoordinator: ObservableObject {
         publishFloatingPlayerState()
     }
 
+    /// True between the engine reporting `.waiting` and the host supplying the next chapter.
+    var isWaitingForNextChapter: Bool { currentEngine.isWaitingForNextUnit }
+
+    /// Chapter line shown on the lock screen / mini-player while the next chapter is being
+    /// prepared. Set by the reader so this Core type stays free of the app's string catalog.
+    var nextChapterLoadingStatusTitle = ""
+
+    /// Reflect the chapter-boundary wait on every system surface. Playback state stays
+    /// `.playing` — the audio session, lock-screen controls and mini-player all keep their
+    /// live appearance — while the chapter line reports that loading is in progress.
+    private func enterChapterWaitPresentation() {
+        ttsLog("[TTS][Coordinator] waiting for next chapter")
+        if !nextChapterLoadingStatusTitle.isEmpty {
+            nowPlayingChapterTitle = nextChapterLoadingStatusTitle
+        }
+        // The elapsed clock has nothing to count during the wait; freeze it so the lock
+        // screen doesn't run past the (now meaningless) duration of the finished chapter.
+        freezeNowPlayingElapsed()
+        currentSegmentText = ""
+        updateNowPlaying()
+        publishFloatingPlayerState()
+    }
+
+    /// Deliver the chapter the engine has been waiting for and resume narration.
+    func supplyPendingNarration(_ unit: TTSNarrationUnit, chapterTitle: String) {
+        guard currentEngine.isWaitingForNextUnit else {
+            ttsLog("[TTS][Coordinator] supplyPendingNarration ignored engine not waiting")
+            return
+        }
+        ttsLog("[TTS][Coordinator] supplying pending chapter title=\(chapterTitle) textCount=\(unit.text.count)")
+        nowPlayingChapterTitle = chapterTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        prepareNowPlayingForText(unit.text)
+        currentSegmentIndex = 0
+        totalSegments = 0
+        currentSegmentText = ""
+        currentEngine.supplyPendingUnit(unit)
+        isPlaying = currentEngine.isPlaying
+        playbackState = isPlaying ? .playing : .paused
+        updateNowPlaying()
+        publishFloatingPlayerState()
+    }
+
+    /// Give up on a wait that cannot succeed (the fetch failed outright).
+    ///
+    /// Deliberately goes through the engine's own stop path rather than `stop(reason:)`: that
+    /// one sets `isStoppingFromCoordinator`, which suppresses the `onStop` hand-off and would
+    /// leave the reader's TTS bookkeeping (`ttsChapterIndex`, the playback anchor) stale. This
+    /// route ends the session exactly like a natural end-of-book.
+    func abortWaitingForNextChapter(reason: String) {
+        guard currentEngine.isWaitingForNextUnit else { return }
+        ttsLog("[TTS][Coordinator] aborting chapter wait reason=\(reason)")
+        currentEngine.stop()
+    }
+
     func updateNowPlayingTitle(_ title: String) {
         updateNowPlayingChapter(title: title)
     }
@@ -560,11 +613,14 @@ final class TTSCoordinator: ObservableObject {
 
     private func wireCallbacks(to engine: TTSPlayable) {
         engine.onPageFinished = { [weak self] in
-            guard let self, self.isPlaying else { return nil }
-            if let next = self.onPageFinishedWithPronunciation?() {
-                return next
+            guard let self, self.isPlaying else { return .finished }
+            let outcome = self.onNextNarrationUnit?() ?? .finished
+            if case .waiting = outcome {
+                // Runs before the engine flips its own waiting flag, so this must not test
+                // `isWaitingForNextUnit` — the outcome we just received IS the signal.
+                self.enterChapterWaitPresentation()
             }
-            return self.onPageFinished?().map { TTSNarrationUnit(text: $0) }
+            return outcome
         }
         engine.onStop = { [weak self] in
             let handleStop = {

@@ -121,6 +121,10 @@ struct AppleBooksReaderControls: View {
                                         height: DSLayout.readerAppleBooksActionHeight
                                     )
                                     .background(.regularMaterial, in: Capsule())
+                                    // Same trap the 經典 bar hit: an unhidden SF Symbol stays
+                                    // its own element and reads out as "arrow.left.and.right"
+                                    // instead of 「換源」. docs/design.md §7.1.
+                                    .accessibilityHidden(true)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(item.label)
@@ -200,6 +204,7 @@ struct AppleBooksReaderControls: View {
                         height: DSLayout.readerAppleBooksMenuRowHeight
                     )
                     .contentShape(Rectangle())
+                    .accessibilityHidden(true)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(localized("目錄"))

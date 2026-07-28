@@ -1,5 +1,5 @@
 import Combine
-import SwiftUI
+    import SwiftUI
 import UIKit
 
 let uiFeedbackDuration: Double = 0.25
@@ -116,6 +116,9 @@ struct ReaderView: View {
     @State var modernCoverImage: UIImage?
     @State private var showAutoReadPanel = false
     @State var ttsChapterIndex: Int? = nil
+    /// Chapter the narration is blocked on at a chapter boundary, while the engine holds the
+    /// audio session open. Non-nil only between `beginWaitingForTTSChapter` and its resolution.
+    @State var ttsPendingChapterIndex: Int? = nil
     @State var showTTSJumpPrompt = false
     @State var ttsJumpPromptChapterIndex: Int? = nil
     @State var ttsPlaybackAnchor: CoreTextReadingPosition?
@@ -590,6 +593,20 @@ struct ReaderView: View {
                 )
                 : nil
         )
+    }
+
+    /// Drop queued pagination when the app leaves the foreground — except while TTS is
+    /// narrating. Backgrounding used to cancel unconditionally, which killed the layout pass
+    /// for the chapter TTS was about to need; because layout is otherwise only scheduled by
+    /// page turns (`warmUpNext`), and a locked screen turns no pages, nothing ever rebuilt it
+    /// and narration stopped dead at the chapter boundary. Listening is precisely the case
+    /// where offscreen pagination still has to run.
+    func cancelPendingRenderWorkUnlessNarrating() {
+        guard ttsCoordinator.playbackState == .stopped else {
+            ttsLog("[TTS][Reader] keeping pagination alive while narrating (phase change)")
+            return
+        }
+        epubRenderer.engine?.cancelPendingWork()
     }
 
     func isChapterContentAvailable(at chapterIndex: Int) -> Bool {
@@ -1532,7 +1549,8 @@ struct ReaderView: View {
             // Allow the in-reader mini-player the whole time the reader is on screen,
             // independent of the bars — bar visibility only repositions it now.
             setTTSFloatingOverlayVisible(true)
-            ttsCoordinator.onPageFinishedWithPronunciation = {
+            ttsCoordinator.nextChapterLoadingStatusTitle = localized("正在載入下一章…")
+            ttsCoordinator.onNextNarrationUnit = {
                 ttsLog("[TTS][Reader] onChapterFinished ttsChapter=\(ttsChapterIndex.map(String.init) ?? "nil") currentChapter=\(currentChapterIndex)")
                 return advanceTTSChapterFromEngine()
             }
@@ -1547,6 +1565,7 @@ struct ReaderView: View {
             }
             ttsCoordinator.onStop = {
                 ttsChapterIndex = nil
+                ttsPendingChapterIndex = nil
                 ttsPlaybackAnchor = nil
                 showTTSJumpPrompt = false
                 ttsJumpPromptChapterIndex = nil
@@ -1554,14 +1573,19 @@ struct ReaderView: View {
         }
         .onDisappear {
             ttsLog("[TTS][Reader] onDisappear cleanup only ttsPlaying=\(ttsCoordinator.isPlaying)")
-            epubRenderer.engine?.cancelPendingWork()
+            cancelPendingRenderWorkUnlessNarrating()
             if !settings.followSystemBrightness {
                 UIScreen.main.brightness = CGFloat(systemBrightness)
             }
             saveProgress()
             finishReadingStatsSession()
             restoreFixedLayoutOrientationPreference()
-            if let b = book, b.isOnline {
+            // Same invariant as the pagination guard above: while TTS is narrating, the
+            // chapter-supply pipeline must stay up. `onDisappear` also fires when the reader
+            // is merely covered (a pushed page, a full-screen cover), and cancelling the
+            // in-flight fetch there would strand a chapter-boundary wait with no fetch left
+            // to complete it. A real teardown stops the coordinator, which releases these.
+            if let b = book, b.isOnline, ttsCoordinator.playbackState == .stopped {
                 Task {
                     await readerViewModel.cancelAll(for: b.id)
                 }
@@ -1577,7 +1601,7 @@ struct ReaderView: View {
             ttsLog("[TTS][Reader] scenePhase=\(String(describing: phase)) ttsPlaying=\(ttsCoordinator.isPlaying)")
             if phase == .background || phase == .inactive {
                 ttsCoordinator.refreshNowPlayingForSystemSurfaces()
-                epubRenderer.engine?.cancelPendingWork()
+                cancelPendingRenderWorkUnlessNarrating()
                 saveProgress()
                 finishReadingStatsSession()
             } else if phase == .active {
@@ -1592,7 +1616,7 @@ struct ReaderView: View {
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
         ) { _ in
-            epubRenderer.engine?.cancelPendingWork()
+            cancelPendingRenderWorkUnlessNarrating()
             saveProgress()
             finishReadingStatsSession()
         }

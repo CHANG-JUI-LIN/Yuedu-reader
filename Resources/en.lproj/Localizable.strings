@@ -934,6 +934,13 @@
 "連結" = "Link";
 "連結電子郵件" = "Link Email";
 "此登入方式已綁定其他帳號，無法連結" = "This sign-in method is already linked to another account.";
+"解除連結" = "Unlink";
+"連結後可用任一方式登入同一個帳號，並且至少要保留一種。" = "Once linked, you can sign in to the same account with any method. At least one must remain.";
+"改用該帳號登入" = "Sign in to that account instead";
+"解除後就不能再用這個方式登入此帳號，帳號本身與已同步的資料不受影響。" = "You will no longer be able to sign in to this account with this method. The account itself and its synced data are unaffected.";
+"此登入方式屬於另一個帳號。你可以改用它登入那個帳號，或先在那個帳號解除連結。" = "This sign-in method belongs to another account. You can sign in to that account instead, or unlink it there first.";
+"這是唯一的登入方式，解除後就無法再登入，請先連結另一種方式" = "This is the only sign-in method. Link another one before removing it, or you will be locked out.";
+"連結資訊已失效，請重新操作" = "That link request expired. Please try again.";
 "正在同步書籍檔案…" = "Syncing book files…";
 "立即閱讀" = "Read Now";
 "繼續閱讀" = "Continue Reading";
@@ -1573,3 +1580,14 @@
 "現代" = "Modern";
 "線上" = "Online";
 "返回書架" = "Back to Library";
+
+"正在載入下一章…" = "Loading next chapter…";
+
+/* Accessibility — merged rows and rotor actions in the source lists */
+"取消選取" = "Deselect";
+"點兩下切換啟用狀態" = "Double tap to toggle enabled";
+"點兩下設為使用中" = "Double tap to use this voice";
+"新增書源" = "Add Source";
+"點兩下切換書源" = "Double tap to switch source";
+"已加入" = "Added";
+"未加入" = "Not added";

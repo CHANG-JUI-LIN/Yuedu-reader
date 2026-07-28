@@ -8,10 +8,17 @@ import UIKit
 final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     var isPlaying: Bool = false
-    var onPageFinished: (() -> TTSNarrationUnit?)?
+    var onPageFinished: (() -> TTSNextUnitOutcome)?
     var onStop: (() -> Void)?
     var onPlaybackStarted: ((TimeInterval) -> Void)?
     var onSegmentChanged: ((Int, Int, String) -> Void)?
+
+    /// Set while the host prepares the next chapter; the same keep-alive silence that covers
+    /// chunk-download gaps carries the session through this longer wait.
+    private(set) var isWaitingForNextUnit = false
+    /// Next chapter that arrived while the listener had playback paused. Held rather than
+    /// played, so content becoming ready never overrides an explicit pause; `resume` plays it.
+    private var pendingUnit: TTSNarrationUnit?
 
     private var audioPlayer: TTSChunkAudioPlayer?
     private let audioProvider: TTSAudioProvider
@@ -35,13 +42,12 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// instead of replaying the whole ~5s sentence from its start.
     private var resumePlaybackTime: TimeInterval = 0
 
-    /// Looped-silence player that keeps the audio session emitting samples during the gap
-    /// between one chunk finishing and the next being downloaded/ready. Without it the
-    /// `AVAudioPlayer` is `nil`, there is no active audio output, and iOS may suspend the
-    /// app while backgrounded / locked — manifesting as playback stalling mid-book with the
-    /// mini-player still showing "playing" until the device is unlocked. The silence is
-    /// looped until a real chunk playback starts, which stops it.
-    private var silencePlayer: AVAudioPlayer?
+    /// Keeps the audio session emitting samples during the gap between one chunk finishing
+    /// and the next being downloaded/ready, and across a chapter-boundary wait. Without it
+    /// there is no active audio output and iOS may suspend the app while backgrounded /
+    /// locked — playback stalling mid-book with the mini-player still showing "playing"
+    /// until the device is unlocked.
+    private let silence = TTSSilenceKeepAlive()
 
     private let preloadWindow = 3
     private let maxConcurrentDownloads = 2
@@ -111,11 +117,26 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     }
 
     func resume() {
-        ttsLog("[TTS][HTTPEngine] resume requested isPlaying=\(isPlaying) isPaused=\(isPaused) index=\(currentIndex)")
+        ttsLog("[TTS][HTTPEngine] resume requested isPlaying=\(isPlaying) isPaused=\(isPaused) index=\(currentIndex) waiting=\(isWaitingForNextUnit)")
         guard !isPlaying, isPaused else { return }
         beginBackgroundTask()
         isPaused = false
         isPlaying = true
+
+        // Paused while waiting on the next chapter. If it arrived during the pause, play it
+        // now; otherwise go back to waiting rather than replaying the finished chapter.
+        if isWaitingForNextUnit {
+            if let unit = pendingUnit {
+                pendingUnit = nil
+                isWaitingForNextUnit = false
+                ttsLog("[TTS][HTTPEngine] resume plays chapter held during pause")
+                speak(text: unit.text, title: "", rate: lastRate, pronunciationHints: unit.pronunciationHints)
+                return
+            }
+            startSilence()
+            ttsLog("[TTS][HTTPEngine] resume back into waiting state")
+            return
+        }
 
         // Consume the saved offset once; a later resume must re-capture it at its own pause.
         let resumeTime = resumePlaybackTime
@@ -493,20 +514,62 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         guard token == playbackToken else { return }
         ttsLog("[TTS][HTTPEngine] page chunks finished count=\(chunks.count)")
 
-        if let next = onPageFinished?(), !next.text.isEmpty {
+        switch onPageFinished?() ?? .finished {
+        case let .ready(next) where !next.text.isEmpty:
             speak(
                 text: next.text,
                 title: "",
                 rate: lastRate,
                 pronunciationHints: next.pronunciationHints
             )
-        } else {
+        case .waiting:
+            enterWaitingForNextUnit()
+        case .ready, .finished:
             resetPlaybackState()
             onStop?()
         }
     }
 
+    /// Hold the session open while the host fetches + lays out the next chapter, exactly as
+    /// the chunk-gap path does: background task claimed, looped silence emitting, no stop.
+    private func enterWaitingForNextUnit() {
+        guard !isWaitingForNextUnit else { return }
+        isWaitingForNextUnit = true
+        audioPlayer?.delegate = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
+        isPlaying = true
+        beginBackgroundTask()
+        startSilence()
+        ttsLog("[TTS][HTTPEngine] waiting for next unit")
+    }
+
+    func supplyPendingUnit(_ unit: TTSNarrationUnit) {
+        guard isWaitingForNextUnit else {
+            ttsLog("[TTS][HTTPEngine] supplyPendingUnit ignored not waiting")
+            return
+        }
+        guard !unit.text.isEmpty else {
+            ttsLog("[TTS][HTTPEngine] supplyPendingUnit empty text; stopping")
+            isWaitingForNextUnit = false
+            resetPlaybackState()
+            onStop?()
+            return
+        }
+        guard !isPaused else {
+            ttsLog("[TTS][HTTPEngine] supplyPendingUnit held; playback is paused")
+            pendingUnit = unit
+            return
+        }
+        ttsLog("[TTS][HTTPEngine] supplyPendingUnit resuming textCount=\(unit.text.count)")
+        isWaitingForNextUnit = false
+        // `speak` resets state and mints a fresh token — the wait IS the chapter boundary.
+        speak(text: unit.text, title: "", rate: lastRate, pronunciationHints: unit.pronunciationHints)
+    }
+
     private func resetPlaybackState() {
+        isWaitingForNextUnit = false
+        pendingUnit = nil
         activeTasks.values.forEach { $0.cancel() }
         activeTasks.removeAll()
         audioCache.removeAll()
@@ -531,63 +594,16 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     // MARK: - Silence keep-alive
 
-    /// PCM silence data (1 second, mono 16-bit 44.1kHz) wrapped in a minimal WAV container.
-    /// Built once; the silence player loops it for as long as the engine is "playing" but
-    /// has no real audio to emit (chunk download gaps).
-    private static let silenceWAV: Data = {
-        let sampleRate: UInt32 = 44_100
-        let numChannels: UInt16 = 1
-        let bitsPerSample: UInt16 = 16
-        let blockAlign: UInt16 = numChannels * (bitsPerSample / 8)
-        let byteRate: UInt32 = sampleRate * UInt32(blockAlign)
-        let frames: UInt32 = sampleRate // 1 second
-        let dataSize: UInt32 = frames * UInt32(blockAlign)
-
-        var d = Data()
-        func u32(_ v: UInt32) {
-            var le = v.littleEndian
-            withUnsafeBytes(of: &le) { d.append(contentsOf: $0) }
-        }
-        func u16(_ v: UInt16) {
-            var le = v.littleEndian
-            withUnsafeBytes(of: &le) { d.append(contentsOf: $0) }
-        }
-        func tag(_ s: String) {
-            s.utf8.forEach { d.append($0) }
-        }
-        tag("RIFF"); u32(36 + dataSize); tag("WAVE")
-        tag("fmt "); u32(16); u16(1) // PCM
-        u16(numChannels); u32(sampleRate); u32(byteRate); u16(blockAlign); u16(bitsPerSample)
-        tag("data"); u32(dataSize)
-        d.append(Data(repeating: 0, count: Int(dataSize)))
-        return d
-    }()
-
-    private func ensureSilencePlayer() {
-        if silencePlayer != nil { return }
-        guard let p = try? AVAudioPlayer(data: Self.silenceWAV) else {
-            ttsLog("[TTS][HTTPEngine] silence player init failed — chunk-gap keep-alive disabled")
-            return
-        }
-        p.numberOfLoops = -1
-        p.volume = 0.0
-        p.prepareToPlay()
-        silencePlayer = p
-    }
-
     /// Start emitting looped silence so the audio session has active output while waiting
     /// for the next chunk to download. Idempotent and only while not paused.
     private func startSilence() {
         guard !isPaused else { return }
-        ensureSilencePlayer()
-        if silencePlayer?.isPlaying == false {
-            _ = silencePlayer?.play()
-        }
+        silence.start()
     }
 
     /// Stop the keep-alive silence. Called when real chunk playback begins, on pause, stop, and reset.
     private func stopSilence() {
-        silencePlayer?.pause()
+        silence.stop()
     }
 
     // MARK: - Background task

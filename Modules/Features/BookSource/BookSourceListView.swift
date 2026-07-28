@@ -114,6 +114,7 @@ struct BookSourceListView: View {
                     } label: {
                         Image(systemName: "xmark")
                     }
+                    .accessibilityLabel(localized("關閉"))
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     importToolbarControl
@@ -122,6 +123,7 @@ struct BookSourceListView: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel(localized("新增書源"))
                     Menu {
                         Button {
                             enableAll()
@@ -154,6 +156,7 @@ struct BookSourceListView: View {
                     } label: {
                         Image(systemName: "ellipsis")
                     }
+                    .accessibilityLabel(localized("更多"))
                 }
             }
             .sheet(
@@ -328,6 +331,7 @@ struct BookSourceListView: View {
             } label: {
                 Image(systemName: "square.and.arrow.down")
             }
+            .accessibilityLabel(localized("匯入"))
         } else {
             Menu {
                 Button {
@@ -343,6 +347,7 @@ struct BookSourceListView: View {
             } label: {
                 Image(systemName: "square.and.arrow.down")
             }
+            .accessibilityLabel(localized("匯入"))
         }
     }
 
@@ -380,8 +385,102 @@ struct BookSourceListView: View {
         .scrollContentBackground(.hidden)
     }
 
+    /// One VoiceOver element per source.
+    ///
+    /// The row packs five separate controls (核取方塊 / 啟用開關 / 編輯 / 更多) around three
+    /// lines of text, so unmerged it cost eight swipes per source and announced bare SF
+    /// Symbol names ("square", "square.and.pencil", "ellipsis") for four of them. Merging
+    /// means every control has to come back as a rotor action — see `sourceRotorActions`
+    /// — and the 網址 moves to rotor custom content so it isn't re-read on every swipe.
+    /// Rules in `docs/design.md` §7.
     @ViewBuilder
     private func sourceRow(source: BookSource) -> some View {
+        let row = sourceRowContent(source: source)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(sourceAccessibilityLabel(source))
+            .accessibilityValue(sourceAccessibilityValue(source))
+            .accessibilityAddTraits(sourceAccessibilityTraits(source))
+            .accessibilityHint(localized("點兩下切換啟用狀態"))
+            .accessibilityAction { store.toggle(id: source.id) }
+            .accessibilityActions { sourceRotorActions(source) }
+
+        if source.bookSourceUrl.isEmpty {
+            row
+        } else {
+            row.accessibilityCustomContent(
+                Text(localized("網址")),
+                Text(source.bookSourceUrl)
+            )
+        }
+    }
+
+    /// The row's VoiceOver name: 書源名稱（分組）, matching the first visible line.
+    private func sourceAccessibilityLabel(_ source: BookSource) -> String {
+        let name = source.bookSourceName.isEmpty
+            ? localized("未命名書源")
+            : source.bookSourceName
+        guard !source.bookSourceGroup.isEmpty else { return name }
+        return "\(name)（\(source.bookSourceGroup)）"
+    }
+
+    /// State the row shows visually: the 啟用 toggle plus the validation badge.
+    /// Selection is carried by the `.isSelected` trait instead, so it isn't said twice.
+    private func sourceAccessibilityValue(_ source: BookSource) -> String {
+        var parts = [localized(source.enabled ? "已啟用" : "已停用")]
+        if let health = healthChecker.healthById[source.id]?.health {
+            parts.append(sourceHealthText(health))
+        }
+        return parts.joined(separator: "，")
+    }
+
+    /// `.isSelected` is what carries the leading checkbox — VoiceOver says 「已選取」 for it,
+    /// so the value line stays about 啟用 state only.
+    private func sourceAccessibilityTraits(_ source: BookSource) -> AccessibilityTraits {
+        var traits: AccessibilityTraits = .isButton
+        if selectedIds.contains(source.id) {
+            traits.insert(.isSelected)
+        }
+        return traits
+    }
+
+    private func sourceHealthText(_ health: SourceHealth) -> String {
+        switch health {
+        case .passed:       return localized("驗證通過")
+        case .fetchError:   return localized("抓取異常")
+        case .contentError: return localized("正文異常")
+        }
+    }
+
+    /// Everything the row's buttons and menu can do, as rotor actions. Must stay in sync
+    /// with the visible controls in `sourceRowContent` — the merged element is the only
+    /// way VoiceOver can reach any of them.
+    @ViewBuilder
+    private func sourceRotorActions(_ source: BookSource) -> some View {
+        Button(localized(selectedIds.contains(source.id) ? "取消選取" : "選取")) {
+            toggleSelection(source.id)
+        }
+        Button(localized("編輯")) {
+            editingSource = source
+        }
+        Button(localized("複製 JSON")) {
+            copySourceJSON(source)
+        }
+        if !source.loginUrl.isEmpty {
+            Button(localized("Cookie 驗證登入")) {
+                loginSource = source
+            }
+        }
+        Button(localized("設置源變量")) {
+            variableEditingSource = source
+        }
+        Button(localized("刪除"), role: .destructive) {
+            selectedIds.remove(source.id)
+            store.delete(id: source.id)
+        }
+    }
+
+    @ViewBuilder
+    private func sourceRowContent(source: BookSource) -> some View {
         HStack(spacing: 0) {
             Button {
                 toggleSelection(source.id)
@@ -450,12 +549,7 @@ struct BookSourceListView: View {
                     Label(localized("編輯"), systemImage: "pencil")
                 }
                 Button {
-                    if let data = try? JSONEncoder().encode(source),
-                        let str = String(data: data, encoding: .utf8)
-                    {
-                        UIPasteboard.general.string = str
-                        withAnimation { importSuccess = localized("已複製書源 JSON") }
-                    }
+                    copySourceJSON(source)
                 } label: {
                     Label(localized("複製 JSON"), systemImage: "doc.on.doc")
                 }
@@ -514,6 +608,7 @@ struct BookSourceListView: View {
                     .foregroundColor(
                         selectedIds.count == filteredSources.count && !filteredSources.isEmpty
                             ? DSColor.accent : Color(UIColor.systemGray3))
+                    .accessibilityHidden(true)
                     Text(localized("全選") + "(\(selectedIds.count)/\(store.sources.count))")
                         .font(DSFont.fixed(size: 13))
                         .foregroundColor(DSColor.textPrimary)
@@ -521,6 +616,8 @@ struct BookSourceListView: View {
             }
             .buttonStyle(.plain)
             .padding(.leading, 16)
+            .accessibilityLabel(localized("全選"))
+            .accessibilityValue("\(selectedIds.count)/\(store.sources.count)")
 
             Spacer()
 
@@ -582,6 +679,7 @@ struct BookSourceListView: View {
                     .frame(width: 32, height: 32)
                     .rotationEffect(.degrees(90))
             }
+            .accessibilityLabel(localized("更多"))
             .padding(.trailing, 12)
         }
         .padding(.vertical, 8)
@@ -589,6 +687,14 @@ struct BookSourceListView: View {
     }
 
     // MARK: - Batch Operations
+
+    private func copySourceJSON(_ source: BookSource) {
+        guard let data = try? JSONEncoder().encode(source),
+              let str = String(data: data, encoding: .utf8)
+        else { return }
+        UIPasteboard.general.string = str
+        withAnimation { importSuccess = localized("已複製書源 JSON") }
+    }
 
     private func toggleSelection(_ id: UUID) {
         if selectedIds.contains(id) {

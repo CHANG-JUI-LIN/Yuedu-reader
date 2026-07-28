@@ -6,6 +6,10 @@ import UIKit
 @MainActor
 final class AppleReauthCoordinator: NSObject {
     private var continuation: CheckedContinuation<ASAuthorizationAppleIDCredential, Error>?
+    /// `ASAuthorizationController` holds its delegate weakly and does not retain
+    /// itself, so a controller kept only in a local would be free to deallocate
+    /// mid-flight and leave the continuation hanging forever.
+    private var activeController: ASAuthorizationController?
 
     func requestCredential(nonceSHA256: String) async throws -> ASAuthorizationAppleIDCredential {
         try await withCheckedThrowingContinuation { continuation in
@@ -16,6 +20,7 @@ final class AppleReauthCoordinator: NSObject {
             let controller = ASAuthorizationController(authorizationRequests: [request])
             controller.delegate = self
             controller.presentationContextProvider = self
+            activeController = controller
             controller.performRequests()
         }
     }
@@ -23,6 +28,7 @@ final class AppleReauthCoordinator: NSObject {
     private func resume(_ result: Result<ASAuthorizationAppleIDCredential, Error>) {
         let continuation = self.continuation
         self.continuation = nil
+        activeController = nil
         switch result {
         case .success(let credential):
             continuation?.resume(returning: credential)

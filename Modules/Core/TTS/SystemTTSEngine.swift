@@ -11,10 +11,19 @@ import UIKit
 final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     var isPlaying: Bool = false
-    var onPageFinished: (() -> TTSNarrationUnit?)?
+    var onPageFinished: (() -> TTSNextUnitOutcome)?
     var onStop: (() -> Void)?
     var onPlaybackStarted: ((TimeInterval) -> Void)?
     var onSegmentChanged: ((Int, Int, String) -> Void)?
+
+    /// Set while the host prepares the next chapter. `AVSpeechSynthesizer` emits nothing
+    /// between utterances, so the keep-alive silence carries the audio session through the
+    /// gap — otherwise iOS suspends the app mid-wait when the screen is locked.
+    private(set) var isWaitingForNextUnit = false
+    private let silence = TTSSilenceKeepAlive()
+    /// Next chapter that arrived while the listener had playback paused. Held rather than
+    /// spoken, so content becoming ready never overrides an explicit pause; `resume` plays it.
+    private var pendingUnit: TTSNarrationUnit?
 
     private let synthesizer = AVSpeechSynthesizer()
     private var chunks: [String] = []
@@ -83,20 +92,36 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     }
 
     func pause() {
-        ttsLog("[TTS][SystemEngine] pause requested isPlaying=\(isPlaying) index=\(currentIndex)")
+        ttsLog("[TTS][SystemEngine] pause requested isPlaying=\(isPlaying) index=\(currentIndex) waiting=\(isWaitingForNextUnit)")
         guard isPlaying else { return }
         synthesizer.pauseSpeaking(at: .word)
+        silence.stop()
         isPaused = true
         isPlaying = false
         endBackgroundTask()
     }
 
     func resume() {
-        ttsLog("[TTS][SystemEngine] resume requested isPlaying=\(isPlaying) isPaused=\(isPaused) index=\(currentIndex)")
+        ttsLog("[TTS][SystemEngine] resume requested isPlaying=\(isPlaying) isPaused=\(isPaused) index=\(currentIndex) waiting=\(isWaitingForNextUnit)")
         guard !isPlaying, isPaused else { return }
         beginBackgroundTask()
         isPaused = false
         isPlaying = true
+        // Paused while waiting on the next chapter. If it arrived during the pause, play it
+        // now; otherwise go back to waiting rather than re-speaking the finished chapter.
+        if isWaitingForNextUnit {
+            if let unit = pendingUnit {
+                pendingUnit = nil
+                isWaitingForNextUnit = false
+                silence.stop()
+                ttsLog("[TTS][SystemEngine] resume plays chapter held during pause")
+                speak(text: unit.text, title: "", rate: lastRate, pronunciationHints: unit.pronunciationHints)
+                return
+            }
+            silence.start()
+            ttsLog("[TTS][SystemEngine] resume back into waiting state")
+            return
+        }
         if synthesizer.isPaused {
             let success = synthesizer.continueSpeaking()
             ttsLog("[TTS][SystemEngine] resume continue success=\(success)")
@@ -269,17 +294,58 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         guard token == playbackToken else { return }
         ttsLog("[TTS][SystemEngine] page chunks finished count=\(chunks.count)")
 
-        if let next = onPageFinished?(), !next.text.isEmpty {
+        switch onPageFinished?() ?? .finished {
+        case let .ready(next) where !next.text.isEmpty:
             speak(
                 text: next.text,
                 title: "",
                 rate: lastRate,
                 pronunciationHints: next.pronunciationHints
             )
-        } else {
+        case .waiting:
+            enterWaitingForNextUnit()
+        case .ready, .finished:
             resetPlaybackState()
             onStop?()
         }
+    }
+
+    /// Hold the session open while the host fetches + lays out the next chapter. The
+    /// background task and the audio session stay claimed, and looped silence keeps real
+    /// output flowing so a locked device doesn't suspend us mid-wait.
+    private func enterWaitingForNextUnit() {
+        guard !isWaitingForNextUnit else { return }
+        isWaitingForNextUnit = true
+        stopSynthesizer()
+        isPlaying = true
+        beginBackgroundTask()
+        silence.start()
+        ttsLog("[TTS][SystemEngine] waiting for next unit")
+    }
+
+    func supplyPendingUnit(_ unit: TTSNarrationUnit) {
+        guard isWaitingForNextUnit else {
+            ttsLog("[TTS][SystemEngine] supplyPendingUnit ignored not waiting")
+            return
+        }
+        guard !unit.text.isEmpty else {
+            ttsLog("[TTS][SystemEngine] supplyPendingUnit empty text; stopping")
+            isWaitingForNextUnit = false
+            resetPlaybackState()
+            onStop?()
+            return
+        }
+        guard !isPaused else {
+            ttsLog("[TTS][SystemEngine] supplyPendingUnit held; playback is paused")
+            pendingUnit = unit
+            return
+        }
+        ttsLog("[TTS][SystemEngine] supplyPendingUnit resuming textCount=\(unit.text.count)")
+        isWaitingForNextUnit = false
+        silence.stop()
+        // `speak` resets state and mints a fresh token, which is what we want here: the
+        // waiting period is the boundary between two chapters.
+        speak(text: unit.text, title: "", rate: lastRate, pronunciationHints: unit.pronunciationHints)
     }
 
     private func publishSegmentChanged(index: Int) {
@@ -296,6 +362,9 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     private func resetPlaybackState() {
         stopSynthesizer()
+        silence.stop()
+        isWaitingForNextUnit = false
+        pendingUnit = nil
         chunks.removeAll()
         chunkPronunciationHints.removeAll()
         currentIndex = 0

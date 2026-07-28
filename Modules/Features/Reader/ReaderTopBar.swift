@@ -21,11 +21,16 @@ struct ReaderTopBar: View {
                         onBack()
                     } label: {
                         Image(systemName: "chevron.left")
-                            .accessibilityIdentifier("reader_back_button")
                             .font(DSFont.fixed(size: 17, weight: .medium))
                             .foregroundColor(theme.textColor)
                             .frame(width: 36, height: 36)
+                            .accessibilityHidden(true)   // 名稱在按鈕上（見 §7.1）
                     }
+                    // Identifier moved off the Image with its accessibility: the UI test
+                    // queries `app.buttons["reader_back_button"]`, so it has to live on the
+                    // element that stays visible to accessibility.
+                    .accessibilityIdentifier("reader_back_button")
+                    .accessibilityLabel(localized("退出閱讀"))
 
                     if onOpenBookDetail != nil {
                         Color.clear
@@ -50,8 +55,11 @@ struct ReaderTopBar: View {
                             .foregroundColor(isBookmarked ? .orange : theme.textColor)
                             .scaleEffect(isBookmarked ? 1.15 : 1.0)
                             .frame(width: 36, height: 36)
+                            .accessibilityHidden(true)
                     }
                     .animation(.easeInOut(duration: 0.15), value: isBookmarked)
+                    .accessibilityLabel(localized("書籤"))
+                    .accessibilityValue(localized(isBookmarked ? "已加入" : "未加入"))
 
                     if let onOpenBookDetail {
                         Button {
@@ -62,6 +70,7 @@ struct ReaderTopBar: View {
                                 .font(DSFont.fixed(size: 17, weight: .medium))
                                 .foregroundColor(theme.textColor)
                                 .frame(width: 36, height: 36)
+                                .accessibilityHidden(true)
                         }
                         .accessibilityLabel(localized("書籍詳情"))
                     }
