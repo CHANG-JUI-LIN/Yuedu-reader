@@ -1023,9 +1023,40 @@ final class HTMLAttributedStringBuilder {
 
     private func isPlainImagePageWrapper(_ element: ElementNode) -> Bool {
         guard element.tag == "div" else { return false }
-        return element.id.isEmpty
-            && element.classes.isEmpty
-            && element.attributes["style"] == nil
+        guard element.id.isEmpty, element.classes.isEmpty else { return false }
+        guard let rawStyle = element.attributes["style"] else { return true }
+
+        let rawDeclarations = rawStyle.split(separator: ";")
+        let declarations = rawDeclarations.compactMap { declaration -> (String, String)? in
+            let parts = declaration.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2 else { return nil }
+            return (
+                parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                parts[1].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            )
+        }
+        guard !declarations.isEmpty, declarations.count == rawDeclarations.count else { return false }
+
+        return declarations.allSatisfy { declaration in
+            let (property, value) = declaration
+            switch property {
+            case "text-align":
+                return ["left", "right", "center", "start", "end"].contains(value)
+            case "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
+                 "padding", "padding-top", "padding-right", "padding-bottom", "padding-left":
+                return value.split(whereSeparator: \.isWhitespace).allSatisfy { component in
+                    let length = component
+                        .replacingOccurrences(of: "px", with: "")
+                        .replacingOccurrences(of: "pt", with: "")
+                        .replacingOccurrences(of: "rem", with: "")
+                        .replacingOccurrences(of: "em", with: "")
+                        .replacingOccurrences(of: "%", with: "")
+                    return Double(length) == 0
+                }
+            default:
+                return false
+            }
+        }
     }
 
     private func imageSource(from element: ElementNode) -> String {
