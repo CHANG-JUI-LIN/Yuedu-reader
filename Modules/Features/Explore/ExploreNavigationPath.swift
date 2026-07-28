@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 enum ExploreNavigationRoute: Hashable {
     case category(UUID)
@@ -28,7 +29,9 @@ enum ExploreNavigationRoute: Hashable {
 }
 
 struct ExploreNavigationPath {
-    var path: [ExploreNavigationRoute] = []
+    // Explore embeds SearchView, whose result links append SearchResultRoute values.
+    // Keep this heterogeneous so the shared stack accepts both feature route types.
+    var path = NavigationPath()
 
     mutating func push(_ route: ExploreNavigationRoute) {
         path.append(route)
