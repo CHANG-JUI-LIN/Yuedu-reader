@@ -24,6 +24,8 @@ vertical writing, links, selection, images, or annotation rendering.
 - [interaction.md](interaction.md): link hit-testing, selection rects, underline drawing, and reader navigation callbacks.
 - [contributing.md](contributing.md): change checklist and focused test commands.
 - [performance-benchmark.md](performance-benchmark.md): reader signpost contract, synthetic corpus, and baseline capture procedure.
+- [`YueduCoreText`](../../Packages/YueduCoreText/README.md): the standalone
+  Swift package currently consumed by the app for reusable Core Text typography.
 
 ## Focused Tests
 

@@ -238,6 +238,25 @@ per page. Page-range probes and orphan/widow correction still need temporary
 frames before final ranges exist. The deterministic result is removal of
 repeated shaping of the same **final page** during metadata extraction and draw.
 
+### Local-package integration verification
+
+After extracting the reusable typography slice into `YueduCoreTextTypography`,
+the app's CJK and vertical-writing suites passed 39/39 through the package
+public API. The package also passed 7/7 tests from a clean temporary copy with
+no app project or third-party package graph.
+
+The final Debug simulator corpus verification after package integration
+produced:
+
+| ID | Open | Build | First page | Full layout | Warm layout |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `large-epub-160m` | 690.02 ms | 986.16 ms | 8.69 ms | 5.68 ms | 0.03 ms |
+| `large-epub-224m` | 2,107.61 ms | 3,361.76 ms | 8.29 ms | 20.03 ms | 0.05 ms |
+
+Both runs retained the same representative spines, character counts, and
+seven-page layouts. These single Debug simulator samples are integration
+diagnostics, not the outstanding Release physical-device median/p95 gate.
+
 ## Capture Procedure
 
 Use a Release build on a physical device with a fixed iOS version:

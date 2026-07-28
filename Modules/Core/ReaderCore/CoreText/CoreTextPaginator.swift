@@ -1,5 +1,6 @@
 import CoreText
 import UIKit
+import YueduCoreTextTypography
 
 final class CoreTextPaginator {
     static func debugVerticalLog(_ message: @autoclosure () -> String, verbose: Bool = false) {

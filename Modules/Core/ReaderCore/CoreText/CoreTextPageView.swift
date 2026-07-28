@@ -2,6 +2,7 @@ import AVKit
 import CoreText
 import SwiftUI
 import UIKit
+import YueduCoreTextTypography
 
 /// Single-page CoreText rendering view.
 /// Draws line-by-line using draw(_ rect:) (supporting CJK justified alignment), without snapshot caching or layer caching.

@@ -2,6 +2,7 @@ import CoreText
 import Foundation
 import Testing
 import UIKit
+import YueduCoreTextTypography
 @testable import yuedu_app
 
 // MARK: - CJK 排版後處理器

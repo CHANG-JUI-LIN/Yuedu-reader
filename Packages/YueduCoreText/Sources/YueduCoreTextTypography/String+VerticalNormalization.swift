@@ -13,7 +13,7 @@ extension String {
     ///   font already handles via `kCTVerticalFormsAttributeName` are skipped;
     ///   only truly missing ones get a presentation-form fallback.  This keeps
     ///   searchability and copy-paste working for natively-supported punctuation.
-    func normalizedForVerticalLayout(using verticalMap: [String: String]? = nil) -> String {
+    public func normalizedForVerticalLayout(using verticalMap: [String: String]? = nil) -> String {
         var processed = self
 
         // ── Phase 1: half-width → full-width brackets ──
@@ -41,7 +41,7 @@ extension String {
     }
 
     /// Fallback used when no per-font map is available.
-    static let staticVerticalMap: [String: String] = [
+    public static let staticVerticalMap: [String: String] = [
         "《": "︽", "》": "︾",
         "〈": "︿", "〉": "﹀",
         "「": "﹁", "」": "﹂",
@@ -57,7 +57,7 @@ extension String {
 }
 
 extension NSMutableAttributedString {
-    func normalizeForVerticalLayoutInPlace(using verticalMap: [String: String]? = nil) {
+    public func normalizeForVerticalLayoutInPlace(using verticalMap: [String: String]? = nil) {
         guard length > 0 else { return }
         let fullRange = NSRange(location: 0, length: length)
         let halfToFullMap: [String: String] = [

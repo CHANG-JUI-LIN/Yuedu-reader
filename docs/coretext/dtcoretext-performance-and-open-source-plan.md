@@ -158,6 +158,12 @@ chunk 預設高度約 2,000 pt，約數個螢幕。當背景預熱沒有完成�
 - `PageEngine` 與 `ScrollEngine` 只消費同一份 immutable `ChapterDocument`。
 - theme 的純色彩變更不得重做 layout；只有字型、字級、行距、內容寬度、writing mode 等 layout-affecting input 才失效。
 
+**目前進度（2026-07-28）：** 已加入 bounded、generation-aware 的
+`ChapterDocumentStore`，相同 request 的 in-flight build 只執行一次。EPUB、
+TXT 與線上內容的 page／scroll engine 由 `EPUBPageRenderer` 注入同一 store；
+容量固定為 8，明確 invalidation 會使舊 task 結果失效。整合 mutation 暫時繞過
+scroll store 時測試由 5/5 降為 4/5，還原後相關 focused suites 53/53 通過。
+
 ### P1 級：CSS cascade 是 element × rules 的全掃描與排序
 
 [`HTMLAttributedStringBuilder.resolvedStyle`](../../Modules/Core/ReaderCore/CoreText/HTMLAttributedStringBuilder.swift) 對每個 element：
@@ -598,6 +604,15 @@ CoreTextCommon/VerticalLayoutConfig.swift
 `CJKLineBreakPolicyTests` 可搬成 package tests。它的目的只是在 app 內驗證
 SwiftPM 邊界、直排 typography parity 與 license/header 流程；不宣稱 layout
 engine 已完成獨立化。
+
+**目前進度（2026-07-28）：** 第一批六個檔案已移入
+`Packages/YueduCoreText` 的 `YueduCoreTextTypography` target，app 與 test
+target 皆透過 local Swift Package product 使用。套件從乾淨臨時目錄執行
+7/7 測試通過，App 的 CJK／直排整合測試 39/39 通過。套件包含 MPL-2.0、
+NOTICE、CONTRIBUTING、SECURITY、DocC、GitHub CI／issue templates，並以自動
+boundary test 禁止 Readium、SwiftSoup、WebKit、Firebase、app setting 與
+logging 耦合。這完成的是 typography v0.1 切片，不代表 paginator、HTML 或
+UIKit renderer 已對外公開。
 
 下一批可評估 `ReaderContentMetrics`、`TextSelectionManager` 與
 `ReaderPerfTrace`。`LayoutCache` 雖然容易搬，但必須等 P2 決定唯一 cache owner

@@ -1,6 +1,6 @@
 import Foundation
 
-enum VerticalGlyphKind {
+public enum VerticalGlyphKind {
     case cjk(String)
     case verticalPunctuation(String)
     case compressedPunctuation(String)
@@ -8,14 +8,14 @@ enum VerticalGlyphKind {
     case uprightLatin(String)
 }
 
-enum VerticalGlyphClassifier {
+public enum VerticalGlyphClassifier {
     private static let verticalPresentationMap: [String: String] = String.staticVerticalMap
 
     private static let compressedSet: Set<String> = [
         "\u{FF0C}", "\u{3002}", "\u{3001}", "\u{FF0E}", ".", ",", "\u{FF61}", "\u{FF64}"
     ]
 
-    static func classify(_ char: Character) -> VerticalGlyphKind {
+    public static func classify(_ char: Character) -> VerticalGlyphKind {
         let s = String(char)
 
         if let presentationForm = verticalPresentationMap[s] {

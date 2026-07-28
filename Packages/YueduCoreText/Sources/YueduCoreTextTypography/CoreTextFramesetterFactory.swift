@@ -1,8 +1,8 @@
 import CoreText
 import Foundation
 
-enum CoreTextFramesetterFactory {
-    static func make(for attributedString: NSAttributedString) -> CTFramesetter {
+public enum CoreTextFramesetterFactory {
+    public static func make(for attributedString: NSAttributedString) -> CTFramesetter {
         let options = [
             kCTTypesetterOptionAllowUnboundedLayout as NSAttributedString.Key: true
         ] as CFDictionary

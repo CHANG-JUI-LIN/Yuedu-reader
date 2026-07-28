@@ -12,7 +12,7 @@ import UIKit
 /// ## Preserves UTF-16 length
 /// Smart punctuation replaces ASCII quotes with BMP curly quotes one-for-one, and spacing only modifies `.kern`.
 /// UTF-16 offsets used by reading progress therefore remain stable.
-enum CJKTypographyProcessor {
+public enum CJKTypographyProcessor {
 
     // MARK: - Punctuation Classification
 
@@ -37,18 +37,18 @@ enum CJKTypographyProcessor {
     // MARK: - Public API
 
     /// Checks whether the first character is an opening mark, used for line-start compression
-    static func isOpening(_ char: Character) -> Bool {
+    public static func isOpening(_ char: Character) -> Bool {
         guard let first = char.unicodeScalars.first else { return false }
         return openingMarks.contains(first)
     }
 
     /// Checks whether the last character is a closing mark, used for line-end compression
-    static func isClosing(_ char: Character) -> Bool {
+    public static func isClosing(_ char: Character) -> Bool {
         guard let first = char.unicodeScalars.first else { return false }
         return closingMarks.contains(first)
     }
 
-    static func protectedLineBreakOffset(
+    public static func protectedLineBreakOffset(
         _ proposedOffset: Int,
         in string: String,
         lowerBound: Int
@@ -77,7 +77,7 @@ enum CJKTypographyProcessor {
     }
 
     /// Applies smart punctuation normalization + CJK punctuation compression.
-    static func apply(to attrStr: NSAttributedString) -> NSAttributedString {
+    public static func apply(to attrStr: NSAttributedString) -> NSAttributedString {
         let smart = applySmartPunctuation(to: attrStr)
         guard smart.length > 1 else { return smart }
 
@@ -129,7 +129,7 @@ enum CJKTypographyProcessor {
     /// Converts ASCII straight quotes to Unicode curly quotes.
     /// " -> “ / ” (U+201C / U+201D)
     /// ' -> ‘ / ’ (U+2018 / U+2019) with apostrophe detection for English contractions and possessives.
-    static func normalizeEnglishPunctuation(_ text: String) -> String {
+    public static func normalizeEnglishPunctuation(_ text: String) -> String {
         var result = ""
         var isOpeningDouble = true
         var isOpeningSingle = true
