@@ -31,6 +31,25 @@ jobs:
       - name: Localization plist lint
         run: find iOS -name Localizable.strings -print0 | xargs -0 plutil -lint
 
+      - name: Create non-secret Firebase build fixture
+        run: |
+          plutil -create xml1 GoogleService-Info.plist
+          plutil -insert API_KEY -string "ci-placeholder" GoogleService-Info.plist
+          plutil -insert CLIENT_ID -string "000000000000-ci.apps.googleusercontent.com" GoogleService-Info.plist
+          plutil -insert REVERSED_CLIENT_ID -string "com.googleusercontent.apps.000000000000-ci" GoogleService-Info.plist
+          plutil -insert GCM_SENDER_ID -string "000000000000" GoogleService-Info.plist
+          plutil -insert PLIST_VERSION -string "1" GoogleService-Info.plist
+          plutil -insert BUNDLE_ID -string "com.yuedu.reader.ci" GoogleService-Info.plist
+          plutil -insert PROJECT_ID -string "yuedu-reader-ci" GoogleService-Info.plist
+          plutil -insert STORAGE_BUCKET -string "yuedu-reader-ci.appspot.com" GoogleService-Info.plist
+          plutil -insert IS_ADS_ENABLED -bool false GoogleService-Info.plist
+          plutil -insert IS_ANALYTICS_ENABLED -bool false GoogleService-Info.plist
+          plutil -insert IS_APPINVITE_ENABLED -bool false GoogleService-Info.plist
+          plutil -insert IS_GCM_ENABLED -bool false GoogleService-Info.plist
+          plutil -insert IS_SIGNIN_ENABLED -bool false GoogleService-Info.plist
+          plutil -insert GOOGLE_APP_ID -string "1:000000000000:ios:0000000000000000000000" GoogleService-Info.plist
+          plutil -lint GoogleService-Info.plist
+
       - name: Build app
         run: |
           xcodebuild build \
