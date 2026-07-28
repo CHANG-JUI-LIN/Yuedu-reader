@@ -5,6 +5,7 @@ struct DownloadManagementView: View {
     @Environment(\.presentationMode) private var presentationMode
     @Environment(\.appDependencies) private var dependencies
     @StateObject private var viewModel = DownloadManagementViewModel()
+    @State private var bookPendingRemoval: ReadingBook?
 
     private var onlineBooks: [ReadingBook] {
         store.books.filter { $0.isOnline }
@@ -69,6 +70,33 @@ struct DownloadManagementView: View {
                     )
                 }
             }
+            // Removal throws away a download the user spent time and data on, so it
+            // confirms first — and the message says what survives, because "移除"
+            // next to a book title reads like it deletes the book itself.
+            .confirmationDialog(
+                localized("移除下載內容？"),
+                isPresented: Binding(
+                    get: { bookPendingRemoval != nil },
+                    set: { if !$0 { bookPendingRemoval = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: bookPendingRemoval
+            ) { book in
+                Button(localized("移除"), role: .destructive) {
+                    removeDownload(for: book)
+                    bookPendingRemoval = nil
+                }
+                Button(localized("取消"), role: .cancel) {
+                    bookPendingRemoval = nil
+                }
+            } message: { book in
+                Text(
+                    String(
+                        format: localized("將刪除《%@》已下載的章節。書籍仍留在書架，可重新下載。"),
+                        book.title
+                    )
+                )
+            }
         }
     }
 
@@ -115,11 +143,16 @@ struct DownloadManagementView: View {
                                 .font(DSFont.caption)
                                 .foregroundColor(DSColor.textSecondary)
                             Spacer()
+                            // Every button here is `.borderless` on purpose: a List row
+                            // containing a single button routes the whole row's taps to
+                            // it, so tapping the title used to pause the download while
+                            // it was 下載中 (the only button in that state).
                             if book.offlineDownloadState == .downloading {
                                 Button(localized("暫停下載")) {
                                     pauseDownload(for: book)
                                 }
                                 .font(DSFont.caption)
+                                .buttonStyle(.borderless)
                             } else {
                                 Button(
                                     book.offlineDownloadState == .partial || book.offlineDownloadState == .failed
@@ -129,15 +162,28 @@ struct DownloadManagementView: View {
                                     resumeDownload(for: book)
                                 }
                                 .font(DSFont.caption)
+                                .buttonStyle(.borderless)
                                 Button(role: .destructive) {
-                                    removeDownload(for: book)
+                                    bookPendingRemoval = book
                                 } label: {
-                                    Image(systemName: "trash")
+                                    // `Label` + `.iconOnly` keeps the button's own name for
+                                    // VoiceOver; a bare `Image(systemName:)` would stay a
+                                    // focusable element reading out "trash".
+                                    Label(localized("移除"), systemImage: "trash")
+                                        .labelStyle(.iconOnly)
                                 }
+                                .buttonStyle(.borderless)
                             }
                         }
                     }
                     .padding(.vertical, 4)
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            bookPendingRemoval = book
+                        } label: {
+                            Label(localized("移除"), systemImage: "trash")
+                        }
+                    }
                 }
             }
         }
@@ -160,13 +206,24 @@ struct DownloadManagementView: View {
                             .foregroundColor(DSColor.textSecondary)
                         }
                         Spacer()
+                        // `.borderless` confines the tap to the button. Without it this
+                        // row's single button swallowed the whole row, so tapping the
+                        // book title removed the download outright.
                         Button(role: .destructive) {
-                            removeDownload(for: book)
+                            bookPendingRemoval = book
                         } label: {
                             Text(localized("移除"))
                         }
+                        .buttonStyle(.borderless)
                     }
                     .padding(.vertical, 2)
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            bookPendingRemoval = book
+                        } label: {
+                            Label(localized("移除"), systemImage: "trash")
+                        }
+                    }
                 }
             }
         }
