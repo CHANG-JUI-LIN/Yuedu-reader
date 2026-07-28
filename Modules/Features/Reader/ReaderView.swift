@@ -1434,7 +1434,7 @@ struct ReaderView: View {
             }
             }
         )
-        return AnyView(
+        let configuredLayers = AnyView(
             readerLayers
                 .background(
             GeometryReader { g in
@@ -1504,7 +1504,10 @@ struct ReaderView: View {
                 dismissReaderPresentation()
             }
         }
-        .onAppear {
+        )
+        let lifecycleLayers = AnyView(
+            configuredLayers
+                .onAppear {
             ensureReaderOverlaySVGAssetStore()
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             readerViewModel.configure(
@@ -1661,7 +1664,10 @@ struct ReaderView: View {
         .onChanged(of: settings.readerCustomBackgroundImageFileName) { _ in
             syncActiveThemePreset()
         }
-        .onChanged(of: settings.commentBubbleFollowsSourceSVG) { _ in
+        )
+        let settingsObservationLayers = AnyView(
+            lifecycleLayers
+                .onChanged(of: settings.commentBubbleFollowsSourceSVG) { _ in
             forceReaderRenderableContentRefresh()
         }
         .onChanged(of: settings.commentBubblePresetMode) { _ in
@@ -1802,7 +1808,10 @@ struct ReaderView: View {
                 Task { await backgroundAudioCoordinator.update(session: session, chapterIndex: newChapter) }
             }
         }
-        .sheet(isPresented: $showSettings) {
+        )
+        let presentationLayers = AnyView(
+            settingsObservationLayers
+                .sheet(isPresented: $showSettings) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 ReaderSettingsView(
                     fontSize: Binding(
@@ -2027,7 +2036,10 @@ struct ReaderView: View {
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
-        .onChanged(of: showChangeSourceSheet) { show in
+        )
+        return AnyView(
+            presentationLayers
+                .onChanged(of: showChangeSourceSheet) { show in
             if show { loadOtherOrigins() }
         }
         .onChanged(of: epubRenderer.isCoreTextReady) { ready in
