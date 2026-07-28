@@ -124,6 +124,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private var layoutGeneration: Int = 0
 
     private let attributedBuilder: any AttributedStringBuilding
+    private let chapterDocumentStore: ChapterDocumentStore
     private let paginationManager: PaginationManager
     let offsetStore: CharOffsetStore
 
@@ -172,6 +173,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             MainActor.assumeIsolated {
                 self?.chapterSnapshots.removeAllObjects()
                 self?.cancelPreloadTasks()
+                self?.chapterDocumentStore.invalidateAll()
             }
         }
 
@@ -204,10 +206,13 @@ final class CoreTextPageEngine: PageRenderingProvider {
     init(
         attributedBuilder: any AttributedStringBuilding,
         renderSettings: ReaderRenderSettings,
+        chapterDocumentStore: ChapterDocumentStore? = nil,
         paginationManager: PaginationManager? = nil,
         offsetStore: CharOffsetStore
     ) {
         self.attributedBuilder = attributedBuilder
+        self.chapterDocumentStore = chapterDocumentStore
+            ?? ChapterDocumentStore(builder: attributedBuilder)
         self.renderSettings = renderSettings
         self.paginationManager = paginationManager ?? PaginationManager()
         self.offsetStore = offsetStore
@@ -716,11 +721,13 @@ _layouts[spineIndex] = nil
                 generation: generation
             )
         ) {
-            try await attributedBuilder.buildChapter(
-                at: spineIndex,
-                settings: renderSettings,
-                themeTextColor: themeTextColor,
-                themeBackgroundColor: themeBackgroundColor
+            try await chapterDocumentStore.document(
+                for: ChapterDocumentRequest(
+                    spineIndex: spineIndex,
+                    settings: renderSettings,
+                    themeTextColor: themeTextColor,
+                    themeBackgroundColor: themeBackgroundColor
+                )
             )
         }
         guard let buildResult else {
@@ -1252,6 +1259,7 @@ _layouts.removeAll()
 
     private func updateBuilderRenderSize(_ size: CGSize) {
         (attributedBuilder as? RenderSizeAwareAttributedStringBuilding)?.updateRenderSize(size)
+        chapterDocumentStore.invalidateAll()
     }
 
     /// Returns appropriate text color. GlobalSettings does not expose a theme enum,

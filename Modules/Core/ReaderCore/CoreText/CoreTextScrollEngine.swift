@@ -41,6 +41,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     // MARK: - Inputs
 
     private let builder: any AttributedStringBuilding
+    private let chapterDocumentStore: ChapterDocumentStore
     private(set) var renderSettings: ReaderRenderSettings
     private(set) var contentWidth: CGFloat = 0
     private var imageContentWidth: CGFloat?
@@ -54,8 +55,14 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
 
     // MARK: - Init
 
-    init(builder: any AttributedStringBuilding, renderSettings: ReaderRenderSettings) {
+    init(
+        builder: any AttributedStringBuilding,
+        renderSettings: ReaderRenderSettings,
+        chapterDocumentStore: ChapterDocumentStore? = nil
+    ) {
         self.builder = builder
+        self.chapterDocumentStore = chapterDocumentStore
+            ?? ChapterDocumentStore(builder: builder)
         self.renderSettings = renderSettings
     }
 
@@ -103,7 +110,11 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     func reslice(restoreAt chapterIndex: Int, contentWidth: CGFloat, imageContentWidth: CGFloat? = nil) async {
         let resolvedImageContentWidth = imageContentWidth ?? self.imageContentWidth
 
-        let replacement = CoreTextScrollEngine(builder: builder, renderSettings: renderSettings)
+        let replacement = CoreTextScrollEngine(
+            builder: builder,
+            renderSettings: renderSettings,
+            chapterDocumentStore: chapterDocumentStore
+        )
         replacement.onChapterContentRequired = onChapterContentRequired
         await replacement.start(
             initialChapter: chapterIndex,
@@ -234,11 +245,13 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                     executor: Thread.isMainThread ? "main" : "background"
                 )
             ) {
-                try await builder.buildChapter(
-                    at: chapterIndex,
-                    settings: renderSettings,
-                    themeTextColor: renderSettings.textColor,
-                    themeBackgroundColor: renderSettings.backgroundColor
+                try await chapterDocumentStore.document(
+                    for: ChapterDocumentRequest(
+                        spineIndex: chapterIndex,
+                        settings: renderSettings,
+                        themeTextColor: renderSettings.textColor,
+                        themeBackgroundColor: renderSettings.backgroundColor
+                    )
                 )
             }
             let attrStr: NSAttributedString
