@@ -66,7 +66,7 @@ extension ReaderView {
                             width: DSLayout.readerAppleBooksControlSize,
                             height: DSLayout.readerAppleBooksControlSize
                         )
-                        .background(.thinMaterial, in: Circle())
+                        .floatingSurface(in: Circle(), fill: readerTheme.barColor)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(localized("選單"))

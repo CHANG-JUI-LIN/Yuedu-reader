@@ -256,6 +256,16 @@ enum DSLayout {
     static let readerCardFallbackWidth: CGFloat = 96
     /// Physical book-cover height/width ratio used by the transition fallback.
     static let readerCardFallbackAspectRatio: CGFloat = 1.45
+    /// Outer glow radius of a floating surface at 光暈強度 100%.
+    static let interfaceGlowOuterRadius: CGFloat = 32
+    /// Inner (tighter, denser) glow radius at 光暈強度 100%.
+    static let interfaceGlowInnerRadius: CGFloat = 12
+    /// Outer glow opacity at 光暈強度 100%.
+    static let interfaceGlowOuterOpacity: Double = 0.5
+    /// Inner glow opacity at 光暈強度 100%.
+    static let interfaceGlowInnerOpacity: Double = 0.3
+    /// Height of the 界面效果 live preview card.
+    static let interfaceEffectPreviewHeight: CGFloat = 220
 }
 
 // MARK: - Design System: Corner Radius Tokens

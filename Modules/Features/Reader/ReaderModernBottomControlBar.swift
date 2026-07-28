@@ -4,8 +4,9 @@ import SwiftUI
 /// edge, holding the chapter line, the chapter progress slider, and the same four
 /// tools 經典 offers — 目錄 / 書籤 / 深色 / 設置.
 ///
-/// It wears the system's own glass (`readerFloatingPanel` below) so it matches the
-/// toolbar controls above it without either being hand-painted.
+/// It wears the shared 界面效果 surface (`floatingSurface`), which on iOS 26 is the
+/// system's own glass — so it matches the toolbar controls above it without either
+/// being hand-painted, and follows 外觀主題 › 界面效果 like every other floating element.
 ///
 /// The book-scoped actions (刷新 / 換源 / 下載 / 聽書) are deliberately *not* here;
 /// 現代 puts them in `ReaderModernBookCard` behind the cover thumbnail.
@@ -48,8 +49,9 @@ struct ReaderModernBottomControlBar: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.md)
-            .readerFloatingPanel(
-                in: RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous)
+            .floatingSurface(
+                in: RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous),
+                fill: readerTheme.barColor
             )
             .overlay(alignment: .top) {
                 if chapterSliderDraft != nil {
@@ -184,32 +186,10 @@ struct ReaderModernBottomControlBar: View {
         }
         .padding(.horizontal, DSSpacing.xl)
         .padding(.vertical, DSSpacing.md)
-        .readerFloatingPanel(in: Capsule())
+        .floatingSurface(in: Capsule(), fill: readerTheme.barColor)
         .allowsHitTesting(false)
         .transition(.opacity.animation(.easeOut(duration: 0.15)))
         .offset(y: -72)
-    }
-}
-
-extension View {
-    /// The surface 現代's floating panels sit on. iOS 26 has the real thing —
-    /// `glassEffect`, the same material the toolbar controls above are made of — so
-    /// the panel and the toolbar match without either being hand-painted. Older
-    /// systems have no glass; `.regularMaterial` is the closest they offer.
-    ///
-    /// The `#if compiler` guard mirrors `RSSFeedSearchBar`: the iOS 26 API only exists
-    /// in the Xcode 26 SDK, and the project still has to compile on older toolchains.
-    @ViewBuilder
-    func readerFloatingPanel<PanelShape: Shape>(in shape: PanelShape) -> some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            glassEffect(.regular, in: shape)
-        } else {
-            background(.regularMaterial, in: shape)
-        }
-        #else
-        background(.regularMaterial, in: shape)
-        #endif
     }
 }
 

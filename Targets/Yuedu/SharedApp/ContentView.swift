@@ -429,7 +429,7 @@ struct NowPlayingMiniPlayer: View {
         .padding(.leading, 4)
         .padding(.trailing, 10)
         .padding(.vertical, 4)
-        .background(.regularMaterial, in: Capsule())
+        .floatingSurface(in: Capsule())
         .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
         .contentShape(Capsule())
     }

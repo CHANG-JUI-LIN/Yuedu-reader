@@ -94,6 +94,9 @@ struct ReaderBottomControlBar: View {
     /// through the circles and the icons were unreadable against any paragraph behind
     /// them. `barColor` matches the control bar underneath, so the row reads as one
     /// piece of chrome.
+    ///
+    /// That is also why this takes 光暈 alone rather than the full `floatingSurface`:
+    /// letting 毛玻璃 reach these circles would put the body text back behind the icons.
     @ViewBuilder
     private func circleBtn(icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -102,6 +105,7 @@ struct ReaderBottomControlBar: View {
                 .foregroundColor(readerTheme.textColor.opacity(0.9))
                 .frame(width: 40, height: 40)
                 .background(readerTheme.barColor, in: Circle())
+                .interfaceGlow(in: Circle())
                 .overlay(Circle().stroke(readerTheme.textColor.opacity(0.35), lineWidth: 1))
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
                 // The symbol stayed a focusable element of its own next to the button, so

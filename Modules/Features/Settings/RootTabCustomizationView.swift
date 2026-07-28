@@ -100,7 +100,7 @@ struct RootTabCustomizationView: View {
                 HStack {
                     Text(localized("自訂圖標大小"))
                     Spacer(minLength: DSSpacing.md)
-                    Text(settings.usesCustomRootTabIconSize ? "\(Int(settings.rootTabIconSize)) pt" : localized("系統默認"))
+                    Text(settings.usesCustomRootTabIconSize ? iconSizeText : localized("系統默認"))
                         .font(settings.usesCustomRootTabIconSize ? DSFont.body.monospacedDigit() : DSFont.body)
                         .foregroundStyle(DSColor.textSecondary)
                 }
@@ -112,7 +112,7 @@ struct RootTabCustomizationView: View {
                     HStack {
                         Text(localized("圖標大小"))
                         Spacer()
-                        Text("\(Int(settings.rootTabIconSize)) pt")
+                        Text(iconSizeText)
                             .font(DSFont.body.monospacedDigit())
                             .foregroundStyle(DSColor.textSecondary)
                     }
@@ -122,6 +122,11 @@ struct RootTabCustomizationView: View {
                         step: 1
                     )
                     .disabled(!canCustomize)
+                    // A bare Slider has no name and announces a fraction of its
+                    // range instead of the size printed above it.
+                    // docs/design.md §7.1, third trap.
+                    .accessibilityLabel(localized("圖標大小"))
+                    .accessibilityValue(iconSizeText)
                 }
             }
         }
@@ -237,6 +242,13 @@ struct RootTabCustomizationView: View {
                 settings.rootTabHidesLabels = value
             }
         )
+    }
+
+    /// The one source for the printed size and the slider's VoiceOver value, so what
+    /// is spoken can never drift from what is shown. Only read while
+    /// `usesCustomRootTabIconSize` is true, which is when both call sites render.
+    private var iconSizeText: String {
+        "\(Int(settings.rootTabIconSize)) pt"
     }
 
     private var iconSizeBinding: Binding<Double> {

@@ -133,6 +133,8 @@
 "密碼" = "Password";
 "封面" = "Cover";
 "尚未下載任何書籍" = "No books downloaded yet";
+"移除下載內容？" = "Remove Downloaded Content?";
+"將刪除《%@》已下載的章節。書籍仍留在書架，可重新下載。" = "This deletes the downloaded chapters of “%@”. The book stays on your shelf and can be downloaded again.";
 "尚未設置書源" = "No Book Sources";
 "尚無書源" = "No Sources Yet";
 "尚無書籤" = "No Bookmarks";
@@ -1095,6 +1097,16 @@
 "簡潔" = "Compact";
 "沉浸" = "Immersive";
 "選擇閱讀界面的工具列與控制方式。" = "Choose the reader toolbar and control style.";
+"界面效果" = "Interface Effects";
+"光暈" = "Glow";
+"光暈強度" = "Glow Intensity";
+"毛玻璃" = "Frosted Glass";
+"效果預覽" = "Effect Preview";
+"浮動工具列" = "Floating Toolbar";
+"效果套用於底部迷你播放器與閱讀器的浮動工具列、控制欄。" = "Applies to the mini player and the reader's floating toolbars and control bars.";
+"光暈從浮動元素的邊緣向外擴散，顏色跟隨主題色。" = "The glow spreads outward from the edge of floating elements, tinted by the theme color.";
+"關閉後，浮動元素改用不透明底色。透明度越低，背後的內容越不透出。" = "When off, floating elements use a solid fill. The lower the opacity, the less shows through from behind.";
+"系統已開啟「降低透明度」，浮動元素目前一律使用不透明底色。" = "Reduce Transparency is on in system settings, so floating elements currently use a solid fill.";
 "主題自定義" = "Theme Customization";
 "自訂主題" = "Custom Theme";
 "名稱" = "Name";
@@ -1398,6 +1410,7 @@
 "從檔案選擇" = "Choose from Files";
 "移除背景圖" = "Remove Background Image";
 "不透明度" = "Opacity";
+"%@ 不透明度" = "%@ Opacity";
 "背景預覽" = "Background Preview";
 "亮色模式" = "Light Mode";
 "深色模式" = "Dark Mode";
