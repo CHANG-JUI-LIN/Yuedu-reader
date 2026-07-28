@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1C081706E1002E557584EDC6 /* YueduCoreTextTypography in Frameworks */ = {isa = PBXBuildFile; productRef = 3D3ACA9A6DDE978E3B91280C /* YueduCoreTextTypography */; };
 		1E90D290C84CF7DFB61183AB /* yuedu_app_Widget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4E4E1DDA4EE35F67778097F0 /* yuedu_app_Widget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2EE60C00FD763A43CFCAC2A0 /* yuedu_app_ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 81F92752186D8D0E971A17B9 /* yuedu_app_ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3021769152B9F41FC1F2CBA5 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 489E6E08B47AA3AC9F140CAD /* SwiftSoup */; };
@@ -43,6 +44,7 @@
 		8A11B0E32F9A1C7300A1B001 /* ReadiumFuzi in Frameworks */ = {isa = PBXBuildFile; productRef = 8A11B0E22F9A1C7300A1B001 /* ReadiumFuzi */; };
 		9345BAE6E7C14A44A078A749 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E661223F57364063B509666C /* GoogleService-Info.plist */; };
 		AAAA1111AAAA1111AAAA0001 /* Nuke in Frameworks */ = {isa = PBXBuildFile; productRef = AAAA1111AAAA1111AAAA0002 /* Nuke */; };
+		BA0DC69BDD8FFF2AE7B103A0 /* YueduCoreTextTypography in Frameworks */ = {isa = PBXBuildFile; productRef = 3D3ACA9A6DDE978E3B91280C /* YueduCoreTextTypography */; };
 		D4C329B2F01E414A88BD6077 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E661223F57364063B509666C /* GoogleService-Info.plist */; };
 		D698BFBD3CA24E3C9A05AD4B /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E661223F57364063B509666C /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
@@ -105,14 +107,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		AA11BB22CC33DD44EE55FF66AA11BB22 /* Exceptions for "Widget" folder in "Yuedu-Reader Widget" target */ = {
+		AA11BB22CC33DD44EE55FF66AA11BB22 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 3D398CD107E29DC5585FDF83 /* Yuedu-Reader Widget */;
 		};
-		BB22CC33DD44EE55FF66AA11BB22CC33 /* Exceptions for "ShareExtension" folder in "Yuedu-Reader ShareExtension" target */ = {
+		BB22CC33DD44EE55FF66AA11BB22CC33 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -140,7 +142,7 @@
 		501150730FA6492E85D96D0235061651 /* Widget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				AA11BB22CC33DD44EE55FF66AA11BB22 /* Exceptions for "Widget" folder in "Yuedu-Reader Widget" target */,
+				AA11BB22CC33DD44EE55FF66AA11BB22 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
 			);
 			path = Widget;
 			sourceTree = "<group>";
@@ -158,7 +160,7 @@
 		A1BCCA3D5B9C4DD1AFB56B678141488F /* ShareExtension */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				BB22CC33DD44EE55FF66AA11BB22CC33 /* Exceptions for "ShareExtension" folder in "Yuedu-Reader ShareExtension" target */,
+				BB22CC33DD44EE55FF66AA11BB22CC33 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
 			);
 			path = ShareExtension;
 			sourceTree = "<group>";
@@ -201,6 +203,7 @@
 				463C854D2FA4F48E008F9AD7 /* GoogleSignIn in Frameworks */,
 				46A6AB832FCD4ED60071B397 /* FirebaseMLModelDownloader in Frameworks */,
 				6B865095660449D830AF13C4 /* iosMath in Frameworks */,
+				BA0DC69BDD8FFF2AE7B103A0 /* YueduCoreTextTypography in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -208,6 +211,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1C081706E1002E557584EDC6 /* YueduCoreTextTypography in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -357,6 +361,7 @@
 				46A6AB8A2FCD4ED60071B397 /* FirebaseStorage */,
 				46A6AB8C2FCD4ED60071B397 /* FirebaseStorageCombine-Community */,
 				3F2758F4003B483DCE6CFC1C /* iosMath */,
+				3D3ACA9A6DDE978E3B91280C /* YueduCoreTextTypography */,
 			);
 			productName = "yuedu app";
 			productReference = 460D36592F51C5B8006E774C /* YueduReader.app */;
@@ -475,6 +480,7 @@
 				463C854A2FA4F38E008F9AD7 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 				46A6AB5D2FCD4ED60071B397 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				4F766A6C466F0B91C61C6FB1 /* XCRemoteSwiftPackageReference "iosMath" */,
+				4503FB56A177080D0D9E31E4 /* XCRemoteSwiftPackageReference "YueduCoreText" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 460D365A2F51C5B8006E774C /* Products */;
@@ -703,7 +709,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -764,7 +770,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -881,7 +887,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zhangruilin.yuedureader.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -905,7 +911,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.zhangruilin.yuedureader.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -1119,6 +1125,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		4503FB56A177080D0D9E31E4 /* XCRemoteSwiftPackageReference "YueduCoreText" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/CHANG-JUI-LIN/YueduCoreText";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.0;
+			};
+		};
 		460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/readium/swift-toolkit.git";
@@ -1186,6 +1200,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		3D3ACA9A6DDE978E3B91280C /* YueduCoreTextTypography */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4503FB56A177080D0D9E31E4 /* XCRemoteSwiftPackageReference "YueduCoreText" */;
+			productName = YueduCoreTextTypography;
+		};
 		3F2758F4003B483DCE6CFC1C /* iosMath */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 4F766A6C466F0B91C61C6FB1 /* XCRemoteSwiftPackageReference "iosMath" */;

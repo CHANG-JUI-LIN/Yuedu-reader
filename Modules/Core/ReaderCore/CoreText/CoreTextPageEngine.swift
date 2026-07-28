@@ -124,6 +124,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private var layoutGeneration: Int = 0
 
     private let attributedBuilder: any AttributedStringBuilding
+    private let chapterDocumentStore: ChapterDocumentStore
     private let paginationManager: PaginationManager
     let offsetStore: CharOffsetStore
 
@@ -172,6 +173,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             MainActor.assumeIsolated {
                 self?.chapterSnapshots.removeAllObjects()
                 self?.cancelPreloadTasks()
+                self?.chapterDocumentStore.invalidateAll()
             }
         }
 
@@ -204,10 +206,13 @@ final class CoreTextPageEngine: PageRenderingProvider {
     init(
         attributedBuilder: any AttributedStringBuilding,
         renderSettings: ReaderRenderSettings,
+        chapterDocumentStore: ChapterDocumentStore? = nil,
         paginationManager: PaginationManager? = nil,
         offsetStore: CharOffsetStore
     ) {
         self.attributedBuilder = attributedBuilder
+        self.chapterDocumentStore = chapterDocumentStore
+            ?? ChapterDocumentStore(builder: attributedBuilder)
         self.renderSettings = renderSettings
         self.paginationManager = paginationManager ?? PaginationManager()
         self.offsetStore = offsetStore
@@ -707,12 +712,25 @@ _layouts[spineIndex] = nil
         guard !shouldAbortPreload(generation: generation) else { return }
         AppLogger.render("[FlipTrace] preload begin spine=\(spineIndex) generation=\(generation) layouts=\(_layouts.keys.sorted())")
 
-        guard let buildResult = try? await attributedBuilder.buildChapter(
-            at: spineIndex,
-            settings: renderSettings,
-            themeTextColor: themeTextColor,
-            themeBackgroundColor: themeBackgroundColor
-        ) else {
+        let buildResult = try? await ReaderPerfTrace.spanAsync(
+            .chapterLoad,
+            metadata: ReaderPerfMetadata(
+                spineIndex: spineIndex,
+                writingMode: String(describing: renderSettings.writingMode),
+                executor: Thread.isMainThread ? "main" : "background",
+                generation: generation
+            )
+        ) {
+            try await chapterDocumentStore.document(
+                for: ChapterDocumentRequest(
+                    spineIndex: spineIndex,
+                    settings: renderSettings,
+                    themeTextColor: themeTextColor,
+                    themeBackgroundColor: themeBackgroundColor
+                )
+            )
+        }
+        guard let buildResult else {
             AppLogger.render("[CoreTextEngine] preloadChapter[\(spineIndex)] FAILED to build attributed string")
             return
         }
@@ -731,6 +749,7 @@ _layouts[spineIndex] = nil
             paragraphSpacing: renderSettings.paragraphSpacing,
             letterSpacing: renderSettings.letterSpacing,
             contentInsets: currentContentInsets(),
+            revision: buildResult.revision,
             writingMode: renderSettings.writingMode
         )
 
@@ -738,29 +757,68 @@ _layouts[spineIndex] = nil
         // out and publish page 1 immediately, then let the full pass replace it.
         let firstPageStart = ProcessInfo.processInfo.systemUptime
         if buildResult.attributedString.length >= Self.partialFirstPageThreshold,
-           _layouts[spineIndex] == nil,
-           let firstPageResult = await paginationManager.paginateFirstPage(request) {
-            guard !shouldAbortPreload(generation: generation) else { return }
-            let firstPageLayout = firstPageResult.layout.withUpdatedAppearance(
-                textColor: themeTextColor,
-                backgroundColor: themeBackgroundColor,
-                readerBackgroundImage: currentReaderBackgroundImage(),
-                dialogueColor: renderSettings.dialogueHighlightColor,
-                dialogueBoxColor: renderSettings.dialogueBoxColor
-            )
-            _layouts[spineIndex] = firstPageLayout
-            generateSnapshot(for: spineIndex)
-            rebuildPageOffsets()
-            if firstPageLayout.isPartial {
-                SourcePerfTrace.record(
-                    "coreText.firstPage", "spine=\(spineIndex)", since: firstPageStart
+           _layouts[spineIndex] == nil {
+            let firstPageTrace = ReaderPerfTrace.begin(
+                .layoutFirstPagePublish,
+                metadata: ReaderPerfMetadata(
+                    spineIndex: spineIndex,
+                    characterCount: buildResult.attributedString.length,
+                    writingMode: String(describing: renderSettings.writingMode),
+                    executor: Thread.isMainThread ? "main" : "background",
+                    generation: generation
                 )
-                AppLogger.render("[FlipTrace] preload partial spine=\(spineIndex) estPages=\(firstPageLayout.displayPageCount) generation=\(generation)")
-                onChapterReady?(spineIndex)
+            )
+            if let firstPageResult = await paginationManager.paginateFirstPage(request) {
+                guard !shouldAbortPreload(generation: generation) else {
+                    ReaderPerfTrace.end(firstPageTrace)
+                    return
+                }
+                let firstPageLayout = firstPageResult.layout.withUpdatedAppearance(
+                    textColor: themeTextColor,
+                    backgroundColor: themeBackgroundColor,
+                    readerBackgroundImage: currentReaderBackgroundImage(),
+                    dialogueColor: renderSettings.dialogueHighlightColor,
+                    dialogueBoxColor: renderSettings.dialogueBoxColor
+                )
+                _layouts[spineIndex] = firstPageLayout
+                generateSnapshot(for: spineIndex)
+                rebuildPageOffsets()
+                if firstPageLayout.isPartial {
+                    SourcePerfTrace.record(
+                        "coreText.firstPage", "spine=\(spineIndex)", since: firstPageStart
+                    )
+                    ReaderPerfTrace.end(
+                        firstPageTrace,
+                        metadata: ReaderPerfMetadata(
+                            spineIndex: spineIndex,
+                            characterCount: buildResult.attributedString.length,
+                            pageCount: firstPageLayout.pageRanges.count,
+                            writingMode: String(describing: renderSettings.writingMode),
+                            executor: Thread.isMainThread ? "main" : "background",
+                            generation: generation
+                        )
+                    )
+                    AppLogger.render("[FlipTrace] preload partial spine=\(spineIndex) estPages=\(firstPageLayout.displayPageCount) generation=\(generation)")
+                    onChapterReady?(spineIndex)
+                } else {
+                    // Paginator cache hit — the layout is already complete.
+                    ReaderPerfTrace.end(
+                        firstPageTrace,
+                        metadata: ReaderPerfMetadata(
+                            spineIndex: spineIndex,
+                            characterCount: buildResult.attributedString.length,
+                            pageCount: firstPageLayout.pageRanges.count,
+                            writingMode: String(describing: renderSettings.writingMode),
+                            cacheResult: "hit",
+                            executor: Thread.isMainThread ? "main" : "background",
+                            generation: generation
+                        )
+                    )
+                    AppLogger.render("[FlipTrace] preload done spine=\(spineIndex) pages=\(firstPageLayout.pageRanges.count) generation=\(generation) source=cache")
+                    return
+                }
             } else {
-                // Paginator cache hit — the layout is already complete.
-                AppLogger.render("[FlipTrace] preload done spine=\(spineIndex) pages=\(firstPageLayout.pageRanges.count) generation=\(generation) source=cache")
-                return
+                ReaderPerfTrace.end(firstPageTrace)
             }
         }
 
@@ -1201,6 +1259,7 @@ _layouts.removeAll()
 
     private func updateBuilderRenderSize(_ size: CGSize) {
         (attributedBuilder as? RenderSizeAwareAttributedStringBuilding)?.updateRenderSize(size)
+        chapterDocumentStore.invalidateAll()
     }
 
     /// Returns appropriate text color. GlobalSettings does not expose a theme enum,

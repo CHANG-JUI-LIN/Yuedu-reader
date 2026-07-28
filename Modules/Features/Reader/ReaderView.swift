@@ -1254,7 +1254,7 @@ struct ReaderView: View {
             isScrolling: effectiveScrollMode,
             isEditing: readerHeaderFooterEditorModel != nil
         )
-        return AnyView(
+        let readerLayers = AnyView(
             ZStack(alignment: .top) {
             readerSurfaceBackground
                 .animation(.easeInOut(duration: uiFeedbackDuration), value: readerTheme)
@@ -1429,8 +1429,11 @@ struct ReaderView: View {
                 .transition(.opacity)
                 .zIndex(110)
             }
-        }
-        .background(
+            }
+        )
+        let configuredLayers = AnyView(
+            readerLayers
+                .background(
             GeometryReader { g in
                 Color.clear
                     .preference(key: ReaderSafeAreaTopKey.self, value: g.safeAreaInsets.top)
@@ -1498,7 +1501,10 @@ struct ReaderView: View {
                 dismissReaderPresentation()
             }
         }
-        .onAppear {
+        )
+        let lifecycleLayers = AnyView(
+            configuredLayers
+                .onAppear {
             ensureReaderOverlaySVGAssetStore()
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             readerViewModel.configure(
@@ -1655,7 +1661,10 @@ struct ReaderView: View {
         .onChanged(of: settings.readerCustomBackgroundImageFileName) { _ in
             syncActiveThemePreset()
         }
-        .onChanged(of: settings.commentBubbleFollowsSourceSVG) { _ in
+        )
+        let settingsObservationLayers = AnyView(
+            lifecycleLayers
+                .onChanged(of: settings.commentBubbleFollowsSourceSVG) { _ in
             forceReaderRenderableContentRefresh()
         }
         .onChanged(of: settings.commentBubblePresetMode) { _ in
@@ -1796,7 +1805,10 @@ struct ReaderView: View {
                 Task { await backgroundAudioCoordinator.update(session: session, chapterIndex: newChapter) }
             }
         }
-        .sheet(isPresented: $showSettings) {
+        )
+        let presentationLayers = AnyView(
+            settingsObservationLayers
+                .sheet(isPresented: $showSettings) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 ReaderSettingsView(
                     fontSize: Binding(
@@ -2021,7 +2033,10 @@ struct ReaderView: View {
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
-        .onChanged(of: showChangeSourceSheet) { show in
+        )
+        return AnyView(
+            presentationLayers
+                .onChanged(of: showChangeSourceSheet) { show in
             if show { loadOtherOrigins() }
         }
         .onChanged(of: epubRenderer.isCoreTextReady) { ready in

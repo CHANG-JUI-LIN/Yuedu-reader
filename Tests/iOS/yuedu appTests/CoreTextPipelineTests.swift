@@ -2,6 +2,7 @@ import CoreText
 import Foundation
 import Testing
 import UIKit
+import YueduCoreTextTypography
 @testable import yuedu_app
 
 // MARK: - CJK 排版後處理器
@@ -290,6 +291,7 @@ struct CSSPropertyApplierTests {
             },
             cssAlignment: { value in
                 switch value {
+                case "left": return .left
                 case "center": return .center
                 case "right": return .right
                 case "justify": return .justified

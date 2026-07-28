@@ -290,6 +290,7 @@ final class TXTPageEngine: PageRenderingProvider {
             paragraphSpacing: renderSettings.paragraphSpacing,
             letterSpacing: renderSettings.letterSpacing,
             contentInsets: renderSettings.contentInsets,
+            revision: buildResult.revision,
             writingMode: renderSettings.writingMode
         )
         let layout = await paginationManager.paginate(request).layout

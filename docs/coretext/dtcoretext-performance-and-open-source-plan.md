@@ -6,18 +6,19 @@
 >
 > 範圍：`Modules/Core/ReaderCore/CoreText/`、分頁／連續捲動宿主、HTML/CSS 轉換管線、快取與效能追蹤
 >
-> 方法：原始碼靜態稽核與架構對照；本輪未執行長時間 `xcodebuild`、Instruments 或真機基準測試
+> 方法：原始碼靜態稽核、架構對照、Time Profiler CPU sample，以及兩本 161／224 MiB 外部 EPUB 的 Debug 模擬器前後基準；Release 真機 median／p95 尚待執行
 
 ## 執行摘要
 
 目前的慢，不是因為「Core Text 天生慢」，而是昂貴工作在錯誤的時間、執行緒與抽象層重複發生：
 
-1. `layoutFingerprint` 在進入 detached task 前掃描整章文字與所有 attributes；長章的「首屏快速路徑 + 完整分頁」還會掃兩次。
-2. 同一頁在算 page range、抽圖片、抽 inline annotation、抽 block decoration、實際繪圖時重複建立 `CTFrame`。
-3. 連續捲動以約 2,000 pt 高的 chunk 在主執行緒同步建立／繪製文字、裝飾與圖片；預熱沒趕上時，`willDisplay` 還會同步 materialize。
-4. 分頁與捲動各自呼叫 `buildChapter`，同一章可能重做 HTML parse、CSS cascade、AST、IR、圖片載入與 attributed string render。
-5. CSS matching 對每個 element 掃描並排序全部規則；圖片也大致依文件順序等待，長章與圖片章的延遲會被放大。
-6. paginator 另有一份未設容量的完整 layout cache；它與 engine LRU 重疊，memory warning 又沒有清掉所有 layout，容易以記憶體換到不穩定的命中率。
+1. 大型 EPUB 的第一個實測主因是 `@font-face` 引用了大量未打包字型：每個缺失資源都進入 Readium manifest 查找與錯誤日誌；OPF manifest O(1) availability guard 後，代表章節 build 由 5.3–12.8 秒降到 1.0–3.2 秒。
+2. `layoutFingerprint` 在進入 detached task 前掃描整章文字與所有 attributes；長章的「首屏快速路徑 + 完整分頁」還會掃兩次。
+3. 同一頁在算 page range、抽圖片、抽 inline annotation、抽 block decoration、實際繪圖時重複建立 `CTFrame`。
+4. 連續捲動以約 2,000 pt 高的 chunk 在主執行緒同步建立／繪製文字、裝飾與圖片；預熱沒趕上時，`willDisplay` 還會同步 materialize。
+5. 分頁與捲動各自呼叫 `buildChapter`，同一章可能重做 HTML parse、CSS cascade、AST、IR、圖片載入與 attributed string render。
+6. CSS matching 對每個 element 掃描並排序全部規則；圖片也大致依文件順序等待，長章與圖片章的延遲會被放大。
+7. paginator 另有一份未設容量的完整 layout cache；它與 engine LRU 重疊，memory warning 又沒有清掉所有 layout，容易以記憶體換到不穩定的命中率。
 
 DTCoreText 最值得學的不是把整套程式碼搬過來，而是四個邊界：
 
@@ -35,6 +36,12 @@ DTCoreText 最值得學的不是把整套程式碼搬過來，而是四個邊界
 以下「有沒有做重複工作、工作在哪個 actor、快取是否有上限」是程式碼可直接證明的事實；「每項佔總延遲多少」仍需 P0 的 signpost 與真機 profile 才能排序。
 
 因此本計畫不以猜測的毫秒數承諾成果，而是先建立固定 corpus、固定裝置、Release build 與可重複操作，再讓每一階段以 before／after 數據出場。這也符合專案要求：效能修改必須有 `SourcePerfTrace` 或等價的前後數字。
+
+目前 P0 已完成可提交的 synthetic corpus、22 個 Points of Interest 階段、
+兩本大型外部 EPUB corpus contract，以及第一個前後優化。結果也修正了最初
+純靜態稽核的排序：代表章節的 pagination 一直低於約 36 ms，首要瓶頸其實在
+進入 Core Text 之前的 CSS 字型資源解析。下列 layout／raster 問題仍成立，但
+應在完成 Release 真機 capture 後依實測重新排序。
 
 ## 架構對照
 
@@ -73,6 +80,13 @@ DTCoreText 最值得學的不是把整套程式碼搬過來，而是四個邊界
 - 若舊 builder 暫時沒有 revision，fingerprint 也必須移到背景 queue，且由 `ChapterDocumentStore` 去重，只算一次。
 - first-page 與 full-layout 共用 prepared attributed string 與 revision。
 
+**目前進度（2026-07-28）：** 已加入 opaque、`Hashable & Sendable` 的
+`ContentRevision`，由一次 `AttributedChapterBuildResult` 產生並沿
+`PaginationRequest` 傳到 first/full/warm layout。production two-phase path 的
+完整 fingerprint 次數已由 2 降為 0；沒有 revision 的 legacy direct caller
+仍執行原本 fingerprint。prepared attributed string 共用仍留待
+`ChapterDocument`／`LayoutSession` 階段處理。
+
 ### P0 級：同一頁重複建立 `CTFrame`
 
 [`CoreTextPaginator`](../../Modules/Core/ReaderCore/CoreText/CoreTextPaginator.swift) 的典型完整分頁流程是：
@@ -91,6 +105,14 @@ DTCoreText 最值得學的不是把整套程式碼搬過來，而是四個邊界
 - artifact 保存 range、frame、lines、attachments、inline annotations、block renderables、link/selection hit-test metadata。
 - 所有 extractor 改為接受同一個 frame／line snapshot，不得自行建立 frame。
 - display list 的 immutable 值可以跨到 raster queue；Core Text layout object 則遵守固定 queue 的生命週期。
+
+**目前進度（2026-07-28）：** 已加入 `PageLayoutArtifact`。最終 page
+ranges 與 float notch 確定後，每頁建立一個 artifact，保存 `CTFrame` 與 line
+origins；image、inline annotation、block renderable extractor、page draw 與
+interaction hit testing 均消費同一 frame。分頁探測與 orphan/widow 修正使用的
+暫時 frame 仍保留，因為它們發生在最終 ranges 形成之前。手動建立
+`ChapterLayout` 的舊測試值暫時有明確 compatibility branch；正式 paginator
+輸出不走該 branch。
 
 ### P0 級：連續捲動在主執行緒同步 raster
 
@@ -135,6 +157,12 @@ chunk 預設高度約 2,000 pt，約數個螢幕。當背景預熱沒有完成�
 - in-flight task 必須去重；相同 key 只允許一個 build。
 - `PageEngine` 與 `ScrollEngine` 只消費同一份 immutable `ChapterDocument`。
 - theme 的純色彩變更不得重做 layout；只有字型、字級、行距、內容寬度、writing mode 等 layout-affecting input 才失效。
+
+**目前進度（2026-07-28）：** 已加入 bounded、generation-aware 的
+`ChapterDocumentStore`，相同 request 的 in-flight build 只執行一次。EPUB、
+TXT 與線上內容的 page／scroll engine 由 `EPUBPageRenderer` 注入同一 store；
+容量固定為 8，明確 invalidation 會使舊 task 結果失效。整合 mutation 暫時繞過
+scroll store 時測試由 5/5 降為 4/5，還原後相關 focused suites 53/53 通過。
 
 ### P1 級：CSS cascade 是 element × rules 的全掃描與排序
 
@@ -553,6 +581,42 @@ Yuedu app adapters → all needed package targets
 `YueduCoreText` 只依賴 Foundation、CoreText、CoreGraphics，以及最低限度 UIKit（若 `UIFont`／`UIColor` 尚未完全 value-化）。理想上 core layout config 使用自有 value types，UIKit conversion 留在 UIKit target。
 
 Readium、publication storage、線上書源、媒體播放、使用者設定、資料庫與 app logging 留在 Yuedu app。HTML target 才依賴 SwiftSoup；MathML／SVG 依賴放 Extras，避免所有使用者被迫引入。
+
+### 第一個可獨立編譯的切片
+
+依目前檔案級依賴盤點，第一個 Local Package compile-check 不應包含
+`CoreTextPageEngine`、`CoreTextPaginator` 或整個 `RenderableNode`。它們仍直接
+依賴 app-owned settings、EPUB media、具體 builder payload 與尚未穩定的 cache /
+executor contract。
+
+建議先建立不含第三方 dependency 的 `YueduCoreTextTypography` target：
+
+```text
+CJKTypographyProcessor.swift
+CoreTextFramesetterFactory.swift
+CoreTextCommon/ReaderHyphenation.swift
+CoreTextCommon/String+VerticalNormalization.swift
+CoreTextCommon/VerticalGlyphClassifier.swift
+CoreTextCommon/VerticalLayoutConfig.swift
+```
+
+這一批只依賴 Apple frameworks，且已有 `CJKTypographyProcessorTests` 與
+`CJKLineBreakPolicyTests` 可搬成 package tests。它的目的只是在 app 內驗證
+SwiftPM 邊界、直排 typography parity 與 license/header 流程；不宣稱 layout
+engine 已完成獨立化。
+
+**目前進度（2026-07-28）：** 第一批六個檔案已發佈至公開的
+[`YueduCoreText`](https://github.com/CHANG-JUI-LIN/YueduCoreText)
+`YueduCoreTextTypography` target；app 與 test target 透過 0.1.x 遠端 Swift
+Package product 使用。獨立套件 7/7 測試通過，App 的 CJK／直排整合測試
+39/39 通過。套件包含 MPL-2.0、NOTICE、CONTRIBUTING、SECURITY、DocC、GitHub
+CI／issue templates，並以自動 boundary test 禁止 Readium、SwiftSoup、
+WebKit、Firebase、app setting 與 logging 耦合。這完成的是 typography v0.1
+切片，不代表 paginator、HTML 或 UIKit renderer 已對外公開。
+
+下一批可評估 `ReaderContentMetrics`、`TextSelectionManager` 與
+`ReaderPerfTrace`。`LayoutCache` 雖然容易搬，但必須等 P2 決定唯一 cache owner
+與 eviction contract，避免為了讓 package 先編譯而固化錯誤架構。
 
 ### 建議 public protocols
 

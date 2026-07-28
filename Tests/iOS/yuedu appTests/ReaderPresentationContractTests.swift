@@ -388,6 +388,10 @@ struct ReaderPresentationContractTests {
             .warmUpNext(currentGlobalPage: 11),
             .requestPageTransition(targetPage: 12)
         ])
+        #expect(coordinator.isPageTransitioning)
+
+        let finalSettle = coordinator.send(.pageTransitionSettled(visiblePage: 12))
+        #expect(finalSettle == [.warmUpNext(currentGlobalPage: 12)])
         #expect(!coordinator.isPageTransitioning)
 
         #expect(coordinator.send(.warmUpNext(currentGlobalPage: 12)) == [

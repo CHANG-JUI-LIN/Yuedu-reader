@@ -111,13 +111,19 @@ final class EPUBPageRenderer: ObservableObject {
             session: session,
             renderSize: effectiveSize
         )
+        let chapterDocumentStore = ChapterDocumentStore(builder: builder)
         self.epubBuilder = builder
         let newEngine = CoreTextPageEngine(
             attributedBuilder: builder,
             renderSettings: settings,
+            chapterDocumentStore: chapterDocumentStore,
             offsetStore: store
         )
-        self.scrollEngine = CoreTextScrollEngine(builder: builder, renderSettings: settings)
+        self.scrollEngine = CoreTextScrollEngine(
+            builder: builder,
+            renderSettings: settings,
+            chapterDocumentStore: chapterDocumentStore
+        )
 
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         self.engine = newEngine
@@ -172,16 +178,22 @@ final class EPUBPageRenderer: ObservableObject {
         publicationSession = nil
         let progressDir = StorageLocations.epubCharOffsets.appendingPathComponent(bookIdentifier)
         let store = CharOffsetStore(directoryURL: progressDir)
+        let chapterDocumentStore = ChapterDocumentStore(builder: attributedBuilder)
         let newEngine = CoreTextPageEngine(
             attributedBuilder: attributedBuilder,
             renderSettings: settings,
+            chapterDocumentStore: chapterDocumentStore,
             offsetStore: store
         )
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         self.engine = newEngine
         self.epubBuilder = nil
         self.onlineBuilder = nil
-        self.scrollEngine = CoreTextScrollEngine(builder: attributedBuilder, renderSettings: settings)
+        self.scrollEngine = CoreTextScrollEngine(
+            builder: attributedBuilder,
+            renderSettings: settings,
+            chapterDocumentStore: chapterDocumentStore
+        )
         isCoreTextReady = false
 
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
@@ -227,15 +239,21 @@ final class EPUBPageRenderer: ObservableObject {
             chapterSourceHrefs: chapterSourceHrefs,
             imageDecode: imageDecode
         )
+        let chapterDocumentStore = ChapterDocumentStore(builder: onlineBuilder)
         let newEngine = CoreTextPageEngine(
             attributedBuilder: onlineBuilder,
             renderSettings: settings,
+            chapterDocumentStore: chapterDocumentStore,
             offsetStore: store
         )
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         self.engine = newEngine
         self.onlineBuilder = onlineBuilder
-        self.scrollEngine = CoreTextScrollEngine(builder: onlineBuilder, renderSettings: settings)
+        self.scrollEngine = CoreTextScrollEngine(
+            builder: onlineBuilder,
+            renderSettings: settings,
+            chapterDocumentStore: chapterDocumentStore
+        )
         isCoreTextReady = false
 
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize

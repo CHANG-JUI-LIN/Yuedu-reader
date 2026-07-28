@@ -23,6 +23,10 @@ vertical writing, links, selection, images, or annotation rendering.
 - [vertical-writing.md](vertical-writing.md): vertical-rl coordinate rules, Latin centering, inline image and annotation behavior.
 - [interaction.md](interaction.md): link hit-testing, selection rects, underline drawing, and reader navigation callbacks.
 - [contributing.md](contributing.md): change checklist and focused test commands.
+- [performance-benchmark.md](performance-benchmark.md): reader signpost contract, synthetic corpus, and baseline capture procedure.
+- [`YueduCoreText`](https://github.com/CHANG-JUI-LIN/YueduCoreText): the
+  standalone Swift package consumed by the app for reusable Core Text
+  typography.
 
 ## Focused Tests
 

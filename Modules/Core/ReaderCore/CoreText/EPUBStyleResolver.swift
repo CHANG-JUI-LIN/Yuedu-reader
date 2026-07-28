@@ -63,6 +63,7 @@ final class EPUBStyleResolver {
             }) { continue }
             guard
                 let fontURL = URL(string: fontFace.resolvedURL),
+                resourceProvider.resourceAvailability(for: fontURL) != false,
                 let response = try? await resourceProvider.response(for: fontURL),
                 let registeredFont = fontRegistrationService.registerFont(
                     data: response.data,
