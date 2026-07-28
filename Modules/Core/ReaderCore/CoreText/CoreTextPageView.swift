@@ -8,6 +8,36 @@ import UIKit
 final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInteractionDelegate {
     private static let emphasisEditMenuIdentifier = NSString(string: "CoreTextPageView.emphasis")
 
+    nonisolated static func frameForRendering(
+        layout: CoreTextPaginator.ChapterLayout,
+        pageIndex: Int
+    ) -> CTFrame {
+        if layout.pageArtifacts.indices.contains(pageIndex) {
+            return layout.pageArtifacts[pageIndex].frame
+        }
+
+        // Compatibility trigger: hand-constructed ChapterLayout values in
+        // tests may omit artifacts. Delete this branch when pageArtifacts
+        // becomes a required initializer argument for every layout.
+        let range = layout.pageRanges[pageIndex]
+        let contentPathRect = CoreTextPaginator.coreTextContentPathRect(
+            renderSize: layout.renderSize,
+            contentInsets: layout.contentInsets,
+            fontSize: layout.fontSize,
+            writingMode: layout.writingMode
+        )
+        let path = CoreTextPaginator.framePath(
+            contentPathRect: contentPathRect,
+            floatNotch: layout.pageFloatNotches[pageIndex]
+        )
+        return CoreTextPaginator.makeFrame(
+            framesetter: layout.framesetter,
+            range: range,
+            path: path,
+            writingMode: layout.writingMode
+        )
+    }
+
     private struct InteractionContext {
         let frame: CTFrame
         let lines: [CTLine]
@@ -410,8 +440,6 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         // Phase 1: CG geometry operations (background colors, borders) — coordinate-system independent
         drawBlockRenderables(layout.blockRenderables[pageIndex] ?? [], in: ctx, boundsHeight: layoutSize.height)
 
-        let range = layout.pageRanges[pageIndex]
-
         ctx.textMatrix = .identity
         ctx.translateBy(x: 0, y: layoutSize.height)
         ctx.scaleBy(x: 1.0, y: -1.0)
@@ -422,17 +450,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             fontSize: layout.fontSize,
             writingMode: layout.writingMode
         )
-        // Carve the same CSS-float notch used during pagination so the drawn text wraps beside the float.
-        let path = CoreTextPaginator.framePath(
-            contentPathRect: contentPathRect,
-            floatNotch: layout.pageFloatNotches[pageIndex]
-        )
-        let frame = CoreTextPaginator.makeFrame(
-            framesetter: layout.framesetter,
-            range: range,
-            path: path,
-            writingMode: layout.writingMode
-        )
+        let frame = Self.frameForRendering(layout: layout, pageIndex: pageIndex)
 
         // Collect ranges that will be redrawn by drawBlockRenderableText so drawLines can skip them.
         let suppressedRanges = (layout.blockRenderables[pageIndex] ?? [])
@@ -1355,17 +1373,16 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             fontSize: layout.fontSize,
             writingMode: layout.writingMode
         )
-        let range = layout.pageRanges[localPageIndex]
-        let path = CGPath(rect: contentPathRect, transform: nil)
-        let frame = CoreTextPaginator.makeFrame(
-            framesetter: layout.framesetter,
-            range: range,
-            path: path,
-            writingMode: layout.writingMode
-        )
+        let frame = Self.frameForRendering(layout: layout, pageIndex: localPageIndex)
         let lines = CTFrameGetLines(frame) as! [CTLine]
-        var origins = [CGPoint](repeating: .zero, count: lines.count)
-        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        let origins: [CGPoint]
+        if layout.pageArtifacts.indices.contains(localPageIndex) {
+            origins = layout.pageArtifacts[localPageIndex].lineOrigins
+        } else {
+            var fallbackOrigins = [CGPoint](repeating: .zero, count: lines.count)
+            CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &fallbackOrigins)
+            origins = fallbackOrigins
+        }
 
         return InteractionContext(
             frame: frame,

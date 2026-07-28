@@ -106,6 +106,14 @@ DTCoreText 最值得學的不是把整套程式碼搬過來，而是四個邊界
 - 所有 extractor 改為接受同一個 frame／line snapshot，不得自行建立 frame。
 - display list 的 immutable 值可以跨到 raster queue；Core Text layout object 則遵守固定 queue 的生命週期。
 
+**目前進度（2026-07-28）：** 已加入 `PageLayoutArtifact`。最終 page
+ranges 與 float notch 確定後，每頁建立一個 artifact，保存 `CTFrame` 與 line
+origins；image、inline annotation、block renderable extractor、page draw 與
+interaction hit testing 均消費同一 frame。分頁探測與 orphan/widow 修正使用的
+暫時 frame 仍保留，因為它們發生在最終 ranges 形成之前。手動建立
+`ChapterLayout` 的舊測試值暫時有明確 compatibility branch；正式 paginator
+輸出不走該 branch。
+
 ### P0 級：連續捲動在主執行緒同步 raster
 
 [`CoreTextChunkDrawView.draw(_:)`](../../Modules/Features/Reader/CoreTextChunkCell.swift) 在 UIKit draw callback 中同步做：

@@ -218,6 +218,26 @@ deterministic improvement claim is the elimination of two full-content scans;
 absolute latency must be measured with the 100K synthetic fixture and Release
 physical-device capture before setting a gate.
 
+## PageLayoutArtifact: Single Ownership of Final Page Frames
+
+`CoreTextPaginator` now creates `PageLayoutArtifact` values after final page
+ranges and float notches are known. Each artifact retains one `CTFrame` and its
+line origins for attachment, inline annotation, block decoration, page drawing,
+and interaction hit testing.
+
+Automated acceptance:
+
+- artifact count equals final page-range count;
+- every artifact range equals its final page range;
+- page rendering returns the exact `CTFrame` object retained by the artifact;
+- a mutation forcing draw-time frame recreation changes the focused result
+  from 2/2 passing to 1/2 passing.
+
+This does not claim that the whole pagination algorithm creates only one frame
+per page. Page-range probes and orphan/widow correction still need temporary
+frames before final ranges exist. The deterministic result is removal of
+repeated shaping of the same **final page** during metadata extraction and draw.
+
 ## Capture Procedure
 
 Use a Release build on a physical device with a fixed iOS version:

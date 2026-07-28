@@ -121,6 +121,8 @@ final class CoreTextPaginator {
         let framesetter: CTFramesetter
         /// UTF-16 character range per page (total length == attributedString.length)
         let pageRanges: [CFRange]
+        /// Final per-page frames shared by metadata extraction and drawing.
+        var pageArtifacts: [PageLayoutArtifact] = []
         /// pageIndex → inline attachments
         let inlineAttachments: [Int: [RenderedAttachment]]
         /// pageIndex → inline annotation placeholders
@@ -270,11 +272,24 @@ final class CoreTextPaginator {
             let effectiveBackgroundColor = readerBackgroundImage == nil
                 ? (authoredBackgroundColor ?? backgroundColor)
                 : backgroundColor
+            let updatedArtifacts = CoreTextPaginator.makePageArtifacts(
+                framesetter: newFramesetter,
+                pageRanges: pageRanges,
+                contentPathRect: CoreTextPaginator.coreTextContentPathRect(
+                    renderSize: renderSize,
+                    contentInsets: contentInsets,
+                    fontSize: fontSize,
+                    writingMode: writingMode
+                ),
+                writingMode: writingMode,
+                floatNotches: pageFloatNotches
+            )
             return ChapterLayout(
                 spineIndex: spineIndex,
                 attributedString: updated,
                 framesetter: newFramesetter,
                 pageRanges: pageRanges,
+                pageArtifacts: updatedArtifacts,
                 inlineAttachments: inlineAttachments,
                 inlineAnnotations: inlineAnnotations,
                 blockAttachments: blockAttachments,
@@ -917,14 +932,19 @@ final class CoreTextPaginator {
                 executor: Thread.isMainThread ? "main" : "background"
             )
         )
-        let (inlineAttachments, blockAttachmentsBase, pageKinds) = extractImages(
+        let pageArtifacts = makePageArtifacts(
             framesetter: framesetter,
             pageRanges: pageRanges,
+            contentPathRect: contentPathRect,
+            writingMode: writingMode,
+            floatNotches: pageFloatNotches
+        )
+        let (inlineAttachments, blockAttachmentsBase, pageKinds) = extractImages(
+            pageArtifacts: pageArtifacts,
             renderSize: renderSize,
             contentPathRect: contentPathRect,
             attrStr: attrStr,
-            writingMode: writingMode,
-            floatNotches: pageFloatNotches
+            writingMode: writingMode
         )
         // Merge in the floated images (drawn via the block-attachment path) for pages that carry them.
         var blockAttachments = blockAttachmentsBase
@@ -932,21 +952,17 @@ final class CoreTextPaginator {
             blockAttachments[pageIdx, default: []].append(contentsOf: attachments)
         }
         let inlineAnnotations = extractInlineAnnotations(
-            framesetter: framesetter,
-            pageRanges: pageRanges,
+            pageArtifacts: pageArtifacts,
             renderSize: renderSize,
             contentPathRect: contentPathRect,
-            writingMode: writingMode,
-            floatNotches: pageFloatNotches
+            writingMode: writingMode
         )
         let blockRenderables = extractBlockRenderables(
-            framesetter: framesetter,
-            pageRanges: pageRanges,
+            pageArtifacts: pageArtifacts,
             contentPathRect: contentPathRect,
             renderSize: renderSize,
             attrStr: attrStr,
-            writingMode: writingMode,
-            floatNotches: pageFloatNotches
+            writingMode: writingMode
         )
         let inlineAttachmentCount = inlineAttachments.values.reduce(0) { $0 + $1.count }
         let inlineAnnotationCount = inlineAnnotations.values.reduce(0) { $0 + $1.count }
@@ -967,9 +983,7 @@ final class CoreTextPaginator {
         logLayoutFormatProbe(
             spineIndex: spineIndex,
             attrStr: attrStr,
-            framesetter: framesetter,
-            pageRanges: pageRanges,
-            contentPathRect: contentPathRect,
+            pageArtifacts: pageArtifacts,
             writingMode: writingMode
         )
 
@@ -992,6 +1006,7 @@ final class CoreTextPaginator {
             attributedString: attrStr,
             framesetter: framesetter,
             pageRanges: pageRanges,
+            pageArtifacts: pageArtifacts,
             inlineAttachments: inlineAttachments,
             inlineAnnotations: inlineAnnotations,
             blockAttachments: blockAttachments,
@@ -1020,18 +1035,17 @@ final class CoreTextPaginator {
     private static func logLayoutFormatProbe(
         spineIndex: Int,
         attrStr: NSAttributedString,
-        framesetter: CTFramesetter,
-        pageRanges: [CFRange],
-        contentPathRect: CGRect,
+        pageArtifacts: [PageLayoutArtifact],
         writingMode: ReaderWritingMode
     ) {
         guard !writingMode.isVertical,
               layoutFormatProbeCount < 6,
-              let pageRange = pageRanges.first
+              let artifact = pageArtifacts.first
         else { return }
         layoutFormatProbeCount += 1
 
         let ns = attrStr.string as NSString
+        let pageRange = artifact.range
         // Paragraph walk: style + terminator hex for the first 4 paragraphs.
         var paragraphInfo: [String] = []
         var location = 0
@@ -1054,19 +1068,9 @@ final class CoreTextPaginator {
             )
         }
 
-        // First page's frame, built exactly like the page view builds it at draw time.
-        let path = framePath(contentPathRect: contentPathRect, floatNotch: nil)
-        let frame = makeFrame(
-            framesetter: framesetter,
-            range: pageRange,
-            path: path,
-            writingMode: writingMode
-        )
+        let frame = artifact.frame
         let lines = CTFrameGetLines(frame) as! [CTLine]
-        var origins = [CGPoint](repeating: .zero, count: lines.count)
-        if !lines.isEmpty {
-            CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
-        }
+        let origins = artifact.lineOrigins
         var lineInfo: [String] = []
         for (index, line) in lines.enumerated() where index < 6 {
             let lineRange = CTLineGetStringRange(line)
@@ -1227,6 +1231,37 @@ final class CoreTextPaginator {
         let attributes = frameAttributes(for: writingMode)
         let frameAttributes = attributes.isEmpty ? nil : attributes as CFDictionary
         return CTFramesetterCreateFrame(framesetter, range, path, frameAttributes)
+    }
+
+    static func makePageArtifacts(
+        framesetter: CTFramesetter,
+        pageRanges: [CFRange],
+        contentPathRect: CGRect,
+        writingMode: ReaderWritingMode,
+        floatNotches: [Int: CGRect] = [:]
+    ) -> [PageLayoutArtifact] {
+        pageRanges.enumerated().map { pageIndex, range in
+            let path = framePath(
+                contentPathRect: contentPathRect,
+                floatNotch: floatNotches[pageIndex]
+            )
+            let frame = makeFrame(
+                framesetter: framesetter,
+                range: range,
+                path: path,
+                writingMode: writingMode
+            )
+            let lines = CTFrameGetLines(frame) as! [CTLine]
+            var origins = [CGPoint](repeating: .zero, count: lines.count)
+            if !lines.isEmpty {
+                CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+            }
+            return PageLayoutArtifact(
+                range: range,
+                frame: frame,
+                lineOrigins: origins
+            )
+        }
     }
 
     // MARK: - CSS float support
@@ -1823,26 +1858,22 @@ final class CoreTextPaginator {
     }
 
     private static func extractImages(
-        framesetter: CTFramesetter,
-        pageRanges: [CFRange],
+        pageArtifacts: [PageLayoutArtifact],
         renderSize: CGSize,
         contentPathRect: CGRect,
         attrStr: NSAttributedString,
-        writingMode: ReaderWritingMode,
-        floatNotches: [Int: CGRect] = [:]
+        writingMode: ReaderWritingMode
     ) -> (inline: [Int: [RenderedAttachment]], block: [Int: [RenderedAttachment]], kinds: [PageKind]) {
         var inlineAttachments: [Int: [RenderedAttachment]] = [:]
         var blockAttachments: [Int: [RenderedAttachment]] = [:]
-        var kinds = Array(repeating: PageKind.text, count: pageRanges.count)
+        var kinds = Array(repeating: PageKind.text, count: pageArtifacts.count)
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
         let isVertical = writingMode.isVertical
 
-        for (pageIdx, range) in pageRanges.enumerated() { autoreleasepool {
-            let pagePath = framePath(contentPathRect: contentPathRect, floatNotch: floatNotches[pageIdx])
-            let frame = makeFrame(framesetter: framesetter, range: range, path: pagePath, writingMode: writingMode)
+        for (pageIdx, artifact) in pageArtifacts.enumerated() { autoreleasepool {
+            let frame = artifact.frame
             let lines = CTFrameGetLines(frame) as! [CTLine]
-            var origins = [CGPoint](repeating: .zero, count: lines.count)
-            CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+            let origins = artifact.lineOrigins
 
             for (lineIdx, line) in lines.enumerated() {
                 let lineOrigin = origins[lineIdx]
@@ -2029,7 +2060,7 @@ final class CoreTextPaginator {
             scalar != "\u{FFFC}" && !CharacterSet.whitespacesAndNewlines.contains(scalar)
         }
 
-        if pageRanges.count == 1,
+        if pageArtifacts.count == 1,
            visibleContent.isEmpty,
            blockAttachments.count == 1,
            let attachment = blockAttachments[0]?.first {
@@ -2060,31 +2091,19 @@ final class CoreTextPaginator {
     }
 
     private static func extractInlineAnnotations(
-        framesetter: CTFramesetter,
-        pageRanges: [CFRange],
+        pageArtifacts: [PageLayoutArtifact],
         renderSize: CGSize,
         contentPathRect: CGRect,
-        writingMode: ReaderWritingMode,
-        floatNotches: [Int: CGRect] = [:]
+        writingMode: ReaderWritingMode
     ) -> [Int: [RenderedInlineAnnotation]] {
-        // Inline annotations are a vertical-writing feature; CSS floats are horizontal-only, so the notch
-        // map is irrelevant here and the rectangular path is correct.
-        _ = floatNotches
         guard writingMode.isVertical else { return [:] }
-        let pagePath = CGPath(rect: contentPathRect, transform: nil)
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
         var annotations: [Int: [RenderedInlineAnnotation]] = [:]
 
-        for (pageIdx, range) in pageRanges.enumerated() {
-            let frame = makeFrame(
-                framesetter: framesetter,
-                range: range,
-                path: pagePath,
-                writingMode: writingMode
-            )
+        for (pageIdx, artifact) in pageArtifacts.enumerated() {
+            let frame = artifact.frame
             let lines = CTFrameGetLines(frame) as! [CTLine]
-            var origins = [CGPoint](repeating: .zero, count: lines.count)
-            CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+            let origins = artifact.lineOrigins
 
             for (lineIdx, line) in lines.enumerated() {
                 let lineOrigin = origins[lineIdx]
@@ -2127,24 +2146,21 @@ final class CoreTextPaginator {
     }
 
     private static func extractBlockRenderables(
-        framesetter: CTFramesetter,
-        pageRanges: [CFRange],
+        pageArtifacts: [PageLayoutArtifact],
         contentPathRect: CGRect,
         renderSize: CGSize,
         attrStr: NSAttributedString,
-        writingMode: ReaderWritingMode,
-        floatNotches: [Int: CGRect] = [:]
+        writingMode: ReaderWritingMode
     ) -> [Int: [RenderedBlockRenderable]] {
         var pageRenderables: [Int: [RenderedBlockRenderable]] = [:]
 
-        for (pageIdx, range) in pageRanges.enumerated() { autoreleasepool {
-            let pagePath = framePath(contentPathRect: contentPathRect, floatNotch: floatNotches[pageIdx])
-            let frame = makeFrame(framesetter: framesetter, range: range, path: pagePath, writingMode: writingMode)
+        for (pageIdx, artifact) in pageArtifacts.enumerated() { autoreleasepool {
+            let range = artifact.range
+            let frame = artifact.frame
             let lines = CTFrameGetLines(frame) as! [CTLine]
             guard !lines.isEmpty else { return }
 
-            var origins = [CGPoint](repeating: .zero, count: lines.count)
-            CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+            let origins = artifact.lineOrigins
 
             struct DecorationGroup {
                 let blockID: String
