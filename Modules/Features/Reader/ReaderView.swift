@@ -1257,7 +1257,7 @@ struct ReaderView: View {
             isScrolling: effectiveScrollMode,
             isEditing: readerHeaderFooterEditorModel != nil
         )
-        return AnyView(
+        let readerLayers = AnyView(
             ZStack(alignment: .top) {
             readerSurfaceBackground
                 .animation(.easeInOut(duration: uiFeedbackDuration), value: readerTheme)
@@ -1432,8 +1432,11 @@ struct ReaderView: View {
                 .transition(.opacity)
                 .zIndex(110)
             }
-        }
-        .background(
+            }
+        )
+        return AnyView(
+            readerLayers
+                .background(
             GeometryReader { g in
                 Color.clear
                     .preference(key: ReaderSafeAreaTopKey.self, value: g.safeAreaInsets.top)

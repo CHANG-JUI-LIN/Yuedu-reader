@@ -17,6 +17,10 @@ struct ReaderPageTransitionQueueTests {
 
         let followUp = queue.transitionFinished(showing: 11)
         #expect(followUp == 12)
+        #expect(queue.isTransitioning)
+
+        let finalFollowUp = queue.transitionFinished(showing: 12)
+        #expect(finalFollowUp == nil)
         #expect(!queue.isTransitioning)
     }
 
@@ -45,6 +49,10 @@ struct ReaderPageTransitionQueueTests {
 
         let followUp = queue.transitionFinished(showing: 11)
         #expect(followUp == 12)
+        #expect(queue.isTransitioning)
+
+        let finalFollowUp = queue.transitionFinished(showing: 12)
+        #expect(finalFollowUp == nil)
         #expect(!queue.isTransitioning)
     }
 }

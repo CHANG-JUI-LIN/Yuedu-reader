@@ -65,7 +65,8 @@ struct ProgrammaticPageTransitionPerformerTests {
     }
 
     @Test("reverse slide re-applies target non-animated so settled page stays on target")
-    func reverseSlideTransitionIsStabilized() {
+    @MainActor
+    func reverseSlideTransitionIsStabilized() async {
         let performer = ProgrammaticPageTransitionPerformer(pageTurnStyle: .slide)
         let container = FakePageContainer()
         let dataSource = FakeDataSource()
@@ -74,16 +75,16 @@ struct ProgrammaticPageTransitionPerformerTests {
         container.viewControllers = [current]
         container.dataSource = dataSource
 
-        var settledViewController: UIViewController?
-
-        performer.perform(
-            on: container,
-            targetViewController: target,
-            direction: .reverse,
-            animated: true,
-            restoringDataSource: dataSource
-        ) { settled in
-            settledViewController = settled
+        let settledViewController = await withCheckedContinuation { continuation in
+            performer.perform(
+                on: container,
+                targetViewController: target,
+                direction: .reverse,
+                animated: true,
+                restoringDataSource: dataSource
+            ) { settled in
+                continuation.resume(returning: settled)
+            }
         }
 
         #expect(container.animatedReverseCalls == 1)
