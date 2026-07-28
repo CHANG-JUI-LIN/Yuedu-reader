@@ -30,8 +30,7 @@ final class FixedLayoutPageEngine: PageRenderingProvider, FixedLayoutSpreadPairi
             defaultViewport: session.fixedLayoutViewport?.defaultViewport,
             pageViewports: session.fixedLayoutViewport?.pageViewports ?? [:]
         )
-        let storeDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("epub_charoffsets/\(session.id)")
+        let storeDir = StorageLocations.epubCharOffsets.appendingPathComponent(session.id)
         self.offsetStore = CharOffsetStore(directoryURL: storeDir)
     }
 

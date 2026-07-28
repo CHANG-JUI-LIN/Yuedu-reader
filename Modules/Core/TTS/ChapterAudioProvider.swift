@@ -108,8 +108,9 @@ final class LocalChapterAudioProvider: ChapterAudioProvider {
         )
     }
 
+    /// Audio extracted from a user-supplied archive (`local_audio/<id>/…`) or the
+    /// audiobook file itself — user content, so it stays in Documents.
     private static func documentsURL(for relativePath: String) -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(relativePath)
+        StorageLocations.bookFile(relativePath)
     }
 }

@@ -31,9 +31,7 @@ struct ChapterCacheRepository: Sendable {
     private let rootDirectory: URL
 
     init(rootDirectory: URL? = nil) {
-        self.rootDirectory = rootDirectory
-            ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("online_cache", isDirectory: true)
+        self.rootDirectory = rootDirectory ?? StorageLocations.onlineCache
     }
 
     func loadCachedChapterSync(

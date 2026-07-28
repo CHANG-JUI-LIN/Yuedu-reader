@@ -5,9 +5,7 @@ import UniformTypeIdentifiers
 // MARK: - Bookshelf Home
 enum BookshelfCoverLoader {
     static func load(filename: String) -> UIImage? {
-        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(filename)
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let data = try? Data(contentsOf: StorageLocations.coverFile(filename)) else { return nil }
         return UIImage(data: data)
     }
 }
@@ -1026,10 +1024,7 @@ struct BookRow: View {
     }
 
     private func loadCoverImage(filename: String) -> UIImage? {
-        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(filename)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return UIImage(data: data)
+        BookshelfCoverLoader.load(filename: filename)
     }
 
 }
@@ -1233,10 +1228,7 @@ struct BookGridCell: View {
     }
 
     private func loadCoverImage(filename: String) -> UIImage? {
-        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(filename)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return UIImage(data: data)
+        BookshelfCoverLoader.load(filename: filename)
     }
 
 }

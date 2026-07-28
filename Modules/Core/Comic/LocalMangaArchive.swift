@@ -49,9 +49,9 @@ enum LocalMangaArchive {
         allowedArchiveExtensions.contains(url.pathExtension.lowercased())
     }
 
+    /// The user's own archive file (`.cbz` / `.zip`), so it stays in Documents.
     static func archiveURL(for filename: String) -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(filename)
+        StorageLocations.bookFile(filename)
     }
 
     static func bookDirectory(bookId: UUID) -> URL {

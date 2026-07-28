@@ -699,9 +699,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
 
     private static func loadCover(_ filename: String?) -> UIImage? {
         guard let filename, !filename.isEmpty else { return nil }
-        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(filename)
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let data = try? Data(contentsOf: StorageLocations.coverFile(filename)) else { return nil }
         return UIImage(data: data)
     }
 

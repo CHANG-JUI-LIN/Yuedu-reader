@@ -114,9 +114,7 @@ enum BookCoverLoader {
     ) async -> String? {
         guard let image = await loadImage(urlString: urlString, headers: headers),
               let jpeg = image.jpegData(compressionQuality: 0.85) else { return nil }
-        let fileURL = FileManager.default
-            .urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(filename)
+        let fileURL = StorageLocations.coverFile(filename)
         do {
             try jpeg.write(to: fileURL)
             return filename

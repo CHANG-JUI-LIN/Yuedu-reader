@@ -10,9 +10,10 @@ class BookSourceStore: ObservableObject {
 
     private let fileName = "book_sources.json"
 
+    /// Under Application Support, not Documents: Documents is user-visible in the
+    /// Files app and this is app-internal. `StorageMigration` moves the legacy file.
     private var fileURL: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(fileName)
+        StorageLocations.bookSourcesFile
     }
 
     private init() {

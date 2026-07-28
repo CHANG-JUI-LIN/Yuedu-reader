@@ -5,11 +5,10 @@ struct OfflineStorageRoots: Sendable, Equatable {
     var mangaRoot: URL
 
     static var live: OfflineStorageRoots {
-        let fileManager = FileManager.default
-        let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let applicationSupport = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return OfflineStorageRoots(
-            textRoot: documents.appendingPathComponent("online_cache", isDirectory: true),
+            textRoot: StorageLocations.onlineCache,
             mangaRoot: applicationSupport.appendingPathComponent("manga", isDirectory: true)
         )
     }

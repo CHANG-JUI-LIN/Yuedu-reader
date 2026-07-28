@@ -180,16 +180,14 @@ final class WebDAVManager: ObservableObject {
 
         try? await mkcol(path: "/yuedu/")
 
-        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let libDir  = FileManager.default.urls(for: .libraryDirectory,  in: .userDomainMask).first!
 
-        // 1. book_sources.json
-        let bookSourcesURL = docsDir.appendingPathComponent("book_sources.json")
-        try await backupFileIfExists(at: bookSourcesURL, to: "/yuedu/book_sources.json")
+        // 1. book_sources.json — remote layout is unchanged; only the local path moved
+        //    out of Documents (see StorageLocations).
+        try await backupFileIfExists(at: StorageLocations.bookSourcesFile, to: "/yuedu/book_sources.json")
 
         // 2. books.json — read from the file-based store (mirrors BookStore.booksMetaFileURL)
-        let booksMetaURL = docsDir.appendingPathComponent("books_meta.json")
-        try await backupFileIfExists(at: booksMetaURL, to: "/yuedu/books.json")
+        try await backupFileIfExists(at: StorageLocations.booksMetadataFile, to: "/yuedu/books.json")
 
         // 3. replace_rules.json
         let replaceURL = libDir.appendingPathComponent("replace_rules.json")
@@ -261,20 +259,17 @@ final class WebDAVManager: ObservableObject {
         }
 
         // ── Perform Restore ─────────────────────────────────────────────────────────
-        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let libDir  = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
 
         if let sourcesData = try? await get(path: "/yuedu/book_sources.json") {
-            let url = docsDir.appendingPathComponent("book_sources.json")
-            try sourcesData.write(to: url, options: .atomic)
+            try sourcesData.write(to: StorageLocations.bookSourcesFile, options: .atomic)
             if let decoded = try? JSONDecoder().decode([BookSource].self, from: sourcesData) {
                 await MainActor.run { BookSourceStore.shared.sources = decoded }
             }
         }
 
         if let booksData = try? await get(path: "/yuedu/books.json") {
-            let booksMetaURL = docsDir.appendingPathComponent("books_meta.json")
-            try booksData.write(to: booksMetaURL, options: .atomic)
+            try booksData.write(to: StorageLocations.booksMetadataFile, options: .atomic)
             // Clean up any legacy UserDefaults entry from before the file migration.
             UserDefaults.standard.removeObject(forKey: "yd_books_meta")
         }
