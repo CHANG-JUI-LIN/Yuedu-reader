@@ -71,6 +71,31 @@ class BookSourceStore: ObservableObject {
         }
     }
 
+    /// Moves a source to the head of the list. The management list and `enabledSources`
+    /// both render `sources` in array order — there is no sort key, so array position *is*
+    /// the display and search order (Legado's `customOrder` field is only mirrored to the
+    /// JS bridge, never consulted here).
+    ///
+    /// Deliberately does NOT advance `lastUpdateTime`: position isn't part of a source's
+    /// content, the sync merge hashes the encoded source, and seeding the merge from the
+    /// local array already preserves this device's order — so a reorder must not register
+    /// as an edit and churn the sync.
+    func moveToTop(id: UUID) {
+        guard let idx = sources.firstIndex(where: { $0.id == id }), idx != 0 else { return }
+        let source = sources.remove(at: idx)
+        sources.insert(source, at: 0)
+        save()
+    }
+
+    /// Moves a source to the tail of the list. See `moveToTop(id:)` for the ordering contract.
+    func moveToBottom(id: UUID) {
+        guard let idx = sources.firstIndex(where: { $0.id == id }),
+              idx != sources.count - 1 else { return }
+        let source = sources.remove(at: idx)
+        sources.append(source)
+        save()
+    }
+
     /// Sets a source's enabled flag to an explicit value (no-op if already set). Used by the
     /// health checker to disable bad/slow sources without risk of accidentally re-enabling.
     /// Deliberately does NOT advance `lastUpdateTime`: an automated, possibly-transient disable

@@ -55,4 +55,27 @@ public enum ReaderChapterPresentation {
             return .rebuildPages
         }
     }
+
+    /// Reconciles chapter-entry state with the renderer.
+    ///
+    /// A chapter can become cached while it is still offscreen. Its `.ready`
+    /// publication is intentionally ignored at that point, so entering it later
+    /// must replace any earlier cache-miss placeholder even though there is no new
+    /// state transition to observe.
+    public static func entryRefreshAction(
+        chapterIndex: Int,
+        usesCoreText: Bool,
+        loadState: ChapterLoadState,
+        isContentAvailable: Bool,
+        isLayoutAvailable: Bool
+    ) -> ReaderChapterRefreshAction {
+        guard usesCoreText,
+              loadState == .ready,
+              isContentAvailable,
+              !isLayoutAvailable
+        else {
+            return .none
+        }
+        return .notifyChapterDataChanged(chapterIndex)
+    }
 }

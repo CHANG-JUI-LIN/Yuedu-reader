@@ -75,6 +75,58 @@ struct BookSourceStoreTests {
         #expect(imported.lastUpdateTime >= before)
     }
 
+    @Test("置頂／置底 move a source to either end without disturbing the others")
+    func moveToTopAndBottomReorderSources() {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let sources = (0..<4).map(makeSource)
+        store.replaceSourcesFromSync(sources)
+
+        store.moveToTop(id: sources[2].id)
+        #expect(store.sources.map(\.id)
+            == [sources[2].id, sources[0].id, sources[1].id, sources[3].id])
+
+        store.moveToBottom(id: sources[0].id)
+        #expect(store.sources.map(\.id)
+            == [sources[2].id, sources[1].id, sources[3].id, sources[0].id])
+    }
+
+    @Test("置頂／置底 leave the sync clock alone — position isn't source content")
+    func moveDoesNotAdvanceLastUpdateTime() throws {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        var sources = (0..<3).map(makeSource)
+        for index in sources.indices {
+            sources[index].lastUpdateTime = 1000
+        }
+        store.replaceSourcesFromSync(sources)
+
+        store.moveToTop(id: sources[2].id)
+        store.moveToBottom(id: sources[0].id)
+
+        #expect(store.sources.allSatisfy { $0.lastUpdateTime == 1000 })
+    }
+
+    @Test("置頂／置底 are no-ops when the source is already at that end")
+    func moveIsNoOpAtEnds() {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let sources = (0..<3).map(makeSource)
+        store.replaceSourcesFromSync(sources)
+
+        store.moveToTop(id: sources[0].id)
+        store.moveToBottom(id: sources[2].id)
+        store.moveToTop(id: UUID())        // unknown id must not reorder anything
+
+        #expect(store.sources.map(\.id) == sources.map(\.id))
+    }
+
     private func makeSource(index: Int) -> BookSource {
         var source = BookSource()
         source.bookSourceName = "Source \(index)"

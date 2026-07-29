@@ -1,6 +1,54 @@
 import Foundation
 import WebKit
 
+/// Cancellation-aware bridge from WKNavigationDelegate callbacks to async code.
+///
+/// A checked continuation does not resume merely because its surrounding Task
+/// was cancelled. Without this owner, the timeout task could win while the
+/// navigation child stayed suspended forever, and structured concurrency would
+/// then wait forever for that cancelled child before returning the timeout.
+@MainActor
+final class WebViewNavigationWait {
+    private var continuation: CheckedContinuation<String, Error>?
+
+    var isWaiting: Bool { continuation != nil }
+
+    func value(start: @MainActor () -> Void) async throws -> String {
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                precondition(self.continuation == nil)
+                self.continuation = continuation
+                start()
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancel()
+            }
+        }
+    }
+
+    func resume(returning value: String) {
+        guard let continuation else { return }
+        self.continuation = nil
+        continuation.resume(returning: value)
+    }
+
+    func resume(throwing error: Error) {
+        guard let continuation else { return }
+        self.continuation = nil
+        continuation.resume(throwing: error)
+    }
+
+    func cancel() {
+        resume(throwing: CancellationError())
+    }
+}
+
 // MARK: - WKWebView Background JS Rendering Engine
 
 /// Loads pages that require JavaScript rendering and returns the full DOM HTML.
@@ -17,7 +65,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     private var activeCount: Int = 0
 
     /// In-flight loading tasks
-    private var loadingMap: [WKWebView: CheckedContinuation<String, Error>] = [:]
+    private var loadingMap: [WKWebView: WebViewNavigationWait] = [:]
 
     private override init() {
         assert(Thread.isMainThread, "WebViewFetcher must be initialized on the main thread")
@@ -98,9 +146,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
             group.addTask { @MainActor [weak self] in
                 guard let self else { throw WebViewError.deallocated }
 
-                let _ = try await withCheckedThrowingContinuation {
-                    (continuation: CheckedContinuation<String, Error>) in
-                    self.loadingMap[webView] = continuation
+                try await self.waitForNavigation(in: webView) {
                     webView.load(request)
                 }
 
@@ -152,8 +198,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         return try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask { @MainActor [weak self] in
                 guard let self else { throw WebViewError.deallocated }
-                let _ = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
-                    self.loadingMap[webView] = cont
+                try await self.waitForNavigation(in: webView) {
                     webView.load(request)
                 }
                 try await Task.sleep(nanoseconds: UInt64(jsWait * 1_000_000_000))
@@ -236,8 +281,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
             group.addTask { @MainActor [weak self] in
                 guard let self else { throw WebViewError.deallocated }
 
-                let _ = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
-                    self.loadingMap[webView] = cont
+                try await self.waitForNavigation(in: webView) {
                     webView.load(request)
                 }
 
@@ -399,8 +443,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         return try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask { @MainActor [weak self] in
                 guard let self else { throw WebViewError.deallocated }
-                let _ = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
-                    self.loadingMap[webView] = cont
+                try await self.waitForNavigation(in: webView) {
                     webView.load(request)
                 }
                 // Dynamic polling replaces a fixed jsWait delay
@@ -452,8 +495,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         return try await withThrowingTaskGroup(of: PageResult.self) { group in
             group.addTask { @MainActor [weak self] in
                 guard let self else { throw WebViewError.deallocated }
-                let _ = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
-                    self.loadingMap[webView] = cont
+                try await self.waitForNavigation(in: webView) {
                     webView.load(request)
                 }
                 let polledHTML = await self.pollForContent(webView: webView)
@@ -544,8 +586,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask { @MainActor [weak self] in
                 guard let self else { throw WebViewError.deallocated }
-                _ = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
-                    self.loadingMap[webView] = cont
+                try await self.waitForNavigation(in: webView) {
                     webView.loadHTMLString(html, baseURL: baseURL)
                 }
                 return "loaded"
@@ -572,6 +613,21 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     }
 
     // MARK: - WebView Pool Management
+
+    private func waitForNavigation(
+        in webView: WKWebView,
+        start: @MainActor () -> Void
+    ) async throws {
+        let wait = WebViewNavigationWait()
+        loadingMap[webView]?.cancel()
+        loadingMap[webView] = wait
+        defer {
+            if let currentWait = loadingMap[webView], currentWait === wait {
+                loadingMap.removeValue(forKey: webView)
+            }
+        }
+        _ = try await wait.value(start: start)
+    }
 
     private func prepareRequest(
         url: URL,
@@ -636,7 +692,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         // start a new navigation and cancel it (-999) when the next caller loads
         // a new request, causing the new caller to receive the -999 error.
         webView.stopLoading()
-        loadingMap.removeValue(forKey: webView)
+        loadingMap.removeValue(forKey: webView)?.cancel()
         activeCount = max(0, activeCount - 1)
 
         if let waiter = waiters.first {
@@ -653,10 +709,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
 
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Task { @MainActor in
-            if let continuation = loadingMap[webView] {
-                loadingMap.removeValue(forKey: webView)
-                continuation.resume(returning: "loaded")
-            }
+            loadingMap.removeValue(forKey: webView)?.resume(returning: "loaded")
         }
     }
 
@@ -664,10 +717,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         _ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error
     ) {
         Task { @MainActor in
-            if let continuation = loadingMap[webView] {
-                loadingMap.removeValue(forKey: webView)
-                continuation.resume(throwing: error)
-            }
+            loadingMap.removeValue(forKey: webView)?.resume(throwing: error)
         }
     }
 
@@ -676,10 +726,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         withError error: Error
     ) {
         Task { @MainActor in
-            if let continuation = loadingMap[webView] {
-                loadingMap.removeValue(forKey: webView)
-                continuation.resume(throwing: error)
-            }
+            loadingMap.removeValue(forKey: webView)?.resume(throwing: error)
         }
     }
 

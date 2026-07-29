@@ -57,4 +57,43 @@ struct ReaderChapterPresentationTests {
     func readyButMissingContentShowsRecoverableFailure() {
         #expect(ReaderChapterPresentation.overlayState(isContentAvailable: false, loadState: .ready) == ReaderChapterOverlayState.failed(message: "資料不一致，請點擊重試"))
     }
+
+    @Test("entering a cached chapter replaces a stale CoreText placeholder")
+    func enteringCachedChapterReplacesPlaceholder() {
+        #expect(
+            ReaderChapterPresentation.entryRefreshAction(
+                chapterIndex: 7,
+                usesCoreText: true,
+                loadState: .ready,
+                isContentAvailable: true,
+                isLayoutAvailable: false
+            ) == .notifyChapterDataChanged(7)
+        )
+    }
+
+    @Test("entering an already laid out chapter does not rebuild it")
+    func enteringLaidOutChapterDoesNotRebuild() {
+        #expect(
+            ReaderChapterPresentation.entryRefreshAction(
+                chapterIndex: 7,
+                usesCoreText: true,
+                loadState: .ready,
+                isContentAvailable: true,
+                isLayoutAvailable: true
+            ) == .none
+        )
+    }
+
+    @Test("a newly discovered cached chapter waits for its ready publication")
+    func newlyDiscoveredCacheDoesNotDoubleRefresh() {
+        #expect(
+            ReaderChapterPresentation.entryRefreshAction(
+                chapterIndex: 7,
+                usesCoreText: true,
+                loadState: .idle,
+                isContentAvailable: true,
+                isLayoutAvailable: false
+            ) == .none
+        )
+    }
 }

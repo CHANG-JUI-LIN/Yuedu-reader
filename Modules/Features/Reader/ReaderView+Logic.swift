@@ -85,9 +85,15 @@ extension ReaderView {
                 moveReaderSession(to: position, source: .jump)
             }
             epubRenderer.currentEpubPage = currentPage
-            let alreadyReady = readerViewModel.chapterState(for: idx) == .ready
+            let entryAction = ReaderChapterPresentation.entryRefreshAction(
+                chapterIndex: idx,
+                usesCoreText: usesCoreTextEPUB,
+                loadState: readerViewModel.chapterState(for: idx),
+                isContentAvailable: isChapterContentAvailable(at: idx),
+                isLayoutAvailable: engine.layouts[idx] != nil
+            )
             ensureChapterReady(chapterIndex: idx, priority: .jump)
-            if alreadyReady, isChapterContentAvailable(at: idx) {
+            if case .notifyChapterDataChanged = entryAction {
                 Task { await engine.notifyChapterDataChanged(at: idx) }
             }
             if idx > 0 { Task { await engine.preloadChapter(at: idx - 1) } }

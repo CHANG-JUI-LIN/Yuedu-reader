@@ -1604,3 +1604,9 @@
 "點兩下切換書源" = "Double tap to switch source";
 "已加入" = "Added";
 "未加入" = "Not added";
+
+/* Book source list ordering (move to top/bottom) */
+"置頂" = "Move to Top";
+"置底" = "Move to Bottom";
+"已置頂" = "Moved to top";
+"已置底" = "Moved to bottom";

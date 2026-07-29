@@ -43,6 +43,9 @@ struct BookSourceListView: View {
     @State private var checkToast: String? = nil
     @State private var validationFilter: ValidationListFilter = .all
     @State private var showDisclaimer = false
+    /// Set by 置頂／置底 so the list follows the row to its new position.
+    @State private var scrollTargetId: UUID? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var checkSources: [BookSource] {
         if !selectedIds.isEmpty {
@@ -365,24 +368,33 @@ struct BookSourceListView: View {
 
     // MARK: - Source List
     private var sourceList: some View {
-        List {
-            Section {
-                SourceValidationListHeader(
-                    sources: store.sources,
-                    healthById: healthChecker.healthById,
-                    filter: $validationFilter
-                )
-            }
-            .listRowSeparator(.hidden)
+        ScrollViewReader { proxy in
+            List {
+                Section {
+                    SourceValidationListHeader(
+                        sources: store.sources,
+                        healthById: healthChecker.healthById,
+                        filter: $validationFilter
+                    )
+                }
+                .listRowSeparator(.hidden)
 
-            ForEach(displayedSources) { source in
-                sourceRow(source: source)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                    .listRowSeparator(.visible)
+                ForEach(displayedSources) { source in
+                    sourceRow(source: source)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                        .listRowSeparator(.visible)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .onChange(of: scrollTargetId) { _, target in
+                guard let target else { return }
+                withAnimation(reduceMotion ? nil : DSAnimation.standard) {
+                    proxy.scrollTo(target, anchor: .center)
+                }
+                scrollTargetId = nil
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
     }
 
     /// One VoiceOver element per source.
@@ -472,6 +484,16 @@ struct BookSourceListView: View {
         }
         Button(localized("設置源變量")) {
             variableEditingSource = source
+        }
+        if !isFirstSource(source) {
+            Button(localized("置頂")) {
+                moveSourceToTop(source)
+            }
+        }
+        if !isLastSource(source) {
+            Button(localized("置底")) {
+                moveSourceToBottom(source)
+            }
         }
         Button(localized("刪除"), role: .destructive) {
             selectedIds.remove(source.id)
@@ -572,6 +594,19 @@ struct BookSourceListView: View {
                 } label: {
                     Label(localized("設置源變量"), systemImage: "curlybraces")
                 }
+                Divider()
+                Button {
+                    moveSourceToTop(source)
+                } label: {
+                    Label(localized("置頂"), systemImage: "arrow.up.to.line")
+                }
+                .disabled(isFirstSource(source))
+                Button {
+                    moveSourceToBottom(source)
+                } label: {
+                    Label(localized("置底"), systemImage: "arrow.down.to.line")
+                }
+                .disabled(isLastSource(source))
                 Divider()
                 Button(role: .destructive) {
                     selectedIds.remove(source.id)
@@ -694,6 +729,35 @@ struct BookSourceListView: View {
         else { return }
         UIPasteboard.general.string = str
         withAnimation { importSuccess = localized("已複製書源 JSON") }
+    }
+
+    // MARK: - Ordering
+
+    private func isFirstSource(_ source: BookSource) -> Bool {
+        store.sources.first?.id == source.id
+    }
+
+    private func isLastSource(_ source: BookSource) -> Bool {
+        store.sources.last?.id == source.id
+    }
+
+    /// The row leaves the viewport when it jumps to the other end of a long list, which reads
+    /// as "the source disappeared", so both moves scroll the row back into view and announce
+    /// the outcome for VoiceOver (the merged row can't show its new position on its own).
+    private func moveSourceToTop(_ source: BookSource) {
+        withAnimation(reduceMotion ? nil : DSAnimation.standard) {
+            store.moveToTop(id: source.id)
+        }
+        scrollTargetId = source.id
+        UIAccessibility.post(notification: .announcement, argument: localized("已置頂"))
+    }
+
+    private func moveSourceToBottom(_ source: BookSource) {
+        withAnimation(reduceMotion ? nil : DSAnimation.standard) {
+            store.moveToBottom(id: source.id)
+        }
+        scrollTargetId = source.id
+        UIAccessibility.post(notification: .announcement, argument: localized("已置底"))
     }
 
     private func toggleSelection(_ id: UUID) {
@@ -1016,4 +1080,8 @@ struct BookSourceListView: View {
             .background(color.opacity(0.9)).clipShape(Capsule())
             .padding(.top, 8)
     }
+}
+
+#Preview {
+    BookSourceListView()
 }

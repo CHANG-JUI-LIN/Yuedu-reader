@@ -855,7 +855,17 @@ struct ReaderView: View {
         progressTrace("onPageChanged page=\(newPage) chapter=\(currentChapterIndex) visiblePosition=\(String(describing: visiblePosition))")
 
         if chapterChanged {
+            let entryAction = ReaderChapterPresentation.entryRefreshAction(
+                chapterIndex: newChapter,
+                usesCoreText: usesCoreTextEPUB,
+                loadState: readerViewModel.chapterState(for: newChapter),
+                isContentAvailable: isChapterContentAvailable(at: newChapter),
+                isLayoutAvailable: engine.layouts[newChapter] != nil
+            )
             ensureChapterReady(chapterIndex: newChapter)
+            if case .notifyChapterDataChanged = entryAction {
+                Task { await engine.notifyChapterDataChanged(at: newChapter) }
+            }
             // Switch the authored background soundtrack to the new chapter's (or stop it if none).
             if let session = activePublicationSession {
                 Task { await backgroundAudioCoordinator.update(session: session, chapterIndex: newChapter) }
