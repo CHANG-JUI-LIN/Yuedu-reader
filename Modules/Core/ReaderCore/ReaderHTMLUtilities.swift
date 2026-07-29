@@ -315,9 +315,143 @@ enum ReaderHTMLUtilities {
         }
     }
 
+    /// Structural counts used to trace paragraph-review duplication across the online pipeline.
+    /// Targets deliberately exclude the review count and timestamp: two bubbles pointing at the
+    /// same `(bookId, chapterId, paragraphId)` are semantically the same marker even when their
+    /// source-generated SVG/action payloads differ.
+    struct ReviewMarkupDiagnostics: Equatable {
+        let markerCount: Int
+        let rawReviewImageCount: Int
+        let reviewAnchorCount: Int
+        let commentTagCount: Int
+        let duplicateInstanceCount: Int
+        let duplicateTargets: [String]
+        let targetSequence: [String]
+    }
+
     /// Custom URL scheme used internally to carry a paragraph-review action through the
     /// existing link/attachment pipeline. Never reaches a real network request.
     static let reviewURLScheme = "ydreview"
+
+    /// Produces a content-free diagnostic fingerprint for paragraph-review markup.
+    ///
+    /// The source output uses raw Legado image click configs, while later stages carry encoded
+    /// `ydreview://` anchors. Reading both representations lets a single log schema identify the
+    /// exact stage where a duplicate semantic target first appears without logging prose, tokens,
+    /// SVG payloads, or full review URLs.
+    static func reviewMarkupDiagnostics(in html: String) -> ReviewMarkupDiagnostics {
+        var targetSequence: [String] = []
+        var rawReviewImageCount = 0
+        var reviewAnchorCount = 0
+
+        if html.range(of: "<img", options: .caseInsensitive) != nil,
+           let imageRegex = try? NSRegularExpression(
+               pattern: #"<img\b[^>]*>"#,
+               options: [.caseInsensitive]
+           ) {
+            let ns = html as NSString
+            for match in imageRegex.matches(
+                in: html,
+                range: NSRange(location: 0, length: ns.length)
+            ) {
+                let tag = ns.substring(with: match.range)
+                guard let config = legadoClickConfigMatch(in: tag) else { continue }
+                let suffix = (tag as NSString).substring(with: config.range)
+                guard let action = legadoClickAction(fromConfigSuffix: suffix) else { continue }
+                rawReviewImageCount += 1
+                if let key = reviewDiagnosticTargetKey(fromAction: action) {
+                    targetSequence.append(key)
+                }
+            }
+        }
+
+        if html.range(of: "\(reviewURLScheme)://", options: .caseInsensitive) != nil,
+           let hrefRegex = try? NSRegularExpression(
+               pattern: #"href\s*=\s*["'](ydreview://[^"']+)["']"#,
+               options: [.caseInsensitive]
+           ) {
+            let ns = html as NSString
+            for match in hrefRegex.matches(
+                in: html,
+                range: NSRange(location: 0, length: ns.length)
+            ) where match.numberOfRanges >= 2 {
+                let href = ns.substring(with: match.range(at: 1))
+                guard let marker = decodeReviewHref(href) else { continue }
+                reviewAnchorCount += 1
+                if let key = reviewDiagnosticTargetKey(from: marker) {
+                    targetSequence.append(key)
+                }
+            }
+        }
+
+        let commentTagCount: Int
+        if html.range(of: "<comment", options: .caseInsensitive) != nil,
+           let commentRegex = try? NSRegularExpression(
+               pattern: #"<comment\b[^>]*>"#,
+               options: [.caseInsensitive]
+           ) {
+            let ns = html as NSString
+            commentTagCount = commentRegex.numberOfMatches(
+                in: html,
+                range: NSRange(location: 0, length: ns.length)
+            )
+        } else {
+            commentTagCount = 0
+        }
+
+        let counts = targetSequence.reduce(into: [String: Int]()) { result, key in
+            result[key, default: 0] += 1
+        }
+        let duplicateTargets = counts
+            .filter { $0.value > 1 }
+            .map { "\($0.key)×\($0.value)" }
+            .sorted()
+        let duplicateInstanceCount = counts.values.reduce(0) {
+            $0 + max(0, $1 - 1)
+        }
+
+        return ReviewMarkupDiagnostics(
+            markerCount: rawReviewImageCount + reviewAnchorCount + commentTagCount,
+            rawReviewImageCount: rawReviewImageCount,
+            reviewAnchorCount: reviewAnchorCount,
+            commentTagCount: commentTagCount,
+            duplicateInstanceCount: duplicateInstanceCount,
+            duplicateTargets: Array(duplicateTargets.prefix(16)),
+            targetSequence: Array(targetSequence.prefix(32))
+        )
+    }
+
+    /// Emits one stable `reviewFlow` event per pipeline boundary. The target source is logged even
+    /// when the marker count is zero, because disappearance is itself the evidence we need.
+    static func logReviewMarkupDiagnostics(
+        stage: String,
+        html: String,
+        sourceName: String = "",
+        context: [String: Any] = [:],
+        category: (String, [String: Any]) -> Void = { message, context in
+            AppLogger.parse(message, context: context)
+        }
+    ) {
+        let diagnostics = reviewMarkupDiagnostics(in: html)
+        let isTargetSource = sourceName.contains("同人小说网") || sourceName.contains("同人小說網")
+        guard isTargetSource || diagnostics.markerCount > 0 else { return }
+
+        var logContext = context
+        logContext["stage"] = stage
+        logContext["source"] = sourceName
+        logContext["markers"] = diagnostics.markerCount
+        logContext["rawImages"] = diagnostics.rawReviewImageCount
+        logContext["anchors"] = diagnostics.reviewAnchorCount
+        logContext["comments"] = diagnostics.commentTagCount
+        logContext["duplicateInstances"] = diagnostics.duplicateInstanceCount
+        logContext["duplicateTargets"] = diagnostics.duplicateTargets.isEmpty
+            ? "-"
+            : diagnostics.duplicateTargets.joined(separator: ",")
+        logContext["targetSequence"] = diagnostics.targetSequence.isEmpty
+            ? "-"
+            : diagnostics.targetSequence.joined(separator: ",")
+        category("⟐ reviewFlow", logContext)
+    }
 
     /// Rewrites Legado iOS paragraph-review markers into plain anchors the renderer can carry.
     ///
@@ -1266,6 +1400,45 @@ enum ReaderHTMLUtilities {
               let encoded = base64URLEncode(data)
         else { return nil }
         return "\(reviewURLScheme)://r?d=\(encoded)"
+    }
+
+    private static func reviewDiagnosticTargetKey(from marker: ReviewMarker) -> String? {
+        if let key = reviewDiagnosticTargetKey(fromAction: marker.sourceJS) {
+            return key
+        }
+        guard let components = URLComponents(string: marker.url) else { return nil }
+        let query = (components.queryItems ?? []).reduce(into: [String: String]()) { result, item in
+            guard let value = item.value, !value.isEmpty else { return }
+            result[item.name.lowercased()] = value
+        }
+        let bookID = query["bookid"] ?? query["book_id"] ?? query["bid"]
+        let chapterID = query["chapterid"] ?? query["chapter_id"] ?? query["cid"]
+        let paragraphID = query["paragraphid"] ?? query["paragraph_id"] ?? query["pid"]
+        guard let bookID, let chapterID, let paragraphID else { return nil }
+        return "\(bookID)/\(chapterID)/\(paragraphID)"
+    }
+
+    static func reviewDiagnosticTargetKey(fromHref href: String) -> String? {
+        decodeReviewHref(href).flatMap {
+            reviewDiagnosticTargetKey(from: $0)
+        }
+    }
+
+    private static func reviewDiagnosticTargetKey(fromAction action: String) -> String? {
+        for name in ["showCmt", "androidshowCmt", "createSvg"] {
+            guard let args = legadoFunctionArgs(named: name, in: action),
+                  args.count >= 3,
+                  isIntegerLegadoArgument(args[0]),
+                  isIntegerLegadoArgument(args[1]),
+                  isIntegerLegadoArgument(args[2])
+            else { continue }
+            return [
+                cleanLegadoArgument(args[0]),
+                cleanLegadoArgument(args[1]),
+                cleanLegadoArgument(args[2]),
+            ].joined(separator: "/")
+        }
+        return nil
     }
 
     private static func firstCapture(in text: String, pattern: String) -> String? {

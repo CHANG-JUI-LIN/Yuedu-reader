@@ -400,6 +400,17 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         let result: AttributedChapterBuildResult
         switch payload.body {
         case .html(let rawHTML):
+            ReaderHTMLUtilities.logReviewMarkupDiagnostics(
+                stage: "rendererInput",
+                html: rawHTML,
+                context: [
+                    "chapterIndex": index,
+                    "title": payload.title,
+                ],
+                category: { message, context in
+                    AppLogger.render(message, context: context)
+                }
+            )
             AppLogger.render("⟐ ccsCard", context: [
                 "chapter": index,
                 "hasCard": rawHTML.contains("androidshowChapterComments"),
@@ -422,6 +433,28 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 themeBackgroundColor: themeBackgroundColor
             )
         }
+
+        var renderedReviewAnchors: [String] = []
+        result.attributedString.enumerateAttribute(
+            HTMLAttributedStringBuilder.internalLinkAttribute,
+            in: NSRange(location: 0, length: result.attributedString.length)
+        ) { value, _, _ in
+            guard let href = value as? String,
+                  ReaderHTMLUtilities.decodeReviewHref(href) != nil
+            else { return }
+            renderedReviewAnchors.append(#"<a href="\#(href)"></a>"#)
+        }
+        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
+            stage: "rendererOutput",
+            html: renderedReviewAnchors.joined(),
+            context: [
+                "chapterIndex": index,
+                "title": payload.title,
+            ],
+            category: { message, context in
+                AppLogger.render(message, context: context)
+            }
+        )
 
         let scopeURL = (provider as? OnlineBookContentProvider)?.replaceRuleScopeURL ?? ""
         let rules = ReplaceRuleStore.shared.rules(for: scopeURL)

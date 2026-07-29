@@ -140,6 +140,11 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         renderSettings = settings
     }
 
+    func invalidateChapterDocument(at chapterIndex: Int) {
+        guard chapterIndex >= 0, chapterIndex < builder.chapterCount else { return }
+        chapterDocumentStore.invalidate(spineIndex: chapterIndex)
+    }
+
     func applyThemeChange(textColor: UIColor, backgroundColor: UIColor) {
         renderSettings = ReaderRenderSettings(
             theme: renderSettings.theme,

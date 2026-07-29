@@ -56,6 +56,54 @@ struct ChapterDocumentStoreTests {
         #expect(await probe.buildCount == 1)
     }
 
+    @Test("Paged chapter data change rebuilds the chapter document")
+    @MainActor
+    func pagedChapterDataChangeRebuildsDocument() async throws {
+        let probe = ChapterDocumentBuildProbe()
+        let builder = ChapterDocumentTestBuilder(probe: probe, chapterCount: 1)
+        let store = ChapterDocumentStore(builder: builder)
+        let offsetDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ChapterDocumentRefreshTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: offsetDirectory) }
+        let engine = CoreTextPageEngine(
+            attributedBuilder: builder,
+            renderSettings: makeRequest().settings,
+            chapterDocumentStore: store,
+            offsetStore: CharOffsetStore(directoryURL: offsetDirectory)
+        )
+
+        await engine.start(
+            renderSize: CGSize(width: 320, height: 480),
+            bookId: "chapter-document-refresh-test"
+        )
+        #expect(await probe.buildCount == 1)
+
+        await engine.notifyChapterDataChanged(at: 0)
+
+        #expect(await probe.buildCount == 2)
+    }
+
+    @Test("Scroll chapter refresh rebuilds the chapter document during reslice")
+    @MainActor
+    func scrollChapterRefreshRebuildsDocument() async throws {
+        let probe = ChapterDocumentBuildProbe()
+        let builder = ChapterDocumentTestBuilder(probe: probe, chapterCount: 1)
+        let store = ChapterDocumentStore(builder: builder)
+        let engine = CoreTextScrollEngine(
+            builder: builder,
+            renderSettings: makeRequest().settings,
+            chapterDocumentStore: store
+        )
+
+        await engine.start(initialChapter: 0, contentWidth: 288)
+        #expect(await probe.buildCount == 1)
+
+        engine.invalidateChapterDocument(at: 0)
+        await engine.reslice(restoreAt: 0, contentWidth: 288)
+
+        #expect(await probe.buildCount == 2)
+    }
+
     @Test("Layout-affecting settings create a distinct chapter document")
     @MainActor
     func layoutSettingsInvalidateIdentity() async throws {
@@ -103,6 +151,27 @@ struct ChapterDocumentStoreTests {
 
         #expect(await probe.buildCount == 2)
         #expect(first.revision != second.revision)
+    }
+
+    @Test("Chapter invalidation rebuilds only the requested spine")
+    @MainActor
+    func chapterInvalidationIsTargeted() async throws {
+        let probe = ChapterDocumentBuildProbe()
+        let store = ChapterDocumentStore(builder: ChapterDocumentTestBuilder(probe: probe))
+        let firstRequest = makeRequest(spineIndex: 0)
+        let secondRequest = makeRequest(spineIndex: 1)
+
+        let firstBefore = try await store.document(for: firstRequest)
+        let secondBefore = try await store.document(for: secondRequest)
+
+        store.invalidate(spineIndex: 0)
+
+        let firstAfter = try await store.document(for: firstRequest)
+        let secondAfter = try await store.document(for: secondRequest)
+
+        #expect(await probe.buildCount == 3)
+        #expect(firstBefore.revision != firstAfter.revision)
+        #expect(secondBefore.revision == secondAfter.revision)
     }
 
     private func makeRequest(

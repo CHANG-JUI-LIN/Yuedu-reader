@@ -55,24 +55,17 @@ struct BookSourceFormLoginView: View {
                                     .multilineTextAlignment(.trailing)
                             }
                         case .select:
-                            HStack {
-                                Text(field.name).foregroundColor(DSColor.textSecondary)
-                                Spacer()
-                                if field.options.isEmpty {
-                                    TextField(field.name, text: binding(for: field.name))
-                                        .multilineTextAlignment(.trailing)
-                                        .autocorrectionDisabled()
-                                        .textInputAutocapitalization(.never)
-                                } else {
-                                    Picker(field.name, selection: selectionBinding(for: field)) {
-                                        ForEach(options(for: field), id: \.self) { option in
-                                            Text(option).tag(option)
-                                        }
-                                    }
-                                    .labelsHidden()
-                                    .pickerStyle(.menu)
-                                    .tint(DSColor.accent)
+                            selectRow(field: field)
+                        case .toggle:
+                            if let chars = LoginToggleChars(options: field.options) {
+                                Toggle(isOn: toggleBinding(for: field, chars: chars)) {
+                                    Text(field.name).foregroundColor(DSColor.textSecondary)
                                 }
+                                .tint(DSColor.accent)
+                            } else {
+                                // `chars` that isn't a two-state pair can't be a switch —
+                                // show the choices instead of guessing which one means on.
+                                selectRow(field: field)
                             }
                         case .button:
                             Button(field.name) {
@@ -165,6 +158,31 @@ struct BookSourceFormLoginView: View {
         }
     }
 
+    // MARK: - Rows
+
+    @ViewBuilder
+    private func selectRow(field: LoginUIField) -> some View {
+        HStack {
+            Text(field.name).foregroundColor(DSColor.textSecondary)
+            Spacer()
+            if field.options.isEmpty {
+                TextField(field.name, text: binding(for: field.name))
+                    .multilineTextAlignment(.trailing)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            } else {
+                Picker(field.name, selection: selectionBinding(for: field)) {
+                    ForEach(options(for: field), id: \.self) { option in
+                        Text(option).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .tint(DSColor.accent)
+            }
+        }
+    }
+
     // MARK: - Setup
 
     private func loadUI() {
@@ -234,6 +252,21 @@ struct BookSourceFormLoginView: View {
         )
     }
 
+    private func toggleBinding(for field: LoginUIField, chars: LoginToggleChars) -> Binding<Bool> {
+        Binding(
+            get: { chars.isOn(stored: values[field.name], default: field.defaultValue) },
+            set: { newValue in
+                values[field.name] = chars.value(isOn: newValue)
+                persistCurrentFormValues()
+                // A toggle carries the same `action` as a button row and the source
+                // expects it to run on every flip: 同人小说网 hangs `commentRefreshTip()`
+                // on all 评论 switches to say the change needs a manual refresh.
+                // No-ops when the row declares no action.
+                handleButton(field: field)
+            }
+        )
+    }
+
     private func selectedValue(for field: LoginUIField) -> String {
         if let value = values[field.name], !value.isEmpty {
             return value
@@ -257,6 +290,8 @@ struct BookSourceFormLoginView: View {
         stored: [String: String]?
     ) -> [String: String] {
         var result = stored ?? [:]
+        // `.select` only: a `.toggle`'s declared default must stay out of the stored
+        // values (see `LoginToggleChars.isOn`) — seeding it flips 段评开关 off.
         for field in fields where field.type == .select {
             if let current = result[field.name], !current.isEmpty {
                 continue
@@ -331,7 +366,9 @@ struct BookSourceFormLoginView: View {
                 switch field.type {
                 case .select:
                     dict[field.name] = selectedValue(for: field)
-                case .text, .password:
+                case .text, .password, .toggle:
+                    // A toggle reports only what the user actually flipped — resolving
+                    // its default here would write it back on the next save.
                     dict[field.name] = values[field.name] ?? ""
                 case .button:
                     break
@@ -774,7 +811,7 @@ struct LoginUIField: Identifiable {
     let options: [String]
     let defaultValue: String?
 
-    enum FieldType: String { case text, password, select, button }
+    enum FieldType: String { case text, password, select, button, toggle }
 
     static func parse(from json: String) -> [LoginUIField] {
         // Legado's loginUi is frequently authored as a JS object literal
@@ -814,4 +851,32 @@ struct LoginUIField: Identifiable {
             return nil
         }
     }
+}
+
+// MARK: - Preview
+
+#Preview("書源登入表單") {
+    // Shaped after 同人小说网's menu: text/password rows, a `select` of 模板,
+    // the `toggle` switches its jsLib reads back through `qdToggle()`, and buttons.
+    let loginUi = """
+    [
+      {"name":"邀请码","type":"text"},
+      {"name":"◎ 气泡二","type":"password"},
+      {"name":"◎ 模板","type":"select","chars":["起点","样式一","样式二"],"default":"起点"},
+      {"name":"段评开关","type":"toggle","chars":["🔳","✅"],"default":"🔳",
+       "action":"commentRefreshTip()"},
+      {"name":"章名段评","type":"toggle","chars":["🔳","✅"],"default":"🔳",
+       "action":"commentRefreshTip()"},
+      {"name":"账号管理","type":"button","action":"_login()"}
+    ]
+    """
+    let source: BookSource = {
+        var s = BookSource(
+            bookSourceUrl: "https://m.qidian.com#preview",
+            bookSourceName: "起點限免（同人小說網）"
+        )
+        s.loginUi = loginUi
+        return s
+    }()
+    BookSourceFormLoginView(source: source, onDismiss: {})
 }

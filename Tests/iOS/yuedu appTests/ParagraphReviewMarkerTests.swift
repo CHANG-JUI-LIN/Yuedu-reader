@@ -24,6 +24,30 @@ struct ParagraphReviewMarkerTests {
         return ns.substring(with: m.range(at: 1))
     }
 
+    @Test("review markup diagnostics identify duplicate semantic paragraph targets")
+    func reviewMarkupDiagnosticsIdentifyDuplicateTargets() {
+        let first = #"<img src="data:image/svg+xml;base64,PHN2Zy8+,{"style":"text","click":"createSvg(1037570737,760696410,5,7,111)"}">"#
+        let duplicate = #"<img src="data:image/svg+xml;base64,PHN2Zy8+,{"style":"text","click":"createSvg(1037570737,760696410,5,7,222)"}">"#
+        let distinct = #"<img src="data:image/svg+xml;base64,PHN2Zy8+,{"style":"text","click":"createSvg(1037570737,760696410,6,15,333)"}">"#
+
+        let diagnostics = ReaderHTMLUtilities.reviewMarkupDiagnostics(
+            in: first + duplicate + distinct
+        )
+
+        #expect(diagnostics.markerCount == 3)
+        #expect(diagnostics.rawReviewImageCount == 3)
+        #expect(diagnostics.duplicateInstanceCount == 1)
+        #expect(diagnostics.duplicateTargets == ["1037570737/760696410/5×2"])
+        #expect(
+            diagnostics.targetSequence
+                == [
+                    "1037570737/760696410/5",
+                    "1037570737/760696410/5",
+                    "1037570737/760696410/6",
+                ]
+        )
+    }
+
     @Test("rewrites the iOS paraForiOS comment marker into a ydreview anchor")
     func rewritesMarkerIntoAnchor() throws {
         let raw = #"<div rs-native>第一段文字<comment count="12" onPress="java.showReadingBrowser('https://api.example.com/cmt?book_id=1&amp;ssionid=abc','番茄段评')"></div>"#

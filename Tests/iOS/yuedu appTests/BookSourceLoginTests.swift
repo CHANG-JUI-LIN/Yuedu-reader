@@ -140,6 +140,53 @@ struct BookSourceLoginTests {
         #expect(size.defaultValue == "中")
     }
 
+    @Test("LoginUIField.parse() 正確解析 toggle 欄位（同人小说网 评论开关）")
+    func parseToggleLoginUiField() throws {
+        // 同人小说网最终版.json 的評論開關。過去 toggle 不在型別枚舉裡，
+        // `FieldType(rawValue:) ?? .text` 讓整排開關退化成文字輸入框。
+        let json = """
+        [
+            {"name":"段评开关","viewName":"' 段评开关'","type":"toggle",
+             "action":"commentRefreshTip()","chars":["🔳","✅"],"default":"🔳"},
+            {"name":"彩蛋章开关","type":"toggle","action":"eggRefreshTip()",
+             "chars":["🔳","✅"],"default":"🔳"}
+        ]
+        """
+        let fields = LoginUIField.parse(from: json)
+
+        #expect(fields.count == 2)
+        #expect(fields[0].type == .toggle)
+        #expect(fields[0].options == ["🔳", "✅"])
+        #expect(fields[0].defaultValue == "🔳")
+        #expect(fields[0].action == "commentRefreshTip()")
+        #expect(fields[1].type == .toggle)
+
+        let loginFields = LoginManager.shared.parseLoginUi(json)
+        let first = try #require(loginFields.first)
+        #expect(first.type == .toggle)
+        #expect(first.options == ["🔳", "✅"])
+    }
+
+    @Test("LoginToggleChars 開關值對應書源的 qdToggle 判定")
+    func toggleCharsSemantics() throws {
+        let chars = try #require(LoginToggleChars(options: ["🔳", "✅"]))
+        #expect(chars.off == "🔳")
+        #expect(chars.on == "✅")
+        #expect(chars.value(isOn: true) == "✅")   // jsLib qdToggle() 只認 "✅" 為開
+        #expect(chars.value(isOn: false) == "🔳")
+
+        // 已儲存的值優先；沒存過才顯示書源宣告的 default（且不得寫回）。
+        #expect(chars.isOn(stored: "✅", default: "🔳"))
+        #expect(!chars.isOn(stored: "🔳", default: "✅"))
+        #expect(!chars.isOn(stored: nil, default: "🔳"))
+        #expect(!chars.isOn(stored: "", default: "🔳"))
+        #expect(chars.isOn(stored: nil, default: "✅"))
+
+        // 非兩態的 chars 不是開關，必須交給選單渲染。
+        #expect(LoginToggleChars(options: ["起点", "样式一", "样式二"]) == nil)
+        #expect(LoginToggleChars(options: []) == nil)
+    }
+
     @Test("LoginUIField.parse() 空 JSON 回傳空陣列")
     func parseEmptyLoginUi() {
         let fields = LoginUIField.parse(from: "")

@@ -8,13 +8,12 @@ enum GlobalAppTypographyUIKitBridge {
     /// A `nil` font means "no custom font selected" — the default — and
     /// *removes* the override instead of re-stating the system font. Writing
     /// any explicit font into `titleTextAttributes` replaces UIKit's own
-    /// Dynamic-Type-clamped title font with an unclamped scaled one, while the
-    /// bar keeps laying out at its normal height; at large text sizes the tab
-    /// title then grows over the tab icon.
+    /// Dynamic-Type behavior, so the custom tab font below deliberately stays
+    /// at its semantic base size while the bar keeps its normal fixed height.
     static func apply(postScriptName: String?) {
         let titleFont = chromeFont(.headline, postScriptName: postScriptName, weight: .semibold)
         let largeTitleFont = chromeFont(.largeTitle, postScriptName: postScriptName, weight: .bold)
-        let tabFont = chromeFont(.caption2, postScriptName: postScriptName)
+        let tabFont = tabBarFont(postScriptName: postScriptName)
 
         updateAppearanceProxies(
             titleFont: titleFont,
@@ -36,6 +35,18 @@ enum GlobalAppTypographyUIKitBridge {
                 visited: &visited
             )
         }
+    }
+
+    /// A tab bar keeps its normal fixed height at every content-size category.
+    /// Keep a custom title face at caption2's base size so Dynamic Type cannot
+    /// enlarge it into the icon. A nil selection still removes the override
+    /// and gives UIKit full control of the system tab font.
+    static func tabBarFont(postScriptName: String?) -> UIFont? {
+        guard let postScriptName else { return nil }
+        return GlobalAppTypography.unscaledUIFont(
+            .caption2,
+            postScriptName: postScriptName
+        )
     }
 
     /// Bar chrome lays out at a fixed height, so a custom font has to stop

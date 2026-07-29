@@ -966,6 +966,64 @@ final class CoreTextPaginator {
             attrStr: attrStr,
             writingMode: writingMode
         )
+        var reviewDrawRouteCounts: [String: Int] = [:]
+        func appendReviewDrawEntry(
+            route: String,
+            page: Int,
+            attachment: RenderedAttachment
+        ) {
+            guard let href = attachment.linkHref,
+                  let target = ReaderHTMLUtilities.reviewDiagnosticTargetKey(fromHref: href)
+            else { return }
+            reviewDrawRouteCounts[route, default: 0] += 1
+            AppLogger.render("⟐ reviewDrawItem", context: [
+                "route": route,
+                "page": page,
+                "target": target,
+                "rect": String(
+                    format: "%.0f,%.0f,%.0fx%.0f",
+                    attachment.rect.minX,
+                    attachment.rect.minY,
+                    attachment.rect.width,
+                    attachment.rect.height
+                ),
+                "imageSize": String(
+                    format: "%.0fx%.0f",
+                    attachment.image.size.width,
+                    attachment.image.size.height
+                ),
+            ])
+        }
+        for page in inlineAttachments.keys.sorted() {
+            for attachment in inlineAttachments[page] ?? [] {
+                appendReviewDrawEntry(route: "inline", page: page, attachment: attachment)
+            }
+        }
+        for page in blockAttachments.keys.sorted() {
+            for attachment in blockAttachments[page] ?? [] {
+                appendReviewDrawEntry(route: "block", page: page, attachment: attachment)
+            }
+        }
+        for page in blockRenderables.keys.sorted() {
+            for item in blockRenderables[page] ?? [] {
+                if let attachment = item.imageAttachment {
+                    appendReviewDrawEntry(
+                        route: "blockRenderable",
+                        page: page,
+                        attachment: attachment
+                    )
+                }
+            }
+        }
+        if !reviewDrawRouteCounts.isEmpty {
+            AppLogger.render("⟐ reviewDrawLists", context: [
+                "spine": spineIndex,
+                "routes": reviewDrawRouteCounts
+                    .map { "\($0.key)=\($0.value)" }
+                    .sorted()
+                    .joined(separator: ","),
+            ])
+        }
         let inlineAttachmentCount = inlineAttachments.values.reduce(0) { $0 + $1.count }
         let inlineAnnotationCount = inlineAnnotations.values.reduce(0) { $0 + $1.count }
         let blockAttachmentCount = blockAttachments.values.reduce(0) { $0 + $1.count }
@@ -2088,6 +2146,20 @@ final class CoreTextPaginator {
             )]
             kinds[0] = .image
         }
+
+        let reviewAttachmentAnchors = (Array(inlineAttachments.values) + Array(blockAttachments.values))
+            .flatMap { $0 }
+            .compactMap(\.linkHref)
+            .filter { ReaderHTMLUtilities.decodeReviewHref($0) != nil }
+            .map { #"<a href="\#($0)"></a>"# }
+        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
+            stage: "paginatorAttachments",
+            html: reviewAttachmentAnchors.joined(),
+            context: ["pages": pageArtifacts.count],
+            category: { message, context in
+                AppLogger.render(message, context: context)
+            }
+        )
 
         return (inlineAttachments, blockAttachments, kinds)
     }

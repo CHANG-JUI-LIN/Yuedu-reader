@@ -158,20 +158,7 @@ enum GlobalAppTypography {
         maximumPointSize: CGFloat? = nil,
         compatibleWith traits: UITraitCollection? = nil
     ) -> UIFont {
-        let resolvedWeight = weight ?? style.defaultUIKitWeight
-        let baseFont: UIFont
-
-        if let postScriptName,
-           let customFont = UIFont(name: postScriptName, size: style.basePointSize) {
-            if resolvedWeight.rawValue >= UIFont.Weight.semibold.rawValue,
-               let descriptor = customFont.fontDescriptor.withSymbolicTraits(.traitBold) {
-                baseFont = UIFont(descriptor: descriptor, size: style.basePointSize)
-            } else {
-                baseFont = customFont
-            }
-        } else {
-            baseFont = UIFont.systemFont(ofSize: style.basePointSize, weight: resolvedWeight)
-        }
+        let baseFont = baseUIFont(style, postScriptName: postScriptName, weight: weight)
 
         let metrics = UIFontMetrics(forTextStyle: style.uiKitStyle)
         guard let maximumPointSize else {
@@ -182,5 +169,33 @@ enum GlobalAppTypography {
             maximumPointSize: maximumPointSize,
             compatibleWith: traits
         )
+    }
+
+    /// Resolves a semantic UIKit font at its base point size without applying
+    /// Dynamic Type. Use only for fixed-height chrome such as tab bar titles.
+    static func unscaledUIFont(
+        _ style: Style,
+        postScriptName: String?,
+        weight: UIFont.Weight? = nil
+    ) -> UIFont {
+        baseUIFont(style, postScriptName: postScriptName, weight: weight)
+    }
+
+    private static func baseUIFont(
+        _ style: Style,
+        postScriptName: String?,
+        weight: UIFont.Weight?
+    ) -> UIFont {
+        let resolvedWeight = weight ?? style.defaultUIKitWeight
+        guard let postScriptName,
+              let customFont = UIFont(name: postScriptName, size: style.basePointSize) else {
+            return UIFont.systemFont(ofSize: style.basePointSize, weight: resolvedWeight)
+        }
+
+        if resolvedWeight.rawValue >= UIFont.Weight.semibold.rawValue,
+           let descriptor = customFont.fontDescriptor.withSymbolicTraits(.traitBold) {
+            return UIFont(descriptor: descriptor, size: style.basePointSize)
+        }
+        return customFont
     }
 }

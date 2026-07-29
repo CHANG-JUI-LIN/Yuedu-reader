@@ -133,6 +133,7 @@ struct ReaderView: View {
     @State var scrollVisibleChapter = 0
     @State var scrollResliceToken: UInt = 0
     @State var pendingScrollJumpTarget: CoreTextReadingPosition?
+    @State var pendingManualChapterRefreshIndex: Int?
 
     @State var readerSessionCoordinator: ReaderSessionCoordinator?
     @State var readingStatsTracker: ReadingStatsSessionTracker?

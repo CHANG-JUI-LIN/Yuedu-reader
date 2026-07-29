@@ -47,9 +47,20 @@ extension ReaderView {
         let contentAvailable = isChapterContentAvailable(at: chapterIndex)
         if effectiveScrollMode, let scrollEngine = epubRenderer.scrollEngine {
             if newState == .ready, contentAvailable {
-                Task { await scrollEngine.retryChapterIfNeeded(chapterIndex) }
+                if pendingManualChapterRefreshIndex == chapterIndex {
+                    pendingManualChapterRefreshIndex = nil
+                    scrollEngine.invalidateChapterDocument(at: chapterIndex)
+                    if chapterIndex == currentChapterIndex {
+                        scheduleScrollReslice()
+                    }
+                } else {
+                    Task { await scrollEngine.retryChapterIfNeeded(chapterIndex) }
+                }
                 return
             }
+        }
+        if newState == .ready, pendingManualChapterRefreshIndex == chapterIndex {
+            pendingManualChapterRefreshIndex = nil
         }
         let action = ReaderChapterPresentation.refreshAction(
             changedChapterIndex: chapterIndex,
@@ -132,6 +143,9 @@ extension ReaderView {
         guard let currentBook = book else { return }
         let idx = currentChapterIndex
         AppLogger.render("⟐ chapter retry tapped ch=\(idx)")
+        if effectiveScrollMode {
+            pendingManualChapterRefreshIndex = idx
+        }
         dependencies.bookSourceFetcher.clearChapterCache(
             bookId: currentBook.id,
             chapterIndex: idx

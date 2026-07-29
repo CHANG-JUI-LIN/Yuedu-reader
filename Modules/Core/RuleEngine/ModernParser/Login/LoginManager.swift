@@ -44,7 +44,43 @@ struct LoginField {
         case password = "password"
         case select   = "select"
         case button   = "button"
+        case toggle   = "toggle"
     }
+}
+
+// MARK: - Toggle chars (Legado `chars` on a `toggle` row)
+
+/// The two strings a `toggle` row switches between, taken from its `chars`.
+///
+/// A `toggle` stores its current char as the field's value — nothing else. The
+/// source reads it straight back: 同人小说网's `qdToggle()` fetches the value via
+/// `source.getLoginInfoMap()` and calls the switch on when it equals `"✅"`
+/// (its `chars` are `["🔳", "✅"]`, off first).
+struct LoginToggleChars {
+    let off: String
+    let on: String
+
+    /// Only a two-state `chars` is a switch; anything else has to be rendered as
+    /// a list of choices instead.
+    init?(options: [String]) {
+        guard options.count == 2 else { return nil }
+        off = options[0]
+        on = options[1]
+    }
+
+    /// Whether the switch reads as on, given what is stored and what the source
+    /// declared as `default`.
+    ///
+    /// The declared default is for display only — it must never be written back.
+    /// 同人小说网 declares `default: "🔳"` for 段评开关 while its own
+    /// `qdToggle("段评开关", true)` treats a *missing* value as on, so persisting
+    /// the default would silently turn 段评 off for everyone who opens the menu.
+    func isOn(stored: String?, default defaultValue: String?) -> Bool {
+        let value = (stored?.isEmpty == false ? stored : defaultValue) ?? ""
+        return value == on
+    }
+
+    func value(isOn: Bool) -> String { isOn ? on : off }
 }
 
 // MARK: - Login Error

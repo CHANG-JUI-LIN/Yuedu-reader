@@ -103,8 +103,9 @@ final class ChapterDocumentStore {
 
         do {
             let document = try await task.value
+            let stillOwnsEntry = inFlight.contains { $0.id == entryID }
             inFlight.removeAll { $0.id == entryID }
-            guard generation == requestGeneration else { return document }
+            guard stillOwnsEntry, generation == requestGeneration else { return document }
             insert(document, for: request)
             return document
         } catch {
@@ -118,6 +119,15 @@ final class ChapterDocumentStore {
         cache.removeAll(keepingCapacity: true)
         inFlight.forEach { $0.task.cancel() }
         inFlight.removeAll(keepingCapacity: true)
+    }
+
+    func invalidate(spineIndex: Int) {
+        cache.removeAll { $0.request.spineIndex == spineIndex }
+        let invalidatedTasks = inFlight
+            .filter { $0.request.spineIndex == spineIndex }
+            .map(\.task)
+        inFlight.removeAll { $0.request.spineIndex == spineIndex }
+        invalidatedTasks.forEach { $0.cancel() }
     }
 
     private func insert(_ document: ChapterDocument, for request: ChapterDocumentRequest) {

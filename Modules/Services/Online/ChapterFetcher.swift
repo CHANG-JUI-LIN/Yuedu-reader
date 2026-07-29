@@ -48,6 +48,12 @@ struct ChapterFetcher {
         rawHTMLContent: String?,
         reviewContext: ReaderHTMLUtilities.LegadoReviewContext? = nil
     ) async -> String {
+        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
+            stage: "fetcherInput",
+            html: rawHTMLContent ?? "",
+            sourceName: reviewContext?.sourceName ?? "",
+            context: ["title": title]
+        )
         // Images whose real URL is produced by the source's own JS (Legado `UrlOption.js`) have to
         // be resolved HERE, while the session that just parsed this chapter still holds the
         // per-image state the source set during parsing — see `LegadoImageSourceResolver`.
@@ -58,6 +64,12 @@ struct ChapterFetcher {
                 reviewContext: reviewContext
             )
         }.value
+        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
+            stage: "deferredImageResolved",
+            html: raw,
+            sourceName: reviewContext?.sourceName ?? "",
+            context: ["title": title]
+        )
         let rawTrimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let looksHTML = !rawTrimmed.isEmpty && Self.containsLikelyHTMLTags(raw)
         AppLogger.parse("⟐ buildRenderableNormalizedHTML", context: [
@@ -103,6 +115,12 @@ struct ChapterFetcher {
             originalRawHTML,
             reviewContext: reviewContext
         )
+        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
+            stage: "sanitized",
+            html: cleanedRawHTML,
+            sourceName: reviewContext?.sourceName ?? "",
+            context: ["title": title]
+        )
 
         // ⟐ sanitizeClickConfig — show whether the `,{json}` click-config suffix is actually
         // stripped at fetch time. rawCommas vs cleanCommas: if cleanCommas > 0 the suffix
@@ -144,19 +162,46 @@ struct ChapterFetcher {
         // then restore — keeps SwiftSoup's cleaning behavior without feeding it the bloat.
         // Run in a detached task to avoid blocking the cooperative thread pool.
         let (slimmedHTML, payloadRestore) = ReaderHTMLUtilities.extractDataURIPayloads(rawHTMLContent)
-        let parsedBody = await Task.detached(priority: .userInitiated) { () -> (html: String, titleBubble: String?) in
+        let parsedBody = await Task.detached(priority: .userInitiated) {
+            () -> (
+                html: String,
+                titleBubble: String?,
+                reviewRepair: ParagraphReviewStructureRepair
+            ) in
             guard let document = try? SwiftSoup.parse(slimmedHTML),
-                  let body = document.body() else { return ("", nil) }
+                  let body = document.body()
+            else {
+                return ("", nil, ParagraphReviewStructureRepair())
+            }
             _ = try? body.select("script,noscript,iframe,object,embed").remove()
             let titleBubble = Self.detachLeadingTitleReviewImage(from: body)
             Self.detachLeadingDuplicateTitle(from: body, title: trimmedTitle)
+            let reviewRepair = Self.reattachStandaloneParagraphReviews(in: body)
             let html = ((try? body.html()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return (html, titleBubble)
+            return (html, titleBubble, reviewRepair)
         }.value
         let bodyHTML = ReaderHTMLUtilities.restoreDataURIPayloads(parsedBody.html, restore: payloadRestore)
         let leadingTitleBubbleHTML = parsedBody.titleBubble.map {
             ReaderHTMLUtilities.restoreDataURIPayloads($0, restore: payloadRestore)
         }
+        if parsedBody.reviewRepair.scanned > 0 {
+            AppLogger.parse("⟐ reviewFlow", context: [
+                "stage": "structureRepair",
+                "source": reviewContext?.sourceName ?? "",
+                "scanned": parsedBody.reviewRepair.scanned,
+                "alreadyInline": parsedBody.reviewRepair.alreadyInline,
+                "movedBare": parsedBody.reviewRepair.movedBareAnchors,
+                "movedBlock": parsedBody.reviewRepair.movedImageOnlyBlocks,
+                "skipped": parsedBody.reviewRepair.skipped,
+                "title": title,
+            ])
+        }
+        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
+            stage: "swiftSoupBody",
+            html: bodyHTML + (leadingTitleBubbleHTML ?? ""),
+            sourceName: reviewContext?.sourceName ?? "",
+            context: ["title": title]
+        )
 
         guard !bodyHTML.isEmpty || leadingTitleBubbleHTML != nil else {
             return buildNormalizedHTML(
@@ -177,7 +222,7 @@ struct ChapterFetcher {
             ? ""
             : "<h1>\(ReaderHTMLUtilities.escapeHTML(trimmedTitle))\(resolvedTitleBubbleHTML ?? "")</h1>\n"
 
-        return """
+        let normalizedHTML = """
         <!DOCTYPE html>
         <html lang="zh-Hant">
         <head>
@@ -192,6 +237,13 @@ struct ChapterFetcher {
         </body>
         </html>
         """
+        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
+            stage: "normalizedOutput",
+            html: normalizedHTML,
+            sourceName: reviewContext?.sourceName ?? "",
+            context: ["title": title]
+        )
+        return normalizedHTML
     }
 
     /// Splits a chapter title into its text part and an optional comment-bubble `<img>` HTML.
@@ -234,6 +286,99 @@ struct ChapterFetcher {
 
         try? firstElement.remove()
         return anchorHTML
+    }
+
+    private struct ParagraphReviewStructureRepair: Sendable {
+        var scanned = 0
+        var alreadyInline = 0
+        var movedBareAnchors = 0
+        var movedImageOnlyBlocks = 0
+        var skipped = 0
+    }
+
+    /// Some Legado sources append a text-sized paragraph-review image after the prose block's
+    /// closing tag (`<p>正文</p><a class=yd-review-image>…</a>`). SwiftSoup preserves that
+    /// structure, so CoreText correctly gives the anchor an anonymous paragraph of its own.
+    /// Reattach only those text-sized review anchors to the immediately preceding leaf prose
+    /// block. FULL review cards, author cards, title reviews, and ordinary images stay untouched.
+    private static func reattachStandaloneParagraphReviews(
+        in body: Element
+    ) -> ParagraphReviewStructureRepair {
+        var result = ParagraphReviewStructureRepair()
+        let anchors = (try? body.select("a.yd-review-image[href]").array()) ?? []
+        let blockTags: Set<String> = [
+            "p", "div", "li", "blockquote",
+            "h1", "h2", "h3", "h4", "h5", "h6",
+            "section", "article",
+        ]
+
+        func hasDirectBlockChild(_ element: Element) -> Bool {
+            element.children().array().contains {
+                blockTags.contains($0.tagName().lowercased())
+            }
+        }
+
+        func trimmedText(_ element: Element) -> String {
+            ((try? element.text()) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        for anchor in anchors {
+            let textSizedImages = (
+                try? anchor.select("img[data-yd-imgstyle=text]").array()
+            ) ?? []
+            guard textSizedImages.count == 1,
+                  ((try? anchor.select("img").array()) ?? []).count == 1,
+                  let href = try? anchor.attr("href"),
+                  !ReaderHTMLUtilities.isTitleReviewHref(href),
+                  let parent = anchor.parent()
+            else {
+                continue
+            }
+            result.scanned += 1
+
+            let parentTag = parent.tagName().lowercased()
+            let candidate: Element
+            let emptyWrapperToRemove: Element?
+
+            if hasDirectBlockChild(parent) {
+                // The anchor is a loose inline child of body/article/a block wrapper, after <p>.
+                candidate = anchor
+                emptyWrapperToRemove = nil
+            } else if blockTags.contains(parentTag), trimmedText(parent).isEmpty {
+                // SwiftSoup/source normalization wrapped the loose anchor in its own empty <p>.
+                candidate = parent
+                emptyWrapperToRemove = parent
+            } else if !trimmedText(parent).isEmpty {
+                result.alreadyInline += 1
+                continue
+            } else {
+                result.skipped += 1
+                continue
+            }
+
+            guard let previous = try? candidate.previousElementSibling(),
+                  blockTags.contains(previous.tagName().lowercased()),
+                  !hasDirectBlockChild(previous),
+                  !trimmedText(previous).isEmpty
+            else {
+                result.skipped += 1
+                continue
+            }
+
+            do {
+                try previous.appendChild(anchor)
+                if let emptyWrapperToRemove {
+                    try emptyWrapperToRemove.remove()
+                    result.movedImageOnlyBlocks += 1
+                } else {
+                    result.movedBareAnchors += 1
+                }
+            } catch {
+                result.skipped += 1
+            }
+        }
+        return result
     }
 
     /// HTML-side half of 去除重复标题: drops a leading element whose entire text is the chapter

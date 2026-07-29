@@ -678,6 +678,7 @@ _layouts[spineIndex] = nil
         preloadTasks[spineIndex]?.cancel()
         preloadTasks[spineIndex] = nil
         chapterSnapshots.removeObject(forKey: NSNumber(value: spineIndex))
+        chapterDocumentStore.invalidate(spineIndex: spineIndex)
 
         // 2. Incrementally update the chapter's byte size (O(1), no full rescan)
         let size = await attributedBuilder.chapterDataSize(at: spineIndex)

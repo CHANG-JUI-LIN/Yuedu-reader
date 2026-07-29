@@ -200,6 +200,77 @@ struct OnlineReaderPipelineUnificationTests {
         #expect(ReaderHTMLUtilities.isTitleReviewHref(reviewHref))
     }
 
+    @Test("standalone paragraph review anchors rejoin the preceding prose paragraph")
+    func standaloneParagraphReviewAnchorsRejoinPrecedingParagraph() async throws {
+        let svg = """
+        <svg viewBox="5 14 45 36" xmlns="http://www.w3.org/2000/svg" width="180" height="144">
+          <path d="M44 48 H20 V16 H44 Z" fill="none" stroke="#666"/>
+          <text x="32" y="38" text-anchor="middle" font-size="18">12</text>
+        </svg>
+        """
+        let base64 = Data(svg.utf8).base64EncodedString()
+        func bubble(paragraphID: Int) -> String {
+            let config = #"{"style":"text","type":"qd","click":"showCmt(123,456,\#(paragraphID),999)"}"#
+            return #"<img src="data:image/svg+xml;base64,\#(base64),\#(config)">"#
+        }
+
+        // Some source chapters close each prose <p> before appending its review image. Without
+        // structural repair, the anchor becomes an anonymous paragraph on the following line.
+        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: "第一章",
+            plainTextContent: "第一段。\n第二段。",
+            rawHTMLContent: """
+            <p>第一段。</p>\(bubble(paragraphID: 1))
+            <p>第二段。</p><p>\(bubble(paragraphID: 2))</p>
+            """,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "起点限免（同人小说网）",
+                sourceURL: "https://m.qidian.com#同人小说网"
+            )
+        )
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(
+                index: 0,
+                title: "第一章",
+                plainText: "第一段。\n第二段。",
+                body: .html(normalizedHTML),
+                sourceHref: "https://m.qidian.com/chapter/456"
+            )
+        ])
+        let rendered = try await OnlineProviderAttributedStringBuilder(
+            provider: provider,
+            renderSize: CGSize(width: 360, height: 640)
+        ).buildChapter(
+            at: 0,
+            settings: Self.settings,
+            themeTextColor: .label,
+            themeBackgroundColor: .systemBackground
+        ).attributedString
+
+        var reviewLocations: [Int] = []
+        rendered.enumerateAttribute(
+            HTMLAttributedStringBuilder.internalLinkAttribute,
+            in: NSRange(location: 0, length: rendered.length)
+        ) { value, range, _ in
+            guard let href = value as? String, href.hasPrefix("ydreview://") else { return }
+            reviewLocations.append(range.location)
+        }
+        #expect(reviewLocations.count == 2)
+
+        let renderedText = rendered.string as NSString
+        for (index, paragraphText) in ["第一段。", "第二段。"].enumerated() {
+            let textRange = renderedText.range(of: paragraphText)
+            try #require(textRange.location != NSNotFound)
+            let paragraphRange = renderedText.paragraphRange(for: textRange)
+            try #require(reviewLocations.indices.contains(index))
+            let reviewLocation = reviewLocations[index]
+            #expect(
+                NSLocationInRange(reviewLocation, paragraphRange),
+                "\(paragraphText) review rendered in a separate paragraph"
+            )
+        }
+    }
+
     // MARK: - Provider cache miss becomes engine signal
 
     @Test("provider cache miss becomes engine contentNotCached")

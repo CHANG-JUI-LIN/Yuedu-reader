@@ -63,4 +63,22 @@ struct GlobalAppTypographyTests {
 
         #expect(accessibility.pointSize > normal.pointSize)
     }
+
+    @Test("custom tab font keeps the caption2 base size")
+    func customTabFontDoesNotScaleWithDynamicType() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Ahem.ttf")
+        let info = try UserFontStorageManager.shared.importFont(fileURL: fixtureURL)
+        defer { UserFontStorageManager.shared.delete(info) }
+
+        let font = try #require(
+            GlobalAppTypographyUIKitBridge.tabBarFont(
+                postScriptName: info.postScriptName
+            )
+        )
+
+        #expect(font.fontName == info.postScriptName)
+        #expect(abs(font.pointSize - 11) < 0.01)
+    }
 }

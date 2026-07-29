@@ -852,6 +852,67 @@ class ModernParserBridge {
             "title": chapterRef?.title ?? "",
             "vars": String(paraState.prefix(160))
         ])
+        // Source-scoped diagnostic probe for 同人小说网. It observes the source's own existing
+        // getComments boundary without changing its arguments or return value, and is restored
+        // immediately after this one content-rule evaluation. This distinguishes duplicate
+        // bubbles already present in `/novel/chap` content from duplicates introduced by
+        // getComments itself. Only semantic IDs/counts are logged — never chapter prose or token.
+        let shouldProbeTongrenReviews =
+            source.bookSourceName.contains("同人小说网")
+            || source.bookSourceName.contains("同人小說網")
+        if shouldProbeTongrenReviews {
+            _ = jsEngine.evaluate(
+                """
+                (function () {
+                    if (typeof getComments !== 'function' || getComments.__ydReviewFlowWrapped) {
+                        return 'false';
+                    }
+                    var original = getComments;
+                    function reviewFlowDiagnostic(stage, value, fallbackBookId, fallbackChapterId) {
+                        var text = String(value || '');
+                        var tags = text.match(/<img\\b[^>]*>/gi) || [];
+                        var sequence = [];
+                        var counts = Object.create(null);
+                        for (var i = 0; i < tags.length; i++) {
+                            var match = tags[i].match(
+                                /(?:showCmt|androidshowCmt|createSvg)\\s*\\(\\s*['"]?(-?\\d+)['"]?\\s*,\\s*['"]?(-?\\d+)['"]?\\s*,\\s*['"]?(-?\\d+)/i
+                            );
+                            if (!match) continue;
+                            var key = match[1] + '/' + match[2] + '/' + match[3];
+                            sequence.push(key);
+                            counts[key] = (counts[key] || 0) + 1;
+                        }
+                        var duplicates = [];
+                        var duplicateInstances = 0;
+                        Object.keys(counts).sort().forEach(function (key) {
+                            if (counts[key] <= 1) return;
+                            duplicates.push(key + '×' + counts[key]);
+                            duplicateInstances += counts[key] - 1;
+                        });
+                        java.log(
+                            'reviewFlow stage=' + stage
+                            + ' bookId=' + String(fallbackBookId || '')
+                            + ' chapterId=' + String(fallbackChapterId || '')
+                            + ' markers=' + sequence.length
+                            + ' duplicateInstances=' + duplicateInstances
+                            + ' duplicateTargets=' + (duplicates.slice(0, 16).join(',') || '-')
+                            + ' targetSequence=' + (sequence.slice(0, 32).join(',') || '-')
+                        );
+                    }
+                    var wrapped = function (content, bookId, chapterId) {
+                        reviewFlowDiagnostic('getCommentsInput', content, bookId, chapterId);
+                        var output = original.apply(this, arguments);
+                        reviewFlowDiagnostic('getCommentsOutput', output, bookId, chapterId);
+                        return output;
+                    };
+                    wrapped.__ydReviewFlowWrapped = true;
+                    wrapped.__ydReviewFlowOriginal = original;
+                    getComments = wrapped;
+                    return 'true';
+                })()
+                """
+            )
+        }
         // 段评样式: content JS 的段评注入函数在 iOS 上（deviceType=='苹果'）会走「iOS 变体」，
         // 产出 <comment count onPress> → app 原生 .commentBadge，完全忽略书源「段评样式」SVG
         // 设置（起点对话框等）。为忠实还原书源样式，在 content 规则执行前把「iOS 变体」别名成
@@ -902,6 +963,16 @@ class ModernParserBridge {
                 if (typeof globalThis.__ydOriginalCommentDeviceType === 'function') {
                     deviceType = globalThis.__ydOriginalCommentDeviceType;
                     delete globalThis.__ydOriginalCommentDeviceType;
+                }
+                if (typeof getComments === 'function'
+                    && getComments.__ydReviewFlowWrapped
+                    && typeof getComments.__ydReviewFlowOriginal === 'function') {
+                    getComments = getComments.__ydReviewFlowOriginal;
+                }
+                if (typeof getCommentsios === 'function'
+                    && getCommentsios.__ydReviewFlowWrapped
+                    && typeof getCommentsios.__ydReviewFlowOriginal === 'function') {
+                    getCommentsios = getCommentsios.__ydReviewFlowOriginal;
                 }
             })()
             """
@@ -956,6 +1027,15 @@ class ModernParserBridge {
             "jsError": contentRuleError ?? "none",
             "head": String(content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(180))
         ])
+        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
+            stage: "ruleOutput",
+            html: content,
+            sourceName: source.bookSourceName,
+            context: [
+                "title": chapterRef?.title ?? "",
+                "chapterIndex": chapterRef?.index ?? -1,
+            ]
+        )
         if source.bookSourceName.contains("书山聚合") {
             NSLog(
                 "❖SHUSHAN TRACE❖ stage=content.end len=%d bubbles=%d commentTags=%d showCmt=%d jsNetMs=%d jsError=%@",

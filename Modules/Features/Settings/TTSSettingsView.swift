@@ -898,6 +898,25 @@ struct TTSSourceLoginView: View {
                     Text(option).tag(option)
                 }
             }
+        case .toggle:
+            if let chars = LoginToggleChars(options: field.options) {
+                Toggle(field.name, isOn: Binding<Bool>(
+                    get: { chars.isOn(stored: fieldValues[field.name], default: field.defaultValue) },
+                    set: {
+                        fieldValues[field.name] = chars.value(isOn: $0)
+                        // Runs the row's `action` when it has one, like a button row.
+                        handleButtonAction(field)
+                    }
+                ))
+            } else {
+                // `chars` that isn't a two-state pair can't be a switch — show the
+                // choices rather than guessing which one means on.
+                Picker(field.name, selection: value) {
+                    ForEach(field.options, id: \.self) { option in
+                        Text(option).tag(option)
+                    }
+                }
+            }
         case .button:
             Section {
                 Button(field.name) {
