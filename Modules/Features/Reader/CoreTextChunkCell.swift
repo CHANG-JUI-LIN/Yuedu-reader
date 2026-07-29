@@ -484,6 +484,11 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         drawView.chunk?.evictFrame()
+        // `setNeedsDisplay()` is deferred. Without dropping the backing stores
+        // immediately, a reused cell can composite its previous chunk for one
+        // frame while fast scrolling, which appears as text/image ghosting.
+        drawView.layer.contents = nil
+        backdropView.layer.contents = nil
         backdropView.chunk = nil
         backdropView.frame = .zero
         drawView.chunk = nil

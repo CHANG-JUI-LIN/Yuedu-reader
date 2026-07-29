@@ -24,6 +24,7 @@ struct ReaderDownloadOptionsView: View {
     let onStart: (Int, Int) -> Void
     let onPause: () -> Void
     let onResume: () -> Void
+    let onSkipFailed: () -> Void
     let onRemove: () -> Void
     let onClose: () -> Void
 
@@ -42,6 +43,7 @@ struct ReaderDownloadOptionsView: View {
         onStart: @escaping (Int, Int) -> Void,
         onPause: @escaping () -> Void,
         onResume: @escaping () -> Void,
+        onSkipFailed: @escaping () -> Void,
         onRemove: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
@@ -52,6 +54,7 @@ struct ReaderDownloadOptionsView: View {
         self.onStart = onStart
         self.onPause = onPause
         self.onResume = onResume
+        self.onSkipFailed = onSkipFailed
         self.onRemove = onRemove
         self.onClose = onClose
 
@@ -234,6 +237,13 @@ struct ReaderDownloadOptionsView: View {
                     systemImage: downloadState == .downloading ? "pause.fill" : "arrow.clockwise"
                 )
             }
+            if hasFailedChapters && downloadState != .downloading {
+                Button {
+                    onSkipFailed()
+                } label: {
+                    Label(localized("略過失敗章節"), systemImage: "forward.end")
+                }
+            }
             if downloadState != .downloading {
                 Button(role: .destructive) {
                     onRemove()
@@ -292,6 +302,10 @@ struct ReaderDownloadOptionsView: View {
     private var progressValue: Double {
         let total = max(totalCount, 1)
         return min(max(Double(completedCount) / Double(total), 0), 1)
+    }
+
+    private var hasFailedChapters: Bool {
+        clampedTask?.failedChapters.isEmpty == false
     }
 
     private var statusTitle: String {

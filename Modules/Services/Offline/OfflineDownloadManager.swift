@@ -9,6 +9,7 @@ protocol OfflineDownloadManaging: Sendable {
     func pause(bookId: UUID, store: BookStore) async
     func resume(book: ReadingBook, store: BookStore) async
     func retryFailed(book: ReadingBook, store: BookStore) async
+    func skipFailed(bookId: UUID, store: BookStore) async
     func remove(bookId: UUID, store: BookStore) async throws
     func reconcileInterruptedDownloads(store: BookStore) async
 }
@@ -118,6 +119,22 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         }
         guard shouldRetry else { return }
         enqueue(book, store: store)
+    }
+
+    func skipFailed(bookId: UUID, store: BookStore) async {
+        guard bookJobs[bookId] == nil,
+              !waitingBooks.contains(where: { $0.book.id == bookId }) else {
+            return
+        }
+        await MainActor.run {
+            guard var task = store.books.first(where: { $0.id == bookId })?.offlineDownloadTask,
+                  task.pendingIndices.isEmpty,
+                  !task.failedChapters.isEmpty else {
+                return
+            }
+            task.removeRequestedIndices(Set(task.failedChapters.keys))
+            store.replaceOfflineDownloadTask(bookId: bookId, task: task, isRunning: false)
+        }
     }
 
     func remove(bookId: UUID, store: BookStore) async throws {

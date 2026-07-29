@@ -345,14 +345,16 @@ struct ReaderQuickThemePanelView: View {
     }
 
     private func readingBackgroundButton(_ background: ReaderTheme) -> some View {
-        let selected = settings.readerCustomBackgroundMode == .none
+        let selected = (background == .night || settings.readerCustomBackgroundMode == .none)
             && !settings.appearanceBindReaderTheme
             && readerTheme == background
         return Button {
             settings.readerFollowSystemTheme = false
             settings.appearanceBindReaderTheme = false
-            settings.clearReaderCustomBackground()
-            AppearanceThemePreset.activeReaderTheme = nil
+            if background != .night {
+                settings.clearReaderCustomBackground()
+                AppearanceThemePreset.activeReaderTheme = nil
+            }
             readerTheme = background
         } label: {
             ZStack(alignment: .topTrailing) {
@@ -400,7 +402,7 @@ struct ReaderQuickThemePanelView: View {
     }
 
     private var customReadingBackgroundButton: some View {
-        let selected = settings.readerCustomBackgroundMode != .none
+        let selected = settings.readerCustomBackgroundMode != .none && readerTheme != .night
         return Button {
             customBackgroundColor = Color(uiColor: customColorEditorInitialUIColor)
             showCustomBackgroundOptions = true
@@ -492,8 +494,6 @@ struct ReaderQuickThemePanelView: View {
 
     private func applyThemeMode(_ mode: ReaderQuickThemeMode) {
         settings.appearanceBindReaderTheme = false
-        settings.clearReaderCustomBackground()
-        AppearanceThemePreset.activeReaderTheme = nil
         switch mode {
         case .light:
             settings.readerFollowSystemTheme = false

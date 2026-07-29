@@ -52,6 +52,30 @@ struct ExploreNavigationAndMetadataTests {
         #expect(wordCount == "374萬字")
     }
 
+    @Test("discover source picker targets the current source")
+    func sourcePickerTargetsCurrentSource() {
+        let sourceIds = [UUID(), UUID(), UUID()]
+
+        let target = DiscoverSourcePickerPositioning.target(
+            selectedSourceId: sourceIds[1],
+            visibleSourceIds: sourceIds
+        )
+
+        #expect(target == sourceIds[1])
+    }
+
+    @Test("discover source picker has no target when selection is filtered out")
+    func sourcePickerIgnoresFilteredSelection() {
+        let selectedSourceId = UUID()
+
+        let target = DiscoverSourcePickerPositioning.target(
+            selectedSourceId: selectedSourceId,
+            visibleSourceIds: [UUID(), UUID()]
+        )
+
+        #expect(target == nil)
+    }
+
     private func makeBook() -> OnlineBook {
         OnlineBook(
             name: "夜無疆",

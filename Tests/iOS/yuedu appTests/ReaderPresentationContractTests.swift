@@ -211,24 +211,54 @@ struct ReaderPresentationContractTests {
         #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 5, totalPages: 6) == nil)
     }
 
-    @Test("curl back pages stay opaque solid color but keep stable position identity")
-    func curlBackPageStaysSolidColorWithStableIdentity() {
+    @Test("curl back pages display rendered built-in color, custom color, and custom image materials")
+    func curlBackPageDisplaysEveryRenderedPageMaterial() throws {
         let position = CoreTextReadingPosition(spineIndex: 2, charOffset: 64)
-        let backPage = PageBackViewController(
-            virtualIndex: 7,
-            logicalPageIndex: 3,
-            globalPageIndex: 4,
-            backgroundColor: .white,
-            readingPosition: position
-        )
+        let materials = [
+            ("built-in color", solidImage(color: .systemBackground)),
+            ("custom color", solidImage(color: UIColor(red: 0.18, green: 0.31, blue: 0.22, alpha: 1))),
+            ("custom image", splitColorImage(left: .systemPink, right: .systemTeal))
+        ]
 
-        backPage.loadViewIfNeeded()
+        for (name, renderedPageImage) in materials {
+            let backPage = PageBackViewController(
+                virtualIndex: 7,
+                logicalPageIndex: 3,
+                globalPageIndex: 4,
+                backgroundColor: .white,
+                renderedPageImage: renderedPageImage,
+                readingPosition: position
+            )
 
-        #expect(backPage.view.isOpaque)
-        #expect(backPage.view.backgroundColor == .white)
-        #expect(backPage.logicalPageIndex == 3)
-        #expect(backPage.globalPageIndex == 4)
-        #expect(backPage.coreTextReadingPosition == position)
+            backPage.loadViewIfNeeded()
+
+            let imageView = try #require(
+                backPage.view.subviews.compactMap { $0 as? UIImageView }.first,
+                "Missing rendered material for \(name)"
+            )
+            #expect(imageView.image === renderedPageImage)
+            #expect(imageView.contentMode == .scaleToFill)
+            #expect(backPage.view.isOpaque)
+            #expect(backPage.logicalPageIndex == 3)
+            #expect(backPage.globalPageIndex == 4)
+            #expect(backPage.coreTextReadingPosition == position)
+        }
+    }
+
+    private func solidImage(color: UIColor) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            context.cgContext.setFillColor(color.cgColor)
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+    }
+
+    private func splitColorImage(left: UIColor, right: UIColor) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            context.cgContext.setFillColor(left.cgColor)
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 4, height: 8))
+            context.cgContext.setFillColor(right.cgColor)
+            context.cgContext.fill(CGRect(x: 4, y: 0, width: 4, height: 8))
+        }
     }
 
     @Test("session store keeps reader presentation state as a single update surface")

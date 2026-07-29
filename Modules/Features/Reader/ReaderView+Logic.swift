@@ -367,6 +367,11 @@ extension ReaderView {
         )
     }
 
+    func skipFailedOfflineDownload() {
+        guard let b = book else { return }
+        readerViewModel.skipFailedOfflineDownload(bookId: b.id, store: store)
+    }
+
     /// Source change search has been moved to ReaderViewModel.loadOtherOrigins. This method only triggers it and passes required data.
     func loadOtherOrigins(forceRefresh: Bool = false) {
         guard let b = book, let currentSourceId = b.bookSourceId else { return }

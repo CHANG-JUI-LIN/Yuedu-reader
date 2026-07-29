@@ -150,8 +150,19 @@ enum ReaderTheme: String, CaseIterable {
         Color(uiColor: uiAccentColor)
     }
 
+    /// Night mode is a reversible presentation override. Custom colors and
+    /// background artwork remain configured underneath it and become visible
+    /// again when the reader returns to a non-night theme.
+    var allowsReaderBackgroundImage: Bool {
+        self != .night
+    }
+
+    private var activeAppearancePreset: AppearanceThemePreset? {
+        self == .night ? nil : AppearanceThemePreset.activeReaderTheme
+    }
+
     var uiBackgroundColor: UIColor {
-        if let preset = AppearanceThemePreset.activeReaderTheme { return preset.background }
+        if let preset = activeAppearancePreset { return preset.background }
         return intrinsicUIBackgroundColor
     }
 
@@ -165,7 +176,7 @@ enum ReaderTheme: String, CaseIterable {
     }
 
     var uiTextColor: UIColor {
-        if let preset = AppearanceThemePreset.activeReaderTheme { return preset.text }
+        if let preset = activeAppearancePreset { return preset.text }
         return intrinsicUITextColor
     }
 
@@ -179,7 +190,7 @@ enum ReaderTheme: String, CaseIterable {
     }
 
     var uiAccentColor: UIColor {
-        if let preset = AppearanceThemePreset.activeReaderTheme { return preset.accent }
+        if let preset = activeAppearancePreset { return preset.accent }
         return Self.weChatAccent
     }
 
@@ -197,7 +208,7 @@ enum ReaderTheme: String, CaseIterable {
     }
 
     var uiBarColor: UIColor {
-        if let preset = AppearanceThemePreset.activeReaderTheme { return preset.bar }
+        if let preset = activeAppearancePreset { return preset.bar }
         switch self {
         case .white: return .white
         case .green:

@@ -186,7 +186,8 @@ struct ReaderView: View {
     /// behind an opaque CoreText page. The same URL is passed into render settings
     /// so every paged canvas draws it beneath the text.
     var activeReaderBackgroundImageURL: URL? {
-        guard settings.readerCustomBackgroundMode == .image,
+        guard readerTheme.allowsReaderBackgroundImage,
+              settings.readerCustomBackgroundMode == .image,
               let url = settings.readerCustomBackgroundImageURL,
               FileManager.default.fileExists(atPath: url.path)
         else {
@@ -1899,6 +1900,7 @@ struct ReaderView: View {
                         },
                         onPause: { pauseOfflineDownload() },
                         onResume: { resumeOfflineDownload() },
+                        onSkipFailed: { skipFailedOfflineDownload() },
                         onRemove: {
                             Task {
                                 do {

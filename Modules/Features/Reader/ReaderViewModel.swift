@@ -197,6 +197,11 @@ final class ReaderViewModel: ObservableObject {
         Task { await offlineDownloadManager.retryFailed(book: book, store: store) }
     }
 
+    func skipFailedOfflineDownload(bookId: UUID, store: BookStore) {
+        guard let offlineDownloadManager else { return }
+        Task { await offlineDownloadManager.skipFailed(bookId: bookId, store: store) }
+    }
+
     // MARK: - Neighbour Prefetch
 
     /// Prefetches chapters around the given center index through the injected coordinator.

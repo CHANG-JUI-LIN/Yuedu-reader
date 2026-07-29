@@ -30,6 +30,36 @@ struct CoreTextScrollTests {
         #expect(Self.bytes(of: ReaderTheme.night.uiAccentColor) == [56, 151, 241, 255])
     }
 
+    @Test("night mode overrides custom reader colors and light mode restores them")
+    func nightModeTemporarilyOverridesCustomReaderColors() {
+        let previousPreset = AppearanceThemePreset.activeReaderTheme
+        defer { AppearanceThemePreset.activeReaderTheme = previousPreset }
+        AppearanceThemePreset.activeReaderTheme = AppearanceThemePreset.preset(
+            from: AppearanceCustomTheme(
+                name: "Custom Reader",
+                backgroundHex: 0x123456,
+                textHex: 0x654321,
+                barHex: 0x234567,
+                accentHex: 0x345678,
+                dialogueHex: 0x456789
+            )
+        )
+
+        #expect(Self.bytes(of: ReaderTheme.white.uiBackgroundColor) == [18, 52, 86, 255])
+        #expect(Self.bytes(of: ReaderTheme.night.uiBackgroundColor) == [0, 0, 0, 255])
+        #expect(Self.bytes(of: ReaderTheme.night.uiTextColor) == [217, 217, 217, 255])
+        #expect(Self.bytes(of: ReaderTheme.night.uiBarColor) == [26, 26, 26, 255])
+        #expect(Self.bytes(of: ReaderTheme.white.uiBackgroundColor) == [18, 52, 86, 255])
+    }
+
+    @Test("night mode suppresses custom reader background images")
+    func nightModeSuppressesReaderBackgroundImages() {
+        #expect(ReaderTheme.night.allowsReaderBackgroundImage == false)
+        #expect(ReaderTheme.white.allowsReaderBackgroundImage)
+        #expect(ReaderTheme.green.allowsReaderBackgroundImage)
+        #expect(ReaderTheme.sepia.allowsReaderBackgroundImage)
+    }
+
     @Test("collection scroll controller is available for vertical scroll")
     @MainActor
     func collectionScrollControllerInitializes() {
@@ -67,6 +97,23 @@ struct CoreTextScrollTests {
         )
 
         #expect(controller.scrollAxis == .horizontalRTL)
+    }
+
+    @Test("reused chunk cell immediately discards its previous rendered contents")
+    @MainActor
+    func reusedChunkCellDiscardsPreviousRenderedContents() throws {
+        let cell = CoreTextChunkCollectionCell(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 480)
+        )
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { context in
+            UIColor.black.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        cell.drawView.layer.contents = try #require(image.cgImage)
+
+        cell.prepareForReuse()
+
+        #expect(cell.drawView.layer.contents == nil)
     }
 
     @Test("vertical RTL scroll cover fits viewport width instead of text extent")

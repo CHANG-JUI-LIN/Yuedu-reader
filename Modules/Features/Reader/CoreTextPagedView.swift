@@ -578,6 +578,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 logicalPageIndex: logicalPageIndex,
                 globalPageIndex: contentPage,
                 backgroundColor: curlBackPageColor,
+                // CoreText/TXT snapshots contain the final composed page, so built-in
+                // colors, custom colors, custom background images, and text stay on
+                // the same rendering path. The solid color remains only while a
+                // provider cannot snapshot (an unloaded placeholder or current FXL);
+                // remove it once every provider implements renderSnapshot(forPage:).
+                renderedPageImage: currentEngine.renderSnapshot(forPage: contentPage),
                 readingPosition: currentEngine.readingPosition(forPage: contentPage)
             )
         }

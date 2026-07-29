@@ -1568,6 +1568,7 @@
 "失敗章節" = "Failed Chapters";
 "%d 章失敗" = "%d Chapters Failed";
 "重試失敗章節" = "Retry Failed Chapters";
+"略過失敗章節" = "Skip Failed Chapters";
 "新增下載範圍" = "Add Download Range";
 
 /* Paywall */

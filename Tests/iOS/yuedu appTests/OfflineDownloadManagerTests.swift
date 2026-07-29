@@ -97,6 +97,30 @@ struct OfflineDownloadManagerTests {
         #expect(fixture.store.books.first?.offlineDownloadState == .available)
     }
 
+    @Test("skipping failed chapters finishes the download without fetching them again")
+    @MainActor
+    func skipFailedFinishesWithoutRefetching() async throws {
+        let fixture = makeFixture(chapters: 4, failingIndices: [1, 3])
+        defer { fixture.cleanup() }
+
+        await fixture.manager.start(
+            book: fixture.book,
+            selection: .range(0...3),
+            store: fixture.store
+        )
+        await fixture.manager.waitUntilIdle()
+        #expect(fixture.store.books.first?.offlineDownloadState == .partial)
+
+        await fixture.manager.skipFailed(bookId: fixture.book.id, store: fixture.store)
+
+        let task = try #require(fixture.store.books.first?.offlineDownloadTask)
+        #expect(task.requestedIndices == Set([0, 2]))
+        #expect(task.completedIndices == Set([0, 2]))
+        #expect(task.failedChapters.isEmpty)
+        #expect(fixture.store.books.first?.offlineDownloadState == .available)
+        #expect(await fixture.fetcher.requestedIndices == [0, 1, 2, 3])
+    }
+
     @Test("removing a download survives a reconcile pass that is mid-validation")
     @MainActor
     func removalBeatsConcurrentReconcile() async throws {

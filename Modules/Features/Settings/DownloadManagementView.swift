@@ -163,16 +163,39 @@ struct DownloadManagementView: View {
                                 }
                                 .font(DSFont.caption)
                                 .buttonStyle(.borderless)
-                                Button(role: .destructive) {
-                                    bookPendingRemoval = book
-                                } label: {
-                                    // `Label` + `.iconOnly` keeps the button's own name for
-                                    // VoiceOver; a bare `Image(systemName:)` would stay a
-                                    // focusable element reading out "trash".
-                                    Label(localized("移除"), systemImage: "trash")
-                                        .labelStyle(.iconOnly)
+                                if book.offlineDownloadState == .partial
+                                    || book.offlineDownloadState == .failed {
+                                    Menu {
+                                        Button {
+                                            skipFailedChapters(for: book)
+                                        } label: {
+                                            Label(
+                                                localized("略過失敗章節"),
+                                                systemImage: "forward.end"
+                                            )
+                                        }
+                                        Button(role: .destructive) {
+                                            bookPendingRemoval = book
+                                        } label: {
+                                            Label(localized("移除"), systemImage: "trash")
+                                        }
+                                    } label: {
+                                        Label(localized("更多"), systemImage: "ellipsis.circle")
+                                            .labelStyle(.iconOnly)
+                                    }
+                                    .buttonStyle(.borderless)
+                                } else {
+                                    Button(role: .destructive) {
+                                        bookPendingRemoval = book
+                                    } label: {
+                                        // `Label` + `.iconOnly` keeps the button's own name for
+                                        // VoiceOver; a bare `Image(systemName:)` would stay a
+                                        // focusable element reading out "trash".
+                                        Label(localized("移除"), systemImage: "trash")
+                                            .labelStyle(.iconOnly)
+                                    }
+                                    .buttonStyle(.borderless)
                                 }
-                                .buttonStyle(.borderless)
                             }
                         }
                     }
@@ -285,6 +308,12 @@ struct DownloadManagementView: View {
     private func pauseDownload(for book: ReadingBook) {
         Task {
             await dependencies.offlineDownloadManager.pause(bookId: book.id, store: store)
+        }
+    }
+
+    private func skipFailedChapters(for book: ReadingBook) {
+        Task {
+            await dependencies.offlineDownloadManager.skipFailed(bookId: book.id, store: store)
         }
     }
 

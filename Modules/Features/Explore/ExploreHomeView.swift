@@ -789,6 +789,19 @@ private struct DiscoverSettingsFlowLayout: Layout {
 
 // MARK: - Discover Source Picker
 
+enum DiscoverSourcePickerPositioning {
+    static func target(
+        selectedSourceId: UUID?,
+        visibleSourceIds: [UUID]
+    ) -> UUID? {
+        guard let selectedSourceId,
+              visibleSourceIds.contains(selectedSourceId) else {
+            return nil
+        }
+        return selectedSourceId
+    }
+}
+
 private struct DiscoverSourcePickerView: View {
     let sources: [BookSource]
     let selectedSourceId: UUID?
@@ -806,58 +819,72 @@ private struct DiscoverSourcePickerView: View {
         }
     }
 
-    var body: some View {
-        List {
-            ForEach(filteredSources) { source in
-                Button {
-                    onSelect(source)
-                } label: {
-                    HStack(spacing: DSSpacing.md) {
-                        Image(systemName: "books.vertical")
-                            .foregroundColor(DSColor.accent)
-                            .frame(width: 28)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(source.bookSourceName)
-                                .foregroundColor(DSColor.textPrimary)
-                                .lineLimit(1)
-                            Text(source.bookSourceUrl)
-                                .font(DSFont.caption)
-                                .foregroundColor(DSColor.textSecondary)
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: DSSpacing.sm)
-                        if source.id == selectedSourceId {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(DSColor.accent)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .overlay {
-            if filteredSources.isEmpty {
-                ContentUnavailableView.search(text: searchText)
-            }
-        }
-        .navigationTitle(localized("切換發現頁"))
-        .toolbarTitleDisplayMode(.inline)
-        .themedAppSurface(for: .explore)
-        .searchable(
-            text: $searchText,
-            placement: .navigationBarDrawer(displayMode: .always),
-            prompt: localized("搜尋書源名稱或網址")
+    private var scrollTargetId: UUID? {
+        DiscoverSourcePickerPositioning.target(
+            selectedSourceId: selectedSourceId,
+            visibleSourceIds: filteredSources.map(\.id)
         )
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button {
-                    onDismiss()
-                } label: {
-                    Label(localized("完成"), systemImage: "checkmark")
-                        .labelStyle(.iconOnly)
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            List {
+                ForEach(filteredSources) { source in
+                    Button {
+                        onSelect(source)
+                    } label: {
+                        HStack(spacing: DSSpacing.md) {
+                            Image(systemName: "books.vertical")
+                                .foregroundColor(DSColor.accent)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(source.bookSourceName)
+                                    .foregroundColor(DSColor.textPrimary)
+                                    .lineLimit(1)
+                                Text(source.bookSourceUrl)
+                                    .font(DSFont.caption)
+                                    .foregroundColor(DSColor.textSecondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: DSSpacing.sm)
+                            if source.id == selectedSourceId {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(DSColor.accent)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .id(source.id)
                 }
-                .accessibilityLabel(localized("完成"))
+            }
+            .overlay {
+                if filteredSources.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
+                }
+            }
+            .navigationTitle(localized("切換發現頁"))
+            .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .explore)
+            .searchable(
+                text: $searchText,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: localized("搜尋書源名稱或網址")
+            )
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        onDismiss()
+                    } label: {
+                        Label(localized("完成"), systemImage: "checkmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel(localized("完成"))
+                }
+            }
+            .task(id: scrollTargetId) {
+                guard let scrollTargetId else { return }
+                proxy.scrollTo(scrollTargetId, anchor: .center)
             }
         }
     }

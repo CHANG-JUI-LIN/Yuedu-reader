@@ -2265,12 +2265,15 @@ final class PageBackViewController: UIViewController {
     let coreTextReadingPosition: CoreTextReadingPosition?
 
     private let pageBackgroundColor: UIColor
+    private let renderedPageImage: UIImage?
+    private let imageView = UIImageView()
 
     init(
         virtualIndex: Int,
         logicalPageIndex: Int,
         globalPageIndex: Int,
         backgroundColor: UIColor,
+        renderedPageImage: UIImage?,
         readingPosition: CoreTextReadingPosition? = nil
     ) {
         self.virtualIndex = virtualIndex
@@ -2278,6 +2281,7 @@ final class PageBackViewController: UIViewController {
         self.globalPageIndex = globalPageIndex
         self.coreTextReadingPosition = readingPosition
         self.pageBackgroundColor = backgroundColor
+        self.renderedPageImage = renderedPageImage
         super.init(nibName: nil, bundle: nil)
         view.backgroundColor = backgroundColor
     }
@@ -2288,10 +2292,18 @@ final class PageBackViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Opaque solid theme color: the underside of the curling leaf never
-        // shows the page content (no show-through text).
         view.backgroundColor = pageBackgroundColor
         view.isOpaque = true
+
+        if let renderedPageImage {
+            imageView.image = renderedPageImage
+            imageView.contentMode = .scaleToFill
+            imageView.clipsToBounds = true
+            imageView.frame = view.bounds
+            imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            view.addSubview(imageView)
+        }
+
         // Purely decorative half of the curl pair — never announce it.
         view.accessibilityElementsHidden = true
     }
