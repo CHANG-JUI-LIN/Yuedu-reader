@@ -504,6 +504,12 @@ struct BookSourceListView: View {
     @ViewBuilder
     private func sourceRowContent(source: BookSource) -> some View {
         HStack(spacing: 0) {
+            Rectangle()
+                .fill(DSColor.warning)
+                .opacity(isFirstSource(source) ? 1 : 0)
+                .frame(width: DSSpacing.xs)
+                .accessibilityHidden(true)
+
             Button {
                 toggleSelection(source.id)
             } label: {
