@@ -17,11 +17,17 @@ struct AuthAndICloudConfigurationTests {
 
     @Test("iCloud payload covers existing sync data files")
     func iCloudPayloadCoversExistingSyncDataFiles() {
-        let documentsDirectory = URL(fileURLWithPath: "/tmp/yuedu-documents", isDirectory: true)
+        let applicationSupportDirectory = URL(
+            fileURLWithPath: "/tmp/yuedu-application-support",
+            isDirectory: true
+        )
         let libraryDirectory = URL(fileURLWithPath: "/tmp/yuedu-library", isDirectory: true)
+        let bookSourcesFile = applicationSupportDirectory.appendingPathComponent("book_sources.json")
+        let booksMetadataFile = applicationSupportDirectory.appendingPathComponent("books_meta.json")
 
         let files = ICloudSyncPayload.defaultFiles(
-            documentsDirectory: documentsDirectory,
+            bookSourcesFile: bookSourcesFile,
+            booksMetadataFile: booksMetadataFile,
             libraryDirectory: libraryDirectory
         )
 
@@ -36,8 +42,8 @@ struct AuthAndICloudConfigurationTests {
             "replace_rules.json"
         ])
         #expect(files.map { $0.localURL.deletingLastPathComponent() } == [
-            documentsDirectory,
-            documentsDirectory,
+            applicationSupportDirectory,
+            applicationSupportDirectory,
             libraryDirectory
         ])
     }
