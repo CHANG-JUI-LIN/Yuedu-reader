@@ -7,6 +7,42 @@ import UIKit
 
 struct EPUBRenderingTests {
 
+    @Test func cjkPrimaryFontIsPreservedForArabicDigitsAndLatinText() async throws {
+        let cjkFont = try #require(UIFont(name: "PingFangSC-Regular", size: 20))
+        let style = RenderStyle(fontFamilies: [cjkFont.fontName])
+        let renderer = NodeAttributedStringRenderer(
+            config: NodeAttributedStringRenderer.Config(
+                from: testRenderSettings(),
+                textColor: .black,
+                baseFontSize: 20,
+                renderWidth: 320
+            )
+        )
+
+        let attributed = await renderer.render([
+            .paragraph([.text("年齡 25 / 27，身高 178cm，血型 AB型")], style: style)
+        ])
+        let digitRange = (attributed.string as NSString).range(of: "25")
+        let latinRange = (attributed.string as NSString).range(of: "AB")
+        let digitFont = try #require(
+            attributed.attribute(.font, at: digitRange.location, effectiveRange: nil) as? UIFont
+        )
+        let latinFont = try #require(
+            attributed.attribute(.font, at: latinRange.location, effectiveRange: nil) as? UIFont
+        )
+        let shapedDigitFontName = try #require(
+            shapedFontName(at: digitRange.location, in: attributed)
+        )
+        let shapedLatinFontName = try #require(
+            shapedFontName(at: latinRange.location, in: attributed)
+        )
+
+        #expect(digitFont.fontName == cjkFont.fontName)
+        #expect(latinFont.fontName == cjkFont.fontName)
+        #expect(shapedDigitFontName == cjkFont.fontName)
+        #expect(shapedLatinFontName == cjkFont.fontName)
+    }
+
     // MARK: - HR divider has correct attribute
 
     @Test func hrDividerCarriesAttribute() {
@@ -2293,6 +2329,24 @@ private func imageContainsVisiblePixel(_ image: UIImage) -> Bool {
     ) else { return false }
     context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
     return stride(from: 3, to: pixels.count, by: 4).contains { pixels[$0] != 0 }
+}
+
+private func shapedFontName(
+    at utf16Offset: Int,
+    in attributed: NSAttributedString
+) -> String? {
+    let line = CTLineCreateWithAttributedString(attributed)
+    for run in CTLineGetGlyphRuns(line) as! [CTRun] {
+        let range = CTRunGetStringRange(run)
+        guard utf16Offset >= range.location,
+              utf16Offset < range.location + range.length
+        else { continue }
+        let attributes = CTRunGetAttributes(run) as NSDictionary
+        guard let fontValue = attributes[kCTFontAttributeName] else { return nil }
+        let font = fontValue as! CTFont
+        return CTFontCopyPostScriptName(font) as String
+    }
+    return nil
 }
 
 private func testHTMLConfig() -> HTMLAttributedStringBuilder.Config {

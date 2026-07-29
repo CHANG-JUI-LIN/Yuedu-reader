@@ -133,7 +133,7 @@ final class EPUBStyleResolver {
             // the embedded family has no matching face (e.g. only an upright file registered). Compare
             // requested vs. delivered so we can see whether the embedded font silently dropped the trait.
             AppLogger.parse("[EPUBStyleResolver] resolveRegisteredFont req families=\(families) weight=\(weight) italic=\(italic) -> picked alias=\(family) pickedFaceWeight=\(matchedFace.weight) pickedFaceItalic=\(matchedFace.isItalic) ps=\(matchedFace.postScriptName) | withTraitsOK=\(traitApplied != nil) finalFont=\(result.fontName) finalBold=\(finalTraits.contains(.traitBold)) finalItalic=\(finalTraits.contains(.traitItalic)) (wantedBold=\(wantBold) wantedItalic=\(italic))")
-            return wrapCJKFont(result, size: size)
+            return addFontFallbacks(to: result, size: size)
         }
 
         AppLogger.parse("[EPUBStyleResolver] resolveRegisteredFont NO VARIANT families=\(families) weight=\(weight) italic=\(italic) registeredAliases=\(registeredFontVariants.keys.sorted()) variantsPerAlias=\(registeredFontVariants.mapValues { $0.map { "w\($0.weight)\($0.isItalic ? "i" : "n")/\($0.familyName)" } })")
@@ -411,25 +411,10 @@ final class EPUBStyleResolver {
     }
 
     private func fontCascadeDescriptors() -> [UIFontDescriptor] {
-        ["Georgia", "PingFangSC-Regular", "STHeitiSC-Light", "AppleColorEmoji"]
-            .compactMap { UIFontDescriptor(name: $0, size: 0) }
+        ReaderFontCascade.descriptors()
     }
 
-    private func wrapCJKFont(_ font: UIFont, size: CGFloat) -> UIFont {
-        guard isCJKFont(font) else { return font }
-        guard let georgia = UIFont(name: "Georgia", size: size) else { return font }
-        var desc = georgia.fontDescriptor
-        let cjkDesc = font.fontDescriptor
-        let fallbackDescs = [cjkDesc]
-            + ["PingFangSC-Regular", "STHeitiSC-Light", "AppleColorEmoji"]
-                .compactMap { UIFontDescriptor(name: $0, size: 0) }
-        desc = desc.addingAttributes([.cascadeList: fallbackDescs])
-        return UIFont(descriptor: desc, size: size)
-    }
-
-    private func isCJKFont(_ font: UIFont) -> Bool {
-        var ch: UniChar = 0x4E2D
-        var glyph: CGGlyph = 0
-        return CTFontGetGlyphsForCharacters(font as CTFont, &ch, &glyph, 1) && glyph != 0
+    private func addFontFallbacks(to font: UIFont, size: CGFloat) -> UIFont {
+        ReaderFontCascade.preservingPrimary(font, size: size)
     }
 }

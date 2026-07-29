@@ -962,7 +962,7 @@ struct NodeAttributedStringRenderer {
         let bold = weight >= 600 || config.isBold
         let candidateFamilies = families + (config.fontFamily.map { [$0] } ?? [])
         if let resolved = config.resolvedFont?(candidateFamilies, bold ? max(weight, 700) : weight, italic, size) {
-            return wrapCJKFont(resolved, size: size)
+            return addFontFallbacks(to: resolved, size: size)
         }
 
         for family in candidateFamilies {
@@ -971,7 +971,7 @@ struct NodeAttributedStringRenderer {
             if let font = UIFont(name: trimmed, size: size) {
                 let withTraits = applyTraits(to: font, bold: bold, italic: italic, size: size)
                 let descriptor = withTraits.fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes())
-                return wrapCJKFont(UIFont(descriptor: descriptor, size: size), size: size)
+                return addFontFallbacks(to: UIFont(descriptor: descriptor, size: size), size: size)
             }
         }
 
@@ -1015,28 +1015,11 @@ struct NodeAttributedStringRenderer {
     }
 
     private static func cascadeAttributes() -> [UIFontDescriptor.AttributeName: Any] {
-        let fallbacks = ["Georgia", "PingFangSC-Regular", "STHeitiSC-Light", "AppleColorEmoji"]
-            .compactMap { UIFontDescriptor(name: $0, size: 0) }
-        guard !fallbacks.isEmpty else { return [:] }
-        return [.cascadeList: fallbacks]
+        ReaderFontCascade.attributes()
     }
 
-    private func wrapCJKFont(_ font: UIFont, size: CGFloat) -> UIFont {
-        guard isCJKFont(font) else { return font }
-        guard let georgia = UIFont(name: "Georgia", size: size) else { return font }
-        var desc = georgia.fontDescriptor
-        let cjkDesc = font.fontDescriptor
-        let fallbackDescs = [cjkDesc]
-            + ["PingFangSC-Regular", "STHeitiSC-Light", "AppleColorEmoji"]
-                .compactMap { UIFontDescriptor(name: $0, size: 0) }
-        desc = desc.addingAttributes([.cascadeList: fallbackDescs])
-        return UIFont(descriptor: desc, size: size)
-    }
-
-    private func isCJKFont(_ font: UIFont) -> Bool {
-        var ch: UniChar = 0x4E2D
-        var glyph: CGGlyph = 0
-        return CTFontGetGlyphsForCharacters(font as CTFont, &ch, &glyph, 1) && glyph != 0
+    private func addFontFallbacks(to font: UIFont, size: CGFloat) -> UIFont {
+        ReaderFontCascade.preservingPrimary(font, size: size)
     }
 
     // MARK: - Images / Block Decoration

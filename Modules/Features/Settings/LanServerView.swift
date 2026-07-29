@@ -27,10 +27,21 @@ struct LanServerView: View {
                             Text(localized("地址"))
                                 .foregroundColor(DSColor.textSecondary)
                             Spacer()
-                            Text("http://\(server.localIPAddress):\(server.port)")
+                            Text("http://" + server.localIPAddress + ":" + String(server.port))
                                 .font(DSFont.monospaced())
                                 .foregroundColor(DSColor.accent)
                                 .textSelection(.enabled)
+                        }
+                        if !server.accessPIN.isEmpty {
+                            HStack {
+                                Text(localized("PIN 碼"))
+                                    .foregroundColor(DSColor.textSecondary)
+                                Spacer()
+                                Text(server.accessPIN)
+                                    .font(DSFont.monospaced())
+                                    .foregroundColor(DSColor.accent)
+                                    .textSelection(.enabled)
+                            }
                         }
                     }
                 } header: {
