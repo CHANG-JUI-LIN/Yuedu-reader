@@ -1418,12 +1418,6 @@ enum ReaderHTMLUtilities {
         return "\(bookID)/\(chapterID)/\(paragraphID)"
     }
 
-    static func reviewDiagnosticTargetKey(fromHref href: String) -> String? {
-        decodeReviewHref(href).flatMap {
-            reviewDiagnosticTargetKey(from: $0)
-        }
-    }
-
     private static func reviewDiagnosticTargetKey(fromAction action: String) -> String? {
         for name in ["showCmt", "androidshowCmt", "createSvg"] {
             guard let args = legadoFunctionArgs(named: name, in: action),

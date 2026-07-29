@@ -1099,9 +1099,6 @@ struct NodeAttributedStringRenderer {
         svgContent: String?,
         ctx: RenderContext
     ) async -> NSAttributedString {
-        let reviewTargetKey = ctx.linkHref.flatMap {
-            ReaderHTMLUtilities.reviewDiagnosticTargetKey(fromHref: $0)
-        }
         // ⟐ bubble diagnostics: confirm on device whether 段評 SVGs (光遇/企点) even reach this
         // renderer, and whether they're flagged text-sized. Fingerprint keeps DISTINCT bubble
         // types from deduping into one line (so we see isTextSized per template, not just the first).
@@ -1138,19 +1135,6 @@ struct NodeAttributedStringRenderer {
                     displayMode: .inline,
                     availableWidthOverride: availableImageWidth(in: ctx)
                 )
-                if let reviewTargetKey {
-                    AppLogger.render("⟐ reviewImageMetrics", context: [
-                        "route": "recognizedInline",
-                        "target": reviewTargetKey,
-                        "textSized": style.isTextSizedImage,
-                        "viewBox": "\(Int(recognized.viewBox.width))x\(Int(recognized.viewBox.height))",
-                        "sourceSize": "\(Int(recognized.width))x\(Int(recognized.height))",
-                        "imageSize": "\(Int(image.size.width))x\(Int(image.size.height))",
-                        "drawSize": "\(Int(metrics.drawWidth))x\(Int(metrics.drawHeight))",
-                        "totalWidth": Int(metrics.totalWidth),
-                        "followsSource": settings.commentBubbleFollowsSourceSVG,
-                    ])
-                }
                 return await makeImagePlaceholder(
                     image: image,
                     style: bubbleStyle,
@@ -1203,16 +1187,6 @@ struct NodeAttributedStringRenderer {
                 displayMode: .inline,
                 availableWidthOverride: availableImageWidth(in: ctx)
             )
-            if let reviewTargetKey {
-                AppLogger.render("⟐ reviewImageMetrics", context: [
-                    "route": "svgContentFallback",
-                    "target": reviewTargetKey,
-                    "textSized": style.isTextSizedImage,
-                    "imageSize": "\(Int(image?.size.width ?? 0))x\(Int(image?.size.height ?? 0))",
-                    "drawSize": "\(Int(metrics.drawWidth))x\(Int(metrics.drawHeight))",
-                    "totalWidth": Int(metrics.totalWidth),
-                ])
-            }
             return await makeImagePlaceholder(
                 image: image,
                 style: style,
@@ -1268,31 +1242,13 @@ struct NodeAttributedStringRenderer {
                 ctx: ctx
             )
         }
-        let metrics = await resolvedImageMetrics(
-            image: image,
-            style: style,
-            font: ctx.font,
-            displayMode: .inline,
-            availableWidthOverride: availableImageWidth(in: ctx)
-        )
-        if let reviewTargetKey {
-            AppLogger.render("⟐ reviewImageMetrics", context: [
-                "route": "loaderFallback",
-                "target": reviewTargetKey,
-                "textSized": style.isTextSizedImage,
-                "imageSize": "\(Int(image?.size.width ?? 0))x\(Int(image?.size.height ?? 0))",
-                "drawSize": "\(Int(metrics.drawWidth))x\(Int(metrics.drawHeight))",
-                "totalWidth": Int(metrics.totalWidth),
-            ])
-        }
         return await makeImagePlaceholder(
             image: image,
             style: style,
             ctx: ctx,
             imageSource: src,
             imageAlt: alt,
-            displayMode: .inline,
-            precomputedMetrics: metrics
+            displayMode: .inline
         )
     }
 
@@ -1404,28 +1360,6 @@ struct NodeAttributedStringRenderer {
             displayMode: .block,
             availableWidthOverride: availableImageWidth(in: blockCtx)
         )
-        if let href = payload.href,
-           let target = ReaderHTMLUtilities.reviewDiagnosticTargetKey(fromHref: href) {
-            let recognized = CommentBubbleSVGRecognizer.recognize(
-                src: payload.src,
-                svgContent: payload.svgContent
-            )
-            AppLogger.render("⟐ reviewImageMetrics", context: [
-                "route": "imageOnlyBlock",
-                "target": target,
-                "textSized": payload.style.isTextSizedImage,
-                "recognized": recognized != nil,
-                "viewBox": recognized.map {
-                    "\(Int($0.viewBox.width))x\(Int($0.viewBox.height))"
-                } ?? "-",
-                "sourceSize": recognized.map {
-                    "\(Int($0.width))x\(Int($0.height))"
-                } ?? "-",
-                "imageSize": "\(Int(image?.size.width ?? 0))x\(Int(image?.size.height ?? 0))",
-                "drawSize": "\(Int(imageMetrics.drawWidth))x\(Int(imageMetrics.drawHeight))",
-                "totalWidth": Int(imageMetrics.totalWidth),
-            ])
-        }
         let blockImage = HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage(
             image: image,
             source: payload.src,
