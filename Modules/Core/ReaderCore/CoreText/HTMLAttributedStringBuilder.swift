@@ -1,6 +1,7 @@
 import CoreText
 import SwiftSoup
 import UIKit
+import YueduCoreText
 
 /// HTML/CSS -> NSAttributedString builder for local EPUB.
 /// This path intentionally avoids DTCoreText so that font mapping,

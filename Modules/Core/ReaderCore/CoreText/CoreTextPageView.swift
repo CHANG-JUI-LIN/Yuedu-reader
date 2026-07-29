@@ -2,6 +2,7 @@ import AVKit
 import CoreText
 import SwiftUI
 import UIKit
+import YueduCoreText
 import YueduCoreTextTypography
 
 /// Single-page CoreText rendering view.
@@ -72,11 +73,8 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         annotationOverlays[key] = overlay
         return overlay
     }
-    private enum SelectionDragHandle {
-        case start
-        case end
-    }
-    private var activeDragHandle: SelectionDragHandle?
+    private var activeDragHandle: TextSelectionHandle?
+    private var activeDragEndpoint: TextSelectionEndpoint?
     private lazy var linkTapGesture: UITapGestureRecognizer = {
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         tap.cancelsTouchesInView = false
@@ -1186,6 +1184,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
               let context = makeInteractionContext()
         else {
             activeDragHandle = nil
+            activeDragEndpoint = nil
             return
         }
 
@@ -1193,15 +1192,17 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         switch gesture.state {
         case .began:
             activeDragHandle = nearestHandle(to: point)
-        case .changed:
-            guard let activeDragHandle,
-                  let index = stringIndex(at: point, in: context) else { return }
-            switch activeDragHandle {
-            case .start:
-                interactor.selectionManager.updateSelectionStart(to: index, maxLength: layout.attributedString.length)
-            case .end:
-                interactor.selectionManager.updateSelectionEnd(to: index, maxLength: layout.attributedString.length)
+            activeDragEndpoint = activeDragHandle.flatMap {
+                interactor.selectionManager.endpoint(for: $0)
             }
+        case .changed:
+            guard let activeDragEndpoint,
+                  let index = stringIndex(at: point, in: context) else { return }
+            interactor.selectionManager.updateSelection(
+                activeDragEndpoint,
+                to: index,
+                maxLength: layout.attributedString.length
+            )
             // Snap to annotation boundaries
             if let selRange = interactor.selectionManager.selectedRange {
                 let snapped = AnnotationStore.expandedSelectionRange(
@@ -1211,8 +1212,17 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
                     in: textAnnotations,
                     tolerance: 3
                 )
-                if snapped != selRange {
+                if snapped != selRange,
+                   let anchor = interactor.selectionManager.anchorIndex,
+                   let focus = interactor.selectionManager.focusIndex {
+                    let activeEndpointIsVisualStart = switch activeDragEndpoint {
+                    case .anchor: anchor <= focus
+                    case .focus: focus <= anchor
+                    }
                     interactor.selectionManager.setSelection(range: snapped, maxLength: layout.attributedString.length)
+                    // setSelection normalizes anchor/focus. Keep the gesture attached to
+                    // the same visual boundary after annotation snapping replaces the range.
+                    self.activeDragEndpoint = activeEndpointIsVisualStart ? .anchor : .focus
                 }
             }
             updateSelectionOverlay(with: context)
@@ -1229,8 +1239,10 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             becomeFirstResponder()
             presentSelectionEditMenu(at: point)
             activeDragHandle = nil
+            activeDragEndpoint = nil
         case .cancelled, .failed:
             activeDragHandle = nil
+            activeDragEndpoint = nil
         default:
             break
         }
@@ -1314,6 +1326,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         interactor.selectedTextForCopy = nil
         interactor.tappedAnnotation = nil
         activeDragHandle = nil
+        activeDragEndpoint = nil
         interactionOverlay.clearSelection()
         editMenuInteraction.dismissMenu()
     }
@@ -1344,7 +1357,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         return NSRange(location: min(max(index, 0), attributedString.length - 1), length: 1)
     }
 
-    private func nearestHandle(to point: CGPoint) -> SelectionDragHandle? {
+    private func nearestHandle(to point: CGPoint) -> TextSelectionHandle? {
         let hitRadius: CGFloat = 36
         let start = interactionOverlay.startHandlePoint
         let end = interactionOverlay.endHandlePoint

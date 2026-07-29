@@ -1,5 +1,6 @@
 import CoreText
 import UIKit
+import YueduCoreText
 import YueduCoreTextTypography
 
 final class CoreTextPaginator {

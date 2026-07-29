@@ -1,6 +1,7 @@
 import Foundation
 import SwiftSoup
 import UIKit
+import YueduCoreText
 
 final class HTMLBuilderDOMParser {
     func parse(

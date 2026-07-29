@@ -15,7 +15,8 @@ vertical writing, links, selection, images, or annotation rendering.
 | Images, inline annotation placeholders | `RunDelegateProvider.swift`, `CoreTextChunkAttachmentExtractor.swift` |
 | Vertical writing helpers | `CoreTextCommon/String+VerticalNormalization.swift`, `CoreTextCommon/VerticalLayoutConfig.swift` |
 | Engine and reader bridge | `CoreTextPageEngine.swift`, `PageRenderingProvider.swift`, `ReaderView.swift` |
-| Text selection and underline bookmarks | `TextSelectionManager.swift`, `CoreTextTextAnnotation.swift` |
+| Text selection and underline bookmarks | `YueduCoreText.TextSelectionManager`, `CoreTextTextAnnotation.swift` |
+| Content progress metrics and performance signposts | `YueduCoreText.ReaderContentUnitMap`, `YueduCoreText.ReaderPerfTrace` |
 
 ## Supporting Notes
 
@@ -26,7 +27,7 @@ vertical writing, links, selection, images, or annotation rendering.
 - [performance-benchmark.md](performance-benchmark.md): reader signpost contract, synthetic corpus, and baseline capture procedure.
 - [`YueduCoreText`](https://github.com/CHANG-JUI-LIN/YueduCoreText): the
   standalone Swift package consumed by the app for reusable Core Text
-  typography.
+  typography, selection state, content metrics, and performance tracing.
 
 ## Focused Tests
 

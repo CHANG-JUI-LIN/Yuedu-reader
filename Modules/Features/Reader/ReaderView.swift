@@ -1,6 +1,7 @@
 import Combine
     import SwiftUI
 import UIKit
+import YueduCoreText
 
 let uiFeedbackDuration: Double = 0.25
 

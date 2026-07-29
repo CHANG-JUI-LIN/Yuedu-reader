@@ -1,5 +1,6 @@
 import CoreText
 import UIKit
+import YueduCoreText
 
 /// Paints the publication-authored page backdrop behind a scroll chunk, including the reader's
 /// horizontal/vertical text insets. Large chunks repeat the artwork at viewport-sized intervals

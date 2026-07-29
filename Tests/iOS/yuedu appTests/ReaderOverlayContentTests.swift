@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import YueduCoreText
 @testable import yuedu_app
 
 struct ReaderOverlayContentTests {

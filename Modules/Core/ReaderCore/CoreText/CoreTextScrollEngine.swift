@@ -2,6 +2,7 @@ import Combine
 import CoreText
 import Foundation
 import UIKit
+import YueduCoreText
 import YueduCoreTextTypography
 
 /// A lightweight value that captures where the reader stopped scrolling.

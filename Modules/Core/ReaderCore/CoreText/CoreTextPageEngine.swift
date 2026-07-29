@@ -2,6 +2,7 @@ import CoreText
 import CoreGraphics
 import UIKit
 import ReadiumShared
+import YueduCoreText
 
 struct FontRegistrationResult {
     let familyName: String

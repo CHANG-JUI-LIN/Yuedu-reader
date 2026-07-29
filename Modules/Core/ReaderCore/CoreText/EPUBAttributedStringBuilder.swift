@@ -1,4 +1,5 @@
 import UIKit
+import YueduCoreText
 
 // MARK: - EPUBAttributedStringBuilder
 //
@@ -213,16 +214,16 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         }
         CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.ast index=\(index) href=\(chapterHref) bodyClass=\(ast.classes.joined(separator: ".")) bodyVertical=\(ast.resolvedStyle.isVerticalWritingMode) cssDetectedVertical=\(localBuilder.detectedVerticalWritingMode) nodeCount=\(nodes.count)")
 
-        let attributedString = await ReaderPerfTrace.spanAsync(
+        let renderInterval = ReaderPerfTrace.begin(
             .attributedRender,
             metadata: ReaderPerfMetadata(
                 spineIndex: index,
                 writingMode: String(describing: settings.writingMode),
                 executor: Thread.isMainThread ? "main" : "background"
             )
-        ) {
-            await renderer.render(nodes)
-        }
+        )
+        let attributedString = await renderer.render(nodes)
+        ReaderPerfTrace.end(renderInterval)
         CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.rendered index=\(index) href=\(chapterHref) attrLen=\(attributedString.length) cssDetectedVerticalGlobal=\(cssDetectedVerticalWritingMode) prefix=\"\(debugTextPreview(attributedString.string))\"")
         let anchorOffsets = localBuilder.anchorOffsets(in: attributedString)
 

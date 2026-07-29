@@ -1,4 +1,5 @@
 import UIKit
+import YueduCoreText
 
 /// Shared text selection interaction logic for both paged and scroll reading modes.
 /// Owns selection state, default-range expansion, annotation snapping, and color config.
@@ -52,16 +53,6 @@ final class TextSelectionInteractor {
     /// Update the focus end of the selection by dragging.
     func updateSelection(to index: Int, maxLength: Int) {
         selectionManager.updateSelection(to: index, maxLength: maxLength)
-    }
-
-    /// Drag the start handle.
-    func updateSelectionStart(to index: Int, maxLength: Int) {
-        selectionManager.updateSelectionStart(to: index, maxLength: maxLength)
-    }
-
-    /// Drag the end handle.
-    func updateSelectionEnd(to index: Int, maxLength: Int) {
-        selectionManager.updateSelectionEnd(to: index, maxLength: maxLength)
     }
 
     /// Re-extract selected text after drag ends.
