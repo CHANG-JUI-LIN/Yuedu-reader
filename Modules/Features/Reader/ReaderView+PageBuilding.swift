@@ -447,6 +447,11 @@ extension ReaderView {
     }
 
     func performUnifiedRelayout(targetSize: CGSize? = nil) {
+        if effectiveScrollMode, epubRenderer.scrollEngine != nil {
+            scheduleScrollReslice()
+            return
+        }
+
         guard let engine = epubRenderer.engine else {
             rebuildPages()
             return
