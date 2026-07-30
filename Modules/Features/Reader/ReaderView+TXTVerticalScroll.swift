@@ -96,7 +96,7 @@ extension ReaderView {
 
     func scheduleScrollReslice() {
         guard let engine = epubRenderer.scrollEngine else { return }
-        engine.updateRenderSettings(buildRenderSettings())
+        engine.updateRenderSettings(readerRenderSettings(for: .scroll))
         scrollResliceToken &+= 1
     }
 
@@ -112,45 +112,6 @@ extension ReaderView {
             return (target.spineIndex, target.charOffset)
         }
         return (max(0, currentChapterIndex), 0)
-    }
-
-    func buildRenderSettings() -> ReaderRenderSettings {
-        let topInset = ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
-        let bottomInset = ReaderLayoutMetrics.bottomInset(
-            safeBottom: 0,
-            footerBottomPadding: readerConfig.footerBottomPadding,
-            footerTextGap: readerConfig.footerTextGap
-        )
-        return ReaderRenderSettings(
-            theme: readerTheme.rawValue,
-            textColor: readerTheme.uiTextColor,
-            backgroundColor: readerTheme.uiBackgroundColor,
-            fontSize: readerConfig.fontSize,
-            lineHeightMultiple: readerConfig.lineHeightMultiple,
-            lineSpacing: readerConfig.lineSpacing,
-            paragraphSpacing: readerConfig.paragraphSpacing,
-            letterSpacing: readerConfig.letterSpacing,
-            marginH: effectivePageMarginH,
-            marginV: readerConfig.pageMarginV,
-            footerHeight: ReaderLayoutMetrics.footerHeight,
-            contentInsets: UIEdgeInsets(
-                top: topInset,
-                left: effectivePageMarginH,
-                bottom: bottomInset,
-                right: effectivePageMarginH
-            ),
-            writingMode: effectiveWritingMode,
-            fontPostScriptName: UserReaderFontResolver.selectedPostScriptName,
-            isBold: readerConfig.readerFontBold,
-            chapterTitleStyle: readerConfig.chapterTitleStyle,
-            readerBackgroundImageURL: activeReaderBackgroundImageURL,
-            dialogueHighlightColor: GlobalSettings.shared.readerDialogueHighlightEnabled
-                ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueHighlightColorHex)
-                : nil,
-            dialogueBoxColor: (GlobalSettings.shared.readerDialogueHighlightEnabled && GlobalSettings.shared.readerDialogueBoxEnabled)
-                ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueBoxColorHex)
-                : nil
-        )
     }
 
     var effectiveWritingMode: ReaderWritingMode {

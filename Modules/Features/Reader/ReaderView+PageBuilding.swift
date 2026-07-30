@@ -4,45 +4,75 @@ import UIKit
 extension ReaderView {
 
     // MARK: - Loading & Page Building
-    func currentRenderSettings(marginH: CGFloat) -> ReaderRenderSettings {
-        let reservations = ReaderOverlayPaginationPolicy.insets(
-            for: settings.readerOverlayLayout
-        )
-        // Fixed overlays are a paged-reading feature. Their coordinates, size,
-        // style, and count never enter render settings; only these explicit body
-        // reservations can change pagination geometry.
-        let topInset = effectiveScrollMode
-            ? ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
-            : CGFloat(reservations.top)
-        let bottomInset = effectiveScrollMode
-            ? ReaderLayoutMetrics.bottomInset(safeBottom: windowSafeBottom, footerVisible: false)
-            : CGFloat(reservations.bottom)
-        let lineHeightMultiple = max(1.0, readerConfig.lineHeightMultiple)
-        return ReaderRenderSettings(
+    var resolvedDialogueHighlightColor: UIColor? {
+        GlobalSettings.shared.readerDialogueHighlightEnabled
+            ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueHighlightColorHex)
+            : nil
+    }
+
+    var resolvedDialogueBoxColor: UIColor? {
+        (GlobalSettings.shared.readerDialogueHighlightEnabled && GlobalSettings.shared.readerDialogueBoxEnabled)
+            ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueBoxColorHex)
+            : nil
+    }
+
+    func readerRenderSettings(for mode: ReaderDisplayMode) -> ReaderRenderSettings {
+        let input = ReaderRenderSettingsSnapshotInput(
             theme: readerTheme.epubJSName,
             textColor: readerTheme.uiTextColor,
             backgroundColor: readerTheme.uiBackgroundColor,
-            fontSize: fontSize,
-            lineHeightMultiple: lineHeightMultiple,
+            fontSize: readerConfig.fontSize,
+            lineHeightMultiple: max(1.0, readerConfig.lineHeightMultiple),
             lineSpacing: readerConfig.lineSpacing,
             paragraphSpacing: readerConfig.paragraphSpacing,
             letterSpacing: readerConfig.letterSpacing,
-            marginH: marginH,
-            marginV: systemVerticalPadding,
-            footerHeight: footerOverlayHeight,
-            contentInsets: UIEdgeInsets(top: topInset, left: marginH, bottom: bottomInset, right: marginH),
+            marginH: effectivePageMarginH,
             writingMode: effectiveWritingMode,
             fontPostScriptName: UserReaderFontResolver.selectedPostScriptName,
             isBold: readerConfig.readerFontBold,
             chapterTitleStyle: readerConfig.chapterTitleStyle,
             readerBackgroundImageURL: activeReaderBackgroundImageURL,
-            dialogueHighlightColor: GlobalSettings.shared.readerDialogueHighlightEnabled
-                ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueHighlightColorHex)
-                : nil,
-            dialogueBoxColor: (GlobalSettings.shared.readerDialogueHighlightEnabled && GlobalSettings.shared.readerDialogueBoxEnabled)
-                ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueBoxColorHex)
-                : nil
+            dialogueHighlightColor: resolvedDialogueHighlightColor,
+            dialogueBoxColor: resolvedDialogueBoxColor
         )
+
+        let surface: ReaderRenderSurface
+        switch mode {
+        case .paged:
+            let reservations = ReaderOverlayPaginationPolicy.insets(
+                for: settings.readerOverlayLayout
+            )
+            // Fixed overlays are a paged-reading feature. Their coordinates, size,
+            // style, and count never enter render settings; only these explicit body
+            // reservations can change pagination geometry.
+            surface = .paged(
+                contentInsets: UIEdgeInsets(
+                    top: CGFloat(reservations.top),
+                    left: effectivePageMarginH,
+                    bottom: CGFloat(reservations.bottom),
+                    right: effectivePageMarginH
+                ),
+                marginV: systemVerticalPadding,
+                footerHeight: footerOverlayHeight
+            )
+        case .scroll:
+            surface = .scroll(
+                contentInsets: UIEdgeInsets(
+                    top: ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop),
+                    left: effectivePageMarginH,
+                    bottom: ReaderLayoutMetrics.bottomInset(
+                        safeBottom: 0,
+                        footerBottomPadding: readerConfig.footerBottomPadding,
+                        footerTextGap: readerConfig.footerTextGap
+                    ),
+                    right: effectivePageMarginH
+                ),
+                marginV: readerConfig.pageMarginV,
+                footerHeight: ReaderLayoutMetrics.footerHeight
+            )
+        }
+
+        return ReaderRenderSettingsSnapshotBuilder.make(input: input, surface: surface)
     }
 
     func applyPublicationSession(
@@ -111,7 +141,7 @@ extension ReaderView {
         isRestoringPosition = false
     }
 
-    func loadLocalEPUB(_ book: ReadingBook, marginH: CGFloat) {
+    func loadLocalEPUB(_ book: ReadingBook) {
         Task {
             do {
                 let session = try await EPUBBookService.shared.openSession(for: book, using: store)
@@ -120,7 +150,7 @@ extension ReaderView {
                     if session.epubWritingMode == .verticalRL {
                         self.isVerticalEPUB = true
                     }
-                    let settings = self.currentRenderSettings(marginH: marginH)
+                    let settings = self.readerRenderSettings(for: .paged)
                     self.applyPublicationSession(session, book: book, settings: settings)
                 }
             } catch {
@@ -134,7 +164,7 @@ extension ReaderView {
         }
     }
 
-    func loadOnlineCoreText(_ book: ReadingBook, marginH: CGFloat) {
+    func loadOnlineCoreText(_ book: ReadingBook) {
         #if DEBUG
         AppLogger.render("onlinePipeline route", context: [
             "builder": "OnlineProviderAttributedStringBuilder",
@@ -155,7 +185,7 @@ extension ReaderView {
             return
         }
 
-        let settings = currentRenderSettings(marginH: marginH)
+        let settings = readerRenderSettings(for: .paged)
         let refs = book.onlineChapters ?? []
         chapters = refs.enumerated().map { idx, ref in
             let href = ref.sanitizedContentURL
@@ -216,7 +246,6 @@ extension ReaderView {
         isRestoringPosition = true
         refreshInitialRestoreState()
 
-        let marginH = effectivePageMarginH
         guard let b = book else {
             applyDocument(nil)
             isRestoringPosition = false
@@ -225,13 +254,13 @@ extension ReaderView {
         }
 
         if b.isOnline {
-            loadOnlineCoreText(b, marginH: marginH)
+            loadOnlineCoreText(b)
             return
         }
         
         if b.resolvedPipelineKind == .txt {
             let bookTitle = b.title
-            let settings = currentRenderSettings(marginH: marginH)
+            let settings = readerRenderSettings(for: .paged)
             let targetBook = b
             let targetBookID = targetBook.id
             let txtURL = StorageLocations.bookFile(targetBook.contentFilename)
@@ -360,9 +389,7 @@ extension ReaderView {
                         title: bookTitle,
                         document: finalDocument,
                         builder: finalBuilder,
-                        settings: self.currentRenderSettings(
-                            marginH: self.effectivePageMarginH
-                        )
+                        settings: self.readerRenderSettings(for: .paged)
                     )
                 } catch {
                     guard self.book?.id == targetBook.id else { return }
@@ -385,7 +412,7 @@ extension ReaderView {
         self.chapters = [BookChapter(index: 0, title: bookTitle, content: "")]
         self.allPages = [PageContent(chapterIndex: 0, chapterTitle: bookTitle, content: "", pageInChapter: 0)]
         self.currentPage = 0
-        loadLocalEPUB(b, marginH: marginH)
+        loadLocalEPUB(b)
     }
 
     func applyTXTReaderPhase(
@@ -457,7 +484,7 @@ extension ReaderView {
             return
         }
         let size = targetSize ?? engine.renderSize
-        let newSettings = currentRenderSettings(marginH: effectivePageMarginH)
+        let newSettings = readerRenderSettings(for: .paged)
         if targetSize != nil,
            abs(size.width - engine.renderSize.width) < 0.5,
            abs(size.height - engine.renderSize.height) < 0.5 {
@@ -492,13 +519,13 @@ extension ReaderView {
             return
         }
 
-        epubRenderer.updateRenderSettings(currentRenderSettings(marginH: effectivePageMarginH))
+        epubRenderer.updateRenderSettings(readerRenderSettings(for: .paged))
         Task { await engine.invalidateLayout(newSize: engine.renderSize) }
     }
 
     func applyUnifiedAppearanceUpdate() {
         guard let engine = epubRenderer.engine else { return }
-        epubRenderer.updateRenderSettings(currentRenderSettings(marginH: effectivePageMarginH))
+        epubRenderer.updateRenderSettings(readerRenderSettings(for: .paged))
         engine.applyThemeChange(
             textColor: readerTheme.uiTextColor,
             backgroundColor: readerTheme.uiBackgroundColor

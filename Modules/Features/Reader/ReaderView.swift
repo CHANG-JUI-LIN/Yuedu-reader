@@ -660,7 +660,10 @@ struct ReaderView: View {
             direction: effectiveWritingMode.isVertical ? .rtl : .ltr,
             spreadMode: effectiveReaderSpreadMode,
             viewportSize: readerViewportSize,
-            appearance: ReaderAppearance(settings: buildRenderSettings(), theme: readerTheme),
+            appearance: ReaderAppearance(
+                settings: readerRenderSettings(for: effectiveScrollMode ? .scroll : .paged),
+                theme: readerTheme
+            ),
             pagingStyle: ReaderPagingStyle(pageTurnStyle: settings.pageTurnStyle)
         )
     }
