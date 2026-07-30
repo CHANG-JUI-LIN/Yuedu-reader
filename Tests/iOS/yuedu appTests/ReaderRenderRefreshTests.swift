@@ -113,10 +113,17 @@ struct ReaderRenderRefreshTests {
             settings: Self.makeSettings(fontSize: 18)
         )
         await waitUntilPagedReady(renderer)
+        let engine = renderer.engine as? CoreTextPageEngine
+        let callbackProbe = ReaderRefreshCallbackProbe()
+        engine?.onChapterReady = { _ in callbackProbe.chapterReadyCount += 1 }
+        engine?.onNavigateToPage = { _ in callbackProbe.navigateCount += 1 }
 
         builder.gateBuild(fontSize: 19)
+        let firstResultProbe = ReaderRefreshResultProbe()
         let first = Task {
-            await renderer.refresh(Self.request(fontSize: 19))
+            let result = await renderer.refresh(Self.request(fontSize: 19))
+            firstResultProbe.result = result
+            return result
         }
         await builder.waitUntilGatedBuildStarts()
         #expect(renderer.pendingVisibleRefreshCommit == nil)
@@ -124,10 +131,164 @@ struct ReaderRenderRefreshTests {
         let second = Task {
             await renderer.refresh(Self.request(fontSize: 22))
         }
-        let finisher = Task<ReaderVisibleRefreshCommit?, Never> { @MainActor in
+        await builder.waitUntilBuildStarts(fontSize: 22)
+        await Task.yield()
+
+        let firstReturnedBeforeGateRelease = firstResultProbe.result != nil
+        #expect(firstResultProbe.result == .superseded(transactionID: 1))
+        #expect(builder.hasPendingGatedBuild)
+        if !firstReturnedBeforeGateRelease {
+            builder.releaseGatedBuild()
+        }
+
+        let firstResult = await first.value
+        let secondCommit = await waitForVisibleCommit(renderer)
+        renderer.finishVisibleRefresh(
+            transactionID: secondCommit.transactionID,
+            outcome: .applied
+        )
+        let secondResult = await second.value
+        let readyCountAfterSecond = callbackProbe.chapterReadyCount
+        let navigateCountAfterSecond = callbackProbe.navigateCount
+        let pageAfterSecond = engine?.currentPage
+        let wasRelayingAfterSecond = engine?.isRelaying
+
+        if builder.hasPendingGatedBuild {
+            builder.releaseGatedBuild()
+        }
+        await builder.waitUntilGatedBuildReturns()
+        while renderer.activeRefreshPreparationCount > 0 {
+            await Task.yield()
+        }
+
+        #expect(firstResult == .superseded(transactionID: 1))
+        #expect(secondResult == .completed(transactionID: 2))
+        #expect(secondCommit.transactionID == 2)
+        #expect(engine?.layouts[0] != nil)
+        #expect(engine?.renderSettings.fontSize == 22)
+        #expect(callbackProbe.chapterReadyCount == readyCountAfterSecond)
+        #expect(callbackProbe.navigateCount == navigateCountAfterSecond)
+        #expect(engine?.currentPage == pageAfterSecond)
+        #expect(wasRelayingAfterSecond == false)
+        #expect(engine?.isRelaying == false)
+    }
+
+    @Test("paged appearance does not mark stale content revision applied")
+    func pagedAppearancePreservesStaleContentRevision() async {
+        let builder = MutableReaderRefreshBuilder(body: "Old body")
+        let renderer = EPUBPageRenderer()
+        renderer.loadTXT(
+            attributedBuilder: builder,
+            bookIdentifier: UUID().uuidString,
+            renderSize: CGSize(width: 320, height: 480),
+            settings: Self.makeSettings(fontSize: 18)
+        )
+        await waitUntilPagedReady(renderer)
+        builder.body = "New body"
+
+        let scrollContent = Task {
+            await renderer.refresh(
+                Self.request(
+                    intent: .chapterContent(0),
+                    mode: .scroll,
+                    fontSize: 18
+                )
+            )
+        }
+        let scrollCommit = await waitForVisibleCommit(renderer)
+        _ = await renderer.scrollEngine?.reslice(
+            restoreAt: 0,
+            contentWidth: 288,
+            restorePosition: .chapterStart(0)
+        )
+        renderer.finishVisibleRefresh(
+            transactionID: scrollCommit.transactionID,
+            outcome: .applied
+        )
+        #expect(await scrollContent.value == .completed(transactionID: 1))
+
+        let appearance = Task {
+            await renderer.refresh(
+                Self.request(
+                    intent: .appearance,
+                    mode: .paged,
+                    fontSize: 18
+                )
+            )
+        }
+        let appearanceCommit = await waitForVisibleCommit(
+            renderer,
+            after: scrollCommit.transactionID
+        )
+        renderer.finishVisibleRefresh(
+            transactionID: appearanceCommit.transactionID,
+            outcome: .applied
+        )
+        #expect(await appearance.value == .completed(transactionID: 2))
+        #expect(
+            (renderer.engine as? CoreTextPageEngine)?
+                .layouts[0]?.attributedString.string == "Old body"
+        )
+
+        let activation = Task {
+            await renderer.refresh(
+                Self.request(
+                    intent: .modeActivation,
+                    mode: .paged,
+                    fontSize: 18
+                )
+            )
+        }
+        let activationCommit = await waitForVisibleCommit(
+            renderer,
+            after: appearanceCommit.transactionID
+        )
+        #expect(
+            (renderer.engine as? CoreTextPageEngine)?
+                .layouts[0]?.attributedString.string == "New body"
+        )
+        renderer.finishVisibleRefresh(
+            transactionID: activationCommit.transactionID,
+            outcome: .applied
+        )
+        #expect(await activation.value == .completed(transactionID: 3))
+    }
+
+    @Test("fresh scroll mode activation completes without visible commit")
+    func freshScrollActivationCompletesImmediately() async {
+        let renderer = EPUBPageRenderer()
+        renderer.loadTXT(
+            attributedBuilder: MutableReaderRefreshBuilder(body: "Body"),
+            bookIdentifier: UUID().uuidString,
+            renderSize: CGSize(width: 320, height: 480),
+            settings: Self.makeSettings(fontSize: 18)
+        )
+        await waitUntilPagedReady(renderer)
+        let request = Self.request(
+            intent: .modeActivation,
+            mode: .scroll,
+            fontSize: 18
+        )
+
+        let first = Task { await renderer.refresh(request) }
+        let firstCommit = await waitForVisibleCommit(renderer)
+        _ = await renderer.scrollEngine?.reslice(
+            restoreAt: 0,
+            contentWidth: 288,
+            restorePosition: .chapterStart(0)
+        )
+        renderer.finishVisibleRefresh(
+            transactionID: firstCommit.transactionID,
+            outcome: .applied
+        )
+        #expect(await first.value == .completed(transactionID: 1))
+
+        let second = Task { await renderer.refresh(request) }
+        let unexpectedCommitFinisher = Task<ReaderVisibleRefreshCommit?, Never> {
+            @MainActor in
             while !Task.isCancelled {
                 if let commit = renderer.pendingVisibleRefreshCommit,
-                   commit.transactionID == 2 {
+                   commit.transactionID > firstCommit.transactionID {
                     renderer.finishVisibleRefresh(
                         transactionID: commit.transactionID,
                         outcome: .applied
@@ -138,18 +299,13 @@ struct ReaderRenderRefreshTests {
             }
             return nil
         }
-
         let secondResult = await second.value
-        finisher.cancel()
-        let secondCommit = await finisher.value
-        builder.releaseGatedBuild()
-        let firstResult = await first.value
+        unexpectedCommitFinisher.cancel()
+        let unexpectedCommit = await unexpectedCommitFinisher.value
 
-        #expect(firstResult == .superseded(transactionID: 1))
         #expect(secondResult == .completed(transactionID: 2))
-        #expect(secondCommit?.transactionID == 2)
-        #expect((renderer.engine as? CoreTextPageEngine)?.layouts[0] != nil)
-        #expect((renderer.engine as? CoreTextPageEngine)?.renderSettings.fontSize == 22)
+        #expect(unexpectedCommit == nil)
+        #expect(renderer.pendingVisibleRefreshCommit == nil)
     }
 
     private static func makeSettings(fontSize: CGFloat) -> ReaderRenderSettings {
@@ -170,9 +326,17 @@ struct ReaderRenderRefreshTests {
     }
 
     private static func request(fontSize: CGFloat) -> ReaderRenderRefreshRequest {
+        request(intent: .layout, mode: .paged, fontSize: fontSize)
+    }
+
+    private static func request(
+        intent: ReaderRenderRefreshIntent,
+        mode: ReaderDisplayMode,
+        fontSize: CGFloat
+    ) -> ReaderRenderRefreshRequest {
         ReaderRenderRefreshRequest(
-            intent: .layout,
-            mode: .paged,
+            intent: intent,
+            mode: mode,
             settings: makeSettings(fontSize: fontSize),
             position: .chapterStart(0),
             viewportSize: CGSize(width: 320, height: 480)
@@ -187,7 +351,13 @@ private final class MutableReaderRefreshBuilder: AttributedStringBuilding {
     private(set) var buildCount = 0
     private var gatedFontSize: CGFloat?
     private var gatedBuildStarted = false
+    private var gatedBuildReturned = false
     private var gatedBuildContinuation: CheckedContinuation<Void, Never>?
+    private var startedFontSizes: Set<CGFloat> = []
+
+    var hasPendingGatedBuild: Bool {
+        gatedBuildContinuation != nil
+    }
 
     init(body: String) {
         self.body = body
@@ -204,10 +374,23 @@ private final class MutableReaderRefreshBuilder: AttributedStringBuilding {
     func gateBuild(fontSize: CGFloat) {
         gatedFontSize = fontSize
         gatedBuildStarted = false
+        gatedBuildReturned = false
     }
 
     func waitUntilGatedBuildStarts() async {
         while !gatedBuildStarted {
+            await Task.yield()
+        }
+    }
+
+    func waitUntilBuildStarts(fontSize: CGFloat) async {
+        while !startedFontSizes.contains(fontSize) {
+            await Task.yield()
+        }
+    }
+
+    func waitUntilGatedBuildReturns() async {
+        while !gatedBuildReturned {
             await Task.yield()
         }
     }
@@ -225,11 +408,13 @@ private final class MutableReaderRefreshBuilder: AttributedStringBuilding {
         themeBackgroundColor: UIColor
     ) async throws -> AttributedChapterBuildResult {
         buildCount += 1
+        startedFontSizes.insert(settings.fontSize)
         if settings.fontSize == gatedFontSize {
             gatedBuildStarted = true
             await withCheckedContinuation { continuation in
                 gatedBuildContinuation = continuation
             }
+            gatedBuildReturned = true
         }
         return AttributedChapterBuildResult(
             attributedString: NSAttributedString(
@@ -244,6 +429,17 @@ private final class MutableReaderRefreshBuilder: AttributedStringBuilding {
             anchorOffsets: [:]
         )
     }
+}
+
+@MainActor
+private final class ReaderRefreshResultProbe {
+    var result: ReaderRenderRefreshResult?
+}
+
+@MainActor
+private final class ReaderRefreshCallbackProbe {
+    var chapterReadyCount = 0
+    var navigateCount = 0
 }
 
 @MainActor

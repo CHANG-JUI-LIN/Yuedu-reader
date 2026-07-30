@@ -122,7 +122,10 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private var spinePageOffsets: [Int] = []
     private(set) var renderSize: CGSize = .zero
     private var preloadTasks: [Int: Task<Void, Never>] = [:]
+    private var preloadTaskIDs: [Int: UUID] = [:]
     private var layoutGeneration: Int = 0
+    private var nextLayoutInvalidationOperationID: UInt64 = 0
+    private var activeLayoutInvalidationOperationID: UInt64?
 
     private let attributedBuilder: any AttributedStringBuilding
     private let chapterDocumentStore: ChapterDocumentStore
@@ -482,6 +485,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
             task.cancel()
         }
         preloadTasks.removeAll()
+        preloadTaskIDs.removeAll()
     }
 
     private func shouldAbortPreload(generation: Int) -> Bool {
@@ -496,12 +500,37 @@ final class CoreTextPageEngine: PageRenderingProvider {
         }
     }
 
-    private func makePreloadTask(spineIndex: Int, generation: Int) -> Task<Void, Never> {
+    private func makePreloadTask(
+        spineIndex: Int,
+        generation: Int,
+        taskID: UUID
+    ) -> Task<Void, Never> {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.preloadTasks.removeValue(forKey: spineIndex) }
+            defer {
+                if self.preloadTaskIDs[spineIndex] == taskID {
+                    self.preloadTasks.removeValue(forKey: spineIndex)
+                    self.preloadTaskIDs.removeValue(forKey: spineIndex)
+                }
+            }
             await self.preloadChapterInternal(at: spineIndex, generation: generation)
         }
+    }
+
+    @discardableResult
+    private func installPreloadTask(
+        spineIndex: Int,
+        generation: Int
+    ) -> Task<Void, Never> {
+        let taskID = UUID()
+        let task = makePreloadTask(
+            spineIndex: spineIndex,
+            generation: generation,
+            taskID: taskID
+        )
+        preloadTaskIDs[spineIndex] = taskID
+        preloadTasks[spineIndex] = task
+        return task
     }
 
     private func schedulePreloadChapter(at spineIndex: Int) {
@@ -520,13 +549,20 @@ final class CoreTextPageEngine: PageRenderingProvider {
 
         let generation = layoutGeneration
         AppLogger.render("[FlipTrace] schedulePreload spine=\(spineIndex) generation=\(generation) layouts=\(_layouts.keys.sorted())")
-        preloadTasks[spineIndex] = makePreloadTask(spineIndex: spineIndex, generation: generation)
+        installPreloadTask(
+            spineIndex: spineIndex,
+            generation: generation
+        )
     }
 
     func cancelPendingWork() {
         AppLogger.render("[FlipTrace] cancelPendingWork generation=\(layoutGeneration) pending=\(preloadTasks.keys.sorted()) layouts=\(_layouts.keys.sorted())")
         layoutGeneration += 1
         cancelPreloadTasks()
+        if activeLayoutInvalidationOperationID != nil {
+            activeLayoutInvalidationOperationID = nil
+            isRelaying = false
+        }
     }
 
     func pageViewController(at index: Int) -> UIViewController {
@@ -664,8 +700,10 @@ final class CoreTextPageEngine: PageRenderingProvider {
         }
 
         let generation = layoutGeneration
-        let task = makePreloadTask(spineIndex: spineIndex, generation: generation)
-        preloadTasks[spineIndex] = task
+        let task = installPreloadTask(
+            spineIndex: spineIndex,
+            generation: generation
+        )
         await task.value
     }
 
@@ -677,6 +715,7 @@ final class CoreTextPageEngine: PageRenderingProvider {
 _layouts[spineIndex] = nil
         preloadTasks[spineIndex]?.cancel()
         preloadTasks[spineIndex] = nil
+        preloadTaskIDs[spineIndex] = nil
         chapterSnapshots.removeObject(forKey: NSNumber(value: spineIndex))
         chapterDocumentStore.invalidate(spineIndex: spineIndex)
 
@@ -856,6 +895,9 @@ _layouts[spineIndex] = nil
         AppLogger.render("[FlipTrace] invalidateLayout newSize=\(newSize) oldSize=\(renderSize) loaded=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
         let restorePosition = readingPosition(forPage: currentPage)
         cancelPendingWork()
+        nextLayoutInvalidationOperationID &+= 1
+        let operationID = nextLayoutInvalidationOperationID
+        activeLayoutInvalidationOperationID = operationID
         isRelaying = true
         renderSize = newSize
         updateBuilderRenderSize(newSize)
@@ -877,6 +919,10 @@ _layouts.removeAll()
             }
         }
 
+        guard activeLayoutInvalidationOperationID == operationID else {
+            return
+        }
+
         // Byte size rescan not needed (unaffected by font size changes)
         // Restore the in-memory location after re-pagination; do not read disk.
         if let restorePosition,
@@ -887,6 +933,7 @@ _layouts.removeAll()
             currentPage = max(0, min(currentPage, max(totalPages - 1, 0)))
         }
         isRelaying = false
+        activeLayoutInvalidationOperationID = nil
         onChapterReady?(nil)
     }
 

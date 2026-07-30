@@ -41,11 +41,38 @@ final class EPUBPageRenderer: ObservableObject {
     @Published var isCoreTextReady: Bool = false
     @Published private(set) var pendingVisibleRefreshCommit: ReaderVisibleRefreshCommit?
 
+    private struct RefreshRevisionSnapshot {
+        let settings: UInt64
+        let content: UInt64
+    }
+
+    private struct RefreshRevisionCoverage {
+        let settings: UInt64?
+        let content: UInt64?
+
+        static let none = RefreshRevisionCoverage(
+            settings: nil,
+            content: nil
+        )
+    }
+
+    private struct RefreshTransactionContext {
+        let request: ReaderRenderRefreshRequest
+        let revisions: RefreshRevisionSnapshot
+        let continuation: CheckedContinuation<ReaderRenderRefreshResult, Never>
+        var coverage: RefreshRevisionCoverage = .none
+    }
+
+    private enum RefreshPreparationResult {
+        case requiresVisibleCommit(RefreshRevisionCoverage)
+        case completed(RefreshRevisionCoverage)
+        case failed(ReaderRenderRefreshFailure)
+    }
+
     private var nextRefreshTransactionID: UInt64 = 0
     private var currentRefreshTransactionID: UInt64 = 0
-    private var visibleRefreshContinuations:
-        [UInt64: CheckedContinuation<ReaderRenderRefreshResult, Never>] = [:]
-    private var visibleRefreshRequests: [UInt64: ReaderRenderRefreshRequest] = [:]
+    private var refreshTransactions: [UInt64: RefreshTransactionContext] = [:]
+    private var refreshPreparationTasks: [UInt64: Task<Void, Never>] = [:]
     private var latestRenderSettings: ReaderRenderSettings?
     private var settingsRevision: UInt64 = 0
     private var contentRevision: UInt64 = 0
@@ -53,6 +80,10 @@ final class EPUBPageRenderer: ObservableObject {
     private var scrollAppliedSettingsRevision: UInt64 = 0
     private var pagedAppliedContentRevision: UInt64 = 0
     private var scrollAppliedContentRevision: UInt64 = 0
+
+    var activeRefreshPreparationCount: Int {
+        refreshPreparationTasks.count
+    }
 
     var isFixedLayout: Bool {
         layoutMode == .prePaginated
@@ -370,34 +401,10 @@ final class EPUBPageRenderer: ObservableObject {
     func refresh(
         _ request: ReaderRenderRefreshRequest
     ) async -> ReaderRenderRefreshResult {
-        let transactionID = beginRefreshTransaction()
-
-        if latestRenderSettings != request.settings {
-            latestRenderSettings = request.settings
-            settingsRevision &+= 1
-        }
-        updateRenderSettings(request.settings)
-        if case .chapterContent = request.intent {
-            contentRevision &+= 1
-        }
-        visibleRefreshRequests[transactionID] = request
-
-        let failure = await prepareRefresh(request)
-        guard transactionID == currentRefreshTransactionID else {
-            visibleRefreshRequests.removeValue(forKey: transactionID)
-            return .superseded(transactionID: transactionID)
-        }
-        if let failure {
-            visibleRefreshRequests.removeValue(forKey: transactionID)
-            return .failed(transactionID: transactionID, failure: failure)
-        }
-
-        return await withCheckedContinuation { continuation in
-            visibleRefreshContinuations[transactionID] = continuation
-            pendingVisibleRefreshCommit = ReaderVisibleRefreshCommit(
-                transactionID: transactionID,
-                mode: request.mode,
-                position: request.position
+        await withCheckedContinuation { continuation in
+            beginRefreshTransaction(
+                request: request,
+                continuation: continuation
             )
         }
     }
@@ -407,29 +414,22 @@ final class EPUBPageRenderer: ObservableObject {
         outcome: ReaderVisibleRefreshOutcome
     ) {
         guard pendingVisibleRefreshCommit?.transactionID == transactionID,
-              let continuation = visibleRefreshContinuations[
-                  transactionID
-              ],
-              let request = visibleRefreshRequests[
-                  transactionID
-              ]
+              let context = refreshTransactions[transactionID]
         else { return }
 
-        visibleRefreshContinuations.removeValue(
-            forKey: transactionID
-        )
-        visibleRefreshRequests.removeValue(
-            forKey: transactionID
-        )
+        refreshTransactions.removeValue(forKey: transactionID)
         pendingVisibleRefreshCommit = nil
         switch outcome {
         case .applied:
-            markAppliedRevisions(for: request.mode)
-            continuation.resume(
+            apply(
+                context.coverage,
+                to: context.request.mode
+            )
+            context.continuation.resume(
                 returning: .completed(transactionID: transactionID)
             )
         case .failed(let failure):
-            continuation.resume(
+            context.continuation.resume(
                 returning: .failed(
                     transactionID: transactionID,
                     failure: failure
@@ -438,42 +438,113 @@ final class EPUBPageRenderer: ObservableObject {
         }
     }
 
-    private func beginRefreshTransaction() -> UInt64 {
+    private func beginRefreshTransaction(
+        request: ReaderRenderRefreshRequest,
+        continuation: CheckedContinuation<ReaderRenderRefreshResult, Never>
+    ) {
         nextRefreshTransactionID &+= 1
         currentRefreshTransactionID = nextRefreshTransactionID
+        let transactionID = currentRefreshTransactionID
 
-        let supersededContinuations = visibleRefreshContinuations
-        visibleRefreshContinuations.removeAll(keepingCapacity: true)
-        visibleRefreshRequests.removeAll(keepingCapacity: true)
+        let supersededTransactions = refreshTransactions
+        refreshTransactions.removeAll(keepingCapacity: true)
         pendingVisibleRefreshCommit = nil
-        for (transactionID, continuation) in supersededContinuations {
-            continuation.resume(
-                returning: .superseded(transactionID: transactionID)
+        refreshPreparationTasks.values.forEach { $0.cancel() }
+        for (supersededID, context) in supersededTransactions {
+            context.continuation.resume(
+                returning: .superseded(transactionID: supersededID)
             )
         }
-
         engine?.cancelPendingWork()
-        return currentRefreshTransactionID
+
+        if latestRenderSettings != request.settings {
+            latestRenderSettings = request.settings
+            settingsRevision &+= 1
+        }
+        updateRenderSettings(request.settings)
+        if case .chapterContent = request.intent {
+            contentRevision &+= 1
+        }
+
+        refreshTransactions[transactionID] = RefreshTransactionContext(
+            request: request,
+            revisions: RefreshRevisionSnapshot(
+                settings: settingsRevision,
+                content: contentRevision
+            ),
+            continuation: continuation
+        )
+        refreshPreparationTasks[transactionID] = Task { @MainActor [weak self] in
+            await self?.runRefreshPreparation(transactionID: transactionID)
+        }
+    }
+
+    private func runRefreshPreparation(transactionID: UInt64) async {
+        defer {
+            refreshPreparationTasks.removeValue(forKey: transactionID)
+        }
+        guard let context = refreshTransactions[transactionID] else { return }
+        let result = await prepareRefresh(
+            context.request,
+            revisions: context.revisions
+        )
+        guard transactionID == currentRefreshTransactionID,
+              var currentContext = refreshTransactions[transactionID]
+        else { return }
+
+        switch result {
+        case .requiresVisibleCommit(let coverage):
+            currentContext.coverage = coverage
+            refreshTransactions[transactionID] = currentContext
+            pendingVisibleRefreshCommit = ReaderVisibleRefreshCommit(
+                transactionID: transactionID,
+                mode: currentContext.request.mode,
+                position: currentContext.request.position
+            )
+        case .completed(let coverage):
+            refreshTransactions.removeValue(forKey: transactionID)
+            apply(coverage, to: currentContext.request.mode)
+            currentContext.continuation.resume(
+                returning: .completed(transactionID: transactionID)
+            )
+        case .failed(let failure):
+            refreshTransactions.removeValue(forKey: transactionID)
+            currentContext.continuation.resume(
+                returning: .failed(
+                    transactionID: transactionID,
+                    failure: failure
+                )
+            )
+        }
     }
 
     private func prepareRefresh(
-        _ request: ReaderRenderRefreshRequest
-    ) async -> ReaderRenderRefreshFailure? {
+        _ request: ReaderRenderRefreshRequest,
+        revisions: RefreshRevisionSnapshot
+    ) async -> RefreshPreparationResult {
         switch request.mode {
         case .paged:
-            return await preparePagedRefresh(request)
+            return await preparePagedRefresh(
+                request,
+                revisions: revisions
+            )
         case .scroll:
-            return await prepareScrollRefresh(request)
+            return await prepareScrollRefresh(
+                request,
+                revisions: revisions
+            )
         }
     }
 
     private func preparePagedRefresh(
-        _ request: ReaderRenderRefreshRequest
-    ) async -> ReaderRenderRefreshFailure? {
+        _ request: ReaderRenderRefreshRequest,
+        revisions: RefreshRevisionSnapshot
+    ) async -> RefreshPreparationResult {
         guard let engine else {
-            return .engineUnavailable(.paged)
+            return .failed(.engineUnavailable(.paged))
         }
 
+        let coverage: RefreshRevisionCoverage
         switch request.intent {
         case .layout:
             await invalidatePagedLayout(
@@ -481,33 +552,52 @@ final class EPUBPageRenderer: ObservableObject {
                 newSize: request.viewportSize,
                 ensuringSpine: request.position.spineIndex
             )
+            coverage = RefreshRevisionCoverage(
+                settings: revisions.settings,
+                content: revisions.content
+            )
         case .appearance:
             engine.applyThemeChange(
                 textColor: request.settings.textColor,
                 backgroundColor: request.settings.backgroundColor
             )
+            coverage = RefreshRevisionCoverage(
+                settings: revisions.settings,
+                content: nil
+            )
         case .chapterContent(let chapterIndex):
             await engine.notifyChapterDataChanged(at: chapterIndex)
+            coverage = RefreshRevisionCoverage(
+                settings: revisions.settings,
+                content: revisions.content
+            )
         case .modeActivation:
-            let needsPreparation =
-                pagedAppliedSettingsRevision < settingsRevision
-                || pagedAppliedContentRevision < contentRevision
-            if needsPreparation {
+            let needsSettings =
+                pagedAppliedSettingsRevision < revisions.settings
+            let needsContent =
+                pagedAppliedContentRevision < revisions.content
+            if needsSettings || needsContent {
                 await invalidatePagedLayout(
                     engine,
                     newSize: request.viewportSize,
                     ensuringSpine: request.position.spineIndex
                 )
             }
+            coverage = RefreshRevisionCoverage(
+                settings: needsSettings ? revisions.settings : nil,
+                content: needsContent ? revisions.content : nil
+            )
         }
 
         guard hasPagedLayout(
             for: request.position,
             engine: engine
         ) else {
-            return .layoutUnavailable(request.position.spineIndex)
+            return .failed(
+                .layoutUnavailable(request.position.spineIndex)
+            )
         }
-        return nil
+        return .requiresVisibleCommit(coverage)
     }
 
     private func invalidatePagedLayout(
@@ -526,26 +616,56 @@ final class EPUBPageRenderer: ObservableObject {
     }
 
     private func prepareScrollRefresh(
-        _ request: ReaderRenderRefreshRequest
-    ) async -> ReaderRenderRefreshFailure? {
+        _ request: ReaderRenderRefreshRequest,
+        revisions: RefreshRevisionSnapshot
+    ) async -> RefreshPreparationResult {
         guard let scrollEngine else {
-            return .engineUnavailable(.scroll)
+            return .failed(.engineUnavailable(.scroll))
         }
 
         switch request.intent {
         case .layout, .appearance:
-            break
+            return .requiresVisibleCommit(
+                RefreshRevisionCoverage(
+                    settings: revisions.settings,
+                    content: revisions.content
+                )
+            )
         case .chapterContent(let chapterIndex):
             if chapterIndex == request.position.spineIndex {
                 scrollEngine.invalidateChapterDocument(at: chapterIndex)
+                return .requiresVisibleCommit(
+                    RefreshRevisionCoverage(
+                        settings: revisions.settings,
+                        content: revisions.content
+                    )
+                )
             } else {
-                _ = await scrollEngine.retryChapterIfNeeded(chapterIndex)
+                let didRetry = await scrollEngine.retryChapterIfNeeded(
+                    chapterIndex
+                )
+                return .requiresVisibleCommit(
+                    RefreshRevisionCoverage(
+                        settings: revisions.settings,
+                        content: didRetry ? revisions.content : nil
+                    )
+                )
             }
         case .modeActivation:
-            _ = scrollAppliedSettingsRevision < settingsRevision
-                || scrollAppliedContentRevision < contentRevision
+            let needsSettings =
+                scrollAppliedSettingsRevision < revisions.settings
+            let needsContent =
+                scrollAppliedContentRevision < revisions.content
+            guard needsSettings || needsContent else {
+                return .completed(.none)
+            }
+            return .requiresVisibleCommit(
+                RefreshRevisionCoverage(
+                    settings: needsSettings ? revisions.settings : nil,
+                    content: needsContent ? revisions.content : nil
+                )
+            )
         }
-        return nil
     }
 
     private func hasPagedLayout(
@@ -558,14 +678,37 @@ final class EPUBPageRenderer: ObservableObject {
         return engine.layouts[position.spineIndex] != nil
     }
 
-    private func markAppliedRevisions(for mode: ReaderDisplayMode) {
+    private func apply(
+        _ coverage: RefreshRevisionCoverage,
+        to mode: ReaderDisplayMode
+    ) {
         switch mode {
         case .paged:
-            pagedAppliedSettingsRevision = settingsRevision
-            pagedAppliedContentRevision = contentRevision
+            if let revision = coverage.settings {
+                pagedAppliedSettingsRevision = max(
+                    pagedAppliedSettingsRevision,
+                    revision
+                )
+            }
+            if let revision = coverage.content {
+                pagedAppliedContentRevision = max(
+                    pagedAppliedContentRevision,
+                    revision
+                )
+            }
         case .scroll:
-            scrollAppliedSettingsRevision = settingsRevision
-            scrollAppliedContentRevision = contentRevision
+            if let revision = coverage.settings {
+                scrollAppliedSettingsRevision = max(
+                    scrollAppliedSettingsRevision,
+                    revision
+                )
+            }
+            if let revision = coverage.content {
+                scrollAppliedContentRevision = max(
+                    scrollAppliedContentRevision,
+                    revision
+                )
+            }
         }
     }
 }
