@@ -78,6 +78,11 @@ extension ReaderView {
                 },
                 onChapterContentRequired: { chapterIndex in
                     ensureChapterReady(chapterIndex: chapterIndex)
+                },
+                onResliceCompleted: { chapterIndex in
+                    if manuallyRefreshingChapterIndex == chapterIndex {
+                        manuallyRefreshingChapterIndex = nil
+                    }
                 }
             )
             .id(ObjectIdentifier(scrollEngine))

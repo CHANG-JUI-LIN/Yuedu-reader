@@ -133,6 +133,7 @@ struct ReaderView: View {
     @State var scrollVisibleChapter = 0
     @State var scrollResliceToken: UInt = 0
     @State var pendingScrollJumpTarget: CoreTextReadingPosition?
+    @State var manuallyRefreshingChapterIndex: Int?
 
     @State var readerSessionCoordinator: ReaderSessionCoordinator?
     @State var readingStatsTracker: ReadingStatsSessionTracker?
@@ -1364,11 +1365,17 @@ struct ReaderView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
 
-            // The network-fetch *loading* overlay stays disabled per user request —
-            // the engine's placeholder page already communicates loading. Only the
-            // FAILURE branch is rendered (restored 2026-07-22): a failed chapter
-            // fetch used to be swallowed here (state was computed but never shown),
-            // leaving the placeholder spinning forever with no error and no retry.
+            // Ordinary lazy loading keeps using the inline chapter placeholder. A manual
+            // refresh is different: the user explicitly requested a new copy, so keep a
+            // visible loading surface up until the renderer has consumed that copy.
+            if manuallyRefreshingChapterIndex == currentChapterIndex {
+                readerSurfaceBackground
+                    .overlay { ProgressView(localized("載入中…")) }
+                    .transition(.opacity)
+            }
+
+            // Failed chapter fetches surface the reason and a manual retry. Do not
+            // auto-retry here: rate-limited sources would otherwise avalanche.
             if case .failed(let message) = currentChapterOverlayState {
                 chapterLoadFailureOverlay(message: message)
             }

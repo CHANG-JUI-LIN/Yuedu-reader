@@ -303,15 +303,13 @@ extension ReaderView {
     }
 
     func refreshCurrentChapter() {
-        if let b = book, b.isOnline {
-            // For online books the chapter content is cached *after* the current set of
-            // replace rules has been applied.  When the user adds/edits a rule and calls
-            // refresh we must clear that cache and re-fetch so the new rule takes effect.
+        if let currentBook = book, currentBook.isOnline {
+            // Online refresh explicitly requests a new chapter copy. Keep the manual
+            // loading surface visible until the active renderer consumes that copy.
+            manuallyRefreshingChapterIndex = currentChapterIndex
             retryCurrentChapterLoad()
         } else if book != nil {
-            // Local TXT/EPUB: replace rules are applied during attributed-string building
-            // (TXTLazyAttributedStringBuilder / MarkdownAttributedStringBuilder).  Invalidate
-            // the layout so the engine rebuilds each chapter through the pipeline again.
+            // Local TXT/EPUB refresh rebuilds the current renderer from local content.
             forceReaderRenderableContentRefresh()
         }
     }

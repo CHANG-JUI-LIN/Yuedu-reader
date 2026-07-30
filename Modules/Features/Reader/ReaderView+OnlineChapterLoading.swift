@@ -39,24 +39,26 @@ extension ReaderView {
                 }
                 prefetchAdjacentChapters(around: chapterIndex)
             }
+            if case .failed = newState,
+               manuallyRefreshingChapterIndex == chapterIndex {
+                manuallyRefreshingChapterIndex = nil
+            }
             applyChapterRefreshAction(for: chapterIndex, newState: newState)
         }
     }
 
     func applyChapterRefreshAction(for chapterIndex: Int, newState: ChapterLoadState) {
         let contentAvailable = isChapterContentAvailable(at: chapterIndex)
+        if newState == .ready,
+           !contentAvailable,
+           manuallyRefreshingChapterIndex == chapterIndex {
+            manuallyRefreshingChapterIndex = nil
+        }
         if effectiveScrollMode, let scrollEngine = epubRenderer.scrollEngine {
             if newState == .ready, contentAvailable {
                 if chapterIndex == currentChapterIndex {
-                    let restorePosition = readerSessionCoordinator?
-                        .state.location.coreTextPosition
-                        ?? .chapterStart(chapterIndex)
-                    Task {
-                        await scrollEngine.refreshChapter(
-                            at: chapterIndex,
-                            restoreAt: restorePosition
-                        )
-                    }
+                    scrollEngine.invalidateChapterDocument(at: chapterIndex)
+                    scheduleScrollReslice()
                 } else {
                     Task { await scrollEngine.retryChapterIfNeeded(chapterIndex) }
                 }
@@ -92,12 +94,18 @@ extension ReaderView {
                 if self.savedCoreTextRestoreTarget != nil {
                     self.applyInitialProgressIfNeeded()
                 }
+                if self.manuallyRefreshingChapterIndex == visibleChapterIndex {
+                    self.manuallyRefreshingChapterIndex = nil
+                }
             }
         case .rebuildPages:
             #if DEBUG
             AppLogger.render("[StateDebug] rebuildPages()")
             #endif
             rebuildPages()
+            if manuallyRefreshingChapterIndex == chapterIndex {
+                manuallyRefreshingChapterIndex = nil
+            }
         }
     }
 

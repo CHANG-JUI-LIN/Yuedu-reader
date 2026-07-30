@@ -19,6 +19,7 @@ struct ScrollConfigObserver: ViewModifier {
             .onChanged(of: readerConfig.footerBottomPadding) { _ in onChanged() }
             .onChanged(of: readerConfig.footerTextGap) { _ in onChanged() }
             .onChanged(of: readerConfig.chapterTitleStyle) { _ in onChanged() }
+            .onChanged(of: readerConfig.readerFontBold) { _ in onChanged() }
             .onChanged(of: readerTheme) { _ in onChanged() }
     }
 }

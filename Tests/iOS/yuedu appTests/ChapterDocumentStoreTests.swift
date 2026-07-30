@@ -60,7 +60,10 @@ struct ChapterDocumentStoreTests {
     @MainActor
     func pagedChapterDataChangeRebuildsDocument() async throws {
         let probe = ChapterDocumentBuildProbe()
-        let builder = ChapterDocumentTestBuilder(probe: probe, chapterCount: 1)
+        let builder = MutableChapterDocumentTestBuilder(
+            probe: probe,
+            body: "Old chapter body"
+        )
         let store = ChapterDocumentStore(builder: builder)
         let offsetDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ChapterDocumentRefreshTests-\(UUID().uuidString)")
@@ -77,17 +80,23 @@ struct ChapterDocumentStoreTests {
             bookId: "chapter-document-refresh-test"
         )
         #expect(await probe.buildCount == 1)
+        #expect(engine.layouts[0]?.attributedString.string == "Old chapter body")
 
+        builder.body = "New chapter body"
         await engine.notifyChapterDataChanged(at: 0)
 
         #expect(await probe.buildCount == 2)
+        #expect(engine.layouts[0]?.attributedString.string == "New chapter body")
     }
 
     @Test("Scroll chapter refresh rebuilds the chapter document during reslice")
     @MainActor
     func scrollChapterRefreshRebuildsDocument() async throws {
         let probe = ChapterDocumentBuildProbe()
-        let builder = ChapterDocumentTestBuilder(probe: probe, chapterCount: 1)
+        let builder = MutableChapterDocumentTestBuilder(
+            probe: probe,
+            body: "Old chapter body"
+        )
         let store = ChapterDocumentStore(builder: builder)
         let engine = CoreTextScrollEngine(
             builder: builder,
@@ -97,11 +106,16 @@ struct ChapterDocumentStoreTests {
 
         await engine.start(initialChapter: 0, contentWidth: 288)
         #expect(await probe.buildCount == 1)
+        #expect(renderedText(in: engine).contains("Old chapter body"))
 
+        builder.body = "New chapter body"
         engine.invalidateChapterDocument(at: 0)
         await engine.reslice(restoreAt: 0, contentWidth: 288)
 
         #expect(await probe.buildCount == 2)
+        let refreshedText = renderedText(in: engine)
+        #expect(refreshedText.contains("New chapter body"))
+        #expect(!refreshedText.contains("Old chapter body"))
     }
 
     @Test("Layout-affecting settings create a distinct chapter document")
@@ -199,6 +213,13 @@ struct ChapterDocumentStoreTests {
             themeBackgroundColor: settings.backgroundColor
         )
     }
+
+    @MainActor
+    private func renderedText(in engine: CoreTextScrollEngine) -> String {
+        engine.chunks
+            .map(\.attributedString.string)
+            .joined(separator: "\n")
+    }
 }
 
 private actor ChapterDocumentBuildProbe {
@@ -254,6 +275,44 @@ private struct ChapterDocumentTestBuilder: AttributedStringBuilding {
         return AttributedChapterBuildResult(
             attributedString: NSAttributedString(
                 string: "chapter-\(index)",
+                attributes: [
+                    .font: UIFont.systemFont(ofSize: settings.fontSize),
+                    .foregroundColor: themeTextColor,
+                ]
+            ),
+            imagePage: nil,
+            pageBackgroundImage: nil,
+            anchorOffsets: [:]
+        )
+    }
+}
+
+@MainActor
+private final class MutableChapterDocumentTestBuilder: AttributedStringBuilding {
+    let probe: ChapterDocumentBuildProbe
+    let chapterCount = 1
+    var body: String
+
+    init(probe: ChapterDocumentBuildProbe, body: String) {
+        self.probe = probe
+        self.body = body
+    }
+
+    func chapterTitle(at index: Int) -> String { "Chapter \(index)" }
+    func chapterDataSize(at index: Int) async -> Int {
+        body.lengthOfBytes(using: .utf8)
+    }
+
+    func buildChapter(
+        at index: Int,
+        settings: ReaderRenderSettings,
+        themeTextColor: UIColor,
+        themeBackgroundColor: UIColor
+    ) async throws -> AttributedChapterBuildResult {
+        await probe.beginBuild()
+        return AttributedChapterBuildResult(
+            attributedString: NSAttributedString(
+                string: body,
                 attributes: [
                     .font: UIFont.systemFont(ofSize: settings.fontSize),
                     .foregroundColor: themeTextColor,

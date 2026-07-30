@@ -19,6 +19,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     var onProgressCommit: ((CoreTextReadingPosition) -> Void)?
     var onTap: (() -> Void)?
     var onInternalLinkTap: ((String) -> Void)?
+    var onResliceCompleted: ((Int) -> Void)?
 
     private let collectionView: UICollectionView
     private var cancellables: Set<AnyCancellable> = []
@@ -29,6 +30,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     private var displayedCount: Int = 0
     private var lastWarmRow: Int?
     private var lastWarmUptime: TimeInterval = 0
+    private var resliceTask: Task<Void, Never>?
 
     private var selectionChapter: Int?
     private var selectedText: String?
@@ -405,7 +407,8 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         let extent = currentContentExtent
         let imageExtent = currentImageContentWidth
         guard extent > 0 else { return }
-        Task { [weak self] in
+        resliceTask?.cancel()
+        resliceTask = Task { [weak self] in
             guard let self = self else { return }
             self.hasAppliedInitialScroll = false
             self.pendingInitialScroll = (chapter, charOffset)
@@ -414,6 +417,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
                 contentWidth: extent,
                 imageContentWidth: imageExtent
             )
+            guard !Task.isCancelled else { return }
+            self.onResliceCompleted?(chapter)
+            self.resliceTask = nil
         }
     }
 

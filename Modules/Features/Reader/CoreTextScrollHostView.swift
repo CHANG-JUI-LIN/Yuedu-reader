@@ -19,6 +19,7 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
     var onProgressCommit: (CoreTextReadingPosition) -> Void = { _ in }
     var onInternalLinkTap: (String) -> Void = { _ in }
     var onChapterContentRequired: (Int) -> Void = { _ in }
+    var onResliceCompleted: (Int) -> Void = { _ in }
 
     func makeUIViewController(context: Context) -> UIViewController {
         let vc = CoreTextCollectionScrollViewController(
@@ -31,6 +32,7 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
         vc.onTap = onTap
         vc.onProgressCommit = onProgressCommit
         vc.onInternalLinkTap = onInternalLinkTap
+        vc.onResliceCompleted = onResliceCompleted
         engine.onChapterContentRequired = onChapterContentRequired
         vc.setInitialPosition(chapter: initialChapter, charOffset: initialCharOffset)
         vc.setTextAnnotations(textAnnotations)
@@ -44,6 +46,7 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
         collectionVC.onTap = onTap
         collectionVC.onProgressCommit = onProgressCommit
         collectionVC.onInternalLinkTap = onInternalLinkTap
+        collectionVC.onResliceCompleted = onResliceCompleted
         engine.onChapterContentRequired = onChapterContentRequired
         collectionVC.setTextAnnotations(textAnnotations)
         collectionVC.setPlaybackHighlight(text: playbackHighlightText)

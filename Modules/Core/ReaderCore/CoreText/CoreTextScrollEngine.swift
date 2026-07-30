@@ -54,6 +54,8 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     private var loadedChapters: Set<Int> = []
     /// Chapters that could not be sliced because their online content was not cached yet.
     private var pendingMissingChapters: [Int: Bool] = [:]
+    /// Latest-wins guard for overlapping settings/content reslices.
+    private var resliceGeneration: UInt64 = 0
 
     // MARK: - Init
 
@@ -76,12 +78,18 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     // MARK: - Lifecycle
 
     /// Initial load: slices the starting chapter + adjacent chapters
-    func start(initialChapter: Int, contentWidth: CGFloat, imageContentWidth: CGFloat? = nil) async {
+    func start(
+        initialChapter: Int,
+        contentWidth: CGFloat,
+        imageContentWidth: CGFloat? = nil,
+        loadAdjacentChapters: Bool = true
+    ) async {
         self.contentWidth = contentWidth
         self.imageContentWidth = imageContentWidth
         let clamped = max(0, min(initialChapter, max(0, builder.chapterCount - 1)))
         await loadChapter(clamped)
         isReady = true
+        guard loadAdjacentChapters else { return }
         if clamped + 1 < builder.chapterCount {
             await loadChapter(clamped + 1)
         }
@@ -115,6 +123,8 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         imageContentWidth: CGFloat? = nil,
         restorePosition: CoreTextReadingPosition? = nil
     ) async {
+        resliceGeneration &+= 1
+        let generation = resliceGeneration
         let resolvedImageContentWidth = imageContentWidth ?? self.imageContentWidth
 
         let replacement = CoreTextScrollEngine(
@@ -126,9 +136,11 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         await replacement.start(
             initialChapter: chapterIndex,
             contentWidth: contentWidth,
-            imageContentWidth: resolvedImageContentWidth
+            imageContentWidth: resolvedImageContentWidth,
+            loadAdjacentChapters: false
         )
 
+        guard generation == resliceGeneration, !Task.isCancelled else { return }
         self.contentWidth = contentWidth
         self.imageContentWidth = resolvedImageContentWidth
         chunks = replacement.chunks

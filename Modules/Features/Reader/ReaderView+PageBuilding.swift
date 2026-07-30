@@ -476,7 +476,8 @@ extension ReaderView {
     }
 
     func forceReaderRenderableContentRefresh() {
-        if effectiveScrollMode, epubRenderer.scrollEngine != nil {
+        if effectiveScrollMode, let scrollEngine = epubRenderer.scrollEngine {
+            scrollEngine.invalidateChapterDocument(at: currentChapterIndex)
             scheduleScrollReslice()
             return
         }
