@@ -661,7 +661,7 @@ struct ReaderView: View {
             spreadMode: effectiveReaderSpreadMode,
             viewportSize: readerViewportSize,
             appearance: ReaderAppearance(
-                settings: readerRenderSettings(for: effectiveScrollMode ? .scroll : .paged),
+                settings: readerRenderSettings(for: activeReaderDisplayMode),
                 theme: readerTheme
             ),
             pagingStyle: ReaderPagingStyle(pageTurnStyle: settings.pageTurnStyle)

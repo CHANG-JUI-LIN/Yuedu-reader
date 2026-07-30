@@ -16,6 +16,10 @@ extension ReaderView {
             : nil
     }
 
+    var activeReaderDisplayMode: ReaderDisplayMode {
+        effectiveScrollMode ? .scroll : .paged
+    }
+
     func readerRenderSettings(for mode: ReaderDisplayMode) -> ReaderRenderSettings {
         let input = ReaderRenderSettingsSnapshotInput(
             theme: readerTheme.epubJSName,
@@ -150,7 +154,7 @@ extension ReaderView {
                     if session.epubWritingMode == .verticalRL {
                         self.isVerticalEPUB = true
                     }
-                    let settings = self.readerRenderSettings(for: .paged)
+                    let settings = self.readerRenderSettings(for: self.activeReaderDisplayMode)
                     self.applyPublicationSession(session, book: book, settings: settings)
                 }
             } catch {
@@ -185,7 +189,7 @@ extension ReaderView {
             return
         }
 
-        let settings = readerRenderSettings(for: .paged)
+        let settings = readerRenderSettings(for: activeReaderDisplayMode)
         let refs = book.onlineChapters ?? []
         chapters = refs.enumerated().map { idx, ref in
             let href = ref.sanitizedContentURL
@@ -260,7 +264,7 @@ extension ReaderView {
         
         if b.resolvedPipelineKind == .txt {
             let bookTitle = b.title
-            let settings = readerRenderSettings(for: .paged)
+            let settings = readerRenderSettings(for: activeReaderDisplayMode)
             let targetBook = b
             let targetBookID = targetBook.id
             let txtURL = StorageLocations.bookFile(targetBook.contentFilename)
@@ -389,7 +393,7 @@ extension ReaderView {
                         title: bookTitle,
                         document: finalDocument,
                         builder: finalBuilder,
-                        settings: self.readerRenderSettings(for: .paged)
+                        settings: self.readerRenderSettings(for: self.activeReaderDisplayMode)
                     )
                 } catch {
                     guard self.book?.id == targetBook.id else { return }
@@ -525,7 +529,7 @@ extension ReaderView {
 
     func applyUnifiedAppearanceUpdate() {
         guard let engine = epubRenderer.engine else { return }
-        epubRenderer.updateRenderSettings(readerRenderSettings(for: .paged))
+        epubRenderer.updateRenderSettings(readerRenderSettings(for: activeReaderDisplayMode))
         engine.applyThemeChange(
             textColor: readerTheme.uiTextColor,
             backgroundColor: readerTheme.uiBackgroundColor
