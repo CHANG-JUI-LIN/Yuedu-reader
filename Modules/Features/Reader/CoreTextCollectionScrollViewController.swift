@@ -488,7 +488,14 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
 
     private func handle(event: CoreTextScrollEngine.Event) {
         switch event {
-        case .reset:
+        case .reset(let restorePosition):
+            if let restorePosition {
+                hasAppliedInitialScroll = false
+                pendingInitialScroll = (
+                    restorePosition.spineIndex,
+                    restorePosition.charOffset
+                )
+            }
             displayedCount = engine.chunks.count
             lastWarmRow = nil
             collectionView.reloadData()

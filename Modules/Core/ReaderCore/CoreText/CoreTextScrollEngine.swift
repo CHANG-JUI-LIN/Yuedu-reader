@@ -33,7 +33,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
 
     /// Change event stream: VC subscribes to perform insertRows / contentOffset compensation
     enum Event {
-        case reset
+        case reset(restorePosition: CoreTextReadingPosition?)
         case insertedAtBottom(count: Int, chapter: Int)
         case insertedAtTop(count: Int, addedHeight: CGFloat, chapter: Int)
     }
@@ -109,7 +109,12 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     }
 
     /// Reslice (settings changed): clear all chunks and re-slice from the specified chapter
-    func reslice(restoreAt chapterIndex: Int, contentWidth: CGFloat, imageContentWidth: CGFloat? = nil) async {
+    func reslice(
+        restoreAt chapterIndex: Int,
+        contentWidth: CGFloat,
+        imageContentWidth: CGFloat? = nil,
+        restorePosition: CoreTextReadingPosition? = nil
+    ) async {
         let resolvedImageContentWidth = imageContentWidth ?? self.imageContentWidth
 
         let replacement = CoreTextScrollEngine(
@@ -133,11 +138,32 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         slicingChapters = []
         pendingMissingChapters = replacement.pendingMissingChapters
         isReady = replacement.isReady
-        events.send(.reset)
+        events.send(.reset(restorePosition: restorePosition))
     }
 
     func updateRenderSettings(_ settings: ReaderRenderSettings) {
         renderSettings = settings
+    }
+
+    func refreshChapter(
+        at chapterIndex: Int,
+        restoreAt position: CoreTextReadingPosition
+    ) async {
+        guard chapterIndex >= 0,
+              chapterIndex < builder.chapterCount,
+              contentWidth > 0
+        else { return }
+
+        let restorePosition = position.spineIndex == chapterIndex
+            ? position
+            : .chapterStart(chapterIndex)
+        chapterDocumentStore.invalidate(spineIndex: chapterIndex)
+        await reslice(
+            restoreAt: chapterIndex,
+            contentWidth: contentWidth,
+            imageContentWidth: imageContentWidth,
+            restorePosition: restorePosition
+        )
     }
 
     func invalidateChapterDocument(at chapterIndex: Int) {

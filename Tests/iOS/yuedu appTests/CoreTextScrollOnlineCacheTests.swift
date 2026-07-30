@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 import UIKit
@@ -40,6 +41,65 @@ struct CoreTextScrollOnlineCacheTests {
         #expect(didRetry)
         #expect(engine.chapterRanges[0] != nil)
         #expect(engine.chunks.first?.chapterIndex == 0)
+    }
+
+    @Test("refreshing a loaded scroll chapter replaces its rendered content")
+    func refreshingLoadedChapterReplacesRenderedContent() async throws {
+        let builder = MutableOnlineLikeBuilder(chapterCount: 1)
+        builder.cachedChapters[0] = "Old chapter body"
+        let engine = CoreTextScrollEngine(
+            builder: builder,
+            renderSettings: makeSettings()
+        )
+        let expectedPosition = CoreTextReadingPosition(
+            spineIndex: 0,
+            charOffset: 4
+        )
+        var restoredPosition: CoreTextReadingPosition?
+        let eventCancellable = engine.events.sink { event in
+            if case .reset(let position) = event {
+                restoredPosition = position
+            }
+        }
+        defer { eventCancellable.cancel() }
+
+        await engine.start(initialChapter: 0, contentWidth: 320)
+        #expect(renderedText(in: engine).contains("Old chapter body"))
+
+        builder.cachedChapters[0] = "New chapter body"
+        await engine.refreshChapter(
+            at: 0,
+            restoreAt: expectedPosition
+        )
+
+        let refreshedText = renderedText(in: engine)
+        #expect(refreshedText.contains("New chapter body"))
+        #expect(!refreshedText.contains("Old chapter body"))
+        #expect(restoredPosition == expectedPosition)
+    }
+
+    private func makeSettings() -> ReaderRenderSettings {
+        ReaderRenderSettings(
+            theme: "test",
+            textColor: .label,
+            backgroundColor: .systemBackground,
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 2,
+            paragraphSpacing: 8,
+            letterSpacing: 0,
+            marginH: 20,
+            marginV: 20,
+            footerHeight: 0,
+            contentInsets: .zero,
+            writingMode: .horizontal
+        )
+    }
+
+    private func renderedText(in engine: CoreTextScrollEngine) -> String {
+        engine.chunks
+            .map(\.attributedString.string)
+            .joined(separator: "\n")
     }
 }
 
