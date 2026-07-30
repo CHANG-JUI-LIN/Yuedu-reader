@@ -39,6 +39,20 @@ final class EPUBPageRenderer: ObservableObject {
     private var scrollReadyCancellable: AnyCancellable?
 
     @Published var isCoreTextReady: Bool = false
+    @Published private(set) var pendingVisibleRefreshCommit: ReaderVisibleRefreshCommit?
+
+    private var nextRefreshTransactionID: UInt64 = 0
+    private var currentRefreshTransactionID: UInt64 = 0
+    private var visibleRefreshContinuations:
+        [UInt64: CheckedContinuation<ReaderRenderRefreshResult, Never>] = [:]
+    private var visibleRefreshRequests: [UInt64: ReaderRenderRefreshRequest] = [:]
+    private var latestRenderSettings: ReaderRenderSettings?
+    private var settingsRevision: UInt64 = 0
+    private var contentRevision: UInt64 = 0
+    private var pagedAppliedSettingsRevision: UInt64 = 0
+    private var scrollAppliedSettingsRevision: UInt64 = 0
+    private var pagedAppliedContentRevision: UInt64 = 0
+    private var scrollAppliedContentRevision: UInt64 = 0
 
     var isFixedLayout: Bool {
         layoutMode == .prePaginated
@@ -349,5 +363,209 @@ final class EPUBPageRenderer: ObservableObject {
     func updateRenderSettings(_ settings: ReaderRenderSettings) {
         engine?.updateRenderSettings(settings)
         scrollEngine?.updateRenderSettings(settings)
+    }
+
+    // MARK: - Refresh transactions
+
+    func refresh(
+        _ request: ReaderRenderRefreshRequest
+    ) async -> ReaderRenderRefreshResult {
+        let transactionID = beginRefreshTransaction()
+
+        if latestRenderSettings != request.settings {
+            latestRenderSettings = request.settings
+            settingsRevision &+= 1
+        }
+        updateRenderSettings(request.settings)
+        if case .chapterContent = request.intent {
+            contentRevision &+= 1
+        }
+        visibleRefreshRequests[transactionID] = request
+
+        let failure = await prepareRefresh(request)
+        guard transactionID == currentRefreshTransactionID else {
+            visibleRefreshRequests.removeValue(forKey: transactionID)
+            return .superseded(transactionID: transactionID)
+        }
+        if let failure {
+            visibleRefreshRequests.removeValue(forKey: transactionID)
+            return .failed(transactionID: transactionID, failure: failure)
+        }
+
+        return await withCheckedContinuation { continuation in
+            visibleRefreshContinuations[transactionID] = continuation
+            pendingVisibleRefreshCommit = ReaderVisibleRefreshCommit(
+                transactionID: transactionID,
+                mode: request.mode,
+                position: request.position
+            )
+        }
+    }
+
+    func finishVisibleRefresh(
+        transactionID: UInt64,
+        outcome: ReaderVisibleRefreshOutcome
+    ) {
+        guard pendingVisibleRefreshCommit?.transactionID == transactionID,
+              let continuation = visibleRefreshContinuations[
+                  transactionID
+              ],
+              let request = visibleRefreshRequests[
+                  transactionID
+              ]
+        else { return }
+
+        visibleRefreshContinuations.removeValue(
+            forKey: transactionID
+        )
+        visibleRefreshRequests.removeValue(
+            forKey: transactionID
+        )
+        pendingVisibleRefreshCommit = nil
+        switch outcome {
+        case .applied:
+            markAppliedRevisions(for: request.mode)
+            continuation.resume(
+                returning: .completed(transactionID: transactionID)
+            )
+        case .failed(let failure):
+            continuation.resume(
+                returning: .failed(
+                    transactionID: transactionID,
+                    failure: failure
+                )
+            )
+        }
+    }
+
+    private func beginRefreshTransaction() -> UInt64 {
+        nextRefreshTransactionID &+= 1
+        currentRefreshTransactionID = nextRefreshTransactionID
+
+        let supersededContinuations = visibleRefreshContinuations
+        visibleRefreshContinuations.removeAll(keepingCapacity: true)
+        visibleRefreshRequests.removeAll(keepingCapacity: true)
+        pendingVisibleRefreshCommit = nil
+        for (transactionID, continuation) in supersededContinuations {
+            continuation.resume(
+                returning: .superseded(transactionID: transactionID)
+            )
+        }
+
+        engine?.cancelPendingWork()
+        return currentRefreshTransactionID
+    }
+
+    private func prepareRefresh(
+        _ request: ReaderRenderRefreshRequest
+    ) async -> ReaderRenderRefreshFailure? {
+        switch request.mode {
+        case .paged:
+            return await preparePagedRefresh(request)
+        case .scroll:
+            return await prepareScrollRefresh(request)
+        }
+    }
+
+    private func preparePagedRefresh(
+        _ request: ReaderRenderRefreshRequest
+    ) async -> ReaderRenderRefreshFailure? {
+        guard let engine else {
+            return .engineUnavailable(.paged)
+        }
+
+        switch request.intent {
+        case .layout:
+            await invalidatePagedLayout(
+                engine,
+                newSize: request.viewportSize,
+                ensuringSpine: request.position.spineIndex
+            )
+        case .appearance:
+            engine.applyThemeChange(
+                textColor: request.settings.textColor,
+                backgroundColor: request.settings.backgroundColor
+            )
+        case .chapterContent(let chapterIndex):
+            await engine.notifyChapterDataChanged(at: chapterIndex)
+        case .modeActivation:
+            let needsPreparation =
+                pagedAppliedSettingsRevision < settingsRevision
+                || pagedAppliedContentRevision < contentRevision
+            if needsPreparation {
+                await invalidatePagedLayout(
+                    engine,
+                    newSize: request.viewportSize,
+                    ensuringSpine: request.position.spineIndex
+                )
+            }
+        }
+
+        guard hasPagedLayout(
+            for: request.position,
+            engine: engine
+        ) else {
+            return .layoutUnavailable(request.position.spineIndex)
+        }
+        return nil
+    }
+
+    private func invalidatePagedLayout(
+        _ engine: any PageRenderingProvider,
+        newSize: CGSize,
+        ensuringSpine spineIndex: Int
+    ) async {
+        if let coreTextEngine = engine as? CoreTextPageEngine {
+            await coreTextEngine.invalidateLayout(
+                newSize: newSize,
+                ensuringSpine: spineIndex
+            )
+        } else {
+            await engine.invalidateLayout(newSize: newSize)
+        }
+    }
+
+    private func prepareScrollRefresh(
+        _ request: ReaderRenderRefreshRequest
+    ) async -> ReaderRenderRefreshFailure? {
+        guard let scrollEngine else {
+            return .engineUnavailable(.scroll)
+        }
+
+        switch request.intent {
+        case .layout, .appearance:
+            break
+        case .chapterContent(let chapterIndex):
+            if chapterIndex == request.position.spineIndex {
+                scrollEngine.invalidateChapterDocument(at: chapterIndex)
+            } else {
+                _ = await scrollEngine.retryChapterIfNeeded(chapterIndex)
+            }
+        case .modeActivation:
+            _ = scrollAppliedSettingsRevision < settingsRevision
+                || scrollAppliedContentRevision < contentRevision
+        }
+        return nil
+    }
+
+    private func hasPagedLayout(
+        for position: CoreTextReadingPosition,
+        engine: any PageRenderingProvider
+    ) -> Bool {
+        if engine is FixedLayoutPageEngine {
+            return engine.pageIndex(for: position) != nil
+        }
+        return engine.layouts[position.spineIndex] != nil
+    }
+
+    private func markAppliedRevisions(for mode: ReaderDisplayMode) {
+        switch mode {
+        case .paged:
+            pagedAppliedSettingsRevision = settingsRevision
+            pagedAppliedContentRevision = contentRevision
+        case .scroll:
+            scrollAppliedSettingsRevision = settingsRevision
+            scrollAppliedContentRevision = contentRevision
+        }
     }
 }

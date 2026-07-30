@@ -846,6 +846,13 @@ _layouts[spineIndex] = nil
     }
 
     func invalidateLayout(newSize: CGSize) async {
+        await invalidateLayout(newSize: newSize, ensuringSpine: nil)
+    }
+
+    func invalidateLayout(
+        newSize: CGSize,
+        ensuringSpine spineIndex: Int?
+    ) async {
         AppLogger.render("[FlipTrace] invalidateLayout newSize=\(newSize) oldSize=\(renderSize) loaded=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
         let restorePosition = readingPosition(forPage: currentPage)
         cancelPendingWork()
@@ -854,13 +861,18 @@ _layouts[spineIndex] = nil
         updateBuilderRenderSize(newSize)
         paginationManager.invalidate(reason: .viewSizeChanged)
 
-        // Only re-layout chapters currently held in memory
-        let loadedSpines = Array(_layouts.keys.sorted())
+        // Re-layout chapters currently held in memory plus an explicit visible
+        // target that an overlapping invalidation may already have removed.
+        var spinesToReload = Set(_layouts.keys)
+        if let spineIndex,
+           (0..<chapterCount).contains(spineIndex) {
+            spinesToReload.insert(spineIndex)
+        }
 _layouts.removeAll()
         chapterSnapshots.removeAllObjects()
 
         await withTaskGroup(of: Void.self) { group in
-            for i in loadedSpines {
+            for i in spinesToReload.sorted() {
                 group.addTask { await self.preloadChapter(at: i) }
             }
         }

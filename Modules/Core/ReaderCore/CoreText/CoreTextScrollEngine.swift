@@ -117,12 +117,13 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     }
 
     /// Reslice (settings changed): clear all chunks and re-slice from the specified chapter
+    @discardableResult
     func reslice(
         restoreAt chapterIndex: Int,
         contentWidth: CGFloat,
         imageContentWidth: CGFloat? = nil,
         restorePosition: CoreTextReadingPosition? = nil
-    ) async {
+    ) async -> Bool {
         resliceGeneration &+= 1
         let generation = resliceGeneration
         let resolvedImageContentWidth = imageContentWidth ?? self.imageContentWidth
@@ -140,7 +141,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             loadAdjacentChapters: false
         )
 
-        guard generation == resliceGeneration, !Task.isCancelled else { return }
+        guard generation == resliceGeneration, !Task.isCancelled else {
+            return false
+        }
         self.contentWidth = contentWidth
         self.imageContentWidth = resolvedImageContentWidth
         chunks = replacement.chunks
@@ -151,6 +154,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         pendingMissingChapters = replacement.pendingMissingChapters
         isReady = replacement.isReady
         events.send(.reset(restorePosition: restorePosition))
+        return chapterRanges[chapterIndex]?.isEmpty == false
     }
 
     func updateRenderSettings(_ settings: ReaderRenderSettings) {
@@ -170,7 +174,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             ? position
             : .chapterStart(chapterIndex)
         chapterDocumentStore.invalidate(spineIndex: chapterIndex)
-        await reslice(
+        _ = await reslice(
             restoreAt: chapterIndex,
             contentWidth: contentWidth,
             imageContentWidth: imageContentWidth,
