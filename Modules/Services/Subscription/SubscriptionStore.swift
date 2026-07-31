@@ -76,6 +76,15 @@ final class SubscriptionStore: ObservableObject {
     /// process per 5 minutes, so a repeatedly-failing device cannot flood
     /// the diagnostics collection.
     private var lastDropReportDate: Date?
+    /// Persisted across launches: `true` once this device ever held a Pro
+    /// entitlement. Cold-start drops (app relaunched while the entitlement is
+    /// already false — the common "退出重進就掉了" report pattern) only report
+    /// when this flag is set, so devices that never had Pro stay silent.
+    private var hadProEver: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.hadProEverKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.hadProEverKey) }
+    }
+    private static let hadProEverKey = "subscription_had_pro_ever"
 
     private init() {
         // Start listening for transactions BEFORE any purchase so we never miss
@@ -357,10 +366,16 @@ final class SubscriptionStore: ObservableObject {
             account: accountIsProActive
         )
         #endif
+        if isProActive {
+            hadProEver = true
+        }
         Self.subscriptionLog.notice(
             "Entitlement recompute: storeKit \(hasPurchase, privacy: .public) account \(self.accountIsProActive, privacy: .public) → pro \(self.isProActive, privacy: .public)"
         )
-        if previous && !isProActive {
+        // Report when Pro is (now) off on a device that ever had it — covers
+        // both in-process drops and cold-start drops (relaunch with the
+        // entitlement already false, where `previous` is always false).
+        if !isProActive && hadProEver {
             reportEntitlementDrop(storeKit: hasPurchase, account: accountIsProActive)
         }
     }
