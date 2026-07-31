@@ -96,6 +96,17 @@ class BookSourceStore: ObservableObject {
         save()
     }
 
+    /// Records the health checker's measured response time (ms), which doubles as the
+    /// adaptive request timeout (Legado semantics: elapsed on success, timeout+elapsed on
+    /// failure). Deliberately does NOT advance `lastUpdateTime`: an automated measurement
+    /// shouldn't win the sync merge (same contract as `setEnabled`).
+    func setRespondTime(id: UUID, ms: Int64) {
+        if let idx = sources.firstIndex(where: { $0.id == id }), sources[idx].respondTime != ms {
+            sources[idx].respondTime = ms
+            save()
+        }
+    }
+
     /// Sets a source's enabled flag to an explicit value (no-op if already set). Used by the
     /// health checker to disable bad/slow sources without risk of accidentally re-enabling.
     /// Deliberately does NOT advance `lastUpdateTime`: an automated, possibly-transient disable
