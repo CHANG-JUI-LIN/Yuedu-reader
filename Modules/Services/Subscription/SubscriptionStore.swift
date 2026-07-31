@@ -357,7 +357,6 @@ final class SubscriptionStore: ObservableObject {
     }
 
     private func recomputeEntitlement() {
-        let previous = isProActive
         let hasPurchase = ProProduct.allCases.contains { purchasedProductIDs.contains($0.rawValue) }
         storeKitIsProActive = hasPurchase
         #if DEBUG
@@ -415,7 +414,9 @@ final class SubscriptionStore: ObservableObject {
             let storefrontID = await Storefront.current?.id ?? ""
             data["storefront"] = storefrontID
             Self.subscriptionLog.notice("Reporting entitlement drop diagnostic to Firestore")
-            Firestore.firestore().collection("entitlementDiagnostics").addDocument(data: data)
+            try? await Firestore.firestore()
+                .collection("entitlementDiagnostics")
+                .addDocument(data: data)
         }
     }
 
