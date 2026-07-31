@@ -39,5 +39,18 @@ service cloud.firestore {
     match /purchaseBindings/{originalTransactionId} {
       allow read, write: if false;
     }
+
+    // Client-side entitlement diagnostics, auto-reported by the app the moment
+    // a Pro entitlement drops (true -> false) on a device the developer cannot
+    // reach directly (e.g. a user reporting from behind a VPN). Anonymous
+    // create with a whitelisted schema of non-sensitive fields only; the
+    // developer reads these from the Firebase console with admin credentials.
+    match /entitlementDiagnostics/{docId} {
+      allow create: if request.resource.data.keys().hasOnly([
+        "storeKit", "account", "ownedProducts", "uid",
+        "appVersion", "build", "createdAt"
+      ]);
+      allow read, update, delete: if false;
+    }
   }
 }

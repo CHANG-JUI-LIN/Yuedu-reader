@@ -85,6 +85,9 @@ final class SubscriptionAccountService {
                 expiresAt: (data["expiresAt"] as? Timestamp)?.dateValue()
             )
             SubscriptionEntitlementCache.save(entitlement, uid: uid)
+            subscriptionAccountLog.notice(
+                "Entitlement document: uid \(uid, privacy: .public) isProActive \(entitlement.isProActive, privacy: .public)"
+            )
             return entitlement.isActive()
         } catch {
             subscriptionAccountLog.error(

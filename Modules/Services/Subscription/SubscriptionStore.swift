@@ -1,8 +1,12 @@
 import Combine
+import FirebaseAuth
+import FirebaseCore
+import FirebaseFirestore
 import Foundation
 import StoreKit
 import SwiftUI
 import UIKit
+import os
 
 enum SubscriptionProductReloadPolicy {
     static func shouldReload(
@@ -25,6 +29,11 @@ enum SubscriptionProductReloadPolicy {
 @MainActor
 final class SubscriptionStore: ObservableObject {
     static let shared = SubscriptionStore()
+
+    private static let subscriptionLog = Logger(
+        subsystem: "com.zhangruilin.yuedureader",
+        category: "Subscription"
+    )
 
     /// The product identifiers configured in App Store Connect and the local
     /// `.storekit` file. Order here is the display order on the paywall.
@@ -63,6 +72,10 @@ final class SubscriptionStore: ObservableObject {
     private var loadedStorefrontID: String?
     private var productLoadGeneration = 0
     private let accountService = SubscriptionAccountService.shared
+    /// Throttle for the fire-and-forget drop diagnostic: one report per
+    /// process per 5 minutes, so a repeatedly-failing device cannot flood
+    /// the diagnostics collection.
+    private var lastDropReportDate: Date?
 
     private init() {
         // Start listening for transactions BEFORE any purchase so we never miss
@@ -259,13 +272,23 @@ final class SubscriptionStore: ObservableObject {
     /// Recomputes the entitlement from `Transaction.currentEntitlements`.
     func refreshEntitlements() async {
         var owned: Set<String> = []
+        var revokedCount = 0
         for await result in Transaction.currentEntitlements {
-            guard let transaction = try? checkVerified(result) else { continue }
-            if transaction.revocationDate == nil {
-                owned.insert(transaction.productID)
+            switch result {
+            case .verified(let transaction):
+                if transaction.revocationDate == nil {
+                    owned.insert(transaction.productID)
+                } else {
+                    revokedCount += 1
+                }
+            case .unverified:
+                break
             }
         }
         purchasedProductIDs = owned
+        Self.subscriptionLog.notice(
+            "StoreKit currentEntitlements: owned \(owned.sorted().joined(separator: ","), privacy: .public) revoked \(revokedCount)"
+        )
         recomputeEntitlement()
     }
 
@@ -320,6 +343,7 @@ final class SubscriptionStore: ObservableObject {
     }
 
     private func recomputeEntitlement() {
+        let previous = isProActive
         let hasPurchase = ProProduct.allCases.contains { purchasedProductIDs.contains($0.rawValue) }
         storeKitIsProActive = hasPurchase
         #if DEBUG
@@ -333,6 +357,37 @@ final class SubscriptionStore: ObservableObject {
             account: accountIsProActive
         )
         #endif
+        Self.subscriptionLog.notice(
+            "Entitlement recompute: storeKit \(hasPurchase, privacy: .public) account \(self.accountIsProActive, privacy: .public) → pro \(self.isProActive, privacy: .public)"
+        )
+        if previous && !isProActive {
+            reportEntitlementDrop(storeKit: hasPurchase, account: accountIsProActive)
+        }
+    }
+
+    /// Fire-and-forget telemetry: when the Pro entitlement drops, write the
+    /// exact state (StoreKit flag, account flag, owned product IDs, uid,
+    /// app version) to Firestore `entitlementDiagnostics` so the developer can
+    /// diagnose a device they cannot reach (e.g. a user reporting from behind
+    /// a VPN). Deliberately best-effort: failure must never affect the reader,
+    /// and Firebase may not be configured yet at early launch — guarded.
+    private func reportEntitlementDrop(storeKit: Bool, account: Bool) {
+        let now = Date()
+        if let last = lastDropReportDate, now.timeIntervalSince(last) < 300 { return }
+        lastDropReportDate = now
+        guard FirebaseApp.app() != nil else { return }
+        let info = Bundle.main.infoDictionary
+        let data: [String: Any] = [
+            "storeKit": storeKit,
+            "account": account,
+            "ownedProducts": purchasedProductIDs.sorted().joined(separator: ","),
+            "uid": Auth.auth().currentUser?.uid ?? "",
+            "appVersion": info?["CFBundleShortVersionString"] as? String ?? "",
+            "build": info?["CFBundleVersion"] as? String ?? "",
+            "createdAt": FieldValue.serverTimestamp()
+        ]
+        Self.subscriptionLog.notice("Reporting entitlement drop diagnostic to Firestore")
+        Firestore.firestore().collection("entitlementDiagnostics").addDocument(data: data)
     }
 
     // MARK: - Transaction listener
