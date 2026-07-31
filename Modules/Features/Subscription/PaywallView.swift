@@ -19,7 +19,8 @@ struct PaywallView: View {
     @State private var purchaseAfterLogin = false
 
     private let privacyPolicyURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/privacy.html")
-    private let paidTermsURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/paid-terms.html")
+    /// Apple's standard EULA. The custom paid-terms.html page is retired.
+    private let paidTermsURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")
 
     private var activeWindowScene: UIWindowScene? {
         UIApplication.shared.connectedScenes
@@ -200,14 +201,19 @@ struct PaywallView: View {
                     .foregroundStyle(isSelected ? DSColor.accent : DSColor.textSecondary)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(planTitle(pro))
-                        .font(DSFont.bodyBold)
-                        .foregroundColor(DSColor.textPrimary)
-                    if pro == .lifetime {
-                        Text(localized("最超值"))
-                            .font(DSFont.caption2)
-                            .foregroundColor(DSColor.accent)
+                    HStack(spacing: DSSpacing.xs) {
+                        Text(planTitle(pro))
+                            .font(DSFont.bodyBold)
+                            .foregroundColor(DSColor.textPrimary)
+                        if pro == .lifetime {
+                            Text(localized("最超值"))
+                                .font(DSFont.caption2)
+                                .foregroundColor(DSColor.accent)
+                        }
                     }
+                    Text(planDescription(pro))
+                        .font(DSFont.caption2)
+                        .foregroundColor(DSColor.textSecondary)
                 }
                 Spacer(minLength: 0)
                 if let product {
@@ -235,6 +241,13 @@ struct PaywallView: View {
         switch pro {
         case .lifetime: return localized("永久會員")
         case .monthly: return localized("月會員")
+        }
+    }
+
+    private func planDescription(_ pro: SubscriptionStore.ProProduct) -> String {
+        switch pro {
+        case .lifetime: return localized("一次性購買，永久有效")
+        case .monthly: return localized("每月自動續訂，可隨時取消")
         }
     }
 
@@ -275,13 +288,6 @@ struct PaywallView: View {
                     .foregroundColor(DSColor.destructive)
                     .multilineTextAlignment(.center)
             }
-
-            Text(selectedProduct == .lifetime
-                 ? localized("一次性購買，永久有效")
-                 : localized("訂閱會自動續期，可隨時在 App Store 取消"))
-                .font(DSFont.caption2)
-                .foregroundColor(DSColor.textSecondary)
-                .multilineTextAlignment(.center)
         }
     }
 
@@ -349,7 +355,7 @@ struct PaywallView: View {
 
             HStack(spacing: DSSpacing.md) {
                 if let paidTermsURL {
-                    Link(localized("訂閱條款"), destination: paidTermsURL)
+                    Link(localized("使用條款 (EULA)"), destination: paidTermsURL)
                 }
                 if let privacyPolicyURL {
                     Link(localized("隱私政策"), destination: privacyPolicyURL)
