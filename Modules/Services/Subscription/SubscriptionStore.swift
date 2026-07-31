@@ -288,6 +288,12 @@ final class SubscriptionStore: ObservableObject {
             accountIsProActive = accountEntitlement
             recomputeEntitlement()
         }
+        // Backfill: purchases made while signed out (or on another device) were
+        // never bound — bind runs only during purchase/restore — so the server
+        // document stays missing and refreshEntitlement above keeps returning
+        // nil. Sign-in is the last chance to fix the backend while Firebase is
+        // known to be reachable.
+        await bindCurrentStoreKitEntitlementsToAccount()
     }
 
     func deleteCurrentAccountSubscriptionData() async throws {

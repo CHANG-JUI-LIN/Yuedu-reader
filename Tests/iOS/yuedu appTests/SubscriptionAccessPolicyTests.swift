@@ -33,6 +33,16 @@ struct SubscriptionAccessPolicyTests {
         #expect(!CachedSubscriptionEntitlement(isProActive: false, expiresAt: nil).isActive(at: now))
     }
 
+    @Test("missing entitlement document keeps the cached value")
+    func missingEntitlementDocumentKeepsCachedValue() {
+        #expect(!SubscriptionEntitlementRefreshPolicy.shouldApplyServerValue(documentExists: false))
+    }
+
+    @Test("existing entitlement document is authoritative over the cache")
+    func existingEntitlementDocumentIsAuthoritative() {
+        #expect(SubscriptionEntitlementRefreshPolicy.shouldApplyServerValue(documentExists: true))
+    }
+
     @Test("complete product cache reloads after the App Store storefront changes")
     func productCacheReloadsForChangedStorefront() {
         #expect(SubscriptionProductReloadPolicy.shouldReload(

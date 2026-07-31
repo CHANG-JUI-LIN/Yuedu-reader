@@ -50,8 +50,9 @@ final class SubscriptionAccountService {
         return entitlement.isActive()
     }
 
-    /// Returns nil only when Firebase is temporarily unavailable. The caller keeps
-    /// the last value for the same signed-in UID instead of revoking valid access.
+    /// Returns nil when Firebase is temporarily unavailable or the backend has
+    /// no entitlement document for this UID. The caller keeps the last value for
+    /// the same signed-in UID instead of revoking valid access.
     func refreshEntitlement() async -> Bool? {
         guard let uid = Auth.auth().currentUser?.uid else { return false }
         do {
@@ -59,10 +60,22 @@ final class SubscriptionAccountService {
                 .collection("entitlements")
                 .document(uid)
                 .getDocument()
-            let data = snapshot.data()
+            guard SubscriptionEntitlementRefreshPolicy.shouldApplyServerValue(
+                documentExists: snapshot.exists
+            ), let data = snapshot.data() else {
+                // Missing document means "never verified on this backend" (e.g. a
+                // purchase made while signed out, bound only later on sign-in), not
+                // "no entitlement". Applying its absent value as false would revoke
+                // previously verified access once Firebase becomes reachable — the
+                // real China + VPN case behind "opening the tunnel drops Pro".
+                subscriptionAccountLog.notice(
+                    "No entitlement document for uid; keeping cached value"
+                )
+                return nil
+            }
             let entitlement = CachedSubscriptionEntitlement(
-                isProActive: data?["isProActive"] as? Bool == true,
-                expiresAt: (data?["expiresAt"] as? Timestamp)?.dateValue()
+                isProActive: data["isProActive"] as? Bool == true,
+                expiresAt: (data["expiresAt"] as? Timestamp)?.dateValue()
             )
             SubscriptionEntitlementCache.save(entitlement, uid: uid)
             return entitlement.isActive()
