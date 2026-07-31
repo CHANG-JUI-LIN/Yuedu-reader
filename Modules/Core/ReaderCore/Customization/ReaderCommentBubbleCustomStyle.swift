@@ -4,6 +4,11 @@ struct ReaderCommentBubbleCustomStyle: Codable, Equatable, Identifiable {
     var id: UUID
     var name: String
     var svg: String
+    /// Last local edit time, stamped by `ReaderCommentBubbleCustomStyleLibrary.upserting`.
+    /// Drives the iCloud last-write-wins merge clock (`updatedAt` in the sync
+    /// record); nil for styles that predate the sync feature (old UserDefaults
+    /// payloads decode with a missing key) — they fall back to distantPast.
+    var updatedAt: Date?
     /// Overall bubble size scale imported from bubble.json (`sizeScale`).
     /// Kept for reference/future use; the active scale still lives in GlobalSettings.commentBubbleScale.
     var sizeScale: Double?
@@ -20,6 +25,7 @@ struct ReaderCommentBubbleCustomStyle: Codable, Equatable, Identifiable {
         id: UUID = UUID(),
         name: String,
         svg: String,
+        updatedAt: Date? = nil,
         sizeScale: Double? = nil,
         dayEmphasisColor: String? = nil,
         dayNormalColor: String? = nil,
@@ -29,6 +35,7 @@ struct ReaderCommentBubbleCustomStyle: Codable, Equatable, Identifiable {
         self.id = id
         self.name = name
         self.svg = svg
+        self.updatedAt = updatedAt
         self.sizeScale = sizeScale
         self.dayEmphasisColor = dayEmphasisColor
         self.dayNormalColor = dayNormalColor
@@ -161,12 +168,16 @@ enum ReaderCommentBubbleCustomStyleLibrary {
         _ style: ReaderCommentBubbleCustomStyle,
         into styles: [ReaderCommentBubbleCustomStyle]
     ) -> [ReaderCommentBubbleCustomStyle] {
+        // Every upsert is a local edit: stamp the iCloud merge clock so the
+        // edited style outranks older copies on other devices.
+        var stamped = style
+        stamped.updatedAt = Date()
         guard let matchingIndex = styles.firstIndex(where: { $0.id == style.id }) else {
-            return styles + [style]
+            return styles + [stamped]
         }
 
         var updatedStyles = styles
-        updatedStyles[matchingIndex] = style
+        updatedStyles[matchingIndex] = stamped
         return updatedStyles
     }
 
@@ -200,4 +211,18 @@ enum ReaderCommentBubbleCustomStyleLibrary {
             )
         ]
     }
+}
+
+/// The iCloud-synced part of the bubble *selection* (which custom style is
+/// active). Synced as ONE always-present last-write-wins record (`modifiedAt`
+/// advances only when the user actually changes the selection — see
+/// `GlobalSettings.commentBubbleSelectionSyncClock`). "Cleared" is a nil
+/// `selectedCustomStyleID` value, never an absent record, so the sync merge
+/// cannot mistake a nil selection for a deletion and tombstone the constant
+/// record id with a `now` timestamp (which would kill a newer selection picked
+/// on another device). Scale / follow-source toggles stay per-device display
+/// preferences and are deliberately excluded.
+struct ReaderCommentBubbleSyncSelection: Codable, Equatable {
+    var selectedCustomStyleID: UUID?
+    var modifiedAt: Date?
 }

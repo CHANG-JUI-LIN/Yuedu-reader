@@ -435,6 +435,7 @@ class GlobalSettings: ObservableObject {
     private static let commentBubbleCustomStyleNameKey = "yd_comment_bubble_custom_style_name"
     private static let commentBubbleCustomStylesV2Key = "yd_comment_bubble_custom_styles_v2"
     private static let commentBubbleSelectedCustomStyleIDKey = "yd_comment_bubble_selected_custom_style_id"
+    private static let commentBubbleSelectionSyncClockKey = "yd_comment_bubble_selection_sync_clock"
     private static let commentBubbleScaleKey = "yd_comment_bubble_scale"
     private static let commentBubbleTextScaleKey = "yd_comment_bubble_text_scale"
     private static let chapterTitleStyleKey = "yd_chapter_title_style_v1"
@@ -761,6 +762,21 @@ class GlobalSettings: ObservableObject {
     @Published private(set) var commentBubbleSelectedCustomStyleID: UUID? {
         didSet {
             Self.saveCommentBubbleSelectedCustomStyleID(commentBubbleSelectedCustomStyleID)
+        }
+    }
+    /// iCloud merge clock for the bubble *selection* record. Advances ONLY on
+    /// user actions that change the selection (`selectCommentBubbleCustomStyle`
+    /// / `upsertCommentBubbleCustomStyle` / `deleteCommentBubbleCustomStyle`),
+    /// never on launch-load or on applying a synced selection — otherwise the
+    /// newest-write-wins merge would let a device stamp itself as "newer" every
+    /// launch and clobber the other device's choice.
+    private(set) var commentBubbleSelectionSyncClock: Date? {
+        didSet {
+            if let commentBubbleSelectionSyncClock {
+                UserDefaults.standard.set(commentBubbleSelectionSyncClock, forKey: Self.commentBubbleSelectionSyncClockKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.commentBubbleSelectionSyncClockKey)
+            }
         }
     }
     var commentBubbleSelectedCustomStyle: ReaderCommentBubbleCustomStyle? {
@@ -1335,6 +1351,9 @@ class GlobalSettings: ObservableObject {
         commentBubblePresetMode = loadedBubbleMode
         commentBubbleCustomStyles = loadedCustomStyles
         commentBubbleSelectedCustomStyleID = loadedSelectedCustomStyleID
+        commentBubbleSelectionSyncClock = UserDefaults.standard.object(
+            forKey: Self.commentBubbleSelectionSyncClockKey
+        ) as? Date
         if shouldPersistLoadedLibrary {
             Self.saveCommentBubbleCustomStyles(loadedCustomStyles)
             Self.saveCommentBubbleSelectedCustomStyleID(loadedSelectedCustomStyleID)
@@ -1450,11 +1469,13 @@ class GlobalSettings: ObservableObject {
         ) != nil else {
             commentBubbleSelectedCustomStyleID = nil
             commentBubblePresetMode = .builtin
+            stampCommentBubbleSelectionSyncClock()
             return
         }
 
         commentBubbleSelectedCustomStyleID = id
         commentBubblePresetMode = .custom
+        stampCommentBubbleSelectionSyncClock()
     }
 
     func upsertCommentBubbleCustomStyle(_ style: ReaderCommentBubbleCustomStyle) {
@@ -1466,6 +1487,7 @@ class GlobalSettings: ObservableObject {
         )
         commentBubbleSelectedCustomStyleID = style.id
         commentBubblePresetMode = .custom
+        stampCommentBubbleSelectionSyncClock()
     }
 
     func deleteCommentBubbleCustomStyle(id: UUID) {
@@ -1478,6 +1500,45 @@ class GlobalSettings: ObservableObject {
         guard wasSelected else { return }
         commentBubbleSelectedCustomStyleID = nil
         commentBubblePresetMode = .builtin
+        stampCommentBubbleSelectionSyncClock()
+    }
+
+    /// Applies the iCloud-merged bubble style list (per-item last-write-wins).
+    /// Does NOT re-stamp `updatedAt` — the merged values carry their own merge
+    /// clock from the winning device.
+    func applyCommentBubbleSync(styles: [ReaderCommentBubbleCustomStyle]) {
+        commentBubbleCustomStyles = ReaderCommentBubbleCustomStyleLibrary.uniqued(styles)
+        // Keep the invariant that select/delete maintain: a .custom selection
+        // must point at a style that actually exists.
+        guard commentBubblePresetMode == .custom,
+              let selectedID = commentBubbleSelectedCustomStyleID,
+              ReaderCommentBubbleCustomStyleLibrary.validatedSelectedID(selectedID, in: commentBubbleCustomStyles) == nil
+        else { return }
+        commentBubbleSelectedCustomStyleID = nil
+        commentBubblePresetMode = .builtin
+    }
+
+    /// Applies the iCloud-merged bubble selection (single last-write-wins
+    /// record). Mirroring the user picking a style: a synced selection becomes
+    /// the active custom bubble; a cleared selection falls back to builtin when
+    /// the custom mode was active. Never touches the sync clock.
+    func applyCommentBubbleSync(selection: UUID?) {
+        guard let selection else {
+            guard commentBubblePresetMode == .custom else { return }
+            commentBubbleSelectedCustomStyleID = nil
+            commentBubblePresetMode = .builtin
+            return
+        }
+        guard ReaderCommentBubbleCustomStyleLibrary.validatedSelectedID(
+            selection,
+            in: commentBubbleCustomStyles
+        ) != nil else { return }
+        commentBubbleSelectedCustomStyleID = selection
+        commentBubblePresetMode = .custom
+    }
+
+    private func stampCommentBubbleSelectionSyncClock() {
+        commentBubbleSelectionSyncClock = Date()
     }
 
     private static func saveCommentBubbleCustomStyles(

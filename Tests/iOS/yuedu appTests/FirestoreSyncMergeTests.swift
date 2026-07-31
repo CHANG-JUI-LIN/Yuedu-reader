@@ -132,4 +132,168 @@ struct FirestoreSyncMergeTests {
         #expect(try ICloudSyncManager.shouldUploadCloudSyncRecords(records, remotePayloadHash: remoteHash) == false)
         #expect(try ICloudSyncManager.shouldUploadCloudSyncRecords(records, remotePayloadHash: nil) == true)
     }
+
+    private static let bubbleSelectionID = "comment_bubble_selection"
+
+    private func selectionMerge(
+        local: [ReaderCommentBubbleSyncSelection],
+        remote: [FirestoreSyncRecord<ReaderCommentBubbleSyncSelection>],
+        shadow: [String: SyncShadowEntry]
+    ) -> (values: [ReaderCommentBubbleSyncSelection], shadow: [String: SyncShadowEntry]) {
+        FirestoreSyncMerge.merge(
+            local: local,
+            remote: remote,
+            shadow: shadow,
+            id: { _ in Self.bubbleSelectionID },
+            hash: { $0.selectedCustomStyleID?.uuidString ?? "" },
+            fallbackUpdatedAt: { $0.modifiedAt ?? .distantPast }
+        )
+    }
+
+    @Test("bubble selection record merges last-write-wins by its clock")
+    func bubbleSelectionMergesLastWriteWins() {
+        let older = ReaderCommentBubbleSyncSelection(
+            selectedCustomStyleID: UUID(),
+            modifiedAt: Date(timeIntervalSince1970: 100)
+        )
+        let newer = ReaderCommentBubbleSyncSelection(
+            selectedCustomStyleID: UUID(),
+            modifiedAt: Date(timeIntervalSince1970: 300)
+        )
+
+        let result = selectionMerge(
+            local: [older],
+            remote: [FirestoreSyncRecord(
+                id: Self.bubbleSelectionID,
+                value: newer,
+                updatedAt: Date(timeIntervalSince1970: 300),
+                deleted: false
+            )],
+            shadow: [Self.bubbleSelectionID: shadow(100, hash: older.selectedCustomStyleID!.uuidString)]
+        )
+
+        #expect(result.values == [newer])
+        #expect(result.shadow[Self.bubbleSelectionID]?.deleted == false)
+    }
+
+    @Test("a device with no selection adopts the remote bubble selection")
+    func bubbleSelectionAdoptedFromRemote() {
+        let remote = ReaderCommentBubbleSyncSelection(
+            selectedCustomStyleID: UUID(),
+            modifiedAt: Date(timeIntervalSince1970: 200)
+        )
+
+        let result = selectionMerge(
+            local: [],
+            remote: [FirestoreSyncRecord(
+                id: Self.bubbleSelectionID,
+                value: remote,
+                updatedAt: Date(timeIntervalSince1970: 200),
+                deleted: false
+            )],
+            shadow: [:]
+        )
+
+        #expect(result.values == [remote])
+    }
+
+    @Test("a cleared selection stays cleared while a newer remote pick wins")
+    func bubbleSelectionNeverTreatsNilAsLocalDeletion() {
+        // Local record represents "cleared" as a value (nil + old clock), not as
+        // an absent record — so the merge never tombstones the constant id and
+        // a newer remote pick survives.
+        let cleared = ReaderCommentBubbleSyncSelection(
+            selectedCustomStyleID: nil,
+            modifiedAt: Date(timeIntervalSince1970: 100)
+        )
+        let newerRemotePick = ReaderCommentBubbleSyncSelection(
+            selectedCustomStyleID: UUID(),
+            modifiedAt: Date(timeIntervalSince1970: 300)
+        )
+
+        let result = selectionMerge(
+            local: [cleared],
+            remote: [FirestoreSyncRecord(
+                id: Self.bubbleSelectionID,
+                value: newerRemotePick,
+                updatedAt: Date(timeIntervalSince1970: 300),
+                deleted: false
+            )],
+            shadow: [Self.bubbleSelectionID: shadow(100, hash: "cleared")]
+        )
+
+        #expect(result.values == [newerRemotePick])
+        #expect(result.shadow[Self.bubbleSelectionID]?.deleted == false)
+    }
+
+    @Test("bubble selection tombstone clears a newer-picked style only when newer")
+    func bubbleSelectionTombstoneRespectsClock() {
+        let staleLocalPick = ReaderCommentBubbleSyncSelection(
+            selectedCustomStyleID: UUID(),
+            modifiedAt: Date(timeIntervalSince1970: 100)
+        )
+
+        let cleared = selectionMerge(
+            local: [staleLocalPick],
+            remote: [FirestoreSyncRecord<ReaderCommentBubbleSyncSelection>(
+                id: Self.bubbleSelectionID,
+                value: nil,
+                updatedAt: Date(timeIntervalSince1970: 200),
+                deleted: true
+            )],
+            shadow: [Self.bubbleSelectionID: shadow(100, hash: staleLocalPick.selectedCustomStyleID!.uuidString)]
+        )
+
+        #expect(cleared.values.isEmpty)
+        #expect(cleared.shadow[Self.bubbleSelectionID]?.deleted == true)
+    }
+
+    @Test("shadow entry advances on a local edit")
+    func shadowEntryAdvancesOnLocalEdit() {
+        let advanced = ICloudSyncManager.updatedShadowEntry(
+            existing: shadow(100, hash: "old"),
+            currentHash: "new",
+            fallbackUpdatedAt: Date(timeIntervalSince1970: 300)
+        )
+
+        #expect(advanced?.updatedAt == Date(timeIntervalSince1970: 300))
+        #expect(advanced?.hash == "new")
+        #expect(advanced?.deleted == false)
+    }
+
+    @Test("shadow entry stays untouched when nothing changed")
+    func shadowEntryUntouchedWhenUnchanged() {
+        #expect(ICloudSyncManager.updatedShadowEntry(
+            existing: shadow(100, hash: "same"),
+            currentHash: "same",
+            fallbackUpdatedAt: Date(timeIntervalSince1970: 300)
+        ) == nil)
+        #expect(ICloudSyncManager.updatedShadowEntry(
+            existing: nil,
+            currentHash: "new",
+            fallbackUpdatedAt: Date(timeIntervalSince1970: 300)
+        ) == nil)
+    }
+
+    @Test("shadow entry revives a re-creation that is newer than the tombstone")
+    func shadowEntryRevivesNewerRecreation() {
+        let revived = ICloudSyncManager.updatedShadowEntry(
+            existing: shadow(200, hash: "", deleted: true),
+            currentHash: "repicked",
+            fallbackUpdatedAt: Date(timeIntervalSince1970: 400)
+        )
+
+        #expect(revived?.updatedAt == Date(timeIntervalSince1970: 400))
+        #expect(revived?.hash == "repicked")
+        #expect(revived?.deleted == false)
+    }
+
+    @Test("shadow entry keeps the tombstone when the re-creation is older")
+    func shadowEntryKeepsTombstoneWhenRecreationOlder() {
+        #expect(ICloudSyncManager.updatedShadowEntry(
+            existing: shadow(200, hash: "", deleted: true),
+            currentHash: "repicked",
+            fallbackUpdatedAt: Date(timeIntervalSince1970: 100)
+        ) == nil)
+    }
 }

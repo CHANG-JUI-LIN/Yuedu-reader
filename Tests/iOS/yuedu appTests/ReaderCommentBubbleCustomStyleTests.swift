@@ -57,14 +57,19 @@ struct ReaderCommentBubbleCustomStyleTests {
         )
     }
 
-    @Test("appends a new style")
+    @Test("appends a new style and stamps its sync clock")
     func appendsNewStyle() {
         let existing = makeStyle(name: "Existing", svg: "<svg>existing</svg>")
         let added = makeStyle(name: "Added", svg: "<svg>added</svg>")
 
         let result = ReaderCommentBubbleCustomStyleLibrary.upserting(added, into: [existing])
 
-        #expect(result == [existing, added])
+        #expect(result.count == 2)
+        #expect(result[0] == existing)
+        #expect(result[1].id == added.id)
+        #expect(result[1].name == added.name)
+        #expect(result[1].svg == added.svg)
+        #expect(result[1].updatedAt != nil)
     }
 
     @Test("updates a matching ID without changing its order or ID")
@@ -83,8 +88,29 @@ struct ReaderCommentBubbleCustomStyleTests {
             into: [first, target, last]
         )
 
-        #expect(result == [first, updated, last])
+        #expect(result.count == 3)
+        #expect(result[0] == first)
+        #expect(result[1].id == target.id)
+        #expect(result[1].name == updated.name)
+        #expect(result[1].svg == updated.svg)
+        #expect(result[1].updatedAt != nil)
+        #expect(result[2] == last)
         #expect(result.map(\.id) == [first.id, target.id, last.id])
+    }
+
+    @Test("re-editing a style advances its sync clock")
+    func reEditingAdvancesSyncClock() {
+        let style = makeStyle(name: "First pass", svg: "<svg>v1</svg>")
+        let once = ReaderCommentBubbleCustomStyleLibrary.upserting(style, into: [])[0]
+        let edited = ReaderCommentBubbleCustomStyle(
+            id: style.id,
+            name: "Second pass",
+            svg: "<svg>v2</svg>"
+        )
+        let twice = ReaderCommentBubbleCustomStyleLibrary.upserting(edited, into: [once])[0]
+
+        #expect(twice.updatedAt != nil)
+        #expect(twice.updatedAt! >= once.updatedAt!)
     }
 
     @Test("deletes only the requested style")
@@ -211,7 +237,8 @@ struct ReaderCommentBubbleCustomStyleTests {
         let original = ReaderCommentBubbleCustomStyle(
             id: UUID(),
             name: "Round trip",
-            svg: "<svg>round-trip</svg>"
+            svg: "<svg>round-trip</svg>",
+            updatedAt: Date(timeIntervalSince1970: 12345)
         )
 
         let data = try JSONEncoder().encode(original)
@@ -223,6 +250,23 @@ struct ReaderCommentBubbleCustomStyleTests {
         #expect(decoded.id == original.id)
         #expect(decoded.name == original.name)
         #expect(decoded.svg == original.svg)
+        #expect(decoded.updatedAt == original.updatedAt)
+    }
+
+    @Test("decodes a pre-sync payload that has no updatedAt key")
+    func decodesPayloadWithoutUpdatedAt() throws {
+        let json = """
+        [{"id":"\(UUID().uuidString)","name":"Legacy","svg":"<svg>legacy</svg>"}]
+        """
+
+        let decoded = try JSONDecoder().decode(
+            [ReaderCommentBubbleCustomStyle].self,
+            from: Data(json.utf8)
+        )
+
+        #expect(decoded.count == 1)
+        #expect(decoded.first?.name == "Legacy")
+        #expect(decoded.first?.updatedAt == nil)
     }
 
     @Test("imports a bubble.json package into a comment bubble custom style")
