@@ -47,8 +47,8 @@ service cloud.firestore {
     // developer reads these from the Firebase console with admin credentials.
     match /entitlementDiagnostics/{docId} {
       allow create: if request.resource.data.keys().hasOnly([
-        "storeKit", "account", "ownedProducts", "uid",
-        "appVersion", "build", "createdAt"
+        "storeKit", "account", "ownedProducts", "revokedCount", "uid",
+        "appVersion", "build", "storefront", "createdAt"
       ]);
       allow read, update, delete: if false;
     }

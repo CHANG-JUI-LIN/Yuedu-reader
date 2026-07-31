@@ -85,6 +85,10 @@ final class SubscriptionStore: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: Self.hadProEverKey) }
     }
     private static let hadProEverKey = "subscription_had_pro_ever"
+    /// Revoked transaction count from the last `currentEntitlements` read, so
+    /// the drop diagnostic can distinguish "no transactions at all" from
+    /// "transactions were revoked".
+    private var lastRevokedCount = 0
 
     private init() {
         // Start listening for transactions BEFORE any purchase so we never miss
@@ -295,6 +299,7 @@ final class SubscriptionStore: ObservableObject {
             }
         }
         purchasedProductIDs = owned
+        lastRevokedCount = revokedCount
         Self.subscriptionLog.notice(
             "StoreKit currentEntitlements: owned \(owned.sorted().joined(separator: ","), privacy: .public) revoked \(revokedCount)"
         )
@@ -382,27 +387,36 @@ final class SubscriptionStore: ObservableObject {
 
     /// Fire-and-forget telemetry: when the Pro entitlement drops, write the
     /// exact state (StoreKit flag, account flag, owned product IDs, uid,
-    /// app version) to Firestore `entitlementDiagnostics` so the developer can
-    /// diagnose a device they cannot reach (e.g. a user reporting from behind
-    /// a VPN). Deliberately best-effort: failure must never affect the reader,
-    /// and Firebase may not be configured yet at early launch — guarded.
+    /// app version, storefront) to Firestore `entitlementDiagnostics` so the
+    /// developer can diagnose a device they cannot reach (e.g. a user
+    /// reporting from behind a VPN). Deliberately best-effort: failure must
+    /// never affect the reader, and Firebase may not be configured yet at
+    /// early launch — guarded.
     private func reportEntitlementDrop(storeKit: Bool, account: Bool) {
         let now = Date()
         if let last = lastDropReportDate, now.timeIntervalSince(last) < 300 { return }
         lastDropReportDate = now
         guard FirebaseApp.app() != nil else { return }
         let info = Bundle.main.infoDictionary
-        let data: [String: Any] = [
+        var data: [String: Any] = [
             "storeKit": storeKit,
             "account": account,
             "ownedProducts": purchasedProductIDs.sorted().joined(separator: ","),
+            "revokedCount": lastRevokedCount,
             "uid": Auth.auth().currentUser?.uid ?? "",
             "appVersion": info?["CFBundleShortVersionString"] as? String ?? "",
             "build": info?["CFBundleVersion"] as? String ?? "",
             "createdAt": FieldValue.serverTimestamp()
         ]
-        Self.subscriptionLog.notice("Reporting entitlement drop diagnostic to Firestore")
-        Firestore.firestore().collection("entitlementDiagnostics").addDocument(data: data)
+        // Storefront (App Store region) is async; fold it in after the read so
+        // the report shows whether Apple resolved the entitlement against the
+        // user's home region or the VPN exit region.
+        Task {
+            let storefrontID = await Storefront.current?.id ?? ""
+            data["storefront"] = storefrontID
+            Self.subscriptionLog.notice("Reporting entitlement drop diagnostic to Firestore")
+            Firestore.firestore().collection("entitlementDiagnostics").addDocument(data: data)
+        }
     }
 
     // MARK: - Transaction listener
