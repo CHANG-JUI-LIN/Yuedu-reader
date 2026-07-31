@@ -1,6 +1,40 @@
 import Foundation
 import Combine
 
+// MARK: - Pin State
+
+/// Where a user explicitly pinned a source (置頂／置底). Unlike a plain move, a pin is a
+/// deliberate claim on the head/tail region: the list shows a pin icon, and 取消置頂／取消置底
+/// drops the pin and puts the source back where it was.
+enum SourcePinPosition: String, Codable, Equatable {
+    case top
+    case bottom
+}
+
+struct SourcePinRecord: Codable, Equatable {
+    var position: SourcePinPosition
+    /// The source's array index when it was pinned, so unpinning can restore it
+    /// (clamped to the current list size — later insertions/deletions shift everything).
+    var originalIndex: Int
+    /// When the pin was set, newest-first within each pin group. Pre-multi-pin files
+    /// carry no timestamp and decode as `.distantPast`, sorting last — i.e. bottom of
+    /// their pin group — instead of jumping the order.
+    var pinnedAt: Date
+
+    init(position: SourcePinPosition, originalIndex: Int, pinnedAt: Date = Date()) {
+        self.position = position
+        self.originalIndex = originalIndex
+        self.pinnedAt = pinnedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        position = try container.decode(SourcePinPosition.self, forKey: .position)
+        originalIndex = try container.decode(Int.self, forKey: .originalIndex)
+        pinnedAt = try container.decodeIfPresent(Date.self, forKey: .pinnedAt) ?? .distantPast
+    }
+}
+
 // MARK: - Book Source Management (ObservableObject)
 
 class BookSourceStore: ObservableObject {
@@ -8,7 +42,17 @@ class BookSourceStore: ObservableObject {
 
     @Published var sources: [BookSource] = []
 
+    /// Persisted 置頂／置底 pin state, keyed by source id. Kept OUT of `BookSource` (and thus
+    /// out of the exported/synced source JSON) so pinning never looks like a content edit:
+    /// it must not advance `lastUpdateTime` or churn the sync merge (same contract as the
+    /// ordering — array position is the display order, and pins are management state).
+    @Published private(set) var pinRecords: [UUID: SourcePinRecord] = [:]
+
     private let fileName = "book_sources.json"
+
+    private var pinsFileURL: URL {
+        StorageLocations.support.appendingPathComponent("book_source_pins.json")
+    }
 
     /// Under Application Support, not Documents: Documents is user-visible in the
     /// Files app and this is app-internal. `StorageMigration` moves the legacy file.
@@ -17,6 +61,7 @@ class BookSourceStore: ObservableObject {
     }
 
     private init() {
+        loadPins()
         load()
     }
 
@@ -27,7 +72,13 @@ class BookSourceStore: ObservableObject {
         // Stamp the local-modification clock so this creation wins the iCloud sync merge
         // (see importSources for why lastUpdateTime doubles as the last-write-wins clock).
         stamped.lastUpdateTime = Self.currentMillis()
-        sources.insert(stamped, at: 0)
+        // New sources appear at the head of the list — but below the whole 置頂 group,
+        // or the pin markers would no longer match the head region.
+        if let lastTopPinned = sources.lastIndex(where: { pinRecords[$0.id]?.position == .top }) {
+            sources.insert(stamped, at: lastTopPinned + 1)
+        } else {
+            sources.insert(stamped, at: 0)
+        }
         save()
     }
 
@@ -57,6 +108,10 @@ class BookSourceStore: ObservableObject {
         sources.removeAll { ids.contains($0.id) }
         let removedCount = originalCount - sources.count
         if removedCount > 0 {
+            for id in ids {
+                pinRecords.removeValue(forKey: id)
+            }
+            savePins()
             save()
         }
         return removedCount
@@ -71,7 +126,9 @@ class BookSourceStore: ObservableObject {
         }
     }
 
-    /// Moves a source to the head of the list. The management list and `enabledSources`
+    /// Moves a source to the head of the list and marks it 置頂. Any number of sources can
+    /// be pinned: the 置頂 group orders newest-first, so a re-pin refreshes the timestamp
+    /// and moves the source to the group's head. The management list and `enabledSources`
     /// both render `sources` in array order — there is no sort key, so array position *is*
     /// the display and search order (Legado's `customOrder` field is only mirrored to the
     /// JS bridge, never consulted here).
@@ -80,20 +137,94 @@ class BookSourceStore: ObservableObject {
     /// content, the sync merge hashes the encoded source, and seeding the merge from the
     /// local array already preserves this device's order — so a reorder must not register
     /// as an edit and churn the sync.
-    func moveToTop(id: UUID) {
-        guard let idx = sources.firstIndex(where: { $0.id == id }), idx != 0 else { return }
+    func pinToTop(id: UUID) {
+        guard let idx = sources.firstIndex(where: { $0.id == id }) else { return }
+        let originalIndex = pinRecords[id]?.originalIndex ?? idx
         let source = sources.remove(at: idx)
-        sources.insert(source, at: 0)
+        if let firstTop = sources.firstIndex(where: { pinRecords[$0.id]?.position == .top }) {
+            sources.insert(source, at: firstTop)
+        } else {
+            sources.insert(source, at: 0)
+        }
+        pinRecords[id] = SourcePinRecord(position: .top, originalIndex: originalIndex)
+        savePins()
         save()
     }
 
-    /// Moves a source to the tail of the list. See `moveToTop(id:)` for the ordering contract.
-    func moveToBottom(id: UUID) {
-        guard let idx = sources.firstIndex(where: { $0.id == id }),
-              idx != sources.count - 1 else { return }
+    /// Moves a source to the tail of the list and marks it 置底. Newest-first like 置頂:
+    /// the newest bottom pin sits at the group's head, right against the rest of the list.
+    /// See `pinToTop(id:)` for the ordering and sync-clock contract.
+    func pinToBottom(id: UUID) {
+        guard let idx = sources.firstIndex(where: { $0.id == id }) else { return }
+        let originalIndex = pinRecords[id]?.originalIndex ?? idx
         let source = sources.remove(at: idx)
-        sources.append(source)
+        if let firstBottom = sources.firstIndex(where: { pinRecords[$0.id]?.position == .bottom }) {
+            sources.insert(source, at: firstBottom)
+        } else {
+            sources.append(source)
+        }
+        pinRecords[id] = SourcePinRecord(position: .bottom, originalIndex: originalIndex)
+        savePins()
         save()
+    }
+
+    /// 取消置頂／取消置底: drops the pin and returns the source to the position it held when
+    /// pinned — inserted before the first unpinned source at or after the recorded index,
+    /// or after the last unpinned source when everything else is pinned. Pins ahead in the
+    /// array shift indices, so the position clamps naturally when the list shrank meanwhile.
+    func unpin(id: UUID) {
+        guard let record = pinRecords[id],
+              let idx = sources.firstIndex(where: { $0.id == id }) else { return }
+        pinRecords.removeValue(forKey: id)
+        let source = sources.remove(at: idx)
+
+        var insertIndex: Int?
+        for (index, candidate) in sources.enumerated() {
+            guard pinRecords[candidate.id] == nil, index >= record.originalIndex else { continue }
+            insertIndex = index
+            break
+        }
+        if let insertIndex {
+            sources.insert(source, at: insertIndex)
+        } else if let lastUnpinned = sources.lastIndex(where: { pinRecords[$0.id] == nil }) {
+            sources.insert(source, at: lastUnpinned + 1)
+        } else if let firstBottom = sources.firstIndex(where: { pinRecords[$0.id]?.position == .bottom }) {
+            sources.insert(source, at: firstBottom)
+        } else {
+            sources.append(source)
+        }
+        savePins()
+        save()
+    }
+
+    func pinRecord(for id: UUID) -> SourcePinRecord? {
+        pinRecords[id]
+    }
+
+    // MARK: Pin Persistence
+
+    private func savePins() {
+        if let data = try? JSONEncoder().encode(pinRecords) {
+            try? data.write(to: pinsFileURL)
+        }
+    }
+
+    private func loadPins() {
+        guard let data = try? Data(contentsOf: pinsFileURL),
+              let decoded = try? JSONDecoder().decode([UUID: SourcePinRecord].self, from: data)
+        else { return }
+        pinRecords = decoded
+    }
+
+    /// Drops pins whose source no longer exists (deleted locally, deduped by sync, etc.).
+    private func prunePins() {
+        let liveIDs = Set(sources.map(\.id))
+        let staleIDs = pinRecords.keys.filter { !liveIDs.contains($0) }
+        guard !staleIDs.isEmpty else { return }
+        for id in staleIDs {
+            pinRecords.removeValue(forKey: id)
+        }
+        savePins()
     }
 
     /// Records the health checker's measured response time (ms), which doubles as the
@@ -213,7 +344,13 @@ class BookSourceStore: ObservableObject {
             } else {
                 var added = src
                 added.lastUpdateTime = nowMillis
-                sources.append(added)
+                // New imports append at the tail — but above the whole 置底 group,
+                // so the pin markers keep matching the tail region.
+                if let bottomPinnedIndex = sources.firstIndex(where: { pinRecords[$0.id]?.position == .bottom }) {
+                    sources.insert(added, at: bottomPinnedIndex)
+                } else {
+                    sources.append(added)
+                }
             }
         }
         save()
@@ -399,6 +536,7 @@ class BookSourceStore: ObservableObject {
         // Collapse any cross-device duplicates (same bookSourceUrl, different random id) the merge
         // couldn't unify, so an old cloud copy can't resurface next to a freshly imported one.
         sources = Self.dedupedByURL(syncedSources)
+        prunePins()
         save()
     }
 
@@ -422,6 +560,7 @@ class BookSourceStore: ObservableObject {
         else { return }
         // Clean up any duplicates a previous buggy sync may have persisted to disk.
         sources = Self.dedupedByURL(decoded)
+        prunePins()
     }
 
     // MARK: Errors

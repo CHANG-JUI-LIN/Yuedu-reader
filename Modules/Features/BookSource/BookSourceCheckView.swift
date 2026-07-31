@@ -165,6 +165,8 @@ struct BookSourceCheckView: View {
         .padding(.top, DSSpacing.xs)
     }
 
+    /// One filter chip: selected state keeps its accent fill but the label weight stays
+    /// fixed, so tapping never changes the text's appearance — only the fill color.
     private func filterChip(_ value: ResultFilter, icon: String, label: String, count: Int) -> some View {
         let selected = filter == value
         return Button {
@@ -174,7 +176,7 @@ struct BookSourceCheckView: View {
                 Image(systemName: icon)
                     .font(DSFont.caption)
                 Text("\(label) \(count)")
-                    .font(DSFont.subheadline.weight(selected ? .semibold : .regular))
+                    .font(DSFont.subheadline)
             }
             .foregroundColor(selected ? .white : DSColor.textSecondary)
             .padding(.horizontal, DSSpacing.md)

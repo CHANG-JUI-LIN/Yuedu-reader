@@ -232,6 +232,7 @@
 "書源調試" = "Book Source Debug";
 "書源除錯大師" = "Book Source Debugger";
 "書源：" = "Source:";
+"默認分組" = "Default Group";
 "書籍 JSON（書架備份檔）" = "Books JSON (library backup file)";
 "書籍 URL" = "Book URL";
 "書籍列表" = "Book List";
@@ -1458,7 +1459,8 @@
 "source_disclaimer_body_2" = "Do not use this feature to bypass logins, paywalls, DRM, CAPTCHAs, geographic restrictions, or other access controls. It must not be used for unauthorized bulk scraping, content copying, or redistribution.";
 "source_disclaimer_body_3" = "Yuedu provides a general-purpose rule-parsing engine only. It does not bundle, provide, recommend, or maintain any third-party book sources or subscriptions. Users are solely responsible for verifying the legality and authorization scope of the configurations and content sources they use.";
 "source_disclaimer_body_4" = "Yuedu reserves the right to restrict or disable configurations that have been clearly notified as infringing, violating terms of service, or constituting abuse.";
-"我知道了" = "I Understand";
+"注意事項" = "Notes";
+"繼續" = "Continue";
 
 // Book source five-stage validation (Legado CheckSourceService model)
 "書源驗證" = "Source Validation";
@@ -1628,7 +1630,13 @@
 /* Book source list ordering (move to top/bottom) */
 "置頂" = "Move to Top";
 "置底" = "Move to Bottom";
+"置頂組" = "Pinned to Top";
+"置底組" = "Pinned to Bottom";
 "已置頂" = "Moved to top";
 "已置底" = "Moved to bottom";
+"取消置頂" = "Unpin from Top";
+"取消置底" = "Unpin from Bottom";
+"已取消置頂" = "Restored to original position";
+"已取消置底" = "Restored to original position";
 
 "PIN 碼" = "PIN Code";

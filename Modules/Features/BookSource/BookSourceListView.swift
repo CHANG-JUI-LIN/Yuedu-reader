@@ -45,7 +45,14 @@ struct BookSourceListView: View {
     @State private var showDisclaimer = false
     /// Set by 置頂／置底 so the list follows the row to its new position.
     @State private var scrollTargetId: UUID? = nil
+    /// Non-empty book-source groups the user has expanded. Seeded with every group on
+    /// appear so nothing starts hidden; searching flattens the layout regardless.
+    @State private var expandedGroups: Set<String> = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Leading slot for the 置頂／置底 pin icon, matching the old warning bar + checkbox
+    /// padding so source names keep their horizontal position.
+    private let pinSlotWidth = DSSpacing.lg + DSSpacing.xs
 
     private var checkSources: [BookSource] {
         if !selectedIds.isEmpty {
@@ -73,6 +80,85 @@ struct BookSourceListView: View {
             $0.bookSourceName.lowercased().contains(q) || $0.bookSourceUrl.lowercased().contains(q)
                 || $0.bookSourceGroup.lowercased().contains(q)
         }
+    }
+
+    /// Sentinel ids for the built-in 置頂／置底 groups — kept distinct from any user group
+    /// name, so a group literally named 置頂 cannot collide with them.
+    private static let topPinnedGroupID = "yuedu.pin-group.top"
+    private static let bottomPinnedGroupID = "yuedu.pin-group.bottom"
+
+    /// One row group in the management list. Every displayed source belongs to exactly one
+    /// group: pinned sources land in the built-in 置頂／置底 groups, the rest use their
+    /// `bookSourceGroup` — and sources without one land in the built-in 默認分組 (Legado's
+    /// default group — ungrouped sources are never left flat).
+    private struct BookSourceRowGroup: Identifiable {
+        let id: String
+        let name: String
+        let sources: [BookSource]
+    }
+
+    /// Legado keeps sources with an empty `bookSourceGroup` in a built-in default group;
+    /// mirror that instead of scattering them as bare rows.
+    private var defaultGroupName: String {
+        localized("默認分組")
+    }
+
+    /// Group layout: the 置頂 group first, then the named `bookSourceGroup` groups (pinned
+    /// sources excluded — they live in the pin groups now), then the 置底 group. Pin groups
+    /// keep array order, which is pinnedAt newest-first. Group members are accumulated per
+    /// name, so interleaved sources of the same group render as one contiguous
+    /// DisclosureGroup.
+    private var displayedGroups: [BookSourceRowGroup] {
+        let topPinned = displayedSources.filter { store.pinRecord(for: $0.id)?.position == .top }
+        let bottomPinned = displayedSources.filter { store.pinRecord(for: $0.id)?.position == .bottom }
+        var groups: [BookSourceRowGroup] = []
+        if !topPinned.isEmpty {
+            groups.append(BookSourceRowGroup(
+                id: Self.topPinnedGroupID, name: localized("置頂組"), sources: topPinned))
+        }
+        var names: [String] = []
+        var byName: [String: [BookSource]] = [:]
+        for source in displayedSources where store.pinRecord(for: source.id) == nil {
+            let name = source.bookSourceGroup.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = name.isEmpty ? defaultGroupName : name
+            if byName[key] == nil { names.append(key) }
+            byName[key, default: []].append(source)
+        }
+        groups.append(contentsOf: names.map {
+            BookSourceRowGroup(id: $0, name: $0, sources: byName[$0] ?? [])
+        })
+        if !bottomPinned.isEmpty {
+            groups.append(BookSourceRowGroup(
+                id: Self.bottomPinnedGroupID, name: localized("置底組"), sources: bottomPinned))
+        }
+        return groups
+    }
+
+    /// Searching flattens the grouped layout so matching sources stay visible no matter
+    /// which group they belong to.
+    private var usesGroupedLayout: Bool {
+        searchText.isEmpty
+    }
+
+    /// Every group id (named groups, the built-in default group, and the pin groups when
+    /// pinned sources exist), re-checked so newly imported or edited groups are seeded
+    /// expanded instead of hidden behind a collapsed header.
+    private var allGroupIDs: Set<String> {
+        var ids = Set(store.sources.map {
+            $0.bookSourceGroup.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })
+        if store.sources.contains(where: {
+            $0.bookSourceGroup.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) {
+            ids.insert(defaultGroupName)
+        }
+        if store.sources.contains(where: { store.pinRecord(for: $0.id)?.position == .top }) {
+            ids.insert(Self.topPinnedGroupID)
+        }
+        if store.sources.contains(where: { store.pinRecord(for: $0.id)?.position == .bottom }) {
+            ids.insert(Self.bottomPinnedGroupID)
+        }
+        return ids
     }
 
     var body: some View {
@@ -316,12 +402,16 @@ struct BookSourceListView: View {
                 }
             }
             .onAppear {
+                expandedGroups.formUnion(allGroupIDs)
                 if !gs.sourceDisclaimerAccepted {
                     showDisclaimer = true
                 }
             }
             .onChange(of: store.sources.map(\.id)) { _, sourceIds in
                 selectedIds.formIntersection(Set(sourceIds))
+            }
+            .onChange(of: allGroupIDs) { _, ids in
+                expandedGroups.formUnion(ids)
             }
     }
 
@@ -379,10 +469,21 @@ struct BookSourceListView: View {
                 }
                 .listRowSeparator(.hidden)
 
-                ForEach(displayedSources) { source in
-                    sourceRow(source: source)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                        .listRowSeparator(.visible)
+                if usesGroupedLayout {
+                    ForEach(displayedGroups) { group in
+                        DisclosureGroup(isExpanded: expandedBinding(for: group.id)) {
+                            ForEach(group.sources) { source in
+                                sourceRowListEntry(source)
+                            }
+                        } label: {
+                            sourceGroupHeader(group)
+                        }
+                        .listRowInsets(EdgeInsets(top: 0, leading: pinSlotWidth, bottom: 0, trailing: 2))
+                    }
+                } else {
+                    ForEach(displayedSources) { source in
+                        sourceRowListEntry(source)
+                    }
                 }
             }
             .listStyle(.plain)
@@ -395,6 +496,42 @@ struct BookSourceListView: View {
                 scrollTargetId = nil
             }
         }
+    }
+
+    @ViewBuilder
+    private func sourceRowListEntry(_ source: BookSource) -> some View {
+        sourceRow(source: source)
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+            .listRowSeparator(.visible)
+    }
+
+    /// Collapse state for one group's DisclosureGroup, backed by `expandedGroups`.
+    private func expandedBinding(for id: String) -> Binding<Bool> {
+        Binding(
+            get: { expandedGroups.contains(id) },
+            set: { expanded in
+                if expanded {
+                    expandedGroups.insert(id)
+                } else {
+                    expandedGroups.remove(id)
+                }
+            }
+        )
+    }
+
+    private func sourceGroupHeader(_ group: BookSourceRowGroup) -> some View {
+        HStack(spacing: DSSpacing.sm) {
+            Text(group.name)
+                .font(DSFont.toolbarIcon)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+            Text("\(group.sources.count)")
+                .font(DSFont.fixed(size: 12))
+                .foregroundColor(DSColor.textSecondary)
+                .monospacedDigit()
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, DSSpacing.sm)
     }
 
     /// One VoiceOver element per source.
@@ -435,10 +572,13 @@ struct BookSourceListView: View {
         return "\(name)（\(source.bookSourceGroup)）"
     }
 
-    /// State the row shows visually: the 啟用 toggle plus the validation badge.
+    /// State the row shows visually: the 啟用 toggle, the pin marker, and the validation badge.
     /// Selection is carried by the `.isSelected` trait instead, so it isn't said twice.
     private func sourceAccessibilityValue(_ source: BookSource) -> String {
         var parts = [localized(source.enabled ? "已啟用" : "已停用")]
+        if let position = store.pinRecord(for: source.id)?.position {
+            parts.append(localized(position == .top ? "已置頂" : "已置底"))
+        }
         if let health = healthChecker.healthById[source.id]?.health {
             parts.append(sourceHealthText(health))
         }
@@ -485,14 +625,22 @@ struct BookSourceListView: View {
         Button(localized("設置源變量")) {
             variableEditingSource = source
         }
-        if !isFirstSource(source) {
+        if store.pinRecord(for: source.id)?.position == .top {
+            Button(localized("取消置頂")) {
+                unpinSource(source, announcement: localized("已取消置頂"))
+            }
+        } else {
             Button(localized("置頂")) {
-                moveSourceToTop(source)
+                pinSourceToTop(source)
             }
         }
-        if !isLastSource(source) {
+        if store.pinRecord(for: source.id)?.position == .bottom {
+            Button(localized("取消置底")) {
+                unpinSource(source, announcement: localized("已取消置底"))
+            }
+        } else {
             Button(localized("置底")) {
-                moveSourceToBottom(source)
+                pinSourceToBottom(source)
             }
         }
         Button(localized("刪除"), role: .destructive) {
@@ -504,11 +652,7 @@ struct BookSourceListView: View {
     @ViewBuilder
     private func sourceRowContent(source: BookSource) -> some View {
         HStack(spacing: 0) {
-            Rectangle()
-                .fill(DSColor.warning)
-                .opacity(isFirstSource(source) ? 1 : 0)
-                .frame(width: DSSpacing.xs)
-                .accessibilityHidden(true)
+            pinIndicator(for: source)
 
             Button {
                 toggleSelection(source.id)
@@ -521,7 +665,6 @@ struct BookSourceListView: View {
                     selectedIds.contains(source.id) ? DSColor.accent : Color(UIColor.systemGray3))
             }
             .buttonStyle(.plain)
-            .padding(.leading, 16)
             .padding(.trailing, 12)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -601,18 +744,32 @@ struct BookSourceListView: View {
                     Label(localized("設置源變量"), systemImage: "curlybraces")
                 }
                 Divider()
-                Button {
-                    moveSourceToTop(source)
-                } label: {
-                    Label(localized("置頂"), systemImage: "arrow.up.to.line")
+                if store.pinRecord(for: source.id)?.position == .top {
+                    Button {
+                        unpinSource(source, announcement: localized("已取消置頂"))
+                    } label: {
+                        Label(localized("取消置頂"), systemImage: "pin.slash")
+                    }
+                } else {
+                    Button {
+                        pinSourceToTop(source)
+                    } label: {
+                        Label(localized("置頂"), systemImage: "arrow.up.to.line")
+                    }
                 }
-                .disabled(isFirstSource(source))
-                Button {
-                    moveSourceToBottom(source)
-                } label: {
-                    Label(localized("置底"), systemImage: "arrow.down.to.line")
+                if store.pinRecord(for: source.id)?.position == .bottom {
+                    Button {
+                        unpinSource(source, announcement: localized("已取消置底"))
+                    } label: {
+                        Label(localized("取消置底"), systemImage: "pin.slash")
+                    }
+                } else {
+                    Button {
+                        pinSourceToBottom(source)
+                    } label: {
+                        Label(localized("置底"), systemImage: "arrow.down.to.line")
+                    }
                 }
-                .disabled(isLastSource(source))
                 Divider()
                 Button(role: .destructive) {
                     selectedIds.remove(source.id)
@@ -737,33 +894,52 @@ struct BookSourceListView: View {
         withAnimation { importSuccess = localized("已複製書源 JSON") }
     }
 
-    // MARK: - Ordering
+    // MARK: - Pinning
 
-    private func isFirstSource(_ source: BookSource) -> Bool {
-        store.sources.first?.id == source.id
-    }
-
-    private func isLastSource(_ source: BookSource) -> Bool {
-        store.sources.last?.id == source.id
+    /// 置頂／置底 marker: a pin icon instead of the old warning-colored bar, so only sources
+    /// the user explicitly pinned carry an indicator (the first unpinned source does not).
+    @ViewBuilder
+    private func pinIndicator(for source: BookSource) -> some View {
+        if let record = store.pinRecord(for: source.id) {
+            Image(systemName: "pin.fill")
+                .font(DSFont.fixed(size: 12))
+                .foregroundColor(DSColor.accent)
+                .rotationEffect(.degrees(record.position == .bottom ? 180 : 0))
+                .frame(width: pinSlotWidth)
+                .accessibilityHidden(true)
+        } else {
+            Color.clear
+                .frame(width: pinSlotWidth)
+                .accessibilityHidden(true)
+        }
     }
 
     /// The row leaves the viewport when it jumps to the other end of a long list, which reads
-    /// as "the source disappeared", so both moves scroll the row back into view and announce
-    /// the outcome for VoiceOver (the merged row can't show its new position on its own).
-    private func moveSourceToTop(_ source: BookSource) {
+    /// as "the source disappeared", so pinning and unpinning both scroll the row back into
+    /// view and announce the outcome for VoiceOver (the merged row can't show its new
+    /// position on its own).
+    private func pinSourceToTop(_ source: BookSource) {
         withAnimation(reduceMotion ? nil : DSAnimation.standard) {
-            store.moveToTop(id: source.id)
+            store.pinToTop(id: source.id)
         }
         scrollTargetId = source.id
         UIAccessibility.post(notification: .announcement, argument: localized("已置頂"))
     }
 
-    private func moveSourceToBottom(_ source: BookSource) {
+    private func pinSourceToBottom(_ source: BookSource) {
         withAnimation(reduceMotion ? nil : DSAnimation.standard) {
-            store.moveToBottom(id: source.id)
+            store.pinToBottom(id: source.id)
         }
         scrollTargetId = source.id
         UIAccessibility.post(notification: .announcement, argument: localized("已置底"))
+    }
+
+    private func unpinSource(_ source: BookSource, announcement: String) {
+        withAnimation(reduceMotion ? nil : DSAnimation.standard) {
+            store.unpin(id: source.id)
+        }
+        scrollTargetId = source.id
+        UIAccessibility.post(notification: .announcement, argument: announcement)
     }
 
     private func toggleSelection(_ id: UUID) {
