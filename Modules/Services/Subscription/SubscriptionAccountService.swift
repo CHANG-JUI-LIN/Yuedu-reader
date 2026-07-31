@@ -42,12 +42,19 @@ final class SubscriptionAccountService {
             throw SubscriptionAccountError.authenticationRequired
         }
         let jws: String = transaction.jwsRepresentation
-        let result = try await Functions.functions(region: functionsRegion)
-            .httpsCallable("bindSubscriptionPurchase")
-            .call(["signedTransaction": jws])
-        let entitlement = try entitlement(from: result.data)
-        SubscriptionEntitlementCache.save(entitlement, uid: uid)
-        return entitlement.isActive()
+        do {
+            let result = try await Functions.functions(region: functionsRegion)
+                .httpsCallable("bindSubscriptionPurchase")
+                .call(["signedTransaction": jws])
+            let entitlement = try entitlement(from: result.data)
+            SubscriptionEntitlementCache.save(entitlement, uid: uid)
+            return entitlement.isActive()
+        } catch {
+            subscriptionAccountLog.error(
+                "bindSubscriptionPurchase failed for uid \(uid, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            throw error
+        }
     }
 
     /// Returns nil when Firebase is temporarily unavailable or the backend has

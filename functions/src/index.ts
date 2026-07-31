@@ -98,7 +98,18 @@ function environmentFromJWS(jws: string): Environment {
     const environment = environmentName(payload);
     if (environment === Environment.PRODUCTION) return Environment.PRODUCTION;
     if (environment === Environment.SANDBOX) return Environment.SANDBOX;
+    if (environment === Environment.XCODE || environment === Environment.LOCAL_TESTING) {
+      // Local StoreKit Configuration transactions (Xcode scheme with a
+      // .storekit file) are signed with local certificates and can never be
+      // verified or bound. Real transactions only appear in TestFlight or
+      // App Store builds, where the environment is Sandbox or Production.
+      throw new HttpsError(
+        "invalid-argument",
+        "Local Xcode StoreKit configuration transactions cannot be bound. Test with TestFlight or the App Store sandbox."
+      );
+    }
   } catch (error) {
+    if (error instanceof HttpsError) throw error;
     logger.warn("Unable to decode transaction environment", error);
   }
   throw new HttpsError("invalid-argument", "Unsupported transaction environment.");
