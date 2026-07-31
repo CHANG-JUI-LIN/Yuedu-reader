@@ -158,6 +158,7 @@ struct BookSourceCheckOptionsView: View {
                 }
 
                 Toggle(localized("停用過慢書源"), isOn: $policy.disableSlow)
+                    .padding(.trailing, 2)
 
                 if policy.disableSlow {
                     Picker(localized("過慢閾值"), selection: $policy.slowThresholdMs) {
@@ -190,6 +191,7 @@ struct BookSourceCheckOptionsView: View {
             Toggle(localized("檢查目錄"), isOn: $policy.checkCategory)
             Toggle(localized("檢查正文"), isOn: $policy.checkContent)
         }
+        .padding(.trailing, 2)
     }
 }
 
