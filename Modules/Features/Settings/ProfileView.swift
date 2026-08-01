@@ -171,10 +171,7 @@ struct SettingsView: View {
                     }
 
                     // ── About ──
-                    Section(
-                        header: Text(localized("關於")),
-                        footer: Text(localized("允許測試購買說明"))
-                    ) {
+                    Section(header: Text(localized("關於"))) {
                         NavigationLink {
                             AboutSupportView(
                                 appVersion: appVersion,
@@ -198,7 +195,6 @@ struct SettingsView: View {
                                     .foregroundColor(DSColor.textSecondary)
                             }
                         }
-                        Toggle(localized("允許測試購買"), isOn: $gs.allowSandboxTestTransactions)
                     }
                 }
             .themedAppSurface(for: .settings)

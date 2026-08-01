@@ -12,7 +12,9 @@ import {FieldValue, Timestamp, getFirestore} from "firebase-admin/firestore";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
 import {onRequest} from "firebase-functions/v2/https";
 import {logger} from "firebase-functions";
+import {defineSecret} from "firebase-functions/params";
 
+import {AppStoreConnectClient} from "./appStoreConnect.js";
 import {
   assertBindingOwner,
   assertTransactionCanBind,
@@ -77,7 +79,21 @@ interface TestFlightRequestDocument {
   email: string;
   status: string;
   createdAt: FieldValue;
+  updatedAt?: FieldValue;
 }
+
+const testFlightGroupNameSecret = defineSecret("APP_STORE_CONNECT_GROUP_NAME");
+const appStoreIssuerIdSecret = defineSecret("APP_STORE_CONNECT_ISSUER_ID");
+const appStoreKeyIdSecret = defineSecret("APP_STORE_CONNECT_KEY_ID");
+const appStorePrivateKeySecret = defineSecret("APP_STORE_CONNECT_PRIVATE_KEY");
+const appStoreConnectSecrets = [
+  appStoreIssuerIdSecret,
+  appStoreKeyIdSecret,
+  appStorePrivateKeySecret,
+  testFlightGroupNameSecret,
+];
+/// Beta group created automatically if the configured group does not exist.
+const defaultTestFlightGroupName = "Yuedu 測試版";
 
 function requireUid(auth: {uid: string} | undefined): string {
   if (auth === undefined) {
@@ -259,28 +275,66 @@ export const deleteSubscriptionAccountData = onCall({region}, async (request) =>
   return {deleted: true};
 });
 
-export const requestTestFlightAccess = onCall({region}, async (request) => {
-  const email = normalizeTestFlightEmail(request.data?.email);
-  if (email === null) {
-    throw new HttpsError("invalid-argument", "Invalid email address.");
+/// Adds the tester to the App Store Connect beta group so Apple sends the
+/// invite email. Never throws: misconfiguration or API failure must not fail
+/// the user's application — the request stays recorded in Firestore with a
+/// "failed" status for the developer to retry or invite manually.
+async function inviteTestFlightTester(email: string): Promise<string> {
+  try {
+    const client = new AppStoreConnectClient({
+      credentials: {
+        issuerId: appStoreIssuerIdSecret.value(),
+        keyId: appStoreKeyIdSecret.value(),
+        privateKeyBase64: appStorePrivateKeySecret.value(),
+      },
+      appId: String(appAppleId),
+      groupName: testFlightGroupNameSecret.value() ?? defaultTestFlightGroupName,
+    });
+    const {testerId, groupId} = await client.invite(email);
+    logger.info(`TestFlight invite requested: email ${email} tester ${testerId} group ${groupId}`);
+    return "invited";
+  } catch (error) {
+    logger.error(`TestFlight invite failed for ${email}`, error);
+    return "failed";
   }
+}
 
-  // One document per normalized address. Idempotent: a repeated request from
-  // the same mailbox returns alreadySubmitted instead of stacking invites.
-  const reference = db.collection("testflightRequests").doc(email);
-  const snapshot = await reference.get();
-  if (snapshot.exists) {
-    return {alreadySubmitted: true};
+export const requestTestFlightAccess = onCall(
+  {region, secrets: appStoreConnectSecrets},
+  async (request) => {
+    const email = normalizeTestFlightEmail(request.data?.email);
+    if (email === null) {
+      throw new HttpsError("invalid-argument", "Invalid email address.");
+    }
+
+    // One document per normalized address. Idempotent: a repeated request from
+    // the same mailbox returns alreadySubmitted instead of stacking invites.
+    const reference = db.collection("testflightRequests").doc(email);
+    const snapshot = await reference.get();
+    if (snapshot.exists) {
+      const existing = snapshot.data() as TestFlightRequestDocument | undefined;
+      // A previous attempt that never reached App Store Connect is retried on
+      // the next application instead of silently dropping the invite.
+      if (existing?.status !== "invited") {
+        const status = await inviteTestFlightTester(email);
+        await reference.update({status, updatedAt: FieldValue.serverTimestamp()});
+        return {alreadySubmitted: true, status};
+      }
+      return {alreadySubmitted: true, status: existing?.status ?? "pending"};
+    }
+
+    const data: TestFlightRequestDocument = {
+      email,
+      status: "pending",
+      createdAt: FieldValue.serverTimestamp(),
+    };
+    await reference.set(data);
+
+    const status = await inviteTestFlightTester(email);
+    await reference.update({status, updatedAt: FieldValue.serverTimestamp()});
+    return {alreadySubmitted: false, status};
   }
-
-  const data: TestFlightRequestDocument = {
-    email,
-    status: "pending",
-    createdAt: FieldValue.serverTimestamp(),
-  };
-  await reference.set(data);
-  return {alreadySubmitted: false};
-});
+);
 
 export const appStoreServerNotifications = onRequest({region}, async (request, response) => {
   if (request.method !== "POST") {

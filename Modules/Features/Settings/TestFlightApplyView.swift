@@ -52,10 +52,10 @@ struct TestFlightApplyView: View {
                                     .font(DSFont.bodyBold)
                             }
                         }
+                        .frame(maxWidth: .infinity)
                         .frame(minHeight: 44)
                     }
                     .buttonStyle(.borderedProminent)
-                    .frame(maxWidth: .infinity, alignment: .center)
                     .disabled(state == .submitting)
                 }
             }

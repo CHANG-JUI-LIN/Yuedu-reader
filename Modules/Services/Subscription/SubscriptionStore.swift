@@ -297,12 +297,10 @@ final class SubscriptionStore: ObservableObject {
     func refreshEntitlements() async {
         var owned: Set<String> = []
         var revokedCount = 0
-        let allowSandbox = GlobalSettings.shared.allowSandboxTestTransactions
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
             guard SubscriptionEntitlementFilter.shouldAccept(
                 environment: transaction.environment,
-                allowSandbox: allowSandbox,
                 isDebugBuild: Self.isDebugBuild
             ) else { continue }
             if transaction.revocationDate == nil {
@@ -354,13 +352,11 @@ final class SubscriptionStore: ObservableObject {
 
     private func bindCurrentStoreKitEntitlementsToAccount() async {
         var didFailBinding = false
-        let allowSandbox = GlobalSettings.shared.allowSandboxTestTransactions
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result),
                   ProProduct(rawValue: transaction.productID) != nil,
                   SubscriptionEntitlementFilter.shouldAccept(
                     environment: transaction.environment,
-                    allowSandbox: allowSandbox,
                     isDebugBuild: Self.isDebugBuild
                   ) else { continue }
             do {

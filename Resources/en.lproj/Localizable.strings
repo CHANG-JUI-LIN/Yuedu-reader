@@ -428,8 +428,6 @@
 "閱讀進度" = "Progress";
 "關於" = "About";
 "關於 Yuedu Reader" = "About Yuedu Reader";
-"允許測試購買" = "Allow Test Purchases";
-"允許測試購買說明" = "When enabled, sandbox (TestFlight) purchases count as entitlements. App Store builds ignore sandbox transactions by default, so leftover test purchases cannot unlock Pro.";
 "聯絡我們" = "Contact Us";
 "聯絡方式" = "Contact";
 "聯絡方式、版本資訊與政策協議" = "Contact, version, policies, and agreements";

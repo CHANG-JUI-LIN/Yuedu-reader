@@ -30,10 +30,11 @@ enum SubscriptionEntitlementRefreshPolicy {
 enum SubscriptionEntitlementFilter {
     /// Whether a transaction from the given StoreKit environment counts as an
     /// entitlement. Sandbox transactions are accepted only by DEBUG builds
-    /// used for local StoreKit testing. Release/TestFlight/App Store builds
-    /// must never let a persisted test-purchase toggle turn a sandbox
-    /// transaction into a real Pro entitlement.
-    static func shouldAccept(environment: AppStore.Environment, allowSandbox _: Bool, isDebugBuild: Bool) -> Bool {
+    /// used for local StoreKit testing; Release/TestFlight/App Store builds
+    /// never count a sandbox transaction, so stale TestFlight purchases
+    /// lingering in the device's shared StoreKit database cannot unlock Pro
+    /// in the production app.
+    static func shouldAccept(environment: AppStore.Environment, isDebugBuild: Bool) -> Bool {
         switch environment {
         case .sandbox:
             return isDebugBuild
