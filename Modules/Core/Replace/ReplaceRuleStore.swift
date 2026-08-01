@@ -14,11 +14,19 @@ final class ReplaceRuleStore: ObservableObject {
 
     private let fileURL: URL
 
+    /// Marks that the built-in presets have been installed on this install. Without it,
+    /// deleting every rule made the next launch treat the store as brand new and put the
+    /// presets back, so the rules could not be removed. Cleared with the app, so a real
+    /// reinstall still seeds them.
+    private static let presetsInstalledKey = "yd_replace_presets_installed"
+
     private init() {
         let dir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         fileURL = dir.appendingPathComponent("replace_rules.json")
         load()
-        if rules.isEmpty { installPresets() }
+        if rules.isEmpty, !UserDefaults.standard.bool(forKey: Self.presetsInstalledKey) {
+            installPresets()
+        }
     }
 
     // MARK: - CRUD
@@ -75,7 +83,9 @@ final class ReplaceRuleStore: ObservableObject {
     }
 
     func replaceRulesFromSync(_ syncedRules: [ReplaceRule]) {
-        rules = syncedRules.sorted { $0.sortOrder < $1.sortOrder }
+        // Deduplicate here too: until every device has run the stable-id build, a merge
+        // can still hand back the old duplicated set from the cloud.
+        rules = Self.deduplicated(syncedRules.sorted { $0.sortOrder < $1.sortOrder })
         save()
     }
 
@@ -132,7 +142,10 @@ final class ReplaceRuleStore: ObservableObject {
               let decoded = try? JSONDecoder().decode([ReplaceRule].self, from: data) else {
             return
         }
-        rules = decoded
+        rules = Self.deduplicated(decoded)
+        // Persist immediately when copies were dropped, so the next sync sees the
+        // shrunken set and tombstones the ids that went away.
+        if rules.count != decoded.count { save() }
     }
 
     private func save() {
@@ -142,25 +155,60 @@ final class ReplaceRuleStore: ObservableObject {
 
     // MARK: - Presets
 
+    /// Preset ids are fixed strings, never fresh UUIDs.
+    ///
+    /// iCloud merges rules by id. When every install minted new UUIDs for the same five
+    /// presets, a reinstall (or a second device) produced five ids the cloud had never
+    /// seen, so the merge kept both sets and the list grew by five every time. A stable
+    /// id makes those the same record everywhere, and the merge collapses them.
     private func installPresets() {
-        let presets: [(String, String, String, Bool)] = [
-            // (name, pattern, replacement, isRegex)
-            ("廣告文字過濾（首行）",  "^\\s*本章節.*?(?=\\n)",              "",      true),
-            ("廣告文字過濾（尾行）",  "(?<=\\n).*?閱讀\\s*$",              "",      true),
-            ("合并多餘空行",          "\\n{3,}",                           "\n\n",  true),
-            ("清除全形空格開頭",      "^[\\u3000\\s]+",                    "",      true),
-            ("清除行末空白",          "[\\t ]+$",                          "",      true),
+        let presets: [(id: String, name: String, pattern: String, replacement: String)] = [
+            ("preset.ad-filter.leading", "廣告文字過濾（首行）", "^\\s*本章節.*?(?=\\n)", ""),
+            ("preset.ad-filter.trailing", "廣告文字過濾（尾行）", "(?<=\\n).*?閱讀\\s*$", ""),
+            ("preset.collapse-blank-lines", "合并多餘空行", "\\n{3,}", "\n\n"),
+            ("preset.trim-leading-space", "清除全形空格開頭", "^[\\u3000\\s]+", ""),
+            ("preset.trim-trailing-space", "清除行末空白", "[\\t ]+$", ""),
         ]
         for (i, preset) in presets.enumerated() {
             rules.append(ReplaceRule(
-                name: preset.0,
-                pattern: preset.1,
-                replacement: preset.2,
-                isRegex: preset.3,
+                id: preset.id,
+                name: preset.name,
+                pattern: preset.pattern,
+                replacement: preset.replacement,
+                isRegex: true,
                 sortOrder: i
             ))
         }
+        UserDefaults.standard.set(true, forKey: Self.presetsInstalledKey)
         save()
+    }
+
+    /// Collapses rules that would do exactly the same substitution.
+    ///
+    /// Cleans up what the UUID-per-install bug above already duplicated on people's
+    /// devices: running the identical pattern twice can never change the output, so the
+    /// copies are pure noise. Keeping the lowest id makes two devices independently pick
+    /// the same survivor, and the ids that disappear are tombstoned by the normal sync
+    /// path so the copies do not come back from the cloud.
+    ///
+    /// Can be deleted once no install carries duplicates from before the stable-id fix.
+    /// Not `private` so `ReplaceRuleDeduplicationTests` can cover it without reaching
+    /// through the singleton's private init.
+    static func deduplicated(_ input: [ReplaceRule]) -> [ReplaceRule] {
+        var survivorIndexByKey: [String: Int] = [:]
+        var output: [ReplaceRule] = []
+        for rule in input {
+            let key = "\(rule.pattern)\u{1F}\(rule.replacement)\u{1F}\(rule.scope)\u{1F}\(rule.isRegex)"
+            guard let existing = survivorIndexByKey[key] else {
+                survivorIndexByKey[key] = output.count
+                output.append(rule)
+                continue
+            }
+            if rule.id < output[existing].id {
+                output[existing] = rule
+            }
+        }
+        return output
     }
 }
 
