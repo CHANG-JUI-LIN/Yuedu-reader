@@ -419,7 +419,10 @@ extension UIColor {
         var blue: CGFloat = 0
         var alpha: CGFloat = 0
         guard getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
-        return (UInt32(red * 255) << 16) | (UInt32(green * 255) << 8) | UInt32(blue * 255)
+        // Clamp before conversion: Display P3 colors can surface out-of-range
+        // components (extended range) here, and UInt32(negative) traps.
+        let byte: (CGFloat) -> UInt32 = { UInt32((min(max($0, 0), 1) * 255).rounded()) }
+        return (byte(red) << 16) | (byte(green) << 8) | byte(blue)
     }
 }
 
