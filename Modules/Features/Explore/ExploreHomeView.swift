@@ -711,7 +711,7 @@ private struct DiscoverSettingsView: View {
         VStack(alignment: .leading, spacing: DSSpacing.md, content: content)
             .padding(DSSpacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DSColor.surface)
+            .interfaceCardSurface()
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
     }
 

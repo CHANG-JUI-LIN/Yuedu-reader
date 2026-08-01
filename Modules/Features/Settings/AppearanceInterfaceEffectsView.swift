@@ -49,13 +49,13 @@ struct AppearanceInterfaceEffectsView: View {
             // would be visibly inert. Same rule as 透明度 above.
             if settings.interfaceFrostedGlass {
                 Section {
-                    Toggle(isOn: $settings.interfaceGlassListSections) {
-                        Text(localized("列表分組"))
+                    Toggle(isOn: $settings.interfaceGlassCards) {
+                        Text(localized("分組卡片"))
                             .font(DSFont.body)
                             .foregroundStyle(DSColor.textPrimary)
                     }
                 } footer: {
-                    Text(localized("設定頁的分組卡片也改用玻璃材質，跟隨上方的透明度。系統設計建議玻璃只用於浮動控制項，因此預設關閉。"))
+                    Text(localized("設定、統計、書籍詳情等頁面的卡片也改用玻璃材質，跟隨上方的透明度。系統設計建議玻璃只用於浮動控制項，因此預設關閉。"))
                         .font(DSFont.footnote)
                         .foregroundStyle(DSColor.textSecondary)
                 }

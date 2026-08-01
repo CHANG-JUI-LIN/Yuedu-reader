@@ -376,7 +376,7 @@ private struct DiscoverRankedSummaryCard: View {
         }
         .padding(DSSpacing.md)
         .frame(width: 320, alignment: .topLeading)
-        .background(DSColor.surface)
+        .interfaceCardSurface()
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)

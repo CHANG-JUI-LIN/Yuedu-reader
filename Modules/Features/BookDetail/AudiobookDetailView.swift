@@ -282,7 +282,7 @@ struct AudiobookDetailView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, DSSpacing.md)
                     .padding(.vertical, 6)
-                    .background(DSColor.surface, in: Capsule())
+                    .interfaceCardSurface(in: Capsule())
             }
         }
         .padding(.horizontal, DSSpacing.lg)
@@ -403,7 +403,7 @@ struct AudiobookDetailView: View {
                 .padding(.horizontal, DSSpacing.lg)
                 .padding(.vertical, DSSpacing.md)
                 .frame(maxWidth: .infinity)
-                .background(DSColor.surface)
+                .interfaceCardSurface()
                 .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
                 .contentShape(Rectangle())
             }
@@ -531,7 +531,7 @@ struct AudiobookDetailView: View {
                 .buttonStyle(.plain)
             }
         }
-        .background(DSColor.surface)
+        .interfaceCardSurface()
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
     }
 

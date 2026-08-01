@@ -271,7 +271,7 @@ struct AppearanceThemeView: View {
             }
         }
         .padding(DSSpacing.lg)
-        .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         .animation(DSAnimation.standard, value: settings.appearanceUsesSeparateDarkTheme)
     }
 
@@ -519,7 +519,7 @@ struct AppearanceThemeView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.lg)
-            .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -550,7 +550,7 @@ struct AppearanceThemeView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.lg)
-            .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -573,7 +573,7 @@ struct AppearanceThemeView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.lg)
-            .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -618,7 +618,7 @@ struct AppearanceThemeView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.lg)
-            .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -648,7 +648,7 @@ struct AppearanceThemeView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.lg)
-            .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -1112,7 +1112,7 @@ struct AppearanceThemeView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.lg)
-            .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -1193,7 +1193,7 @@ struct AppearanceThemeView: View {
                 }
                 .padding(.horizontal, DSSpacing.lg)
                 .padding(.vertical, DSSpacing.lg)
-                .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+                .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
             }
             .buttonStyle(.plain)
 

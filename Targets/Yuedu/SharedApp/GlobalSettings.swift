@@ -494,7 +494,9 @@ class GlobalSettings: ObservableObject {
     private static let interfaceGlowIntensityKey = "yd_interface_glow_intensity"
     private static let interfaceFrostedGlassKey = "yd_interface_frosted_glass"
     private static let interfaceGlassTransparencyKey = "yd_interface_glass_transparency"
-    private static let interfaceGlassListSectionsKey = "yd_interface_glass_list_sections"
+    /// Key kept at the original `list_sections` spelling: the setting shipped under that
+    /// name and renaming the key would silently reset it for anyone who already turned it on.
+    private static let interfaceGlassCardsKey = "yd_interface_glass_list_sections"
     private static let customAppearanceThemesKey = "yd_custom_appearance_themes"
     private static let appearancePageBackgroundsKey = "yd_appearance_page_backgrounds"
     private static let globalFontPostScriptKey = "yd_global_font_postscript"
@@ -552,7 +554,7 @@ class GlobalSettings: ObservableObject {
     /// (controls, navigation, transient UI) and keeps it out of the content layer,
     /// which is where a settings list's cards live — so this stays opt-in, and off
     /// reproduces the original opaque cards exactly.
-    static let defaultInterfaceGlassListSections = false
+    static let defaultInterfaceGlassCards = false
     static let commentBubbleScaleRange: ClosedRange<Double> = 0.5...2.0
     static let commentBubbleTextScaleRange: ClosedRange<Double> = 0.2...0.8
     static let defaultCommentBubbleScale = 1.0
@@ -1008,10 +1010,11 @@ class GlobalSettings: ObservableObject {
             }
         }
     }
-    /// Whether Form/List section cards wear the same glass as floating elements.
-    /// Rides `interfaceFrostedGlass` and 透明度 rather than owning its own material.
-    @Published var interfaceGlassListSections: Bool {
-        didSet { UserDefaults.standard.set(interfaceGlassListSections, forKey: Self.interfaceGlassListSectionsKey) }
+    /// Whether content-layer cards — Form/List sections and the hand-drawn cards on
+    /// 外觀主題, 統計, 書籍詳情 — wear the same glass as floating elements. Rides
+    /// `interfaceFrostedGlass` and 透明度 rather than owning its own material.
+    @Published var interfaceGlassCards: Bool {
+        didSet { UserDefaults.standard.set(interfaceGlassCards, forKey: Self.interfaceGlassCardsKey) }
     }
     @Published var customAppearanceThemes: [AppearanceCustomTheme] {
         didSet { Self.saveCustomAppearanceThemes(customAppearanceThemes) }
@@ -1523,9 +1526,9 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: Self.interfaceGlassTransparencyKey) as? Double)
                 ?? Self.defaultInterfaceGlassTransparency
         )
-        interfaceGlassListSections =
-            (UserDefaults.standard.object(forKey: Self.interfaceGlassListSectionsKey) as? Bool)
-            ?? Self.defaultInterfaceGlassListSections
+        interfaceGlassCards =
+            (UserDefaults.standard.object(forKey: Self.interfaceGlassCardsKey) as? Bool)
+            ?? Self.defaultInterfaceGlassCards
         rootTabVisibleIDs = Self.sanitizedRootTabVisibleIDs(
             UserDefaults.standard.stringArray(forKey: Self.rootTabVisibleIDsKey)
                 ?? Self.defaultRootTabVisibleIDs

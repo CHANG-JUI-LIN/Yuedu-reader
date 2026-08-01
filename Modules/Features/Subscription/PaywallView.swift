@@ -178,7 +178,7 @@ struct PaywallView: View {
             .opacity(0.6)
         }
         .padding(DSSpacing.lg)
-        .background(DSColor.surface)
+        .interfaceCardSurface()
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
     }
 
@@ -239,7 +239,7 @@ struct PaywallView: View {
                 }
             }
             .padding(DSSpacing.lg)
-            .background(DSColor.surface)
+            .interfaceCardSurface()
             .overlay(
                 RoundedRectangle(cornerRadius: DSRadius.lg)
                     .stroke(isSelected ? DSColor.accent : DSColor.border, lineWidth: isSelected ? 2 : 1)

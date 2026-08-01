@@ -43,7 +43,7 @@ struct SourceDisclaimerView: View {
             disclaimerRow(icon: "shield.fill", text: localized("source_disclaimer_body_4"))
         }
         .padding(DSSpacing.lg)
-        .background(DSColor.surface)
+        .interfaceCardSurface()
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
     }
 

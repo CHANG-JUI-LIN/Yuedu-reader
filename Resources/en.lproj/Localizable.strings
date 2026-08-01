@@ -1127,8 +1127,8 @@
 "光暈從浮動元素的邊緣向外擴散，顏色跟隨主題色。" = "The glow spreads outward from the edge of floating elements, tinted by the theme color.";
 "關閉後，浮動元素改用不透明底色。透明度越低，背後的內容越不透出。" = "When off, floating elements use a solid fill. The lower the opacity, the less shows through from behind.";
 "系統已開啟「降低透明度」，浮動元素目前一律使用不透明底色。" = "Reduce Transparency is on in system settings, so floating elements currently use a solid fill.";
-"列表分組" = "List Sections";
-"設定頁的分組卡片也改用玻璃材質，跟隨上方的透明度。系統設計建議玻璃只用於浮動控制項，因此預設關閉。" = "Settings cards use the glass material too, following the transparency above. Off by default, since the system design reserves glass for floating controls.";
+"分組卡片" = "Cards";
+"設定、統計、書籍詳情等頁面的卡片也改用玻璃材質，跟隨上方的透明度。系統設計建議玻璃只用於浮動控制項，因此預設關閉。" = "Cards on settings, stats and book detail pages use the glass material too, following the transparency above. Off by default, since the system design reserves glass for floating controls.";
 "主題自定義" = "Theme Customization";
 "自訂主題" = "Custom Theme";
 "名稱" = "Name";

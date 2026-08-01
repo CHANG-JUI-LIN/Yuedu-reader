@@ -195,7 +195,7 @@ struct DSCard<Content: View>: View {
             content
         }
         .padding(DSSpacing.lg)
-        .background(DSColor.surface)
+        .interfaceCardSurface()
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
         .shadow(color: DSColor.shadow, radius: 6, x: 0, y: 4)
     }

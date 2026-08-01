@@ -75,7 +75,7 @@ struct PurchaseSuccessView: View {
             }
         }
         .padding(DSSpacing.lg)
-        .background(DSColor.surface)
+        .interfaceCardSurface()
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
     }
 
