@@ -411,10 +411,18 @@ struct AppearanceThemePreset: Identifiable, Hashable {
     /// Active reader-surface color override (nil = built-in reader theme).
     nonisolated(unsafe) static var activeReaderTheme: AppearanceThemePreset?
 
-    /// Active app-wide appearance theme (nil = classic/system colors). Set by
-    /// `ContentView`; consulted by `DSColor` so themed surfaces retint the whole
-    /// app. Only ever mutated on the main thread.
-    nonisolated(unsafe) static var activeAppTheme: AppearanceThemePreset?
+    /// The app-wide appearance theme for *both* appearances, so `DSColor` can hand UIKit
+    /// a dynamic color that resolves at draw time. Set by `ContentView`; only ever
+    /// mutated on the main thread.
+    ///
+    /// This used to hold one already-chosen palette, which made every themed color depend
+    /// on *when* the global was last written. `ContentView.body` is the only place that
+    /// refreshes it when the system appearance flips, and SwiftUI may re-render a themed
+    /// screen before that runs — so dark mode could paint with the light palette until
+    /// something forced another pass. (`setAppearanceTheme` carries a patch for the same
+    /// ordering problem on theme *selection*: the "switch takes two taps" bug.) Resolving
+    /// per trait removes the ordering question entirely.
+    nonisolated(unsafe) static var activeAppThemes = ActiveAppThemes()
 
     static func preset(
         id: String?,
@@ -646,5 +654,25 @@ struct AppearanceThemeBackgroundView: View {
                 .ignoresSafeArea()
                 .accessibilityHidden(true)
         }
+    }
+}
+
+/// The active app theme per appearance. `nil` in a slot means classic — system colors.
+///
+/// Held as a pair rather than "whichever palette matches the current appearance" so
+/// `DSColor` can build a dynamic `UIColor`, which UIKit resolves against the trait
+/// collection in effect when a view actually draws. See `activeAppThemes`.
+struct ActiveAppThemes {
+    var light: AppearanceThemePreset?
+    var dark: AppearanceThemePreset?
+
+    var isActive: Bool { light != nil || dark != nil }
+
+    func theme(for colorScheme: ColorScheme) -> AppearanceThemePreset? {
+        colorScheme == .dark ? dark : light
+    }
+
+    func theme(for style: UIUserInterfaceStyle) -> AppearanceThemePreset? {
+        style == .dark ? dark : light
     }
 }

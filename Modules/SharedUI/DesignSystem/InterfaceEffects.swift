@@ -197,8 +197,15 @@ private struct InterfaceGlowModifier<SurfaceShape: Shape>: ViewModifier {
         settings.interfaceGlowIntensity
     }
 
+    /// Dynamic like every other themed color, so the glow follows the appearance at draw
+    /// time instead of whatever palette was current when the global was last written.
     private var resolvedTint: Color {
-        tint ?? AppearanceThemePreset.activeAppTheme?.accentColor ?? DSColor.accent
+        if let tint { return tint }
+        let themes = AppearanceThemePreset.activeAppThemes
+        guard themes.isActive else { return DSColor.accent }
+        return Color(uiColor: UIColor { traits in
+            themes.theme(for: traits.userInterfaceStyle)?.accent ?? .tintColor
+        })
     }
 
     func body(content: Content) -> some View {

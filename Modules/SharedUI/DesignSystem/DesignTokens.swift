@@ -28,13 +28,13 @@ enum DSColor {
     // When an app appearance theme is active these retint the whole app; with
     // no theme (classic) they resolve to the exact system colors as before.
     /// Page background
-    static var background: Color { themed(\.appPageBackground) ?? Color(.systemBackground) }
+    static var background: Color { themed(\.appPageBackground, fallback: .systemBackground) }
     /// Group / card background
-    static var surface: Color { themed(\.appCardBackground) ?? Color(.secondarySystemGroupedBackground) }
+    static var surface: Color { themed(\.appCardBackground, fallback: .secondarySystemGroupedBackground) }
     /// Tertiary background (nested groups)
-    static var surfaceTertiary: Color { themed(\.appSecondaryBackground) ?? Color(.tertiarySystemBackground) }
+    static var surfaceTertiary: Color { themed(\.appSecondaryBackground, fallback: .tertiarySystemBackground) }
     /// Grouped content background
-    static var groupedBackground: Color { themed(\.appPageBackground) ?? Color(.systemGroupedBackground) }
+    static var groupedBackground: Color { themed(\.appPageBackground, fallback: .systemGroupedBackground) }
     /// Neutral gray fill for controls that must not inherit an appearance-theme tint.
     static let neutralControlFill = Color(uiColor: .systemGray5)
     /// Pressed-state fill layered inside `neutralControlFill` controls (pre-iOS 26 fallback).
@@ -50,15 +50,28 @@ enum DSColor {
 
     // ── Borders & Separators ──
     /// Thin separator
-    static var separator: Color { themed(\.appSeparator) ?? Color(.separator) }
+    static var separator: Color { themed(\.appSeparator, fallback: .separator) }
     /// Light border
-    static var border: Color { themed(\.appBorder) ?? Color(.systemGray4) }
+    static var border: Color { themed(\.appBorder, fallback: .systemGray4) }
 
-    /// Resolves a themed surface color from the active app theme, or nil when no
-    /// theme is active (classic/system).
-    private static func themed(_ keyPath: KeyPath<AppearanceThemePreset, UIColor>) -> Color? {
-        guard let theme = AppearanceThemePreset.activeAppTheme else { return nil }
-        return Color(uiColor: theme[keyPath: keyPath])
+    /// Resolves a themed surface color as a **dynamic** color.
+    ///
+    /// UIKit picks the light or dark palette from the trait collection in effect when a
+    /// view actually draws, so the result no longer depends on when `activeAppThemes` was
+    /// last written. That ordering was the bug: only `ContentView.body` refreshes the
+    /// global on a system appearance change, and SwiftUI can re-render a themed screen
+    /// before it runs, leaving dark mode painted with light-mode surfaces.
+    ///
+    /// - Parameter fallback: the system color for an appearance with no theme (classic).
+    private static func themed(
+        _ keyPath: KeyPath<AppearanceThemePreset, UIColor>,
+        fallback: UIColor
+    ) -> Color {
+        let themes = AppearanceThemePreset.activeAppThemes
+        guard themes.isActive else { return Color(uiColor: fallback) }
+        return Color(uiColor: UIColor { traits in
+            themes.theme(for: traits.userInterfaceStyle)?[keyPath: keyPath] ?? fallback
+        })
     }
 
     // ── Functional ──

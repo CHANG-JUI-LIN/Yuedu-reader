@@ -1875,13 +1875,21 @@ class GlobalSettings: ObservableObject {
         applyPageBackgroundsFromCustomTheme(id: preset.id)
         guard slot == activeAppearance else { return }
         // Sync the DSColor-facing global in the same turn as the selection.
-        // `activeAppTheme` is otherwise refreshed only in ContentView.body, which
+        // `activeAppThemes` is otherwise refreshed only in ContentView.body, which
         // SwiftUI may run *after* re-rendering the themed screen that triggered
         // this — so surfaces would read last frame's theme and only catch up on
         // the next tap (the "switch takes two taps" bug). Matches ContentView's
         // resolvedAppTheme rule: classic (默認) means no override.
         let active = preset.palette(for: activeAppearance)
-        AppearanceThemePreset.activeAppTheme = active.isClassic ? nil : active
+        let resolved = active.isClassic ? nil : active
+        // Only the slot on screen; `ContentView.body` refreshes both on the pass this
+        // selection triggers. Which *preset* is active still needs this immediate write —
+        // the per-trait dynamic colors fixed appearance ordering, not selection ordering.
+        if activeAppearance == .dark {
+            AppearanceThemePreset.activeAppThemes.dark = resolved
+        } else {
+            AppearanceThemePreset.activeAppThemes.light = resolved
+        }
     }
 
     private func selectAppearanceTheme(id: String, for slot: ColorScheme) {

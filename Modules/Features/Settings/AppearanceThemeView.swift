@@ -76,7 +76,7 @@ struct AppearanceThemeView: View {
     /// Appearance forced on the app while a slot is being edited by hand, so the
     /// 深色 tab shows the dark theme *in place* — picking colors you cannot see is
     /// not a review. Flipping the window's scheme is what makes `colorScheme`
-    /// (and with it `activeAppTheme`, every DSColor surface, and this screen's
+    /// (and with it every DSColor surface, which resolves per trait, and this screen's
     /// own tint) resolve to the edited appearance. nil = follow the device, which
     /// is also the only state reachable while 單獨設定深色主題 is off.
     private var previewedAppearance: ColorScheme? {

@@ -72,7 +72,10 @@ struct IconConsistentLabelStyle: LabelStyle {
         let sized = icon
             .font(DSFont.fixed(size: 17, weight: .medium))
             .frame(width: 28, height: 28)
-        if AppearanceThemePreset.activeAppTheme != nil {
+        // A LabelStyle cannot read @Environment, so this asks whether any appearance is
+        // themed rather than the current one. The tint it applies is `Color.accentColor`,
+        // which already resolves per appearance, so the distinction costs nothing here.
+        if AppearanceThemePreset.activeAppThemes.isActive {
             sized.foregroundStyle(DSColor.accent)
         } else {
             sized
@@ -148,7 +151,7 @@ private struct PageBackgroundToolbarModifier: ViewModifier {
            gs.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme) != nil {
             return true
         }
-        return AppearanceThemePreset.activeAppTheme != nil
+        return AppearanceThemePreset.activeAppThemes.theme(for: colorScheme) != nil
     }
 
     /// Always the same modifier, only its visibility changes (`.automatic` is

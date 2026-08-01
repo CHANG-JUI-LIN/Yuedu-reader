@@ -43,29 +43,39 @@ struct ContentView: View {
     /// > **Optimistic Pro theme.** On cold launch StoreKit entitlements are
     /// > still loading, so `subscriptionStore.hasAccess(.readerThemePacks)`
     /// > returns false even for Pro users. Without the optimistic fallback
-    /// > below, the first render would fall back to classic → `activeAppTheme`
-    /// > = nil → the entire UI flashes in system colors until entitlements
+    /// > below, the first render would fall back to classic → an empty
+    /// > `activeAppThemes` → the entire UI flashes in system colors until entitlements
     /// > resolve. Instead, we detect the intended theme from UserDefaults and
     /// > apply it optimistically when it requires Pro. If the user turns out
     /// > not to be Pro, the theme downgrades on the next render pass (~1
     /// > frame), which is imperceptible compared to the 500ms–2s flash.
-    private var resolvedAppTheme: AppearanceThemePreset? {
+    private func resolvedAppTheme(for scheme: ColorScheme) -> AppearanceThemePreset? {
         let theme = gs.appearanceTheme(
-            for: colorScheme,
+            for: scheme,
             isProActive: subscriptionStore.hasAccess(.readerThemePacks)
         )
         if theme.isClassic {
             // The intended theme may be a Pro theme that requires Pro, but
             // entitlements haven't resolved yet. Look up the intended theme
             // from UserDefaults (synchronous) and use it optimistically.
-            let selectedID = gs.selectedAppearanceThemeID(for: colorScheme)
+            let selectedID = gs.selectedAppearanceThemeID(for: scheme)
             if let intended = AppearanceThemePreset.preset(
                 id: selectedID, customThemes: gs.customAppearanceThemes
             ), !intended.isClassic, intended.requiresPro {
-                return intended.palette(for: colorScheme)
+                return intended.palette(for: scheme)
             }
         }
         return theme.isClassic ? nil : theme
+    }
+
+    /// Both appearances, resolved together. `DSColor` turns these into dynamic colors, so
+    /// the palette is chosen by the trait collection at draw time rather than by whichever
+    /// appearance happened to be current the last time this ran.
+    private var resolvedAppThemes: ActiveAppThemes {
+        ActiveAppThemes(
+            light: resolvedAppTheme(for: .light),
+            dark: resolvedAppTheme(for: .dark)
+        )
     }
 
     private var typographyRefreshID: String {
@@ -77,7 +87,7 @@ struct ContentView: View {
         // appearance before descendants read them this render pass. This is a
         // plain global, not SwiftUI state, so assigning it here is side-effect
         // free as far as invalidation goes.
-        AppearanceThemePreset.activeAppTheme = resolvedAppTheme
+        AppearanceThemePreset.activeAppThemes = resolvedAppThemes
         GlobalAppTypography.activate(postScriptName: gs.resolvedGlobalFontPostScript)
         return tabView
         // Classic (默認) = the app's original look: no tint override at all.
@@ -159,7 +169,7 @@ struct ContentView: View {
             ForEach(gs.visibleRootTabs) { tab in
                 rootTabContent(for: tab)
                     .modifier(ThemedSurfaceBackground(
-                        themeActive: resolvedAppTheme != nil,
+                        themeActive: resolvedAppTheme(for: colorScheme) != nil,
                         scope: AppearancePageBackgroundScope(rawValue: tab.rawValue) ?? .global,
                         isProActive: subscriptionStore.hasAccess(.readerThemePacks)
                     ))
