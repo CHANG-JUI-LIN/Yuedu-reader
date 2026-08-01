@@ -118,7 +118,7 @@ private struct ThemedAppSurfaceModifier: ViewModifier {
     /// screen it had pushed. Branch inside `.background` instead.
     /// (The two theme-less branches this replaced were already byte-identical.)
     func body(content: Content) -> some View {
-        let slice = slice
+        let slice = self.slice
         return content
             .scrollContentBackground(.hidden)
             .background {

@@ -249,6 +249,54 @@ class BookSourceStore: ObservableObject {
         }
     }
 
+    /// Bulk enable/disable driven by the user (全部啟用／停用, 啟用選中, and the group menu).
+    /// Advances `lastUpdateTime` exactly like `toggle(id:)` — a deliberate user action has to
+    /// win the iCloud sync merge — and saves once instead of once per source, which is what
+    /// separates it from the health checker's `setEnabled(id:enabled:)`.
+    func setEnabledByUser(ids: Set<UUID>, enabled: Bool) {
+        guard !ids.isEmpty else { return }
+        let now = Self.currentMillis()
+        var changed = false
+        for idx in sources.indices
+        where ids.contains(sources[idx].id) && sources[idx].enabled != enabled {
+            sources[idx].enabled = enabled
+            sources[idx].lastUpdateTime = now
+            changed = true
+        }
+        if changed { save() }
+    }
+
+    /// Rewrites `bookSourceGroup` for a set of sources (重命名分組 / 合併到其他分組). An empty
+    /// `group` clears the field, which returns those sources to the built-in default group.
+    /// Group membership is source content, so this advances the sync clock — otherwise the
+    /// last-write-wins merge would resurrect the old group name from another device.
+    func setGroup(_ group: String, ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        let trimmed = group.trimmingCharacters(in: .whitespacesAndNewlines)
+        let now = Self.currentMillis()
+        var changed = false
+        for idx in sources.indices
+        where ids.contains(sources[idx].id) && sources[idx].bookSourceGroup != trimmed {
+            sources[idx].bookSourceGroup = trimmed
+            sources[idx].lastUpdateTime = now
+            changed = true
+        }
+        if changed { save() }
+    }
+
+    /// Every distinct non-empty `bookSourceGroup`, in first-appearance order — the merge
+    /// targets offered by the group menu.
+    var groupNames: [String] {
+        var seen = Set<String>()
+        var names: [String] = []
+        for source in sources {
+            let name = source.bookSourceGroup.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, seen.insert(name).inserted else { continue }
+            names.append(name)
+        }
+        return names
+    }
+
     var enabledSources: [BookSource] {
         sources.filter { $0.enabled }
     }

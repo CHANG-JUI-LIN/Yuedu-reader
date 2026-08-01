@@ -147,11 +147,55 @@ struct CommentBubbleSVGRecognizer {
         }
     }
 
-    /// Raw-input identity for the recognition cache: the SVG string (or data URI) that
-    /// fully determines the parse. Length-prefixed so a hash clash also needs equal length.
-    private static func recognizeCacheKey(src: String, svgContent: String?) -> NSString {
-        let identity = (svgContent?.isEmpty == false) ? svgContent! : src
-        return "\(identity.utf8.count)#\(identity.hashValue)" as NSString
+    /// Returns a stable template identity and the count currently embedded in the SVG.
+    ///
+    /// 起點把同一個氣泡外形重複內嵌在每一段文字中，唯一變化通常只有 `<text>` 裡的數字。
+    /// 直接用完整 data URI 當 key 會讓每個數字都重新跑整份 SVG parser。把數字換成
+    /// `$displayText` 後，解析結果可以跨段落共享；實際數字仍在回傳前換回去，所以外觀和
+    /// 點擊資料完全不變。
+    private static func normalizedTemplateInput(_ svg: String) -> (template: String, displayText: String?) {
+        let textPattern = #"<text\b[^>]*>(.*?)</text>"#
+        guard let regex = try? NSRegularExpression(
+            pattern: textPattern,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ) else {
+            return (svg, nil)
+        }
+
+        let ns = svg as NSString
+        guard let match = regex.firstMatch(
+            in: svg,
+            range: NSRange(location: 0, length: ns.length)
+        ), match.numberOfRanges > 1 else {
+            return (svg, nil)
+        }
+
+        let rawText = ns.substring(with: match.range(at: 1))
+        let displayText = rawText
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let isCount = (try? NSRegularExpression(pattern: #"^[0-9]+[+]?$"#))
+            .map {
+                $0.firstMatch(
+                    in: displayText,
+                    range: NSRange(location: 0, length: (displayText as NSString).length)
+                ) != nil
+            } ?? false
+        guard isCount else {
+            return (svg, displayText.isEmpty ? nil : displayText)
+        }
+
+        let normalized = ns.replacingCharacters(
+            in: match.range(at: 1),
+            with: "$displayText"
+        )
+        return (normalized, displayText)
+    }
+
+    /// Length-prefixed so a hash clash also needs equal length. The identity is the
+    /// normalized SVG template, not the count-baked source string.
+    private static func recognizeCacheKey(normalizedSVG: String) -> NSString {
+        "\(normalizedSVG.utf8.count)#\(normalizedSVG.hashValue)" as NSString
     }
 
     /// Checks if the given image source or SVG string represents a recognizable simple comment bubble.
@@ -159,20 +203,24 @@ struct CommentBubbleSVGRecognizer {
     /// chapter calls this 2–3× per bubble (gate + resolve + template) over hundreds of paragraphs,
     /// and the parse is pure, so the first occurrence of each distinct SVG pays it and the rest hit.
     static func recognize(src: String, svgContent: String?) -> CommentBubbleSVG? {
-        let cacheKey = recognizeCacheKey(src: src, svgContent: svgContent)
-        if let box = recognizeCache.object(forKey: cacheKey) { return box.svg }
-        let result = recognizeUncached(src: src, svgContent: svgContent)
-        recognizeCache.setObject(RecognizedBox(result), forKey: cacheKey)
-        return result
-    }
-
-    private static func recognizeUncached(src: String, svgContent: String?) -> CommentBubbleSVG? {
-        guard let svg = getSVGString(src: src, svgContent: svgContent) else {
+        guard let rawSVG = getSVGString(src: src, svgContent: svgContent) else {
             diag("reject:no-svg", context: ["srcPrefix": String(src.prefix(48))])
             return nil
         }
 
-        let cleaned = svg.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = rawSVG.trimmingCharacters(in: .whitespacesAndNewlines)
+        let input = normalizedTemplateInput(cleaned)
+        let cacheKey = recognizeCacheKey(normalizedSVG: input.template)
+        if let box = recognizeCache.object(forKey: cacheKey) {
+            return box.svg?.replacingDisplayText(with: input.displayText ?? box.svg?.displayText ?? "")
+        }
+
+        let result = recognizeUncached(svg: input.template)
+        recognizeCache.setObject(RecognizedBox(result), forKey: cacheKey)
+        return result?.replacingDisplayText(with: input.displayText ?? result?.displayText ?? "")
+    }
+
+    private static func recognizeUncached(svg cleaned: String) -> CommentBubbleSVG? {
         // Bound the parse, but generously: iconfont 段評 bubbles (企点/光遇) embed a full
         // outline <path> (~1.4–1.9k chars). The structural checks below — exactly one
         // count-formatted <text> plus a shape — are what actually gate non-bubble SVGs, so

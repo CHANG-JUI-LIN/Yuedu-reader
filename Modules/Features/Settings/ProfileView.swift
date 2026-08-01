@@ -328,6 +328,22 @@ private struct AboutSupportView: View {
                 }
             }
 
+            Section(header: Text(localized("加入測試"))) {
+                NavigationLink {
+                    TestFlightApplyView()
+                } label: {
+                    HStack {
+                        Label(localized("加入 TestFlight 測試版"), systemImage: "testtube.2")
+                            .foregroundColor(DSColor.textPrimary)
+                            .labelStyle(IconConsistentLabelStyle())
+                        Spacer(minLength: 12)
+                        Text(localized("測試版"))
+                            .font(DSFont.caption)
+                            .foregroundColor(DSColor.textSecondary)
+                    }
+                }
+            }
+
             Section(header: Text(localized("開放原始碼"))) {
                 actionRow(
                     icon: "chevron.left.forwardslash.chevron.right",

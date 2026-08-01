@@ -40,6 +40,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // TestFlight access requests are written only by Cloud Functions with
+    // Admin SDK (email validation + idempotency live in the function).
+    match /testflightRequests/{email} {
+      allow read, write: if false;
+    }
+
     // Client-side entitlement diagnostics, auto-reported by the app the moment
     // a Pro entitlement drops (true -> false) on a device the developer cannot
     // reach directly (e.g. a user reporting from behind a VPN). Anonymous

@@ -17,6 +17,9 @@ struct PaywallView: View {
     @State private var showGuestPurchaseAlert = false
     @State private var showLogin = false
     @State private var purchaseAfterLogin = false
+    /// Switches the sheet content to the thank-you page once a Pro
+    /// entitlement becomes active (purchase, offer-code redemption, restore).
+    @State private var showSuccess = false
 
     private let privacyPolicyURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/privacy.html")
     /// Apple's standard EULA. The custom paid-terms.html page is retired.
@@ -33,39 +36,20 @@ struct PaywallView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: DSSpacing.xl) {
-                    header
-                    featureList
-                    planPicker
-                    subscribeButton
-                    restoreAndTerms
-                }
-                .padding(DSSpacing.lg)
-                .frame(maxWidth: DSLayout.readableFormWidth)
-                .frame(maxWidth: .infinity)
-            }
-            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
-            .pageBackgroundToolbar(for: .settings)
-            .navigationTitle(localized("閱讀Pro"))
-            .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(localized("關閉"))
+            Group {
+                if showSuccess {
+                    PurchaseSuccessView()
+                } else {
+                    paywallContent
                 }
             }
             .task { await store.loadProducts() }
             .onChange(of: store.isProActive) { _, _ in
-                dismissIfProIsReady()
+                presentSuccessIfProIsReady()
             }
             .onChange(of: store.isRedeemingOfferCode) { _, isRedeeming in
                 if !isRedeeming {
-                    dismissIfProIsReady()
+                    presentSuccessIfProIsReady()
                 }
             }
             .alert(localized("選擇購買方式"), isPresented: $showGuestPurchaseAlert) {
@@ -90,11 +74,40 @@ struct PaywallView: View {
         }
     }
 
-    private func dismissIfProIsReady() {
+    private var paywallContent: some View {
+        ScrollView {
+            VStack(spacing: DSSpacing.xl) {
+                header
+                featureList
+                planPicker
+                subscribeButton
+                restoreAndTerms
+            }
+            .padding(DSSpacing.lg)
+            .frame(maxWidth: DSLayout.readableFormWidth)
+            .frame(maxWidth: .infinity)
+        }
+        .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+        .pageBackgroundToolbar(for: .settings)
+        .navigationTitle(localized("閱讀Pro"))
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .accessibilityLabel(localized("關閉"))
+            }
+        }
+    }
+
+    private func presentSuccessIfProIsReady() {
         if store.isProActive,
            !store.isRedeemingOfferCode,
            store.lastErrorMessage == nil {
-            dismiss()
+            showSuccess = true
         }
     }
 

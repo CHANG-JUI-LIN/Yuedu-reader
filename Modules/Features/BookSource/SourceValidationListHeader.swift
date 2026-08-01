@@ -62,6 +62,8 @@ struct SourceValidationListHeader: View {
     let sources: [BookSource]
     let healthById: [UUID: SourceValidationSummary]
     @Binding var filter: ValidationListFilter
+    /// Grouped ⇄ flat layout switch, parked at the trailing end of the filter chips.
+    @Binding var grouped: Bool
 
     private var enabledCount: Int { sources.filter(\.enabled).count }
     private var discoverCount: Int {
@@ -120,7 +122,28 @@ struct SourceValidationListHeader: View {
             chip(.fetchError, label: localized("抓取異常"), count: healthCount(.fetchError))
             chip(.contentError, label: localized("正文異常"), count: healthCount(.contentError))
             Spacer(minLength: 0)
+            groupingToggle
         }
+    }
+
+    /// Grouped ⇄ flat toggle. Icon-only, so the symbol is hidden from VoiceOver and the
+    /// button carries the name itself — an `accessibilityLabel` alone would be shadowed by
+    /// the SF Symbol's own element (docs/design.md §7.1).
+    private var groupingToggle: some View {
+        Button {
+            grouped.toggle()
+        } label: {
+            Image(systemName: grouped ? "list.bullet.indent" : "list.bullet")
+                .font(DSFont.subheadline)
+                .foregroundColor(grouped ? DSColor.accent : DSColor.textSecondary)
+                .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+                .contentShape(Rectangle())
+                .accessibilityHidden(true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(localized("書源排列方式"))
+        .accessibilityValue(localized(grouped ? "分組顯示" : "不分組"))
+        .accessibilityHint(localized("點兩下切換分組與不分組"))
     }
 
     private func chip(_ value: ValidationListFilter, label: String, count: Int) -> some View {
@@ -138,4 +161,16 @@ struct SourceValidationListHeader: View {
         }
         .buttonStyle(.plain)
     }
+}
+
+#Preview {
+    @Previewable @State var filter: ValidationListFilter = .all
+    @Previewable @State var grouped = true
+    SourceValidationListHeader(
+        sources: [BookSource(), BookSource()],
+        healthById: [:],
+        filter: $filter,
+        grouped: $grouped
+    )
+    .padding()
 }

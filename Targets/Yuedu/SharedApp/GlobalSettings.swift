@@ -494,6 +494,7 @@ class GlobalSettings: ObservableObject {
     private static let interfaceGlowIntensityKey = "yd_interface_glow_intensity"
     private static let interfaceFrostedGlassKey = "yd_interface_frosted_glass"
     private static let interfaceGlassTransparencyKey = "yd_interface_glass_transparency"
+    private static let interfaceGlassListSectionsKey = "yd_interface_glass_list_sections"
     private static let customAppearanceThemesKey = "yd_custom_appearance_themes"
     private static let appearancePageBackgroundsKey = "yd_appearance_page_backgrounds"
     private static let globalFontPostScriptKey = "yd_global_font_postscript"
@@ -547,6 +548,11 @@ class GlobalSettings: ObservableObject {
     /// before 界面效果 existed, and 透明度 100% reproduces that look exactly.
     static let defaultInterfaceFrostedGlass = true
     static let defaultInterfaceGlassTransparency: Double = 1.0
+    /// Off by default. Apple's HIG puts Liquid Glass in the functional layer
+    /// (controls, navigation, transient UI) and keeps it out of the content layer,
+    /// which is where a settings list's cards live — so this stays opt-in, and off
+    /// reproduces the original opaque cards exactly.
+    static let defaultInterfaceGlassListSections = false
     static let commentBubbleScaleRange: ClosedRange<Double> = 0.5...2.0
     static let commentBubbleTextScaleRange: ClosedRange<Double> = 0.2...0.8
     static let defaultCommentBubbleScale = 1.0
@@ -1002,6 +1008,11 @@ class GlobalSettings: ObservableObject {
             }
         }
     }
+    /// Whether Form/List section cards wear the same glass as floating elements.
+    /// Rides `interfaceFrostedGlass` and 透明度 rather than owning its own material.
+    @Published var interfaceGlassListSections: Bool {
+        didSet { UserDefaults.standard.set(interfaceGlassListSections, forKey: Self.interfaceGlassListSectionsKey) }
+    }
     @Published var customAppearanceThemes: [AppearanceCustomTheme] {
         didSet { Self.saveCustomAppearanceThemes(customAppearanceThemes) }
     }
@@ -1186,6 +1197,12 @@ class GlobalSettings: ObservableObject {
     }
     @Published var sourceDisclaimerAccepted: Bool {
         didSet { UserDefaults.standard.set(sourceDisclaimerAccepted, forKey: "yd_source_disclaimer_accepted") }
+    }
+    /// 書源管理列表是否按分組摺疊顯示。Off flattens every source into one plain list,
+    /// which is what a user with a handful of sources wants; on is the default because
+    /// imported source packs arrive pre-grouped.
+    @Published var bookSourceListGrouped: Bool {
+        didSet { UserDefaults.standard.set(bookSourceListGrouped, forKey: "yd_booksource_list_grouped") }
     }
 
     /// The currently active TTS source, derived from matching `httpTtsUrlTemplate` against imported sources.
@@ -1506,6 +1523,9 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: Self.interfaceGlassTransparencyKey) as? Double)
                 ?? Self.defaultInterfaceGlassTransparency
         )
+        interfaceGlassListSections =
+            (UserDefaults.standard.object(forKey: Self.interfaceGlassListSectionsKey) as? Bool)
+            ?? Self.defaultInterfaceGlassListSections
         rootTabVisibleIDs = Self.sanitizedRootTabVisibleIDs(
             UserDefaults.standard.stringArray(forKey: Self.rootTabVisibleIDsKey)
                 ?? Self.defaultRootTabVisibleIDs
@@ -1555,6 +1575,8 @@ class GlobalSettings: ObservableObject {
         ttsUseSystemVoice = UserDefaults.standard.bool(forKey: "yd_tts_use_system_voice")
         ttsSystemVoiceIdentifier = UserDefaults.standard.string(forKey: "yd_tts_system_voice_id") ?? ""
         sourceDisclaimerAccepted = UserDefaults.standard.bool(forKey: "yd_source_disclaimer_accepted")
+        bookSourceListGrouped =
+            (UserDefaults.standard.object(forKey: "yd_booksource_list_grouped") as? Bool) ?? true
     }
 
     func selectCommentBubbleBuiltinStyle() {

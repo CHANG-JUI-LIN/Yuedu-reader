@@ -40,6 +40,55 @@ extension View {
     ) -> some View {
         modifier(InterfaceGlowModifier(shape: shape, tint: tint))
     }
+
+    /// The surface a `Form`/`List` section card sits on. Apply to a `Section` (or a
+    /// single row) in place of a hardcoded `DSColor.surface` row background, so
+    /// every settings-style card follows 界面效果 › 列表分組 from one place.
+    ///
+    /// - Parameter fill: The opaque card color — what the section looks like with
+    ///   列表分組 off, and the fill 透明度 fades in over the glass.
+    func interfaceSectionSurface(fill: Color = DSColor.surface) -> some View {
+        modifier(InterfaceSectionSurfaceModifier(fill: fill))
+    }
+}
+
+/// Section cards are the content layer, which Apple's HIG keeps Liquid Glass out
+/// of, so they only go glass when the user opts in. The material is the same
+/// `FrostedGlassBackground` every floating element uses and reads the same 毛玻璃 /
+/// 透明度 knobs — one glass path, not a second one for lists.
+private struct InterfaceSectionSurfaceModifier: ViewModifier {
+    let fill: Color
+
+    @ObservedObject private var settings = GlobalSettings.shared
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    /// 毛玻璃 off means the app has no glass anywhere; Reduce Transparency is the
+    /// system asking for solid surfaces. Either one outranks this preference.
+    private var usesGlass: Bool {
+        settings.interfaceGlassListSections
+            && settings.interfaceFrostedGlass
+            && !reduceTransparency
+    }
+
+    func body(content: Content) -> some View {
+        if usesGlass {
+            content.listRowBackground(glassRowBackground)
+        } else {
+            content.listRowBackground(fill)
+        }
+    }
+
+    /// `listRowBackground` paints this per row, and the list clips it to the card's
+    /// rounded corners, so the shape stays a plain rectangle and the rounding stays
+    /// the list's job. One consequence on iOS 26: each row carries its own glass
+    /// edge, so row boundaries inside a section can show a faint seam that a single
+    /// section-wide glass would not have. SwiftUI has no section-level material to
+    /// paint instead; if one ships, this is the place to switch.
+    private var glassRowBackground: some View {
+        Rectangle()
+            .fill(fill.opacity(1 - settings.interfaceGlassTransparency))
+            .modifier(FrostedGlassBackground(shape: Rectangle()))
+    }
 }
 
 private struct FloatingSurfaceModifier<SurfaceShape: Shape>: ViewModifier {
@@ -171,5 +220,35 @@ private struct InterfaceGlowModifier<SurfaceShape: Shape>: ViewModifier {
                     .floatingSurface(in: Capsule())
             }
         }
+    }
+}
+
+/// Section cards over a patterned backdrop — the case 列表分組 exists for. Toggle
+/// 界面效果 › 列表分組 in the running app to see this switch material; the preview
+/// deliberately reads the live setting rather than forcing it, so what shows here
+/// is what the user's own device shows.
+#Preview("界面效果 — 列表分組") {
+    ZStack {
+        LinearGradient(
+            colors: [DSColor.accent.opacity(0.35), DSColor.groupedBackground],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+
+        Form {
+            Section {
+                Text("分組卡片")
+                    .font(DSFont.body)
+                Text("第二列，檢查列與列之間的接縫")
+                    .font(DSFont.body)
+            } footer: {
+                Text("玻璃取樣的是卡片背後的內容，純色主題下與不透明卡片幾乎無異。")
+                    .font(DSFont.footnote)
+                    .foregroundStyle(DSColor.textSecondary)
+            }
+            .interfaceSectionSurface()
+        }
+        .scrollContentBackground(.hidden)
     }
 }

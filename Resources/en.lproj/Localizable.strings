@@ -15,6 +15,8 @@
 "{{key}} 為搜索關鍵字佔位符。POST 格式：URL,POST,body" = "{{key}} is the keyword placeholder. POST format: URL,POST,body";
 "上一章" = "Prev";
 "上下滾動" = "Scroll";
+"不需要申請郵箱的話，也可以直接用公開連結加入測試。" = "No application needed — you can also join directly through the public link.";
+"使用公開連結加入" = "Join via the public link";
 "右往左" = "RTL";
 "右往左連續" = "RTL Continuous";
 "右往左連續閱讀" = "Right-to-left continuous reading";
@@ -88,9 +90,13 @@
 "刪除" = "Delete";
 "刪除書籍" = "Delete";
 "前往小說章節頁，點擊右下角即可轉碼閱讀" = "Open a novel chapter page, then tap the bottom-right button to start converted reading";
+"加入 TestFlight" = "Join TestFlight";
+"加入 TestFlight 測試版" = "Join the TestFlight beta";
+"加入 TestFlight 測試版，搶先體驗新功能並協助我們改善 Yuedu Reader。申請後我們會寄邀請郵件到你填寫的郵箱。" = "Join the TestFlight beta to try new features first and help us improve Yuedu Reader. After you apply, we'll send an invite to the email you enter.";
 "加入中…" = "Adding…";
 "加入時間" = "Date Added";
 "加入書架" = "Bookmarked";
+"加入測試" = "Beta";
 "移除書架" = "Remove from Library";
 "動畫樣式" = "Animation Style";
 "匯入" = "Import";
@@ -153,6 +159,7 @@
 "已複製全部" = "Copied All";
 "已複製書源 JSON" = "Source JSON copied";
 "已解析 EPUB 結構，點擊下方按鈕匯入" = "EPUB parsed. Tap below to import.";
+"已解鎖 閱讀Pro" = "Yuedu Pro unlocked";
 "已讀取" = "Read";
 "已讀完" = "Finished";
 "已讀 %d%%" = "%d%% read";
@@ -291,9 +298,11 @@
 "無法讀取文件" = "Cannot read file";
 "無法讀取文件，請確認格式為 TXT / Markdown" = "Unable to read the file. Please make sure it is TXT or Markdown.";
 "無法讀取文件，請確認格式為 TXT / Markdown / JSON" = "Unable to read the file. Please make sure it is TXT, Markdown, or JSON.";
+"無法送出申請，請檢查網路後再試" = "Couldn't submit your application. Check your connection and try again.";
 "無法連線，請確認網址、帳號及密碼" = "Unable to connect. Check the URL, account, and password.";
 "版本" = "Version";
 "狀態" = "Status";
+"申請已送出" = "Application submitted";
 "留空使用書籍頁 URL" = "Leave empty to use book page URL";
 "當前速度" = "Current Speed";
 "登入成功" = "Login Successful";
@@ -451,7 +460,6 @@
 "頁腳離底" = "Footer Bottom";
 "正文到頁腳" = "Text to Footer";
 "頁腳邊距" = "Footer Margin";
-"點擊右上角 + 手動新增\\n或 ↓ 貼上 Legado 書源 JSON 匯入" = "Tap + in the top-right to add one manually\\nor use ↓ to paste Legado source JSON for import";
 "點擊選取 TXT / EPUB 文件" = "Tap to Select a TXT / EPUB File";
 "點擊選取 TXT / EPUB / 漫畫文件" = "Tap to Select a TXT / EPUB / Manga File";
 "點擊選取 TXT / EPUB / 漫畫 / 音訊文件" = "Tap to Select a TXT / EPUB / Manga / Audio File";
@@ -865,6 +873,7 @@
 "OPDS 書目匯入即將推出，敬請期待。" = "OPDS catalog import is coming soon.";
 
 "目錄網址格式無效" = "Invalid catalog URL";
+"搶先體驗新功能" = "Try new features first";
 "僅支援 http / https 網址" = "Only http / https URLs are supported";
 "認證失敗，請確認帳號和密碼" = "Authentication failed. Check your username and password.";
 "連線失敗（HTTP %d）" = "Connection failed (HTTP %d)";
@@ -875,6 +884,7 @@
 "新增 OPDS 目錄" = "Add OPDS Catalog";
 "加入範例：" = "Add example: ";
 "目錄資訊" = "Catalog Info";
+"請輸入有效的郵箱地址" = "Enter a valid email address";
 "目錄名稱（選填）" = "Catalog name (optional)";
 "OPDS 目錄網址" = "OPDS catalog URL";
 "認證（選填）" = "Authentication (optional)";
@@ -923,6 +933,7 @@
 "正在同步" = "Syncing";
 "已同步" = "Synced";
 "同步失敗" = "Sync Failed";
+"輸入你的郵箱" = "Enter your email";
 "登入後可跨設備同步書籍與進度" = "Sign in to sync books and progress across devices";
 "刪除帳號將登出此裝置，並永久刪除已同步的書庫、書源、替換規則、RSS 與頭像資料。此操作無法復原。" = "Deleting your account signs out this device and permanently removes synced library, source, replacement rule, RSS, and avatar data. This cannot be undone.";
 "刪除帳號會移除您的登入資訊並清除已上傳的同步資料，且無法復原。儲存在本機的內容檔不會被刪除。" = "Deleting your account removes your sign-in information and clears synced data. This cannot be undone. Local content files are not deleted.";
@@ -1059,6 +1070,7 @@
 "購買失敗，請稍後再試" = "Purchase failed. Please try again.";
 "沒有找到可恢復的訂閱" = "No purchases to restore.";
 "解鎖高級個人化，打造專屬的閱讀體驗" = "Unlock premium personalization and make reading your own.";
+"感謝你的支持，所有 Pro 功能現在都已啟用" = "Thanks for your support — every Pro feature is now enabled.";
 "最超值" = "Best value";
 "閱讀Pro" = "Yuedu Pro";
 "永久會員" = "Lifetime";
@@ -1117,6 +1129,8 @@
 "光暈從浮動元素的邊緣向外擴散，顏色跟隨主題色。" = "The glow spreads outward from the edge of floating elements, tinted by the theme color.";
 "關閉後，浮動元素改用不透明底色。透明度越低，背後的內容越不透出。" = "When off, floating elements use a solid fill. The lower the opacity, the less shows through from behind.";
 "系統已開啟「降低透明度」，浮動元素目前一律使用不透明底色。" = "Reduce Transparency is on in system settings, so floating elements currently use a solid fill.";
+"列表分組" = "List Sections";
+"設定頁的分組卡片也改用玻璃材質，跟隨上方的透明度。系統設計建議玻璃只用於浮動控制項，因此預設關閉。" = "Settings cards use the glass material too, following the transparency above. Off by default, since the system design reserves glass for floating controls.";
 "主題自定義" = "Theme Customization";
 "自訂主題" = "Custom Theme";
 "名稱" = "Name";
@@ -1226,12 +1240,15 @@
 "縮小字體" = "Decrease Font Size";
 "放大字體" = "Increase Font Size";
 "主題模式" = "Theme Mode";
+"我們會將 TestFlight 邀請寄到你的郵箱，請留意收件匣。" = "We'll send the TestFlight invite to your email — keep an eye on your inbox.";
 "Light" = "Light";
+"測試版" = "Beta";
 "Dark" = "Dark";
 "Match Device" = "Match Device";
 "Match Surroundings" = "Match Surroundings";
 "Slide" = "Slide";
 "Curl" = "Curl";
+"申請加入" = "Apply";
 "Fast Fade" = "Fast Fade";
 "Scroll" = "Scroll";
 "Search Book" = "Search Book";
@@ -1648,4 +1665,57 @@
 "已取消置頂" = "Restored to original position";
 "已取消置底" = "Restored to original position";
 
+"開始閱讀" = "Start reading";
 "PIN 碼" = "PIN Code";
+
+/* Book source management — group actions */
+"分組操作" = "Group Actions";
+"重命名分組" = "Rename Group";
+"合併到其他分組" = "Merge Into Group";
+"啟用全部" = "Enable All";
+"停用全部" = "Disable All";
+"選擇該分組" = "Select Group";
+"匯出該分組" = "Export Group";
+"刪除該分組" = "Delete Group";
+"分組名稱" = "Group name";
+"確定要刪除分組" = "Delete group";
+"及其中的" = "and its";
+"已展開" = "Expanded";
+"已收合" = "Collapsed";
+"點兩下展開或收合分組" = "Double-tap to expand or collapse the group";
+"書源排列方式" = "Source layout";
+"分組顯示" = "Grouped";
+"不分組" = "Ungrouped";
+"點兩下切換分組與不分組" = "Double-tap to switch between grouped and ungrouped";
+
+/* Book source management — source menu, details, export */
+"查看詳情" = "View Details";
+"測試書源" = "Test Source";
+"選取此書源" = "Select This Source";
+"移動到分組" = "Move to Group";
+"移動到新分組" = "Move to New Group";
+"移出分組" = "Remove from Group";
+"新增分組…" = "New Group…";
+"手動新增" = "Add Manually";
+"匯出" = "Export";
+"匯出書源檔案" = "Export Source File";
+"複製選中到剪貼簿" = "Copy Selected to Clipboard";
+"複製全部到剪貼簿" = "Copy All to Clipboard";
+"複製該分組到剪貼簿" = "Copy Group to Clipboard";
+"選中書源" = "selected-sources";
+"全部書源" = "all-book-sources";
+"點擊右上角 + 手動新增\n或匯入 Legado 書源 JSON" = "Tap + at the top right to add manually\nor import Legado book-source JSON";
+"規則" = "Rules";
+"搜索規則" = "Search Rules";
+"發現規則" = "Discover Rules";
+"詳情規則" = "Book Info Rules";
+"響應時間" = "Response Time";
+"併發限制" = "Concurrency Limit";
+"登入網址" = "Login URL";
+"源變量說明" = "Source Variable Notes";
+"文本" = "Text";
+"音頻" = "Audio";
+"圖片" = "Image";
+"文件" = "File";
+"是" = "Yes";
+"否" = "No";

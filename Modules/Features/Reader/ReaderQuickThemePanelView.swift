@@ -575,7 +575,7 @@ private struct ReaderCustomBackgroundOptionsView: View {
                     .font(DSFont.footnote)
                     .foregroundStyle(DSColor.textSecondary)
             }
-            .listRowBackground(DSColor.surface)
+            .interfaceSectionSurface()
         }
         .font(DSFont.body)
         .listStyle(.insetGrouped)
@@ -673,7 +673,7 @@ private struct ReaderCustomBackgroundColorEditorView: View {
                     .font(DSFont.footnote)
                     .foregroundStyle(DSColor.textSecondary)
             }
-            .listRowBackground(DSColor.surface)
+            .interfaceSectionSurface()
         }
         .font(DSFont.body)
         .scrollContentBackground(.hidden)

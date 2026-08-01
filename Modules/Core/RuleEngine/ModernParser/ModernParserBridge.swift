@@ -295,6 +295,24 @@ class ModernParserBridge {
             var result: String?
             var responseStatusCode: Int?
             var responseError: Error?
+            let reviewSummaryCacheKey = "\(sourceUrl)#\(self.sourceRuleData.source.lastUpdateTime)"
+            let isReviewSummaryRequest = Self.isChapterReviewSummaryRequest(request)
+            if isReviewSummaryRequest,
+               let requestURL = request.url?.absoluteString,
+               let cached = ReviewSummaryResponseCache.shared.value(
+                   sourceKey: reviewSummaryCacheKey,
+                   requestURL: requestURL
+               ) {
+                let cacheLookupStarted = ProcessInfo.processInfo.systemUptime
+                self.recordJSNetwork(url: requestURL, statusCode: 200, timedOut: false, body: cached)
+                SourcePerfTrace.record(
+                    "chapter.reviewSummary.cacheHit",
+                    sourceName,
+                    since: cacheLookupStarted,
+                    thresholdMs: 0
+                )
+                return cached
+            }
             let task = LegadoJSBridge.requestSession.dataTask(with: request) { data, response, error in
                 if let httpResponse = response as? HTTPURLResponse {
                     responseStatusCode = httpResponse.statusCode
@@ -332,6 +350,18 @@ class ModernParserBridge {
                 ])
                 task.cancel()
                 return nil
+            }
+            if isReviewSummaryRequest,
+               responseError == nil,
+               responseStatusCode.map({ (200..<300).contains($0) }) == true,
+               let result,
+               Self.isUsableChapterReviewSummary(result),
+               let requestURL = request.url?.absoluteString {
+                ReviewSummaryResponseCache.shared.insert(
+                    result,
+                    sourceKey: reviewSummaryCacheKey,
+                    requestURL: requestURL
+                )
             }
             // Log failures only — this handler is the 段評 `ajaxAll` path too, and a
             // body head per call floods the device console. "Failure" includes a 2xx
@@ -436,6 +466,24 @@ class ModernParserBridge {
             if timedOut { task.cancel() }
             return result
         }
+    }
+
+    private static func isChapterReviewSummaryRequest(_ request: URLRequest) -> Bool {
+        guard let path = request.url?.path.lowercased() else { return false }
+        return path.contains("/chapterreview/reviewsummary")
+    }
+
+    private static func isUsableChapterReviewSummary(_ body: String) -> Bool {
+        guard let data = body.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let root = object as? [String: Any],
+              let payload = root["data"] as? [String: Any] else {
+            return false
+        }
+        // The source treats a missing list as an auth/error response. Cache only the
+        // response shape that can actually render paragraph badges, so a temporary
+        // login/quota error is never kept for the cache lifetime.
+        return payload["list"] is [Any]
     }
 
     // MARK: - Parsing API (matches BookSourceParsingPipeline signatures)

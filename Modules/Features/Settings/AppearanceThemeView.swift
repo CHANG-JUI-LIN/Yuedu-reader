@@ -1310,7 +1310,7 @@ private struct AppearanceReaderInterfaceView: View {
                     .font(DSFont.footnote)
                     .foregroundStyle(DSColor.textSecondary)
             }
-            .listRowBackground(DSColor.surface)
+            .interfaceSectionSurface()
         }
         .font(DSFont.body)
         .scrollContentBackground(.hidden)
@@ -1366,7 +1366,7 @@ private struct AppearanceThemeCustomizationView: View {
                         .font(DSFont.headline)
                         .foregroundStyle(DSColor.textPrimary)
                 }
-                .listRowBackground(DSColor.surface)
+                .interfaceSectionSurface()
 
                 Section {
                     ThemePreviewTile(
@@ -1385,7 +1385,7 @@ private struct AppearanceThemeCustomizationView: View {
                 Text(localized("找不到主題"))
                     .font(DSFont.body)
                     .foregroundStyle(DSColor.textSecondary)
-                    .listRowBackground(DSColor.surface)
+                    .interfaceSectionSurface()
             }
         }
         .font(DSFont.body)

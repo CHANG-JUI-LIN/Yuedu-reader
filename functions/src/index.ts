@@ -19,6 +19,7 @@ import {
   environmentName,
   transactionIsActive,
 } from "./entitlementPolicy.js";
+import {normalizeTestFlightEmail} from "./testflightRequestPolicy.js";
 
 if (getApps().length === 0) {
   initializeApp();
@@ -70,6 +71,12 @@ interface PurchaseBindingDocument {
   expiresAt: Timestamp | null;
   revocationDate: Timestamp | null;
   updatedAt: FieldValue;
+}
+
+interface TestFlightRequestDocument {
+  email: string;
+  status: string;
+  createdAt: FieldValue;
 }
 
 function requireUid(auth: {uid: string} | undefined): string {
@@ -250,6 +257,29 @@ export const deleteSubscriptionAccountData = onCall({region}, async (request) =>
   batch.delete(db.collection("accountTokens").doc(uid));
   await batch.commit();
   return {deleted: true};
+});
+
+export const requestTestFlightAccess = onCall({region}, async (request) => {
+  const email = normalizeTestFlightEmail(request.data?.email);
+  if (email === null) {
+    throw new HttpsError("invalid-argument", "Invalid email address.");
+  }
+
+  // One document per normalized address. Idempotent: a repeated request from
+  // the same mailbox returns alreadySubmitted instead of stacking invites.
+  const reference = db.collection("testflightRequests").doc(email);
+  const snapshot = await reference.get();
+  if (snapshot.exists) {
+    return {alreadySubmitted: true};
+  }
+
+  const data: TestFlightRequestDocument = {
+    email,
+    status: "pending",
+    createdAt: FieldValue.serverTimestamp(),
+  };
+  await reference.set(data);
+  return {alreadySubmitted: false};
 });
 
 export const appStoreServerNotifications = onRequest({region}, async (request, response) => {

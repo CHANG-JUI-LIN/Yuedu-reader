@@ -140,6 +140,30 @@ struct CommentBubbleSVGRecognizerTests {
         #expect(bubble.replacingDisplayText(with: "99").displayText == "99")
     }
 
+    @Test("reuses an SVG shape template without leaking the previous count")
+    func reusesTemplateForDifferentCounts() throws {
+        func svg(count: String) -> String {
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="48" viewBox="0 0 64 48">
+              <path d="M2 2 H62 V46 H2 Z" fill="none" stroke="#888888" />
+              <text x="32" y="32" font-size="20" text-anchor="middle">\(count)</text>
+            </svg>
+            """
+        }
+
+        let first = try #require(
+            CommentBubbleSVGRecognizer.recognize(src: "", svgContent: svg(count: "5"))
+        )
+        let second = try #require(
+            CommentBubbleSVGRecognizer.recognize(src: "", svgContent: svg(count: "99+"))
+        )
+
+        #expect(first.displayText == "5")
+        #expect(second.displayText == "99+")
+        #expect(first.viewBox == second.viewBox)
+        #expect(first.elements.count == second.elements.count)
+    }
+
     @Test("parses rgb(r,g,b) outline fills so bubble.json shapes actually paint")
     func parsesRGBFills() throws {
         let svg = """

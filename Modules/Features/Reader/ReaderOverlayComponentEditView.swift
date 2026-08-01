@@ -142,7 +142,7 @@ struct ReaderOverlayComponentEditView: View {
             }
             .pickerStyle(.menu)
         }
-        .listRowBackground(DSColor.surface)
+        .interfaceSectionSurface()
     }
 
     private var kindBinding: Binding<ReaderOverlayComponentKind> {
@@ -196,7 +196,7 @@ struct ReaderOverlayComponentEditView: View {
             }
             .font(DSFont.caption)
         }
-        .listRowBackground(DSColor.surface)
+        .interfaceSectionSurface()
     }
 
     private var fontSection: some View {
@@ -244,7 +244,7 @@ struct ReaderOverlayComponentEditView: View {
                 }
             }
         }
-        .listRowBackground(DSColor.surface)
+        .interfaceSectionSurface()
     }
 
     private var colorSection: some View {
@@ -262,7 +262,7 @@ struct ReaderOverlayComponentEditView: View {
                 )
             }
         }
-        .listRowBackground(DSColor.surface)
+        .interfaceSectionSurface()
     }
 
     private var opacitySection: some View {
@@ -279,7 +279,7 @@ struct ReaderOverlayComponentEditView: View {
                     .accessibilityValue(percentText)
             }
         }
-        .listRowBackground(DSColor.surface)
+        .interfaceSectionSurface()
     }
 
     private var formatSection: some View {
@@ -290,7 +290,7 @@ struct ReaderOverlayComponentEditView: View {
                 }
             }
         }
-        .listRowBackground(DSColor.surface)
+        .interfaceSectionSurface()
     }
 
     private var batterySection: some View {
@@ -344,7 +344,7 @@ struct ReaderOverlayComponentEditView: View {
                 }
             }
         }
-        .listRowBackground(DSColor.surface)
+        .interfaceSectionSurface()
     }
 
     private var customTextBinding: Binding<String> {
