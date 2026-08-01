@@ -411,8 +411,9 @@ struct ExploreHomeView: View {
             VStack(spacing: 6) {
                 ZStack {
                     Circle()
-                        .fill(DSColor.surface)
+                        .fill(Color.clear)
                         .frame(width: 52, height: 52)
+                        .interfaceCardSurface(in: Circle())
                     AsyncImage(url: URL(string: engine.faviconURL)) { phase in
                         if let image = phase.image {
                             image.resizable().scaledToFit().frame(width: 28, height: 28)

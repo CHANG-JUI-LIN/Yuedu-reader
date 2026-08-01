@@ -430,10 +430,7 @@ struct AppearanceThemeView: View {
                         boundReaderThemeRow(titleKey: "黑色閱讀主題", appearance: .dark)
                     }
                 }
-                .background(
-                    DSColor.surface,
-                    in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous)
-                )
+                .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
 
                 Text(localized(
                     settings.appearanceBindReaderTheme
@@ -681,10 +678,7 @@ struct AppearanceThemeView: View {
                 groupedSectionDivider
                 backgroundImageRow(scheme: .dark)
             }
-            .background(
-                DSColor.surface,
-                in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous)
-            )
+            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
 
             sectionHeader(localized("預覽"))
             pageBackgroundPreviewCard
@@ -1072,10 +1066,7 @@ struct AppearanceThemeView: View {
                 Text(localized("將清除所有頁面（含各分頁）的背景顏色與背景圖設定。"))
             }
         }
-        .background(
-            DSColor.surface,
-            in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous)
-        )
+        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
     }
 
     private func themeActionRow(titleKey: String, action: @escaping () -> Void) -> some View {
