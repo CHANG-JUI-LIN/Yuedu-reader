@@ -26,6 +26,7 @@ struct RuntimeVariableEditorView: View {
                             .foregroundColor(.secondary)
                             .textSelection(.enabled)
                     }
+                    .interfaceSectionSurface()
                 }
                 Section {
                     TextEditor(text: $text)
@@ -39,6 +40,7 @@ struct RuntimeVariableEditorView: View {
                             .foregroundColor(.red)
                     }
                 }
+                .interfaceSectionSurface()
                 Section {
                     Button(role: .destructive) {
                         text = ""
@@ -46,6 +48,7 @@ struct RuntimeVariableEditorView: View {
                         Label(localized("清除"), systemImage: "trash")
                     }
                 }
+                .interfaceSectionSurface()
             }
             .navigationTitle(title)
             .toolbarTitleDisplayMode(.inline)

@@ -82,6 +82,7 @@ struct LegadoMigrationView: View {
             }
             .padding(.vertical, 4)
         }
+        .interfaceSectionSurface()
     }
 
     private var importSection: some View {
@@ -109,6 +110,7 @@ struct LegadoMigrationView: View {
                 .padding(.vertical, 4)
             }
         }
+        .interfaceSectionSurface()
     }
 
     @ViewBuilder
@@ -142,6 +144,7 @@ struct LegadoMigrationView: View {
                 }
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var logSection: some View {
@@ -171,5 +174,6 @@ struct LegadoMigrationView: View {
                 }
             }
         }
+        .interfaceSectionSurface()
     }
 }

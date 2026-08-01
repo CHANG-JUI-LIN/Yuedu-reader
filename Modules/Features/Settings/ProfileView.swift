@@ -59,6 +59,7 @@ struct SettingsView: View {
                             AccountRowContent()
                         }
                     }
+                    .interfaceSectionSurface()
                     // ── App Language ──
                     Section(
                         header: Text(localized("App 語言")),
@@ -76,6 +77,7 @@ struct SettingsView: View {
                             }
                         )
                     }
+                    .interfaceSectionSurface()
 
                     Section(header: Text(localized("外觀"))) {
                         NavigationLink {
@@ -92,6 +94,7 @@ struct SettingsView: View {
                             }
                         }
                     }
+                    .interfaceSectionSurface()
 
                     Section(header: Text(localized("書架顯示"))) {
                         Picker(selection: $gs.bookshelfGridColumnCount) {
@@ -106,6 +109,7 @@ struct SettingsView: View {
                         }
                         .pickerStyle(.menu)
                     }
+                    .interfaceSectionSurface()
 
                     // ── Book Source Management ──
                     Section(header: Text(localized("書源管理"))) {
@@ -129,6 +133,7 @@ struct SettingsView: View {
                             action: { showNetworkSettings = true }
                         )
                     }
+                    .interfaceSectionSurface()
 
                     // ── Reading Tools ──
                     Section(header: Text(localized("閱讀工具"))) {
@@ -145,6 +150,7 @@ struct SettingsView: View {
                         )
 
                     }
+                    .interfaceSectionSurface()
 
                     // ── Data Management ──
                     Section(header: Text(localized("資料管理"))) {
@@ -169,6 +175,7 @@ struct SettingsView: View {
                             action: { showLegadoMigration = true }
                         )
                     }
+                    .interfaceSectionSurface()
 
                     // ── About ──
                     Section(header: Text(localized("關於"))) {
@@ -196,6 +203,7 @@ struct SettingsView: View {
                             }
                         }
                     }
+                    .interfaceSectionSurface()
                 }
             .themedAppSurface(for: .settings)
             .navigationTitle(localized("設定"))
@@ -315,6 +323,7 @@ private struct AboutSupportView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
             }
+            .interfaceSectionSurface()
 
             Section(header: Text(localized("版本資訊"))) {
                 HStack {
@@ -327,6 +336,7 @@ private struct AboutSupportView: View {
                         .foregroundColor(DSColor.textSecondary)
                 }
             }
+            .interfaceSectionSurface()
 
             Section(header: Text(localized("加入測試"))) {
                 NavigationLink {
@@ -343,6 +353,7 @@ private struct AboutSupportView: View {
                     }
                 }
             }
+            .interfaceSectionSurface()
 
             Section(header: Text(localized("開放原始碼"))) {
                 actionRow(
@@ -356,6 +367,7 @@ private struct AboutSupportView: View {
                     }
                 }
             }
+            .interfaceSectionSurface()
 
             Section(header: Text(localized("聯絡方式"))) {
                 actionRow(
@@ -390,6 +402,7 @@ private struct AboutSupportView: View {
                     }
                 }
             }
+            .interfaceSectionSurface()
 
             Section(
                 header: Text(localized("政策與協議")),
@@ -428,6 +441,7 @@ private struct AboutSupportView: View {
                     }
                 }
             }
+            .interfaceSectionSurface()
         }
         .navigationTitle(localized("關於 Yuedu Reader"))
         .toolbarTitleDisplayMode(.inline)

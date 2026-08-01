@@ -118,6 +118,7 @@ struct DownloadManagementView: View {
                 detail: "MB"
             )
         }
+        .interfaceSectionSurface()
     }
 
     private var activeDownloadsSection: some View {
@@ -210,6 +211,7 @@ struct DownloadManagementView: View {
                 }
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var downloadedBooksSection: some View {
@@ -250,6 +252,7 @@ struct DownloadManagementView: View {
                 }
             }
         }
+        .interfaceSectionSurface()
     }
 
     private func statRow(title: String, value: String, detail: String) -> some View {

@@ -47,6 +47,7 @@ struct LanServerView: View {
                 } header: {
                     Text(localized("服務狀態"))
                 }
+                .interfaceSectionSurface()
 
                 // MARK: Toggle button
                 Section {
@@ -67,6 +68,7 @@ struct LanServerView: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
 
                 // MARK: API endpoints
                 Section {
@@ -77,6 +79,7 @@ struct LanServerView: View {
                 } header: {
                     Text(localized("可用接口"))
                 }
+                .interfaceSectionSurface()
             }
             .navigationTitle(localized("局域網服務"))
             .toolbarTitleDisplayMode(.inline)

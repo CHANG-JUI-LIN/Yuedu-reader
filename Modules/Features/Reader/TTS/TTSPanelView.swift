@@ -77,6 +77,7 @@ struct TTSPanelView: View {
                             .foregroundColor(DSColor.textSecondary)
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     VStack(spacing: 16) {
@@ -169,6 +170,7 @@ struct TTSPanelView: View {
                     }
                     .padding(.vertical, 8)
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     Button {
@@ -191,6 +193,7 @@ struct TTSPanelView: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("語速"))) {
                     HStack {
@@ -232,6 +235,7 @@ struct TTSPanelView: View {
                         .foregroundColor(DSColor.textSecondary)
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("定時停止"))) {
                     Menu {
@@ -252,6 +256,7 @@ struct TTSPanelView: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("高亮"))) {
                     Toggle(isOn: ttsHighlightEnabledBinding) {
@@ -296,6 +301,7 @@ struct TTSPanelView: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
             }
             .scrollContentBackground(.hidden)
             .navigationTitle(localized("語音朗讀"))
@@ -420,6 +426,7 @@ struct AutoReadPanelView: View {
                     }
                     .padding(.vertical, 8)
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("翻頁速度"))) {
                     HStack {
@@ -448,6 +455,7 @@ struct AutoReadPanelView: View {
                     .font(DSFont.caption)
                     .foregroundColor(DSColor.textSecondary)
                 }
+                .interfaceSectionSurface()
             }
             .scrollContentBackground(.hidden)
             .navigationTitle(localized("自動閱讀"))

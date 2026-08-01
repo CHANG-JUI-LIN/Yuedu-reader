@@ -923,6 +923,7 @@ struct TTSSourceLoginView: View {
                     handleButtonAction(field)
                 }
             }
+            .interfaceSectionSurface()
         }
     }
 

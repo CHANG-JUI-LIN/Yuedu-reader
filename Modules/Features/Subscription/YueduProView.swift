@@ -52,6 +52,7 @@ struct YueduProView: View {
             }
             .padding(.vertical, DSSpacing.xs)
         }
+        .interfaceSectionSurface()
 
         if !store.isProActive {
             Section {
@@ -95,6 +96,7 @@ struct YueduProView: View {
                 .padding(.vertical, 2)
             }
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: - Manage
@@ -126,6 +128,7 @@ struct YueduProView: View {
                 Text(error).foregroundColor(DSColor.destructive)
             }
         }
+        .interfaceSectionSurface()
     }
 }
 

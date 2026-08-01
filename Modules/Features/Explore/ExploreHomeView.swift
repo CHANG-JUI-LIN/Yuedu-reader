@@ -231,6 +231,7 @@ struct ExploreHomeView: View {
             }
             .padding(.vertical, DSSpacing.sm)
         }
+        .interfaceSectionSurface()
     }
 
     private var quickEntrySection: some View {
@@ -256,6 +257,7 @@ struct ExploreHomeView: View {
                 action: { showSourceManager = true }
             )
         }
+        .interfaceSectionSurface()
     }
 
     private var recentSection: some View {
@@ -281,6 +283,7 @@ struct ExploreHomeView: View {
                 }
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var recentSectionHeader: some View {

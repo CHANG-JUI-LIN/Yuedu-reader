@@ -231,7 +231,7 @@ struct FileImportTab: View {
                         .disabled(titleInput.trimmingCharacters(in: .whitespaces).isEmpty || isLoading)
                     }
                     .padding()
-                    .background(Color(UIColor.systemBackground))
+                    .interfaceCardSurface(fill: Color(UIColor.systemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                 } else {
                     Button {

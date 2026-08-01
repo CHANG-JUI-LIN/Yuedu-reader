@@ -33,6 +33,7 @@ extension ReaderView {
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(.isSelected)
                 }
+                .interfaceSectionSurface()
 
                 // 其他可切換的書源。Results stream in one source at a time, so show them
                 // as soon as the first match arrives instead of blocking on the full
@@ -68,6 +69,7 @@ extension ReaderView {
                             .foregroundColor(.red)
                     }
                 }
+                .interfaceSectionSurface()
             }
             .scrollContentBackground(.hidden)
             .background(PageBackgroundView(scope: .settings).ignoresSafeArea())

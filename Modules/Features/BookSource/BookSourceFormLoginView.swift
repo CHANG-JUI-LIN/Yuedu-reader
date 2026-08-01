@@ -75,6 +75,7 @@ struct BookSourceFormLoginView: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
 
                 if Self.supportsFanqieLogin(source: source) {
                     Section {
@@ -85,6 +86,7 @@ struct BookSourceFormLoginView: View {
                         }
                         .foregroundColor(DSColor.accent)
                     }
+                    .interfaceSectionSurface()
                 }
 
                 if let err = errorMessage {
@@ -93,6 +95,7 @@ struct BookSourceFormLoginView: View {
                             .foregroundColor(.red)
                             .font(DSFont.caption)
                     }
+                    .interfaceSectionSurface()
                 }
                 if let suc = successMessage {
                     Section {
@@ -100,6 +103,7 @@ struct BookSourceFormLoginView: View {
                             .foregroundColor(.green)
                             .font(DSFont.caption)
                     }
+                    .interfaceSectionSurface()
                 }
             }
             .disabled(isLoading)

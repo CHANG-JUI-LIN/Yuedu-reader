@@ -95,6 +95,7 @@ struct WebDAVSyncView: View {
                 SecureField(localized("密碼"), text: $manager.password)
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var actionsSection: some View {
@@ -120,6 +121,7 @@ struct WebDAVSyncView: View {
                     .foregroundColor(DSColor.accent)
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var statusSection: some View {
@@ -139,6 +141,7 @@ struct WebDAVSyncView: View {
                     .font(DSFont.footnote)
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var syncingOverlay: some View {

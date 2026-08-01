@@ -68,6 +68,7 @@ struct ICloudSyncView: View {
                     .foregroundColor(DSColor.textSecondary)
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var autoSyncSection: some View {
@@ -80,6 +81,7 @@ struct ICloudSyncView: View {
         } footer: {
             Text(localized("開啟後，App 啟動與切到背景時會自動與 iCloud 合併同步（書庫、書源、替換規則與書檔）。多台裝置會智慧合併，不會互相覆蓋。"))
         }
+        .interfaceSectionSurface()
     }
 
     private var actionsSection: some View {
@@ -99,6 +101,7 @@ struct ICloudSyncView: View {
                     .foregroundColor(DSColor.accent)
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var statusSection: some View {
@@ -119,6 +122,7 @@ struct ICloudSyncView: View {
                     .font(DSFont.footnote)
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var statusIcon: String {

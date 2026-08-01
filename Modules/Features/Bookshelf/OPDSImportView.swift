@@ -74,6 +74,7 @@ struct OPDSImportView: View {
                 }
                 .onDelete { catalogStore.remove(atOffsets: $0) }
             }
+            .interfaceSectionSurface()
             if !presetsNotAdded.isEmpty {
                 Section(header: Text(localized("範例目錄"))) {
                     ForEach(presetsNotAdded, id: \.url) { preset in
@@ -85,6 +86,7 @@ struct OPDSImportView: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
             }
         }
     }
@@ -125,11 +127,13 @@ struct AddOPDSCatalogSheet: View {
                     TextField(localized("OPDS 目錄網址"), text: $url)
                         .autocapitalization(.none).disableAutocorrection(true).keyboardType(.URL)
                 }
+                .interfaceSectionSurface()
                 Section(header: Text(localized("認證（選填）"))) {
                     TextField(localized("使用者名稱"), text: $username)
                         .autocapitalization(.none).disableAutocorrection(true)
                     SecureField(localized("密碼"), text: $password)
                 }
+                .interfaceSectionSurface()
             }
             .navigationTitle(localized("新增 OPDS 目錄"))
             .toolbarTitleDisplayMode(.inline)
@@ -193,6 +197,7 @@ struct OPDSFeedView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .interfaceSectionSurface()
             }
             ForEach(entries) { entry in
                 row(for: entry)

@@ -106,6 +106,7 @@ struct BookSourceCheckView: View {
                         .listRowSeparator(.hidden)
                 }
             }
+            .interfaceSectionSurface()
 
             Section {
                 ForEach(visibleItems) { item in
@@ -119,6 +120,7 @@ struct BookSourceCheckView: View {
             } footer: {
                 summaryFooter
             }
+            .interfaceSectionSurface()
         }
         .listStyle(.plain)
     }

@@ -23,6 +23,7 @@ struct RootTabCustomizationView: View {
                         Label(localized("底部 Tab 自定義需要 Pro"), systemImage: "lock.fill")
                     }
                 }
+                .interfaceSectionSurface()
             }
 
             visibleTabsSection
@@ -79,6 +80,7 @@ struct RootTabCustomizationView: View {
                 }
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var tabPresentationSection: some View {
@@ -130,6 +132,7 @@ struct RootTabCustomizationView: View {
                 }
             }
         }
+        .interfaceSectionSurface()
     }
 
     private func iconSection(for tab: RootTabItem) -> some View {
@@ -138,6 +141,7 @@ struct RootTabCustomizationView: View {
                 iconRow(tab: tab, slot: slot)
             }
         }
+        .interfaceSectionSurface()
     }
 
     private func iconRow(tab: RootTabItem, slot: RootTabIconSlot) -> some View {

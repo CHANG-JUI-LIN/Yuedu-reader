@@ -271,6 +271,7 @@ struct ReplaceRuleEditView: View {
                     TextField(localized("規則名稱"), text: $rule.name)
                     Toggle(localized("啟用"), isOn: $rule.enabled)
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("匹配"))) {
                     Toggle(localized("正則表達式"), isOn: $rule.isRegex)
@@ -282,6 +283,7 @@ struct ReplaceRuleEditView: View {
                         .font(DSFont.fixed(size: 14, design: .monospaced))
                         .autocapitalization(.none)
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("作用範圍"))) {
                     Picker(localized("範圍"), selection: $rule.scope) {
@@ -292,6 +294,7 @@ struct ReplaceRuleEditView: View {
                     }
                     .pickerStyle(.inline)
                 }
+                .interfaceSectionSurface()
             }
             .navigationTitle(rule.name.isEmpty ? localized("新增規則") : rule.name)
             .toolbarTitleDisplayMode(.inline)

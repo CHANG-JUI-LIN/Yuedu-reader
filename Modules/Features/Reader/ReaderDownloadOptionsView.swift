@@ -131,6 +131,7 @@ struct ReaderDownloadOptionsView: View {
             }
             .padding(.vertical, DSSpacing.xs)
         }
+        .interfaceSectionSurface()
 
         Section(header: Text(localized("下載範圍"))) {
             Picker(localized("開始位置"), selection: $startOption) {
@@ -150,6 +151,7 @@ struct ReaderDownloadOptionsView: View {
                     .foregroundColor(DSColor.textSecondary)
             }
         }
+        .interfaceSectionSurface()
 
         Section(header: Text(localized("章數"))) {
             if maxSelectableCount > 1 {
@@ -179,12 +181,14 @@ struct ReaderDownloadOptionsView: View {
                 .font(DSFont.caption)
                 .foregroundColor(DSColor.textSecondary)
         }
+        .interfaceSectionSurface()
 
         if totalChapters <= 0 {
             Section {
                 Label(localized("沒有可下載章節"), systemImage: "exclamationmark.triangle")
                     .foregroundColor(DSColor.textSecondary)
             }
+            .interfaceSectionSurface()
         }
     }
 
@@ -208,6 +212,7 @@ struct ReaderDownloadOptionsView: View {
             }
             .padding(.vertical, DSSpacing.xs)
         }
+        .interfaceSectionSurface()
 
         if let task = clampedTask, !task.failedChapters.isEmpty {
             Section(header: Text(localized("失敗章節"))) {
@@ -218,6 +223,7 @@ struct ReaderDownloadOptionsView: View {
                         .font(DSFont.caption)
                 }
             }
+            .interfaceSectionSurface()
         }
 
         Section {
@@ -252,6 +258,7 @@ struct ReaderDownloadOptionsView: View {
                 }
             }
         }
+        .interfaceSectionSurface()
     }
 
     @ViewBuilder private var completedSections: some View {
@@ -272,6 +279,7 @@ struct ReaderDownloadOptionsView: View {
             }
             .padding(.vertical, DSSpacing.xs)
         }
+        .interfaceSectionSurface()
 
         Section {
             Button {
@@ -285,6 +293,7 @@ struct ReaderDownloadOptionsView: View {
                 Label(localized("移除"), systemImage: "trash")
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var clampedTask: BookOfflineDownloadTask? {

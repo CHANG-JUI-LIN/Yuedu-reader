@@ -74,6 +74,7 @@ struct WebDAVImportView: View {
                     SecureField(localized("密碼"), text: $webdav.password)
                 }
             }
+            .interfaceSectionSurface()
             Section {
                 Button {
                     isBrowsing = true
@@ -85,6 +86,7 @@ struct WebDAVImportView: View {
             } footer: {
                 Text(localized("WebDAV 匯入會沿用「WebDAV 同步」的伺服器設定。"))
             }
+            .interfaceSectionSurface()
         }
         .navigationTitle(localized("從 WebDAV 匯入"))
         .toolbarTitleDisplayMode(.inline)
@@ -122,6 +124,7 @@ struct WebDAVDirectoryView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .interfaceSectionSurface()
             }
             ForEach(entries) { entry in
                 row(for: entry)

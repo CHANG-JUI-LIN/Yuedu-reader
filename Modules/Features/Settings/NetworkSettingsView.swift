@@ -27,6 +27,7 @@ struct NetworkSettingsView: View {
                         range: 0...30
                     )
                 }
+                .interfaceSectionSurface()
             }
             .themedAppSurface(for: .settings)
             .navigationTitle(localized("網路設定"))

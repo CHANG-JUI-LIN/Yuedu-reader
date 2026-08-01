@@ -105,6 +105,7 @@ struct ChapterTitleStyleSettingsView: View {
         } footer: {
             Text(localized("開啟後使用 HTML/CSS 模板渲染章節標題，支持自定義排版和樣式。"))
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: - Presets (advanced CSS only)
@@ -119,6 +120,7 @@ struct ChapterTitleStyleSettingsView: View {
         } footer: {
             Text(localized("自動適配淺色和深色。選好後可繼續微調。"))
         }
+        .interfaceSectionSurface()
     }
 
     private var myPresetSection: some View {
@@ -142,6 +144,7 @@ struct ChapterTitleStyleSettingsView: View {
         } header: {
             Text(localized("我的預設"))
         }
+        .interfaceSectionSurface()
     }
 
     private func presetRow(_ preset: ChapterTitleStylePreset) -> some View {
@@ -216,6 +219,7 @@ struct ChapterTitleStyleSettingsView: View {
             sliderRow(localized("上方間距"), value: binding(\ChapterTitleStyle.topSpacing), range: ChapterTitleStyle.topSpacingRange, step: 1, unit: "pt")
             sliderRow(localized("與正文間距"), value: binding(\ChapterTitleStyle.bottomSpacing), range: ChapterTitleStyle.bottomSpacingRange, step: 1, unit: "pt")
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: - Layout (manual mode)
@@ -258,6 +262,7 @@ struct ChapterTitleStyleSettingsView: View {
                 )
             }
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: - Fonts (manual mode)
@@ -276,6 +281,7 @@ struct ChapterTitleStyleSettingsView: View {
                 }
             }
         }
+        .interfaceSectionSurface()
     }
 
     private func fontMenu(_ title: String, current: String?, onSelect: @escaping (String?) -> Void) -> some View {
@@ -328,6 +334,7 @@ struct ChapterTitleStyleSettingsView: View {
                 Label(localized("恢復官方預設"), systemImage: "arrow.counterclockwise")
             }
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: - Bindings & mutation

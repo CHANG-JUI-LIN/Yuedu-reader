@@ -18,6 +18,7 @@ struct GlobalFontSettingsView: View {
                     previewFont: GlobalAppTypography.font(.body, postScriptName: nil)
                 )
             }
+            .interfaceSectionSurface()
 
             Section(header: Text(localized("已匯入字體"))) {
                 if settings.userFonts.isEmpty {
@@ -44,6 +45,7 @@ struct GlobalFontSettingsView: View {
                     }
                 }
             }
+            .interfaceSectionSurface()
 
             Section(
                 footer: Text(localized("匯入後，字體會同時出現在全局字體與閱讀設定。"))
@@ -54,6 +56,7 @@ struct GlobalFontSettingsView: View {
                     Label(localized("匯入字體..."), systemImage: "plus")
                 }
             }
+            .interfaceSectionSurface()
         }
         .navigationTitle(localized("全局字體"))
         .toolbarTitleDisplayMode(.inline)

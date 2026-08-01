@@ -35,6 +35,7 @@ struct LaunchImageSettingsView: View {
                     Text(localized("開啟後，每次啟動 App 會短暫顯示你設定的啟動圖。"))
                 }
             }
+            .interfaceSectionSurface()
 
             Section {
                 launchImageSlot(.light)
@@ -43,6 +44,7 @@ struct LaunchImageSettingsView: View {
             } footer: {
                 Text(localized("淺色模式啟動時顯示。"))
             }
+            .interfaceSectionSurface()
 
             Section {
                 launchImageSlot(.dark)
@@ -51,6 +53,7 @@ struct LaunchImageSettingsView: View {
             } footer: {
                 Text(localized("深色模式啟動時顯示。若只設定一張，另一模式會沿用。"))
             }
+            .interfaceSectionSurface()
         }
         .navigationTitle(localized("啟動圖"))
         .toolbarTitleDisplayMode(.inline)

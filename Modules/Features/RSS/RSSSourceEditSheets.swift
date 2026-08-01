@@ -41,6 +41,7 @@ struct EditRSSSourceSheet: View {
                 Section(header: Text(localized("來源名稱"))) {
                     TextField(localized("來源名稱"), text: $name)
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("RSS 網址"))) {
                     TextField("https://", text: $url)
@@ -49,6 +50,7 @@ struct EditRSSSourceSheet: View {
                         .autocorrectionDisabled()
                         .onChange(of: url) { _, _ in errorMessage = nil }
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("資料夾"))) {
                     Picker(localized("資料夾"), selection: $selectedFolderID) {
@@ -58,12 +60,14 @@ struct EditRSSSourceSheet: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
 
                 if let errorMessage {
                     Section {
                         Text(errorMessage)
                             .foregroundStyle(.red)
                     }
+                    .interfaceSectionSurface()
                 }
             }
             .navigationTitle(localized("編輯訂閱"))
@@ -203,6 +207,7 @@ struct RSSOrganizeSheet: View {
                             store.moveFolders(fromOffsets: offsets, toOffset: destination)
                         }
                     }
+                    .interfaceSectionSurface()
                 }
 
                 ForEach(folders) { folder in
@@ -216,6 +221,7 @@ struct RSSOrganizeSheet: View {
                                 store.moveSources(inFolderNamed: folder.name, fromOffsets: offsets, toOffset: destination)
                             }
                         }
+                        .interfaceSectionSurface()
                     }
                 }
 
@@ -229,6 +235,7 @@ struct RSSOrganizeSheet: View {
                             store.moveSources(inFolderNamed: nil, fromOffsets: offsets, toOffset: destination)
                         }
                     }
+                    .interfaceSectionSurface()
                 }
             }
             .environment(\.editMode, $editMode)

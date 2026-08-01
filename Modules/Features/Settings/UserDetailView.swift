@@ -133,6 +133,7 @@ struct UserDetailView: View {
                 }
                 .buttonStyle(.plain)
             }
+            .interfaceSectionSurface()
 
             Section(header: Text(localized("閱讀工具"))) {
                 Button {
@@ -149,6 +150,7 @@ struct UserDetailView: View {
                 }
                 .buttonStyle(.plain)
             }
+            .interfaceSectionSurface()
 
             if gs.isLoggedIn {
                 Section(header: Text(localized("帳號資訊"))) {
@@ -181,6 +183,7 @@ struct UserDetailView: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     linkRow(title: "Google", providerID: "google.com")
@@ -207,6 +210,7 @@ struct UserDetailView: View {
                 } footer: {
                     Text(localized("連結後可用任一方式登入同一個帳號，並且至少要保留一種。"))
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     Button(role: .destructive) {
@@ -235,6 +239,7 @@ struct UserDetailView: View {
                         Text(localized("登出後此裝置會停止使用目前帳號同步。"))
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     Button(role: .destructive) {
@@ -271,6 +276,7 @@ struct UserDetailView: View {
                 } footer: {
                     Text(localized("刪除帳號會移除您的登入資訊並清除已上傳的同步資料，且無法復原。儲存在本機的內容檔不會被刪除。"))
                 }
+                .interfaceSectionSurface()
             }
         }
         .listStyle(.insetGrouped)

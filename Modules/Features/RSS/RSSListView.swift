@@ -713,7 +713,9 @@ private struct RSSHomeCard<Content: View>: View {
 
     var body: some View {
         content
-            .background(Color(.systemBackground))
+            // Keeps its own systemBackground fill rather than DSColor.surface — that is
+            // the card color this screen shipped with, and 分組卡片 off has to reproduce it.
+            .interfaceCardSurface(fill: Color(.systemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
@@ -962,6 +964,7 @@ private struct RSSOPMLImportSheet: View {
                     }
                     .disabled(urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("本機文件"))) {
                     Button {
@@ -970,12 +973,14 @@ private struct RSSOPMLImportSheet: View {
                         Label(localized("選取 OPML 文件"), systemImage: "doc.badge.plus")
                     }
                 }
+                .interfaceSectionSurface()
 
                 if showMessage {
                     Section {
                         Text(message)
                             .foregroundColor(message.hasPrefix("❌") ? .red : DSColor.textPrimary)
                     }
+                    .interfaceSectionSurface()
                 }
             }
                 .navigationTitle(localized("匯入 OPML"))
@@ -1237,12 +1242,14 @@ private struct ImportLegadoJSONURLSheet: View {
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                 }
+                .interfaceSectionSurface()
 
                 if showMessage {
                     Section {
                         Text(message)
                             .foregroundColor(message.hasPrefix("❌") ? .red : DSColor.textPrimary)
                     }
+                    .interfaceSectionSurface()
                 }
             }
             .navigationTitle(localized("從網址匯入 Legado JSON"))
@@ -1323,12 +1330,14 @@ private struct AddRSSSourceSheet: View {
                 Section(header: Text(localized("來源名稱（選填）"))) {
                     TextField(localized("留空將自動從 RSS 抓取"), text: $name)
                 }
+                .interfaceSectionSurface()
                 Section(header: Text(localized("RSS 網址"))) {
                     TextField("https://", text: $url)
                         .keyboardType(.URL)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                 }
+                .interfaceSectionSurface()
                 Section(header: Text(localized("資料夾"))) {
                     Picker(localized("資料夾"), selection: $selectedFolderID) {
                         Text(localized("無資料夾")).tag(Self.rootFolderID)
@@ -1337,6 +1346,7 @@ private struct AddRSSSourceSheet: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
             }
             .navigationTitle(localized("新增 RSS 訂閱"))
             .toolbarTitleDisplayMode(.inline)
@@ -1434,6 +1444,7 @@ private struct AddRSSFolderSheet: View {
                 Section(header: Text(localized("資料夾名稱"))) {
                     TextField(localized("資料夾名稱"), text: $name)
                 }
+                .interfaceSectionSurface()
             }
             .navigationTitle(localized("新增資料夾"))
             .toolbarTitleDisplayMode(.inline)
@@ -1483,6 +1494,7 @@ private struct RenameRSSFolderSheet: View {
                 Section(header: Text(localized("資料夾名稱"))) {
                     TextField(localized("資料夾名稱"), text: $name)
                 }
+                .interfaceSectionSurface()
             }
             .navigationTitle(localized("重新命名"))
             .toolbarTitleDisplayMode(.inline)
@@ -1536,6 +1548,7 @@ private struct RSSSourceInfoSheet: View {
                         LabeledContent(localized("資料夾"), value: group)
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     Button {
@@ -1552,6 +1565,7 @@ private struct RSSSourceInfoSheet: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
             }
             .navigationTitle(localized("取得資訊"))
             .toolbarTitleDisplayMode(.inline)

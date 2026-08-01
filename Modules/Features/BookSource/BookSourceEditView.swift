@@ -85,6 +85,7 @@ struct BookSourceEditView: View {
             ruleField(localized("書源分組"), placeholder: localized("如：玄幻、言情"), text: $source.bookSourceGroup)
             Toggle(localized("啟用"), isOn: $source.enabled)
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: Search Settings
@@ -97,6 +98,7 @@ struct BookSourceEditView: View {
                 localized("搜索 URL"), placeholder: "https://example.com/search?q={{key}}",
                 text: $source.searchUrl)
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: Search Rules
@@ -114,6 +116,7 @@ struct BookSourceEditView: View {
             ruleField(
                 localized("最新章節"), placeholder: ".last-chapter@text", text: $source.ruleSearch.lastChapter)
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: Book Detail Rules
@@ -128,6 +131,7 @@ struct BookSourceEditView: View {
             ruleField(localized("簡介"), placeholder: "#intro@text", text: $source.ruleBookInfo.intro)
             ruleField(localized("目錄 URL"), placeholder: localized("留空使用書籍頁 URL"), text: $source.ruleBookInfo.tocUrl)
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: TOC Rules
@@ -142,6 +146,7 @@ struct BookSourceEditView: View {
             ruleField(localized("章節 URL"), placeholder: "@href", text: $source.ruleToc.chapterUrl)
             ruleField(localized("下一頁 URL"), placeholder: ".next@href", text: $source.ruleToc.nextTocUrl)
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: Content Rules
@@ -160,6 +165,7 @@ struct BookSourceEditView: View {
                     .frame(height: 80)
             }
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: Custom Headers
@@ -172,6 +178,7 @@ struct BookSourceEditView: View {
                 .font(DSFont.fixed(size: 13, design: .monospaced))
                 .frame(height: 70)
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: Advanced (Legado Compatibility)
@@ -183,6 +190,7 @@ struct BookSourceEditView: View {
             ruleField(localized("登入頁 URL"), placeholder: "https://...", text: $source.loginUrl)
             ruleField(localized("登入檢查 JS"), placeholder: "document.querySelector('.login')", text: $source.loginCheckJs)
         }
+        .interfaceSectionSurface()
     }
 
     // MARK: Form Field

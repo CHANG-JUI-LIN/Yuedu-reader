@@ -586,6 +586,7 @@ struct BookSourceListView: View {
                     )
                 }
                 .listRowSeparator(.hidden)
+                .interfaceSectionSurface()
 
                 if usesGroupedLayout {
                     // Plain header row + conditional child rows instead of `DisclosureGroup`:

@@ -38,6 +38,7 @@ struct BookSourceInfoSheet: View {
                     infoRow(localized("網址"), value: source.bookSourceUrl, monospaced: true)
                     infoRow(localized("類型"), value: sourceTypeText)
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     infoRow(
@@ -60,6 +61,7 @@ struct BookSourceInfoSheet: View {
                         infoRow(localized("登入網址"), value: source.loginUrl, monospaced: true)
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     ruleRow(localized("搜索規則"), present: !source.searchUrl.isEmpty)
@@ -70,6 +72,7 @@ struct BookSourceInfoSheet: View {
                 } header: {
                     Text(localized("規則"))
                 }
+                .interfaceSectionSurface()
 
                 if !source.bookSourceComment.isEmpty {
                     Section {
@@ -80,6 +83,7 @@ struct BookSourceInfoSheet: View {
                     } header: {
                         Text(localized("註釋"))
                     }
+                    .interfaceSectionSurface()
                 }
 
                 if !source.variableComment.isEmpty {
@@ -91,6 +95,7 @@ struct BookSourceInfoSheet: View {
                     } header: {
                         Text(localized("源變量說明"))
                     }
+                    .interfaceSectionSurface()
                 }
             }
             .navigationTitle(localized("查看詳情"))

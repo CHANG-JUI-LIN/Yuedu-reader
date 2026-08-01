@@ -29,6 +29,7 @@ struct TestFlightApplyView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, DSSpacing.md)
             }
+            .interfaceSectionSurface()
 
             if state == .submitted {
                 submittedRow
@@ -58,6 +59,7 @@ struct TestFlightApplyView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(state == .submitting)
                 }
+                .interfaceSectionSurface()
             }
 
             if let errorMessage {
@@ -67,6 +69,7 @@ struct TestFlightApplyView: View {
                         .foregroundColor(DSColor.destructive)
                         .accessibilityLabel(errorMessage)
                 }
+                .interfaceSectionSurface()
             }
         }
         .navigationTitle(localized("加入 TestFlight"))
@@ -92,6 +95,7 @@ struct TestFlightApplyView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, DSSpacing.lg)
         }
+        .interfaceSectionSurface()
     }
 
     private func submit() {

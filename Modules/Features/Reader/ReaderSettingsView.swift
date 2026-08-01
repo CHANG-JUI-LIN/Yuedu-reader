@@ -245,6 +245,7 @@ struct ReaderSettingsView: View {
                 Text(localized("只影響正文排版，不會移動頁首頁尾組件。"))
             }
         }
+        .interfaceSectionSurface()
     }
 
     private func overlayReservationBinding(
@@ -289,6 +290,7 @@ struct ReaderSettingsView: View {
                 }
             )
         }
+        .interfaceSectionSurface()
     }
 
     private func spreadTitleKey(for mode: ReaderSpreadMode) -> String {
@@ -323,6 +325,7 @@ struct ReaderSettingsView: View {
                 }
             }
         }
+        .interfaceSectionSurface()
     }
 
     /// Preview font that reflects the user-selected reader font in real time;
@@ -394,6 +397,7 @@ struct ReaderSettingsView: View {
                     } header: {
                         Text(localized("已匯入字體"))
                     }
+                    .interfaceSectionSurface()
 
                     Menu(localized("刪除字體")) {
                         ForEach(settings.userFonts, id: \.id) { font in
@@ -515,6 +519,7 @@ struct ReaderSettingsView: View {
                 }
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var readerDecorationSection: some View {
@@ -624,6 +629,7 @@ struct ReaderSettingsView: View {
                 }
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var displaySection: some View {
@@ -643,6 +649,7 @@ struct ReaderSettingsView: View {
                 isDisabled: settings.followSystemBrightness
             )
         }
+        .interfaceSectionSurface()
     }
 
     private var fontSizeBinding: Binding<CGFloat> {
