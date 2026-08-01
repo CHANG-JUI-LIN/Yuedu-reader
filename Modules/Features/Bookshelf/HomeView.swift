@@ -517,7 +517,6 @@ struct HomeView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(DSFont.toolbarIcon)
-                    .foregroundColor(.black)
             }
         } else {
             Menu {
@@ -541,7 +540,6 @@ struct HomeView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(DSFont.toolbarIcon)
-                    .foregroundColor(.black)
             }
             .id("\(Locale.autoupdatingCurrent.identifier)_add_menu")
         }
@@ -577,7 +575,6 @@ struct HomeView: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(DSFont.toolbarIcon)
-                .foregroundColor(.black)
         }
         .id("\(Locale.autoupdatingCurrent.identifier)_menu")
     }
