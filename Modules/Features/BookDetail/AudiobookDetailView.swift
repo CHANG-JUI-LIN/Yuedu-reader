@@ -560,6 +560,12 @@ struct AudiobookDetailView: View {
         load()
     }
 
+    private func isCurrentRequest(_ request: OnlineBook) -> Bool {
+        request.sourceId == currentBook.sourceId
+            && ChangeSourceCache.urlKey(request.bookUrl)
+                == ChangeSourceCache.urlKey(currentBook.bookUrl)
+    }
+
     private func load() {
         guard let source else { loadError = localized("書源已被刪除"); return }
         loading = true
@@ -575,7 +581,7 @@ struct AudiobookDetailView: View {
                         url: request.bookUrl, source: source, runtimeVariables: runtimeVars)
                     runtimeVars = Self.mergedRuntimeVariables(runtimeVars, pkg.runtimeVariables)
                     await MainActor.run {
-                        guard request.bookUrl == currentBook.bookUrl else { return }
+                        guard isCurrentRequest(request) else { return }
                         detailInfo = OnlineBookDetailPresentationPolicy.sanitized(
                             pkg.onlineBook
                         )
@@ -586,14 +592,14 @@ struct AudiobookDetailView: View {
                     tocUrl: tocURL, source: source, runtimeVariables: runtimeVars)
                 runtimeVars = Self.mergedRuntimeVariables(runtimeVars, tocPkg.runtimeVariables)
                 await MainActor.run {
-                    guard request.bookUrl == currentBook.bookUrl else { return }
+                    guard isCurrentRequest(request) else { return }
                     chapters = tocPkg.chapters
                     loadedRuntimeVariables = runtimeVars
                     loading = false
                 }
             } catch {
                 await MainActor.run {
-                    guard request.bookUrl == currentBook.bookUrl else { return }
+                    guard isCurrentRequest(request) else { return }
                     loadError = error.localizedDescription
                     loading = false
                 }
@@ -615,7 +621,8 @@ struct AudiobookDetailView: View {
     // MARK: Play
 
     private func existingShelfBookId() -> UUID? {
-        bookStore.books.first(where: { $0.bookInfoURL == currentBook.bookUrl })?.id
+        bookStore.onlineBook(
+            sourceId: currentBook.sourceId, bookInfoURL: currentBook.bookUrl)?.id
     }
 
     private func checkAlreadyInShelf() {

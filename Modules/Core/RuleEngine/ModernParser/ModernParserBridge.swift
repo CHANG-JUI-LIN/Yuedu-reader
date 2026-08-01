@@ -297,21 +297,39 @@ class ModernParserBridge {
             var responseError: Error?
             let reviewSummaryCacheKey = "\(sourceUrl)#\(self.sourceRuleData.source.lastUpdateTime)"
             let isReviewSummaryRequest = Self.isChapterReviewSummaryRequest(request)
-            if isReviewSummaryRequest,
-               let requestURL = request.url?.absoluteString,
-               let cached = ReviewSummaryResponseCache.shared.value(
-                   sourceKey: reviewSummaryCacheKey,
-                   requestURL: requestURL
-               ) {
-                let cacheLookupStarted = ProcessInfo.processInfo.systemUptime
-                self.recordJSNetwork(url: requestURL, statusCode: 200, timedOut: false, body: cached)
-                SourcePerfTrace.record(
-                    "chapter.reviewSummary.cacheHit",
-                    sourceName,
-                    since: cacheLookupStarted,
-                    thresholdMs: 0
-                )
-                return cached
+            var ownsReviewRequest = false
+            if isReviewSummaryRequest, let requestURL = request.url?.absoluteString {
+                switch ReviewSummaryResponseCache.shared.beginRequest(
+                    sourceKey: reviewSummaryCacheKey,
+                    requestURL: requestURL
+                ) {
+                case .cached(let cached):
+                    let cacheLookupStarted = ProcessInfo.processInfo.systemUptime
+                    self.recordJSNetwork(url: requestURL, statusCode: 200, timedOut: false, body: cached)
+                    SourcePerfTrace.record(
+                        "chapter.reviewSummary.cacheHit",
+                        sourceName,
+                        since: cacheLookupStarted,
+                        thresholdMs: 0
+                    )
+                    return cached
+                case .inFlight:
+                    let waitStarted = ProcessInfo.processInfo.systemUptime
+                    guard let cached = ReviewSummaryResponseCache.shared.waitForRequest(
+                        sourceKey: reviewSummaryCacheKey,
+                        requestURL: requestURL
+                    ) else { return nil }
+                    self.recordJSNetwork(url: requestURL, statusCode: 200, timedOut: false, body: cached)
+                    SourcePerfTrace.record(
+                        "chapter.reviewSummary.inFlightHit",
+                        sourceName,
+                        since: waitStarted,
+                        thresholdMs: 0
+                    )
+                    return cached
+                case .owner:
+                    ownsReviewRequest = true
+                }
             }
             let task = LegadoJSBridge.requestSession.dataTask(with: request) { data, response, error in
                 if let httpResponse = response as? HTTPURLResponse {
@@ -349,16 +367,21 @@ class ModernParserBridge {
                     "method": analyzeUrl.method
                 ])
                 task.cancel()
+                if ownsReviewRequest, let requestURL = request.url?.absoluteString {
+                    ReviewSummaryResponseCache.shared.finishRequest(
+                        nil,
+                        sourceKey: reviewSummaryCacheKey,
+                        requestURL: requestURL
+                    )
+                }
                 return nil
             }
-            if isReviewSummaryRequest,
-               responseError == nil,
-               responseStatusCode.map({ (200..<300).contains($0) }) == true,
-               let result,
-               Self.isUsableChapterReviewSummary(result),
-               let requestURL = request.url?.absoluteString {
-                ReviewSummaryResponseCache.shared.insert(
-                    result,
+            if ownsReviewRequest, let requestURL = request.url?.absoluteString {
+                let usable = responseError == nil
+                    && responseStatusCode.map({ (200..<300).contains($0) }) == true
+                    && result.map(Self.isUsableChapterReviewSummary) == true
+                ReviewSummaryResponseCache.shared.finishRequest(
+                    usable ? result : nil,
                     sourceKey: reviewSummaryCacheKey,
                     requestURL: requestURL
                 )
@@ -415,6 +438,43 @@ class ModernParserBridge {
         // networkHandler runs on the jsEngine serial queue thread — blocking via
         // semaphore here is intentional and safe (dedicated thread, not the global pool).
         jsEngine.networkHandler = { [weak self] request in
+            let reviewSummaryCacheKey = self.map { "\(sourceUrl)#\($0.sourceRuleData.source.lastUpdateTime)" }
+            let isReviewSummaryRequest = Self.isChapterReviewSummaryRequest(request)
+            var ownsReviewRequest = false
+            if isReviewSummaryRequest,
+               let self,
+               let reviewSummaryCacheKey,
+               let requestURL = request.url?.absoluteString {
+                switch ReviewSummaryResponseCache.shared.beginRequest(
+                    sourceKey: reviewSummaryCacheKey,
+                    requestURL: requestURL
+                ) {
+                case .cached(let cached):
+                    self.recordJSNetwork(url: requestURL, statusCode: 200, timedOut: false, body: cached)
+                    SourcePerfTrace.record(
+                        "chapter.reviewSummary.cacheHit",
+                        sourceName,
+                        since: ProcessInfo.processInfo.systemUptime,
+                        thresholdMs: 0
+                    )
+                    return cached
+                case .inFlight:
+                    guard let cached = ReviewSummaryResponseCache.shared.waitForRequest(
+                        sourceKey: reviewSummaryCacheKey,
+                        requestURL: requestURL
+                    ) else { return nil }
+                    self.recordJSNetwork(url: requestURL, statusCode: 200, timedOut: false, body: cached)
+                    SourcePerfTrace.record(
+                        "chapter.reviewSummary.inFlightHit",
+                        sourceName,
+                        since: ProcessInfo.processInfo.systemUptime,
+                        thresholdMs: 0
+                    )
+                    return cached
+                case .owner:
+                    ownsReviewRequest = true
+                }
+            }
             let semaphore = DispatchSemaphore(value: 0)
             var result: String?
             var statusCode: Int?
@@ -464,6 +524,19 @@ class ModernParserBridge {
                 ])
             }
             if timedOut { task.cancel() }
+            if ownsReviewRequest,
+               let reviewSummaryCacheKey,
+               let requestURL = request.url?.absoluteString {
+                let usable = !timedOut
+                    && transportError == nil
+                    && statusCode.map({ (200..<300).contains($0) }) == true
+                    && result.map(Self.isUsableChapterReviewSummary) == true
+                ReviewSummaryResponseCache.shared.finishRequest(
+                    usable ? result : nil,
+                    sourceKey: reviewSummaryCacheKey,
+                    requestURL: requestURL
+                )
+            }
             return result
         }
     }
@@ -484,6 +557,119 @@ class ModernParserBridge {
         // response shape that can actually render paragraph badges, so a temporary
         // login/quota error is never kept for the cache lifetime.
         return payload["list"] is [Any]
+    }
+
+    /// Starts Qidian's paragraph-review request while the source JS is still fetching chapter
+    /// content. The source's later synchronous `java.ajax` call joins this in-flight request,
+    /// so the complete original marker list is still rendered. Other sources do not enter this
+    /// path because it requires the exact review endpoint in their own jsLib.
+    private func prefetchReviewSummaryIfPossible(
+        source: BookSource,
+        chapterRef: OnlineChapterRef?
+    ) {
+        guard source.jsLib.contains("chapterReview/reviewSummary"),
+              let chapterRef,
+              let (bookID, chapterID) = Self.reviewSummaryIdentifiers(from: chapterRef.url),
+              let host = Self.reviewSummaryHost(in: source.jsLib),
+              var components = URLComponents(string: "\(host)/majax/chapterReview/reviewSummary")
+        else { return }
+
+        let csrfToken = CookieStore.shared.getKey(url: host, key: "_csrfToken")
+        components.queryItems = [
+            URLQueryItem(name: "bookId", value: bookID),
+            URLQueryItem(name: "chapterId", value: chapterID),
+            URLQueryItem(name: "_csrfToken", value: csrfToken)
+        ]
+        guard let url = components.url else { return }
+        let sourceKey = "\(source.bookSourceUrl)#\(source.lastUpdateTime)"
+        let requestURL = url.absoluteString
+        guard case .owner = ReviewSummaryResponseCache.shared.beginRequest(
+            sourceKey: sourceKey,
+            requestURL: requestURL
+        ) else { return }
+
+        var request = URLRequest(
+            url: url,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: 30
+        )
+        for (key, value) in resolvedSourceHeaders() {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        LoginManager.shared.applyLoginHeaders(to: &request, sourceUrl: source.bookSourceUrl)
+        let cookie = CookieStore.shared.get(url: requestURL)
+        if !cookie.isEmpty {
+            request.setValue(cookie, forHTTPHeaderField: "Cookie")
+        }
+
+        let started = ProcessInfo.processInfo.systemUptime
+        let task = LegadoJSBridge.requestSession.dataTask(with: request) { data, response, _ in
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            let body = data.flatMap { String(data: $0, encoding: .utf8) }
+            let usable = statusCode.map({ (200..<300).contains($0) }) == true
+                && body.map(Self.isUsableChapterReviewSummary) == true
+            ReviewSummaryResponseCache.shared.finishRequest(
+                usable ? body : nil,
+                sourceKey: sourceKey,
+                requestURL: requestURL
+            )
+            SourcePerfTrace.record(
+                "chapter.reviewSummary.prefetch",
+                source.bookSourceName,
+                since: started,
+                thresholdMs: 0
+            )
+        }
+        task.resume()
+    }
+
+    private static func reviewSummaryHost(in jsLib: String) -> String? {
+        let pattern = #"(?:const|let|var)\s+ho\s*=\s*['\"]([^'\"]+)['\"]"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                  in: jsLib,
+                  range: NSRange(location: 0, length: (jsLib as NSString).length)
+              ) else { return nil }
+        let host = (jsLib as NSString).substring(with: match.range(at: 1))
+        guard URL(string: host)?.host != nil else { return nil }
+        return host.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    private static func reviewSummaryIdentifiers(from rawURL: String) -> (String, String)? {
+        if let components = URLComponents(string: rawURL),
+           let bookID = components.queryItems?.first(where: { $0.name == "bookId" })?.value,
+           let chapterID = components.queryItems?.first(where: {
+               $0.name == "chapterId" || $0.name == "id"
+           })?.value,
+           !bookID.isEmpty, !chapterID.isEmpty {
+            return (bookID, chapterID)
+        }
+
+        guard rawURL.lowercased().hasPrefix("data:"),
+              let comma = rawURL.firstIndex(of: ",") else { return nil }
+        let metadata = rawURL[rawURL.index(rawURL.startIndex, offsetBy: 5)..<comma]
+        let tail = rawURL[rawURL.index(after: comma)...]
+        let payload = tail.split(separator: ",", maxSplits: 1, omittingEmptySubsequences: false)
+            .first.map(String.init) ?? String(tail)
+        let data: Data?
+        if metadata.lowercased().contains(";base64") {
+            data = Data(base64Encoded: payload, options: .ignoreUnknownCharacters)
+        } else {
+            data = (payload.removingPercentEncoding ?? payload).data(using: .utf8)
+        }
+        guard let data,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        func stringValue(_ key: String) -> String? {
+            if let value = object[key] as? String { return value }
+            if let value = object[key] as? NSNumber { return value.stringValue }
+            return nil
+        }
+        guard let bookID = stringValue("bookId"),
+              let chapterID = stringValue("chapterId") ?? stringValue("id"),
+              !bookID.isEmpty, !chapterID.isEmpty else { return nil }
+        return (bookID, chapterID)
     }
 
     // MARK: - Parsing API (matches BookSourceParsingPipeline signatures)
@@ -998,6 +1184,7 @@ class ModernParserBridge {
             """
         ) ?? "false"
 
+        prefetchReviewSummaryIfPossible(source: source, chapterRef: chapterRef)
         jsEngine.resetJSNetworkMs()
         lastJSNetworkExchange = nil
         let _contentStart = Date()

@@ -15,8 +15,6 @@
 "{{key}} 為搜索關鍵字佔位符。POST 格式：URL,POST,body" = "{{key}} is the keyword placeholder. POST format: URL,POST,body";
 "上一章" = "Prev";
 "上下滾動" = "Scroll";
-"不需要申請郵箱的話，也可以直接用公開連結加入測試。" = "No application needed — you can also join directly through the public link.";
-"使用公開連結加入" = "Join via the public link";
 "右往左" = "RTL";
 "右往左連續" = "RTL Continuous";
 "右往左連續閱讀" = "Right-to-left continuous reading";
@@ -430,6 +428,8 @@
 "閱讀進度" = "Progress";
 "關於" = "About";
 "關於 Yuedu Reader" = "About Yuedu Reader";
+"允許測試購買" = "Allow Test Purchases";
+"允許測試購買說明" = "When enabled, sandbox (TestFlight) purchases count as entitlements. App Store builds ignore sandbox transactions by default, so leftover test purchases cannot unlock Pro.";
 "聯絡我們" = "Contact Us";
 "聯絡方式" = "Contact";
 "聯絡方式、版本資訊與政策協議" = "Contact, version, policies, and agreements";

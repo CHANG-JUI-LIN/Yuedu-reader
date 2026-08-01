@@ -11,7 +11,7 @@ final class ReaderViewModel: ObservableObject {
     @Published private(set) var changeSourceOrigins: [BookOrigin] = []
     @Published private(set) var changeSourceLoading: Bool = false
     @Published private(set) var changeSourceError: String? = nil
-    /// Normalized book-URL keys of origins that failed to switch (TOC fetch threw),
+    /// Normalized source-qualified keys of origins that failed to switch (TOC fetch threw),
     /// so the 換源 list can flag them. Backed by `ChangeSourceCache`.
     @Published private(set) var changeSourceFailedKeys: Set<String> = []
 
@@ -247,12 +247,13 @@ final class ReaderViewModel: ObservableObject {
         changeSourceFailedKeys = Set(ChangeSourceCache.shared.entry(for: bookId)?.failedKeys ?? [])
         let bookTitle = book.title
         let bookAuthor = book.author
-        let currentBookUrlKey = Self.normalizedURLKey(book.bookInfoURL)
+        let currentOriginKey = ChangeSourceCache.originKey(
+            sourceId: currentSourceId, bookUrl: book.bookInfoURL)
         // Search ALL enabled sources, including the current one. Aggregation sources
         // expose several "channels" for the same book under a single sourceId, and a
         // user may have only that one source installed — filtering by sourceId would
-        // then yield zero results. We dedup by book URL instead, so every distinct
-        // channel/source is offered (minus the exact origin already being read).
+        // then yield zero results. We dedup by source-qualified origin, so sibling
+        // sources that share one site URL remain independently switchable.
         let sources = enabledSources
         let concurrency = NetworkSearchSettings.clampedConcurrency(GlobalSettings.shared.searchConcurrency)
         let autoPauseCount = NetworkSearchSettings.effectiveAutoPauseCount(
@@ -265,7 +266,7 @@ final class ReaderViewModel: ObservableObject {
         tocPrefetchTask?.cancel()
         changeSourceSearchTask = Task { [weak self] in
             guard let self else { return }
-            var seenBookUrls = Set<String>()
+            var seenOriginKeys = Set<String>()
             let bookSourceFetcher = self.bookSourceFetcher
 
             // Fan out with a bounded active window. Results are consumed on the
@@ -310,12 +311,13 @@ final class ReaderViewModel: ObservableObject {
                             name: ob.name, author: ob.author
                         )
                         guard matched else { continue }
-                        // Dedup by book URL so aggregation channels survive; skip the exact
-                        // origin already in use and any duplicate URLs across sources.
-                        let urlKey = Self.normalizedURLKey(ob.bookUrl)
-                        if !urlKey.isEmpty {
-                            if urlKey == currentBookUrlKey { continue }
-                            guard seenBookUrls.insert(urlKey).inserted else { continue }
+                        // Dedup only the same source + URL. Aggregation channels from
+                        // different sources may share a URL but remain distinct rules.
+                        let originKey = ChangeSourceCache.originKey(
+                            sourceId: ob.sourceId, bookUrl: ob.bookUrl)
+                        if !originKey.isEmpty {
+                            if originKey == currentOriginKey { continue }
+                            guard seenOriginKeys.insert(originKey).inserted else { continue }
                         }
                         batchOrigins.append(
                             BookOrigin(
@@ -373,7 +375,9 @@ final class ReaderViewModel: ObservableObject {
             (
                 offset: offset,
                 origin: origin,
-                isFailed: failed.contains(ChangeSourceCache.urlKey(origin.bookUrl)),
+                isFailed: failed.contains(ChangeSourceCache.originKey(
+                    sourceId: origin.sourceId, bookUrl: origin.bookUrl))
+                    || failed.contains(ChangeSourceCache.urlKey(origin.bookUrl)),
                 speed: health.responseSortKey(origin.sourceId)
             )
         }
@@ -394,7 +398,11 @@ final class ReaderViewModel: ObservableObject {
         let failedKeys = changeSourceFailedKeys
         let candidates = Array(
             changeSourceOrigins
-                .filter { !failedKeys.contains(ChangeSourceCache.urlKey($0.bookUrl)) }
+                .filter {
+                    !failedKeys.contains(ChangeSourceCache.originKey(
+                        sourceId: $0.sourceId, bookUrl: $0.bookUrl))
+                        && !failedKeys.contains(ChangeSourceCache.urlKey($0.bookUrl))
+                }
                 .prefix(limit)
         )
         guard !candidates.isEmpty else { return }
@@ -424,22 +432,11 @@ final class ReaderViewModel: ObservableObject {
 
     /// Flags an origin that failed to switch (its TOC fetch threw), persisting the
     /// flag so it stays marked across reopen/re-search of the same book.
-    func markOriginFailed(bookId: UUID, bookUrl: String) {
-        let key = ChangeSourceCache.urlKey(bookUrl)
+    func markOriginFailed(bookId: UUID, sourceId: UUID, bookUrl: String) {
+        let key = ChangeSourceCache.originKey(sourceId: sourceId, bookUrl: bookUrl)
         guard !key.isEmpty else { return }
         changeSourceFailedKeys.insert(key)
-        ChangeSourceCache.shared.markFailed(bookUrlKey: key, for: bookId)
-    }
-
-    /// Normalized book-URL key for deduping origins (drops fragment, lowercased).
-    private static func normalizedURLKey(_ raw: String?) -> String {
-        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else { return "" }
-        if var components = URLComponents(string: trimmed) {
-            components.fragment = nil
-            return (components.string ?? trimmed).lowercased()
-        }
-        return trimmed.lowercased()
+        ChangeSourceCache.shared.markFailed(originKey: key, for: bookId)
     }
 
     /// Searches one source with a timeout, off the main actor. Returns nil on error

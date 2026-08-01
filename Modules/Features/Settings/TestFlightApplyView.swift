@@ -6,8 +6,6 @@ import SwiftUI
 /// `requestTestFlightAccess` callable; the developer adds the tester in App
 /// Store Connect and Apple sends the invite email.
 struct TestFlightApplyView: View {
-    private let testFlightJoinURL = URL(string: "https://testflight.apple.com/join/7hvbzYC1")
-
     @State private var email = ""
     @State private var state: TestFlightApplyState = .idle
     @State private var errorMessage: String?
@@ -54,10 +52,10 @@ struct TestFlightApplyView: View {
                                     .font(DSFont.bodyBold)
                             }
                         }
-                        .frame(maxWidth: .infinity)
                         .frame(minHeight: 44)
                     }
                     .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .disabled(state == .submitting)
                 }
             }
@@ -69,22 +67,6 @@ struct TestFlightApplyView: View {
                         .foregroundColor(DSColor.destructive)
                         .accessibilityLabel(errorMessage)
                 }
-            }
-
-            Section {
-                Link(destination: testFlightJoinURL) {
-                    HStack {
-                        Label(localized("使用公開連結加入"), systemImage: "arrow.up.right.square")
-                            .foregroundColor(DSColor.textPrimary)
-                            .labelStyle(IconConsistentLabelStyle())
-                        Spacer(minLength: 12)
-                        Text("testflight.apple.com/join/7hvbzYC1")
-                            .font(DSFont.caption)
-                            .foregroundColor(DSColor.textSecondary)
-                    }
-                }
-            } footer: {
-                Text(localized("不需要申請郵箱的話，也可以直接用公開連結加入測試。"))
             }
         }
         .navigationTitle(localized("加入 TestFlight"))

@@ -35,6 +35,17 @@ final class SubscriptionStore: ObservableObject {
         category: "Subscription"
     )
 
+    /// Compile-time build kind; DEBUG (Xcode-launched) builds accept sandbox
+    /// transactions so development testing keeps working, Release builds
+    /// (TestFlight/App Store) filter them unless explicitly enabled.
+    private static let isDebugBuild: Bool = {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }()
+
     /// The product identifiers configured in App Store Connect and the local
     /// `.storekit` file. Order here is the display order on the paywall.
     enum ProProduct: String, CaseIterable {
@@ -286,16 +297,18 @@ final class SubscriptionStore: ObservableObject {
     func refreshEntitlements() async {
         var owned: Set<String> = []
         var revokedCount = 0
+        let allowSandbox = GlobalSettings.shared.allowSandboxTestTransactions
         for await result in Transaction.currentEntitlements {
-            switch result {
-            case .verified(let transaction):
-                if transaction.revocationDate == nil {
-                    owned.insert(transaction.productID)
-                } else {
-                    revokedCount += 1
-                }
-            case .unverified:
-                break
+            guard case .verified(let transaction) = result else { continue }
+            guard SubscriptionEntitlementFilter.shouldAccept(
+                environment: transaction.environment,
+                allowSandbox: allowSandbox,
+                isDebugBuild: Self.isDebugBuild
+            ) else { continue }
+            if transaction.revocationDate == nil {
+                owned.insert(transaction.productID)
+            } else {
+                revokedCount += 1
             }
         }
         purchasedProductIDs = owned
@@ -341,9 +354,15 @@ final class SubscriptionStore: ObservableObject {
 
     private func bindCurrentStoreKitEntitlementsToAccount() async {
         var didFailBinding = false
+        let allowSandbox = GlobalSettings.shared.allowSandboxTestTransactions
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result),
-                  ProProduct(rawValue: transaction.productID) != nil else { continue }
+                  ProProduct(rawValue: transaction.productID) != nil,
+                  SubscriptionEntitlementFilter.shouldAccept(
+                    environment: transaction.environment,
+                    allowSandbox: allowSandbox,
+                    isDebugBuild: Self.isDebugBuild
+                  ) else { continue }
             do {
                 accountIsProActive = try await accountService.bind(transaction: result)
             } catch {

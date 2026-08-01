@@ -715,6 +715,21 @@ class BookStore: ObservableObject, BookProvider {
         return libraryBook
     }
 
+    /// Finds a shelf book by its source-qualified online identity.
+    ///
+    /// A detail URL is not globally unique: aggregation sources can expose the
+    /// same site URL under different source rules. Keeping `bookSourceId` in the
+    /// key lets those source variants coexist, matching the MD3 shelf model,
+    /// while repeated opens of the same source reuse one shelf item.
+    func onlineBook(sourceId: UUID?, bookInfoURL: String?) -> ReadingBook? {
+        let urlKey = Self.onlineBookURLKey(bookInfoURL)
+        guard !urlKey.isEmpty else { return nil }
+        return books.first { book in
+            guard book.isOnline, book.bookSourceId == sourceId else { return false }
+            return Self.onlineBookURLKey(book.bookInfoURL ?? book.source) == urlKey
+        }
+    }
+
     // MARK: Bookmark Management
 
     func addBookmark(bookId: UUID, bookmark: Bookmark) {
@@ -1203,6 +1218,7 @@ class BookStore: ObservableObject, BookProvider {
     func updateOnlineBookSource(
         bookId: UUID,
         origin: BookOrigin,
+        bookSourceFetcher: any BookSourceFetching = LiveBookSourceFetcher(bookSourceFetcher: BookSourceFetcher.shared),
         offlineChapterStore: any OfflineChapterStoring = OfflineChapterStore()
     ) async throws {
         guard let source = BookSourceStore.shared.sources.first(where: { $0.id == origin.sourceId })
@@ -1210,7 +1226,7 @@ class BookStore: ObservableObject, BookProvider {
             throw NSError(
                 domain: "BookStore", code: -1, userInfo: [NSLocalizedDescriptionKey: "找不到書源"])
         }
-        let tocPackage = try await BookSourceFetcher.shared.fetchTOCPackage(
+        let tocPackage = try await bookSourceFetcher.fetchTOCPackage(
             tocUrl: origin.tocUrl, source: source, runtimeVariables: origin.runtimeVariables)
         let oldRefs = await MainActor.run {
             books.first(where: { $0.id == bookId })?.onlineChapters ?? []
@@ -1227,7 +1243,10 @@ class BookStore: ObservableObject, BookProvider {
             books[idx].tocURL = origin.tocUrl
             books[idx].runtimeVariables = origin.runtimeVariables
             books[idx].onlineChapters = tocPackage.chapters
-            saveMeta()
+            // A source switch is a user-confirmed metadata transaction. It must
+            // survive leaving the reader or immediate app suspension; the normal
+            // debounce is reserved for high-frequency progress/TOC updates.
+            saveMetaImmediately()
         }
         await reconcileOfflineTaskMetadata(
             bookId: bookId,
@@ -1729,6 +1748,16 @@ class BookStore: ObservableObject, BookProvider {
 
     private func normalizedOnlineValue(_ value: String?) -> String {
         value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private static func onlineBookURLKey(_ raw: String?) -> String {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return "" }
+        if var components = URLComponents(string: trimmed) {
+            components.fragment = nil
+            return (components.string ?? trimmed).lowercased()
+        }
+        return trimmed.lowercased()
     }
 
     private func mergeOnlineChapters(

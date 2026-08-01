@@ -48,7 +48,12 @@ final class ChangeSourceCache {
     /// Replace the cached origin list, preserving any still-relevant failure flags.
     func store(origins: [BookOrigin], for bookId: UUID) {
         let previousFailed = entry(for: bookId)?.failedKeys ?? []
-        let validKeys = Set(origins.map { Self.urlKey($0.bookUrl) })
+        // Keep the legacy URL-only key readable so caches written before source
+        // identity was added do not silently lose their failure markers.
+        let validKeys = Set(origins.flatMap { origin in
+            [Self.originKey(sourceId: origin.sourceId, bookUrl: origin.bookUrl),
+             Self.urlKey(origin.bookUrl)]
+        })
         let entry = Entry(
             origins: origins,
             failedKeys: previousFailed.filter { validKeys.contains($0) },
@@ -57,13 +62,13 @@ final class ChangeSourceCache {
         write(entry, for: bookId)
     }
 
-    /// Flag a book-URL key as having failed to switch.
-    func markFailed(bookUrlKey: String, for bookId: UUID) {
-        guard !bookUrlKey.isEmpty else { return }
+    /// Flag a source-qualified origin key as having failed to switch.
+    func markFailed(originKey: String, for bookId: UUID) {
+        guard !originKey.isEmpty else { return }
         var entry = self.entry(for: bookId)
             ?? Entry(origins: [], failedKeys: [], timestamp: Date())
-        if !entry.failedKeys.contains(bookUrlKey) {
-            entry.failedKeys.append(bookUrlKey)
+        if !entry.failedKeys.contains(originKey) {
+            entry.failedKeys.append(originKey)
         }
         write(entry, for: bookId)
     }
@@ -89,5 +94,15 @@ final class ChangeSourceCache {
             return (components.string ?? trimmed).lowercased()
         }
         return trimmed.lowercased()
+    }
+
+    /// Source-qualified origin identity. Two sources may intentionally return
+    /// the same detail URL, so URL-only keys would merge their failure state and
+    /// hide one of the switchable origins.
+    static func originKey(sourceId: UUID, bookUrl: String?) -> String {
+        let url = urlKey(bookUrl)
+        let sourceKey = sourceId.uuidString.lowercased()
+        guard !url.isEmpty else { return sourceKey + "|" }
+        return sourceKey + "|" + url
     }
 }

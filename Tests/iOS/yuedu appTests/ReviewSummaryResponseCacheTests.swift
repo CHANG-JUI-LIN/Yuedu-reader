@@ -23,4 +23,20 @@ struct ReviewSummaryResponseCacheTests {
         #expect(cache.value(sourceKey: "source", requestURL: "https://example.com/1") == nil)
         #expect(cache.value(sourceKey: "source", requestURL: "https://example.com/2") == "second")
     }
+
+    @Test("joins an in-flight request and releases waiters on completion")
+    func joinsInFlightRequest() async {
+        let cache = ReviewSummaryResponseCache(lifetime: 30, maximumEntryCount: 4)
+        let url = "https://example.com/review-summary"
+        #expect(cache.beginRequest(sourceKey: "source", requestURL: url) == .owner)
+
+        let waiter = Task.detached {
+            cache.waitForRequest(sourceKey: "source", requestURL: url, timeout: 1)
+        }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+        cache.finishRequest("summary", sourceKey: "source", requestURL: url)
+
+        #expect(await waiter.value == "summary")
+        #expect(cache.beginRequest(sourceKey: "source", requestURL: url) == .cached("summary"))
+    }
 }

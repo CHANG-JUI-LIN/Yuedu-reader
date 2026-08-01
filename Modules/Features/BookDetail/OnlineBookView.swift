@@ -605,11 +605,17 @@ struct OnlineBookView: View {
         Task { await loadTOC() }
     }
 
+    private func isCurrentRequest(_ request: OnlineBook) -> Bool {
+        request.sourceId == currentBook.sourceId
+            && ChangeSourceCache.urlKey(request.bookUrl)
+                == ChangeSourceCache.urlKey(currentBook.bookUrl)
+    }
+
     private func checkAlreadyInShelf() {
-        alreadyInShelf = bookStore.books.contains(where: { $0.bookInfoURL == currentBook.bookUrl })
-        if alreadyInShelf {
-            addedBookId = bookStore.books.first(where: { $0.bookInfoURL == currentBook.bookUrl })?.id
-        }
+        let existing = bookStore.onlineBook(
+            sourceId: currentBook.sourceId, bookInfoURL: currentBook.bookUrl)
+        addedBookId = existing?.id
+        alreadyInShelf = existing != nil
     }
 
     private func loadTOC(forceRefresh: Bool = false) async {
@@ -637,7 +643,7 @@ struct OnlineBookView: View {
                ) {
                 showedCachedTOC = true
                 await MainActor.run {
-                    guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                    guard isCurrentRequest(requestBook) else { return }
                     chapters = cached.chapters
                     loadingTOC = false
                 }
@@ -646,7 +652,7 @@ struct OnlineBookView: View {
             let applyFirstPage: ([OnlineChapterRef]) -> Void = { firstChapters in
                 // First page ready — show immediately, don't wait for multi-page fetch
                 Task { @MainActor in
-                    guard requestBook.bookUrl == self.currentBook.bookUrl else { return }
+                    guard self.isCurrentRequest(requestBook) else { return }
                     if self.chapters.isEmpty {
                         self.chapters = firstChapters
                         self.loadingTOC = false
@@ -659,7 +665,7 @@ struct OnlineBookView: View {
 
             let applyFinal: (TOCPackage) async -> Void = { tocPackage in
                 await MainActor.run {
-                    guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                    guard isCurrentRequest(requestBook) else { return }
                     chapters = tocPackage.chapters
                     loadingTOC = false
                     if let bookId = addedBookId {
@@ -695,7 +701,7 @@ struct OnlineBookView: View {
                 }
                 currentRuntimeVariables = infoPackage.runtimeVariables
                 await MainActor.run {
-                    guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                    guard isCurrentRequest(requestBook) else { return }
                     detailInfo = OnlineBookDetailPresentationPolicy.sanitized(
                         infoPackage.onlineBook
                     )
@@ -731,7 +737,7 @@ struct OnlineBookView: View {
                 }
                 currentRuntimeVariables = infoPackage.runtimeVariables
                 await MainActor.run {
-                    guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                    guard isCurrentRequest(requestBook) else { return }
                     detailInfo = OnlineBookDetailPresentationPolicy.sanitized(
                         infoPackage.onlineBook
                     )
@@ -750,7 +756,7 @@ struct OnlineBookView: View {
             await applyFinal(tocPackage)
         } catch {
             await MainActor.run {
-                guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                guard isCurrentRequest(requestBook) else { return }
                 // A cached TOC is already on screen — keep it rather than
                 // replacing it with an error banner.
                 if chapters.isEmpty {

@@ -1099,7 +1099,8 @@ struct NodeAttributedStringRenderer {
                     src: src,
                     svgContent: svgContent,
                     pointSize: ctx.font.pointSize,
-                    themeTextColor: ctx.textColor
+                    themeTextColor: ctx.textColor,
+                    recognizedBubble: recognized
                 ) ?? CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: ctx.font.pointSize, themeTextColor: ctx.textColor)
                 var bubbleStyle = style
                 if !settings.commentBubbleFollowsSourceSVG {

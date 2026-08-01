@@ -629,6 +629,16 @@ class GlobalSettings: ObservableObject {
         }
     }
 
+    /// Accepts TestFlight sandbox transactions as entitlements. Off by default
+    /// so an App Store build never grants Pro from stale sandbox transactions
+    /// lingering in the shared StoreKit database; testers enable it explicitly.
+    @Published var allowSandboxTestTransactions: Bool {
+        didSet {
+            UserDefaults.standard.set(allowSandboxTestTransactions, forKey: Self.allowSandboxTestTransactionsKey)
+        }
+    }
+    private static let allowSandboxTestTransactionsKey = "yd_allow_sandbox_test_transactions"
+
     @Published var textConversion: TextConversion {
         didSet { UserDefaults.standard.set(textConversion.rawValue, forKey: "yd_text_conv") }
     }
@@ -1221,6 +1231,7 @@ class GlobalSettings: ObservableObject {
         accountUserIdentifier = UserDefaults.standard.string(forKey: "yd_account_user_identifier") ?? ""
         accountPhotoURL = UserDefaults.standard.string(forKey: "yd_account_photo_url") ?? ""
         accountAvatarData = UserDefaults.standard.data(forKey: "yd_account_avatar_data")
+        allowSandboxTestTransactions = UserDefaults.standard.bool(forKey: Self.allowSandboxTestTransactionsKey)
         let rawConv = UserDefaults.standard.string(forKey: "yd_text_conv") ?? ""
         textConversion = TextConversion(rawValue: rawConv) ?? .original
         readerFontBold = UserDefaults.standard.bool(forKey: "yd_reader_font_bold")

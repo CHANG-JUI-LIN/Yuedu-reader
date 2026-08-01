@@ -149,7 +149,8 @@ enum OnlineImageLoader {
                     src: uri,
                     svgContent: svg,
                     pointSize: pointSize,
-                    themeTextColor: .secondaryLabel
+                    themeTextColor: .secondaryLabel,
+                    recognizedBubble: recognized
                 ) ?? CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: pointSize, themeTextColor: .secondaryLabel)
             }
             // Render the book source's SVG exactly as authored (no native substitution) — all

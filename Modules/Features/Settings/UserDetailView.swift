@@ -96,7 +96,9 @@ struct UserDetailView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                .listRowBackground(Color.white)
+                // Keep the profile card in the same semantic surface as the other
+                // grouped rows so it follows Light/Dark appearance automatically.
+                .listRowBackground(DSColor.surface)
             }
 
             Section {

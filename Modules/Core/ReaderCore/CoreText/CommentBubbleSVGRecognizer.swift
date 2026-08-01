@@ -257,7 +257,8 @@ struct CommentBubbleSVGRecognizer {
         src: String,
         svgContent: String?,
         pointSize: CGFloat,
-        themeTextColor: UIColor
+        themeTextColor: UIColor,
+        recognizedBubble: CommentBubbleSVG? = nil
     ) -> UIImage? {
         let cacheKey = bubbleImageCacheKey(
             src: src, svgContent: svgContent, pointSize: pointSize, themeTextColor: themeTextColor
@@ -267,7 +268,11 @@ struct CommentBubbleSVGRecognizer {
             return cached
         }
         guard let image = computeResolvedBubbleImage(
-            src: src, svgContent: svgContent, pointSize: pointSize, themeTextColor: themeTextColor
+            src: src,
+            svgContent: svgContent,
+            pointSize: pointSize,
+            themeTextColor: themeTextColor,
+            sourceBubble: recognizedBubble
         ) else { return nil }
         bubbleImageCache.setObject(image, forKey: cacheKey)
         noteBubbleCache(hit: false)
@@ -306,9 +311,12 @@ struct CommentBubbleSVGRecognizer {
         src: String,
         svgContent: String?,
         pointSize: CGFloat,
-        themeTextColor: UIColor
+        themeTextColor: UIColor,
+        sourceBubble: CommentBubbleSVG? = nil
     ) -> UIImage? {
-        guard let sourceBubble = recognize(src: src, svgContent: svgContent) else { return nil }
+        guard let sourceBubble = sourceBubble ?? recognize(src: src, svgContent: svgContent) else {
+            return nil
+        }
         let settings = GlobalSettings.shared
         if settings.commentBubbleFollowsSourceSVG {
             return draw(svg: sourceBubble, pointSize: pointSize, themeTextColor: themeTextColor)

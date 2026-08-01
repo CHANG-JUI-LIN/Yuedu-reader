@@ -187,7 +187,10 @@ extension ReaderView {
                 }
             }
             Spacer()
-            if changeSourceFailedKeys.contains(ChangeSourceCache.urlKey(origin.bookUrl)) {
+            let originKey = ChangeSourceCache.originKey(
+                sourceId: origin.sourceId, bookUrl: origin.bookUrl)
+            if changeSourceFailedKeys.contains(originKey)
+                || changeSourceFailedKeys.contains(ChangeSourceCache.urlKey(origin.bookUrl)) {
                 Text(localized("載入失敗"))
                     .font(DSFont.caption2)
                     .foregroundColor(.red)
@@ -257,7 +260,8 @@ extension ReaderView {
                 }
             } catch {
                 await MainActor.run {
-                    readerViewModel.markOriginFailed(bookId: bookId, bookUrl: origin.bookUrl)
+                    readerViewModel.markOriginFailed(
+                        bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
                     readerViewModel.reportChangeSourceError(error.localizedDescription)
                 }
             }
