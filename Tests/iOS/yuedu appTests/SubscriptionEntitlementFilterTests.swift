@@ -4,24 +4,22 @@ import Testing
 
 @Suite("Subscription entitlement filtering")
 struct SubscriptionEntitlementFilterTests {
-    @Test("sandbox transactions require test mode or debug build")
+    @Test("sandbox transactions never count in release builds")
     func sandboxFiltering() {
         #expect(SubscriptionEntitlementFilter.shouldAccept(
             environment: .sandbox, allowSandbox: false, isDebugBuild: false) == false)
         #expect(SubscriptionEntitlementFilter.shouldAccept(
-            environment: .sandbox, allowSandbox: true, isDebugBuild: false) == true)
+            environment: .sandbox, allowSandbox: true, isDebugBuild: false) == false)
         #expect(SubscriptionEntitlementFilter.shouldAccept(
             environment: .sandbox, allowSandbox: false, isDebugBuild: true) == true)
     }
 
-    @Test("production and local environments always count")
+    @Test("production and xcode environments always count")
     func nonSandboxEnvironments() {
         #expect(SubscriptionEntitlementFilter.shouldAccept(
             environment: .production, allowSandbox: false, isDebugBuild: false) == true)
         #expect(SubscriptionEntitlementFilter.shouldAccept(
             environment: .xcode, allowSandbox: false, isDebugBuild: false) == true)
-        #expect(SubscriptionEntitlementFilter.shouldAccept(
-            environment: .localTesting, allowSandbox: false, isDebugBuild: false) == true)
     }
 
     @Test("sandbox toggle does not weaken production purchases")
