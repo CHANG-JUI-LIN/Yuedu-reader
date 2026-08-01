@@ -301,6 +301,10 @@
 "版本" = "Version";
 "狀態" = "Status";
 "申請已送出" = "Application submitted";
+"已申請過 TestFlight" = "TestFlight already requested";
+"申請已記錄" = "Application recorded";
+"每個郵箱只能申請一次；如果尚未收到邀請，請聯絡管理員。" = "Each email address can apply only once. If you have not received the invite, contact the administrator.";
+"申請已記錄，但邀請尚未完成，請聯絡管理員。" = "Your application was recorded, but the invite could not be completed. Contact the administrator.";
 "留空使用書籍頁 URL" = "Leave empty to use book page URL";
 "當前速度" = "Current Speed";
 "登入成功" = "Login Successful";

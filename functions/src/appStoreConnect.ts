@@ -35,7 +35,12 @@ export function signedRequestHeaders(
   };
   const signingInput = `${base64Url(JSON.stringify(header))}.${base64Url(JSON.stringify(payload))}`;
   const privateKey = createPrivateKey(Buffer.from(credentials.privateKeyBase64, "base64"));
-  const signature = createSign("SHA256").update(signingInput).sign(privateKey);
+  // App Store Connect expects the JOSE/IEEE-P1363 form (r || s), not the
+  // ASN.1 DER form Node uses by default for ECDSA signatures.
+  const signature = createSign("SHA256").update(signingInput).sign({
+    key: privateKey,
+    dsaEncoding: "ieee-p1363",
+  });
   return {Authorization: `Bearer ${signingInput}.${base64Url(signature)}`};
 }
 
@@ -58,26 +63,40 @@ export class AppStoreConnectClient {
 
   /** Idempotent: re-inviting an existing tester/group is a no-op link. */
   async invite(email: string): Promise<{testerId: string; groupId: string}> {
-    const testerId = await this.findBetaTesterByEmail(email)
-      ?? await this.createBetaTester(email);
+    const existingTesterId = await this.findBetaTesterByEmail(email);
     const groupId = await this.findBetaGroupByName(this.options.groupName)
       ?? await this.createBetaGroup(this.options.groupName);
-    await this.addTesterToGroup(testerId, groupId);
+
+    // Apple requires a betaGroups or builds relationship when creating a
+    // tester. Existing testers can be linked after the lookup, but new ones
+    // must receive the group relationship in the create request itself.
+    if (existingTesterId !== null) {
+      await this.addTesterToGroup(existingTesterId, groupId);
+      return {testerId: existingTesterId, groupId};
+    }
+
+    const testerId = await this.createBetaTester(email, groupId);
     return {testerId, groupId};
   }
 
   async findBetaTesterByEmail(email: string): Promise<string | null> {
     const response = await this.request(
-      `/betaTesters?filter[email]=${encodeURIComponent(email)}&fields[betaTesters]=id`
+      `/betaTesters?filter[email]=${encodeURIComponent(email)}`
     );
     const payload = await response.json() as {data?: Array<{id: string}>};
     return payload.data?.[0]?.id ?? null;
   }
 
-  async createBetaTester(email: string): Promise<string> {
+  async createBetaTester(email: string, groupId: string): Promise<string> {
     const response = await this.request("/betaTesters", {
       method: "POST",
-      body: JSON.stringify({data: {type: "betaTesters", attributes: {email}}}),
+      body: JSON.stringify({
+        data: {
+          type: "betaTesters",
+          attributes: {email},
+          relationships: {betaGroups: {data: [{type: "betaGroups", id: groupId}]}},
+        },
+      }),
     });
     const payload = await response.json() as {data: {id: string}};
     return payload.data.id;
@@ -85,7 +104,7 @@ export class AppStoreConnectClient {
 
   async findBetaGroupByName(name: string): Promise<string | null> {
     const response = await this.request(
-      `/betaGroups?filter[app]=${this.options.appId}&filter[name]=${encodeURIComponent(name)}&fields[betaGroups]=id`
+      `/betaGroups?filter[app]=${this.options.appId}&filter[name]=${encodeURIComponent(name)}`
     );
     const payload = await response.json() as {data?: Array<{id: string}>};
     return payload.data?.[0]?.id ?? null;

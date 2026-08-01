@@ -277,8 +277,8 @@ export const deleteSubscriptionAccountData = onCall({region}, async (request) =>
 
 /// Adds the tester to the App Store Connect beta group so Apple sends the
 /// invite email. Never throws: misconfiguration or API failure must not fail
-/// the user's application — the request stays recorded in Firestore with a
-/// "failed" status for the developer to retry or invite manually.
+/// the callable — the one-time request stays recorded in Firestore with a
+/// "failed" status for the developer to resolve manually.
 async function inviteTestFlightTester(email: string): Promise<string> {
   try {
     const client = new AppStoreConnectClient({
@@ -307,28 +307,26 @@ export const requestTestFlightAccess = onCall(
       throw new HttpsError("invalid-argument", "Invalid email address.");
     }
 
-    // One document per normalized address. Idempotent: a repeated request from
-    // the same mailbox returns alreadySubmitted instead of stacking invites.
+    // One document per normalized address. Claim the address transactionally so
+    // concurrent requests cannot both pass the one-time application gate.
     const reference = db.collection("testflightRequests").doc(email);
-    const snapshot = await reference.get();
-    if (snapshot.exists) {
-      const existing = snapshot.data() as TestFlightRequestDocument | undefined;
-      // A previous attempt that never reached App Store Connect is retried on
-      // the next application instead of silently dropping the invite.
-      if (existing?.status !== "invited") {
-        const status = await inviteTestFlightTester(email);
-        await reference.update({status, updatedAt: FieldValue.serverTimestamp()});
-        return {alreadySubmitted: true, status};
-      }
-      return {alreadySubmitted: true, status: existing?.status ?? "pending"};
-    }
-
     const data: TestFlightRequestDocument = {
       email,
       status: "pending",
       createdAt: FieldValue.serverTimestamp(),
     };
-    await reference.set(data);
+    const claim = await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(reference);
+      if (snapshot.exists) {
+        const existing = snapshot.data() as TestFlightRequestDocument | undefined;
+        return {accepted: false, status: existing?.status ?? "pending"};
+      }
+      transaction.create(reference, data);
+      return {accepted: true, status: "pending"};
+    });
+    if (!claim.accepted) {
+      return {alreadySubmitted: true, status: claim.status};
+    }
 
     const status = await inviteTestFlightTester(email);
     await reference.update({status, updatedAt: FieldValue.serverTimestamp()});

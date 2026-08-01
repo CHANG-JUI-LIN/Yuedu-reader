@@ -53,10 +53,11 @@ describe("App Store Connect client", () => {
     assert.equal(payload.exp - payload.iat, 1200);
 
     const publicKey = Buffer.from(credentials.publicKeyPem);
+    assert.equal(Buffer.from(signatureSegment, "base64url").length, 64);
     const valid = verify(
       "SHA256",
       Buffer.from(`${headerSegment}.${payloadSegment}`),
-      publicKey,
+      {key: publicKey, dsaEncoding: "ieee-p1363"},
       Buffer.from(signatureSegment, "base64url")
     );
     assert.equal(valid, true);
@@ -110,9 +111,6 @@ describe("App Store Connect client", () => {
       if (url.endsWith("/betaGroups")) {
         return jsonResponse({data: {id: "group-new"}}, 201);
       }
-      if (url.endsWith("/relationships/betaGroups")) {
-        return new Response(null, {status: 204});
-      }
       throw new Error(`unexpected ${method} ${url}`);
     });
 
@@ -125,12 +123,19 @@ describe("App Store Connect client", () => {
     const result = await client.invite("new@example.com");
 
     assert.deepEqual(result, {testerId: "tester-new", groupId: "group-new"});
-    const createTesterBody = JSON.parse(calls[1].body!);
-    assert.deepEqual(createTesterBody, {data: {type: "betaTesters", attributes: {email: "new@example.com"}}});
-    const createGroupBody = JSON.parse(calls[3].body!);
+    assert.deepEqual(calls.map((call) => call.method), ["GET", "GET", "POST", "POST"]);
+    const createGroupBody = JSON.parse(calls[2].body!);
     assert.equal(createGroupBody.data.type, "betaGroups");
     assert.equal(createGroupBody.data.attributes.name, "Yuedu 測試版");
     assert.equal(createGroupBody.data.relationships.app.data.id, "6772972358");
+    const createTesterBody = JSON.parse(calls[3].body!);
+    assert.deepEqual(createTesterBody, {
+      data: {
+        type: "betaTesters",
+        attributes: {email: "new@example.com"},
+        relationships: {betaGroups: {data: [{type: "betaGroups", id: "group-new"}]}},
+      },
+    });
   });
 
   it("throws with the API error detail on a failed response", async () => {
