@@ -1093,6 +1093,15 @@
 "單獨設定深色主題" = "Separate Dark Theme";
 "綁定閱讀主題" = "Bind Reading Theme";
 "關閉時，切換此外觀主題不會影響閱讀主題。" = "When off, changing this appearance theme will not affect the reading theme.";
+"閱讀器會依系統的淺色／深色，自動套用下面選的閱讀主題。" = "The reader applies the reading themes chosen below, following the system's light or dark appearance.";
+"淺色閱讀主題" = "Light Reading Theme";
+"黑色閱讀主題" = "Dark Reading Theme";
+"跟隨外觀主題" = "Follow Appearance Theme";
+"主題外觀" = "Theme Appearance";
+"主題切換" = "Theme Switching";
+"自動深色配色" = "Automatic Dark Colors";
+"關閉後可單獨指定這個主題的深色配色。" = "Turn off to give this theme its own dark colors.";
+"深色分頁會以深色主題預覽整個介面，選的是同一批主題的深色版本。" = "The Dark tab previews the whole interface in dark and picks the dark version of the same themes.";
 "閱讀界面" = "Reader Interface";
 "經典" = "Classic";
 "簡潔" = "Compact";

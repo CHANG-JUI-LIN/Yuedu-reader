@@ -35,9 +35,10 @@ struct ContentView: View {
     }
 
     /// The theme whose surface colors should retint the whole app, or nil for
-    /// system colors. Presets are light palettes, so surfaces only retint in
-    /// light appearance; dark mode keeps clean system colors (accent still
-    /// applies). Classic = no override.
+    /// system colors. Both appearances retint: `appearanceTheme(for:)` hands back
+    /// the theme's light palette in light mode and its derived dark palette in
+    /// dark mode, so dark mode is the theme's dark version rather than plain
+    /// system black. Classic = no override.
     ///
     /// > **Optimistic Pro theme.** On cold launch StoreKit entitlements are
     /// > still loading, so `subscriptionStore.hasAccess(.readerThemePacks)`
@@ -49,7 +50,6 @@ struct ContentView: View {
     /// > not to be Pro, the theme downgrades on the next render pass (~1
     /// > frame), which is imperceptible compared to the 500ms–2s flash.
     private var resolvedAppTheme: AppearanceThemePreset? {
-        guard colorScheme == .light else { return nil }
         let theme = gs.appearanceTheme(
             for: colorScheme,
             isProActive: subscriptionStore.hasAccess(.readerThemePacks)
@@ -62,7 +62,7 @@ struct ContentView: View {
             if let intended = AppearanceThemePreset.preset(
                 id: selectedID, customThemes: gs.customAppearanceThemes
             ), !intended.isClassic, intended.requiresPro {
-                return intended
+                return intended.palette(for: colorScheme)
             }
         }
         return theme.isClassic ? nil : theme
@@ -251,21 +251,28 @@ private struct ThemedSurfaceBackground: ViewModifier {
         return gs.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme)
     }
 
+    /// One structure for every state, on purpose.
+    ///
+    /// An `if/else` over `content` here returns a different branch of
+    /// `_ConditionalContent` per state, which gives the tab's whole subtree a new
+    /// identity the moment the state flips — and SwiftUI rebuilds a subtree whose
+    /// identity changed. That is what popped every pushed screen back to the tab
+    /// root ("閃回設定頁") whenever the theme moved between 默認 (no override) and
+    /// any real theme, or a page background appeared. Keep `content` wrapped in
+    /// exactly one `.background`; branch *inside* it, where an identity change
+    /// only costs a redraw of the backdrop.
     func body(content: Content) -> some View {
-        if let slice = pageBackgroundSlice {
-            content
-                .background {
-                    ZStack {
-                        DSColor.groupedBackground
-                        AppearancePageBackgroundLayerView(slice: slice)
-                    }
-                    .ignoresSafeArea()
+        let slice = pageBackgroundSlice
+        return content.background {
+            ZStack {
+                if themeActive || slice != nil {
+                    DSColor.groupedBackground
                 }
-        } else if themeActive {
-            content
-                .background(DSColor.groupedBackground.ignoresSafeArea())
-        } else {
-            content
+                if let slice {
+                    AppearancePageBackgroundLayerView(slice: slice)
+                }
+            }
+            .ignoresSafeArea()
         }
     }
 }

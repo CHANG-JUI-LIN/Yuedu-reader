@@ -112,29 +112,25 @@ private struct ThemedAppSurfaceModifier: ViewModifier {
         return gs.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme)
     }
 
+    /// Single structure for every state — branching over `content` would change
+    /// the modified view's identity when a page background appears or vanishes,
+    /// and SwiftUI rebuilds what changed identity, dropping its `@State` and any
+    /// screen it had pushed. Branch inside `.background` instead.
+    /// (The two theme-less branches this replaced were already byte-identical.)
     func body(content: Content) -> some View {
-        if let slice {
-            content
-                .scrollContentBackground(.hidden)
-                .background {
-                    ZStack {
-                        DSColor.groupedBackground
+        let slice = slice
+        return content
+            .scrollContentBackground(.hidden)
+            .background {
+                ZStack {
+                    DSColor.groupedBackground
+                    if let slice {
                         AppearancePageBackgroundLayerView(slice: slice)
                     }
-                    .ignoresSafeArea()
                 }
-                .toolbarBackground(.hidden, for: .navigationBar)
-        } else if AppearanceThemePreset.activeAppTheme != nil {
-            content
-                .scrollContentBackground(.hidden)
-                .background(DSColor.groupedBackground.ignoresSafeArea())
-                .toolbarBackground(.hidden, for: .navigationBar)
-        } else {
-            content
-                .scrollContentBackground(.hidden)
-                .background(DSColor.groupedBackground.ignoresSafeArea())
-                .toolbarBackground(.hidden, for: .navigationBar)
-        }
+                .ignoresSafeArea()
+            }
+            .toolbarBackground(.hidden, for: .navigationBar)
     }
 }
 
@@ -155,12 +151,13 @@ private struct PageBackgroundToolbarModifier: ViewModifier {
         return AppearanceThemePreset.activeAppTheme != nil
     }
 
+    /// Always the same modifier, only its visibility changes (`.automatic` is
+    /// the default bar background, i.e. what "not applied" looked like). An
+    /// `if/else` here re-identified the whole screen whenever the theme moved
+    /// between 默認 and a real theme: 外觀主題 uses this modifier, so switching
+    /// themes from it reset its own `@State` and popped it back to 設定.
     func body(content: Content) -> some View {
-        if hasBackground {
-            content.toolbarBackground(.hidden, for: .navigationBar)
-        } else {
-            content
-        }
+        content.toolbarBackground(hasBackground ? .hidden : .automatic, for: .navigationBar)
     }
 }
 

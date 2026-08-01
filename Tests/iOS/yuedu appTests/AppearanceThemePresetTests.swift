@@ -4,9 +4,9 @@ import UIKit
 
 @Suite("Appearance theme presets", .serialized)
 struct AppearanceThemePresetTests {
-    @Test("image reader backgrounds keep chrome transparent")
+    @Test("image reader backgrounds keep the white chrome")
     @MainActor
-    func imageReaderBackgroundKeepsChromeTransparent() {
+    func imageReaderBackgroundKeepsWhiteChrome() {
         let settings = GlobalSettings.shared
         let savedMode = settings.readerCustomBackgroundMode
         let savedFileName = settings.readerCustomBackgroundImageFileName
@@ -18,8 +18,8 @@ struct AppearanceThemePresetTests {
         settings.readerCustomBackgroundMode = .image
         settings.readerCustomBackgroundImageFileName = "reader-background-test.jpg"
 
-        let barAlpha = settings.readerCustomBackgroundPreset?.bar.cgColor.alpha
-        #expect(barAlpha == 0)
+        let barColor = settings.readerCustomBackgroundPreset?.bar
+        #expect(barColor?.rgbHex == UIColor.white.rgbHex)
     }
 
     @Test("free users get classic plus six built-in appearance themes")

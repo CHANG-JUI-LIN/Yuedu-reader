@@ -1,6 +1,12 @@
 import Foundation
 import UIKit
 
+struct ResolvedFontRequest: Hashable {
+    let family: String
+    let weight: Int
+    let italic: Bool
+}
+
 enum HTMLStyledASTRenderableNodeConverter {
     enum WhitespacePolicy: Equatable {
         /// CSS-like inline flow used by EPUB: preserve authored inline separators (including
@@ -38,6 +44,42 @@ enum HTMLStyledASTRenderableNodeConverter {
             options: .regularExpression
         )
         return collapsed.replacingOccurrences(of: "\u{00A0}", with: " ")
+    }
+
+    /// Returns only the font families that survived CSS cascade matching for this chapter.
+    /// `@font-face` descriptors can then be loaded on demand instead of eagerly reading every
+    /// embedded font declared by a publication-wide stylesheet.
+    static func referencedFonts(
+        in body: HTMLAttributedStringBuilder.ElementNode
+    ) -> Set<ResolvedFontRequest> {
+        var result: Set<ResolvedFontRequest> = []
+
+        func collect(_ style: HTMLAttributedStringBuilder.ResolvedStyle) {
+            result.formUnion(style.fontFamilies.map {
+                ResolvedFontRequest(
+                    family: $0,
+                    weight: style.fontWeight,
+                    italic: style.isItalic
+                )
+            })
+        }
+
+        collect(body.resolvedStyle)
+
+        func collect(_ node: HTMLAttributedStringBuilder.ASTNode) {
+            switch node {
+            case .text, .pageBreak:
+                break
+            case .lineBreak(let lineBreak):
+                collect(lineBreak.resolvedStyle)
+            case .element(let element):
+                collect(element.resolvedStyle)
+                element.children.forEach(collect)
+            }
+        }
+
+        body.children.forEach(collect)
+        return result
     }
 
     /// Maps a child list to renderable nodes, applying CSS-style whitespace processing:

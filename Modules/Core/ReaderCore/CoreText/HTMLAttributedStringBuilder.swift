@@ -450,14 +450,19 @@ final class HTMLAttributedStringBuilder {
     }()
 
 
-    func buildStyledAST(html: String, config: Config) async -> ElementNode? {
+    func buildStyledAST(
+        html: String,
+        config: Config,
+        stylesheetCache: HTMLStylesheetCache? = nil
+    ) async -> ElementNode? {
         epubFlowLog("buildStyledAST.begin htmlLen=\(html.count) configWritingMode=\(config.writingMode) fontSize=\(config.fontSize) renderWidth=\(config.renderWidth)")
         let sanitizedHTML = cleanDirtySpacesInHTML(html)
         guard let parsed = await domParser.parse(
             html: sanitizedHTML,
             collectStyles: { document in
                 await self.collectStyles(from: document)
-            }
+            },
+            stylesheetCache: stylesheetCache
         ) else {
             return nil
         }

@@ -157,8 +157,14 @@ enum ReaderTheme: String, CaseIterable {
         self != .night
     }
 
+    /// 黑色 is a "force dark" reading background: a light palette must not repaint
+    /// it, which is what keeps a custom background (or a bound light theme) from
+    /// bleeding into night mode. A *dark* palette is itself the dark look — the
+    /// dark version of the bound appearance theme — so it is allowed through.
     private var activeAppearancePreset: AppearanceThemePreset? {
-        self == .night ? nil : AppearanceThemePreset.activeReaderTheme
+        guard let preset = AppearanceThemePreset.activeReaderTheme else { return nil }
+        guard self != .night || preset.isDarkAppearancePalette else { return nil }
+        return preset
     }
 
     var uiBackgroundColor: UIColor {
@@ -224,6 +230,66 @@ enum ReaderTheme: String, CaseIterable {
         case .green: return "green"
         case .sepia: return "sepia"
         case .night: return "night"
+        }
+    }
+}
+
+/// What paints the reader for one system appearance while 綁定閱讀主題 is on.
+/// The user picks one of these per appearance (淺色閱讀主題 / 黑色閱讀主題), which
+/// is the whole content of the binding: light appearance applies the light pick,
+/// dark appearance applies the dark pick.
+enum ReaderBoundTheme: Hashable, Identifiable {
+    /// Paint the reader with the app appearance theme itself — its light palette
+    /// in light appearance, its dark palette in dark appearance.
+    case followAppearanceTheme
+    /// Paint the reader with one of its own reading backgrounds.
+    case reading(ReaderTheme)
+
+    /// Menu order: the follow entry first, then the reading backgrounds from
+    /// lightest to darkest (`ReaderTheme.allCases` starts at 夜間, which reads
+    /// wrong at the top of a list).
+    static let menuOptions: [ReaderBoundTheme] = [
+        .followAppearanceTheme,
+        .reading(.white),
+        .reading(.green),
+        .reading(.sepia),
+        .reading(.night),
+    ]
+
+    private static let followStorageValue = "follow_appearance"
+
+    var id: String { storageValue }
+
+    var storageValue: String {
+        switch self {
+        case .followAppearanceTheme: return Self.followStorageValue
+        case .reading(let theme): return theme.rawValue
+        }
+    }
+
+    init(storageValue: String) {
+        if let theme = ReaderTheme(rawValue: storageValue) {
+            self = .reading(theme)
+        } else {
+            self = .followAppearanceTheme
+        }
+    }
+
+    var localizedTitle: String {
+        switch self {
+        case .followAppearanceTheme: return localized("跟隨外觀主題")
+        case .reading(let theme): return theme.localizedTitle
+        }
+    }
+
+    /// The reading background the reader sits on for this choice. 跟隨外觀主題 keeps
+    /// the reader on its natural background for the appearance — which matters
+    /// because the reader toolbars read `.night` to pick their own color scheme —
+    /// and lets the appearance palette repaint it.
+    func resolvedReaderTheme(for appearance: ColorScheme) -> ReaderTheme {
+        switch self {
+        case .followAppearanceTheme: return ReaderTheme.forSystem(dark: appearance == .dark)
+        case .reading(let theme): return theme
         }
     }
 }
@@ -422,6 +488,8 @@ class GlobalSettings: ObservableObject {
     private static let appearanceDarkThemeIDKey = "yd_appearance_dark_theme_id"
     private static let appearanceSeparateDarkThemeKey = "yd_appearance_separate_dark_theme"
     private static let appearanceBindReaderThemeKey = "yd_appearance_bind_reader_theme"
+    private static let appearanceBoundLightReaderThemeKey = "yd_appearance_bound_light_reader_theme"
+    private static let appearanceBoundDarkReaderThemeKey = "yd_appearance_bound_dark_reader_theme"
     private static let appearanceReaderInterfaceKey = "yd_appearance_reader_interface"
     private static let interfaceGlowIntensityKey = "yd_interface_glow_intensity"
     private static let interfaceFrostedGlassKey = "yd_interface_frosted_glass"
@@ -847,7 +915,34 @@ class GlobalSettings: ObservableObject {
         didSet { UserDefaults.standard.set(appearanceUsesSeparateDarkTheme, forKey: Self.appearanceSeparateDarkThemeKey) }
     }
     @Published var appearanceBindReaderTheme: Bool {
-        didSet { UserDefaults.standard.set(appearanceBindReaderTheme, forKey: Self.appearanceBindReaderThemeKey) }
+        didSet {
+            UserDefaults.standard.set(appearanceBindReaderTheme, forKey: Self.appearanceBindReaderThemeKey)
+            // 綁定 owns the appearance → reading-theme mapping once it is on,
+            // including the light/dark split. Leaving 跟隨系統 on would make two
+            // writers of `ReaderConfig.theme` that disagree whenever the user
+            // maps an appearance to something other than the system default.
+            if appearanceBindReaderTheme { readerFollowSystemTheme = false }
+        }
+    }
+    /// Reading theme applied while 綁定閱讀主題 is on and the system is in light
+    /// appearance. Stored as `ReaderBoundTheme.storageValue`.
+    @Published var appearanceBoundLightReaderTheme: String {
+        didSet {
+            UserDefaults.standard.set(
+                appearanceBoundLightReaderTheme,
+                forKey: Self.appearanceBoundLightReaderThemeKey
+            )
+        }
+    }
+    /// Reading theme applied while 綁定閱讀主題 is on and the system is in dark
+    /// appearance. Stored as `ReaderBoundTheme.storageValue`.
+    @Published var appearanceBoundDarkReaderTheme: String {
+        didSet {
+            UserDefaults.standard.set(
+                appearanceBoundDarkReaderTheme,
+                forKey: Self.appearanceBoundDarkReaderThemeKey
+            )
+        }
     }
 
     // MARK: - Launch Image (App Splash)
@@ -1387,6 +1482,14 @@ class GlobalSettings: ObservableObject {
             ?? Self.defaultAppearanceThemeID
         appearanceUsesSeparateDarkTheme = UserDefaults.standard.bool(forKey: Self.appearanceSeparateDarkThemeKey)
         appearanceBindReaderTheme = UserDefaults.standard.bool(forKey: Self.appearanceBindReaderThemeKey)
+        // Defaults reproduce what binding did before it was configurable: the
+        // appearance theme paints the reader in light mode, dark mode is 黑色.
+        appearanceBoundLightReaderTheme =
+            UserDefaults.standard.string(forKey: Self.appearanceBoundLightReaderThemeKey)
+            ?? ReaderBoundTheme.followAppearanceTheme.storageValue
+        appearanceBoundDarkReaderTheme =
+            UserDefaults.standard.string(forKey: Self.appearanceBoundDarkReaderThemeKey)
+            ?? ReaderBoundTheme.reading(.night).storageValue
         launchImageEnabled = UserDefaults.standard.bool(forKey: Self.launchImageEnabledKey)
         launchImageLightFileName = UserDefaults.standard.string(forKey: Self.launchImageLightFileNameKey)
         launchImageDarkFileName = UserDefaults.standard.string(forKey: Self.launchImageDarkFileNameKey)
@@ -1701,7 +1804,20 @@ class GlobalSettings: ObservableObject {
         return appearanceThemeID
     }
 
+    /// The theme in effect for `colorScheme`, already resolved to that
+    /// appearance's palette — the light colors in light appearance, the derived
+    /// dark colors in dark appearance.
     func appearanceTheme(
+        for colorScheme: ColorScheme,
+        isProActive: Bool
+    ) -> AppearanceThemePreset {
+        appearanceBaseTheme(for: colorScheme, isProActive: isProActive).palette(for: colorScheme)
+    }
+
+    /// Same resolution as `appearanceTheme(for:isProActive:)` but without the
+    /// light/dark palette step — the theme's *identity*. Use it when comparing
+    /// against a preset id (selection state) rather than drawing with it.
+    func appearanceBaseTheme(
         for colorScheme: ColorScheme,
         isProActive: Bool
     ) -> AppearanceThemePreset {
@@ -1716,25 +1832,46 @@ class GlobalSettings: ObservableObject {
         ) ?? AppearanceThemePreset.freeSolidPresets[0]
     }
 
-    func setAppearanceTheme(_ preset: AppearanceThemePreset, for colorScheme: ColorScheme) {
-        if appearanceUsesSeparateDarkTheme, colorScheme == .dark {
-            appearanceDarkThemeID = preset.id
-        } else {
-            appearanceThemeID = preset.id
-        }
+    /// Selects `preset` for one appearance slot.
+    ///
+    /// - Parameters:
+    ///   - slot: which slot the pick belongs to. With 單獨設定深色主題 off there is
+    ///     only one slot, so anything but an explicit dark pick lands on it.
+    ///   - activeAppearance: the appearance actually on screen. It can differ
+    ///     from `slot` — the 淺色／深色 picker in 外觀主題 edits the dark slot while
+    ///     the device is still in light mode — and only a change to the slot in
+    ///     use may retint the running app.
+    func setAppearanceTheme(
+        _ preset: AppearanceThemePreset,
+        for slot: ColorScheme,
+        activeAppearance: ColorScheme
+    ) {
+        selectAppearanceTheme(id: preset.id, for: slot)
         applyPageBackgroundsFromCustomTheme(id: preset.id)
+        guard slot == activeAppearance else { return }
         // Sync the DSColor-facing global in the same turn as the selection.
         // `activeAppTheme` is otherwise refreshed only in ContentView.body, which
         // SwiftUI may run *after* re-rendering the themed screen that triggered
         // this — so surfaces would read last frame's theme and only catch up on
         // the next tap (the "switch takes two taps" bug). Matches ContentView's
-        // resolvedAppTheme rule: presets retint only in light appearance.
-        AppearanceThemePreset.activeAppTheme =
-            (colorScheme == .light && !preset.isClassic) ? preset : nil
+        // resolvedAppTheme rule: classic (默認) means no override.
+        let active = preset.palette(for: activeAppearance)
+        AppearanceThemePreset.activeAppTheme = active.isClassic ? nil : active
+    }
+
+    private func selectAppearanceTheme(id: String, for slot: ColorScheme) {
+        if appearanceUsesSeparateDarkTheme, slot == .dark {
+            appearanceDarkThemeID = id
+        } else {
+            appearanceThemeID = id
+        }
     }
 
     @discardableResult
-    func createCustomAppearanceTheme(from preset: AppearanceThemePreset) -> AppearanceCustomTheme {
+    func createCustomAppearanceTheme(
+        from preset: AppearanceThemePreset,
+        for slot: ColorScheme = .light
+    ) -> AppearanceCustomTheme {
         var custom = preset.customCopy(name: localized("自訂主題"))
         var index = 1
         let existingNames = Set(customAppearanceThemes.map(\.name))
@@ -1743,8 +1880,26 @@ class GlobalSettings: ObservableObject {
             custom.name = localized("自訂主題") + " \(index)"
         }
         customAppearanceThemes.append(custom)
-        appearanceThemeID = custom.id
+        selectAppearanceTheme(id: custom.id, for: slot)
         return custom
+    }
+
+    // MARK: - 綁定閱讀主題 (appearance → reading theme)
+
+    func boundReaderTheme(for appearance: ColorScheme) -> ReaderBoundTheme {
+        ReaderBoundTheme(
+            storageValue: appearance == .dark
+                ? appearanceBoundDarkReaderTheme
+                : appearanceBoundLightReaderTheme
+        )
+    }
+
+    func setBoundReaderTheme(_ choice: ReaderBoundTheme, for appearance: ColorScheme) {
+        if appearance == .dark {
+            appearanceBoundDarkReaderTheme = choice.storageValue
+        } else {
+            appearanceBoundLightReaderTheme = choice.storageValue
+        }
     }
 
     /// Deletes a custom theme. Any selection (light or dark slot) pointing at
@@ -1917,7 +2072,8 @@ class GlobalSettings: ObservableObject {
     @discardableResult
     func saveCurrentAppearanceAsTheme(
         named name: String,
-        basedOn preset: AppearanceThemePreset
+        basedOn preset: AppearanceThemePreset,
+        for slot: ColorScheme = .light
     ) -> AppearanceCustomTheme {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         var custom = preset.customCopy(
@@ -1925,7 +2081,7 @@ class GlobalSettings: ObservableObject {
         )
         custom.pageBackgrounds = duplicatedPageBackgrounds(appearancePageBackgrounds)
         customAppearanceThemes.append(custom)
-        appearanceThemeID = custom.id
+        selectAppearanceTheme(id: custom.id, for: slot)
         return custom
     }
 
@@ -1967,6 +2123,10 @@ class GlobalSettings: ObservableObject {
                 darkImageOpacity: config.darkImageOpacity
             )
         }
+        // Exports the theme's light colors plus, only if the user authored one,
+        // its dark palette. A derived dark version is left out so the importing
+        // install derives it with its own rules.
+        let dark = preset.authoredDarkColors?.stored
         return AppearanceThemeExportFile(
             format: AppearanceThemeExportFile.formatIdentifier,
             version: 1,
@@ -1976,7 +2136,12 @@ class GlobalSettings: ObservableObject {
             barHex: preset.bar.rgbHex ?? 0xFFFFFF,
             accentHex: preset.accent.rgbHex ?? 0x007AFF,
             dialogueHex: preset.dialogue.rgbHex ?? 0xD8E9FB,
-            pageBackgrounds: payloads.isEmpty ? nil : payloads
+            pageBackgrounds: payloads.isEmpty ? nil : payloads,
+            darkBackgroundHex: dark?.backgroundHex,
+            darkTextHex: dark?.textHex,
+            darkBarHex: dark?.barHex,
+            darkAccentHex: dark?.accentHex,
+            darkDialogueHex: dark?.dialogueHex
         )
     }
 
@@ -2029,7 +2194,8 @@ class GlobalSettings: ObservableObject {
             barHex: file.barHex,
             accentHex: file.accentHex,
             dialogueHex: file.dialogueHex,
-            pageBackgrounds: payloadConfigs.isEmpty ? nil : payloadConfigs
+            pageBackgrounds: payloadConfigs.isEmpty ? nil : payloadConfigs,
+            dark: file.darkColors
         )
         customAppearanceThemes.append(custom)
         appearanceThemeID = custom.id

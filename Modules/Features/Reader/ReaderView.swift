@@ -229,8 +229,11 @@ struct ReaderView: View {
     /// When "follow system" theme is on, align the reader theme with the current
     /// system light/dark appearance. Setting `readerConfig.theme` triggers the
     /// `.appearance` refresh through `ReaderConfig`'s binding, so pages recolor.
+    ///
+    /// 綁定閱讀主題 supersedes this: it maps each appearance to a theme the user
+    /// chose, so `syncActiveThemePreset` is the single writer while it is on.
     func applyFollowSystemThemeIfNeeded() {
-        guard settings.readerFollowSystemTheme else { return }
+        guard settings.readerFollowSystemTheme, !settings.appearanceBindReaderTheme else { return }
         let desired = ReaderTheme.forSystem(dark: systemColorScheme == .dark)
         if readerConfig.theme != desired {
             readerConfig.theme = desired
@@ -238,21 +241,37 @@ struct ReaderView: View {
     }
 
     /// Applies the selected app appearance theme to the reader only when the
-    /// user explicitly enables "bind reading theme" in Settings.
+    /// user explicitly enables "bind reading theme" in Settings. While bound, the
+    /// reader follows the system appearance through the user's 淺色閱讀主題 /
+    /// 黑色閱讀主題 picks: 跟隨外觀主題 repaints the reader with the appearance
+    /// theme's palette, any other pick switches to that reading background.
     func syncActiveThemePreset() {
-        let preset: AppearanceThemePreset?
+        var preset: AppearanceThemePreset?
+        var boundTheme: ReaderTheme?
         if let customBackgroundPreset = settings.readerCustomBackgroundPreset {
             preset = customBackgroundPreset
         } else if settings.appearanceBindReaderTheme {
-            preset = settings.appearanceTheme(
-                for: systemColorScheme,
-                isProActive: subscriptionStore.hasAccess(.readerThemePacks)
-            )
-        } else {
-            preset = nil
+            let choice = settings.boundReaderTheme(for: systemColorScheme)
+            boundTheme = choice.resolvedReaderTheme(for: systemColorScheme)
+            if case .followAppearanceTheme = choice {
+                preset = settings.appearanceTheme(
+                    for: systemColorScheme,
+                    isProActive: subscriptionStore.hasAccess(.readerThemePacks)
+                )
+            }
         }
-        guard AppearanceThemePreset.activeReaderTheme != preset else { return }
-        AppearanceThemePreset.activeReaderTheme = preset
+
+        // Order matters: `ReaderConfig.$theme` publishes on willSet, so the
+        // refresh it fires must already see the new preset.
+        let presetChanged = AppearanceThemePreset.activeReaderTheme != preset
+        if presetChanged {
+            AppearanceThemePreset.activeReaderTheme = preset
+        }
+        if let boundTheme, readerConfig.theme != boundTheme {
+            readerConfig.theme = boundTheme
+            return
+        }
+        guard presetChanged else { return }
         readerConfig.refresh.send(.appearance)
     }
 
@@ -1669,6 +1688,12 @@ struct ReaderView: View {
             syncActiveThemePreset()
         }
         .onChanged(of: settings.appearanceBindReaderTheme) { _ in
+            syncActiveThemePreset()
+        }
+        .onChanged(of: settings.appearanceBoundLightReaderTheme) { _ in
+            syncActiveThemePreset()
+        }
+        .onChanged(of: settings.appearanceBoundDarkReaderTheme) { _ in
             syncActiveThemePreset()
         }
         .onChanged(of: settings.readerCustomBackgroundMode) { _ in

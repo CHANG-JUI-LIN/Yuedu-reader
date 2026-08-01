@@ -36,6 +36,10 @@ struct AppearanceThemeView: View {
     @State private var showThemeImporter = false
     @State private var showResetPageBackgroundConfirm = false
     @State private var pageBackgroundAlertMessage: String?
+    /// Appearance slot the theme grid edits, once the user picks one by hand.
+    /// nil means "whatever the device is showing", which is also the only
+    /// behaviour available while 單獨設定深色主題 is off.
+    @State private var themeSlot: ColorScheme?
 
     private static let backgroundImageContentTypes: [UTType] = [
         UTType(filenameExtension: "webp") ?? .data,
@@ -44,11 +48,40 @@ struct AppearanceThemeView: View {
         .png,
     ]
 
+    /// Appearance the theme grid is editing: the slot picked above the grid when
+    /// 單獨設定深色主題 is on, otherwise whatever the device is showing.
+    private var editingScheme: ColorScheme {
+        guard settings.appearanceUsesSeparateDarkTheme else { return colorScheme }
+        return themeSlot ?? colorScheme
+    }
+
+    /// Theme selected in the edited slot, as its *identity* — the grid compares
+    /// ids and the 新建 / 保存 actions copy from it, so it must not be swapped for
+    /// a derived dark palette here.
     private var selectedTheme: AppearanceThemePreset {
+        settings.appearanceBaseTheme(
+            for: editingScheme,
+            isProActive: subscriptionStore.hasAccess(.readerThemePacks)
+        )
+    }
+
+    /// Theme painting the app right now. Drives this screen's own tint.
+    private var activeTheme: AppearanceThemePreset {
         settings.appearanceTheme(
             for: colorScheme,
             isProActive: subscriptionStore.hasAccess(.readerThemePacks)
         )
+    }
+
+    /// Appearance forced on the app while a slot is being edited by hand, so the
+    /// 深色 tab shows the dark theme *in place* — picking colors you cannot see is
+    /// not a review. Flipping the window's scheme is what makes `colorScheme`
+    /// (and with it `activeAppTheme`, every DSColor surface, and this screen's
+    /// own tint) resolve to the edited appearance. nil = follow the device, which
+    /// is also the only state reachable while 單獨設定深色主題 is off.
+    private var previewedAppearance: ColorScheme? {
+        guard settings.appearanceUsesSeparateDarkTheme else { return nil }
+        return themeSlot
     }
 
     private var customThemes: [AppearanceThemePreset] {
@@ -98,14 +131,20 @@ struct AppearanceThemeView: View {
         .font(DSFont.body)
         .navigationTitle(localized("外觀主題"))
         .toolbarTitleDisplayMode(.inline)
-        .tint(selectedTheme.isClassic ? nil : selectedTheme.accentColor)
+        .tint(activeTheme.isClassic ? nil : activeTheme.accentColor)
+        .preferredColorScheme(previewedAppearance)
         .sheet(isPresented: $showPaywall) {
             PaywallView()
                 .environmentObject(subscriptionStore)
         }
         .navigationDestination(isPresented: $showCustomizer) {
             if let editingCustomThemeID {
-                AppearanceThemeCustomizationView(themeID: editingCustomThemeID)
+                // Opens on the appearance you were editing, so a theme opened
+                // from the 深色 tab lands on its dark colors.
+                AppearanceThemeCustomizationView(
+                    themeID: editingCustomThemeID,
+                    initialScheme: editingScheme
+                )
             }
         }
         .navigationDestination(isPresented: $showLaunchImageSettings) {
@@ -202,6 +241,9 @@ struct AppearanceThemeView: View {
 
     private var themeSelectionCard: some View {
         VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            if settings.appearanceUsesSeparateDarkTheme {
+                themeSlotPicker
+            }
             LazyVGrid(columns: gridColumns, spacing: DSSpacing.lg) {
                 themeOption(AppearanceThemePreset.classic)
                 ForEach(AppearanceThemePreset.freeSolidPresets) { preset in
@@ -230,6 +272,32 @@ struct AppearanceThemeView: View {
         }
         .padding(DSSpacing.lg)
         .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .animation(DSAnimation.standard, value: settings.appearanceUsesSeparateDarkTheme)
+    }
+
+    /// Chooses which appearance the grid below is picking a theme for, and flips
+    /// the app into it (see `previewedAppearance`) so the pick can be judged
+    /// against the real thing. 深色 shows each theme's dark version, not one black
+    /// theme.
+    private var themeSlotPicker: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            Picker(
+                localized("主題外觀"),
+                selection: Binding(
+                    get: { editingScheme },
+                    set: { themeSlot = $0 }
+                )
+            ) {
+                Text(localized("淺色")).tag(ColorScheme.light)
+                Text(localized("深色")).tag(ColorScheme.dark)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel(localized("主題外觀"))
+
+            Text(localized("深色分頁會以深色主題預覽整個介面，選的是同一批主題的深色版本。"))
+                .font(DSFont.caption)
+                .foregroundStyle(DSColor.textSecondary)
+        }
     }
 
     private func themeGroupTitle(_ title: String) -> some View {
@@ -243,6 +311,9 @@ struct AppearanceThemeView: View {
         let locked = preset.requiresPro && !subscriptionStore.hasAccess(.readerThemePacks)
         // Ring marks the theme actually in effect (not a stored-but-locked pick).
         let selected = selectedTheme.id == preset.id
+        // Preview in the appearance being edited: the dark slot shows this
+        // theme's dark palette, which is what selecting it will apply.
+        let displayed = preset.palette(for: editingScheme)
         return Button {
             guard !locked else {
                 showPaywall = true
@@ -254,14 +325,18 @@ struct AppearanceThemeView: View {
                 showCustomizer = true
                 return
             }
-            settings.setAppearanceTheme(preset, for: colorScheme)
+            settings.setAppearanceTheme(
+                preset,
+                for: editingScheme,
+                activeAppearance: colorScheme
+            )
         } label: {
             VStack(spacing: DSSpacing.sm) {
                 ThemePreviewTile(
-                    preset: preset,
+                    preset: displayed,
                     isSelected: selected,
                     isLocked: locked,
-                    colorScheme: colorScheme
+                    colorScheme: editingScheme
                 )
                 Text(preset.localizedName)
                     .font(DSFont.caption)
@@ -299,7 +374,13 @@ struct AppearanceThemeView: View {
                 showPaywall = true
                 return
             }
-            let custom = settings.createCustomAppearanceTheme(from: selectedTheme)
+            // Copies the whole theme — both appearances — and lands in the slot
+            // being edited, so creating from the 深色 tab does not silently
+            // replace the light selection.
+            let custom = settings.createCustomAppearanceTheme(
+                from: selectedTheme,
+                for: editingScheme
+            )
             editingCustomThemeID = custom.id
             showCustomizer = true
         } label: {
@@ -309,7 +390,7 @@ struct AppearanceThemeView: View {
                         .fill(DSColor.textSecondary.opacity(0.2))
                     Image(systemName: subscriptionStore.hasAccess(.readerThemePacks) ? "plus" : "lock.fill")
                         .font(DSFont.fixed(size: 24, weight: .semibold))
-                        .foregroundStyle(selectedTheme.accentColor)
+                        .foregroundStyle(selectedTheme.palette(for: editingScheme).accentColor)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 58)
@@ -325,27 +406,92 @@ struct AppearanceThemeView: View {
         .accessibilityLabel(localized("新建"))
     }
 
+    /// 主題切換 — the two switches that decide *which* theme applies when, kept
+    /// in one card so 單獨設定深色主題 and 綁定閱讀主題 read as the pair they are.
     private var togglesSection: some View {
-        VStack(spacing: DSSpacing.lg) {
-            settingsToggle(
-                title: localized("單獨設定深色主題"),
-                isOn: $settings.appearanceUsesSeparateDarkTheme
-            )
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            sectionHeader(localized("主題切換"))
 
             VStack(alignment: .leading, spacing: DSSpacing.sm) {
-                settingsToggle(
-                    title: localized("綁定閱讀主題"),
-                    isOn: $settings.appearanceBindReaderTheme
+                VStack(spacing: 0) {
+                    settingsToggleRow(
+                        title: localized("單獨設定深色主題"),
+                        isOn: $settings.appearanceUsesSeparateDarkTheme
+                    )
+                    groupedSectionDivider
+                    settingsToggleRow(
+                        title: localized("綁定閱讀主題"),
+                        isOn: $settings.appearanceBindReaderTheme
+                    )
+                    if settings.appearanceBindReaderTheme {
+                        groupedSectionDivider
+                        boundReaderThemeRow(titleKey: "淺色閱讀主題", appearance: .light)
+                        groupedSectionDivider
+                        boundReaderThemeRow(titleKey: "黑色閱讀主題", appearance: .dark)
+                    }
+                }
+                .background(
+                    DSColor.surface,
+                    in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous)
                 )
-                Text(localized("關閉時，切換此外觀主題不會影響閱讀主題。"))
-                    .font(DSFont.caption)
-                    .foregroundStyle(DSColor.textSecondary)
-                    .padding(.horizontal, DSSpacing.lg)
+
+                Text(localized(
+                    settings.appearanceBindReaderTheme
+                        ? "閱讀器會依系統的淺色／深色，自動套用下面選的閱讀主題。"
+                        : "關閉時，切換此外觀主題不會影響閱讀主題。"
+                ))
+                .font(DSFont.caption)
+                .foregroundStyle(DSColor.textSecondary)
+                .padding(.horizontal, DSSpacing.lg)
             }
         }
+        .animation(DSAnimation.standard, value: settings.appearanceBindReaderTheme)
     }
 
-    private func settingsToggle(title: String, isOn: Binding<Bool>) -> some View {
+    /// One appearance's reading-theme pick, shown while 綁定閱讀主題 is on.
+    private func boundReaderThemeRow(titleKey: String, appearance: ColorScheme) -> some View {
+        let choice = settings.boundReaderTheme(for: appearance)
+        return HStack {
+            Text(localized(titleKey))
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textPrimary)
+            Spacer(minLength: DSSpacing.md)
+            Menu {
+                Picker(
+                    localized(titleKey),
+                    selection: Binding(
+                        get: { settings.boundReaderTheme(for: appearance) },
+                        set: { settings.setBoundReaderTheme($0, for: appearance) }
+                    )
+                ) {
+                    ForEach(ReaderBoundTheme.menuOptions) { option in
+                        Text(option.localizedTitle).tag(option)
+                    }
+                }
+            } label: {
+                HStack(spacing: DSSpacing.xs) {
+                    Text(choice.localizedTitle)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(DSFont.caption.weight(.semibold))
+                        // Decorative: without this VoiceOver reads the raw symbol
+                        // name as its own element (docs/design.md §7.1).
+                        .accessibilityHidden(true)
+                }
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.accent)
+                // The label is the whole hit region of the menu, so it carries
+                // the 44pt minimum rather than the row's padding.
+                .frame(minHeight: DSLayout.minimumTapTarget)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel(localized(titleKey))
+            .accessibilityValue(choice.localizedTitle)
+        }
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.xs)
+    }
+
+    private func settingsToggleRow(title: String, isOn: Binding<Bool>) -> some View {
         Toggle(isOn: isOn) {
             Text(title)
                 .font(DSFont.body)
@@ -353,7 +499,6 @@ struct AppearanceThemeView: View {
         }
         .padding(.horizontal, DSSpacing.lg)
         .padding(.vertical, DSSpacing.md)
-        .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
     }
 
     private var globalFontRow: some View {
@@ -510,7 +655,7 @@ struct AppearanceThemeView: View {
 
     // MARK: - 頁面背景 (page background editor)
 
-    private func pageBackgroundSectionHeader(_ title: String) -> some View {
+    private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(DSFont.headline)
             .foregroundStyle(DSColor.textPrimary)
@@ -519,7 +664,7 @@ struct AppearanceThemeView: View {
 
     private var pageBackgroundSection: some View {
         VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            pageBackgroundSectionHeader(localized("頁面背景"))
+            sectionHeader(localized("頁面背景"))
 
             VStack(spacing: 0) {
                 editScopeRow
@@ -541,7 +686,7 @@ struct AppearanceThemeView: View {
                 in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous)
             )
 
-            pageBackgroundSectionHeader(localized("預覽"))
+            sectionHeader(localized("預覽"))
             pageBackgroundPreviewCard
         }
     }
@@ -869,7 +1014,11 @@ struct AppearanceThemeView: View {
             .alert(localized("保存為新主題"), isPresented: $showSaveThemeAlert) {
                 TextField(localized("主題名稱"), text: $newThemeName)
                 Button(localized("保存")) {
-                    settings.saveCurrentAppearanceAsTheme(named: newThemeName, basedOn: selectedTheme)
+                    settings.saveCurrentAppearanceAsTheme(
+                        named: newThemeName,
+                        basedOn: selectedTheme,
+                        for: editingScheme
+                    )
                 }
                 Button(localized("取消"), role: .cancel) {}
             } message: {
@@ -1033,7 +1182,7 @@ struct AppearanceThemeView: View {
                 HStack(spacing: DSSpacing.md) {
                     Image(systemName: "crown.fill")
                         .font(DSFont.fixed(size: 20, weight: .semibold))
-                        .foregroundStyle(selectedTheme.accentColor)
+                        .foregroundStyle(activeTheme.accentColor)
                         .frame(width: 28, height: 28)
                     Text(localized("主題自定義"))
                         .font(DSFont.headline)
@@ -1175,6 +1324,14 @@ private struct AppearanceThemeCustomizationView: View {
     @ObservedObject private var settings = GlobalSettings.shared
     @Environment(\.dismiss) private var dismiss
     let themeID: String
+    /// Appearance being edited. Unlike the theme grid this is always explicit —
+    /// a custom theme owns both palettes, so there is no "follow the device".
+    @State private var editingScheme: ColorScheme
+
+    init(themeID: String, initialScheme: ColorScheme = .light) {
+        self.themeID = themeID
+        _editingScheme = State(initialValue: initialScheme)
+    }
 
     private var themeBinding: Binding<AppearanceCustomTheme>? {
         guard let index = settings.customAppearanceThemes.firstIndex(where: { $0.id == themeID }) else {
@@ -1192,11 +1349,18 @@ private struct AppearanceThemeCustomizationView: View {
                 Section {
                     TextField(localized("名稱"), text: stringBinding(theme, \.name))
                         .font(DSFont.body)
-                    themeColorPicker("主色", selection: colorBinding(theme, \.accentHex))
-                    themeColorPicker("背景", selection: colorBinding(theme, \.backgroundHex))
-                    themeColorPicker("文字", selection: colorBinding(theme, \.textHex))
-                    themeColorPicker("工具列", selection: colorBinding(theme, \.barHex))
-                    themeColorPicker("對話高亮", selection: colorBinding(theme, \.dialogueHex))
+                    Picker(localized("主題外觀"), selection: $editingScheme) {
+                        Text(localized("淺色")).tag(ColorScheme.light)
+                        Text(localized("深色")).tag(ColorScheme.dark)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel(localized("主題外觀"))
+
+                    if editingScheme == .light {
+                        lightColorPickers(theme)
+                    } else {
+                        darkColorSection(theme)
+                    }
                 } header: {
                     Text(localized("主題自定義"))
                         .font(DSFont.headline)
@@ -1206,10 +1370,12 @@ private struct AppearanceThemeCustomizationView: View {
 
                 Section {
                     ThemePreviewTile(
-                        preset: AppearanceThemePreset.preset(from: theme.wrappedValue),
+                        preset: AppearanceThemePreset
+                            .preset(from: theme.wrappedValue)
+                            .palette(for: editingScheme),
                         isSelected: true,
                         isLocked: false,
-                        colorScheme: .light
+                        colorScheme: editingScheme
                     )
                     .frame(maxWidth: 180)
                     .frame(maxWidth: .infinity)
@@ -1225,6 +1391,10 @@ private struct AppearanceThemeCustomizationView: View {
         .font(DSFont.body)
         .scrollContentBackground(.hidden)
         .background(DSColor.groupedBackground)
+        // Same rule as the theme grid: the appearance being edited is the
+        // appearance shown, so the colors can be judged where they will live.
+        .preferredColorScheme(editingScheme)
+        .animation(DSAnimation.standard, value: editingScheme)
         .navigationTitle(localized("主題自定義"))
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
@@ -1234,6 +1404,71 @@ private struct AppearanceThemeCustomizationView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func lightColorPickers(_ theme: Binding<AppearanceCustomTheme>) -> some View {
+        themeColorPicker("主色", selection: colorBinding(theme, \.accentHex))
+        themeColorPicker("背景", selection: colorBinding(theme, \.backgroundHex))
+        themeColorPicker("文字", selection: colorBinding(theme, \.textHex))
+        themeColorPicker("工具列", selection: colorBinding(theme, \.barHex))
+        themeColorPicker("對話高亮", selection: colorBinding(theme, \.dialogueHex))
+    }
+
+    /// Dark tab: automatic by default (colors derived from the light palette),
+    /// with the pickers appearing only once the user takes it over. Switching
+    /// the toggle off seeds them with what the derivation produced, so the first
+    /// thing they see is what they were already looking at.
+    @ViewBuilder
+    private func darkColorSection(_ theme: Binding<AppearanceCustomTheme>) -> some View {
+        Toggle(isOn: automaticDarkBinding(theme)) {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                Text(localized("自動深色配色"))
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                Text(localized("關閉後可單獨指定這個主題的深色配色。"))
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+            }
+        }
+
+        if theme.wrappedValue.dark != nil {
+            themeColorPicker("主色", selection: darkColorBinding(theme, \.accentHex))
+            themeColorPicker("背景", selection: darkColorBinding(theme, \.backgroundHex))
+            themeColorPicker("文字", selection: darkColorBinding(theme, \.textHex))
+            themeColorPicker("工具列", selection: darkColorBinding(theme, \.barHex))
+            themeColorPicker("對話高亮", selection: darkColorBinding(theme, \.dialogueHex))
+        }
+    }
+
+    private func automaticDarkBinding(
+        _ theme: Binding<AppearanceCustomTheme>
+    ) -> Binding<Bool> {
+        Binding(
+            get: { theme.wrappedValue.dark == nil },
+            set: { isAutomatic in
+                var copy = theme.wrappedValue
+                copy.dark = isAutomatic ? nil : Self.derivedDarkColors(of: copy)
+                theme.wrappedValue = copy
+            }
+        )
+    }
+
+    /// What the automatic derivation currently produces for this theme, in
+    /// storage form — the seed for hand editing.
+    private static func derivedDarkColors(
+        of theme: AppearanceCustomTheme
+    ) -> AppearanceCustomThemeDarkColors {
+        var withoutOverride = theme
+        withoutOverride.dark = nil
+        let derived = AppearanceThemePreset.preset(from: withoutOverride).palette(for: .dark)
+        return AppearanceThemeDarkColors(
+            background: derived.background,
+            text: derived.text,
+            bar: derived.bar,
+            accent: derived.accent,
+            dialogue: derived.dialogue
+        ).stored
     }
 
     private func themeColorPicker(_ titleKey: String, selection: Binding<Color>) -> some View {
@@ -1271,6 +1506,28 @@ private struct AppearanceThemeCustomizationView: View {
             }
         )
     }
+
+    /// Same as `colorBinding`, on the optional dark palette. Only reachable
+    /// while it exists (the pickers are hidden under 自動深色配色), so a missing
+    /// palette reads as the derived value and writes seed one.
+    private func darkColorBinding(
+        _ theme: Binding<AppearanceCustomTheme>,
+        _ keyPath: WritableKeyPath<AppearanceCustomThemeDarkColors, UInt32>
+    ) -> Binding<Color> {
+        Binding(
+            get: {
+                let colors = theme.wrappedValue.dark ?? Self.derivedDarkColors(of: theme.wrappedValue)
+                return Color(uiColor: AppearanceThemePreset.hex(colors[keyPath: keyPath]))
+            },
+            set: { value in
+                var copy = theme.wrappedValue
+                var colors = copy.dark ?? Self.derivedDarkColors(of: copy)
+                colors[keyPath: keyPath] = UIColor(value).rgbHex ?? colors[keyPath: keyPath]
+                copy.dark = colors
+                theme.wrappedValue = copy
+            }
+        )
+    }
 }
 
 /// Which end of the page-background gradient a color row edits.
@@ -1304,5 +1561,14 @@ struct AppearanceThemeExportDocument: FileDocument {
     NavigationStack {
         AppearanceThemeView()
             .environmentObject(SubscriptionStore.shared)
+    }
+}
+
+#Preview("主題自定義 · 深色") {
+    let settings = GlobalSettings.shared
+    let theme = settings.customAppearanceThemes.first
+        ?? settings.createCustomAppearanceTheme(from: AppearanceThemePreset.freeSolidPresets[0])
+    return NavigationStack {
+        AppearanceThemeCustomizationView(themeID: theme.id, initialScheme: .dark)
     }
 }

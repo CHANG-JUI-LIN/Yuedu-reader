@@ -205,6 +205,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
     private let provider: any BookContentProvider
     private let resourceProvider: (any BookResourceProvider)?
     private let styleResolver: EPUBStyleResolver?
+    private var processedCSSCache: [String: String] = [:]
+    private let stylesheetCache = HTMLStylesheetCache()
     private let chapterSourceHrefs: [String?]
     private var cachedPayloadSourceHrefs: [Int: String] = [:]
     private var renderSize: CGSize
@@ -368,6 +370,9 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
     private func loadCSS(href: String, chapterHref: String) async -> String? {
         guard let resourceProvider else { return nil }
         let resolved = EPUBStyleResolver.resolveImageHref(href, chapterHref: chapterHref)
+        if let cached = processedCSSCache[resolved] {
+            return cached
+        }
         let url = resourceProvider.resourceURL(for: resolved)
         guard let response = try? await resourceProvider.response(for: url) else { return nil }
         let cssText = String(data: response.data, encoding: .utf8) ?? ""
@@ -377,6 +382,9 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             cssHref: resolved,
             chapterHref: chapterHref
         )
+        if !processed.isEmpty {
+            processedCSSCache[resolved] = processed
+        }
         return processed.isEmpty ? nil : processed
     }
 
@@ -542,7 +550,11 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             renderWidth: contentRenderWidth
         )
 
-        guard let ast = await builder.buildStyledAST(html: html, config: cfg) else {
+        guard let ast = await builder.buildStyledAST(
+            html: html,
+            config: cfg,
+            stylesheetCache: stylesheetCache
+        ) else {
             return AttributedChapterBuildResult(
                 attributedString: NSAttributedString(),
                 imagePage: nil,
@@ -564,6 +576,12 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 pageBackgroundImage: nil,
                 pageBackgroundColor: pageBackgroundColor,
                 anchorOffsets: [:]
+            )
+        }
+
+        if let styleResolver {
+            await styleResolver.registerFontFaces(
+                requests: HTMLStyledASTRenderableNodeConverter.referencedFonts(in: ast)
             )
         }
 

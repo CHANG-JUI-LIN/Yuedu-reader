@@ -357,6 +357,32 @@ struct AppearanceThemeExportFile: Codable {
     var accentHex: UInt32
     var dialogueHex: UInt32
     var pageBackgrounds: [String: PageBackgroundPayload]?
+    // Hand-authored dark palette, all-or-nothing. Absent (older files, and any
+    // theme using the derived dark version) means the importer derives it.
+    var darkBackgroundHex: UInt32?
+    var darkTextHex: UInt32?
+    var darkBarHex: UInt32?
+    var darkAccentHex: UInt32?
+    var darkDialogueHex: UInt32?
+
+    /// The dark colors to store on import, or nil when the file doesn't carry a
+    /// complete set.
+    var darkColors: AppearanceCustomThemeDarkColors? {
+        guard let darkBackgroundHex,
+              let darkTextHex,
+              let darkBarHex,
+              let darkAccentHex,
+              let darkDialogueHex else {
+            return nil
+        }
+        return AppearanceCustomThemeDarkColors(
+            backgroundHex: darkBackgroundHex,
+            textHex: darkTextHex,
+            barHex: darkBarHex,
+            accentHex: darkAccentHex,
+            dialogueHex: darkDialogueHex
+        )
+    }
 }
 
 enum AppearanceThemeImportError: Error {

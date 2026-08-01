@@ -345,8 +345,13 @@ struct ReaderQuickThemePanelView: View {
     }
 
     private func readingBackgroundButton(_ background: ReaderTheme) -> some View {
+        // While 綁定閱讀主題 maps this appearance to 跟隨外觀主題 the page is painted by
+        // the appearance theme, so no reading background is the one in effect.
+        // Any other bound pick *is* one of these backgrounds and marks it.
+        let paintedByAppearanceTheme = settings.appearanceBindReaderTheme
+            && settings.boundReaderTheme(for: colorScheme) == .followAppearanceTheme
         let selected = (background == .night || settings.readerCustomBackgroundMode == .none)
-            && !settings.appearanceBindReaderTheme
+            && !paintedByAppearanceTheme
             && readerTheme == background
         return Button {
             settings.readerFollowSystemTheme = false

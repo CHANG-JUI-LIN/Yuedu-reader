@@ -156,6 +156,10 @@ enum DSSpacing {
 // MARK: - Design System: Layout Tokens
 
 enum DSLayout {
+    /// Smallest comfortable hit target for any control (HIG default). Reach for
+    /// it when a control's own content is shorter than a finger — a bare menu
+    /// label, an icon button — rather than relying on the row's padding.
+    static let minimumTapTarget: CGFloat = 44
     /// Search-result cover width shared by native list renderers.
     static let searchResultCoverWidth: CGFloat = 72
     /// Search-result cover height shared by native list renderers.
