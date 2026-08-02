@@ -1235,7 +1235,8 @@ class GlobalSettings: ObservableObject {
     @Published var ttsUseSystemVoice: Bool {
         didSet { UserDefaults.standard.set(ttsUseSystemVoice, forKey: "yd_tts_use_system_voice") }
     }
-    /// Selected `AVSpeechSynthesisVoice` identifier for the offline engine; empty = auto by language.
+    /// Legacy persisted voice identifier kept for settings compatibility. System TTS now lets
+    /// AVSpeechSynthesizer choose the voice from the device's own speech settings.
     @Published var ttsSystemVoiceIdentifier: String {
         didSet { UserDefaults.standard.set(ttsSystemVoiceIdentifier, forKey: "yd_tts_system_voice_id") }
     }

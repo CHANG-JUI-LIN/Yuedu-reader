@@ -95,7 +95,7 @@ struct AppearanceThemeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: DSSpacing.xl) {
+            LazyVStack(alignment: .leading, spacing: DSSpacing.xl) {
                 themeSettingsSection
                 readingSettingsSection
                 interfaceSettingsSection
@@ -213,52 +213,67 @@ struct AppearanceThemeView: View {
     }
 
     private var themeSettingsSection: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            sectionHeader(localized("主題"))
-            themeSelectionCard
-            togglesSection
-            // Pro upsell only; subscribers customize via 新建 / theme tiles.
-            if !subscriptionStore.hasAccess(.readerThemePacks) {
-                customizationSection
+        Section {
+            VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                themeSelectionCard
+                togglesSection
+                // Pro upsell only; subscribers customize via 新建 / theme tiles.
+                if !subscriptionStore.hasAccess(.readerThemePacks) {
+                    customizationSection
+                }
             }
+        } header: {
+            sectionHeader(localized("主題"))
         }
     }
 
     private var readingSettingsSection: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+        Section {
+            VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                globalFontRow
+                readerInterfaceRow
+            }
+        } header: {
             sectionHeader(localized("閱讀設定"))
-            globalFontRow
-            readerInterfaceRow
         }
     }
 
     private var interfaceSettingsSection: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            sectionHeader(localized("介面設定"))
-            interfaceEffectsRow
-            if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsBottomTabCustomization {
-                rootTabRow
+        Section {
+            VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                interfaceEffectsRow
+                if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsBottomTabCustomization {
+                    rootTabRow
+                }
             }
+        } header: {
+            sectionHeader(localized("介面設定"))
         }
     }
 
     private var launchScreenSection: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+        Section {
+            VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                launchImageRow
+            }
+        } header: {
             sectionHeader(localized("啟動畫面"))
-            launchImageRow
         }
     }
 
     private var pageAndThemeSection: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            sectionHeader(localized("頁面與主題"))
-            if subscriptionStore.hasAccess(.readerThemePacks) {
-                pageBackgroundSection
-                sectionHeader(localized("主題管理"))
-                themeActionsSection
-            } else {
-                pageBackgroundLockedRow
+        Section {
+            VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                if subscriptionStore.hasAccess(.readerThemePacks) {
+                    pageBackgroundSection
+                    sectionHeader(localized("主題管理"))
+                    themeActionsSection
+                } else {
+                    pageBackgroundLockedRow
+                }
             }
+        } header: {
+            sectionHeader(localized("頁面與主題"))
         }
     }
 
@@ -458,8 +473,6 @@ struct AppearanceThemeView: View {
     /// in one card so the appearance and reading-theme choices read as one group.
     private var togglesSection: some View {
         VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            sectionHeader(localized("主題切換"))
-
             VStack(alignment: .leading, spacing: DSSpacing.sm) {
                 VStack(spacing: 0) {
                     settingsToggleRow(

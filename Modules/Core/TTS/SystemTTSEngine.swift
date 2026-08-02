@@ -215,12 +215,11 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             rate: lastRate,
             pronunciationHints: hints
         )
-        utterance.voice = preferredVoice(for: chunks[index])
         activeUtterance = utterance
         isPlaying = true
 
         onPlaybackStarted?(estimatedDuration(for: chunks[index]))
-        ttsLog("[TTS][SystemEngine] speak chunk index=\(index) rate=\(utterance.rate) voice=\(utterance.voice?.identifier ?? "default")")
+        ttsLog("[TTS][SystemEngine] speak chunk index=\(index) rate=\(utterance.rate) voice=system-selected")
         synthesizer.speak(utterance)
     }
 
@@ -246,7 +245,6 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
         let hints = remainingHints(forChunk: currentIndex, fromUTF16Offset: offset)
         let utterance = Self.makeUtterance(text: remaining, rate: lastRate, pronunciationHints: hints)
-        utterance.voice = preferredVoice(for: remaining)
         activeUtterance = utterance
         utteranceBaseOffset = offset
         isPlaying = true
@@ -375,52 +373,16 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         endBackgroundTask()
     }
 
-    // MARK: - Voice & rate
-
-    private func preferredVoice(for text: String) -> AVSpeechSynthesisVoice? {
-        let savedIdentifier = GlobalSettings.shared.ttsSystemVoiceIdentifier
-        if !savedIdentifier.isEmpty, let voice = AVSpeechSynthesisVoice(identifier: savedIdentifier) {
-            return voice
-        }
-        return AVSpeechSynthesisVoice(language: Self.preferredLanguage(for: text))
-    }
-
-    static func preferredLanguage(for text: String) -> String {
-        if text.unicodeScalars.contains(where: isHan) {
-            return preferredChineseLanguage()
-        }
-        return AVSpeechSynthesisVoice.currentLanguageCode()
-    }
-
-    /// Picks Traditional vs. Simplified Chinese based on the user's preferred languages,
-    /// matching the app's own zh-Hant / zh-Hans localization.
-    private static func preferredChineseLanguage() -> String {
-        for code in Locale.preferredLanguages {
-            let lower = code.lowercased()
-            if lower.hasPrefix("zh-hant") || lower.contains("-tw") || lower.contains("-hk") || lower.contains("-mo") {
-                return "zh-TW"
-            }
-            if lower.hasPrefix("zh") {
-                return "zh-CN"
-            }
-        }
-        return "zh-CN"
-    }
-
-    private static func isHan(_ scalar: Unicode.Scalar) -> Bool {
-        switch scalar.value {
-        case 0x4E00...0x9FFF, 0x3400...0x4DBF, 0xF900...0xFAFF, 0x20000...0x2A6DF:
-            return true
-        default:
-            return false
-        }
-    }
+    // MARK: - Rate
 
     static func makeUtterance(
         text: String,
         rate: Float,
         pronunciationHints: [TTSPronunciationHint]
     ) -> AVSpeechUtterance {
+        // Keep `voice` unset so AVSpeechSynthesizer follows the device's own Spoken Content
+        // voice. Explicitly resolving a language/voice bypasses that selection and can choose
+        // a voice resource that is listed but not playable on iOS 17.
         let utterance: AVSpeechUtterance
         if pronunciationHints.isEmpty {
             utterance = AVSpeechUtterance(string: text)

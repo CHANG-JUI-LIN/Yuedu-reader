@@ -60,14 +60,15 @@ struct SystemTTSEngineTests {
         #expect(normal < fast)
     }
 
-    // MARK: - Language detection
+    // MARK: - Voice selection
 
-    @Test func chineseTextPicksChineseLanguage() {
-        #expect(SystemTTSEngine.preferredLanguage(for: "今天天氣很好").hasPrefix("zh"))
-    }
+    @Test func utteranceLeavesVoiceSelectionToSystem() {
+        let utterance = SystemTTSEngine.makeUtterance(
+            text: "今天天氣很好",
+            rate: 0.5,
+            pronunciationHints: []
+        )
 
-    @Test func chineseLanguageDistinguishesScriptVariant() {
-        let lang = SystemTTSEngine.preferredLanguage(for: "繁體中文")
-        #expect(lang == "zh-TW" || lang == "zh-CN")
+        #expect(utterance.voice == nil)
     }
 }
