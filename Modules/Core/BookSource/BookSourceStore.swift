@@ -40,7 +40,14 @@ struct SourcePinRecord: Codable, Equatable {
 class BookSourceStore: ObservableObject {
     static let shared = BookSourceStore()
 
-    @Published var sources: [BookSource] = []
+    /// Monotonic local mutation token used to prevent an in-flight cloud merge from writing an
+    /// older snapshot over a deletion (or another user edit) that completed while the network
+    /// request was running.
+    private(set) var mutationRevision = 0
+
+    @Published var sources: [BookSource] = [] {
+        didSet { mutationRevision += 1 }
+    }
 
     /// Persisted 置頂／置底 pin state, keyed by source id. Kept OUT of `BookSource` (and thus
     /// out of the exported/synced source JSON) so pinning never looks like a content edit:
@@ -580,12 +587,20 @@ class BookSourceStore: ObservableObject {
         return str
     }
 
-    func replaceSourcesFromSync(_ syncedSources: [BookSource]) {
+    @discardableResult
+    func replaceSourcesFromSync(
+        _ syncedSources: [BookSource],
+        expectedMutationRevision: Int? = nil
+    ) -> Bool {
+        guard expectedMutationRevision == nil || expectedMutationRevision == mutationRevision else {
+            return false
+        }
         // Collapse any cross-device duplicates (same bookSourceUrl, different random id) the merge
         // couldn't unify, so an old cloud copy can't resurface next to a freshly imported one.
         sources = Self.dedupedByURL(syncedSources)
         prunePins()
         save()
+        return true
     }
 
     /// Re-reads the on-disk store into memory. Used after an iCloud restore

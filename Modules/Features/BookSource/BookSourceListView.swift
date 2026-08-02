@@ -586,7 +586,10 @@ struct BookSourceListView: View {
                     )
                 }
                 .listRowSeparator(.hidden)
-                .interfaceSectionSurface()
+                // Clear, not a surface: `statsCard` and the filter chips paint their own,
+                // so a row background here would put a second full-width slab behind them
+                // — the block that read as an opaque header above a see-through list.
+                .listRowBackground(Color.clear)
 
                 if usesGroupedLayout {
                     // Plain header row + conditional child rows instead of `DisclosureGroup`:
@@ -609,6 +612,12 @@ struct BookSourceListView: View {
                 }
             }
             .listStyle(.plain)
+            // Hiding the list's own background is only half of it: a `.plain` row still
+            // paints an opaque `systemBackground` unless it is handed a row background,
+            // which left the source rows as a white slab between the glass search bar
+            // above and the toolbar below. Every row instead wears `interfaceSectionSurface`,
+            // so the list follows 毛玻璃／分組卡片／透明度 like the rest of the screen. Same
+            // treatment in 語音朗讀設定, which is built from the same list + bottom-bar shell.
             .scrollContentBackground(.hidden)
             .onChange(of: scrollTargetId) { _, target in
                 guard let target else { return }
@@ -625,6 +634,7 @@ struct BookSourceListView: View {
         sourceRow(source: source)
             .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
             .listRowSeparator(.visible)
+            .interfaceSectionSurface()
     }
 
     private func sourceGroupHeaderRow(_ group: BookSourceRowGroup) -> some View {
@@ -632,6 +642,7 @@ struct BookSourceListView: View {
             .listRowInsets(
                 EdgeInsets(top: 0, leading: DSSpacing.md, bottom: 0, trailing: DSSpacing.md))
             .listRowSeparator(.hidden)
+            .interfaceSectionSurface()
     }
 
     private func toggleGroupExpansion(_ id: String) {
@@ -1248,7 +1259,11 @@ struct BookSourceListView: View {
             .padding(.trailing, 12)
         }
         .padding(.vertical, 8)
-        .background(Color(UIColor.systemBackground))
+        // `.bar` — the same system toolbar material RSS 訂閱, 線上書詳情 and 聽書 use for
+        // their bottom bars, and it honours Reduce Transparency on its own. A hardcoded
+        // `systemBackground` made this bar the one piece of chrome that stayed flat white
+        // no matter what the list above was wearing.
+        .background(.bar)
     }
 
     // MARK: - Batch Operations

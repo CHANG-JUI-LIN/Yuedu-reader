@@ -97,7 +97,11 @@ struct SourceValidationListHeader: View {
         }
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, DSSpacing.xs)
-        .background(Color(.secondarySystemBackground))
+        // The card carries its own surface so it follows 毛玻璃／分組卡片／透明度 like the
+        // rows below it. A hardcoded `secondarySystemBackground` here was opaque at every
+        // setting, which is what made the header read as a solid slab above a see-through
+        // list. `clipShape` stays for the `Divider`, which is content rather than surface.
+        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
     }
 
@@ -156,7 +160,10 @@ struct SourceValidationListHeader: View {
                 .foregroundColor(selected ? .white : DSColor.textSecondary)
                 .padding(.horizontal, DSSpacing.md)
                 .padding(.vertical, DSSpacing.sm)
-                .background(selected ? DSColor.accent : Color(.secondarySystemBackground))
+                // Chips stay opaque at every 界面效果 setting — they are tappable controls,
+                // and a glass one over a page background loses the affordance. Same neutral
+                // fill as `DSChip`, which is the app's other filter-chip.
+                .background(selected ? DSColor.accent : DSColor.neutralControlFill)
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)

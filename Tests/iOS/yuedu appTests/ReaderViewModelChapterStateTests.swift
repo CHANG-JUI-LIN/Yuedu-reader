@@ -197,6 +197,29 @@ struct ReaderViewModelChapterStateTests {
         await gate.open()
     }
 
+    @Test("a later success clears an origin's persisted failure flag")
+    func originFailureFlagClearsOnSuccess() async throws {
+        let viewModel = makeViewModel(chapterFetcher: MockChapterFetcher())
+        let bookId = UUID()
+        let origin = makeOrigin()
+        defer { ChangeSourceCache.shared.clear(for: bookId) }
+        let key = ChangeSourceCache.originKey(
+            sourceId: origin.sourceId, bookUrl: origin.bookUrl)
+
+        viewModel.markOriginFailed(
+            bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
+        #expect(viewModel.changeSourceFailedKeys.contains(key))
+        #expect(ChangeSourceCache.shared.entry(for: bookId)?.failedKeys.contains(key) == true)
+
+        viewModel.clearOriginFailure(
+            bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
+
+        // Both copies must go: the persisted one is why a one-off failure used to keep the
+        // row badged 載入失敗 across relaunches.
+        #expect(!viewModel.changeSourceFailedKeys.contains(key))
+        #expect(ChangeSourceCache.shared.entry(for: bookId)?.failedKeys.contains(key) != true)
+    }
+
     @Test("stopping the search clears its loading flag")
     func stopChangeSourceSearchClearsLoading() async throws {
         let viewModel = makeViewModel(chapterFetcher: MockChapterFetcher())

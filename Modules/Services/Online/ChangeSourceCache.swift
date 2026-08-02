@@ -73,6 +73,18 @@ final class ChangeSourceCache {
         write(entry, for: bookId)
     }
 
+    /// Clear a failure flag after that origin switched successfully. Without this a source
+    /// that failed once stayed badged 載入失敗 forever, including in every later session,
+    /// because `markFailed` only ever appended.
+    func clearFailure(originKeys: [String], for bookId: UUID) {
+        let keys = Set(originKeys.filter { !$0.isEmpty })
+        guard !keys.isEmpty, var entry = self.entry(for: bookId) else { return }
+        let remaining = entry.failedKeys.filter { !keys.contains($0) }
+        guard remaining.count != entry.failedKeys.count else { return }
+        entry.failedKeys = remaining
+        write(entry, for: bookId)
+    }
+
     func clear(for bookId: UUID) {
         queue.sync { try? FileManager.default.removeItem(at: fileURL(for: bookId)) }
     }

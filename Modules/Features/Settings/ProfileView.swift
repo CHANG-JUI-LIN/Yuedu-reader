@@ -10,8 +10,8 @@ struct SettingsView: View {
     @State private var showSourceList = false
     @State private var showDownloadManager = false
     @State private var showReplaceRules = false
-    @State private var showICloudSync = false
-    @State private var showWebDAVSync = false
+    @State private var showBackupSync = false
+    @State private var showCacheManagement = false
     @State private var showLanServer = false
     @State private var showLegadoMigration = false
     @State private var showTTSSettings = false
@@ -155,15 +155,18 @@ struct SettingsView: View {
                     // ── Data Management ──
                     Section(header: Text(localized("資料管理"))) {
                         DSSettingsRow(
-                            icon: "icloud.fill",
-                            title: localized("iCloud 同步"),
-                            action: { showICloudSync = true }
+                            icon: "arrow.triangle.2.circlepath.icloud",
+                            title: localized("備份與同步"),
+                            detail: localized("iCloud、WebDAV"),
+                            action: { showBackupSync = true }
                         )
+
                         DSSettingsRow(
-                            icon: "icloud.and.arrow.up.fill",
-                            title: localized("WebDAV 同步"),
-                            action: { showWebDAVSync = true }
+                            icon: "externaldrive.fill",
+                            title: localized("快取管理"),
+                            action: { showCacheManagement = true }
                         )
+
                         DSSettingsRow(
                             icon: "wifi",
                             title: localized("局域網服務"),
@@ -226,11 +229,11 @@ struct SettingsView: View {
             .sheet(isPresented: $showReplaceRules) {
                 ReplaceRuleListView()
             }
-            .sheet(isPresented: $showICloudSync) {
-                ICloudSyncView()
+            .sheet(isPresented: $showBackupSync) {
+                BackupSyncView()
             }
-            .sheet(isPresented: $showWebDAVSync) {
-                WebDAVSyncView()
+            .sheet(isPresented: $showCacheManagement) {
+                CacheManagementView()
             }
             .sheet(isPresented: $showLanServer) {
                 LanServerView().environmentObject(store)

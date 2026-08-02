@@ -585,6 +585,19 @@ final class ReaderViewModel: ObservableObject {
         ChangeSourceCache.shared.markFailed(originKey: key, for: bookId)
     }
 
+    /// Drops an origin's failure flag once it has switched successfully, so the row stops
+    /// showing 載入失敗. `markFailed` only ever appended, so without this a source that
+    /// failed once stayed badged for good — the flag is persisted, so even relaunching
+    /// kept it.
+    func clearOriginFailure(bookId: UUID, sourceId: UUID, bookUrl: String) {
+        let key = ChangeSourceCache.originKey(sourceId: sourceId, bookUrl: bookUrl)
+        let legacyKey = ChangeSourceCache.urlKey(bookUrl)
+        guard !key.isEmpty else { return }
+        changeSourceFailedKeys.remove(key)
+        changeSourceFailedKeys.remove(legacyKey)
+        ChangeSourceCache.shared.clearFailure(originKeys: [key, legacyKey], for: bookId)
+    }
+
     /// Searches one source with a timeout, off the main actor. Returns nil on error
     /// or timeout so a slow/hung source can't stall the whole 換源 search.
     /// `nonisolated` so concurrent tasks don't serialize back onto the MainActor.

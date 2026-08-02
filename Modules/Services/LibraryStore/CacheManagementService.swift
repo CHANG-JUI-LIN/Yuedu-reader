@@ -106,7 +106,7 @@ enum CacheManagementError: LocalizedError, Equatable {
 /// Only app-maintained, re-downloadable artifacts are included here. Imported
 /// books, local manga archives, audiobook files, settings, and sync payloads are
 /// deliberately outside these roots and are never removed by this service.
-struct CacheManagementService: Sendable {
+final class CacheManagementService: @unchecked Sendable {
     private let fileManager: FileManager
     private let roots: CacheStorageRoots
 
@@ -138,7 +138,7 @@ struct CacheManagementService: Sendable {
                 "CacheManagementService failed to clear \(category.rawValue)",
                 error: error
             )
-            throw CacheManagementError(
+            throw CacheManagementError.clearFailed(
                 category: category,
                 message: error.localizedDescription
             )
@@ -182,11 +182,10 @@ struct CacheManagementService: Sendable {
         let contents = try fileManager.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
+            options: []
         )
         for item in contents {
             try fileManager.removeItem(at: item)
         }
     }
 }
-

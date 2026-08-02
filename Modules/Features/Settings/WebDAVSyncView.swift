@@ -5,7 +5,6 @@ struct WebDAVSyncView: View {
 
     @StateObject private var manager = WebDAVManager.shared
     @ObservedObject private var gs = GlobalSettings.shared
-    @Environment(\.dismiss) private var dismiss
 
     @State private var showAlert = false
     @State private var alertTitle = ""
@@ -15,49 +14,38 @@ struct WebDAVSyncView: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationStack {
-            Form {
-                serverSection
-                actionsSection
-                statusSection
+        Form {
+            serverSection
+            actionsSection
+            statusSection
+        }
+        .navigationTitle(localized("WebDAV 同步"))
+        .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .settings)
+        .disabled(manager.isSyncing)
+        .overlay {
+            if manager.isSyncing {
+                syncingOverlay
             }
-            .navigationTitle(localized("WebDAV 同步"))
-            .toolbarTitleDisplayMode(.inline)
-            .themedAppSurface(for: .settings)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                }
+        }
+        .alert(alertTitle, isPresented: $showAlert) {
+            Button(localized("確定"), role: .cancel) {}
+        } message: {
+            Text(alertMessage)
+        }
+        .onChange(of: manager.pendingConflict != nil) { _, hasConflict in
+            if hasConflict { showConflictAlert = true }
+        }
+        .alert(localized("偵測到備份衝突"), isPresented: $showConflictAlert) {
+            Button(localized("使用雲端備份"), role: .destructive) {
+                Task { try? await manager.resolveConflict(keepRemote: true) }
             }
-            .disabled(manager.isSyncing)
-            .overlay {
-                if manager.isSyncing {
-                    syncingOverlay
-                }
+            Button(localized("保留本地資料"), role: .cancel) {
+                Task { try? await manager.resolveConflict(keepRemote: false) }
             }
-            .alert(alertTitle, isPresented: $showAlert) {
-                Button(localized("確定"), role: .cancel) {}
-            } message: {
-                Text(alertMessage)
-            }
-            .onChange(of: manager.pendingConflict != nil) { _, hasConflict in
-                if hasConflict { showConflictAlert = true }
-            }
-            .alert(localized("偵測到備份衝突"), isPresented: $showConflictAlert) {
-                Button(localized("使用雲端備份"), role: .destructive) {
-                    Task { try? await manager.resolveConflict(keepRemote: true) }
-                }
-                Button(localized("保留本地資料"), role: .cancel) {
-                    Task { try? await manager.resolveConflict(keepRemote: false) }
-                }
-            } message: {
-                if let c = manager.pendingConflict {
-                    Text(conflictMessage(c))
-                }
+        } message: {
+            if let c = manager.pendingConflict {
+                Text(conflictMessage(c))
             }
         }
     }

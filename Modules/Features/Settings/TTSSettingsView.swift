@@ -177,14 +177,21 @@ struct TTSSettingsView: View {
             systemVoiceSourceRow
                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                 .listRowSeparator(.visible)
+                .interfaceSectionSurface()
 
             ForEach(filteredSources) { source in
                 sourceRow(source)
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                     .listRowSeparator(.visible)
+                    .interfaceSectionSurface()
             }
         }
         .listStyle(.plain)
+        // Same contract as 書源管理's list: hiding the list background is not enough,
+        // because a `.plain` row still paints an opaque `systemBackground` of its own
+        // unless handed a row background. `interfaceSectionSurface` puts the rows on the
+        // shared 毛玻璃／分組卡片／透明度 surface instead of a flat white slab sitting on
+        // top of the page background.
         .scrollContentBackground(.hidden)
     }
 
@@ -420,7 +427,10 @@ struct TTSSettingsView: View {
             .padding(.trailing, 12)
         }
         .padding(.vertical, 8)
-        .background(Color(UIColor.systemBackground))
+        // `.bar` — the system toolbar material, matching 書源管理's bottom bar and the ones
+        // in RSS 訂閱 / 線上書詳情 / 聽書. It honours Reduce Transparency on its own, which a
+        // hardcoded `systemBackground` could not.
+        .background(.bar)
     }
 
     private var networkImportSheet: some View {

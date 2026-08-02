@@ -10,9 +10,11 @@ struct OnlineBookView: View {
     /// editing. `OnlineBook` is only a presentation value, so changing its local state alone
     /// cannot update the reader's `ReadingBook`.
     private let sourceSwitchBookId: UUID?
+    private let onRemoveFromShelf: (() -> Void)?
 
     @State private var currentBook: OnlineBook
     @EnvironmentObject var bookStore: BookStore
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.appDependencies) private var dependencies
     private var gs: GlobalSettings { GlobalSettings.shared }
     private var source: BookSource? { BookSourceStore.shared.sources.first(where: { $0.id == currentBook.sourceId }) }
@@ -37,18 +39,28 @@ struct OnlineBookView: View {
     // MARK: Init
 
     /// Single-source entry (Discover). No source switching.
-    init(book: OnlineBook, sourceSwitchBookId: UUID? = nil) {
+    init(
+        book: OnlineBook,
+        sourceSwitchBookId: UUID? = nil,
+        onRemoveFromShelf: (() -> Void)? = nil
+    ) {
         self.searchBook = nil
         self.sourceSwitchBookId = sourceSwitchBookId
+        self.onRemoveFromShelf = onRemoveFromShelf
         _currentBook = State(
             initialValue: OnlineBookDetailPresentationPolicy.sanitized(book)
         )
     }
 
     /// Search entry — defaults to the first origin, keeps the rest for 換源.
-    init(searchBook: SearchBook, sourceSwitchBookId: UUID? = nil) {
+    init(
+        searchBook: SearchBook,
+        sourceSwitchBookId: UUID? = nil,
+        onRemoveFromShelf: (() -> Void)? = nil
+    ) {
         self.searchBook = searchBook
         self.sourceSwitchBookId = sourceSwitchBookId
+        self.onRemoveFromShelf = onRemoveFromShelf
         if let origin = searchBook.origins.first {
             _currentBook = State(initialValue: Self.makeOnlineBook(from: searchBook, origin: origin))
         } else {
@@ -835,6 +847,14 @@ struct OnlineBookView: View {
     /// Remove from shelf.
     private func removeFromShelf() {
         guard alreadyInShelf, let bookId = addedBookId else { return }
+        // Return control to the presenting navigation route before removing its backing item.
+        // Otherwise `navigationDestination(item:)` keeps this detail destination alive after
+        // the shelf row disappears, leaving only the themed background (white or black).
+        if let onRemoveFromShelf {
+            onRemoveFromShelf()
+        } else {
+            dismiss()
+        }
         bookStore.delete(bookId: bookId)
         addedBookId = nil
         alreadyInShelf = false

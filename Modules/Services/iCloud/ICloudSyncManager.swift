@@ -237,7 +237,9 @@ final class ICloudSyncManager: ObservableObject {
         iCloudSyncLog.notice("sync(\(reason, privacy: .public)): start")
         do {
             // 1. Book sources (singleton store).
-            let localSources = await MainActor.run { BookSourceStore.shared.sources }
+            let (localSources, sourceMutationRevision) = await MainActor.run {
+                (BookSourceStore.shared.sources, BookSourceStore.shared.mutationRevision)
+            }
             var changedRemote = false
 
             let sourceMerge = try await mergeType(
@@ -250,7 +252,15 @@ final class ICloudSyncManager: ObservableObject {
             )
             changedRemote = changedRemote || sourceMerge.uploaded
             if sourceMerge.shouldApplyLocally {
-                await MainActor.run { BookSourceStore.shared.replaceSourcesFromSync(sourceMerge.values) }
+                // The network merge can outlive a user deletion. Only apply its result when the
+                // store still has the exact snapshot that was merged; otherwise the deletion
+                // remains local and the next sync can publish its tombstone.
+                await MainActor.run {
+                    _ = BookSourceStore.shared.replaceSourcesFromSync(
+                        sourceMerge.values,
+                        expectedMutationRevision: sourceMutationRevision
+                    )
+                }
             }
 
             // 2. Replace rules (singleton store).

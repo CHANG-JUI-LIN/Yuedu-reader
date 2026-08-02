@@ -20,6 +20,26 @@ struct BookSourceStoreTests {
         #expect(store.sources.map(\.id) == [sources[0].id, sources[2].id, sources[4].id])
     }
 
+    @Test("stale sync result cannot restore a source deleted during the network merge")
+    func staleSyncResultCannotRestoreDeletedSource() {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let source = makeSource(index: 99)
+        store.replaceSourcesFromSync([source])
+        let snapshotRevision = store.mutationRevision
+
+        store.delete(id: source.id)
+        let applied = store.replaceSourcesFromSync(
+            [source],
+            expectedMutationRevision: snapshotRevision
+        )
+
+        #expect(applied == false)
+        #expect(store.sources.isEmpty)
+    }
+
     @Test("batch delete ignores missing IDs")
     func batchDeleteIgnoresMissingIDs() {
         let store = BookSourceStore.shared

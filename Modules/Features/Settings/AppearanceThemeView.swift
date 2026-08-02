@@ -96,25 +96,11 @@ struct AppearanceThemeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DSSpacing.xl) {
-                themeSelectionCard
-                togglesSection
-                globalFontRow
-                readerInterfaceRow
-                interfaceEffectsRow
-                launchImageRow
-                if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsBottomTabCustomization {
-                    rootTabRow
-                }
-                if subscriptionStore.hasAccess(.readerThemePacks) {
-                    pageBackgroundSection
-                    themeActionsSection
-                } else {
-                    pageBackgroundLockedRow
-                }
-                // Pro upsell only; subscribers customize via 新建 / theme tiles.
-                if !subscriptionStore.hasAccess(.readerThemePacks) {
-                    customizationSection
-                }
+                themeSettingsSection
+                readingSettingsSection
+                interfaceSettingsSection
+                launchScreenSection
+                pageAndThemeSection
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.top, DSSpacing.xl)
@@ -223,6 +209,56 @@ struct AppearanceThemeView: View {
             }
         } message: {
             Text(pageBackgroundAlertMessage ?? "")
+        }
+    }
+
+    private var themeSettingsSection: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            sectionHeader(localized("主題"))
+            themeSelectionCard
+            togglesSection
+            // Pro upsell only; subscribers customize via 新建 / theme tiles.
+            if !subscriptionStore.hasAccess(.readerThemePacks) {
+                customizationSection
+            }
+        }
+    }
+
+    private var readingSettingsSection: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            sectionHeader(localized("閱讀設定"))
+            globalFontRow
+            readerInterfaceRow
+        }
+    }
+
+    private var interfaceSettingsSection: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            sectionHeader(localized("介面設定"))
+            interfaceEffectsRow
+            if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsBottomTabCustomization {
+                rootTabRow
+            }
+        }
+    }
+
+    private var launchScreenSection: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            sectionHeader(localized("啟動畫面"))
+            launchImageRow
+        }
+    }
+
+    private var pageAndThemeSection: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            sectionHeader(localized("頁面與主題"))
+            if subscriptionStore.hasAccess(.readerThemePacks) {
+                pageBackgroundSection
+                sectionHeader(localized("主題管理"))
+                themeActionsSection
+            } else {
+                pageBackgroundLockedRow
+            }
         }
     }
 
@@ -406,14 +442,31 @@ struct AppearanceThemeView: View {
         .accessibilityLabel(localized("新建"))
     }
 
-    /// 主題切換 — the two switches that decide *which* theme applies when, kept
-    /// in one card so 單獨設定深色主題 and 綁定閱讀主題 read as the pair they are.
+    private var appearanceFollowsSystemBinding: Binding<Bool> {
+        Binding(
+            get: { settings.appearanceFollowsSystem },
+            set: {
+                settings.setAppearanceFollowsSystem(
+                    $0,
+                    currentColorScheme: colorScheme
+                )
+            }
+        )
+    }
+
+    /// 主題切換 — the switches that decide *which* theme applies when, kept
+    /// in one card so the appearance and reading-theme choices read as one group.
     private var togglesSection: some View {
         VStack(alignment: .leading, spacing: DSSpacing.lg) {
             sectionHeader(localized("主題切換"))
 
             VStack(alignment: .leading, spacing: DSSpacing.sm) {
                 VStack(spacing: 0) {
+                    settingsToggleRow(
+                        title: localized("跟隨系統"),
+                        isOn: appearanceFollowsSystemBinding
+                    )
+                    groupedSectionDivider
                     settingsToggleRow(
                         title: localized("單獨設定深色主題"),
                         isOn: $settings.appearanceUsesSeparateDarkTheme
@@ -432,11 +485,18 @@ struct AppearanceThemeView: View {
                 }
                 .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
 
-                Text(localized(
-                    settings.appearanceBindReaderTheme
-                        ? "閱讀器會依系統的淺色／深色，自動套用下面選的閱讀主題。"
-                        : "關閉時，切換此外觀主題不會影響閱讀主題。"
-                ))
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                    Text(localized(
+                        settings.appearanceFollowsSystem
+                            ? "App 會依系統的淺色／深色，自動切換外觀。"
+                            : "關閉後，切換系統深色模式不會影響 App 外觀。"
+                    ))
+                    Text(localized(
+                        settings.appearanceBindReaderTheme
+                            ? "閱讀器會依系統的淺色／深色，自動套用下面選的閱讀主題。"
+                            : "關閉時，切換此外觀主題不會影響閱讀主題。"
+                    ))
+                }
                 .font(DSFont.caption)
                 .foregroundStyle(DSColor.textSecondary)
                 .padding(.horizontal, DSSpacing.lg)

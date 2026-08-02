@@ -474,6 +474,23 @@ func localized(_ key: String, bundle: Bundle = .main) -> String {
     NSLocalizedString(key, bundle: bundle, comment: "")
 }
 
+enum AppearanceColorScheme: String, Equatable {
+    case light
+    case dark
+
+    init(_ colorScheme: ColorScheme) {
+        self = colorScheme == .dark ? .dark : .light
+    }
+
+    init(storageValue: String?) {
+        self = Self(rawValue: storageValue ?? "") ?? .light
+    }
+
+    var colorScheme: ColorScheme {
+        self == .dark ? .dark : .light
+    }
+}
+
 // MARK: - Global Settings
 
 class GlobalSettings: ObservableObject {
@@ -484,8 +501,11 @@ class GlobalSettings: ObservableObject {
     /// "默認" (classic) — the app's original look; also the fallback when a
     /// selected Pro theme becomes unavailable (entitlement lapse / deletion).
     static let defaultAppearanceThemeID = AppearanceThemePreset.classicID
+    static let defaultAppearanceFollowsSystem = true
     private static let appearanceThemeIDKey = "yd_appearance_theme_id"
     private static let appearanceDarkThemeIDKey = "yd_appearance_dark_theme_id"
+    private static let appearanceFollowsSystemKey = "yd_appearance_follows_system"
+    private static let appearancePinnedColorSchemeKey = "yd_appearance_pinned_color_scheme"
     private static let appearanceSeparateDarkThemeKey = "yd_appearance_separate_dark_theme"
     private static let appearanceBindReaderThemeKey = "yd_appearance_bind_reader_theme"
     private static let appearanceBoundLightReaderThemeKey = "yd_appearance_bound_light_reader_theme"
@@ -912,6 +932,21 @@ class GlobalSettings: ObservableObject {
     }
 
     // MARK: - App Appearance Themes
+
+    @Published var appearanceFollowsSystem: Bool {
+        didSet {
+            UserDefaults.standard.set(appearanceFollowsSystem, forKey: Self.appearanceFollowsSystemKey)
+        }
+    }
+
+    @Published var appearancePinnedColorScheme: AppearanceColorScheme {
+        didSet {
+            UserDefaults.standard.set(
+                appearancePinnedColorScheme.rawValue,
+                forKey: Self.appearancePinnedColorSchemeKey
+            )
+        }
+    }
 
     @Published var appearanceThemeID: String {
         didSet { UserDefaults.standard.set(appearanceThemeID, forKey: Self.appearanceThemeIDKey) }
@@ -1502,6 +1537,12 @@ class GlobalSettings: ObservableObject {
         readerCustomBackgroundImageFileName = UserDefaults.standard.string(forKey: Self.readerCustomBackgroundImageFileNameKey)
         customAppearanceThemes = Self.loadCustomAppearanceThemes()
         appearancePageBackgrounds = Self.loadPageBackgrounds()
+        appearanceFollowsSystem =
+            (UserDefaults.standard.object(forKey: Self.appearanceFollowsSystemKey) as? Bool)
+            ?? Self.defaultAppearanceFollowsSystem
+        appearancePinnedColorScheme = AppearanceColorScheme(
+            storageValue: UserDefaults.standard.string(forKey: Self.appearancePinnedColorSchemeKey)
+        )
         appearanceThemeID = UserDefaults.standard.string(forKey: Self.appearanceThemeIDKey)
             ?? Self.defaultAppearanceThemeID
         appearanceDarkThemeID = UserDefaults.standard.string(forKey: Self.appearanceDarkThemeIDKey)
@@ -1835,6 +1876,20 @@ class GlobalSettings: ObservableObject {
             return appearanceDarkThemeID
         }
         return appearanceThemeID
+    }
+
+    func setAppearanceFollowsSystem(
+        _ followsSystem: Bool,
+        currentColorScheme: ColorScheme
+    ) {
+        if !followsSystem {
+            appearancePinnedColorScheme = AppearanceColorScheme(currentColorScheme)
+        }
+        appearanceFollowsSystem = followsSystem
+    }
+
+    func effectiveAppearanceColorScheme(systemColorScheme: ColorScheme) -> ColorScheme {
+        appearanceFollowsSystem ? systemColorScheme : appearancePinnedColorScheme.colorScheme
     }
 
     /// The theme in effect for `colorScheme`, already resolved to that

@@ -412,10 +412,14 @@ struct HomeView: View {
             }
             .navigationDestination(item: $selectedOnlineBookDetail) { book in
                 if BookSourceStore.shared.isAudiobook(book) {
-                    AudiobookDetailView(book: book)
+                    AudiobookDetailView(book: book, onRemoveFromShelf: {
+                        selectedOnlineBookDetail = nil
+                    })
                         .environmentObject(store)
                 } else {
-                    OnlineBookView(book: book)
+                    OnlineBookView(book: book, onRemoveFromShelf: {
+                        selectedOnlineBookDetail = nil
+                    })
                         .environmentObject(store)
                 }
             }

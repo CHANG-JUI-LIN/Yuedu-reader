@@ -27,9 +27,18 @@ struct ContentView: View {
         rssStore.totalUnreadCount()
     }
 
+    private var effectiveColorScheme: ColorScheme {
+        gs.effectiveAppearanceColorScheme(systemColorScheme: colorScheme)
+    }
+
+    private var preferredAppearanceColorScheme: ColorScheme? {
+        guard !gs.appearanceFollowsSystem else { return nil }
+        return gs.appearancePinnedColorScheme.colorScheme
+    }
+
     private var appearanceTheme: AppearanceThemePreset {
         gs.appearanceTheme(
-            for: colorScheme,
+            for: effectiveColorScheme,
             isProActive: subscriptionStore.hasAccess(.readerThemePacks)
         )
     }
@@ -93,6 +102,7 @@ struct ContentView: View {
         // Classic (默認) = the app's original look: no tint override at all.
         .tint(appearanceTheme.isClassic ? nil : appearanceTheme.accentColor)
         .accentColor(appearanceTheme.isClassic ? nil : appearanceTheme.accentColor)
+        .preferredColorScheme(preferredAppearanceColorScheme)
         .font(DSFont.body)
         .overlay(alignment: .top) {
             if let outcome = importDrainer.lastOutcome {
@@ -211,7 +221,7 @@ struct ContentView: View {
     private func rootTabItemLabel(for tab: RootTabItem) -> some View {
         if let renderedIcon = RootTabIconRenderer.customIcon(
             for: tab,
-            colorScheme: colorScheme,
+            colorScheme: effectiveColorScheme,
             pointSize: CGFloat(
                 gs.usesCustomRootTabIconSize
                     ? gs.rootTabIconSize

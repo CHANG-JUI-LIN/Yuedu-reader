@@ -274,6 +274,10 @@ extension ReaderView {
                     )
                 }
                 try Task.checkCancellation()
+                // It just worked; a stale flag from an earlier attempt would otherwise keep
+                // this row badged 載入失敗 in every future session.
+                readerViewModel.clearOriginFailure(
+                    bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
 
                 // The new source's chapter list is already live in `store`, so every cache
                 // lookup from here on asks about *its* chapters. The load states still
