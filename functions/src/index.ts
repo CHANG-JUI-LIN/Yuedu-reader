@@ -314,8 +314,12 @@ export const deleteSubscriptionAccountData = onCall({region}, async (request) =>
 /// Adds the tester to the App Store Connect beta group so Apple sends the
 /// invite email. Never throws: misconfiguration or API failure must not fail
 /// the callable — the one-time request stays recorded in Firestore with a
-/// "failed" status for the developer to resolve manually.
-async function inviteTestFlightTester(email: string): Promise<string> {
+/// "failed" status for the developer to resolve manually. The existing-tester
+/// result is kept distinct so the client can explain that no new Apple invite
+/// was created.
+type TestFlightInviteStatus = "invited" | "alreadyInTestFlight" | "failed";
+
+async function inviteTestFlightTester(email: string): Promise<TestFlightInviteStatus> {
   try {
     const client = new AppStoreConnectClient({
       credentials: {
@@ -326,9 +330,9 @@ async function inviteTestFlightTester(email: string): Promise<string> {
       appId: String(appAppleId),
       groupName: testFlightGroupNameSecret.value() ?? defaultTestFlightGroupName,
     });
-    const {testerId, groupId} = await client.invite(email);
+    const {testerId, groupId, testerAlreadyExisted} = await client.invite(email);
     logger.info(`TestFlight invite requested: email ${email} tester ${testerId} group ${groupId}`);
-    return "invited";
+    return testerAlreadyExisted ? "alreadyInTestFlight" : "invited";
   } catch (error) {
     logger.error(`TestFlight invite failed for ${email}`, error);
     return "failed";

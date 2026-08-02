@@ -1633,6 +1633,17 @@
 
 /* Paragraph review (段評) source-JS actions */
 "找不到這則段評所屬的書源，可能已被刪除。" = "The book source for this comment could not be found — it may have been deleted.";
+"申請已送出" = "Request submitted";
+"已申請過 TestFlight" = "TestFlight already requested";
+"申請已記錄" = "Request recorded";
+"此郵箱已在 TestFlight" = "This email is already in TestFlight";
+"此郵箱已經在 TestFlight；如果尚未看到測試版，請確認 Apple 帳號與 TestFlight App。" = "This email is already in TestFlight. If you cannot see the build, check the Apple Account and the TestFlight app.";
+"TestFlight 名額已使用" = "TestFlight slot already used";
+"這個 Pro 帳號已經申請過一個郵箱，不能再邀請第二個。" = "This Pro account has already requested one email and cannot invite a second one.";
+"需要 Pro 會員" = "Pro membership required";
+"只有有效的 Pro 會員可以申請 TestFlight。" = "An active Pro membership is required to request TestFlight access.";
+"每個 Pro 帳號只能申請一次；如果尚未收到邀請，請聯絡管理員。" = "Each Pro account can request TestFlight access only once. If you have not received an invite, contact the administrator.";
+"申請已記錄，但邀請尚未完成，請聯絡管理員。" = "The request was recorded, but the invite has not completed. Contact the administrator.";
 "「%@」沒有回應這則段評，可能需要先在書源設定填寫 Token。" = "\"%@\" did not respond to this comment. You may need to enter a token in its book-source settings first.";
 
 /* Now-playing mini player accessibility */

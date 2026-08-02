@@ -88,7 +88,11 @@ describe("App Store Connect client", () => {
     });
     const result = await client.invite("user@example.com");
 
-    assert.deepEqual(result, {testerId: "tester-1", groupId: "group-1"});
+    assert.deepEqual(result, {
+      testerId: "tester-1",
+      groupId: "group-1",
+      testerAlreadyExisted: true,
+    });
     assert.deepEqual(calls.map((call) => call.method), ["GET", "GET", "POST"]);
     const relationshipBody = JSON.parse(calls[2].body!);
     assert.deepEqual(relationshipBody, {data: [{type: "betaGroups", id: "group-1"}]});
@@ -122,7 +126,11 @@ describe("App Store Connect client", () => {
     });
     const result = await client.invite("new@example.com");
 
-    assert.deepEqual(result, {testerId: "tester-new", groupId: "group-new"});
+    assert.deepEqual(result, {
+      testerId: "tester-new",
+      groupId: "group-new",
+      testerAlreadyExisted: false,
+    });
     assert.deepEqual(calls.map((call) => call.method), ["GET", "GET", "POST", "POST"]);
     const createGroupBody = JSON.parse(calls[2].body!);
     assert.equal(createGroupBody.data.type, "betaGroups");

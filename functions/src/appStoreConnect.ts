@@ -17,6 +17,13 @@ export interface AppStoreConnectClientOptions {
   fetchImpl?: typeof fetch;
 }
 
+export interface AppStoreConnectInviteResult {
+  testerId: string;
+  groupId: string;
+  /** True when Apple already had this address as a beta tester. */
+  testerAlreadyExisted: boolean;
+}
+
 /**
  * ES256 JWT signed with the App Store Connect API key, per Apple's
  * authentication requirements (alg=ES256, kid=key id, iss=issuer id,
@@ -62,7 +69,7 @@ export class AppStoreConnectClient {
   }
 
   /** Idempotent: re-inviting an existing tester/group is a no-op link. */
-  async invite(email: string): Promise<{testerId: string; groupId: string}> {
+  async invite(email: string): Promise<AppStoreConnectInviteResult> {
     const existingTesterId = await this.findBetaTesterByEmail(email);
     const groupId = await this.findBetaGroupByName(this.options.groupName)
       ?? await this.createBetaGroup(this.options.groupName);
@@ -72,11 +79,11 @@ export class AppStoreConnectClient {
     // must receive the group relationship in the create request itself.
     if (existingTesterId !== null) {
       await this.addTesterToGroup(existingTesterId, groupId);
-      return {testerId: existingTesterId, groupId};
+      return {testerId: existingTesterId, groupId, testerAlreadyExisted: true};
     }
 
     const testerId = await this.createBetaTester(email, groupId);
-    return {testerId, groupId};
+    return {testerId, groupId, testerAlreadyExisted: false};
   }
 
   async findBetaTesterByEmail(email: string): Promise<string | null> {

@@ -1634,6 +1634,17 @@
 
 /* Paragraph review (段評) source-JS actions */
 "找不到這則段評所屬的書源，可能已被刪除。" = "找不到这条段评所属的书源，可能已被删除。";
+"申請已送出" = "申请已送出";
+"已申請過 TestFlight" = "已申请过 TestFlight";
+"申請已記錄" = "申请已记录";
+"此郵箱已在 TestFlight" = "此邮箱已在 TestFlight";
+"此郵箱已經在 TestFlight；如果尚未看到測試版，請確認 Apple 帳號與 TestFlight App。" = "此邮箱已经在 TestFlight；如果还没看到测试版，请确认 Apple 账户和 TestFlight App。";
+"TestFlight 名額已使用" = "TestFlight 名额已使用";
+"這個 Pro 帳號已經申請過一個郵箱，不能再邀請第二個。" = "这个 Pro 账户已经申请过一个邮箱，不能再邀请第二个。";
+"需要 Pro 會員" = "需要 Pro 会员";
+"只有有效的 Pro 會員可以申請 TestFlight。" = "只有有效的 Pro 会员可以申请 TestFlight。";
+"每個 Pro 帳號只能申請一次；如果尚未收到邀請，請聯絡管理員。" = "每个 Pro 账户只能申请一次；如果还没收到邀请，请联系管理员。";
+"申請已記錄，但邀請尚未完成，請聯絡管理員。" = "申请已记录，但邀请尚未完成，请联系管理员。";
 "「%@」沒有回應這則段評，可能需要先在書源設定填寫 Token。" = "「%@」没有响应这条段评，可能需要先在书源设置里填写 Token。";
 
 /* Now-playing mini player accessibility */

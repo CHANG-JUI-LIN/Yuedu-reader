@@ -33,8 +33,10 @@ struct TestFlightApplyView: View {
             }
             .interfaceSectionSurface()
 
-            if state == .submitted {
+            if case .submitted = state {
                 submittedRow
+            } else if case let .blocked(reason) = state {
+                blockedRow(reason: reason)
             } else {
                 Section {
                     TextField(localized("輸入你的郵箱"), text: $email)
@@ -42,13 +44,13 @@ struct TestFlightApplyView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .textContentType(.emailAddress)
-                        .disabled(state == .submitting)
+                        .disabled(isSubmitting)
 
                     Button {
                         submit()
                     } label: {
                         Group {
-                            if state == .submitting {
+                            if isSubmitting {
                                 ProgressView()
                             } else {
                                 Text(localized("申請加入"))
@@ -59,7 +61,7 @@ struct TestFlightApplyView: View {
                         .frame(minHeight: 44)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(state == .submitting)
+                    .disabled(isSubmitting)
                 }
                 .interfaceSectionSurface()
             }
@@ -82,9 +84,9 @@ struct TestFlightApplyView: View {
     private var submittedRow: some View {
         Section {
             VStack(spacing: DSSpacing.sm) {
-                Image(systemName: "checkmark.seal.fill")
+                Image(systemName: submittedSymbol)
                     .font(DSFont.fixed(size: 44))
-                    .foregroundStyle(DSColor.success)
+                    .foregroundStyle(submittedTint)
                     .accessibilityHidden(true)
                 Text(submittedTitle)
                     .font(DSFont.title3.weight(.semibold))
@@ -100,7 +102,58 @@ struct TestFlightApplyView: View {
         .interfaceSectionSurface()
     }
 
+    private var submittedSymbol: String {
+        switch submissionStatus {
+        case "alreadyInTestFlight":
+            return "person.crop.circle.badge.checkmark"
+        case "failed":
+            return "exclamationmark.triangle.fill"
+        default:
+            return "clock.arrow.circlepath"
+        }
+    }
+
+    private var submittedTint: Color {
+        switch submissionStatus {
+        case "alreadyInTestFlight":
+            return DSColor.success
+        case "failed":
+            return DSColor.warning
+        default:
+            return DSColor.warning
+        }
+    }
+
+    private func blockedRow(reason: TestFlightBlockReason) -> some View {
+        Section {
+            VStack(spacing: DSSpacing.sm) {
+                Image(systemName: reason.symbol)
+                    .font(DSFont.fixed(size: 44))
+                    .foregroundStyle(DSColor.warning)
+                    .accessibilityHidden(true)
+                Text(reason.title)
+                    .font(DSFont.title3.weight(.semibold))
+                Text(reason.message)
+                    .font(DSFont.footnote)
+                    .foregroundColor(DSColor.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, DSSpacing.lg)
+        }
+        .interfaceSectionSurface()
+    }
+
+    private var isSubmitting: Bool {
+        if case .submitting = state { return true }
+        return false
+    }
+
     private var submittedTitle: String {
+        if submissionStatus == "alreadyInTestFlight" {
+            return localized("此郵箱已在 TestFlight")
+        }
         if wasAlreadySubmitted {
             return localized("已申請過 TestFlight")
         }
@@ -111,6 +164,9 @@ struct TestFlightApplyView: View {
     }
 
     private var submittedMessage: String {
+        if submissionStatus == "alreadyInTestFlight" {
+            return localized("此郵箱已經在 TestFlight；如果尚未看到測試版，請確認 Apple 帳號與 TestFlight App。")
+        }
         if wasAlreadySubmitted {
             return localized("每個 Pro 帳號只能申請一次；如果尚未收到邀請，請聯絡管理員。")
         }
@@ -134,10 +190,25 @@ struct TestFlightApplyView: View {
                 wasAlreadySubmitted = result.alreadySubmitted
                 state = .submitted
             } catch {
-                state = .idle
-                errorMessage = localized("無法送出申請，請檢查網路後再試")
+                switch functionsErrorCode(from: error) {
+                case 6:
+                    state = .blocked(.oneSlotUsed)
+                    errorMessage = nil
+                case 7:
+                    state = .blocked(.requiresPro)
+                    errorMessage = nil
+                default:
+                    state = .idle
+                    errorMessage = localized("無法送出申請，請檢查網路後再試")
+                }
             }
         }
+    }
+
+    private func functionsErrorCode(from error: Error) -> Int? {
+        let nsError = error as NSError
+        guard nsError.domain == FunctionsErrorDomain else { return nil }
+        return nsError.code
     }
 
     /// Mirrors the backend `normalizeTestFlightEmail` check so a clearly
@@ -154,6 +225,35 @@ private enum TestFlightApplyState {
     case idle
     case submitting
     case submitted
+    case blocked(TestFlightBlockReason)
+}
+
+private enum TestFlightBlockReason {
+    case oneSlotUsed
+    case requiresPro
+
+    var symbol: String {
+        switch self {
+        case .oneSlotUsed: return "person.crop.circle.badge.exclamationmark"
+        case .requiresPro: return "lock.circle"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .oneSlotUsed: return localized("TestFlight 名額已使用")
+        case .requiresPro: return localized("需要 Pro 會員")
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .oneSlotUsed:
+            return localized("這個 Pro 帳號已經申請過一個郵箱，不能再邀請第二個。")
+        case .requiresPro:
+            return localized("只有有效的 Pro 會員可以申請 TestFlight。")
+        }
+    }
 }
 
 enum TestFlightAccessServiceError: Error {

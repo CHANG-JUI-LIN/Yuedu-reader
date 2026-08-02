@@ -94,26 +94,18 @@ struct AppearanceThemeView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: DSSpacing.xl) {
-                themeSettingsSection
-                readingSettingsSection
-                interfaceSettingsSection
-                launchScreenSection
-                pageAndThemeSection
-            }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.top, DSSpacing.xl)
-            // Extra bottom inset so the trailing caption never hides behind the
-            // floating tab bar.
-            .padding(.bottom, DSSpacing.xxl * 2)
-            .frame(maxWidth: DSLayout.readableFormWidth)
-            .frame(maxWidth: .infinity)
+        List {
+            themeSelectionSection
+            themeSwitchingSection
+            readingSettingsSection
+            interfaceSettingsSection
+            launchScreenSection
+            pageAndThemeSections
         }
-        .background {
-            pageBackground.ignoresSafeArea()
-        }
-        .pageBackgroundToolbar(for: .settings)
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.bottom, DSSpacing.xxl * 2, for: .scrollContent)
+        .themedAppSurface(for: .settings)
         .font(DSFont.body)
         .navigationTitle(localized("外觀主題"))
         .toolbarTitleDisplayMode(.inline)
@@ -212,81 +204,133 @@ struct AppearanceThemeView: View {
         }
     }
 
-    private var themeSettingsSection: some View {
+    private var themeSelectionSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: DSSpacing.lg) {
-                themeSelectionCard
-                togglesSection
-                // Pro upsell only; subscribers customize via 新建 / theme tiles.
-                if !subscriptionStore.hasAccess(.readerThemePacks) {
-                    customizationSection
-                }
+            themeSelectionCard
+            if !subscriptionStore.hasAccess(.readerThemePacks) {
+                customizationRow
             }
         } header: {
-            sectionHeader(localized("主題"))
+            Text(localized("主題"))
+        } footer: {
+            if !subscriptionStore.hasAccess(.readerThemePacks) {
+                Text(localized("自訂應用配色、閱讀配色與頁面背景需開通會員。"))
+            }
         }
+        .interfaceSectionSurface()
+    }
+
+    private var themeSwitchingSection: some View {
+        Section {
+            settingsToggleRow(
+                title: localized("跟隨系統"),
+                isOn: appearanceFollowsSystemBinding
+            )
+            settingsToggleRow(
+                title: localized("單獨設定深色主題"),
+                isOn: $settings.appearanceUsesSeparateDarkTheme
+            )
+            settingsToggleRow(
+                title: localized("綁定閱讀主題"),
+                isOn: $settings.appearanceBindReaderTheme
+            )
+            if settings.appearanceBindReaderTheme {
+                boundReaderThemeRow(titleKey: "淺色閱讀主題", appearance: .light)
+                boundReaderThemeRow(titleKey: "黑色閱讀主題", appearance: .dark)
+            }
+        } header: {
+            Text(localized("主題切換"))
+        } footer: {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                Text(localized(
+                    settings.appearanceFollowsSystem
+                        ? "App 會依系統的淺色／深色，自動切換外觀。"
+                        : "關閉後，切換系統深色模式不會影響 App 外觀。"
+                ))
+                Text(localized(
+                    settings.appearanceBindReaderTheme
+                        ? "閱讀器會依系統的淺色／深色，自動套用下面選的閱讀主題。"
+                        : "關閉時，切換此外觀主題不會影響閱讀主題。"
+                ))
+            }
+        }
+        .interfaceSectionSurface()
+        .animation(DSAnimation.standard, value: settings.appearanceBindReaderTheme)
     }
 
     private var readingSettingsSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: DSSpacing.lg) {
-                globalFontRow
-                readerInterfaceRow
-            }
+            globalFontRow
+            readerInterfaceRow
         } header: {
-            sectionHeader(localized("閱讀設定"))
+            Text(localized("閱讀設定"))
         }
+        .interfaceSectionSurface()
     }
 
     private var interfaceSettingsSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: DSSpacing.lg) {
-                interfaceEffectsRow
-                if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsBottomTabCustomization {
-                    rootTabRow
-                }
+            interfaceEffectsRow
+            if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsBottomTabCustomization {
+                rootTabRow
             }
         } header: {
-            sectionHeader(localized("介面設定"))
+            Text(localized("介面設定"))
         }
+        .interfaceSectionSurface()
     }
 
     private var launchScreenSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: DSSpacing.lg) {
-                launchImageRow
-            }
+            launchImageRow
         } header: {
-            sectionHeader(localized("啟動畫面"))
+            Text(localized("啟動畫面"))
         }
+        .interfaceSectionSurface()
     }
 
-    private var pageAndThemeSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: DSSpacing.lg) {
-                if subscriptionStore.hasAccess(.readerThemePacks) {
-                    pageBackgroundSection
-                    sectionHeader(localized("主題管理"))
-                    themeActionsSection
-                } else {
-                    pageBackgroundLockedRow
+    @ViewBuilder
+    private var pageAndThemeSections: some View {
+        if subscriptionStore.hasAccess(.readerThemePacks) {
+            Section {
+                editScopeRow
+                pageBackgroundColorRow(titleKey: "亮色主色調", scheme: .light, slot: .primary)
+                pageBackgroundColorRow(titleKey: "亮色輔色調", scheme: .light, slot: .secondary)
+                pageBackgroundColorRow(titleKey: "深色主色調", scheme: .dark, slot: .primary)
+                pageBackgroundColorRow(titleKey: "深色輔色調", scheme: .dark, slot: .secondary)
+                backgroundImagePickerRow(scheme: .light)
+                if hasBackgroundImage(scheme: .light) {
+                    backgroundImageOpacityRow(scheme: .light)
                 }
+                backgroundImagePickerRow(scheme: .dark)
+                if hasBackgroundImage(scheme: .dark) {
+                    backgroundImageOpacityRow(scheme: .dark)
+                }
+            } header: {
+                Text(localized("頁面與主題"))
             }
-        } header: {
-            sectionHeader(localized("頁面與主題"))
-        }
-    }
+            .interfaceSectionSurface()
 
-    private var pageBackground: some View {
-        ZStack {
-            DSColor.groupedBackground
-            if subscriptionStore.hasAccess(.readerThemePacks),
-               let slice = settings.resolvedPageBackgroundSlice(
-                   for: .settings,
-                   colorScheme: colorScheme
-               ) {
-                AppearancePageBackgroundLayerView(slice: slice)
+            Section {
+                pageBackgroundPreviewCard
+            } header: {
+                Text(localized("預覽"))
             }
+            .interfaceSectionSurface()
+
+            Section {
+                themeActionRows
+            } header: {
+                Text(localized("主題管理"))
+            }
+            .interfaceSectionSurface()
+        } else {
+            Section {
+                pageBackgroundLockedRow
+            } header: {
+                Text(localized("頁面與主題"))
+            }
+            .interfaceSectionSurface()
         }
     }
 
@@ -321,8 +365,6 @@ struct AppearanceThemeView: View {
                 }
             }
         }
-        .padding(DSSpacing.lg)
-        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         .animation(DSAnimation.standard, value: settings.appearanceUsesSeparateDarkTheme)
     }
 
@@ -469,55 +511,6 @@ struct AppearanceThemeView: View {
         )
     }
 
-    /// 主題切換 — the switches that decide *which* theme applies when, kept
-    /// in one card so the appearance and reading-theme choices read as one group.
-    private var togglesSection: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            VStack(alignment: .leading, spacing: DSSpacing.sm) {
-                VStack(spacing: 0) {
-                    settingsToggleRow(
-                        title: localized("跟隨系統"),
-                        isOn: appearanceFollowsSystemBinding
-                    )
-                    groupedSectionDivider
-                    settingsToggleRow(
-                        title: localized("單獨設定深色主題"),
-                        isOn: $settings.appearanceUsesSeparateDarkTheme
-                    )
-                    groupedSectionDivider
-                    settingsToggleRow(
-                        title: localized("綁定閱讀主題"),
-                        isOn: $settings.appearanceBindReaderTheme
-                    )
-                    if settings.appearanceBindReaderTheme {
-                        groupedSectionDivider
-                        boundReaderThemeRow(titleKey: "淺色閱讀主題", appearance: .light)
-                        groupedSectionDivider
-                        boundReaderThemeRow(titleKey: "黑色閱讀主題", appearance: .dark)
-                    }
-                }
-                .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
-
-                VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                    Text(localized(
-                        settings.appearanceFollowsSystem
-                            ? "App 會依系統的淺色／深色，自動切換外觀。"
-                            : "關閉後，切換系統深色模式不會影響 App 外觀。"
-                    ))
-                    Text(localized(
-                        settings.appearanceBindReaderTheme
-                            ? "閱讀器會依系統的淺色／深色，自動套用下面選的閱讀主題。"
-                            : "關閉時，切換此外觀主題不會影響閱讀主題。"
-                    ))
-                }
-                .font(DSFont.caption)
-                .foregroundStyle(DSColor.textSecondary)
-                .padding(.horizontal, DSSpacing.lg)
-            }
-        }
-        .animation(DSAnimation.standard, value: settings.appearanceBindReaderTheme)
-    }
-
     /// One appearance's reading-theme pick, shown while 綁定閱讀主題 is on.
     private func boundReaderThemeRow(titleKey: String, appearance: ColorScheme) -> some View {
         let choice = settings.boundReaderTheme(for: appearance)
@@ -557,8 +550,6 @@ struct AppearanceThemeView: View {
             .accessibilityLabel(localized(titleKey))
             .accessibilityValue(choice.localizedTitle)
         }
-        .padding(.horizontal, DSSpacing.lg)
-        .padding(.vertical, DSSpacing.xs)
     }
 
     private func settingsToggleRow(title: String, isOn: Binding<Bool>) -> some View {
@@ -567,8 +558,6 @@ struct AppearanceThemeView: View {
                 .font(DSFont.body)
                 .foregroundStyle(DSColor.textPrimary)
         }
-        .padding(.horizontal, DSSpacing.lg)
-        .padding(.vertical, DSSpacing.md)
     }
 
     private var globalFontRow: some View {
@@ -583,15 +572,8 @@ struct AppearanceThemeView: View {
                 Text(globalFontDisplayName)
                     .font(DSFont.body)
                     .foregroundStyle(DSColor.textSecondary)
-                Image(systemName: "chevron.right")
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(DSColor.textSecondary)
             }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.lg)
-            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
-        .buttonStyle(.plain)
     }
 
     private var globalFontDisplayName: String {
@@ -614,15 +596,8 @@ struct AppearanceThemeView: View {
                 Text(settings.appearanceReaderInterface.localizedTitle)
                     .font(DSFont.body)
                     .foregroundStyle(DSColor.textSecondary)
-                Image(systemName: "chevron.right")
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(DSColor.textSecondary)
             }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.lg)
-            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
-        .buttonStyle(.plain)
     }
 
     private var interfaceEffectsRow: some View {
@@ -637,15 +612,8 @@ struct AppearanceThemeView: View {
                 Text(interfaceEffectsSummary)
                     .font(DSFont.body)
                     .foregroundStyle(DSColor.textSecondary)
-                Image(systemName: "chevron.right")
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(DSColor.textSecondary)
             }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.lg)
-            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
-        .buttonStyle(.plain)
     }
 
     /// Names whichever effects are on, so the row says something useful without
@@ -685,10 +653,8 @@ struct AppearanceThemeView: View {
                 Image(systemName: subscriptionStore.hasAccess(.launchScreen) ? "chevron.right" : "lock.fill")
                     .font(DSFont.subheadline)
                     .foregroundStyle(DSColor.textSecondary)
+                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.lg)
-            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -712,57 +678,11 @@ struct AppearanceThemeView: View {
                 Text(subscriptionStore.hasAccess(.bottomBarCustomization) ? localized("自定義") : localized("需要 Pro"))
                     .font(DSFont.body)
                     .foregroundStyle(DSColor.textSecondary)
-                Image(systemName: "chevron.right")
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(DSColor.textSecondary)
             }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.lg)
-            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - 頁面背景 (page background editor)
-
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(DSFont.headline)
-            .foregroundStyle(DSColor.textPrimary)
-            .padding(.horizontal, DSSpacing.xs)
-    }
-
-    private var pageBackgroundSection: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            sectionHeader(localized("頁面背景"))
-
-            VStack(spacing: 0) {
-                editScopeRow
-                groupedSectionDivider
-                pageBackgroundColorRow(titleKey: "亮色主色調", scheme: .light, slot: .primary)
-                groupedSectionDivider
-                pageBackgroundColorRow(titleKey: "亮色輔色調", scheme: .light, slot: .secondary)
-                groupedSectionDivider
-                pageBackgroundColorRow(titleKey: "深色主色調", scheme: .dark, slot: .primary)
-                groupedSectionDivider
-                pageBackgroundColorRow(titleKey: "深色輔色調", scheme: .dark, slot: .secondary)
-                groupedSectionDivider
-                backgroundImageRow(scheme: .light)
-                groupedSectionDivider
-                backgroundImageRow(scheme: .dark)
-            }
-            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
-
-            sectionHeader(localized("預覽"))
-            pageBackgroundPreviewCard
-        }
-    }
-
-    private var groupedSectionDivider: some View {
-        Divider()
-            .overlay(DSColor.separator)
-            .padding(.leading, DSSpacing.lg)
-    }
 
     private var editScopeRow: some View {
         HStack {
@@ -786,8 +706,6 @@ struct AppearanceThemeView: View {
                 .foregroundStyle(DSColor.accent)
             }
         }
-        .padding(.horizontal, DSSpacing.lg)
-        .padding(.vertical, DSSpacing.lg)
     }
 
     private func pageBackgroundColorRow(
@@ -800,8 +718,6 @@ struct AppearanceThemeView: View {
                 .font(DSFont.body)
                 .foregroundStyle(DSColor.textPrimary)
         }
-        .padding(.horizontal, DSSpacing.lg)
-        .padding(.vertical, DSSpacing.md)
     }
 
     private func pageBackgroundColorBinding(
@@ -855,124 +771,117 @@ struct AppearanceThemeView: View {
         return slot == .primary ? 0xF2F2F7 : 0xFFFFFF
     }
 
-    private func backgroundImageRow(scheme: ColorScheme) -> some View {
+    private func hasBackgroundImage(scheme: ColorScheme) -> Bool {
+        settings.pageBackgroundConfig(for: pageBackgroundScope).imageFileName(for: scheme) != nil
+    }
+
+    private func backgroundImagePickerRow(scheme: ColorScheme) -> some View {
         let titleKey = scheme == .dark ? "深色背景圖" : "亮色背景圖"
         let config = settings.pageBackgroundConfig(for: pageBackgroundScope)
         let fileName = config.imageFileName(for: scheme)
-        return VStack(spacing: 0) {
-            HStack(spacing: DSSpacing.md) {
-                Text(localized(titleKey))
-                    .font(DSFont.body)
-                    .foregroundStyle(DSColor.textPrimary)
-                Spacer(minLength: DSSpacing.md)
-                if let fileName,
-                   let image = AppearancePageBackgroundImageStore.shared.image(fileName: fileName) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 44, height: 30)
-                        .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
-                                .stroke(DSColor.border, lineWidth: 0.5)
-                        )
-                        .accessibilityHidden(true)
-                }
-                if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
-                    HStack(spacing: DSSpacing.sm) {
-                        Button {
-                            backgroundImagePickScheme = scheme
-                            legacyBackgroundImageSequence.cancel()
-                            showLegacyBackgroundImageChooser = true
-                        } label: {
-                            Text(localized("選擇"))
-                                .font(DSFont.subheadline.weight(.medium))
-                                .foregroundStyle(DSColor.accent)
-                                .padding(.horizontal, DSSpacing.md)
-                                .padding(.vertical, DSSpacing.sm - 2)
-                                .background(DSColor.accent.opacity(0.12), in: Capsule())
-                        }
-                        .accessibilityLabel(localized(titleKey))
-                        if fileName != nil {
-                            Button(role: .destructive) {
-                                settings.clearPageBackgroundImage(
-                                    scope: pageBackgroundScope,
-                                    appearance: scheme
-                                )
-                            } label: {
-                                Image(systemName: "trash")
-                                    .foregroundStyle(DSColor.destructive)
-                            }
-                            .accessibilityLabel(localized("移除背景圖"))
-                        }
-                    }
-                } else {
-                    Menu {
-                        Button {
-                            backgroundImagePickScheme = scheme
-                            showBackgroundPhotosPicker = true
-                        } label: {
-                            Label(localized("從相簿選擇"), systemImage: "photo.on.rectangle")
-                        }
-                        Button {
-                            backgroundImagePickScheme = scheme
-                            isImportingBackgroundFile = true
-                        } label: {
-                            Label(localized("從檔案選擇"), systemImage: "folder")
-                        }
-                        if fileName != nil {
-                            Button(role: .destructive) {
-                                settings.clearPageBackgroundImage(scope: pageBackgroundScope, appearance: scheme)
-                            } label: {
-                                Label(localized("移除背景圖"), systemImage: "trash")
-                            }
-                        }
+        return HStack(spacing: DSSpacing.md) {
+            Text(localized(titleKey))
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textPrimary)
+            Spacer(minLength: DSSpacing.md)
+            if let fileName,
+               let image = AppearancePageBackgroundImageStore.shared.image(fileName: fileName) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 44, height: 30)
+                    .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
+                            .stroke(DSColor.border, lineWidth: 0.5)
+                    )
+                    .accessibilityHidden(true)
+            }
+            if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+                HStack(spacing: DSSpacing.sm) {
+                    Button {
+                        backgroundImagePickScheme = scheme
+                        legacyBackgroundImageSequence.cancel()
+                        showLegacyBackgroundImageChooser = true
                     } label: {
-                        HStack(spacing: DSSpacing.xs) {
-                            Text(localized("選擇"))
-                            Image(systemName: "chevron.down")
-                                .font(DSFont.caption2.weight(.semibold))
-                        }
-                        .font(DSFont.subheadline.weight(.medium))
-                        .foregroundStyle(DSColor.accent)
-                        .padding(.horizontal, DSSpacing.md)
-                        .padding(.vertical, DSSpacing.sm - 2)
-                        .background(DSColor.accent.opacity(0.12), in: Capsule())
+                        Text(localized("選擇"))
+                            .font(DSFont.subheadline.weight(.medium))
+                            .foregroundStyle(DSColor.accent)
+                            .padding(.horizontal, DSSpacing.md)
+                            .padding(.vertical, DSSpacing.xs)
+                            .background(DSColor.accent.opacity(0.12), in: Capsule())
                     }
                     .accessibilityLabel(localized(titleKey))
+                    if fileName != nil {
+                        Button(role: .destructive) {
+                            settings.clearPageBackgroundImage(
+                                scope: pageBackgroundScope,
+                                appearance: scheme
+                            )
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundStyle(DSColor.destructive)
+                                .accessibilityHidden(true)
+                        }
+                        .accessibilityLabel(localized("移除背景圖"))
+                    }
                 }
-            }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.md)
-
-            if fileName != nil {
-                Divider()
-                    .overlay(DSColor.separator)
-                    .padding(.leading, DSSpacing.lg)
-
-                HStack(spacing: DSSpacing.md) {
-                    Text(localized("不透明度"))
-                        .font(DSFont.body)
-                        .foregroundStyle(DSColor.textPrimary)
-                    Slider(value: imageOpacityBinding(scheme: scheme), in: 0...1, step: 0.05)
-                        .tint(DSColor.accent)
-                        // A bare Slider has no name and announces a fraction of its
-                        // range. The label carries the appearance too, because this
-                        // screen shows two of these rows (亮色 / 深色) at once and
-                        // 「不透明度」 alone would name them identically.
-                        // docs/design.md §7.1, third trap.
-                        .accessibilityLabel(
-                            String(format: localized("%@ 不透明度"), localized(titleKey))
-                        )
-                        .accessibilityValue(imageOpacityPercentText(scheme: scheme))
-                    Text(imageOpacityPercentText(scheme: scheme))
-                        .font(DSFont.monospaced(size: 13))
-                        .foregroundStyle(DSColor.textSecondary)
-                        .frame(width: 44, alignment: .trailing)
+            } else {
+                Menu {
+                    Button {
+                        backgroundImagePickScheme = scheme
+                        showBackgroundPhotosPicker = true
+                    } label: {
+                        Label(localized("從相簿選擇"), systemImage: "photo.on.rectangle")
+                    }
+                    Button {
+                        backgroundImagePickScheme = scheme
+                        isImportingBackgroundFile = true
+                    } label: {
+                        Label(localized("從檔案選擇"), systemImage: "folder")
+                    }
+                    if fileName != nil {
+                        Button(role: .destructive) {
+                            settings.clearPageBackgroundImage(scope: pageBackgroundScope, appearance: scheme)
+                        } label: {
+                            Label(localized("移除背景圖"), systemImage: "trash")
+                        }
+                    }
+                } label: {
+                    HStack(spacing: DSSpacing.xs) {
+                        Text(localized("選擇"))
+                        Image(systemName: "chevron.down")
+                            .font(DSFont.caption2.weight(.semibold))
+                            .accessibilityHidden(true)
+                    }
+                    .font(DSFont.subheadline.weight(.medium))
+                    .foregroundStyle(DSColor.accent)
+                    .padding(.horizontal, DSSpacing.md)
+                    .padding(.vertical, DSSpacing.xs)
+                    .background(DSColor.accent.opacity(0.12), in: Capsule())
                 }
-                .padding(.horizontal, DSSpacing.lg)
-                .padding(.vertical, DSSpacing.md)
+                .accessibilityLabel(localized(titleKey))
             }
+        }
+    }
+
+    private func backgroundImageOpacityRow(scheme: ColorScheme) -> some View {
+        let titleKey = scheme == .dark ? "深色背景圖" : "亮色背景圖"
+        return HStack(spacing: DSSpacing.md) {
+            Text(localized("不透明度"))
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textPrimary)
+            Slider(value: imageOpacityBinding(scheme: scheme), in: 0...1, step: 0.05)
+                .tint(DSColor.accent)
+                .accessibilityLabel(
+                    String(format: localized("%@ 不透明度"), localized(titleKey))
+                )
+                .accessibilityValue(imageOpacityPercentText(scheme: scheme))
+            Text(imageOpacityPercentText(scheme: scheme))
+                .font(DSFont.caption)
+                .monospacedDigit()
+                .foregroundStyle(DSColor.textSecondary)
+                .frame(minWidth: DSLayout.minimumTapTarget, alignment: .trailing)
         }
     }
 
@@ -1072,74 +981,66 @@ struct AppearanceThemeView: View {
 
     // MARK: - Theme actions (save / export / import / reset)
 
-    private var themeActionsSection: some View {
-        VStack(spacing: 0) {
-            themeActionRow(titleKey: "保存為新主題") {
-                newThemeName = ""
-                showSaveThemeAlert = true
-            }
-            .alert(localized("保存為新主題"), isPresented: $showSaveThemeAlert) {
-                TextField(localized("主題名稱"), text: $newThemeName)
-                Button(localized("保存")) {
-                    settings.saveCurrentAppearanceAsTheme(
-                        named: newThemeName,
-                        basedOn: selectedTheme,
-                        for: editingScheme
-                    )
-                }
-                Button(localized("取消"), role: .cancel) {}
-            } message: {
-                Text(localized("將當前配色與頁面背景保存為自訂主題。"))
-            }
-
-            groupedSectionDivider
-
-            themeActionRow(titleKey: "導出主題") {
-                themeExportDocument = AppearanceThemeExportDocument(
-                    exportFile: settings.appearanceThemeExportFile(for: selectedTheme)
-                )
-                showThemeExporter = true
-            }
-            .fileExporter(
-                isPresented: $showThemeExporter,
-                document: themeExportDocument,
-                contentType: .json,
-                defaultFilename: "yuedu-theme-\(selectedTheme.localizedName)"
-            ) { _ in
-                themeExportDocument = nil
-            }
-
-            groupedSectionDivider
-
-            themeActionRow(titleKey: "導入主題") {
-                showThemeImporter = true
-            }
-            .fileImporter(
-                isPresented: $showThemeImporter,
-                allowedContentTypes: [.json],
-                allowsMultipleSelection: false,
-                onCompletion: handleThemeImport
-            )
-
-            groupedSectionDivider
-
-            themeActionRow(titleKey: "重置為默認") {
-                showResetPageBackgroundConfirm = true
-            }
-            .confirmationDialog(
-                localized("重置為默認？"),
-                isPresented: $showResetPageBackgroundConfirm,
-                titleVisibility: .visible
-            ) {
-                Button(localized("重置為默認"), role: .destructive) {
-                    settings.resetAllPageBackgrounds()
-                }
-                Button(localized("取消"), role: .cancel) {}
-            } message: {
-                Text(localized("將清除所有頁面（含各分頁）的背景顏色與背景圖設定。"))
-            }
+    @ViewBuilder
+    private var themeActionRows: some View {
+        themeActionRow(titleKey: "保存為新主題") {
+            newThemeName = ""
+            showSaveThemeAlert = true
         }
-        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .alert(localized("保存為新主題"), isPresented: $showSaveThemeAlert) {
+            TextField(localized("主題名稱"), text: $newThemeName)
+            Button(localized("保存")) {
+                settings.saveCurrentAppearanceAsTheme(
+                    named: newThemeName,
+                    basedOn: selectedTheme,
+                    for: editingScheme
+                )
+            }
+            Button(localized("取消"), role: .cancel) {}
+        } message: {
+            Text(localized("將當前配色與頁面背景保存為自訂主題。"))
+        }
+
+        themeActionRow(titleKey: "導出主題") {
+            themeExportDocument = AppearanceThemeExportDocument(
+                exportFile: settings.appearanceThemeExportFile(for: selectedTheme)
+            )
+            showThemeExporter = true
+        }
+        .fileExporter(
+            isPresented: $showThemeExporter,
+            document: themeExportDocument,
+            contentType: .json,
+            defaultFilename: "yuedu-theme-\(selectedTheme.localizedName)"
+        ) { _ in
+            themeExportDocument = nil
+        }
+
+        themeActionRow(titleKey: "導入主題") {
+            showThemeImporter = true
+        }
+        .fileImporter(
+            isPresented: $showThemeImporter,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false,
+            onCompletion: handleThemeImport
+        )
+
+        themeActionRow(titleKey: "重置為默認") {
+            showResetPageBackgroundConfirm = true
+        }
+        .confirmationDialog(
+            localized("重置為默認？"),
+            isPresented: $showResetPageBackgroundConfirm,
+            titleVisibility: .visible
+        ) {
+            Button(localized("重置為默認"), role: .destructive) {
+                settings.resetAllPageBackgrounds()
+            }
+            Button(localized("取消"), role: .cancel) {}
+        } message: {
+            Text(localized("將清除所有頁面（含各分頁）的背景顏色與背景圖設定。"))
+        }
     }
 
     private func themeActionRow(titleKey: String, action: @escaping () -> Void) -> some View {
@@ -1150,8 +1051,6 @@ struct AppearanceThemeView: View {
                     .foregroundStyle(DSColor.textPrimary)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.lg)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1173,10 +1072,8 @@ struct AppearanceThemeView: View {
                 Image(systemName: "lock.fill")
                     .font(DSFont.subheadline)
                     .foregroundStyle(DSColor.textSecondary)
+                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.lg)
-            .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -1238,35 +1135,25 @@ struct AppearanceThemeView: View {
     }
 
     /// Free-user upsell row; hidden entirely once Pro is active.
-    private var customizationSection: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.md) {
-            Button {
-                showPaywall = true
-            } label: {
-                HStack(spacing: DSSpacing.md) {
-                    Image(systemName: "crown.fill")
-                        .font(DSFont.fixed(size: 20, weight: .semibold))
-                        .foregroundStyle(activeTheme.accentColor)
-                        .frame(width: 28, height: 28)
-                    Text(localized("主題自定義"))
-                        .font(DSFont.headline)
-                        .foregroundStyle(DSColor.textPrimary)
-                    Spacer(minLength: 0)
-                    Image(systemName: "lock.fill")
-                        .foregroundStyle(DSColor.textSecondary)
-                }
-                .padding(.horizontal, DSSpacing.lg)
-                .padding(.vertical, DSSpacing.lg)
-                .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+    private var customizationRow: some View {
+        Button {
+            showPaywall = true
+        } label: {
+            HStack(spacing: DSSpacing.md) {
+                Image(systemName: "crown.fill")
+                    .font(DSFont.headline)
+                    .foregroundStyle(activeTheme.accentColor)
+                    .accessibilityHidden(true)
+                Text(localized("主題自定義"))
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                Spacer(minLength: 0)
+                Image(systemName: "lock.fill")
+                    .foregroundStyle(DSColor.textSecondary)
+                    .accessibilityHidden(true)
             }
-            .buttonStyle(.plain)
-
-            Text(localized("自訂應用配色、閱讀配色與頁面背景需開通會員。"))
-                .font(DSFont.subheadline)
-                .foregroundStyle(DSColor.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, DSSpacing.lg)
         }
+        .buttonStyle(.plain)
     }
 }
 
