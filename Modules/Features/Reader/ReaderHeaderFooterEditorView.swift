@@ -109,10 +109,9 @@ struct ReaderHeaderFooterEditorView: View {
                 }
             }
         }
-        .confirmationDialog(
+        .alert(
             localized("儲存頁首頁尾變更？"),
-            isPresented: $showingExitConfirmation,
-            titleVisibility: .visible
+            isPresented: $showingExitConfirmation
         ) {
             Button(localized("儲存並退出")) { saveAndExit() }
             Button(localized("不儲存退出"), role: .destructive) { discardAndExit() }

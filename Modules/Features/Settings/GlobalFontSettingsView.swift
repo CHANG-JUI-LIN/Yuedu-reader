@@ -74,13 +74,12 @@ struct GlobalFontSettingsView: View {
                 dismissButton: .default(Text(localized("確定")))
             )
         }
-        .confirmationDialog(
+        .alert(
             localized("刪除此字體？"),
             isPresented: Binding(
                 get: { fontToDelete != nil },
                 set: { if !$0 { fontToDelete = nil } }
             ),
-            titleVisibility: .visible,
             presenting: fontToDelete
         ) { font in
             Button(localized("刪除"), role: .destructive) {

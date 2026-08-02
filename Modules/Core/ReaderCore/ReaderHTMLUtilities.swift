@@ -888,16 +888,14 @@ enum ReaderHTMLUtilities {
               )
         else { return cleanedTag }
 
-        let reviewAnchor = "<a href=\"\(href)\" class=\"yd-review-image\">\(cleanedTag)</a>"
-        // Sigma and MD3 flush Legado FULL review images into a standalone image line. The source
-        // may put the card immediately after an inline count badge inside one paragraph; make that
-        // boundary explicit so CoreText cannot justify the badge and card as one prose line. This
-        // runs only after the image has been recognized as a tappable `yd-review-image`, so ordinary
-        // images without a review target keep their authored structure. Qidian's malformed SVG
-        // dimension repair above remains source-gated because that is not a general Legado rule.
-        return clickStyle == "full"
-            ? "<div data-yd-review-style=\"full\">\(reviewAnchor)</div>"
-            : reviewAnchor
+        // Keep FULL as inline HTML through newline normalization. Injecting a `<div>` here made
+        // newline-based Legado chapters look as if they already had authored block structure, so
+        // `wrapNewlineParagraphsIfNeeded` skipped every prose `<p>` as soon as a chapter contained
+        // a hot-review, author, or chapter-discussion card. The AST converter consumes this exact
+        // marker later and emits a render block, preserving Sigma/MD3's standalone-card behavior
+        // without changing how the source's prose structure is detected.
+        let reviewStyle = clickStyle == "full" ? " data-yd-review-style=\"full\"" : ""
+        return "<a href=\"\(href)\" class=\"yd-review-image\"\(reviewStyle)>\(cleanedTag)</a>"
     }
 
     private static func isQidianSource(_ context: LegadoReviewContext?) -> Bool {

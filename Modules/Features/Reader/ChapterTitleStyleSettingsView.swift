@@ -73,13 +73,12 @@ struct ChapterTitleStyleSettingsView: View {
         } message: {
             Text(localized("為目前的章節標題樣式取一個名字。"))
         }
-        .confirmationDialog(
+        .alert(
             localized("刪除這個預設？"),
             isPresented: Binding(
                 get: { presetPendingDeletion != nil },
                 set: { if !$0 { presetPendingDeletion = nil } }
             ),
-            titleVisibility: .visible,
             presenting: presetPendingDeletion
         ) { preset in
             Button(localized("刪除"), role: .destructive) { deletePreset(preset) }

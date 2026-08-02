@@ -1820,6 +1820,10 @@ struct ReaderView: View {
         .onReceive(readerViewModel.$chapterStates) { states in
             handleChapterStateChanges(states)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .onlineChapterCacheDidClear)) { notification in
+            guard notification.userInfo?["bookId"] as? UUID == bookId else { return }
+            handleOnlineChapterCacheCleared()
+        }
         .onChanged(of: settings.pageTurnStyle) { _ in
             if settings.pageTurnStyle == .curl {
                 beginCurlStartupTrace(reason: "style_changed")

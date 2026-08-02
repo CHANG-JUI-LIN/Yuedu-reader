@@ -486,6 +486,71 @@ struct OnlineReaderPipelineUnificationTests {
         #expect(!NSLocationInRange(cardLocation, badgeParagraph))
     }
 
+    @Test("FULL review cards preserve newline paragraph geometry")
+    func fullReviewCardsPreserveNewlineParagraphGeometry() async throws {
+        func card(_ text: String, paragraphID: Int) -> String {
+            let svg = #"<svg width="1000" height="120" xmlns="http://www.w3.org/2000/svg"><text x="12" y="64">\#(text)</text></svg>"#
+            let base64 = Data(svg.utf8).base64EncodedString()
+            let clickConfig = #"{"style":"FULL","click":"showCmt('1','2','\#(paragraphID)',123,'dp')"}"#
+            return "<img src=\"data:image/svg+xml;base64,\(base64),\(clickConfig)\">"
+        }
+
+        // 同人小說網的 data.content 是換行分段的純文字；熱評插在正文行後的新行，
+        // 作者評論／本章討論則追加在章末。FULL 卡不能讓換行段落略過 <p> 正規化。
+        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: "第一章",
+            plainTextContent: "第一段正文。\n第二段正文。\n第三段正文。",
+            rawHTMLContent: [
+                "第一段正文。",
+                card("熱評", paragraphID: 1),
+                "第二段正文。",
+                "第三段正文。",
+                card("作者評論", paragraphID: -10),
+                card("本章討論", paragraphID: -1),
+            ].joined(separator: "\n"),
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "起点限免（同人小说网）",
+                sourceURL: "https://m.qidian.com#同人小说网"
+            )
+        )
+
+        #expect(normalizedHTML.contains("<p>第一段正文。</p>"))
+        #expect(normalizedHTML.contains("<p>第二段正文。</p>"))
+        #expect(normalizedHTML.contains("<p>第三段正文。</p>"))
+        #expect(!normalizedHTML.contains(#"<div data-yd-review-style="full">"#))
+
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(
+                index: 0,
+                title: "第一章",
+                plainText: "第一段正文。\n第二段正文。\n第三段正文。",
+                body: .html(normalizedHTML),
+                sourceHref: "https://m.qidian.com/chapter/1/2"
+            )
+        ])
+        let attributed = try await OnlineProviderAttributedStringBuilder(
+            provider: provider,
+            renderSize: CGSize(width: 360, height: 640)
+        ).buildChapter(
+            at: 0,
+            settings: Self.settings,
+            themeTextColor: .label,
+            themeBackgroundColor: .systemBackground
+        ).attributedString
+
+        let ns = attributed.string as NSString
+        for text in ["第一段正文。", "第二段正文。", "第三段正文。"] {
+            let range = ns.range(of: text)
+            let location = try #require(range.location == NSNotFound ? nil : range.location)
+            let paragraph = try #require(
+                attributed.attribute(.paragraphStyle, at: location, effectiveRange: nil)
+                    as? NSParagraphStyle
+            )
+            #expect(abs(paragraph.firstLineHeadIndent - Self.settings.fontSize * 2) < 0.5)
+            #expect(abs(paragraph.paragraphSpacing - Self.settings.paragraphSpacing) < 0.5)
+        }
+    }
+
     // MARK: - Legacy parity: provider builder renders cached HTML images
 
     @Test("provider builder renders cached HTML images")

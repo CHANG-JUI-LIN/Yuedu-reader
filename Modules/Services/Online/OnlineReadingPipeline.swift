@@ -3,6 +3,10 @@ import SwiftUI
 
 extension Notification.Name {
     static let onlineChapterCacheDidUpdate = Notification.Name("onlineChapterCacheDidUpdate")
+    /// Every cached chapter of a book was deleted (移除下載). `userInfo["bookId"]` carries the
+    /// book. An open reader holds `.ready` load states for chapters that no longer exist on
+    /// disk, and it reads that pair as 資料不一致 — so whoever empties the cache has to say so.
+    static let onlineChapterCacheDidClear = Notification.Name("onlineChapterCacheDidClear")
 }
 
 enum OnlineChapterLoadState: String {

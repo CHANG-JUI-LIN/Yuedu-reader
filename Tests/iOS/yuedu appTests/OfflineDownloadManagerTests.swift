@@ -21,7 +21,82 @@ struct OfflineDownloadManagerTests {
         #expect(task.completedIndices == Set([0, 2]))
         #expect(Set(task.failedChapters.keys) == Set([1]))
         #expect(fixture.store.books.first?.offlineDownloadState == .partial)
-        #expect(await fixture.fetcher.requestedIndices == [0, 1, 2])
+        // Chapter 1 is tried three times before being recorded as failed, and the download
+        // still moves on to chapter 2 afterwards.
+        #expect(await fixture.fetcher.requestedIndices == [0, 1, 1, 1, 2])
+    }
+
+    @Test("a chapter that fails once is retried and succeeds")
+    @MainActor
+    func transientFailureRecoversWithoutUserAction() async throws {
+        let fixture = makeFixture(chapters: 2, failingIndices: [0])
+        defer { fixture.cleanup() }
+        // Fails the first attempt, then behaves — the single blip a paid/login-gated source
+        // or a chapter that also fetches 段評 is most likely to hit.
+        await fixture.fetcher.setRemainingFailures(1)
+
+        await fixture.manager.start(
+            book: fixture.book,
+            selection: .range(0...1),
+            store: fixture.store
+        )
+        await fixture.manager.waitUntilIdle()
+
+        let task = try #require(fixture.store.books.first?.offlineDownloadTask)
+        #expect(task.completedIndices == Set([0, 1]))
+        #expect(task.failedChapters.isEmpty)
+        #expect(fixture.store.books.first?.offlineDownloadState == .available)
+        #expect(await fixture.fetcher.requestedIndices == [0, 0, 1])
+    }
+
+    @Test("a deterministic failure is not retried")
+    @MainActor
+    func deterministicFailureIsNotRetried() async throws {
+        let fixture = makeFixture(chapters: 2, failingIndices: [0])
+        defer { fixture.cleanup() }
+        // `.invalidChapter`: the same input fails identically every time, so spending two
+        // more requests on a source that may be throttling us buys nothing.
+        await fixture.fetcher.setFailureError(FetchError.invalidURL("https://example.com/1"))
+
+        await fixture.manager.start(
+            book: fixture.book,
+            selection: .range(0...1),
+            store: fixture.store
+        )
+        await fixture.manager.waitUntilIdle()
+
+        let task = try #require(fixture.store.books.first?.offlineDownloadTask)
+        #expect(Set(task.failedChapters.keys) == Set([0]))
+        #expect(task.failedChapters[0]?.category == .invalidChapter)
+        #expect(await fixture.fetcher.requestedIndices == [0, 1])
+    }
+
+    @Test("an explicit retry gets a fresh set of attempts")
+    @MainActor
+    func manualRetryResetsAutomaticAttempts() async throws {
+        let fixture = makeFixture(chapters: 1, failingIndices: [0])
+        defer { fixture.cleanup() }
+
+        await fixture.manager.start(
+            book: fixture.book,
+            selection: .range(0...0),
+            store: fixture.store
+        )
+        await fixture.manager.waitUntilIdle()
+        #expect(await fixture.fetcher.requestedIndices == [0, 0, 0])
+
+        // The user may have logged in or bought the chapter in between, so the attempts
+        // already spent must not carry over — otherwise the retry button would fire a
+        // single request and give up.
+        await fixture.fetcher.setFailingIndices([])
+        let failedBook = try #require(fixture.store.books.first)
+        await fixture.manager.retryFailed(book: failedBook, store: fixture.store)
+        await fixture.manager.waitUntilIdle()
+
+        let task = try #require(fixture.store.books.first?.offlineDownloadTask)
+        #expect(task.completedIndices == Set([0]))
+        #expect(task.failedChapters.isEmpty)
+        #expect(await fixture.fetcher.requestedIndices == [0, 0, 0, 0])
     }
 
     @Test("volume separator is skipped without a fetch")
@@ -90,7 +165,8 @@ struct OfflineDownloadManagerTests {
         await fixture.manager.retryFailed(book: partialBook, store: fixture.store)
         await fixture.manager.waitUntilIdle()
 
-        #expect(await fixture.fetcher.requestedIndices == [0, 1, 2, 1])
+        // 1 exhausts its three automatic attempts, then the manual retry fetches it once more.
+        #expect(await fixture.fetcher.requestedIndices == [0, 1, 1, 1, 2, 1])
         let task = try #require(fixture.store.books.first?.offlineDownloadTask)
         #expect(task.completedIndices == Set(0...2))
         #expect(task.failedChapters.isEmpty)
@@ -118,7 +194,8 @@ struct OfflineDownloadManagerTests {
         #expect(task.completedIndices == Set([0, 2]))
         #expect(task.failedChapters.isEmpty)
         #expect(fixture.store.books.first?.offlineDownloadState == .available)
-        #expect(await fixture.fetcher.requestedIndices == [0, 1, 2, 3])
+        // Both failing chapters spend their three attempts before being recorded.
+        #expect(await fixture.fetcher.requestedIndices == [0, 1, 1, 1, 2, 3, 3, 3])
     }
 
     @Test("removing a download survives a reconcile pass that is mid-validation")
@@ -189,7 +266,9 @@ struct OfflineDownloadManagerTests {
         let artifactStore = TestOfflineChapterStore(ledger: ledger)
         let manager = OfflineDownloadManager(
             chapterFetcher: fetcher,
-            chapterStore: artifactStore
+            chapterStore: artifactStore,
+            // Exercise the real retry path with no wall-clock wait.
+            retryBackoff: 0
         )
         return ManagerFixture(
             directory: directory,
@@ -227,6 +306,11 @@ private actor TestOfflineChapterFetcher: ChapterFetching {
     private let ledger: TestArtifactLedger
     private var failingIndices: Set<Int>
     private(set) var requestedIndices: [Int] = []
+    /// When set, only this many attempts fail before the chapter starts succeeding — models
+    /// a transient blip rather than a permanently broken chapter.
+    private var remainingFailures: Int?
+    /// Error thrown for a failing index; defaults to a transient network error.
+    private var failureError: any Error = URLError(.notConnectedToInternet)
 
     init(ledger: TestArtifactLedger, failingIndices: Set<Int>) {
         self.ledger = ledger
@@ -235,6 +319,14 @@ private actor TestOfflineChapterFetcher: ChapterFetching {
 
     func setFailingIndices(_ indices: Set<Int>) {
         failingIndices = indices
+    }
+
+    func setRemainingFailures(_ count: Int) {
+        remainingFailures = count
+    }
+
+    func setFailureError(_ error: any Error) {
+        failureError = error
     }
 
     func isChapterCached(book: ReadingBook, chapterIndex: Int) async -> Bool {
@@ -249,7 +341,14 @@ private actor TestOfflineChapterFetcher: ChapterFetching {
     ) async throws -> ChapterPackage {
         requestedIndices.append(chapterIndex)
         if failingIndices.contains(chapterIndex) {
-            throw URLError(.notConnectedToInternet)
+            if let remaining = remainingFailures {
+                if remaining > 0 {
+                    remainingFailures = remaining - 1
+                    throw failureError
+                }
+            } else {
+                throw failureError
+            }
         }
         await ledger.insert(chapterIndex)
         let ref = book.onlineChapters![chapterIndex]

@@ -227,10 +227,9 @@ struct UserDetailView: View {
                         }
                     }
                     .disabled(isSigningOut)
-                    .confirmationDialog(
+                    .alert(
                         localized("登出帳號"),
-                        isPresented: $showSignOutConfirmation,
-                        titleVisibility: .visible
+                        isPresented: $showSignOutConfirmation
                     ) {
                         Button(localized("登出"), role: .destructive) {
                             performSignOut(revokeGoogleAccess: true)
@@ -256,10 +255,9 @@ struct UserDetailView: View {
                         }
                     }
                     .disabled(isDeletingAccount || isSigningOut)
-                    .confirmationDialog(
+                    .alert(
                         localized("刪除帳號"),
-                        isPresented: $showDeleteAccountConfirmation,
-                        titleVisibility: .visible
+                        isPresented: $showDeleteAccountConfirmation
                     ) {
                         Button(localized("永久刪除帳號"), role: .destructive) {
                             performAccountDeletion()
@@ -329,13 +327,12 @@ struct UserDetailView: View {
         } message: {
             Text(localized("請輸入密碼以確認刪除帳號"))
         }
-        .confirmationDialog(
+        .alert(
             localized("解除連結"),
             isPresented: Binding(
                 get: { unlinkTarget != nil },
                 set: { if !$0 { unlinkTarget = nil } }
             ),
-            titleVisibility: .visible,
             presenting: unlinkTarget
         ) { target in
             Button(localized("解除連結"), role: .destructive) {

@@ -32,19 +32,46 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
     private let chapterFetcher: any ChapterFetching
     private let chapterStore: any OfflineChapterStoring
     private let maximumConcurrentBooks: Int
+    /// Seconds to wait before the first automatic retry; later attempts scale with the
+    /// attempt number. Injectable so tests exercise the retry path without real waiting.
+    private let retryBackoff: TimeInterval
     private var bookJobs: [UUID: Task<Void, Never>] = [:]
     private var activeChapterIndices: [UUID: Int] = [:]
     private var waitingBooks: [WaitingBook] = []
     private var isReconciling = false
+    /// Attempts spent per chapter, `bookId → chapterIndex → count`. In memory only, like
+    /// Legado's `errorDownloadMap`: a relaunch is a fresh set of attempts.
+    private var chapterAttempts: [UUID: [Int: Int]] = [:]
+
+    /// Legado gives each chapter three tries before recording a failure
+    /// (`CacheBook.onPostError`). Paid sources, sources behind a login, and chapters that
+    /// also fetch 段評 all take longer and are the ones that lose to a single blip; failing
+    /// them on the first error is what made a download report failures it could have avoided.
+    private static let maximumChapterAttempts = 3
+
+    /// Whether spending another attempt on this failure could plausibly change the outcome.
+    /// A volume header or a malformed chapter URL fails identically every time, so retrying
+    /// only spends requests against a source that may already be throttling us.
+    private static func isRetryable(_ category: OfflineChapterFailure.Category) -> Bool {
+        switch category {
+        case .invalidChapter, .canceled:
+            return false
+        case .network, .parsing, .emptyContent, .textWrite,
+             .imageDownload, .imageValidation, .unknown:
+            return true
+        }
+    }
 
     init(
         chapterFetcher: any ChapterFetching,
         chapterStore: any OfflineChapterStoring = OfflineChapterStore(),
-        maximumConcurrentBooks: Int = 2
+        maximumConcurrentBooks: Int = 2,
+        retryBackoff: TimeInterval = 1.0
     ) {
         self.chapterFetcher = chapterFetcher
         self.chapterStore = chapterStore
         self.maximumConcurrentBooks = max(1, maximumConcurrentBooks)
+        self.retryBackoff = max(0, retryBackoff)
     }
 
     func start(
@@ -108,6 +135,10 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
     }
 
     func retryFailed(book: ReadingBook, store: BookStore) async {
+        // An explicit 重試 is a fresh verdict: the user may have logged into the source or
+        // bought the chapter since, so the automatic attempts already spent must not count
+        // against this round.
+        chapterAttempts.removeValue(forKey: book.id)
         let shouldRetry = await MainActor.run { () -> Bool in
             guard var task = store.books.first(where: { $0.id == book.id })?.offlineDownloadTask,
                   !task.failedChapters.isEmpty else {
@@ -138,6 +169,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
     }
 
     func remove(bookId: UUID, store: BookStore) async throws {
+        chapterAttempts.removeValue(forKey: bookId)
         waitingBooks.removeAll { $0.book.id == bookId }
         let job = bookJobs[bookId]
         job?.cancel()
@@ -364,6 +396,29 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                 return
             } catch {
                 guard !Task.isCancelled else { return }
+                let category = failureCategory(for: error)
+                let attempts = (chapterAttempts[book.id]?[index] ?? 0) + 1
+                chapterAttempts[book.id, default: [:]][index] = attempts
+
+                if attempts < Self.maximumChapterAttempts, Self.isRetryable(category) {
+                    // The index is still in `pendingIndices` (only `markFailed` removes it),
+                    // so the next loop pass picks it straight back up. Back off first —
+                    // retrying a source the instant it failed is how a transient error
+                    // becomes three of them. Legado waits a flat second here; the wait grows
+                    // with the attempt so a struggling source gets more room each round.
+                    AppLogger.parse("⟐ offline chapter retry", context: [
+                        "index": index,
+                        "attempt": attempts,
+                        "category": category.rawValue,
+                    ])
+                    activeChapterIndices.removeValue(forKey: book.id)
+                    let backoff = retryBackoff * Double(attempts)
+                    if backoff > 0 {
+                        try? await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
+                    }
+                    continue
+                }
+
                 await markFailed(
                     index,
                     title: ref.title,
@@ -371,12 +426,14 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                     bookId: book.id,
                     store: store
                 )
+                chapterAttempts[book.id]?.removeValue(forKey: index)
             }
             activeChapterIndices.removeValue(forKey: book.id)
         }
     }
 
     private func markCompleted(_ index: Int, bookId: UUID, store: BookStore) async {
+        chapterAttempts[bookId]?.removeValue(forKey: index)
         await MainActor.run {
             guard var task = store.books.first(where: { $0.id == bookId })?.offlineDownloadTask else {
                 return
@@ -434,6 +491,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
 
     private func finishBook(bookId: UUID) {
         activeChapterIndices.removeValue(forKey: bookId)
+        chapterAttempts.removeValue(forKey: bookId)
         bookJobs.removeValue(forKey: bookId)
         startWaitingBooksIfPossible()
     }

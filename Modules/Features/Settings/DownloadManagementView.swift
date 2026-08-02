@@ -73,13 +73,12 @@ struct DownloadManagementView: View {
             // Removal throws away a download the user spent time and data on, so it
             // confirms first — and the message says what survives, because "移除"
             // next to a book title reads like it deletes the book itself.
-            .confirmationDialog(
+            .alert(
                 localized("移除下載內容？"),
                 isPresented: Binding(
                     get: { bookPendingRemoval != nil },
                     set: { if !$0 { bookPendingRemoval = nil } }
                 ),
-                titleVisibility: .visible,
                 presenting: bookPendingRemoval
             ) { book in
                 Button(localized("移除"), role: .destructive) {

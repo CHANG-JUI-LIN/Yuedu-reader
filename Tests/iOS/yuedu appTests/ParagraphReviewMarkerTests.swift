@@ -194,7 +194,8 @@ struct ParagraphReviewMarkerTests {
                 sourceURL: "https://baidu.com"
             )
         )
-        #expect(cleaned.contains(#"<div data-yd-review-style="full"><a"#))
+        #expect(cleaned.contains(#"class="yd-review-image" data-yd-review-style="full""#))
+        #expect(!cleaned.contains(#"<div data-yd-review-style="full">"#))
         let srcRegex = try #require(
             try NSRegularExpression(pattern: #"src="data:image/svg\+xml;base64,([^"]+)""#)
         )
@@ -239,7 +240,8 @@ struct ParagraphReviewMarkerTests {
         )
 
         #expect(untouched == svg)
-        #expect(cleaned.contains(#"<div data-yd-review-style="full"><a"#))
+        #expect(cleaned.contains(#"class="yd-review-image" data-yd-review-style="full""#))
+        #expect(!cleaned.contains(#"<div data-yd-review-style="full">"#))
     }
 
     @Test("does not turn an ordinary FULL image into a review block")

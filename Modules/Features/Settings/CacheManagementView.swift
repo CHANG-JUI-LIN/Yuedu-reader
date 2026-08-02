@@ -146,13 +146,12 @@ struct CacheManagementView: View {
             .refreshable {
                 await viewModel.refresh()
             }
-            .confirmationDialog(
+            .alert(
                 localized("清除快取？"),
                 isPresented: Binding(
                     get: { pendingCategory != nil },
                     set: { if !$0 { pendingCategory = nil } }
                 ),
-                titleVisibility: .visible,
                 presenting: pendingCategory
             ) { category in
                 Button(localized(category.clearTitleKey), role: .destructive) {
@@ -165,10 +164,9 @@ struct CacheManagementView: View {
             } message: { category in
                 Text(localized(category.detailKey))
             }
-            .confirmationDialog(
+            .alert(
                 localized("清除全部快取？"),
-                isPresented: $showClearAllConfirmation,
-                titleVisibility: .visible
+                isPresented: $showClearAllConfirmation
             ) {
                 Button(localized("清除全部快取"), role: .destructive) {
                     Task { await viewModel.clearAll() }

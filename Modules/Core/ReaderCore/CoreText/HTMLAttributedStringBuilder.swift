@@ -2430,7 +2430,7 @@ final class HTMLAttributedStringBuilder {
             "id", "class", "style", "src", "href", "xlink:href", "width", "height",
             "alt", "alttext", "display", "data", "title", "aria-label", "poster", "type",
             "controls", "colspan", "rowspan", "scope", "ssml:ph", "ssml:alphabet",
-            "data-yd-imgstyle"
+            "data-yd-imgstyle", "data-yd-review-style"
         ] {
             let value = (try? element.attr(key)) ?? ""
             if !value.isEmpty {

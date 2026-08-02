@@ -127,7 +127,7 @@ struct ReaderCommentBubbleSettingsView: View {
             defaultFilename: exportFilename,
             onCompletion: handleSVGExport
         )
-        .confirmationDialog(
+        .alert(
             localized("刪除目前樣式？"),
             isPresented: Binding(
                 get: { stylePendingDeletion != nil },
@@ -137,7 +137,6 @@ struct ReaderCommentBubbleSettingsView: View {
                     }
                 }
             ),
-            titleVisibility: .visible,
             presenting: stylePendingDeletion
         ) { style in
             Button(localized("刪除目前樣式"), role: .destructive) {

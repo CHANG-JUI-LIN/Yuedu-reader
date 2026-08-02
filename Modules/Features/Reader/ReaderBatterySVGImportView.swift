@@ -112,13 +112,12 @@ struct ReaderBatterySVGImportView: View {
                 renamePendingAsset()
             }
         }
-        .confirmationDialog(
+        .alert(
             localized("刪除 SVG 模板？"),
             isPresented: Binding(
                 get: { assetPendingDeletion != nil },
                 set: { if !$0 { assetPendingDeletion = nil } }
             ),
-            titleVisibility: .visible,
             presenting: assetPendingDeletion
         ) { asset in
             Button(localized("刪除"), role: .destructive) {

@@ -132,13 +132,12 @@ struct AppearanceThemeView: View {
             PaywallView(highlightedFeature: .launchScreen)
                 .environmentObject(subscriptionStore)
         }
-        .confirmationDialog(
+        .alert(
             localized("刪除此自訂主題？"),
             isPresented: Binding(
                 get: { customThemeToDelete != nil },
                 set: { if !$0 { customThemeToDelete = nil } }
             ),
-            titleVisibility: .visible,
             presenting: customThemeToDelete
         ) { theme in
             Button(localized("刪除"), role: .destructive) {
@@ -1029,10 +1028,9 @@ struct AppearanceThemeView: View {
         themeActionRow(titleKey: "重置為默認") {
             showResetPageBackgroundConfirm = true
         }
-        .confirmationDialog(
+        .alert(
             localized("重置為默認？"),
-            isPresented: $showResetPageBackgroundConfirm,
-            titleVisibility: .visible
+            isPresented: $showResetPageBackgroundConfirm
         ) {
             Button(localized("重置為默認"), role: .destructive) {
                 settings.resetAllPageBackgrounds()

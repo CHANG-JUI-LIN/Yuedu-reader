@@ -1185,6 +1185,15 @@ class BookStore: ObservableObject, BookProvider {
         // The cache was already removed from disk; persist the matching state
         // now so a quick relaunch cannot resurrect a stale completed download.
         saveMetaImmediately()
+        // An open reader still holds `.ready` chapter states for the files just deleted, and
+        // nothing else would tell it otherwise: no load state changed and no chapter was
+        // entered, so neither of the reader's mismatch checks runs. Left alone it renders
+        // 資料不一致 over a chapter it could simply refetch.
+        NotificationCenter.default.post(
+            name: .onlineChapterCacheDidClear,
+            object: nil,
+            userInfo: ["bookId": bookId]
+        )
     }
 
     // MARK: Update Online Book TOC (called after progressive TOC load completes)

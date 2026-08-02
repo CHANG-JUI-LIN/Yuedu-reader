@@ -288,12 +288,22 @@ private extension HTMLAttributedStringBuilder.ElementNode {
                 let anchorStylesOwnText = style.bold || style.italic || style.color != nil
                     || !style.fontFamilies.isEmpty || style.underline || style.strikethrough
                     || style.fontSizeMultiplier != 1.0
-                node = .anchor(
+                let anchorNode = RenderableNode.anchor(
                     href: href,
                     children: anchorStylesOwnText
                         ? [.inline(tag: "a", children: mappedChildren, style: style)]
                         : mappedChildren
                 )
+                // FULL review cards are block-level in Legado/Sigma/MD3, but their HTML marker
+                // deliberately remains inline until after newline-based prose has been wrapped in
+                // paragraphs. Promote only recognized review-image anchors here so ordinary links
+                // and images retain their authored flow.
+                if isReviewImageAnchor,
+                   attributes["data-yd-review-style"]?.lowercased() == "full" {
+                    node = .block(tag: "yd-review-full", children: [anchorNode], style: .none)
+                } else {
+                    node = anchorNode
+                }
             }
 
         case "ruby":

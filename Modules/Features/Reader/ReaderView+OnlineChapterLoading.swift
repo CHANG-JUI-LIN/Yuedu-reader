@@ -116,6 +116,21 @@ extension ReaderView {
         }
     }
 
+    /// 移除下載 deleted every cached chapter of this book while the reader is open. The load
+    /// states still claim `.ready`, and against an empty cache that pair renders as
+    /// 資料不一致 — with nothing to clear it, because no state transitioned and no chapter
+    /// was entered. Drop the states the files backed, then refetch what is on screen.
+    func handleOnlineChapterCacheCleared() {
+        AppLogger.cache("⟐ offline cache cleared, resetting chapter states", context: [
+            "chapter": currentChapterIndex,
+        ])
+        readerViewModel.resetAllChapterStates()
+        chapterConsistencyRecoveryAttempts.removeAll()
+        // Resetting alone would leave the overlay spinning forever: nothing else refetches
+        // a chapter whose state merely went back to `.idle`.
+        ensureChapterReady(chapterIndex: currentChapterIndex, priority: .jump)
+    }
+
     // MARK: - Failure Surface
 
     /// Shown when the current chapter's fetch failed (`.failed` state, or
