@@ -869,7 +869,7 @@ struct ReaderView: View {
             )
             ensureChapterReady(chapterIndex: newChapter)
             if case .notifyChapterDataChanged = entryAction {
-                Task { await engine.notifyChapterDataChanged(at: newChapter) }
+                submitChapterContentRefresh(chapterIndex: newChapter)
             }
             // Switch the authored background soundtrack to the new chapter's (or stop it if none).
             if let session = activePublicationSession {
@@ -2263,37 +2263,33 @@ struct ReaderView: View {
     }
 
     func handleScrollModeChanged(_ enabled: Bool) {
+        let targetMode: ReaderDisplayMode = enabled ? .scroll : .paged
+        let position: CoreTextReadingPosition
         if enabled {
-            guard let position = currentPagedReadingPositionForModeSwitch() else { return }
+            guard let pagedPosition = currentPagedReadingPositionForModeSwitch() else { return }
+            position = pagedPosition
             moveReaderSession(to: position, source: .modeSwitch)
             currentChapterIndex = position.spineIndex
             scrollVisibleChapter = position.spineIndex
             pendingScrollJumpTarget = position
-            return
-        }
-
-        pendingScrollJumpTarget = nil
-        let position = readerSessionCoordinator?.state.location.coreTextPosition
-            ?? CoreTextReadingPosition(spineIndex: scrollVisibleChapter, charOffset: 0)
-        moveReaderSession(to: position, source: .modeSwitch)
-        currentChapterIndex = position.spineIndex
-
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            setCoreTextExternalTarget(position)
-            _ = engine.pageViewController(for: position)
-            if let exactPage = engine.pageIndex(for: position) {
-                currentPage = exactPage
-            } else if let estimatedPage = engine.estimatedGlobalPage(for: position) {
-                currentPage = estimatedPage
-            }
-            epubRenderer.currentEpubPage = currentPage
             ensureChapterReady(chapterIndex: position.spineIndex, priority: .jump)
-            return
+        } else {
+            pendingScrollJumpTarget = nil
+            position = readerSessionCoordinator?.state.location.coreTextPosition
+                ?? CoreTextReadingPosition(spineIndex: scrollVisibleChapter, charOffset: 0)
+            moveReaderSession(to: position, source: .modeSwitch)
+            currentChapterIndex = position.spineIndex
+            if let page = findChapterFirstPage(position.spineIndex), !usesCoreTextEPUB {
+                currentPage = page
+            }
         }
 
-        if let page = findChapterFirstPage(position.spineIndex) {
-            currentPage = page
-        }
+        submitReaderRefresh(
+            intent: .modeActivation,
+            settings: readerRenderSettings(for: targetMode),
+            mode: targetMode,
+            position: position
+        )
     }
 
     func currentPagedReadingPositionForModeSwitch() -> CoreTextReadingPosition? {

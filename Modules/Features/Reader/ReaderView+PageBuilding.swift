@@ -496,15 +496,18 @@ extension ReaderView {
     func submitReaderRefresh(
         intent: ReaderRenderRefreshIntent,
         settings: ReaderRenderSettings? = nil,
-        viewportSize: CGSize? = nil
+        viewportSize: CGSize? = nil,
+        mode: ReaderDisplayMode? = nil,
+        position: CoreTextReadingPosition? = nil
     ) {
         guard epubRenderer.engine != nil || epubRenderer.scrollEngine != nil else { return }
         let resolvedSettings = settings ?? activeReaderRenderSettings
+        let resolvedMode = mode ?? activeReaderDisplayMode
         let request = ReaderRenderRefreshRequest(
             intent: intent,
-            mode: activeReaderDisplayMode,
+            mode: resolvedMode,
             settings: resolvedSettings,
-            position: currentReaderRefreshPosition,
+            position: position ?? currentReaderRefreshPosition,
             viewportSize: viewportSize ?? currentReaderRenderSize
         )
         Task { @MainActor in

@@ -2131,6 +2131,7 @@ class GlobalSettings: ObservableObject {
         return info
     }
 
+    @MainActor
     func deleteUserFont(_ font: UserFontInfo) {
         UserFontStorageManager.shared.delete(font)
         userFonts.removeAll { $0.id == font.id }
@@ -2139,6 +2140,19 @@ class GlobalSettings: ObservableObject {
         }
         if selectedReaderFontPostScript == font.postScriptName {
             selectedReaderFontPostScript = nil
+        }
+        var titleStyle = ReaderConfig.shared.chapterTitleStyle
+        var titleStyleChanged = false
+        if titleStyle.numberFontPostScript == font.postScriptName {
+            titleStyle.numberFontPostScript = nil
+            titleStyleChanged = true
+        }
+        if titleStyle.nameFontPostScript == font.postScriptName {
+            titleStyle.nameFontPostScript = nil
+            titleStyleChanged = true
+        }
+        if titleStyleChanged {
+            ReaderConfig.shared.chapterTitleStyle = titleStyle
         }
     }
 

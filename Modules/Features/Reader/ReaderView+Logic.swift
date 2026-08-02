@@ -95,7 +95,7 @@ extension ReaderView {
             )
             ensureChapterReady(chapterIndex: idx, priority: .jump)
             if case .notifyChapterDataChanged = entryAction {
-                Task { await engine.notifyChapterDataChanged(at: idx) }
+                submitChapterContentRefresh(chapterIndex: idx)
             }
             if idx > 0 { Task { await engine.preloadChapter(at: idx - 1) } }
             if idx < chapters.count - 1 { Task { await engine.preloadChapter(at: idx + 1) } }

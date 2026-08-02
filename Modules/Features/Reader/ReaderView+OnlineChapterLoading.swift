@@ -54,57 +54,40 @@ extension ReaderView {
            manuallyRefreshingChapterIndex == chapterIndex {
             manuallyRefreshingChapterIndex = nil
         }
-        if effectiveScrollMode, let scrollEngine = epubRenderer.scrollEngine {
-            if newState == .ready, contentAvailable {
-                if chapterIndex == currentChapterIndex {
-                    scrollEngine.invalidateChapterDocument(at: chapterIndex)
-                    scheduleScrollReslice()
-                } else {
-                    Task { await scrollEngine.retryChapterIfNeeded(chapterIndex) }
-                }
-                return
-            }
-        }
-        let action = ReaderChapterPresentation.refreshAction(
-            changedChapterIndex: chapterIndex,
-            currentChapterIndex: currentChapterIndex,
-            usesCoreText: usesCoreTextEPUB,
-            newState: newState,
-            isContentAvailable: contentAvailable
-        )
         #if DEBUG
-        AppLogger.render("[StateDebug] applyRefreshAction ch=\(chapterIndex) newState=\(newState) contentAvailable=\(contentAvailable) currentCh=\(currentChapterIndex) → action=\(action)")
+        AppLogger.render("[StateDebug] applyRefreshAction ch=\(chapterIndex) newState=\(newState) contentAvailable=\(contentAvailable) currentCh=\(currentChapterIndex)")
         #endif
 
-        switch action {
-        case .none:
-            break
-        case .notifyChapterDataChanged(let visibleChapterIndex):
-            guard let engine = epubRenderer.engine else {
-                #if DEBUG
-                AppLogger.render("[StateDebug] notifyChapterDataChanged SKIPPED: engine is nil")
-                #endif
-                return
-            }
-            #if DEBUG
-            AppLogger.render("[StateDebug] notifyChapterDataChanged ch=\(visibleChapterIndex) launching Task")
-            #endif
-            Task {
-                await engine.notifyChapterDataChanged(at: visibleChapterIndex)
-                if self.savedCoreTextRestoreTarget != nil {
-                    self.applyInitialProgressIfNeeded()
-                }
-                if self.manuallyRefreshingChapterIndex == visibleChapterIndex {
-                    self.manuallyRefreshingChapterIndex = nil
+        guard newState == .ready, contentAvailable else { return }
+        guard epubRenderer.engine != nil || epubRenderer.scrollEngine != nil else {
+            if chapterIndex == currentChapterIndex {
+                rebuildPages()
+                if manuallyRefreshingChapterIndex == chapterIndex {
+                    manuallyRefreshingChapterIndex = nil
                 }
             }
-        case .rebuildPages:
-            #if DEBUG
-            AppLogger.render("[StateDebug] rebuildPages()")
-            #endif
-            rebuildPages()
-            if manuallyRefreshingChapterIndex == chapterIndex {
+            return
+        }
+        submitChapterContentRefresh(chapterIndex: chapterIndex)
+    }
+
+    func submitChapterContentRefresh(chapterIndex: Int) {
+        guard epubRenderer.engine != nil || epubRenderer.scrollEngine != nil else { return }
+        let request = ReaderRenderRefreshRequest(
+            intent: .chapterContent(chapterIndex),
+            mode: activeReaderDisplayMode,
+            settings: activeReaderRenderSettings,
+            position: currentReaderRefreshPosition,
+            viewportSize: currentReaderRenderSize
+        )
+        Task { @MainActor in
+            let result = await epubRenderer.refresh(request)
+            guard manuallyRefreshingChapterIndex == chapterIndex else { return }
+            switch result {
+            case .completed, .failed:
                 manuallyRefreshingChapterIndex = nil
+            case .superseded:
+                break
             }
         }
     }
@@ -158,9 +141,6 @@ extension ReaderView {
         )
         store.clearCachedChapter(bookId: currentBook.id, chapterIndex: idx)
         readerViewModel.resetChapterState(for: idx)
-        if let engine = epubRenderer.engine {
-            Task { await engine.notifyChapterDataChanged(at: idx) }
-        }
         // .jump = user-initiated highest priority; preempts any stale in-flight.
         ensureChapterReady(chapterIndex: idx, priority: .jump)
     }

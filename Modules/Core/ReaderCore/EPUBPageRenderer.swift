@@ -133,6 +133,9 @@ final class EPUBPageRenderer: ObservableObject {
                     appearance: nil,
                     content: revisions.content
                 )
+                if chapterIndex != request.position.spineIndex {
+                    return .completed(coverage)
+                }
             case .modeActivation:
                 let needsLayout = applied.pagedLayout < revisions.layout
                 let needsAppearance =
@@ -200,7 +203,7 @@ final class EPUBPageRenderer: ObservableObject {
                 let didRetry = await scrollEngine.retryChapterIfNeeded(
                     chapterIndex
                 )
-                return .requiresVisibleCommit(
+                return .completed(
                     RefreshRevisionCoverage(
                         layout: nil,
                         appearance: nil,
