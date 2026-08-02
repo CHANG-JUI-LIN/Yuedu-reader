@@ -19,7 +19,6 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     var onProgressCommit: ((CoreTextReadingPosition) -> Void)?
     var onTap: (() -> Void)?
     var onInternalLinkTap: ((String) -> Void)?
-    var onResliceCompleted: ((Int) -> Void)?
     private(set) var lastAppliedRefreshTransactionID: UInt64 = 0
 
     private let collectionView: UICollectionView
@@ -436,7 +435,6 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
                 self.resliceTask = nil
                 return
             }
-            self.onResliceCompleted?(chapter)
             self.applyPendingInitialScrollIfPossible()
             self.resliceTask = nil
         }

@@ -131,7 +131,8 @@ struct ReaderView: View {
 
     // Scroll mode progress tracking
     @State var scrollVisibleChapter = 0
-    @State var scrollResliceToken: UInt = 0
+    @State var scrollNavigationVersion: UInt64 = 0
+    @State var scrollNavigationRequest: ReaderScrollNavigationRequest?
     @State var pendingScrollJumpTarget: CoreTextReadingPosition?
     @State var manuallyRefreshingChapterIndex: Int?
 
@@ -709,14 +710,20 @@ struct ReaderView: View {
 
         guard let engine = epubRenderer.engine, engine.renderSize != .zero else {
             if epubRenderer.scrollEngine != nil {
-                performUnifiedRelayout(targetSize: targetRenderSize)
+                submitReaderRefresh(
+                    intent: .layout,
+                    viewportSize: targetRenderSize
+                )
             }
             return
         }
 
         if abs(targetRenderSize.width - engine.renderSize.width) > 0.5 ||
             abs(targetRenderSize.height - engine.renderSize.height) > 0.5 {
-            performUnifiedRelayout(targetSize: targetRenderSize)
+            submitReaderRefresh(
+                intent: .layout,
+                viewportSize: targetRenderSize
+            )
         }
     }
 
@@ -1771,7 +1778,10 @@ struct ReaderView: View {
         }
         .onChanged(of: effectiveReaderSpreadMode) { _ in
             readerSessionCoordinator?.send(.updateSpreadMode(effectiveReaderSpreadMode))
-            performUnifiedRelayout(targetSize: currentReaderRenderSize)
+            submitReaderRefresh(
+                intent: .layout,
+                viewportSize: currentReaderRenderSize
+            )
         }
         .onChanged(of: book?.bookmarks ?? []) { _ in
             syncCoreTextTextAnnotations()

@@ -537,26 +537,4 @@ extension ReaderView {
         )
     }
 
-    func performUnifiedRelayout(targetSize: CGSize? = nil) {
-        submitReaderRefresh(
-            intent: .layout,
-            settings: activeReaderRenderSettings,
-            viewportSize: targetSize
-        )
-    }
-
-    func forceReaderRenderableContentRefresh() {
-        submitReaderRefresh(
-            intent: .chapterContent(currentChapterIndex),
-            settings: activeReaderRenderSettings
-        )
-    }
-
-    func applyUnifiedAppearanceUpdate() {
-        submitReaderRefresh(
-            intent: .appearance,
-            settings: activeReaderRenderSettings
-        )
-    }
-
 }

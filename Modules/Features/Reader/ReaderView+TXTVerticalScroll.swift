@@ -25,7 +25,7 @@ extension ReaderView {
                 backgroundColor: readerScrollBackgroundColor,
                 initialChapter: initialPos.chapter,
                 initialCharOffset: initialPos.charOffset,
-                resliceToken: scrollResliceToken,
+                navigationRequest: scrollNavigationRequest,
                 playbackHighlightText: activePlaybackHighlightText,
                 textAnnotations: coreTextTextAnnotations,
                 visibleRefreshCommit: epubRenderer.pendingVisibleRefreshCommit,
@@ -79,18 +79,13 @@ extension ReaderView {
                             currentChapterIndex = spine
                             scrollVisibleChapter = spine
                             pendingScrollJumpTarget = position
-                            scrollResliceToken &+= 1
+                            requestScrollNavigation(to: position)
                         }
                     }
                 },
                 onChapterContentRequired: { chapterIndex in
                     ensureChapterReady(chapterIndex: chapterIndex)
                 },
-                onResliceCompleted: { chapterIndex in
-                    if manuallyRefreshingChapterIndex == chapterIndex {
-                        manuallyRefreshingChapterIndex = nil
-                    }
-                }
             )
             .id(ObjectIdentifier(scrollEngine))
             .background(readerSurfaceBackground)
@@ -100,11 +95,11 @@ extension ReaderView {
         }
     }
 
-    func scheduleScrollReslice() {
-        guard epubRenderer.scrollEngine != nil else { return }
-        submitReaderRefresh(
-            intent: .layout,
-            settings: readerRenderSettings(for: .scroll)
+    func requestScrollNavigation(to position: CoreTextReadingPosition) {
+        scrollNavigationVersion &+= 1
+        scrollNavigationRequest = ReaderScrollNavigationRequest(
+            version: scrollNavigationVersion,
+            position: position
         )
     }
 

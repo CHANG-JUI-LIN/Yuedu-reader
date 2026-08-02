@@ -47,6 +47,11 @@ struct ReaderVisibleRefreshCommit: Equatable {
     let position: CoreTextReadingPosition
 }
 
+struct ReaderScrollNavigationRequest: Equatable {
+    let version: UInt64
+    let position: CoreTextReadingPosition
+}
+
 /// Values read from global settings while CoreText builds chapter content.
 /// They are intentionally separate from `ReaderRenderSettings`: these values
 /// change the attributed chapter output, but do not describe pagination

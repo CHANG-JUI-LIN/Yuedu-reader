@@ -17,7 +17,7 @@ extension ReaderView {
             scrollVisibleChapter = position.spineIndex
             pendingScrollJumpTarget = position
             moveReaderSession(to: position, source: .jump)
-            scrollResliceToken &+= 1
+            requestScrollNavigation(to: position)
             return
         }
         jumpToChapter(position.spineIndex, charOffset: position.charOffset)
@@ -57,7 +57,7 @@ extension ReaderView {
             scrollVisibleChapter = idx
             pendingScrollJumpTarget = position
             moveReaderSession(to: position, source: .jump)
-            scrollResliceToken &+= 1
+            requestScrollNavigation(to: position)
             ensureChapterReady(chapterIndex: idx, priority: .jump)
             return
         }
@@ -310,7 +310,7 @@ extension ReaderView {
             retryCurrentChapterLoad()
         } else if book != nil {
             // Local TXT/EPUB refresh rebuilds the current renderer from local content.
-            forceReaderRenderableContentRefresh()
+            submitChapterContentRefresh(chapterIndex: currentChapterIndex)
         }
     }
 

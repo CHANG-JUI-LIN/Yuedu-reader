@@ -312,8 +312,7 @@ final class ReaderConfig: ObservableObject {
 
         layoutPublisher
             .dropFirst()
-            .sink { [weak self] combinedAll, readerFontBold in
-                guard let self else { return }
+            .sink { combinedAll, readerFontBold in
                 let (combinedMargins, footerBottomPadding, footerTextGap) = combinedAll
                 let (combined, marginH, marginV) = combinedMargins
                 let (fontSize, lineHeightMultiple, letterSpacing, paragraphSpacingMultiplier) = combined
@@ -332,7 +331,7 @@ final class ReaderConfig: ObservableObject {
 
         $theme
             .dropFirst()
-            .sink { [weak self] theme in
+            .sink { theme in
                 theme.persist()
             }
             .store(in: &cancellables)
@@ -340,14 +339,14 @@ final class ReaderConfig: ObservableObject {
         $chapterTitleStyle
             .dropFirst()
             .debounce(for: .milliseconds(120), scheduler: RunLoop.main)
-            .sink { [weak self] style in
+            .sink { style in
                 GlobalSettings.shared.chapterTitleStyle = style
             }
             .store(in: &cancellables)
 
         Publishers.CombineLatest4($readerHeaderVisible, $readerHeaderTopPadding, $readerHeaderTextGap, $readerHeaderHorizontalPadding)
             .dropFirst()
-            .sink { [weak self] visible, topPadding, textGap, hPadding in
+            .sink { visible, topPadding, textGap, hPadding in
                 let gs = GlobalSettings.shared
                 gs.readerHeaderVisible = visible
                 gs.readerHeaderTopPadding = Double(topPadding)
@@ -358,7 +357,7 @@ final class ReaderConfig: ObservableObject {
 
         Publishers.CombineLatest($readerFooterVisible, $readerFooterHorizontalPadding)
             .dropFirst()
-            .sink { [weak self] visible, hPadding in
+            .sink { visible, hPadding in
                 let gs = GlobalSettings.shared
                 gs.readerFooterVisible = visible
                 gs.readerFooterHorizontalPadding = Double(hPadding)
