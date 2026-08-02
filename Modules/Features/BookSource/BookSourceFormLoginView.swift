@@ -17,8 +17,6 @@ struct BookSourceFormLoginView: View {
     @State private var fields: [LoginUIField] = []
     @State private var values: [String: String] = [:]
     @State private var isLoading = false
-    @State private var errorMessage: String? = nil
-    @State private var successMessage: String? = nil
     @State private var showFanqieLogin = false
     /// What a menu button's run reported when the source itself said nothing.
     /// Alert only, never the inline error Section: that Section sits below the whole
@@ -30,6 +28,7 @@ struct BookSourceFormLoginView: View {
         let id = UUID()
         let title: String
         let detail: String
+        var dismissesView = false
     }
 
     var body: some View {
@@ -89,22 +88,6 @@ struct BookSourceFormLoginView: View {
                     .interfaceSectionSurface()
                 }
 
-                if let err = errorMessage {
-                    Section {
-                        Label(err, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundColor(.red)
-                            .font(DSFont.caption)
-                    }
-                    .interfaceSectionSurface()
-                }
-                if let suc = successMessage {
-                    Section {
-                        Label(suc, systemImage: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                            .font(DSFont.caption)
-                    }
-                    .interfaceSectionSurface()
-                }
             }
             .disabled(isLoading)
             .navigationTitle(source.bookSourceName.isEmpty ? localized("書源登入") : source.bookSourceName)
@@ -151,7 +134,11 @@ struct BookSourceFormLoginView: View {
             ),
             presenting: menuAlert
         ) { _ in
-            Button(localized("好"), role: .cancel) { menuAlert = nil }
+            Button(localized("好"), role: .cancel) {
+                let dismissesView = menuAlert?.dismissesView == true
+                menuAlert = nil
+                if dismissesView { onDismiss() }
+            }
         } message: { alert in
             Text(alert.detail)
         }
@@ -319,15 +306,47 @@ struct BookSourceFormLoginView: View {
         ].contains { $0.contains("fanqienovel.com") || $0.contains("getFqToken") }
     }
 
+    /// Returns text-like fields that must be filled before running loginUrl.
+    /// Selects with declared options already have a usable selection; toggles
+    /// and action buttons are not credentials and therefore are optional.
+    static func missingRequiredFieldNames(
+        fields: [LoginUIField],
+        values: [String: String]
+    ) -> [String] {
+        fields.compactMap { field in
+            let requiresValue: Bool
+            switch field.type {
+            case .text, .password:
+                requiresValue = true
+            case .select:
+                requiresValue = field.options.isEmpty
+            case .toggle, .button:
+                requiresValue = false
+            }
+            guard requiresValue,
+                  values[field.name]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+            else { return nil }
+            return field.name
+        }
+    }
+
     // MARK: - Login Action
 
     private func doLogin() {
         guard !isLoading else { return }
-        errorMessage = nil
-        successMessage = nil
+        menuAlert = nil
 
         // Validate: collect non-button field values
         let credentials = currentFormValues()
+
+        let missingFields = Self.missingRequiredFieldNames(fields: fields, values: credentials)
+        guard missingFields.isEmpty else {
+            menuAlert = MenuActionAlert(
+                title: localized("操作失敗"),
+                detail: localized("請填入登入資訊")
+            )
+            return
+        }
 
         if credentials.isEmpty {
             // No credentials needed — just execute loginUrl JS directly
@@ -391,7 +410,8 @@ struct BookSourceFormLoginView: View {
     private func runLoginJS(credentials: [String: String]) {
         let rawLogin = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rawLogin.isEmpty else {
-            errorMessage = localized("書源未設定 loginUrl")
+            menuAlert = MenuActionAlert(
+                title: localized("操作失敗"), detail: localized("書源未設定 loginUrl"))
             return
         }
 
@@ -471,10 +491,13 @@ struct BookSourceFormLoginView: View {
             await MainActor.run {
                 isLoading = false
                 if let err = engine.lastError, !err.isEmpty {
-                    errorMessage = err
+                    menuAlert = MenuActionAlert(title: localized("操作失敗"), detail: err)
                 } else {
-                    successMessage = localized("登入成功")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { onDismiss() }
+                    menuAlert = MenuActionAlert(
+                        title: localized("登入成功"),
+                        detail: localized("登入成功"),
+                        dismissesView: true
+                    )
                 }
             }
         }
@@ -484,7 +507,6 @@ struct BookSourceFormLoginView: View {
         let rawLogin = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         let loginJS = LoginManager.shared.extractLoginJs(rawLogin) ?? ""
         let combined = "\(loginJS)\n\(action)"
-        errorMessage = nil
 
         Task.detached(priority: .userInitiated) {
             let engine = JSCoreEngine()

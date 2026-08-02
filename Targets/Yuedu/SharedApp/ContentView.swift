@@ -104,17 +104,6 @@ struct ContentView: View {
         .accentColor(appearanceTheme.isClassic ? nil : appearanceTheme.accentColor)
         .preferredColorScheme(preferredAppearanceColorScheme)
         .font(DSFont.body)
-        .overlay(alignment: .top) {
-            if let outcome = importDrainer.lastOutcome {
-                SharedImportToast(outcome: outcome)
-                    .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .task(id: outcome) {
-                        try? await Task.sleep(nanoseconds: 3_000_000_000)
-                        withAnimation { importDrainer.lastOutcome = nil }
-                    }
-            }
-        }
         .overlay {
             // App-wide audiobook mini-player: controls the long-lived audiobook session
             // from any tab. Naturally hidden while a full-screen reader/player is presented.
@@ -123,7 +112,22 @@ struct ContentView: View {
         }
         .iPadAdaptiveRootTabStyle()
         .rootTabBarMinimizeStyle()
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: importDrainer.lastOutcome)
+        .alert(
+            localized("匯入"),
+            isPresented: Binding(
+                get: { importDrainer.lastOutcome != nil },
+                set: { isPresented in
+                    if !isPresented { importDrainer.lastOutcome = nil }
+                }
+            ),
+            presenting: importDrainer.lastOutcome
+        ) { _ in
+            Button(localized("確定"), role: .cancel) {
+                importDrainer.lastOutcome = nil
+            }
+        } message: { outcome in
+            Text(Self.sharedImportMessage(for: outcome))
+        }
         .task(id: typographyRefreshID) {
             await MainActor.run {
                 GlobalAppTypographyUIKitBridge.apply(
@@ -169,6 +173,19 @@ struct ContentView: View {
                         }
                     }
             }
+        }
+    }
+
+    private static func sharedImportMessage(for outcome: SharedImportQueueDrainer.Outcome) -> String {
+        let imported = outcome.importedCount
+        let failed = outcome.failureCount
+        if imported > 0 && failed == 0 {
+            return localized("成功匯入") + " \(imported) " + localized("個項目")
+        } else if imported > 0 {
+            return localized("成功匯入") + " \(imported) " + localized("個項目")
+                + "，\(failed) " + localized("個失敗")
+        } else {
+            return "\(failed) " + localized("個項目匯入失敗")
         }
     }
 
@@ -293,40 +310,6 @@ private struct ThemedSurfaceBackground: ViewModifier {
             }
             .ignoresSafeArea()
         }
-    }
-}
-
-/// Toast surfacing the real result of a Share Extension import,
-/// replacing the extension's generic "added to queue" message.
-private struct SharedImportToast: View {
-    let outcome: SharedImportQueueDrainer.Outcome
-
-    private var message: String {
-        let imported = outcome.importedCount
-        let failed = outcome.failureCount
-        if imported > 0 && failed == 0 {
-            return localized("成功匯入") + " \(imported) " + localized("個項目")
-        } else if imported > 0 {
-            return localized("成功匯入") + " \(imported) " + localized("個項目")
-                + "，\(failed) " + localized("個失敗")
-        } else {
-            return "\(failed) " + localized("個項目匯入失敗")
-        }
-    }
-
-    private var tint: Color {
-        if outcome.importedCount == 0 { return .red }
-        return outcome.failureCount == 0 ? .green : .orange
-    }
-
-    var body: some View {
-        Label(message, systemImage: outcome.importedCount > 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
-            .font(DSFont.subheadline.weight(.medium))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(tint.opacity(0.95), in: Capsule())
-            .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
     }
 }
 

@@ -975,13 +975,6 @@ private struct RSSOPMLImportSheet: View {
                 }
                 .interfaceSectionSurface()
 
-                if showMessage {
-                    Section {
-                        Text(message)
-                            .foregroundColor(message.hasPrefix("❌") ? .red : DSColor.textPrimary)
-                    }
-                    .interfaceSectionSurface()
-                }
             }
                 .navigationTitle(localized("匯入 OPML"))
                 .toolbarTitleDisplayMode(.inline)
@@ -994,6 +987,11 @@ private struct RSSOPMLImportSheet: View {
                             Image(systemName: "xmark")
                         }
                     }
+                }
+                .alert(localized("匯入 OPML"), isPresented: $showMessage) {
+                    Button(localized("確定"), role: .cancel) {}
+                } message: {
+                    Text(message)
                 }
             .disabled(isLoading)
             .overlay {
@@ -1244,13 +1242,6 @@ private struct ImportLegadoJSONURLSheet: View {
                 }
                 .interfaceSectionSurface()
 
-                if showMessage {
-                    Section {
-                        Text(message)
-                            .foregroundColor(message.hasPrefix("❌") ? .red : DSColor.textPrimary)
-                    }
-                    .interfaceSectionSurface()
-                }
             }
             .navigationTitle(localized("從網址匯入 Legado JSON"))
             .toolbarTitleDisplayMode(.inline)
@@ -1271,6 +1262,13 @@ private struct ImportLegadoJSONURLSheet: View {
                     }
                     .disabled(urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
                 }
+            }
+            .alert(localized("匯入"), isPresented: $showMessage) {
+                Button(localized("確定"), role: .cancel) {
+                    if !message.hasPrefix("❌") { isPresented = false }
+                }
+            } message: {
+                Text(message)
             }
             .disabled(isLoading)
             .overlay {
@@ -1301,7 +1299,6 @@ private struct ImportLegadoJSONURLSheet: View {
             let addedCount = store.addSources(sources)
             message = "\(localized("成功匯入")) \(addedCount) \(localized("個訂閱源"))"
             showMessage = true
-            isPresented = false
         } catch {
             message = "❌ \(String(format: localized("Legado JSON 匯入失敗：%@"), error.localizedDescription))"
             showMessage = true

@@ -361,10 +361,13 @@ struct AudiobookChapterListView: View {
                         }
                         .padding(.vertical, 2)
                     }
+                    .interfaceSectionSurface()
                     .id(chapter.index)
                 }
                 .onAppear { proxy.scrollTo(player.chapterIndex, anchor: .center) }
             }
+            // Rows carry their own surface; the modifier below only clears the list
+            // container, not each row's system fill. docs/design.md §4.1.
             .scrollContentBackground(.hidden)
             .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
             .pageBackgroundToolbar(for: .settings)
@@ -428,6 +431,9 @@ struct AudiobookSleepTimerView: View {
                 }
             }
         }
+        // Applied here rather than at each call site so every option row keeps the
+        // shared surface instead of the opaque system default. docs/design.md §4.1.
+        .interfaceSectionSurface()
     }
 }
 

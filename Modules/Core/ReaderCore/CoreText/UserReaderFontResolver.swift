@@ -77,7 +77,7 @@ enum UserReaderFontResolver {
            let boldDescriptor = descriptor.withSymbolicTraits(.traitBold) {
             descriptor = boldDescriptor
         }
-        return UIFont(descriptor: descriptor, size: size)
+        return preservingFamily(font, resolved: UIFont(descriptor: descriptor, size: size))
     }
 
     private static func boldVersion(of font: UIFont, size: CGFloat) -> UIFont {
@@ -85,13 +85,27 @@ enum UserReaderFontResolver {
             return font
         }
         if let descriptor = font.fontDescriptor.withSymbolicTraits(.traitBold) {
-            return UIFont(descriptor: descriptor, size: size)
+            return preservingFamily(font, resolved: UIFont(descriptor: descriptor, size: size))
         }
         // Synthetic bold for fonts without native bold face
         let attrs: [UIFontDescriptor.AttributeName: Any] = [
             .traits: [UIFontDescriptor.TraitKey.weight: UIFont.Weight.bold]
         ]
-        return UIFont(descriptor: font.fontDescriptor.addingAttributes(attrs), size: size)
+        return preservingFamily(
+            font,
+            resolved: UIFont(descriptor: font.fontDescriptor.addingAttributes(attrs), size: size)
+        )
+    }
+
+    /// Descriptor matching is allowed to leave the requested family: asking a
+    /// Regular-only imported font for a Bold/weighted face returns a *system*
+    /// face instead. That silently discarded the user's chosen font — the title
+    /// simply kept looking like the system font no matter what was picked, since
+    /// the chapter title's default weight is `.bold`. Keep the family the user
+    /// selected; the missing weight is covered by `syntheticBoldAttributes`,
+    /// which is exactly how the body text already handles Regular-only fonts.
+    private static func preservingFamily(_ requested: UIFont, resolved: UIFont) -> UIFont {
+        resolved.familyName == requested.familyName ? resolved : requested
     }
 
     private static func supportsVariableWeight(_ font: UIFont) -> Bool {

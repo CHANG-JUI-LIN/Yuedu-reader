@@ -43,6 +43,7 @@ struct ReplaceRuleListView: View {
                             ReplaceRuleRow(rule: rule) {
                                 editingRule = rule
                             }
+                            .interfaceSectionSurface()
                         }
                         .onDelete { offsets in
                             offsets.map { store.rules[$0].id }.forEach { store.delete(id: $0) }
@@ -50,6 +51,9 @@ struct ReplaceRuleListView: View {
                         .onMove { store.move(fromOffsets: $0, toOffset: $1) }
                     }
                     .listStyle(.plain)
+                    // `themedAppSurface` below only hides the *list's* background; a `.plain`
+                    // row still paints its own opaque `systemBackground` unless handed one.
+                    // Same fix as 書源管理 / 語音朗讀設定.
                 }
             }
             .navigationTitle(localized("替換規則"))

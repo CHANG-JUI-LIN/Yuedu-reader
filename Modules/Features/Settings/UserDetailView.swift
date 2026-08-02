@@ -96,9 +96,11 @@ struct UserDetailView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                // Keep the profile card in the same semantic surface as the other
-                // grouped rows so it follows Light/Dark appearance automatically.
-                .listRowBackground(DSColor.surface)
+                // Same surface as every other section here. This used to pin the card to
+                // an opaque `DSColor.surface` — correct for Light/Dark, but it predates
+                // `interfaceSectionSurface`, so once the other sections started following
+                // 毛玻璃／分組卡片／透明度 this one stayed flat white above them.
+                .interfaceSectionSurface()
             }
 
             Section {

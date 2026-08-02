@@ -223,24 +223,6 @@ struct DSChip: View {
     }
 }
 
-/// Toast banner for success/error messages.
-struct DSToast: View {
-    let message: String
-    let color: Color
-    
-    var body: some View {
-        Text(message)
-            .font(DSFont.subheadline)
-            .foregroundColor(.white)
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.sm)
-            .background(color.opacity(0.92))
-            .clipShape(Capsule())
-            .shadow(color: DSColor.shadow, radius: 4, y: 2)
-            .padding(.top, DSSpacing.sm)
-    }
-}
-
 /// Empty state placeholder view.
 struct DSEmptyState: View {
     let icon: String

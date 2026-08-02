@@ -458,6 +458,11 @@ struct AutoReadPanelView: View {
                 .interfaceSectionSurface()
             }
             .scrollContentBackground(.hidden)
+            // Matches the 聽書 panel above: hiding the list background only helps if
+            // something is painted behind it, otherwise this sheet showed bare system
+            // chrome while its sibling honoured the page background.
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
             .navigationTitle(localized("自動閱讀"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {

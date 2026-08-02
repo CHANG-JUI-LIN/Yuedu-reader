@@ -108,6 +108,7 @@ struct BookSourceRuleDebugView: View {
                     List(engine.logs) { entry in
                         DebugLogRow(entry: entry)
                             .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                            .interfaceSectionSurface()
                     }
                     .listStyle(.plain)
                 }

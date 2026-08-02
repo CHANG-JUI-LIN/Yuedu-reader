@@ -749,17 +749,18 @@ struct BrowserView: View {
                 }
             }
         }
-        .overlay(alignment: .top) {
-            if let msg = errorMsg {
-                Text(msg)
-                    .font(DSFont.caption).foregroundColor(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(Color.red.opacity(0.85)).clipShape(Capsule())
-                    .padding(.top, 8)
-                    .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { errorMsg = nil }
-                    }
-            }
+        .alert(
+            localized("操作失敗"),
+            isPresented: Binding(
+                get: { errorMsg != nil },
+                set: { isPresented in
+                    if !isPresented { errorMsg = nil }
+                }
+            )
+        ) {
+            Button(localized("確定"), role: .cancel) {}
+        } message: {
+            Text(errorMsg ?? localized("操作失敗"))
         }
     }
 

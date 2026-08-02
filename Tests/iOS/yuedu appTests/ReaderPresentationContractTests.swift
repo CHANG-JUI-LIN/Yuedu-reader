@@ -21,6 +21,7 @@ struct ReaderPresentationContractTests {
         #expect(curl.transitionStyle == .pageCurl)
         #expect(!curl.disablesBuiltInSwipe)
         #expect(!curl.usesInstantPan)
+        #expect(curl.isDoubleSided)
         #expect(curl.spineLocation(isRTL: true) == .max)
 
         let cover = PageViewControllerPagingAdapterDescriptor(pageTurnStyle: .cover)
@@ -199,57 +200,40 @@ struct ReaderPresentationContractTests {
         #expect(ReaderCurlVirtualIndex.backIndex(forLogicalPage: 3, isRTL: true) == 6)
     }
 
-    @Test("curl back page content follows logical reader direction")
-    func curlBackPageContentFollowsLogicalReaderDirection() {
+    @Test("curl back uses the same logical page instead of leaking the next page")
+    func curlBackUsesSameLogicalPage() {
         #expect(ReaderCurlBackPageResolver.logicalPageIndex(targetPage: 4, visiblePage: 3) == 3)
-        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 3, totalPages: 6) == 4)
+        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 3, totalPages: 6) == 3)
 
         #expect(ReaderCurlBackPageResolver.logicalPageIndex(targetPage: 2, visiblePage: 3) == 2)
-        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 2, totalPages: 6) == 3)
+        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 2, totalPages: 6) == 2)
 
         #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: -1, totalPages: 6) == nil)
-        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 5, totalPages: 6) == nil)
+        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 6, totalPages: 6) == nil)
     }
 
-    @Test("curl back pages display rendered built-in color, custom color, and custom image materials")
-    func curlBackPageDisplaysEveryRenderedPageMaterial() throws {
+    @Test("curl back mirrors the complete rendered page material")
+    func curlBackMirrorsRenderedPageMaterial() throws {
+        let renderedPageImage = splitColorImage(left: .black, right: .systemTeal)
         let position = CoreTextReadingPosition(spineIndex: 2, charOffset: 64)
-        let materials = [
-            ("built-in color", solidImage(color: .systemBackground)),
-            ("custom color", solidImage(color: UIColor(red: 0.18, green: 0.31, blue: 0.22, alpha: 1))),
-            ("custom image", splitColorImage(left: .systemPink, right: .systemTeal))
-        ]
+        let backPage = PageBackViewController(
+            virtualIndex: 7,
+            logicalPageIndex: 3,
+            globalPageIndex: 3,
+            backgroundColor: .black,
+            renderedPageImage: renderedPageImage,
+            readingPosition: position
+        )
 
-        for (name, renderedPageImage) in materials {
-            let backPage = PageBackViewController(
-                virtualIndex: 7,
-                logicalPageIndex: 3,
-                globalPageIndex: 4,
-                backgroundColor: .white,
-                renderedPageImage: renderedPageImage,
-                readingPosition: position
-            )
+        backPage.loadViewIfNeeded()
 
-            backPage.loadViewIfNeeded()
-
-            let imageView = try #require(
-                backPage.view.subviews.compactMap { $0 as? UIImageView }.first,
-                "Missing rendered material for \(name)"
-            )
-            #expect(imageView.image === renderedPageImage)
-            #expect(imageView.contentMode == .scaleToFill)
-            #expect(backPage.view.isOpaque)
-            #expect(backPage.logicalPageIndex == 3)
-            #expect(backPage.globalPageIndex == 4)
-            #expect(backPage.coreTextReadingPosition == position)
-        }
-    }
-
-    private func solidImage(color: UIColor) -> UIImage {
-        UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
-            context.cgContext.setFillColor(color.cgColor)
-            context.cgContext.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
-        }
+        let imageView = try #require(backPage.view.subviews.compactMap { $0 as? UIImageView }.first)
+        #expect(imageView.image === renderedPageImage)
+        #expect(imageView.transform == CGAffineTransform(scaleX: -1, y: 1))
+        #expect(backPage.view.backgroundColor == .black)
+        #expect(backPage.logicalPageIndex == 3)
+        #expect(backPage.globalPageIndex == 3)
+        #expect(backPage.coreTextReadingPosition == position)
     }
 
     private func splitColorImage(left: UIColor, right: UIColor) -> UIImage {

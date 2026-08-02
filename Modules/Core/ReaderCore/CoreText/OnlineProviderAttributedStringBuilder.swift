@@ -594,34 +594,31 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             whitespacePolicy: .trimTextNodeBoundaries
         )
 
-        // Advanced-CSS chapter title for HTML-body chapters: source content
-        // carries its own title as a heading or review-bearing paragraph. In
-        // CSS mode, remove that leading title text and typeset the title through
-        // ChapterTitleAttributedBuilder so HTML-body books honour the same
-        // templates as plain-text ones.
-        var renderNodes = nodes
-        var cssTitle: NSMutableAttributedString?
-        var titleAccessories: [RenderableNode] = []
-        if settings.chapterTitleStyle.advancedCSSEnabled {
-            let deduplicated = OnlineChapterTitleDeduplicator.deduplicatingLeadingTitle(
-                from: nodes,
-                matching: payload.title
-            )
-            renderNodes = deduplicated.bodyNodes
-            titleAccessories = deduplicated.titleAccessories
-            let titleAttr = NSMutableAttributedString()
-            await ChapterTitleAttributedBuilder.append(
-                title: payload.title,
-                style: settings.chapterTitleStyle,
-                settings: settings,
-                renderWidth: contentRenderWidth,
-                themeTextColor: themeTextColor,
-                themeBackgroundColor: themeBackgroundColor,
-                letterSpacing: settings.letterSpacing,
-                to: titleAttr
-            )
-            cssTitle = titleAttr
-        }
+        // Chapter title for HTML-body chapters: source content carries its own
+        // title as a heading or review-bearing paragraph. Strip that leading
+        // title text and typeset the title through ChapterTitleAttributedBuilder
+        // so HTML-body books honour the reader's chapter-title style — fonts,
+        // weight, alignment, split, and "顯示標題" — exactly like plain-text ones.
+        // This runs unconditionally: gating it on `advancedCSSEnabled` left the
+        // manual mode (the only mode that exposes the font pickers) rendering the
+        // source's own <h1>, so every title setting silently did nothing online.
+        let deduplicated = OnlineChapterTitleDeduplicator.deduplicatingLeadingTitle(
+            from: nodes,
+            matching: payload.title
+        )
+        let renderNodes = deduplicated.bodyNodes
+        let titleAccessories = deduplicated.titleAccessories
+        let styledTitle = NSMutableAttributedString()
+        await ChapterTitleAttributedBuilder.append(
+            title: payload.title,
+            style: settings.chapterTitleStyle,
+            settings: settings,
+            renderWidth: contentRenderWidth,
+            themeTextColor: themeTextColor,
+            themeBackgroundColor: themeBackgroundColor,
+            letterSpacing: settings.letterSpacing,
+            to: styledTitle
+        )
 
         let hasResources = resourceProvider != nil
         let renderer = NodeAttributedStringRenderer(
@@ -654,15 +651,15 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             )
         )
 
-        if let cssTitle, !titleAccessories.isEmpty {
+        if styledTitle.length > 0, !titleAccessories.isEmpty {
             let renderedAccessories = await renderer.render(titleAccessories)
-            Self.mergeTitleAccessories(renderedAccessories, into: cssTitle)
+            Self.mergeTitleAccessories(renderedAccessories, into: styledTitle)
         }
         let bodyAttributed = await renderer.render(renderNodes)
         let attributedString: NSAttributedString
-        if let cssTitle, cssTitle.length > 0 {
-            cssTitle.append(bodyAttributed)
-            attributedString = cssTitle
+        if styledTitle.length > 0 {
+            styledTitle.append(bodyAttributed)
+            attributedString = styledTitle
         } else {
             attributedString = bodyAttributed
         }
@@ -719,13 +716,14 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
 
         let insertionIndex = lastVisibleIndex + 1
         let titleAttributes = title.attributes(at: lastVisibleIndex, effectiveRange: nil)
-        if let paragraphStyle = titleAttributes[.paragraphStyle] {
-            accessory.addAttribute(
-                .paragraphStyle,
-                value: paragraphStyle,
-                range: NSRange(location: 0, length: accessory.length)
-            )
-        }
+        // The accessory was rendered through the body renderer, so it initially carries the
+        // body font. Once it is moved into the generated title, inherit the title run's font and
+        // paragraph attributes as one unit; otherwise the bubble stays at body size while sitting
+        // beside a larger heading. Keep accessory-only attributes such as its review href intact.
+        accessory.addAttributes(
+            titleAttributes,
+            range: NSRange(location: 0, length: accessory.length)
+        )
         title.insert(
             NSAttributedString(string: "\u{2009}", attributes: titleAttributes),
             at: insertionIndex

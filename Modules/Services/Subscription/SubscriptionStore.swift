@@ -594,9 +594,18 @@ final class SubscriptionStore: ObservableObject {
             // Apple ID.
             data["iCloudAccountStatus"] = await self.iCloudMirror.accountStatusDescription()
             Self.subscriptionLog.notice("Reporting entitlement drop diagnostic to Firestore")
-            try? await Firestore.firestore()
-                .collection("entitlementDiagnostics")
-                .addDocument(data: data)
+            do {
+                _ = try await Firestore.firestore()
+                    .collection("entitlementDiagnostics")
+                    .addDocument(data: data)
+            } catch {
+                // Still best-effort (the reader must not care), but a silent failure
+                // means the diagnostic the developer is waiting on never arrives —
+                // and "no documents" would read as "no entitlement drops".
+                Self.subscriptionLog.error(
+                    "Entitlement drop diagnostic write failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
     }
 

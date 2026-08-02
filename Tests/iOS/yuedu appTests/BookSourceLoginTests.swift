@@ -115,6 +115,67 @@ struct BookSourceLoginTests {
         #expect(registerButton.action == "register()")
     }
 
+    @Test("空白登入欄位不會被當成登入成功")
+    func blankLoginFieldIsRequired() {
+        let fields = LoginUIField.parse(from: """
+        [{"name":"Token","type":"password"}]
+        """)
+
+        #expect(
+            BookSourceFormLoginView.missingRequiredFieldNames(
+                fields: fields,
+                values: ["Token": ""]
+            ) == ["Token"]
+        )
+        #expect(
+            BookSourceFormLoginView.missingRequiredFieldNames(
+                fields: fields,
+                values: ["Token": "token-for-test"]
+            ).isEmpty
+        )
+    }
+
+    @Test("登入資訊變更後會重新解析依賴 token 的書源 header")
+    func loginInfoChangeInvalidatesResolvedHeaderCache() {
+        let sourceURL = "qidian-header-cache-test-\(UUID().uuidString)"
+        var source = BookSource(bookSourceUrl: sourceURL, bookSourceName: "Header cache test")
+        source.header = """
+        <js>
+        (function() {
+            var info = source.getLoginInfoMap();
+            var token = info && info.Token;
+            return token ? JSON.stringify({Authorization: "Bearer " + token}) : "{}";
+        })();
+        </js>
+        """
+        LoginManager.shared.clearLogin(sourceUrl: sourceURL)
+        defer { LoginManager.shared.clearLogin(sourceUrl: sourceURL) }
+
+        let engine = JSCoreEngine()
+        engine.bookSource = source
+        #expect(engine.resolvedSourceHeaders().isEmpty)
+
+        engine.sourceBridge.getLoginInfoMapHandler = {
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceURL) ?? [:]
+        }
+        LoginManager.shared.storeLoginInfo(
+            sourceUrl: sourceURL,
+            info: ["Token": "token-for-test"]
+        )
+
+        #expect(engine.resolvedSourceHeaders()["Authorization"] == "Bearer token-for-test")
+    }
+
+    @Test("Legado 規則支援函式外觀的頂層 return")
+    func isolatedRuleSupportsTopLevelReturn() {
+        let engine = JSCoreEngine()
+        let value = engine.evaluateIsolated(
+            "var output = 'discover'; return output + '-ok';",
+            bindings: [:]
+        )
+        #expect(value == "discover-ok")
+    }
+
     @Test("LoginUIField.parse() 正確解析 select 欄位與選項")
     func parseSelectLoginUiField() throws {
         let json = """

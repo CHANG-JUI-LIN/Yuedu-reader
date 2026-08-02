@@ -34,6 +34,7 @@ struct ProgrammaticPageTransitionPerformerTests {
     private final class FakePageContainer: ProgrammaticPageTransitionControlling {
         var dataSource: UIPageViewControllerDataSource?
         var viewControllers: [UIViewController]?
+        var animatedCalls = 0
         var animatedReverseCalls = 0
         var nonAnimatedCalls = 0
         var layoutIfNeededCalls = 0
@@ -44,6 +45,9 @@ struct ProgrammaticPageTransitionPerformerTests {
             animated: Bool,
             completion: ((Bool) -> Void)?
         ) {
+            if animated {
+                animatedCalls += 1
+            }
             if animated && direction == .reverse {
                 animatedReverseCalls += 1
                 // Simulate the UIKit bug: completion fires, but visible controller is still the old one
@@ -95,8 +99,8 @@ struct ProgrammaticPageTransitionPerformerTests {
         #expect((container.viewControllers?.first as? IndexedViewController)?.globalPageIndex == 0)
     }
 
-    @Test("animated curl transition keeps the provided double-sided stack")
-    func animatedCurlTransitionKeepsProvidedDoubleSidedStack() {
+    @Test("animated curl transition keeps the provided mirrored back page")
+    func animatedCurlTransitionKeepsProvidedBackPage() {
         let performer = ProgrammaticPageTransitionPerformer(pageTurnStyle: .curl)
         let container = FakePageContainer()
         let target = IndexedViewController(index: 2)
@@ -118,15 +122,12 @@ struct ProgrammaticPageTransitionPerformerTests {
         #expect(container.viewControllers?.count == 2)
         #expect(container.viewControllers?.first === target)
         #expect(container.viewControllers?.last === back)
+        #expect(container.animatedCalls == 1)
         #expect(settledViewController === target)
     }
 
-    @Test("animated curl with a single-VC stack degrades to non-animated instead of crashing")
-    func animatedCurlWithSingleControllerStackDegradesToNonAnimated() {
-        // Regression: a freshly added local EPUB whose target chapter isn't laid out yet
-        // yields a PlaceholderPageViewController, so transitionViewControllerStack returns a
-        // 1-element stack. An *animated* page-curl requires 2 VCs; passing 1 made UIKit raise
-        // in -_validatedViewControllersForTransitionWithViewControllers: → SIGABRT on open.
+    @Test("animated double-sided curl with one controller degrades safely")
+    func animatedCurlWithSingleControllerStackDegradesSafely() {
         let performer = ProgrammaticPageTransitionPerformer(pageTurnStyle: .curl)
         let container = FakePageContainer()
         let target = IndexedViewController(index: 0)
@@ -136,7 +137,7 @@ struct ProgrammaticPageTransitionPerformerTests {
         performer.perform(
             on: container,
             targetViewController: target,
-            targetViewControllers: [target], // no back page — single element
+            targetViewControllers: [target],
             direction: .forward,
             animated: true,
             restoringDataSource: nil
@@ -144,6 +145,7 @@ struct ProgrammaticPageTransitionPerformerTests {
             settledViewController = settled
         }
 
+        #expect(container.animatedCalls == 0)
         #expect(container.nonAnimatedCalls == 1)
         #expect(container.viewControllers?.count == 1)
         #expect(container.viewControllers?.first === target)

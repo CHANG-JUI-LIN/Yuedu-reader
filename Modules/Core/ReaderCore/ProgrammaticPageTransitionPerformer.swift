@@ -39,14 +39,9 @@ struct ProgrammaticPageTransitionPerformer {
             targetStack = targetViewControllers ?? [targetViewController]
         }
 
-        // An *animated* page-curl (isDoubleSided = true, spine at .min/.max) requires a
-        // two-element double-sided stack [front, back]. The caller can legitimately end up
-        // with a single VC — the target page is still a PlaceholderPageViewController (chapter
-        // not yet laid out, e.g. a freshly added local EPUB) or no back page exists at a book
-        // boundary. Feeding that 1-element stack to an animated curl makes UIPageViewController
-        // raise in -_validatedViewControllersForTransitionWithViewControllers: → SIGABRT.
-        // Degrade to a non-animated set: one VC is valid when not animating, so the page still
-        // appears, just without the curl on this single turn.
+        // Edge-spine double-sided curl requires [front, mirrored back]. A placeholder
+        // or book boundary may temporarily have only the front, where UIKit would
+        // raise for an animated transition; show that page without animation instead.
         let effectiveAnimated: Bool = {
             guard pageTurnStyle == .curl, animated, targetStack.count < 2 else { return animated }
             AppLogger.render("[CurlTrace] degrade animated curl → non-animated (stack count \(targetStack.count))")

@@ -207,7 +207,11 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
             // snapshot back resurrected the task, and because removal had just
             // deleted the artifacts it still listed as completed, the follow-up
             // enqueue restarted the whole download.
-            let merged = await MainActor.run { () -> BookOfflineDownloadTask? in
+            // The loop above is done mutating the three index sets, so capture them by
+            // value — reaching into this actor's mutable locals from the @MainActor
+            // closure is an error under the Swift 6 language mode.
+            let merged = await MainActor.run {
+                [droppedIndices, verifiedIndices, missingIndices] () -> BookOfflineDownloadTask? in
                 guard var task = store.books
                     .first(where: { $0.id == book.id })?.offlineDownloadTask
                 else { return nil }

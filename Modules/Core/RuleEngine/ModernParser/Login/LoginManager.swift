@@ -5,6 +5,14 @@
 import Foundation
 import JavaScriptCore
 
+extension Notification.Name {
+    /// Posted after a source's stored login information changes. Consumers use
+    /// the source URL in `userInfo` to invalidate only that source's runtime.
+    static let bookSourceLoginInfoDidChange = Notification.Name(
+        "bookSourceLoginInfoDidChange"
+    )
+}
+
 // MARK: - Login State
 
 /// Represents the authentication state of a book source.
@@ -148,6 +156,11 @@ final class LoginManager {
 
     /// Serial queue for thread-safe access to caches and defaults.
     private let queue = DispatchQueue(label: "com.yuedu.LoginManager", attributes: .concurrent)
+
+    /// Monotonically increasing revision for credential-dependent JS rules.
+    /// The revision is intentionally separate from the credential value so it
+    /// can invalidate request-header caches without exposing the token.
+    private var loginInfoRevisions: [String: UInt64] = [:]
 
     // MARK: - Init
 
@@ -516,17 +529,18 @@ final class LoginManager {
 
     /// Remove all login data for a source (Legado `removeLoginHeader`).
     func clearLogin(sourceUrl: String) {
-        queue.async(flags: .barrier) { [weak self] in
-            self?.headerCache.removeValue(forKey: sourceUrl)
-            self?.defaults.removeObject(
+        queue.sync(flags: .barrier) {
+            headerCache.removeValue(forKey: sourceUrl)
+            defaults.removeObject(
                 forKey: LoginManager.loginHeaderPrefix + sourceUrl
             )
             // loginInfo is stored in Keychain; also clear any legacy UserDefaults entry
             KeychainHelper.delete(account: LoginManager.loginInfoPrefix + sourceUrl)
-            self?.defaults.removeObject(
+            defaults.removeObject(
                 forKey: LoginManager.loginInfoPrefix + sourceUrl
             )
         }
+        markLoginInfoChanged(sourceUrl: sourceUrl)
     }
 
     /// Apply stored login headers to a URLRequest.
@@ -545,7 +559,28 @@ final class LoginManager {
     func storeLoginInfo(sourceUrl: String, info: [String: String]) {
         guard let data = try? JSONSerialization.data(withJSONObject: info),
               let json = String(data: data, encoding: .utf8) else { return }
+        let previous = getLoginInfo(sourceUrl: sourceUrl)
         KeychainHelper.save(account: LoginManager.loginInfoPrefix + sourceUrl, data: json)
+        if previous != info {
+            markLoginInfoChanged(sourceUrl: sourceUrl)
+        }
+    }
+
+    /// Revision of the credentials used by a source's dynamic header rule.
+    /// This is safe to read from request workers and never returns credential data.
+    func loginInfoRevision(sourceUrl: String) -> UInt64 {
+        queue.sync { loginInfoRevisions[sourceUrl] ?? 0 }
+    }
+
+    private func markLoginInfoChanged(sourceUrl: String) {
+        queue.sync(flags: .barrier) {
+            loginInfoRevisions[sourceUrl, default: 0] &+= 1
+        }
+        NotificationCenter.default.post(
+            name: .bookSourceLoginInfoDidChange,
+            object: nil,
+            userInfo: ["sourceURL": sourceUrl]
+        )
     }
 
     /// Retrieve stored login credentials (Legado `getLoginInfo`).

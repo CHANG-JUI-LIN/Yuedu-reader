@@ -446,34 +446,24 @@ struct BookSourceListView: View {
                             + " \(pending.sourceIds.count) " + localized("個書源嗎？"))
                 }
             }
+            .alert(
+                messageAlertTitle,
+                isPresented: Binding(
+                    get: { importError != nil || importSuccess != nil || checkToast != nil },
+                    set: { isPresented in
+                        if !isPresented {
+                            importError = nil
+                            importSuccess = nil
+                            checkToast = nil
+                        }
+                    }
+                )
+            ) {
+                Button(localized("確定"), role: .cancel) {}
+            } message: {
+                Text(importError ?? importSuccess ?? checkToast ?? "")
+            }
             .overlay(alignment: .top) {
-                if let msg = importSuccess {
-                    toastBanner(msg, color: .green)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                                withAnimation { importSuccess = nil }
-                            }
-                        }
-                }
-                if let err = importError {
-                    toastBanner(err, color: .red)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                                withAnimation { importError = nil }
-                            }
-                        }
-                }
-                if let msg = checkToast {
-                    toastBanner(msg, color: DSColor.accent)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                                withAnimation { checkToast = nil }
-                            }
-                        }
-                }
                 if healthChecker.isRunning {
                     HStack(spacing: DSSpacing.sm) {
                         ProgressView().scaleEffect(0.8)
@@ -865,7 +855,9 @@ struct BookSourceListView: View {
     private func deleteGroup(_ pending: PendingGroupAction) {
         selectedIds.subtract(pending.sourceIds)
         withAnimation(reduceMotion ? nil : DSAnimation.standard) {
-            store.delete(ids: pending.sourceIds)
+            // Discard the removed count explicitly: without it the closure's implicit
+            // return makes `withAnimation` itself yield a value nobody reads.
+            _ = store.delete(ids: pending.sourceIds)
         }
     }
 
@@ -925,7 +917,8 @@ struct BookSourceListView: View {
     private func sourceAccessibilityTraits(_ source: BookSource) -> AccessibilityTraits {
         var traits: AccessibilityTraits = .isButton
         if selectedIds.contains(source.id) {
-            traits.insert(.isSelected)
+            // SwiftUI's `AccessibilityTraits.insert` is not `@discardableResult`.
+            _ = traits.insert(.isSelected)
         }
         return traits
     }
@@ -1624,13 +1617,10 @@ struct BookSourceListView: View {
     }
 
     // MARK: - Utilities
-    @ViewBuilder
-    private func toastBanner(_ msg: String, color: Color) -> some View {
-        Text(msg)
-            .font(DSFont.caption).foregroundColor(.white)
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            .background(color.opacity(0.9)).clipShape(Capsule())
-            .padding(.top, 8)
+    private var messageAlertTitle: String {
+        if importError != nil { return localized("操作失敗") }
+        if checkToast != nil { return localized("書源驗證") }
+        return localized("完成")
     }
 }
 

@@ -108,7 +108,7 @@ struct BookSourceCheckOptionsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(DSSpacing.lg)
-        .background(Color(.secondarySystemBackground))
+        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
     }
 
@@ -176,7 +176,7 @@ struct BookSourceCheckOptionsView: View {
                 .foregroundColor(DSColor.textPrimary)
         }
         .padding(DSSpacing.md)
-        .background(Color(.secondarySystemBackground))
+        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
     }
 

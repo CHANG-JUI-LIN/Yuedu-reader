@@ -326,8 +326,11 @@ struct FixedPageChapterListView: View {
                         }
                         .padding(.vertical, 2)
                     }
+                    .interfaceSectionSurface()
                     .id(item.index)
                 }
+                // Rows need their own transparent surface too — `scrollContentBackground`
+                // only clears the list container. docs/design.md §4.1.
                 .scrollContentBackground(.hidden)
                 .onAppear {
                     proxy.scrollTo(state.currentChapterIndex, anchor: .center)

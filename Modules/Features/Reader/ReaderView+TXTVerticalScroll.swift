@@ -173,14 +173,27 @@ extension ReaderView {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(chapters.enumerated()), id: \.offset) { ci, chapter in
-                        Text(chapter.title.converted(to: settings.textConversion))
-                            .font(DSFont.fixed(size: readerConfig.chapterTitleStyle.size, weight: .bold, design: .serif))
-                            .foregroundColor(readerTheme.textColor)
-                            .padding(.top, 80)
-                            .padding(.horizontal, 24)
-                            .padding(.bottom, 20)
-                            .id("chapter_\(ci)")
-                            .onAppear { scrollVisibleChapter = ci }
+                        // Chapter title honours the reader's 章節標題樣式 (font /
+                        // weight / visibility) instead of a hardcoded serif bold,
+                        // matching the CoreText paths. The Group keeps the scroll
+                        // anchor alive even when the title itself is hidden —
+                        // `proxy.scrollTo("chapter_\(ci)")` targets this id.
+                        Group {
+                            if readerConfig.chapterTitleStyle.visible {
+                                Text(chapter.title.converted(to: settings.textConversion))
+                                    .font(Font(UserReaderFontResolver.titleFont(
+                                        size: readerConfig.chapterTitleStyle.size,
+                                        weight: readerConfig.chapterTitleStyle.weight,
+                                        postScriptName: readerConfig.chapterTitleStyle.nameFontName()
+                                    )))
+                                    .foregroundColor(readerTheme.textColor)
+                                    .padding(.top, 80)
+                                    .padding(.horizontal, 24)
+                                    .padding(.bottom, 20)
+                            }
+                        }
+                        .id("chapter_\(ci)")
+                        .onAppear { scrollVisibleChapter = ci }
 
                         if chapter.content.isEmpty && book?.isOnline == true {
                             VStack(spacing: 16) {

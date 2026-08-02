@@ -66,6 +66,16 @@ struct ExploreHomeView: View {
             .onSubmit(of: .search, submitSearch)
             .onAppear { discover.refreshSources() }
             .onChange(of: sourceStore.sources.count) { _, _ in discover.refreshSources() }
+            .onReceive(
+                NotificationCenter.default.publisher(for: .bookSourceLoginInfoDidChange)
+            ) { notification in
+                guard let sourceURL = notification.userInfo?["sourceURL"] as? String,
+                      discover.selectedSource?.bookSourceUrl == sourceURL else { return }
+                // The source's exploreUrl and header rule may both depend on the
+                // newly stored credentials. Re-run the source instead of reusing
+                // the pre-login category cache.
+                discover.reload(forceRefresh: true)
+            }
             .navigationDestination(isPresented: pushedSourceManagerBinding) {
                 BookSourceListView(embedsNavigationStack: false)
             }
@@ -219,6 +229,11 @@ struct ExploreHomeView: View {
             recentSection
         }
         .scrollDismissesKeyboard(.immediately)
+        // Without this the `Form` paints its own opaque grouped background over the
+        // `PageBackgroundView` this screen already installs, so 網頁瀏覽 was the one
+        // Explore segment where a page background never showed. The sections each carry
+        // `interfaceSectionSurface`, so the cards still follow 毛玻璃／分組卡片／透明度.
+        .scrollContentBackground(.hidden)
     }
 
     private var searchEnginesSection: some View {
@@ -324,6 +339,7 @@ struct ExploreHomeView: View {
                                 HistoryRow(entry: entry, faviconURL: history.faviconURL(for: entry))
                             }
                             .buttonStyle(.plain)
+                            .interfaceSectionSurface()
                         }
                         .onDelete { offsets in
                             offsets.map { history.entries[$0] }.forEach(history.remove)
@@ -383,6 +399,7 @@ struct ExploreHomeView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .interfaceSectionSurface()
             }
             .navigationTitle(localized("書源網站"))
             .toolbarTitleDisplayMode(.inline)
@@ -859,6 +876,7 @@ private struct DiscoverSourcePickerView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .interfaceSectionSurface()
                     .id(source.id)
                 }
             }

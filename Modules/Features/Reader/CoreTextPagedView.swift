@@ -30,7 +30,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             navigationOrientation: .horizontal,
             options: options
         )
-        pvc.isDoubleSided = pageTurnStyle == .curl && !isDoublePageSpread
+        pvc.isDoubleSided = adapterDescriptor.isDoubleSided && !isDoublePageSpread
         // cover / none mode: disable built-in swipe gesture (use custom pan or tap for page turns).
         if adapterDescriptor.disablesBuiltInSwipe {
             pvc.dataSource = nil
@@ -124,7 +124,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         context.coordinator.currentPlaybackHighlightText = playbackHighlightText
         let spreadModeChanged = context.coordinator.isDoublePageSpread != isDoublePageSpread
         context.coordinator.isDoublePageSpread = isDoublePageSpread
-        uiViewController.isDoubleSided = pageTurnStyle == .curl && !isDoublePageSpread
+        uiViewController.isDoubleSided = PageViewControllerPagingAdapterDescriptor(
+            pageTurnStyle: pageTurnStyle
+        ).isDoubleSided && !isDoublePageSpread
         context.coordinator.externalTargetPosition = externalTargetPosition
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: uiViewController)
         // Phase-2 executor model: this method no longer reconciles the currentPage
@@ -170,12 +172,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         // 1) Position command: Navigator-owned external target (TOC jump, restore,
         //    mode switch, TTS anchor). One-shot — cleared once applied to a real page.
         if externalTargetPosition != nil, !context.coordinator.isTransitioning {
-            // A stack write lands on top of UIKit's in-flight interactive curl and
-            // leaves its pending pair empty, so the pan handler then commits
-            // `_setViewControllers` with zero view controllers (NSInvalidArgumentException,
-            // "provided (0) ... required (2)"). `isTransitioning` only covers our own
-            // programmatic transitions; an interactive pan needs `isGestureInProgress`.
-            // The target is replayed the moment the gesture settles.
+            // A stack write on top of UIKit's in-flight interactive curl corrupts
+            // its pending transition state. `isTransitioning` only covers our own
+            // programmatic transitions; an interactive pan needs
+            // `isGestureInProgress`. Replay the target when the gesture settles.
             if context.coordinator.isGestureInProgress {
                 context.coordinator.deferExternalTarget()
                 return
@@ -343,19 +343,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// interactive page turn was in flight and was held back — see
         /// `replayDeferredExternalTargetIfNeeded`.
         private var hasDeferredExternalTarget = false
-        /// `currentEngine.totalPages` as of the last time we wrote the page view
-        /// controller stack. UIKit pre-fetches and caches the neighbouring page
-        /// controllers at that moment, and in double-sided curl mode its pan handler
-        /// does not tolerate the data source later answering `nil`: it commits
-        /// `_setViewControllers:withCurlOfType:` with an empty array and raises
-        /// `NSInvalidArgumentException — The number of view controllers provided (0)
-        /// doesn't match the number required (2)`. Online books repaginate while the
-        /// reader is open (progressive pagination replaces a partial layout's
-        /// *over-estimated* page count with the smaller real one), so answering curl
-        /// neighbour queries from the live count can retract a neighbour UIKit has
-        /// already committed to. See `curlNeighbourPageCount`.
+        /// Snapshot of the page count used by UIKit's cached double-sided neighbours.
+        /// Hold a shrinking count until the next stack write so an in-flight curl
+        /// never loses a controller that UIKit already requested.
         private var stackWriteTotalPages = 0
-
         // Cover animation overlay components
         private let coverOverlayView = UIView()
         private let coverCurrentImageView = UIImageView()
@@ -550,22 +541,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             return [viewController]
         }
 
-        /// Page count the curl data source answers neighbour queries from. Growth is
-        /// picked up immediately; a *shrink* is held back until the next stack write
-        /// so we never retract a neighbour UIKit already cached — see
-        /// `stackWriteTotalPages` for the crash that retracting causes. The stale
-        /// upper bound is self-healing: repagination fires `onChapterReady`, and
-        /// `handleChapterReady` (deferred until the gesture ends) rewrites the stack,
-        /// which resets the snapshot to the real count. Worst case in that window is
-        /// one extra placeholder page, never a crash — `pageViewController(at:)`
-        /// answers any out-of-range index with a placeholder.
         private var curlNeighbourPageCount: Int {
             max(currentEngine.totalPages, stackWriteTotalPages)
         }
 
-        private func curlBackPage(
-            logicalPageIndex: Int
-        ) -> PageBackViewController? {
+        private func curlBackPage(logicalPageIndex: Int) -> PageBackViewController? {
             guard let contentPage = ReaderCurlBackPageResolver.contentPageIndex(
                 logicalPageIndex: logicalPageIndex,
                 totalPages: curlNeighbourPageCount
@@ -578,11 +558,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 logicalPageIndex: logicalPageIndex,
                 globalPageIndex: contentPage,
                 backgroundColor: curlBackPageColor,
-                // CoreText/TXT snapshots contain the final composed page, so built-in
-                // colors, custom colors, custom background images, and text stay on
-                // the same rendering path. The solid color remains only while a
-                // provider cannot snapshot (an unloaded placeholder or current FXL);
-                // remove it once every provider implements renderSnapshot(forPage:).
+                // The back is the same fully composed page, mirrored by
+                // PageBackViewController. This preserves dark mode, built-in/custom
+                // colors, custom images, and text without leaking the next page.
+                // If an unloaded/FXL provider cannot snapshot yet, the controller
+                // keeps the effective theme/custom color as a crash-safe back. Remove
+                // that fallback once every PageRenderingProvider supports snapshots.
                 renderedPageImage: currentEngine.renderSnapshot(forPage: contentPage),
                 readingPosition: currentEngine.readingPosition(forPage: contentPage)
             )
@@ -607,10 +588,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return viewControllerStack(startingWith: viewController)
             }
             stackWriteTotalPages = currentEngine.totalPages
-            return [
-                viewController,
-                backPage
-            ]
+            return [viewController, backPage]
         }
 
         init(engine: any PageRenderingProvider,
@@ -1312,9 +1290,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
 
             if usesCurlBackPages {
-                let logicalPage = vc.globalPageIndex - 1
-                return curlBackPage(logicalPageIndex: logicalPage)
+                return curlBackPage(logicalPageIndex: vc.globalPageIndex - 1)
             }
+
             let (currentSpine, currentLocal) = currentEngine.localPosition(for: vc.globalPageIndex)
             if currentLocal == 0 && currentSpine > 0 {
                 AppLogger.render("[FlipTrace] pageBackward crossing chapter fromSpine=\(currentSpine) page=\(vc.globalPageIndex) toSpine=\(currentSpine - 1)")
@@ -1336,8 +1314,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         private func pageForward(from viewController: UIViewController) -> UIViewController? {
             if let backPage = viewController as? PageBackViewController {
-                // Same snapshot as `curlBackPage`: this is the far half of the curl
-                // pair UIKit caches, so it must not retract either.
                 guard backPage.logicalPageIndex + 1 < curlNeighbourPageCount else { return nil }
                 return navigationViewController(
                     for: .page(backPage.logicalPageIndex + 1),
@@ -1355,6 +1331,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if usesCurlBackPages {
                 return curlBackPage(logicalPageIndex: vc.globalPageIndex)
             }
+
             guard vc.globalPageIndex < currentEngine.totalPages - 1 else { return nil }
             let (currentSpine, _) = currentEngine.localPosition(for: vc.globalPageIndex)
             if let lastPage = currentEngine.lastPageIndex(ofChapter: currentSpine),
@@ -1433,7 +1410,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
 
             if pvc.viewControllers?.first is PageBackViewController {
-                if let resolvedPage = syncStablePosition(afterShowing: pvc.viewControllers!.first!, notifyFallback: false) {
+                if let resolvedPage = syncStablePosition(
+                    afterShowing: pvc.viewControllers!.first!,
+                    notifyFallback: false
+                ) {
                     continueQueuedTransitionIfNeeded(on: pvc, showing: resolvedPage)
                 } else {
                     continueQueuedTransitionIfNeeded(on: pvc, showing: currentPage)

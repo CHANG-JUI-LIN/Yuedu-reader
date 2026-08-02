@@ -144,7 +144,9 @@ struct BookSourceCheckView: View {
                 .monospacedDigit()
         }
         .padding(DSSpacing.md)
-        .background(Color(.secondarySystemBackground))
+        // Follows 毛玻璃／分組卡片／透明度 like 書源管理's stats card; a hardcoded
+        // `secondarySystemBackground` stayed opaque at every setting.
+        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
     }
 
@@ -183,7 +185,8 @@ struct BookSourceCheckView: View {
             .foregroundColor(selected ? .white : DSColor.textSecondary)
             .padding(.horizontal, DSSpacing.md)
             .padding(.vertical, DSSpacing.sm)
-            .background(selected ? DSColor.accent : Color(.secondarySystemBackground))
+            // Chips stay opaque — same neutral fill as `DSChip` and 書源管理's filter chips.
+            .background(selected ? DSColor.accent : DSColor.neutralControlFill)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)

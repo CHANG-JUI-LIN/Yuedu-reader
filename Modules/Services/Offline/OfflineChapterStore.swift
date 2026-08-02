@@ -5,9 +5,7 @@ struct OfflineStorageRoots: Sendable, Equatable {
     var mangaRoot: URL
 
     static var live: OfflineStorageRoots {
-        let applicationSupport = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return OfflineStorageRoots(
+        OfflineStorageRoots(
             textRoot: StorageLocations.onlineCache,
             mangaRoot: StorageLocations.mangaCache
         )

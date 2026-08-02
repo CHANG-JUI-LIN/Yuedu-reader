@@ -612,6 +612,27 @@ final class ModernRuleEngine {
             }
             return "@json:" + rule
         default:
+            // Legado allows a bare JSON field name (for example `bid` or
+            // `ChapterName`) after a JSON list element. The element is already
+            // known to be JSON, so route that field through JsonExtractor before
+            // falling back to the HTML/JSoup extractor. Without this, numeric
+            // fields especially become an empty string and `isUrl` silently
+            // falls back to the page URL.
+            if isJSON {
+                let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+                let lower = trimmed.lowercased()
+                let looksLikeHTMLSelector = trimmed.hasPrefix("#")
+                    || trimmed.hasPrefix(".")
+                    || trimmed.hasPrefix("[")
+                    || lower.hasPrefix("class.")
+                    || lower.hasPrefix("id.")
+                    || lower.hasPrefix("tag.")
+                    || lower.hasPrefix("text.")
+                    || lower.hasPrefix("children")
+                if !trimmed.isEmpty, !looksLikeHTMLSelector {
+                    return "@json:" + rule
+                }
+            }
             return rule
         }
     }

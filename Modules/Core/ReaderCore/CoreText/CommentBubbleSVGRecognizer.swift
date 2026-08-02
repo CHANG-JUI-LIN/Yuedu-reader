@@ -261,7 +261,11 @@ struct CommentBubbleSVGRecognizer {
         recognizedBubble: CommentBubbleSVG? = nil
     ) -> UIImage? {
         let cacheKey = bubbleImageCacheKey(
-            src: src, svgContent: svgContent, pointSize: pointSize, themeTextColor: themeTextColor
+            src: src,
+            svgContent: svgContent,
+            pointSize: pointSize,
+            themeTextColor: themeTextColor,
+            displayText: recognizedBubble?.displayText
         )
         if let cached = bubbleImageCache.object(forKey: cacheKey) {
             noteBubbleCache(hit: true)
@@ -279,6 +283,27 @@ struct CommentBubbleSVGRecognizer {
         return image
     }
 
+    /// Renders a `<comment count="…">` marker through the same native SVG pipeline as
+    /// source-provided bubble images. A comment tag has no source SVG of its own, so the built-in
+    /// template is the neutral source shape when the reader is set to follow source styling; the
+    /// selected reader SVG is applied by `computeResolvedBubbleImage` when custom styling is on.
+    static func commentBadgeImage(
+        count: String,
+        pointSize: CGFloat,
+        themeTextColor: UIColor
+    ) -> UIImage? {
+        guard let template = recognize(src: "", svgContent: builtinBubbleSVG) else {
+            return nil
+        }
+        return resolvedBubbleImage(
+            src: "",
+            svgContent: builtinBubbleSVG,
+            pointSize: pointSize,
+            themeTextColor: themeTextColor,
+            recognizedBubble: template.replacingDisplayText(with: count)
+        )
+    }
+
     /// The full determinant of a drawn bubble: which SVG (the count is baked into it), the
     /// point size, the resolved theme text colour, and every GlobalSettings knob that alters
     /// the draw. Changing any of these mints a new key, so stale settings never surface a
@@ -287,7 +312,8 @@ struct CommentBubbleSVGRecognizer {
         src: String,
         svgContent: String?,
         pointSize: CGFloat,
-        themeTextColor: UIColor
+        themeTextColor: UIColor,
+        displayText: String?
     ) -> NSString {
         let identity = (svgContent?.isEmpty == false) ? svgContent! : src
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -304,7 +330,8 @@ struct CommentBubbleSVGRecognizer {
             s.readerFontBold ? "B1" : "B0",
             s.selectedReaderFontPostScript ?? "sys"
         ].joined(separator: "|")
-        return "\(identity.utf8.count)#\(identity.hashValue)|\(Int(pointSize.rounded()))|\(rgba)|\(sig)" as NSString
+        let textIdentity = displayText.map { "|T\($0)" } ?? ""
+        return "\(identity.utf8.count)#\(identity.hashValue)\(textIdentity)|\(Int(pointSize.rounded()))|\(rgba)|\(sig)" as NSString
     }
 
     private static func computeResolvedBubbleImage(

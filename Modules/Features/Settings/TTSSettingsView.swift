@@ -98,16 +98,18 @@ struct TTSSettingsView: View {
                     networkImportSheet
                 }
             }
-            .overlay(alignment: .top) {
-                if let sourceImportMessage {
-                    toastBanner(sourceImportMessage)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                                withAnimation { self.sourceImportMessage = nil }
-                            }
-                        }
-                }
+            .alert(
+                localized("語音源設定"),
+                isPresented: Binding(
+                    get: { sourceImportMessage != nil },
+                    set: { isPresented in
+                        if !isPresented { sourceImportMessage = nil }
+                    }
+                )
+            ) {
+                Button(localized("確定"), role: .cancel) {}
+            } message: {
+                Text(sourceImportMessage ?? "")
             }
         }
         .fileImporter(
@@ -224,7 +226,8 @@ struct TTSSettingsView: View {
     private func sourceAccessibilityTraits(_ source: ImportedTTSSource) -> AccessibilityTraits {
         var traits: AccessibilityTraits = .isButton
         if selectedSourceIds.contains(source.id) {
-            traits.insert(.isSelected)
+            // SwiftUI's `AccessibilityTraits.insert` is not `@discardableResult`.
+            _ = traits.insert(.isSelected)
         }
         return traits
     }
@@ -482,18 +485,6 @@ struct TTSSettingsView: View {
                 }
             }
         }
-    }
-
-    private func toastBanner(_ text: String) -> some View {
-        Text(text)
-            .font(DSFont.subheadline.weight(.medium))
-            .foregroundColor(.white)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-            .background(DSColor.accent)
-            .clipShape(Capsule())
-            .shadow(radius: 6)
-            .padding(.top, 12)
     }
 
     private func dismissSettings() {
@@ -833,7 +824,7 @@ struct TTSSourceLoginView: View {
         }
         // Evaluate loginUrl JS first so functions (set, next, Style, etc.) are available
         if let loginUrl = source.loginUrl, !loginUrl.isEmpty {
-            e.evaluate(loginUrl, result: nil, bindings: [:])
+            _ = e.evaluate(loginUrl, result: nil, bindings: [:])
         }
         engine = e
         return e
@@ -862,23 +853,9 @@ struct TTSSourceLoginView: View {
                         .disabled(saved)
                 }
             }
-            .overlay(alignment: .top) {
-                if saved {
-                    Text(localized("已儲存"))
-                        .font(DSFont.subheadline.weight(.medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 10)
-                        .background(DSColor.accent)
-                        .clipShape(Capsule())
-                        .shadow(radius: 6)
-                        .padding(.top, 12)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                onDismiss()
-                            }
-                        }
+            .alert(localized("已儲存"), isPresented: $saved) {
+                Button(localized("確定"), role: .cancel) {
+                    onDismiss()
                 }
             }
         }
@@ -939,7 +916,7 @@ struct TTSSourceLoginView: View {
 
     private func saveLoginInfo() {
         LoginManager.shared.storeLoginInfo(sourceUrl: source.id, info: fieldValues)
-        withAnimation { saved = true }
+        saved = true
     }
 
     private func handleButtonAction(_ field: LoginField) {

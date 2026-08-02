@@ -74,7 +74,7 @@ enum TTSSourceJSONParser {
             let concurrentRate = firstString(in: dictionary, keys: ["concurrentRate"])
             let source = ImportedTTSSource(
                 name: name,
-                urlTemplate: url ?? "",
+                urlTemplate: url,
                 sourceID: sourceID,
                 headers: headers,
                 loginUi: loginUi,
@@ -525,7 +525,7 @@ final class CustomHTTPProvider: TTSAudioProvider {
 
         // Evaluate loginUrl JS first if present (defines shared functions/variables)
         if let loginUrl = source?.loginUrl, !loginUrl.isEmpty {
-            engine.evaluate(loginUrl, result: nil, bindings: [:])
+            _ = engine.evaluate(loginUrl, result: nil, bindings: [:])
         }
 
         // Prepare JS with speakText/speakSpeed bindings

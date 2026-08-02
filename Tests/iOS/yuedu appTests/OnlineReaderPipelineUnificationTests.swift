@@ -421,6 +421,71 @@ struct OnlineReaderPipelineUnificationTests {
         }
     }
 
+    @Test("FULL review cards start a separate paragraph after an inline badge")
+    func fullReviewCardStartsSeparateParagraphAfterBadge() async throws {
+        let cardSVG = #"<svg width="720" height="88" xmlns="http://www.w3.org/2000/svg"><text x="12" y="40">神评内容</text></svg>"#
+        let base64 = Data(cardSVG.utf8).base64EncodedString()
+        let clickConfig = #"{"style":"FULL","type":"qd","click":"showChapterComments(1,2)"}"#
+        let cardImage = "<img src=\"data:image/svg+xml;base64,\(base64),\(clickConfig)\">"
+        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: "第一章",
+            plainTextContent: "一段正文。",
+            rawHTMLContent: "<div rs-native>一段正文。<comment count=\"81\" onPress=\"java.showReadingBrowser('https://m.qidian.com/comments?bookId=1&amp;chapterId=2&amp;paragraphId=1','起点段评')\"></comment>\(cardImage)</div>",
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "起点中文",
+                sourceURL: "https://m.qidian.com/chapter/1/2"
+            )
+        )
+
+        #expect(normalizedHTML.contains(#"data-yd-review-style="full""#))
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(
+                index: 0,
+                title: "第一章",
+                plainText: "一段正文。",
+                body: .html(normalizedHTML),
+                sourceHref: "https://m.qidian.com/chapter/1/2"
+            )
+        ])
+        let rendered = try await OnlineProviderAttributedStringBuilder(
+            provider: provider,
+            renderSize: CGSize(width: 360, height: 640)
+        ).buildChapter(
+            at: 0,
+            settings: Self.settings,
+            themeTextColor: .label,
+            themeBackgroundColor: .systemBackground
+        ).attributedString
+
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        var attachmentLocations: [Int] = []
+        rendered.enumerateAttribute(
+            delegateKey,
+            in: NSRange(location: 0, length: rendered.length)
+        ) { value, range, _ in
+            if value != nil { attachmentLocations.append(range.location) }
+        }
+        let badgeLocation = try #require(
+            attachmentLocations.first { location in
+                guard let href = rendered.attribute(
+                    HTMLAttributedStringBuilder.internalLinkAttribute,
+                    at: location,
+                    effectiveRange: nil
+                ) as? String,
+                let marker = ReaderHTMLUtilities.decodeReviewHref(href)
+                else { return false }
+                return marker.count == "81"
+            }
+        )
+        let cardLocation = try #require(
+            attachmentLocations.first { $0 != badgeLocation }
+        )
+        let badgeParagraph = (rendered.string as NSString).paragraphRange(
+            for: NSRange(location: badgeLocation, length: 1)
+        )
+        #expect(!NSLocationInRange(cardLocation, badgeParagraph))
+    }
+
     // MARK: - Legacy parity: provider builder renders cached HTML images
 
     @Test("provider builder renders cached HTML images")

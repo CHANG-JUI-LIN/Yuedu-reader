@@ -180,6 +180,86 @@ struct ParagraphReviewMarkerTests {
         #expect(marker.title == "起點段評")
     }
 
+    @Test("normalizes Qidian dimensionless FULL god-review SVGs")
+    func normalizesQidianDimensionlessFullGodReviewSVG() throws {
+        let reviewText = String(repeating: "評", count: 32)
+        let svg = #"<svg><text y="15">\#(reviewText)</text></svg>"#
+        let base64 = Data(svg.utf8).base64EncodedString()
+        let raw = #"<p>段落<img src="data:image/svg+xml;base64,\#(base64),{"style":"FULL","type":"qd","click":"showCmt(123,456,7,999)"}"></p>"#
+
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "起点中文",
+                sourceURL: "https://baidu.com"
+            )
+        )
+        #expect(cleaned.contains(#"<div data-yd-review-style="full"><a"#))
+        let srcRegex = try #require(
+            try NSRegularExpression(pattern: #"src="data:image/svg\+xml;base64,([^"]+)""#)
+        )
+        let ns = cleaned as NSString
+        let match = try #require(
+            srcRegex.firstMatch(in: cleaned, range: NSRange(location: 0, length: ns.length))
+        )
+        let payload = ns.substring(with: match.range(at: 1))
+        let normalizedData = try #require(Data(base64Encoded: payload))
+        let normalized = try #require(
+            String(data: normalizedData, encoding: .utf8)
+        )
+
+        #expect(normalized.contains(#"width="720" height="88" viewBox="0 0 720 88""#))
+        #expect(normalized.components(separatedBy: "<text ").count - 1 == 2)
+    }
+
+    @Test("leaves another source's dimensionless FULL SVG untouched")
+    func leavesOtherSourceDimensionlessFullSVGUntouched() throws {
+        let svg = #"<svg><text y="15">其他源神評</text></svg>"#
+        let base64 = Data(svg.utf8).base64EncodedString()
+        let raw = #"<p>段落<img src="data:image/svg+xml;base64,\#(base64),{"style":"FULL","type":"other","click":"open(1)"}"></p>"#
+
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "其他源",
+                sourceURL: "https://example.com"
+            )
+        )
+        let srcRegex = try #require(
+            try NSRegularExpression(pattern: #"src="data:image/svg\+xml;base64,([^"]+)""#)
+        )
+        let ns = cleaned as NSString
+        let match = try #require(
+            srcRegex.firstMatch(in: cleaned, range: NSRange(location: 0, length: ns.length))
+        )
+        let payload = ns.substring(with: match.range(at: 1))
+        let untouchedData = try #require(Data(base64Encoded: payload))
+        let untouched = try #require(
+            String(data: untouchedData, encoding: .utf8)
+        )
+
+        #expect(untouched == svg)
+        #expect(cleaned.contains(#"<div data-yd-review-style="full"><a"#))
+    }
+
+    @Test("does not turn an ordinary FULL image into a review block")
+    func leavesOrdinaryFullImageInline() {
+        let svg = #"<svg width="120" height="80"><rect width="120" height="80"/></svg>"#
+        let base64 = Data(svg.utf8).base64EncodedString()
+        let raw = #"<p>正文<img src="data:image/svg+xml;base64,\#(base64),{"style":"FULL","type":"img","js":"loadImage(1)"}"></p>"#
+
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "普通源",
+                sourceURL: "https://example.com"
+            )
+        )
+
+        #expect(!cleaned.contains("data-yd-review-style=\"full\""))
+        #expect(!cleaned.contains("yd-review-image"))
+    }
+
     /// 同人小说网 ships 段評 bubbles whose click action is a jsLib call, not a URL: the source
     /// signs the review page with the user's shared token inside `createSvg`. Before this was
     /// handled, all 67 bubbles in a chapter came out as bare `<img>` — untappable, and the 氣泡設定
