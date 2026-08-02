@@ -5,6 +5,40 @@ import Testing
 
 struct SystemTTSEngineTests {
 
+    @Test func cancelledActiveUtteranceCanRecover() {
+        #expect(
+            SystemTTSEngine.shouldRecoverFromCancelledUtterance(
+                isPlaying: true,
+                isPaused: false,
+                hasActiveUtterance: true
+            )
+        )
+    }
+
+    @Test func cancelledUtteranceIsIgnoredAfterStopOrPause() {
+        #expect(
+            !SystemTTSEngine.shouldRecoverFromCancelledUtterance(
+                isPlaying: false,
+                isPaused: false,
+                hasActiveUtterance: true
+            )
+        )
+        #expect(
+            !SystemTTSEngine.shouldRecoverFromCancelledUtterance(
+                isPlaying: true,
+                isPaused: true,
+                hasActiveUtterance: true
+            )
+        )
+        #expect(
+            !SystemTTSEngine.shouldRecoverFromCancelledUtterance(
+                isPlaying: true,
+                isPaused: false,
+                hasActiveUtterance: false
+            )
+        )
+    }
+
     // MARK: - TTSTextChunker
 
     @Test func chunkerKeepsSentencesTogetherWithinParagraph() {

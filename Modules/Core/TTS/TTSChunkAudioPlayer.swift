@@ -5,56 +5,47 @@ protocol TTSChunkAudioPlayerDelegate: AnyObject {
     func chunkAudioPlayerDidFinishPlaying(_ player: TTSChunkAudioPlayer, successfully flag: Bool)
 }
 
-/// Plays one in-memory TTS audio chunk with pitch-preserving rate control.
+/// A reusable audio graph for HTTP TTS chunks.
 ///
-/// Replaces `AVAudioPlayer` in `HTTPTTSEngine`. `AVAudioPlayer.rate` is documented to
-/// span only 0.5–2.0, so every speech rate above 200% saturated silently — the exact
-/// complaint that prompted raising the slider to 500%. `AVAudioUnitTimePitch` covers
-/// 1/32–32× and preserves pitch, so 5× stays intelligible instead of turning into
-/// chipmunk audio.
+/// The player node and engine live for the whole TTS session. Only the source file is
+/// replaced between chunks. Rebuilding an `AVAudioEngine` for every paragraph creates an
+/// audio-session boundary precisely when an app is locked or backgrounded; iOS can suspend
+/// that boundary before the next graph has started. Keeping one graph also makes route and
+/// media-service recovery deterministic.
 ///
-/// The surface mirrors the `AVAudioPlayer` API the engine already used (`play`,
-/// `pause`, `stop`, `currentTime`, `duration`, `rate`, `isPlaying`, `delegate`), so the
-/// engine's chunk queue, preloading and resume-with-seek logic are unchanged.
-///
-/// One `AVAudioEngine` per chunk: a chunk is a whole paragraph (~300 characters, on the
-/// order of 10–20 seconds), so graph setup happens rarely enough not to matter, and a
-/// per-chunk graph keeps the lifetime identical to the `AVAudioPlayer` it replaces.
-/// `@unchecked Sendable` for the same reason as `HTTPTTSEngine`, which owns it: the
-/// AVFoundation types here are not `Sendable`, and every mutation is funnelled to the
-/// main queue by the engine and by this class's own completion handlers.
+/// `AVAudioPlayer.rate` is documented to span only 0.5–2.0, so every speech rate above 200%
+/// saturated silently. `AVAudioUnitTimePitch` covers the requested 5× range while preserving
+/// pitch.
 final class TTSChunkAudioPlayer: @unchecked Sendable {
     weak var delegate: TTSChunkAudioPlayerDelegate?
 
     /// Source duration in seconds — unaffected by `rate`, matching `AVAudioPlayer.duration`.
-    let duration: TimeInterval
+    private(set) var duration: TimeInterval = 0
 
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     private let timePitch = AVAudioUnitTimePitch()
-    private let file: AVAudioFile
-    private let fileURL: URL
-    private let sampleRate: Double
-    private let totalFrames: AVAudioFramePosition
+    private var file: AVAudioFile?
+    private var fileURL: URL?
+    private var sampleRate: Double = 0
+    private var totalFrames: AVAudioFramePosition = 0
+    private var connectedSampleRate: Double = 0
+    private var connectedChannelCount: AVAudioChannelCount = 0
 
     /// Source frame the current schedule started at. `currentTime` is this plus whatever
     /// the node has rendered since; a seek restarts the schedule and resets it.
     private var scheduleStartFrame: AVAudioFramePosition = 0
-    /// Invalidates the completion handler of a schedule that a seek/stop superseded, so a
-    /// superseded chunk can't report "finished" and advance the queue.
+    /// Invalidates the completion handler of a schedule that a seek/load/stop superseded.
     private var scheduleToken = UUID()
     private var hasStarted = false
-    /// Position captured at `pause`. `engine.pause()` halts the render loop, after which
-    /// `playerNode.lastRenderTime` can go nil — without this, `currentTime` would fall back
-    /// to the segment start and the engine's resume-mid-sentence seek would replay the
-    /// whole paragraph.
+    /// Position captured at `pause`. `engine.pause()` can make `lastRenderTime` nil, so
+    /// retaining this position prevents a resume from replaying the whole paragraph.
     private var pausedTime: TimeInterval?
 
     private(set) var isPlaying = false
+    var hasLoadedAudio: Bool { file != nil && totalFrames > 0 }
 
     /// Wall-clock length at the current rate — what the Now Playing elapsed clock needs.
-    /// (`AVAudioPlayer.duration` never accounted for `rate`, so this is also a fix for the
-    /// lock-screen scrubber drifting whenever client-side speed was not 1.0×.)
     var effectiveDuration: TimeInterval {
         duration / Double(max(rate, 0.01))
     }
@@ -75,36 +66,16 @@ final class TTSChunkAudioPlayer: @unchecked Sendable {
             else {
                 return frameToSeconds(scheduleStartFrame)
             }
-            // `playerTime.sampleTime` counts frames pulled from the *source*, so it stays
-            // in the source domain no matter what the time-pitch unit is doing downstream.
+            // `playerTime.sampleTime` counts source frames, so it stays in the source domain
+            // no matter what the time-pitch unit is doing downstream.
             return min(max(frameToSeconds(scheduleStartFrame + playerTime.sampleTime), 0), duration)
         }
-        set {
-            seek(to: newValue)
-        }
+        set { seek(to: newValue) }
     }
 
-    init(data: Data) throws {
-        fileURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("yd-tts-\(UUID().uuidString)")
-            .appendingPathExtension(Self.fileExtension(for: data))
-        try data.write(to: fileURL, options: .atomic)
-        do {
-            file = try AVAudioFile(forReading: fileURL)
-        } catch {
-            try? FileManager.default.removeItem(at: fileURL)
-            throw error
-        }
-
-        sampleRate = file.processingFormat.sampleRate
-        totalFrames = file.length
-        duration = sampleRate > 0 ? Double(totalFrames) / sampleRate : 0
-
+    init() {
         engine.attach(playerNode)
         engine.attach(timePitch)
-        engine.connect(playerNode, to: timePitch, format: file.processingFormat)
-        engine.connect(timePitch, to: engine.mainMixerNode, format: file.processingFormat)
-
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleConfigurationChange),
@@ -115,14 +86,47 @@ final class TTSChunkAudioPlayer: @unchecked Sendable {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
-        playerNode.stop()
-        engine.stop()
-        try? FileManager.default.removeItem(at: fileURL)
+        clear()
+    }
+
+    /// Replaces the source while retaining the audio graph. The data is staged in a temporary
+    /// file because `AVAudioFile` decodes compressed containers from a URL.
+    func load(data: Data) throws {
+        stop()
+        clearCurrentFile()
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yd-tts-\(UUID().uuidString)")
+            .appendingPathExtension(Self.fileExtension(for: data))
+        try data.write(to: url, options: .atomic)
+
+        do {
+            let newFile = try AVAudioFile(forReading: url)
+            fileURL = url
+            file = newFile
+            sampleRate = newFile.processingFormat.sampleRate
+            totalFrames = newFile.length
+            duration = sampleRate > 0 ? Double(totalFrames) / sampleRate : 0
+            connectGraph(for: newFile.processingFormat, force: true)
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            throw error
+        }
+
+        scheduleStartFrame = 0
+        pausedTime = nil
+        hasStarted = false
+    }
+
+    /// Releases the current source but keeps the reusable graph attached to the engine.
+    func clear() {
+        stop()
+        clearCurrentFile()
     }
 
     @discardableResult
     func play() -> Bool {
-        guard totalFrames > 0 else { return false }
+        guard let file, totalFrames > 0, scheduleStartFrame < totalFrames else { return false }
         do {
             if !engine.isRunning {
                 try engine.start()
@@ -132,7 +136,7 @@ final class TTSChunkAudioPlayer: @unchecked Sendable {
             return false
         }
         if !hasStarted {
-            scheduleFromCurrentStartFrame()
+            scheduleFromCurrentStartFrame(file: file)
         }
         playerNode.play()
         pausedTime = nil
@@ -143,7 +147,7 @@ final class TTSChunkAudioPlayer: @unchecked Sendable {
 
     func pause() {
         guard isPlaying else { return }
-        pausedTime = currentTime          // capture before the render loop stops
+        pausedTime = currentTime
         playerNode.pause()
         engine.pause()
         isPlaying = false
@@ -156,14 +160,31 @@ final class TTSChunkAudioPlayer: @unchecked Sendable {
         pausedTime = nil
         hasStarted = false
         isPlaying = false
+        scheduleStartFrame = 0
     }
 
     // MARK: - Private
 
+    private func clearCurrentFile() {
+        file = nil
+        if let fileURL {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        fileURL = nil
+        sampleRate = 0
+        totalFrames = 0
+        duration = 0
+        scheduleStartFrame = 0
+        pausedTime = nil
+        hasStarted = false
+    }
+
     private func seek(to time: TimeInterval) {
+        guard hasLoadedAudio else { return }
         let wasPlaying = isPlaying
         scheduleToken = UUID()
         playerNode.stop()
+        engine.stop()
         pausedTime = nil
         hasStarted = false
         isPlaying = false
@@ -173,7 +194,7 @@ final class TTSChunkAudioPlayer: @unchecked Sendable {
         }
     }
 
-    private func scheduleFromCurrentStartFrame() {
+    private func scheduleFromCurrentStartFrame(file: AVAudioFile) {
         let remaining = totalFrames - scheduleStartFrame
         guard remaining > 0 else { return }
         let token = scheduleToken
@@ -186,8 +207,7 @@ final class TTSChunkAudioPlayer: @unchecked Sendable {
         ) { [weak self] _ in
             guard let self else { return }
             DispatchQueue.main.async {
-                // A seek or stop replaced this schedule; its completion is not the
-                // chunk finishing and must not advance the queue.
+                // A seek, load, or stop replaced this schedule; it is not the chunk finishing.
                 guard token == self.scheduleToken, self.isPlaying else { return }
                 self.isPlaying = false
                 self.delegate?.chunkAudioPlayerDidFinishPlaying(self, successfully: true)
@@ -195,14 +215,28 @@ final class TTSChunkAudioPlayer: @unchecked Sendable {
         }
     }
 
-    /// A route change (headphones unplugged, AirPods connected) stops the engine and
-    /// invalidates the graph. Rebuild and resume from where playback was, otherwise
-    /// listening simply dies mid-sentence.
+    private func connectGraph(for format: AVAudioFormat, force: Bool = false) {
+        let channelCount = format.channelCount
+        guard force || connectedSampleRate != format.sampleRate || connectedChannelCount != channelCount else {
+            return
+        }
+
+        engine.disconnectNodeOutput(playerNode)
+        engine.disconnectNodeOutput(timePitch)
+        engine.connect(playerNode, to: timePitch, format: format)
+        engine.connect(timePitch, to: engine.mainMixerNode, format: format)
+        connectedSampleRate = format.sampleRate
+        connectedChannelCount = channelCount
+    }
+
+    /// A route change can invalidate the running graph. Reconnect it before restarting from
+    /// the captured source position; the source file and current queue item remain intact.
     @objc private func handleConfigurationChange(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.isPlaying else { return }
+            guard let self, self.isPlaying, let file = self.file else { return }
             let resumeAt = self.currentTime
-            ttsLog("[TTS][ChunkPlayer] audio route changed; resuming at \(resumeAt)")
+            ttsLog("[TTS][ChunkPlayer] audio graph changed; resuming at \(resumeAt)")
+            self.connectGraph(for: file.processingFormat, force: true)
             self.seek(to: resumeAt)
         }
     }
@@ -226,17 +260,17 @@ final class TTSChunkAudioPlayer: @unchecked Sendable {
         let header = [UInt8](data.prefix(12))
         guard header.count >= 12 else { return "mp3" }
         if header[0] == 0x52, header[1] == 0x49, header[2] == 0x46, header[3] == 0x46 {
-            return "wav"           // "RIFF"
+            return "wav"
         }
         if header[4] == 0x66, header[5] == 0x74, header[6] == 0x79, header[7] == 0x70 {
-            return "m4a"           // "ftyp"
+            return "m4a"
         }
         if header[0] == 0x66, header[1] == 0x4C, header[2] == 0x61, header[3] == 0x43 {
-            return "flac"          // "fLaC"
+            return "flac"
         }
         if header[0] == 0x4F, header[1] == 0x67, header[2] == 0x67, header[3] == 0x53 {
-            return "ogg"           // "OggS" — unsupported by AVAudioFile, same as AVAudioPlayer
+            return "ogg"
         }
-        return "mp3"               // ID3 / raw MPEG frames
+        return "mp3"
     }
 }

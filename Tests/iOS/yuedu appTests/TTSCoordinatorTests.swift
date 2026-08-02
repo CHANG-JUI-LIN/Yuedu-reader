@@ -5,6 +5,27 @@ import Foundation
 
 struct TTSCoordinatorTests {
 
+    @Test func currentChunkFailureStopsPlaybackButPreloadFailureDoesNot() {
+        #expect(
+            HTTPTTSEngine.shouldStopAfterCurrentChunkFailure(
+                isCurrentRequest: true,
+                isPendingPlayback: false
+            )
+        )
+        #expect(
+            HTTPTTSEngine.shouldStopAfterCurrentChunkFailure(
+                isCurrentRequest: false,
+                isPendingPlayback: true
+            )
+        )
+        #expect(
+            !HTTPTTSEngine.shouldStopAfterCurrentChunkFailure(
+                isCurrentRequest: false,
+                isPendingPlayback: false
+            )
+        )
+    }
+
     // MARK: - CustomHTTPProvider.buildURL
 
     @Test func buildURL_replacesAllPlaceholders() {

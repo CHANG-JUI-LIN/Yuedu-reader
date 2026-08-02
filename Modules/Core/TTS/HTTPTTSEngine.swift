@@ -7,9 +7,17 @@ import UIKit
 /// URL template supports placeholders: {{text}}, {{title}}, {{speakSpeed}}
 final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
+    static func shouldStopAfterCurrentChunkFailure(
+        isCurrentRequest: Bool,
+        isPendingPlayback: Bool
+    ) -> Bool {
+        isCurrentRequest || isPendingPlayback
+    }
+
     var isPlaying: Bool = false
     var onPageFinished: (() -> TTSNextUnitOutcome)?
     var onStop: (() -> Void)?
+    var onError: ((Error) -> Void)?
     var onPlaybackStarted: ((TimeInterval) -> Void)?
     var onSegmentChanged: ((Int, Int, String) -> Void)?
 
@@ -20,7 +28,10 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// played, so content becoming ready never overrides an explicit pause; `resume` plays it.
     private var pendingUnit: TTSNarrationUnit?
 
+    /// One reusable graph is kept across chunk boundaries. The index prevents a paused
+    /// session after a seek/new chapter from accidentally resuming the previous chunk.
     private var audioPlayer: TTSChunkAudioPlayer?
+    private var loadedPlayerIndex: Int?
     private let audioProvider: TTSAudioProvider
     private var activeTasks: [Int: Task<Void, Never>] = [:]
     private var audioCache: [Int: Data] = [:]
@@ -36,10 +47,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private var serverControlsSpeed = false
     private var pendingPlaybackIndex: Int?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
-    /// Playback offset (seconds into the current chunk) captured at `pause`, so that a resume
-    /// which has to rebuild the player — because the OS tore `audioPlayer` down while paused
-    /// (interruption, backgrounding, or the chunk finishing during the pause) — can seek back
-    /// instead of replaying the whole ~5s sentence from its start.
+    /// Playback offset (seconds into the current chunk) captured at `pause`, so a resume that
+    /// has to reload cached bytes can seek back instead of replaying the whole sentence.
     private var resumePlaybackTime: TimeInterval = 0
 
     /// Keeps the audio session emitting samples during the gap between one chunk finishing
@@ -142,7 +151,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         let resumeTime = resumePlaybackTime
         resumePlaybackTime = 0
 
-        if let audioPlayer {
+        if loadedPlayerIndex == currentIndex, let audioPlayer, audioPlayer.hasLoadedAudio {
             let success = audioPlayer.play()
             isPlaying = success
             ttsLog("[TTS][HTTPEngine] resume player success=\(success) currentTime=\(audioPlayer.currentTime)")
@@ -153,6 +162,24 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         } else {
             playChunk(at: currentIndex, token: playbackToken)
         }
+    }
+
+    /// Rebuilds the reusable audio graph after iOS reports that its media services were
+    /// reset. The HTTP bytes remain cached, so recovery does not create another network
+    /// request or restart the current chunk from its beginning.
+    func recoverAfterAudioSessionReset() {
+        guard isPlaying, !isPaused else { return }
+        if isWaitingForNextUnit {
+            silence.restart()
+            return
+        }
+        guard let data = audioCache[currentIndex] else {
+            playChunk(at: currentIndex, token: playbackToken)
+            return
+        }
+        let resumeAt = audioPlayer?.currentTime ?? resumePlaybackTime
+        ttsLog("[TTS][HTTPEngine] recovering after media-services reset index=\(currentIndex) offset=\(resumeAt)")
+        resumeCachedChunk(data, at: currentIndex, from: resumeAt, token: playbackToken)
     }
 
     func stop() {
@@ -181,9 +208,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         audioCache.removeAll()
         pendingPlaybackIndex = nil
         resumePlaybackTime = 0
-        audioPlayer?.delegate = nil
-        audioPlayer?.stop()
-        audioPlayer = nil
+        loadedPlayerIndex = nil
+        audioPlayer?.clear()
         if isPlaying {
             playChunk(at: currentIndex, token: playbackToken)
         }
@@ -217,9 +243,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             return
         }
 
-        audioPlayer?.delegate = nil
         audioPlayer?.stop()
-        audioPlayer = nil
+        loadedPlayerIndex = nil
         pendingPlaybackIndex = nil
         resumePlaybackTime = 0
         currentIndex = targetIndex
@@ -376,7 +401,10 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         audioCache[index] = data
         ttsLog("[TTS][HTTPEngine] provider result success index=\(index) bytes=\(data.count)")
 
-        if (priority == .current || isPendingPlayback), currentIndex == index, audioPlayer == nil, !isPaused {
+        if (priority == .current || isPendingPlayback),
+           currentIndex == index,
+           audioPlayer?.isPlaying != true,
+           !isPaused {
             pendingPlaybackIndex = nil
             playChunk(at: index, token: token)
         } else {
@@ -398,12 +426,29 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
         let isPendingPlayback = pendingPlaybackIndex == index && currentIndex == index
         ttsLog("[TTS][HTTPEngine] provider request failed index=\(index) error=\(error.localizedDescription)")
-        if priority == .current || isPendingPlayback {
+        if Self.shouldStopAfterCurrentChunkFailure(
+            isCurrentRequest: priority == .current,
+            isPendingPlayback: isPendingPlayback
+        ) {
             pendingPlaybackIndex = nil
-            playChunk(at: index + 1, token: token)
+            failPlayback(
+                TTSPlaybackError.chunkUnavailable(index: index, underlying: error),
+                token: token
+            )
         } else {
             startPreloading(from: index + 1, token: token)
         }
+    }
+
+    /// A current chunk failure is terminal for this playback session. Skipping it silently
+    /// makes a network/provider problem look like missing book text and leaves the reader's
+    /// controls reporting "playing" without producing audio.
+    private func failPlayback(_ error: Error, token: UUID) {
+        guard token == playbackToken else { return }
+        ttsLog("[TTS][HTTPEngine] playback failed error=\(error.localizedDescription)")
+        resetPlaybackState()
+        onError?(error)
+        onStop?()
     }
 
     // MARK: - Playback
@@ -423,28 +468,31 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         }
 
         do {
-            audioPlayer?.delegate = nil
-            audioPlayer?.stop()
             stopSilence()   // real audio is about to play; stop the keep-alive silence
 
-            let player = try TTSChunkAudioPlayer(data: data)
+            let player = audioPlayer ?? TTSChunkAudioPlayer()
             player.delegate = self
+            try player.load(data: data)
             player.rate = clientPlaybackRate
             audioPlayer = player
+            loadedPlayerIndex = index
 
             let success = player.play()
             isPlaying = success
             ttsLog("[TTS][HTTPEngine] play submitted index=\(index) success=\(success) duration=\(player.duration) rate=\(player.rate)")
 
             if !success {
-                playChunk(at: index + 1, token: token)
+                failPlayback(TTSPlaybackError.playbackFailed(index: index), token: token)
             } else {
                 // Wall-clock length, so the Now Playing clock matches what is heard.
                 onPlaybackStarted?(player.effectiveDuration)
             }
         } catch {
             ttsLog("[TTS][HTTPEngine] player init failed index=\(index) error=\(error.localizedDescription)")
-            playChunk(at: index + 1, token: token)
+            failPlayback(
+                TTSPlaybackError.chunkUnavailable(index: index, underlying: error),
+                token: token
+            )
         }
     }
 
@@ -454,15 +502,15 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private func resumeCachedChunk(_ data: Data, at index: Int, from time: TimeInterval, token: UUID) {
         guard token == playbackToken else { return }
         do {
-            audioPlayer?.delegate = nil
-            audioPlayer?.stop()
             stopSilence()   // real audio is about to play; stop the keep-alive silence
 
-            let player = try TTSChunkAudioPlayer(data: data)
+            let player = audioPlayer ?? TTSChunkAudioPlayer()
             player.delegate = self
+            try player.load(data: data)
             player.rate = clientPlaybackRate
             player.currentTime = min(max(0, time), max(0, player.duration - 0.05))
             audioPlayer = player
+            loadedPlayerIndex = index
             currentIndex = index
 
             let success = player.play()
@@ -471,19 +519,21 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             if success {
                 onPlaybackStarted?(player.effectiveDuration)
             } else {
-                playChunk(at: index, token: token)
+                failPlayback(TTSPlaybackError.playbackFailed(index: index), token: token)
             }
         } catch {
             ttsLog("[TTS][HTTPEngine] resume cached chunk failed index=\(index) error=\(error.localizedDescription)")
-            playChunk(at: index, token: token)
+            failPlayback(
+                TTSPlaybackError.chunkUnavailable(index: index, underlying: error),
+                token: token
+            )
         }
     }
 
     private func jumpToChunk(at index: Int) {
         guard index >= 0, index < chunks.count else { return }
-        audioPlayer?.delegate = nil
         audioPlayer?.stop()
-        audioPlayer = nil
+        loadedPlayerIndex = nil
         pendingPlaybackIndex = nil
         resumePlaybackTime = 0
         currentIndex = index
@@ -503,8 +553,10 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private func handlePlaybackEnded(successfully flag: Bool) {
         let finishedIndex = currentIndex
         ttsLog("[TTS][HTTPEngine] playback ended index=\(finishedIndex) successfully=\(flag)")
-        audioPlayer?.delegate = nil
-        audioPlayer = nil
+        guard flag else {
+            failPlayback(TTSPlaybackError.playbackFailed(index: finishedIndex), token: playbackToken)
+            return
+        }
 
         guard isPlaying, !isPaused else { return }
         playChunk(at: finishedIndex + 1, token: playbackToken)
@@ -535,9 +587,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private func enterWaitingForNextUnit() {
         guard !isWaitingForNextUnit else { return }
         isWaitingForNextUnit = true
-        audioPlayer?.delegate = nil
         audioPlayer?.stop()
-        audioPlayer = nil
+        loadedPlayerIndex = nil
         isPlaying = true
         beginBackgroundTask()
         startSilence()
@@ -579,9 +630,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         pendingPlaybackIndex = nil
         resumePlaybackTime = 0
         isPlaying = false
-        audioPlayer?.delegate = nil
-        audioPlayer?.stop()
-        audioPlayer = nil
+        loadedPlayerIndex = nil
+        audioPlayer?.clear()
         stopSilence()
         endBackgroundTask()
     }
@@ -631,10 +681,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 }
 
 extension HTTPTTSEngine: TTSChunkAudioPlayerDelegate {
-    // Decode failures now surface as a throw from `TTSChunkAudioPlayer(data:)` (AVAudioFile
-    // parses the container up front) and are handled by the `catch` in `playAudioData` /
-    // `resumeCachedChunk`, which logs and skips to the next chunk — the same recovery the
-    // old `audioPlayerDecodeErrorDidOccur` performed.
+    // Decode failures surface from `TTSChunkAudioPlayer.load(data:)` before playback starts;
+    // current-chunk failures are reported to the coordinator instead of being skipped.
     func chunkAudioPlayerDidFinishPlaying(_ player: TTSChunkAudioPlayer, successfully flag: Bool) {
         DispatchQueue.main.async { [weak self] in
             self?.handlePlaybackEnded(successfully: flag)

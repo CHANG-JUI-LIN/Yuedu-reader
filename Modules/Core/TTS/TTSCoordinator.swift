@@ -248,6 +248,7 @@ final class TTSCoordinator: ObservableObject {
     @Published private(set) var currentSegmentIndex = 0
     @Published private(set) var totalSegments = 0
     @Published private(set) var currentSegmentText = ""
+    @Published private(set) var errorMessage: String?
     @Published var speechRate: Float = 0.5
     @Published var sleepMinutes: Int = 0
     var showsGlobalFloatingPlayer = false
@@ -298,6 +299,7 @@ final class TTSCoordinator: ObservableObject {
     private var nowPlayingStartedAt: Date?
     private var audioInterruptionCancellable: AnyCancellable?
     private var routeChangeCancellable: AnyCancellable?
+    private var mediaServicesResetCancellable: AnyCancellable?
     private var shouldResumeAfterInterruption = false
     private var isStoppingFromCoordinator = false
 
@@ -341,6 +343,7 @@ final class TTSCoordinator: ObservableObject {
             ttsLog("[TTS][Coordinator] speak ignored empty text")
             return
         }
+        errorMessage = nil
         activeEngine = resolveEngine(for: text)
         ttsLog("[TTS][Coordinator] speak requested engine=\(currentEngine === systemEngine ? "system" : "http") textCount=\(text.count) title=\(title) rate=\(speechRate)")
         guard activateAudioSession() else {
@@ -373,6 +376,7 @@ final class TTSCoordinator: ObservableObject {
         }
         isPlaying = true
         playbackState = .playing
+        updateScreenAwakePreference()
         updateNowPlaying()
         publishFloatingPlayerState()
         if sleepMinutes > 0 { startSleepTimer() }
@@ -388,6 +392,7 @@ final class TTSCoordinator: ObservableObject {
         freezeNowPlayingElapsed()
         isPlaying = currentEngine.isPlaying
         playbackState = .paused
+        updateScreenAwakePreference()
         updateNowPlaying()
         publishFloatingPlayerState()
         ttsLog("[TTS][Coordinator] pause done coordinatorPlaying=\(isPlaying) enginePlaying=\(currentEngine.isPlaying)")
@@ -405,6 +410,7 @@ final class TTSCoordinator: ObservableObject {
         currentEngine.resume()
         isPlaying = currentEngine.isPlaying
         playbackState = isPlaying ? .playing : .paused
+        updateScreenAwakePreference()
         if nowPlayingStartedAt == nil {
             nowPlayingStartedAt = Date()
         }
@@ -415,6 +421,16 @@ final class TTSCoordinator: ObservableObject {
 
     func toggle() {
         playbackState == .playing ? pause() : resume()
+    }
+
+    func dismissError() {
+        errorMessage = nil
+    }
+
+    /// Applies the user preference immediately when it changes while narration is active.
+    func updateScreenAwakePreference() {
+        guard Self.activeSystemMediaCoordinator === self else { return }
+        UIApplication.shared.isIdleTimerDisabled = isPlaying && GlobalSettings.shared.ttsKeepsScreenAwake
     }
 
     func stop(reason: String = "direct") {
@@ -549,6 +565,9 @@ final class TTSCoordinator: ObservableObject {
         let ownsSystemMedia = Self.activeSystemMediaCoordinator === self
         isPlaying = false
         playbackState = .stopped
+        if ownsSystemMedia {
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
         cancelSleepTimer()
         if ownsSystemMedia {
             MPNowPlayingInfoCenter.default().playbackState = .stopped
@@ -635,6 +654,17 @@ final class TTSCoordinator: ObservableObject {
                 DispatchQueue.main.async(execute: handleStop)
             }
         }
+        engine.onError = { [weak self] error in
+            let presentError = {
+                guard let self else { return }
+                self.errorMessage = String(format: localized("朗讀失敗：%@"), error.localizedDescription)
+            }
+            if Thread.isMainThread {
+                presentError()
+            } else {
+                DispatchQueue.main.async(execute: presentError)
+            }
+        }
         engine.onPlaybackStarted = { [weak self] duration in
             DispatchQueue.main.async {
                 self?.handleEnginePlaybackStarted(duration: duration)
@@ -682,7 +712,12 @@ final class TTSCoordinator: ObservableObject {
         setRemoteCommandsEnabled(true)
         let s = AVAudioSession.sharedInstance()
         do {
-            try s.setCategory(.playback, mode: .spokenAudio, options: [])
+            try s.setCategory(
+                .playback,
+                mode: .spokenAudio,
+                policy: .longFormAudio,
+                options: []
+            )
             try s.setActive(true)
             audioSessionActive = true
             UIApplication.shared.beginReceivingRemoteControlEvents()
@@ -690,6 +725,7 @@ final class TTSCoordinator: ObservableObject {
             return true
         } catch {
             audioSessionActive = false
+            errorMessage = String(format: localized("朗讀失敗：%@"), error.localizedDescription)
             ttsLog("[TTS] Failed to activate audio session: \(error.localizedDescription)")
             return false
         }
@@ -789,6 +825,15 @@ final class TTSCoordinator: ObservableObject {
         .sink { [weak self] notification in
             self?.handleRouteChange(notification)
         }
+
+        mediaServicesResetCancellable = center.publisher(
+            for: AVAudioSession.mediaServicesWereResetNotification,
+            object: session
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _ in
+            self?.handleMediaServicesReset()
+        }
     }
 
     private func handleAudioInterruption(_ notification: Notification) {
@@ -828,6 +873,25 @@ final class TTSCoordinator: ObservableObject {
         if reason == .oldDeviceUnavailable, isPlaying {
             pause()
         }
+    }
+
+    /// Media services can be restarted by iOS while the app is locked, after an audio route
+    /// fault, or after a system audio daemon crash. Re-activate the shared session first, then
+    /// let the selected engine restore its current source position from memory.
+    private func handleMediaServicesReset() {
+        guard Self.activeSystemMediaCoordinator === self, hasActivePlaybackSession else {
+            return
+        }
+        ttsLog("[TTS][Coordinator] media services reset; rebuilding audio session")
+        audioSessionActive = false
+        guard activateAudioSession() else { return }
+        currentEngine.configureAudioSessionOwnership(true)
+        currentEngine.recoverAfterAudioSessionReset()
+        isPlaying = currentEngine.isPlaying
+        playbackState = isPlaying ? .playing : .paused
+        updateScreenAwakePreference()
+        updateNowPlaying()
+        publishFloatingPlayerState()
     }
 
     private func setRemoteCommandsEnabled(_ enabled: Bool) {

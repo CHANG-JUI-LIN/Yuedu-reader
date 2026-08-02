@@ -10,9 +10,18 @@ import UIKit
 /// `TTSPlayable` without special-casing.
 final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
+    static func shouldRecoverFromCancelledUtterance(
+        isPlaying: Bool,
+        isPaused: Bool,
+        hasActiveUtterance: Bool
+    ) -> Bool {
+        hasActiveUtterance && isPlaying && !isPaused
+    }
+
     var isPlaying: Bool = false
     var onPageFinished: (() -> TTSNextUnitOutcome)?
     var onStop: (() -> Void)?
+    var onError: ((Error) -> Void)?
     var onPlaybackStarted: ((TimeInterval) -> Void)?
     var onSegmentChanged: ((Int, Int, String) -> Void)?
 
@@ -128,6 +137,29 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         } else {
             resumeCurrentChunkFromSpokenOffset(token: playbackToken)
         }
+    }
+
+    /// Re-issues the current utterance after a media-services reset. If AVSpeechSynthesizer
+    /// has already emitted `didCancel`, that delegate path owns recovery; otherwise only
+    /// rebuild when it no longer reports an active utterance, avoiding two overlapping speaks.
+    func recoverAfterAudioSessionReset() {
+        guard isPlaying else { return }
+        if isWaitingForNextUnit {
+            silence.restart()
+            return
+        }
+        guard !isPaused else { return }
+        guard !synthesizer.isSpeaking else {
+            ttsLog("[TTS][SystemEngine] media-services reset; synthesizer still speaking")
+            return
+        }
+
+        if activeUtterance != nil {
+            synthesizer.stopSpeaking(at: .immediate)
+            activeUtterance = nil
+        }
+        ttsLog("[TTS][SystemEngine] recovering after media-services reset index=\(currentIndex) offset=\(spokenUTF16Offset)")
+        resumeCurrentChunkFromSpokenOffset(token: playbackToken)
     }
 
     func stop() {
@@ -286,6 +318,22 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         activeUtterance = nil
         guard isPlaying, !isPaused else { return }
         speakChunk(at: finishedIndex + 1, token: playbackToken)
+    }
+
+    private func handlePlaybackCancelled(_ utterance: AVSpeechUtterance) {
+        guard utterance === activeUtterance else { return }
+        guard Self.shouldRecoverFromCancelledUtterance(
+            isPlaying: isPlaying,
+            isPaused: isPaused,
+            hasActiveUtterance: activeUtterance != nil
+        ) else {
+            ttsLog("[TTS][SystemEngine] cancelled utterance ignored because playback is not active")
+            return
+        }
+
+        ttsLog("[TTS][SystemEngine] utterance cancelled index=\(currentIndex) offset=\(spokenUTF16Offset)")
+        activeUtterance = nil
+        resumeCurrentChunkFromSpokenOffset(token: playbackToken)
     }
 
     private func handlePageChunksFinished(token: UUID) {
@@ -469,6 +517,9 @@ extension SystemTTSEngine: AVSpeechSynthesizerDelegate {
         }
     }
 
-    // didCancel is intentionally unhandled: cancellation only happens when we stop or jump,
-    // and those paths drive the next utterance themselves.
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async { [weak self] in
+            self?.handlePlaybackCancelled(utterance)
+        }
+    }
 }

@@ -380,6 +380,12 @@
 "語速，例如 +0%、+30%、-20%" = "Speech rate, for example +0%, +30%, -20%";
 "語音引擎" = "Speech Engine";
 "語音朗讀" = "Text to Speech";
+"播放行為" = "Playback Behavior";
+"朗讀時保持螢幕開啟" = "Keep screen awake while reading";
+"只防止自動鎖定，按下電源鍵仍可鎖屏並繼續朗讀。" = "This only prevents auto-lock; pressing the power button still locks the device and narration continues.";
+"朗讀失敗：%@" = "Narration failed: %@";
+"第 %d 段語音無法下載：%@" = "Audio segment %d could not be downloaded: %@";
+"第 %d 段語音無法播放" = "Audio segment %d could not be played";
 "語音朗讀設定" = "TTS Settings";
 "說明" = "Description";
 "調試規則" = "Debug Rule";

@@ -258,6 +258,19 @@ struct TTSPanelView: View {
                 }
                 .interfaceSectionSurface()
 
+                Section(header: Text(localized("播放行為"))) {
+                    Toggle(isOn: $gs.ttsKeepsScreenAwake) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(localized("朗讀時保持螢幕開啟"))
+                                .font(DSFont.body)
+                            Text(localized("只防止自動鎖定，按下電源鍵仍可鎖屏並繼續朗讀。"))
+                                .font(DSFont.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .interfaceSectionSurface()
+
                 Section(header: Text(localized("高亮"))) {
                     Toggle(isOn: ttsHighlightEnabledBinding) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -319,6 +332,19 @@ struct TTSPanelView: View {
             }
             .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
             .pageBackgroundToolbar(for: .settings)
+            .alert(
+                localized("語音朗讀"),
+                isPresented: Binding(
+                    get: { tts.errorMessage != nil },
+                    set: { isPresented in
+                        if !isPresented { tts.dismissError() }
+                    }
+                )
+            ) {
+                Button(localized("好"), role: .cancel) { tts.dismissError() }
+            } message: {
+                Text(tts.errorMessage ?? "")
+            }
             .sheet(isPresented: $showChapterPicker) {
                 NavigationStack {
                     List(chapters.indices, id: \.self) { index in
@@ -357,6 +383,9 @@ struct TTSPanelView: View {
                 if !isScrubbing {
                     scrubProgress = playbackProgress
                 }
+            }
+            .onChange(of: gs.ttsKeepsScreenAwake) { _, _ in
+                tts.updateScreenAwakePreference()
             }
         }
     }

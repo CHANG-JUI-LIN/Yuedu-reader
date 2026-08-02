@@ -3,4 +3,3 @@
 // and ShareExtension all inherit these values. Bump here only.
 MARKETING_VERSION = 2.0.4
 CURRENT_PROJECT_VERSION = 1
-    

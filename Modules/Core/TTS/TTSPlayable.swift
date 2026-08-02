@@ -20,6 +20,24 @@ enum TTSNextUnitOutcome {
     case finished
 }
 
+enum TTSPlaybackError: LocalizedError {
+    case chunkUnavailable(index: Int, underlying: Error)
+    case playbackFailed(index: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case let .chunkUnavailable(index, underlying):
+            return String(
+                format: localized("第 %d 段語音無法下載：%@"),
+                index + 1,
+                underlying.localizedDescription
+            )
+        case let .playbackFailed(index):
+            return String(format: localized("第 %d 段語音無法播放"), index + 1)
+        }
+    }
+}
+
 /// Unified interface for TTS engines.
 /// TTSCoordinator communicates with the underlying engine through this protocol
 /// without knowledge of the concrete implementation.
@@ -33,6 +51,7 @@ protocol TTSPlayable: AnyObject {
     /// True between a `.waiting` outcome and the matching `supplyPendingUnit(_:)`.
     var isWaitingForNextUnit: Bool { get }
     var onStop: (() -> Void)? { get set }
+    var onError: ((Error) -> Void)? { get set }
     var onPlaybackStarted: ((TimeInterval) -> Void)? { get set }
     var onSegmentChanged: ((Int, Int, String) -> Void)? { get set }
 
@@ -42,6 +61,8 @@ protocol TTSPlayable: AnyObject {
     /// takes effect immediately instead of only on the next `speak`.
     func updateRate(_ rate: Float)
     func configureAudioSessionOwnership(_ enabled: Bool)
+    /// Rebuild playback after iOS reports that the media services were reset.
+    func recoverAfterAudioSessionReset()
     func pause()
     func resume()
     func stop()

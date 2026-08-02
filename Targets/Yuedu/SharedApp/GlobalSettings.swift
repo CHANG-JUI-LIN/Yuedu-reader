@@ -547,6 +547,7 @@ class GlobalSettings: ObservableObject {
     private static let ttsHighlightBoxEnabledKey = "yd_tts_highlight_box_enabled"
     private static let ttsHighlightBoxColorHexKey = "yd_tts_highlight_box_color_hex"
     private static let ttsHighlightBoxStyleKey = "yd_tts_highlight_box_style"
+    private static let ttsKeepsScreenAwakeKey = "yd_tts_keeps_screen_awake"
     private static let readerCustomBackgroundModeKey = "yd_reader_custom_background_mode"
     private static let readerCustomBackgroundColorHexKey = "yd_reader_custom_background_color_hex"
     private static let readerCustomBackgroundImageFileNameKey = "yd_reader_custom_background_image_file_name"
@@ -1235,6 +1236,11 @@ class GlobalSettings: ObservableObject {
     @Published var ttsUseSystemVoice: Bool {
         didSet { UserDefaults.standard.set(ttsUseSystemVoice, forKey: "yd_tts_use_system_voice") }
     }
+    /// Prevents automatic screen dimming while TTS is actively reading. Pressing the
+    /// hardware lock button still locks the device and does not stop background audio.
+    @Published var ttsKeepsScreenAwake: Bool {
+        didSet { UserDefaults.standard.set(ttsKeepsScreenAwake, forKey: Self.ttsKeepsScreenAwakeKey) }
+    }
     /// Legacy persisted voice identifier kept for settings compatibility. System TTS now lets
     /// AVSpeechSynthesizer choose the voice from the device's own speech settings.
     @Published var ttsSystemVoiceIdentifier: String {
@@ -1626,6 +1632,7 @@ class GlobalSettings: ObservableObject {
         httpTtsHeaders = Self.loadTTSHeaders()
         importedTTSSources = Self.loadImportedTTSSources()
         ttsUseSystemVoice = UserDefaults.standard.bool(forKey: "yd_tts_use_system_voice")
+        ttsKeepsScreenAwake = UserDefaults.standard.bool(forKey: Self.ttsKeepsScreenAwakeKey)
         ttsSystemVoiceIdentifier = UserDefaults.standard.string(forKey: "yd_tts_system_voice_id") ?? ""
         sourceDisclaimerAccepted = UserDefaults.standard.bool(forKey: "yd_source_disclaimer_accepted")
         bookSourceListGrouped =
