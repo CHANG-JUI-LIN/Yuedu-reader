@@ -133,6 +133,7 @@ struct ReaderRenderRefreshTests {
         }
         await builder.waitUntilBuildStarts(fontSize: 22)
         await Task.yield()
+        #expect(renderer.activeRefreshPreparationCount == 1)
 
         let firstReturnedBeforeGateRelease = firstResultProbe.result != nil
         #expect(firstResultProbe.result == .superseded(transactionID: 1))
@@ -148,16 +149,20 @@ struct ReaderRenderRefreshTests {
             outcome: .applied
         )
         let secondResult = await second.value
+        #expect(renderer.activeRefreshPreparationCount == 0)
         let readyCountAfterSecond = callbackProbe.chapterReadyCount
         let navigateCountAfterSecond = callbackProbe.navigateCount
         let pageAfterSecond = engine?.currentPage
         let wasRelayingAfterSecond = engine?.isRelaying
+        let completionCountAfterSecond =
+            renderer.refreshPreparationCompletionCount
 
         if builder.hasPendingGatedBuild {
             builder.releaseGatedBuild()
         }
         await builder.waitUntilGatedBuildReturns()
-        while renderer.activeRefreshPreparationCount > 0 {
+        while renderer.refreshPreparationCompletionCount
+                == completionCountAfterSecond {
             await Task.yield()
         }
 
@@ -171,6 +176,10 @@ struct ReaderRenderRefreshTests {
         #expect(engine?.currentPage == pageAfterSecond)
         #expect(wasRelayingAfterSecond == false)
         #expect(engine?.isRelaying == false)
+        #expect(
+            renderer.refreshPreparationCompletionCount
+                == completionCountAfterSecond + 1
+        )
     }
 
     @Test("paged appearance does not mark stale content revision applied")
@@ -254,6 +263,86 @@ struct ReaderRenderRefreshTests {
         #expect(await activation.value == .completed(transactionID: 3))
     }
 
+    @Test("paged appearance does not consume stale layout revision")
+    func pagedAppearancePreservesStaleLayoutRevision() async {
+        let renderer = EPUBPageRenderer()
+        renderer.loadTXT(
+            attributedBuilder: MutableReaderRefreshBuilder(body: "Body"),
+            bookIdentifier: UUID().uuidString,
+            renderSize: CGSize(width: 320, height: 480),
+            settings: Self.makeSettings(fontSize: 18)
+        )
+        await waitUntilPagedReady(renderer)
+        #expect(Self.pagedLayoutFontSize(renderer) == 18)
+
+        let scrollLayout = Task {
+            await renderer.refresh(
+                Self.request(
+                    intent: .layout,
+                    mode: .scroll,
+                    fontSize: 22
+                )
+            )
+        }
+        let scrollLayoutCommit = await waitForVisibleCommit(renderer)
+        _ = await renderer.scrollEngine?.reslice(
+            restoreAt: 0,
+            contentWidth: 288,
+            restorePosition: .chapterStart(0)
+        )
+        renderer.finishVisibleRefresh(
+            transactionID: scrollLayoutCommit.transactionID,
+            outcome: .applied
+        )
+        #expect(await scrollLayout.value == .completed(transactionID: 1))
+
+        let appearanceSettings = Self.makeSettings(
+            fontSize: 22,
+            theme: "night",
+            textColor: .white,
+            backgroundColor: .black
+        )
+        let appearance = Task {
+            await renderer.refresh(
+                Self.request(
+                    intent: .appearance,
+                    mode: .paged,
+                    settings: appearanceSettings
+                )
+            )
+        }
+        let appearanceCommit = await waitForVisibleCommit(
+            renderer,
+            after: scrollLayoutCommit.transactionID
+        )
+        renderer.finishVisibleRefresh(
+            transactionID: appearanceCommit.transactionID,
+            outcome: .applied
+        )
+        #expect(await appearance.value == .completed(transactionID: 2))
+        #expect(Self.pagedLayoutFontSize(renderer) == 18)
+
+        let activation = Task {
+            await renderer.refresh(
+                Self.request(
+                    intent: .modeActivation,
+                    mode: .paged,
+                    settings: appearanceSettings
+                )
+            )
+        }
+        let activationCommit = await waitForVisibleCommit(
+            renderer,
+            after: appearanceCommit.transactionID
+        )
+        #expect(Self.pagedLayoutFontSize(renderer) == 22)
+        renderer.finishVisibleRefresh(
+            transactionID: activationCommit.transactionID,
+            outcome: .applied
+        )
+        #expect(await activation.value == .completed(transactionID: 3))
+    }
+
     @Test("fresh scroll mode activation completes without visible commit")
     func freshScrollActivationCompletesImmediately() async {
         let renderer = EPUBPageRenderer()
@@ -308,11 +397,16 @@ struct ReaderRenderRefreshTests {
         #expect(renderer.pendingVisibleRefreshCommit == nil)
     }
 
-    private static func makeSettings(fontSize: CGFloat) -> ReaderRenderSettings {
+    private static func makeSettings(
+        fontSize: CGFloat,
+        theme: String = "sepia",
+        textColor: UIColor = .black,
+        backgroundColor: UIColor = .white
+    ) -> ReaderRenderSettings {
         ReaderRenderSettings(
-            theme: "sepia",
-            textColor: .black,
-            backgroundColor: .white,
+            theme: theme,
+            textColor: textColor,
+            backgroundColor: backgroundColor,
             fontSize: fontSize,
             lineHeightMultiple: 1.6,
             lineSpacing: 10,
@@ -334,13 +428,39 @@ struct ReaderRenderRefreshTests {
         mode: ReaderDisplayMode,
         fontSize: CGFloat
     ) -> ReaderRenderRefreshRequest {
+        request(
+            intent: intent,
+            mode: mode,
+            settings: makeSettings(fontSize: fontSize)
+        )
+    }
+
+    private static func request(
+        intent: ReaderRenderRefreshIntent,
+        mode: ReaderDisplayMode,
+        settings: ReaderRenderSettings
+    ) -> ReaderRenderRefreshRequest {
         ReaderRenderRefreshRequest(
             intent: intent,
             mode: mode,
-            settings: makeSettings(fontSize: fontSize),
+            settings: settings,
             position: .chapterStart(0),
             viewportSize: CGSize(width: 320, height: 480)
         )
+    }
+
+    private static func pagedLayoutFontSize(
+        _ renderer: EPUBPageRenderer
+    ) -> CGFloat? {
+        guard let attributedString = (renderer.engine as? CoreTextPageEngine)?
+            .layouts[0]?.attributedString,
+              attributedString.length > 0
+        else { return nil }
+        return (attributedString.attribute(
+            .font,
+            at: 0,
+            effectiveRange: nil
+        ) as? UIFont)?.pointSize
     }
 }
 

@@ -42,18 +42,30 @@ final class EPUBPageRenderer: ObservableObject {
     @Published private(set) var pendingVisibleRefreshCommit: ReaderVisibleRefreshCommit?
 
     private struct RefreshRevisionSnapshot {
-        let settings: UInt64
+        let layout: UInt64
+        let appearance: UInt64
         let content: UInt64
     }
 
     private struct RefreshRevisionCoverage {
-        let settings: UInt64?
+        let layout: UInt64?
+        let appearance: UInt64?
         let content: UInt64?
 
         static let none = RefreshRevisionCoverage(
-            settings: nil,
+            layout: nil,
+            appearance: nil,
             content: nil
         )
+    }
+
+    private struct RefreshAppliedRevisionSnapshot {
+        let pagedLayout: UInt64
+        let pagedAppearance: UInt64
+        let pagedContent: UInt64
+        let scrollLayout: UInt64
+        let scrollAppearance: UInt64
+        let scrollContent: UInt64
     }
 
     private struct RefreshTransactionContext {
@@ -69,21 +81,200 @@ final class EPUBPageRenderer: ObservableObject {
         case failed(ReaderRenderRefreshFailure)
     }
 
+    @MainActor
+    private struct RefreshPreparation {
+        let request: ReaderRenderRefreshRequest
+        let revisions: RefreshRevisionSnapshot
+        let applied: RefreshAppliedRevisionSnapshot
+        let engine: (any PageRenderingProvider)?
+        let scrollEngine: CoreTextScrollEngine?
+
+        func run() async -> RefreshPreparationResult {
+            switch request.mode {
+            case .paged:
+                return await preparePaged()
+            case .scroll:
+                return await prepareScroll()
+            }
+        }
+
+        private func preparePaged() async -> RefreshPreparationResult {
+            guard let engine else {
+                return .failed(.engineUnavailable(.paged))
+            }
+
+            let coverage: RefreshRevisionCoverage
+            switch request.intent {
+            case .layout:
+                await invalidatePagedLayout(
+                    engine,
+                    newSize: request.viewportSize,
+                    ensuringSpine: request.position.spineIndex
+                )
+                coverage = RefreshRevisionCoverage(
+                    layout: revisions.layout,
+                    appearance: nil,
+                    content: nil
+                )
+            case .appearance:
+                engine.applyThemeChange(
+                    textColor: request.settings.textColor,
+                    backgroundColor: request.settings.backgroundColor
+                )
+                coverage = RefreshRevisionCoverage(
+                    layout: nil,
+                    appearance: revisions.appearance,
+                    content: nil
+                )
+            case .chapterContent(let chapterIndex):
+                await engine.notifyChapterDataChanged(at: chapterIndex)
+                coverage = RefreshRevisionCoverage(
+                    layout: nil,
+                    appearance: nil,
+                    content: revisions.content
+                )
+            case .modeActivation:
+                let needsLayout = applied.pagedLayout < revisions.layout
+                let needsAppearance =
+                    applied.pagedAppearance < revisions.appearance
+                let needsContent = applied.pagedContent < revisions.content
+                guard needsLayout || needsAppearance || needsContent else {
+                    return .completed(.none)
+                }
+                await invalidatePagedLayout(
+                    engine,
+                    newSize: request.viewportSize,
+                    ensuringSpine: request.position.spineIndex
+                )
+                coverage = RefreshRevisionCoverage(
+                    layout: needsLayout ? revisions.layout : nil,
+                    appearance: needsAppearance ? revisions.appearance : nil,
+                    content: needsContent ? revisions.content : nil
+                )
+            }
+
+            guard hasPagedLayout(
+                for: request.position,
+                engine: engine
+            ) else {
+                return .failed(
+                    .layoutUnavailable(request.position.spineIndex)
+                )
+            }
+            return .requiresVisibleCommit(coverage)
+        }
+
+        private func prepareScroll() async -> RefreshPreparationResult {
+            guard let scrollEngine else {
+                return .failed(.engineUnavailable(.scroll))
+            }
+
+            switch request.intent {
+            case .layout:
+                return .requiresVisibleCommit(
+                    RefreshRevisionCoverage(
+                        layout: revisions.layout,
+                        appearance: nil,
+                        content: nil
+                    )
+                )
+            case .appearance:
+                return .requiresVisibleCommit(
+                    RefreshRevisionCoverage(
+                        layout: nil,
+                        appearance: revisions.appearance,
+                        content: nil
+                    )
+                )
+            case .chapterContent(let chapterIndex):
+                if chapterIndex == request.position.spineIndex {
+                    scrollEngine.invalidateChapterDocument(at: chapterIndex)
+                    return .requiresVisibleCommit(
+                        RefreshRevisionCoverage(
+                            layout: nil,
+                            appearance: nil,
+                            content: revisions.content
+                        )
+                    )
+                }
+                let didRetry = await scrollEngine.retryChapterIfNeeded(
+                    chapterIndex
+                )
+                return .requiresVisibleCommit(
+                    RefreshRevisionCoverage(
+                        layout: nil,
+                        appearance: nil,
+                        content: didRetry ? revisions.content : nil
+                    )
+                )
+            case .modeActivation:
+                let needsLayout = applied.scrollLayout < revisions.layout
+                let needsAppearance =
+                    applied.scrollAppearance < revisions.appearance
+                let needsContent = applied.scrollContent < revisions.content
+                guard needsLayout || needsAppearance || needsContent else {
+                    return .completed(.none)
+                }
+                return .requiresVisibleCommit(
+                    RefreshRevisionCoverage(
+                        layout: needsLayout ? revisions.layout : nil,
+                        appearance: needsAppearance
+                            ? revisions.appearance
+                            : nil,
+                        content: needsContent ? revisions.content : nil
+                    )
+                )
+            }
+        }
+
+        private func invalidatePagedLayout(
+            _ engine: any PageRenderingProvider,
+            newSize: CGSize,
+            ensuringSpine spineIndex: Int
+        ) async {
+            if let coreTextEngine = engine as? CoreTextPageEngine {
+                await coreTextEngine.invalidateLayout(
+                    newSize: newSize,
+                    ensuringSpine: spineIndex
+                )
+            } else {
+                await engine.invalidateLayout(newSize: newSize)
+            }
+        }
+
+        private func hasPagedLayout(
+            for position: CoreTextReadingPosition,
+            engine: any PageRenderingProvider
+        ) -> Bool {
+            if engine is FixedLayoutPageEngine {
+                return engine.pageIndex(for: position) != nil
+            }
+            return engine.layouts[position.spineIndex] != nil
+        }
+    }
+
     private var nextRefreshTransactionID: UInt64 = 0
     private var currentRefreshTransactionID: UInt64 = 0
     private var refreshTransactions: [UInt64: RefreshTransactionContext] = [:]
     private var refreshPreparationTasks: [UInt64: Task<Void, Never>] = [:]
-    private var latestRenderSettings: ReaderRenderSettings?
-    private var settingsRevision: UInt64 = 0
-    private var contentRevision: UInt64 = 0
-    private var pagedAppliedSettingsRevision: UInt64 = 0
-    private var scrollAppliedSettingsRevision: UInt64 = 0
+    private var latestLayoutRenderSettings: ReaderRenderSettings?
+    private var latestAppearanceRenderSettings: ReaderRenderSettings?
+    // Revision 1 is the initial loaded snapshot. Applied revisions start at 0
+    // so a mode's first activation remains stale until its host acknowledges it.
+    private var layoutRevision: UInt64 = 1
+    private var appearanceRevision: UInt64 = 1
+    private var contentRevision: UInt64 = 1
+    private var pagedAppliedLayoutRevision: UInt64 = 0
+    private var pagedAppliedAppearanceRevision: UInt64 = 0
     private var pagedAppliedContentRevision: UInt64 = 0
+    private var scrollAppliedLayoutRevision: UInt64 = 0
+    private var scrollAppliedAppearanceRevision: UInt64 = 0
     private var scrollAppliedContentRevision: UInt64 = 0
 
     var activeRefreshPreparationCount: Int {
         refreshPreparationTasks.count
     }
+    private(set) var refreshPreparationCompletionCount: UInt64 = 0
 
     var isFixedLayout: Bool {
         layoutMode == .prePaginated
@@ -449,7 +640,9 @@ final class EPUBPageRenderer: ObservableObject {
         let supersededTransactions = refreshTransactions
         refreshTransactions.removeAll(keepingCapacity: true)
         pendingVisibleRefreshCommit = nil
-        refreshPreparationTasks.values.forEach { $0.cancel() }
+        let supersededPreparationTasks = refreshPreparationTasks
+        refreshPreparationTasks.removeAll(keepingCapacity: true)
+        supersededPreparationTasks.values.forEach { $0.cancel() }
         for (supersededID, context) in supersededTransactions {
             context.continuation.resume(
                 returning: .superseded(transactionID: supersededID)
@@ -457,37 +650,64 @@ final class EPUBPageRenderer: ObservableObject {
         }
         engine?.cancelPendingWork()
 
-        if latestRenderSettings != request.settings {
-            latestRenderSettings = request.settings
-            settingsRevision &+= 1
+        switch request.intent {
+        case .layout:
+            if latestLayoutRenderSettings != request.settings {
+                latestLayoutRenderSettings = request.settings
+                layoutRevision &+= 1
+            }
+        case .appearance:
+            if latestAppearanceRenderSettings != request.settings {
+                latestAppearanceRenderSettings = request.settings
+                appearanceRevision &+= 1
+            }
+        case .chapterContent:
+            contentRevision &+= 1
+        case .modeActivation:
+            break
         }
         updateRenderSettings(request.settings)
-        if case .chapterContent = request.intent {
-            contentRevision &+= 1
-        }
 
+        let revisions = RefreshRevisionSnapshot(
+            layout: layoutRevision,
+            appearance: appearanceRevision,
+            content: contentRevision
+        )
         refreshTransactions[transactionID] = RefreshTransactionContext(
             request: request,
-            revisions: RefreshRevisionSnapshot(
-                settings: settingsRevision,
-                content: contentRevision
-            ),
+            revisions: revisions,
             continuation: continuation
         )
-        refreshPreparationTasks[transactionID] = Task { @MainActor [weak self] in
-            await self?.runRefreshPreparation(transactionID: transactionID)
+        let preparation = RefreshPreparation(
+            request: request,
+            revisions: revisions,
+            applied: RefreshAppliedRevisionSnapshot(
+                pagedLayout: pagedAppliedLayoutRevision,
+                pagedAppearance: pagedAppliedAppearanceRevision,
+                pagedContent: pagedAppliedContentRevision,
+                scrollLayout: scrollAppliedLayoutRevision,
+                scrollAppearance: scrollAppliedAppearanceRevision,
+                scrollContent: scrollAppliedContentRevision
+            ),
+            engine: engine,
+            scrollEngine: scrollEngine
+        )
+        refreshPreparationTasks[transactionID] = Task {
+            @MainActor [weak self] in
+            let result = await preparation.run()
+            self?.completeRefreshPreparation(
+                transactionID: transactionID,
+                result: result
+            )
         }
     }
 
-    private func runRefreshPreparation(transactionID: UInt64) async {
-        defer {
-            refreshPreparationTasks.removeValue(forKey: transactionID)
-        }
-        guard let context = refreshTransactions[transactionID] else { return }
-        let result = await prepareRefresh(
-            context.request,
-            revisions: context.revisions
-        )
+    private func completeRefreshPreparation(
+        transactionID: UInt64,
+        result: RefreshPreparationResult
+    ) {
+        refreshPreparationCompletionCount &+= 1
+        refreshPreparationTasks.removeValue(forKey: transactionID)
         guard transactionID == currentRefreshTransactionID,
               var currentContext = refreshTransactions[transactionID]
         else { return }
@@ -518,175 +738,21 @@ final class EPUBPageRenderer: ObservableObject {
         }
     }
 
-    private func prepareRefresh(
-        _ request: ReaderRenderRefreshRequest,
-        revisions: RefreshRevisionSnapshot
-    ) async -> RefreshPreparationResult {
-        switch request.mode {
-        case .paged:
-            return await preparePagedRefresh(
-                request,
-                revisions: revisions
-            )
-        case .scroll:
-            return await prepareScrollRefresh(
-                request,
-                revisions: revisions
-            )
-        }
-    }
-
-    private func preparePagedRefresh(
-        _ request: ReaderRenderRefreshRequest,
-        revisions: RefreshRevisionSnapshot
-    ) async -> RefreshPreparationResult {
-        guard let engine else {
-            return .failed(.engineUnavailable(.paged))
-        }
-
-        let coverage: RefreshRevisionCoverage
-        switch request.intent {
-        case .layout:
-            await invalidatePagedLayout(
-                engine,
-                newSize: request.viewportSize,
-                ensuringSpine: request.position.spineIndex
-            )
-            coverage = RefreshRevisionCoverage(
-                settings: revisions.settings,
-                content: revisions.content
-            )
-        case .appearance:
-            engine.applyThemeChange(
-                textColor: request.settings.textColor,
-                backgroundColor: request.settings.backgroundColor
-            )
-            coverage = RefreshRevisionCoverage(
-                settings: revisions.settings,
-                content: nil
-            )
-        case .chapterContent(let chapterIndex):
-            await engine.notifyChapterDataChanged(at: chapterIndex)
-            coverage = RefreshRevisionCoverage(
-                settings: revisions.settings,
-                content: revisions.content
-            )
-        case .modeActivation:
-            let needsSettings =
-                pagedAppliedSettingsRevision < revisions.settings
-            let needsContent =
-                pagedAppliedContentRevision < revisions.content
-            if needsSettings || needsContent {
-                await invalidatePagedLayout(
-                    engine,
-                    newSize: request.viewportSize,
-                    ensuringSpine: request.position.spineIndex
-                )
-            }
-            coverage = RefreshRevisionCoverage(
-                settings: needsSettings ? revisions.settings : nil,
-                content: needsContent ? revisions.content : nil
-            )
-        }
-
-        guard hasPagedLayout(
-            for: request.position,
-            engine: engine
-        ) else {
-            return .failed(
-                .layoutUnavailable(request.position.spineIndex)
-            )
-        }
-        return .requiresVisibleCommit(coverage)
-    }
-
-    private func invalidatePagedLayout(
-        _ engine: any PageRenderingProvider,
-        newSize: CGSize,
-        ensuringSpine spineIndex: Int
-    ) async {
-        if let coreTextEngine = engine as? CoreTextPageEngine {
-            await coreTextEngine.invalidateLayout(
-                newSize: newSize,
-                ensuringSpine: spineIndex
-            )
-        } else {
-            await engine.invalidateLayout(newSize: newSize)
-        }
-    }
-
-    private func prepareScrollRefresh(
-        _ request: ReaderRenderRefreshRequest,
-        revisions: RefreshRevisionSnapshot
-    ) async -> RefreshPreparationResult {
-        guard let scrollEngine else {
-            return .failed(.engineUnavailable(.scroll))
-        }
-
-        switch request.intent {
-        case .layout, .appearance:
-            return .requiresVisibleCommit(
-                RefreshRevisionCoverage(
-                    settings: revisions.settings,
-                    content: revisions.content
-                )
-            )
-        case .chapterContent(let chapterIndex):
-            if chapterIndex == request.position.spineIndex {
-                scrollEngine.invalidateChapterDocument(at: chapterIndex)
-                return .requiresVisibleCommit(
-                    RefreshRevisionCoverage(
-                        settings: revisions.settings,
-                        content: revisions.content
-                    )
-                )
-            } else {
-                let didRetry = await scrollEngine.retryChapterIfNeeded(
-                    chapterIndex
-                )
-                return .requiresVisibleCommit(
-                    RefreshRevisionCoverage(
-                        settings: revisions.settings,
-                        content: didRetry ? revisions.content : nil
-                    )
-                )
-            }
-        case .modeActivation:
-            let needsSettings =
-                scrollAppliedSettingsRevision < revisions.settings
-            let needsContent =
-                scrollAppliedContentRevision < revisions.content
-            guard needsSettings || needsContent else {
-                return .completed(.none)
-            }
-            return .requiresVisibleCommit(
-                RefreshRevisionCoverage(
-                    settings: needsSettings ? revisions.settings : nil,
-                    content: needsContent ? revisions.content : nil
-                )
-            )
-        }
-    }
-
-    private func hasPagedLayout(
-        for position: CoreTextReadingPosition,
-        engine: any PageRenderingProvider
-    ) -> Bool {
-        if engine is FixedLayoutPageEngine {
-            return engine.pageIndex(for: position) != nil
-        }
-        return engine.layouts[position.spineIndex] != nil
-    }
-
     private func apply(
         _ coverage: RefreshRevisionCoverage,
         to mode: ReaderDisplayMode
     ) {
         switch mode {
         case .paged:
-            if let revision = coverage.settings {
-                pagedAppliedSettingsRevision = max(
-                    pagedAppliedSettingsRevision,
+            if let revision = coverage.layout {
+                pagedAppliedLayoutRevision = max(
+                    pagedAppliedLayoutRevision,
+                    revision
+                )
+            }
+            if let revision = coverage.appearance {
+                pagedAppliedAppearanceRevision = max(
+                    pagedAppliedAppearanceRevision,
                     revision
                 )
             }
@@ -697,9 +763,15 @@ final class EPUBPageRenderer: ObservableObject {
                 )
             }
         case .scroll:
-            if let revision = coverage.settings {
-                scrollAppliedSettingsRevision = max(
-                    scrollAppliedSettingsRevision,
+            if let revision = coverage.layout {
+                scrollAppliedLayoutRevision = max(
+                    scrollAppliedLayoutRevision,
+                    revision
+                )
+            }
+            if let revision = coverage.appearance {
+                scrollAppliedAppearanceRevision = max(
+                    scrollAppliedAppearanceRevision,
                     revision
                 )
             }
