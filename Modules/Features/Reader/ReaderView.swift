@@ -1301,7 +1301,14 @@ struct ReaderView: View {
                         currentPage = newPage
                     },
                     onTapZone: handleTouchAction,
-                    onSwipeUpExit: { closeReader() }
+                    onSwipeUpExit: { closeReader() },
+                    visibleRefreshCommit: epubRenderer.pendingVisibleRefreshCommit,
+                    onVisibleRefreshFinished: { transactionID, outcome in
+                        epubRenderer.finishVisibleRefresh(
+                            transactionID: transactionID,
+                            outcome: outcome
+                        )
+                    }
                 )
                 .id(readerPageViewIdentity)
                 .ignoresSafeArea()
@@ -1351,7 +1358,14 @@ struct ReaderView: View {
                     onFootnoteTap: { text in
                         footnoteItem = ReaderFootnoteItem(text: text)
                     },
-                    onSwipeUpExit: { closeReader() }
+                    onSwipeUpExit: { closeReader() },
+                    visibleRefreshCommit: epubRenderer.pendingVisibleRefreshCommit,
+                    onVisibleRefreshFinished: { transactionID, outcome in
+                        epubRenderer.finishVisibleRefresh(
+                            transactionID: transactionID,
+                            outcome: outcome
+                        )
+                    }
                 )
                 .id(readerPageViewIdentity)
                 .ignoresSafeArea()

@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SwiftUI
 import Testing
 import UIKit
 @testable import yuedu_app
@@ -395,6 +396,83 @@ struct ReaderRenderRefreshTests {
         #expect(secondResult == .completed(transactionID: 2))
         #expect(unexpectedCommit == nil)
         #expect(renderer.pendingVisibleRefreshCommit == nil)
+    }
+
+    @Test("paged host applies a visible refresh commit")
+    func pagedHostAppliesVisibleRefreshCommit() async throws {
+        let renderer = EPUBPageRenderer()
+        renderer.loadTXT(
+            attributedBuilder: MutableReaderRefreshBuilder(body: "Paged host body"),
+            bookIdentifier: UUID().uuidString,
+            renderSize: CGSize(width: 320, height: 480),
+            settings: Self.makeSettings(fontSize: 18)
+        )
+        await waitUntilPagedReady(renderer)
+        let engine = try #require(renderer.engine)
+        var currentPage = 0
+        let binding = Binding<Int>(
+            get: { currentPage },
+            set: { currentPage = $0 }
+        )
+        let coordinator = CoreTextPageEngineView.Coordinator(
+            engine: engine,
+            pageTurnStyle: .slide,
+            theme: .white,
+            playbackHighlightText: nil,
+            isRTL: false,
+            isDoublePageSpread: false,
+            spreadGutter: 0,
+            sessionCoordinator: nil,
+            externalTargetPosition: nil,
+            clearExternalTargetPosition: {},
+            currentPage: binding,
+            onPageChanged: { _, _ in },
+            onTapZone: { _ in },
+            onFootnoteTap: { _ in },
+            onSwipeUpExit: {}
+        )
+        let pageViewController = UIPageViewController(
+            transitionStyle: .scroll,
+            navigationOrientation: .horizontal
+        )
+        pageViewController.view.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
+        pageViewController.setViewControllers(
+            [engine.pageViewController(at: 0)],
+            direction: .forward,
+            animated: false
+        )
+
+        var appliedTransactionIDs: [UInt64] = []
+        coordinator.applyVisibleRefresh(
+            ReaderVisibleRefreshCommit(
+                transactionID: 7,
+                mode: .paged,
+                position: CoreTextReadingPosition(spineIndex: 0, charOffset: 20)
+            ),
+            on: pageViewController
+        ) { transactionID, outcome in
+            if outcome == .applied {
+                appliedTransactionIDs.append(transactionID)
+            }
+        }
+
+        #expect(coordinator.lastAppliedRefreshTransactionID == 7)
+        #expect(appliedTransactionIDs == [7])
+        #expect(
+            (pageViewController.viewControllers?.first as? any PageIndexProviding)?.globalPageIndex
+                == engine.pageIndex(
+                    for: CoreTextReadingPosition(spineIndex: 0, charOffset: 20)
+                )
+        )
+        #expect(
+            (pageViewController.viewControllers?.first as? CoreTextReadingPositionProviding)?
+                .coreTextReadingPosition
+                == engine.readingPosition(
+                    forPage: engine.pageIndex(
+                        for: CoreTextReadingPosition(spineIndex: 0, charOffset: 20)
+                    ) ?? 0
+                )
+        )
     }
 
     private static func makeSettings(

@@ -279,6 +279,62 @@ struct CoreTextScrollTests {
         #expect(!engine.chunks.isEmpty)
     }
 
+    @Test("scroll controller applies a visible refresh commit")
+    @MainActor
+    func scrollControllerAppliesVisibleRefreshCommit() async throws {
+        let engine = CoreTextScrollEngine(
+            builder: StaticScrollTestBuilder(chapters: [Self.longChapter]),
+            renderSettings: Self.renderSettings
+        )
+        let controller = CoreTextCollectionScrollViewController(
+            engine: engine,
+            axis: .vertical,
+            horizontalInset: 12,
+            verticalInset: 20,
+            backgroundColor: .white
+        )
+        controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        controller.setInitialPosition(chapter: 0, charOffset: 0)
+        controller.loadViewIfNeeded()
+
+        let scene = try #require(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+
+        for _ in 0..<100 where !engine.isReady {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        #expect(engine.isReady)
+
+        var appliedTransactionIDs: [UInt64] = []
+        controller.applyVisibleRefresh(
+            ReaderVisibleRefreshCommit(
+                transactionID: 9,
+                mode: .scroll,
+                position: CoreTextReadingPosition(spineIndex: 0, charOffset: 40)
+            )
+        ) { transactionID, outcome in
+            if outcome == .applied {
+                appliedTransactionIDs.append(transactionID)
+            }
+        }
+
+        for _ in 0..<100 where appliedTransactionIDs.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        #expect(appliedTransactionIDs == [9])
+        #expect(controller.lastAppliedRefreshTransactionID == 9)
+        #expect(engine.isReady)
+        window.isHidden = true
+    }
+
     @Test("TXT first switch to scroll mode loads through renderer without crashing")
     @MainActor
     func txtFirstSwitchToScrollModeLoadsThroughRenderer() async throws {

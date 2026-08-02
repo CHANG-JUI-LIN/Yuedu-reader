@@ -28,6 +28,13 @@ extension ReaderView {
                 resliceToken: scrollResliceToken,
                 playbackHighlightText: activePlaybackHighlightText,
                 textAnnotations: coreTextTextAnnotations,
+                visibleRefreshCommit: epubRenderer.pendingVisibleRefreshCommit,
+                onVisibleRefreshFinished: { transactionID, outcome in
+                    epubRenderer.finishVisibleRefresh(
+                        transactionID: transactionID,
+                        outcome: outcome
+                    )
+                },
                 onTap: {
                     withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
                 },

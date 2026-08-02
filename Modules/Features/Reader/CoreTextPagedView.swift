@@ -19,6 +19,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     let onTapZone: (TouchAction) -> Void
     var onFootnoteTap: (String) -> Void = { _ in }
     var onSwipeUpExit: () -> Void = {}
+    var visibleRefreshCommit: ReaderVisibleRefreshCommit?
+    var onVisibleRefreshFinished: (UInt64, ReaderVisibleRefreshOutcome) -> Void = { _, _ in }
 
     func makeUIViewController(context: Context) -> UIPageViewController {
         let adapterDescriptor = PageViewControllerPagingAdapterDescriptor(pageTurnStyle: pageTurnStyle)
@@ -127,6 +129,16 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         uiViewController.isDoubleSided = pageTurnStyle == .curl && !isDoublePageSpread
         context.coordinator.externalTargetPosition = externalTargetPosition
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: uiViewController)
+        if let commit = visibleRefreshCommit,
+           commit.mode == .paged,
+           context.coordinator.lastAppliedRefreshTransactionID != commit.transactionID {
+            context.coordinator.applyVisibleRefresh(
+                commit,
+                on: uiViewController,
+                completion: onVisibleRefreshFinished
+            )
+            return
+        }
         // Phase-2 executor model: this method no longer reconciles the currentPage
         // binding against the visible page (the old implicit channel that caused
         // correction-transition oscillation). It executes exactly three inputs:
@@ -303,6 +315,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         let onSwipeUpExit: () -> Void
         let isRTL: Bool
         var isDoublePageSpread: Bool
+        private(set) var lastAppliedRefreshTransactionID: UInt64 = 0
         let spreadGutter: CGFloat
         let clearExternalTargetPosition: () -> Void
         var externalTargetPosition: CoreTextReadingPosition? {
@@ -543,6 +556,28 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 pageViewController.view.layoutIfNeeded()
             }
             return syncStablePosition(afterShowing: targetVC, notifyFallback: notifyFallback)
+        }
+
+        func applyVisibleRefresh(
+            _ commit: ReaderVisibleRefreshCommit,
+            on pageViewController: UIPageViewController,
+            completion: @escaping (UInt64, ReaderVisibleRefreshOutcome) -> Void
+        ) {
+            guard commit.mode == .paged,
+                  commit.transactionID != lastAppliedRefreshTransactionID
+            else { return }
+
+            let target = displayViewController(for: commit.position)
+            guard !isPlaceholderDisplay(target) else {
+                completion(
+                    commit.transactionID,
+                    .failed(.layoutUnavailable(commit.position.spineIndex))
+                )
+                return
+            }
+            _ = setPage(target, on: pageViewController, layoutNow: true)
+            lastAppliedRefreshTransactionID = commit.transactionID
+            completion(commit.transactionID, .applied)
         }
 
         fileprivate func viewControllerStack(startingWith viewController: UIViewController) -> [UIViewController] {

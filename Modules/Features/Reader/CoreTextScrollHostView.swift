@@ -15,6 +15,8 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
     let resliceToken: UInt
     let playbackHighlightText: String?
     let textAnnotations: [CoreTextTextAnnotation]
+    var visibleRefreshCommit: ReaderVisibleRefreshCommit?
+    var onVisibleRefreshFinished: (UInt64, ReaderVisibleRefreshOutcome) -> Void = { _, _ in }
     var onTap: () -> Void = {}
     var onProgressCommit: (CoreTextReadingPosition) -> Void = { _ in }
     var onInternalLinkTap: (String) -> Void = { _ in }
@@ -58,11 +60,18 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
                 collectionVC.requestReslice(at: initialChapter, charOffset: initialCharOffset)
             }
         }
+        if let commit = visibleRefreshCommit,
+           commit.mode == .scroll,
+           context.coordinator.lastRefreshTransactionID != commit.transactionID {
+            context.coordinator.lastRefreshTransactionID = commit.transactionID
+            collectionVC.applyVisibleRefresh(commit, completion: onVisibleRefreshFinished)
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator {
         var lastResliceToken: UInt = 0
+        var lastRefreshTransactionID: UInt64 = 0
     }
 }

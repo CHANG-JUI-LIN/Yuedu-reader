@@ -20,6 +20,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     var onTap: (() -> Void)?
     var onInternalLinkTap: ((String) -> Void)?
     var onResliceCompleted: ((Int) -> Void)?
+    private(set) var lastAppliedRefreshTransactionID: UInt64 = 0
 
     private let collectionView: UICollectionView
     private var cancellables: Set<AnyCancellable> = []
@@ -31,6 +32,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     private var lastWarmRow: Int?
     private var lastWarmUptime: TimeInterval = 0
     private var resliceTask: Task<Void, Never>?
+    private var pendingVisibleRefreshCompletion: ((Bool) -> Void)?
 
     private var selectionChapter: Int?
     private var selectedText: String?
@@ -404,22 +406,71 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     }
 
     func requestReslice(at chapter: Int, charOffset: Int = 0) {
+        requestReslice(at: chapter, charOffset: charOffset, completion: nil)
+    }
+
+    private func requestReslice(
+        at chapter: Int,
+        charOffset: Int = 0,
+        completion: ((Bool) -> Void)?
+    ) {
         let extent = currentContentExtent
         let imageExtent = currentImageContentWidth
         guard extent > 0 else { return }
         resliceTask?.cancel()
+        pendingVisibleRefreshCompletion = completion
         resliceTask = Task { [weak self] in
             guard let self = self else { return }
             self.hasAppliedInitialScroll = false
             self.pendingInitialScroll = (chapter, charOffset)
-            await self.engine.reslice(
+            let succeeded = await self.engine.reslice(
                 restoreAt: chapter,
                 contentWidth: extent,
                 imageContentWidth: imageExtent
             )
             guard !Task.isCancelled else { return }
+            guard succeeded else {
+                let completion = self.pendingVisibleRefreshCompletion
+                self.pendingVisibleRefreshCompletion = nil
+                completion?(false)
+                self.resliceTask = nil
+                return
+            }
             self.onResliceCompleted?(chapter)
+            self.applyPendingInitialScrollIfPossible()
             self.resliceTask = nil
+        }
+    }
+
+    func applyVisibleRefresh(
+        _ commit: ReaderVisibleRefreshCommit,
+        completion: @escaping (UInt64, ReaderVisibleRefreshOutcome) -> Void
+    ) {
+        guard commit.mode == .scroll,
+              commit.transactionID != lastAppliedRefreshTransactionID
+        else { return }
+        guard currentContentExtent > 0 else {
+            completion(
+                commit.transactionID,
+                .failed(.scrollViewportUnavailable)
+            )
+            return
+        }
+
+        requestReslice(
+            at: commit.position.spineIndex,
+            charOffset: commit.position.charOffset
+        ) { [weak self] succeeded in
+            guard let self else { return }
+            guard succeeded else {
+                completion(
+                    commit.transactionID,
+                    .failed(.scrollLayoutUnavailable(commit.position.spineIndex))
+                )
+                return
+            }
+            self.lastAppliedRefreshTransactionID = commit.transactionID
+            completion(commit.transactionID, .applied)
         }
     }
 
@@ -680,6 +731,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             self.warmChunks(around: row, force: true)
             self.hasAppliedInitialScroll = true
             self.pendingInitialScroll = nil
+            let completion = self.pendingVisibleRefreshCompletion
+            self.pendingVisibleRefreshCompletion = nil
+            completion?(true)
         }
     }
 
