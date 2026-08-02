@@ -18,6 +18,7 @@ import {AppStoreConnectClient} from "./appStoreConnect.js";
 import {
   assertBindingOwner,
   assertTransactionCanBind,
+  bindingGrantsEntitlement,
   environmentName,
   transactionIsActive,
 } from "./entitlementPolicy.js";
@@ -219,11 +220,13 @@ function bindingData(
 
 async function recomputeEntitlement(uid: string): Promise<Record<string, unknown>> {
   const snapshot = await db.collection("purchaseBindings").where("uid", "==", uid).get();
+  // Second line of defence behind `assertTransactionCanBind`: this also
+  // neutralises the Sandbox bindings already written before that check existed,
+  // so the stale TestFlight grants stop counting the moment this deploys — no
+  // data migration needed to stop the leak.
   const activeBindings = snapshot.docs
     .map((document) => document.data() as PurchaseBindingDocument)
-    .filter((binding) => binding.active && (
-      binding.expiresAt === null || binding.expiresAt.toMillis() > Date.now()
-    ));
+    .filter((binding) => bindingGrantsEntitlement(binding));
   const productIds = [...new Set(activeBindings.map((binding) => binding.productId))].sort();
   const expirationDates = activeBindings
     .map((binding) => binding.expiresAt?.toMillis())

@@ -230,7 +230,15 @@ final class SubscriptionStore: ObservableObject {
             switch result {
             case .success(let verification):
                 let transaction = try checkVerified(verification)
-                if accountToken != nil {
+                // The environment filter belongs here too, not just in
+                // `refreshEntitlements`. This was the one path that reached
+                // `bind` unfiltered, so a TestFlight (Sandbox) purchase — which
+                // costs nothing — got bound to the Yuedu account and then
+                // unlocked Pro on the App Store build through `entitlements/{uid}`.
+                if accountToken != nil, SubscriptionEntitlementFilter.shouldAccept(
+                    environment: transaction.environment,
+                    isDebugBuild: Self.isDebugBuild
+                ) {
                     do {
                         accountIsProActive = try await accountService.bind(transaction: verification)
                     } catch {

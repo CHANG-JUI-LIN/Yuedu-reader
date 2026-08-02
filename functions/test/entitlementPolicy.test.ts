@@ -4,6 +4,7 @@ import {describe, it} from "node:test";
 import {
   assertBindingOwner,
   assertTransactionCanBind,
+  bindingGrantsEntitlement,
   effectiveEntitlement,
   environmentName,
   transactionIsActive,
@@ -39,15 +40,70 @@ describe("entitlement policy", () => {
     assert.doesNotThrow(() => assertTransactionCanBind({
       productId: "com.zhangruilin.yuedureader.pro.monthly",
       appAccountToken: "token-a",
+      environment: "Production",
     }, "token-a"));
     assert.throws(() => assertTransactionCanBind({
       productId: "com.example.other",
       appAccountToken: "token-a",
+      environment: "Production",
     }, "token-a"), /Unsupported product/);
     assert.throws(() => assertTransactionCanBind({
       productId: "com.zhangruilin.yuedureader.pro.monthly",
       appAccountToken: "token-b",
+      environment: "Production",
     }, "token-a"), /different app account/);
+  });
+
+  it("refuses to bind a free TestFlight (Sandbox) purchase", () => {
+    // The leak: a Sandbox purchase costs nothing, so binding one handed Pro to
+    // every beta tester who signed into the same account on the App Store build.
+    assert.throws(() => assertTransactionCanBind({
+      productId: "com.zhangruilin.yuedureader.pro.lifetime",
+      appAccountToken: "token-a",
+      environment: "Sandbox",
+    }, "token-a"), /Only App Store purchases/);
+    assert.throws(() => assertTransactionCanBind({
+      productId: "com.zhangruilin.yuedureader.pro.lifetime",
+      appAccountToken: "token-a",
+    }, "token-a"), /Only App Store purchases/);
+  });
+
+  it("counts only production bindings toward the entitlement", () => {
+    const now = Date.parse("2026-08-02T00:00:00Z");
+    const lifetime = {active: true, expiresAt: null};
+
+    assert.equal(
+      bindingGrantsEntitlement({...lifetime, environment: "Production"}, now),
+      true
+    );
+    // Already-stored Sandbox bindings stop counting the moment this deploys,
+    // which is what stops the leak without a data migration.
+    assert.equal(
+      bindingGrantsEntitlement({...lifetime, environment: "Sandbox"}, now),
+      false
+    );
+    assert.equal(
+      bindingGrantsEntitlement({...lifetime, environment: undefined}, now),
+      false
+    );
+    assert.equal(
+      bindingGrantsEntitlement({active: false, expiresAt: null, environment: "Production"}, now),
+      false
+    );
+    assert.equal(
+      bindingGrantsEntitlement(
+        {active: true, environment: "Production", expiresAt: {toMillis: () => now - 1}},
+        now
+      ),
+      false
+    );
+    assert.equal(
+      bindingGrantsEntitlement(
+        {active: true, environment: "Production", expiresAt: {toMillis: () => now + 1}},
+        now
+      ),
+      true
+    );
   });
 
   it("reads the environment from transactions and server notifications", () => {
