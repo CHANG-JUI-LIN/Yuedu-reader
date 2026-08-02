@@ -228,11 +228,6 @@ enum ReaderTheme: String, CaseIterable {
     }
 }
 
-enum ReaderConfigRefreshKind {
-    case layout
-    case appearance
-}
-
 @MainActor
 final class ReaderConfig: ObservableObject {
     static let shared = ReaderConfig()
@@ -263,10 +258,7 @@ final class ReaderConfig: ObservableObject {
         max(0, fontSize * paragraphSpacingMultiplier)
     }
 
-    let refresh = PassthroughSubject<ReaderConfigRefreshKind, Never>()
-
     private var cancellables = Set<AnyCancellable>()
-    private var suppressRefresh = false
 
     private init() {
         let gs = GlobalSettings.shared
@@ -292,7 +284,6 @@ final class ReaderConfig: ObservableObject {
 
     func syncFromGlobalSettings() {
         let gs = GlobalSettings.shared
-        suppressRefresh = true
         fontSize = CGFloat(gs.readerFontSize)
         lineHeightMultiple = CGFloat(gs.lineHeightMultiple)
         letterSpacing = CGFloat(gs.letterSpacing)
@@ -310,7 +301,6 @@ final class ReaderConfig: ObservableObject {
         readerFooterVisible = gs.readerFooterVisible
         readerFooterHorizontalPadding = CGFloat(gs.readerFooterHorizontalPadding)
         theme = ReaderTheme.loadPersisted()
-        suppressRefresh = false
     }
 
     private func setupBindings() {
@@ -337,8 +327,6 @@ final class ReaderConfig: ObservableObject {
                 gs.footerBottomPadding = Double(footerBottomPadding)
                 gs.footerTextGap = Double(footerTextGap)
                 gs.readerFontBold = readerFontBold
-                guard !self.suppressRefresh else { return }
-                self.refresh.send(.layout)
             }
             .store(in: &cancellables)
 
@@ -346,8 +334,6 @@ final class ReaderConfig: ObservableObject {
             .dropFirst()
             .sink { [weak self] theme in
                 theme.persist()
-                guard let self, !self.suppressRefresh else { return }
-                self.refresh.send(.appearance)
             }
             .store(in: &cancellables)
 
@@ -356,10 +342,6 @@ final class ReaderConfig: ObservableObject {
             .debounce(for: .milliseconds(120), scheduler: RunLoop.main)
             .sink { [weak self] style in
                 GlobalSettings.shared.chapterTitleStyle = style
-                guard let self, !self.suppressRefresh else { return }
-                // Any title change (size/spacing/weight/alignment/split/fonts)
-                // shifts pagination — needs a relayout, not just a recolor.
-                self.refresh.send(.layout)
             }
             .store(in: &cancellables)
 
@@ -371,8 +353,6 @@ final class ReaderConfig: ObservableObject {
                 gs.readerHeaderTopPadding = Double(topPadding)
                 gs.readerHeaderTextGap = Double(textGap)
                 gs.readerHeaderHorizontalPadding = Double(hPadding)
-                guard let self, !self.suppressRefresh else { return }
-                self.refresh.send(.layout)
             }
             .store(in: &cancellables)
 
@@ -382,8 +362,6 @@ final class ReaderConfig: ObservableObject {
                 let gs = GlobalSettings.shared
                 gs.readerFooterVisible = visible
                 gs.readerFooterHorizontalPadding = Double(hPadding)
-                guard let self, !self.suppressRefresh else { return }
-                self.refresh.send(.layout)
             }
             .store(in: &cancellables)
     }
@@ -2042,7 +2020,6 @@ class GlobalSettings: ObservableObject {
         readerFollowSystemTheme = false
         appearanceBindReaderTheme = false
         AppearanceThemePreset.activeReaderTheme = readerCustomBackgroundPreset
-        sendReaderAppearanceRefresh()
     }
 
     @discardableResult
@@ -2053,14 +2030,12 @@ class GlobalSettings: ObservableObject {
         readerFollowSystemTheme = false
         appearanceBindReaderTheme = false
         AppearanceThemePreset.activeReaderTheme = readerCustomBackgroundPreset
-        sendReaderAppearanceRefresh()
         return fileName
     }
 
     func clearReaderCustomBackground() {
         readerCustomBackgroundMode = .none
         AppearanceThemePreset.activeReaderTheme = appearanceBindReaderTheme ? AppearanceThemePreset.activeReaderTheme : nil
-        sendReaderAppearanceRefresh()
     }
 
     // MARK: - Launch Image import / resolution
@@ -2114,12 +2089,6 @@ class GlobalSettings: ObservableObject {
     private func removeLaunchImageFile(_ fileName: String?) {
         guard let fileName, !fileName.isEmpty else { return }
         LaunchImageStorageManager.shared.delete(fileName: fileName)
-    }
-
-    private func sendReaderAppearanceRefresh() {
-        Task { @MainActor in
-            ReaderConfig.shared.refresh.send(.appearance)
-        }
     }
 
     private static func readableTextColor(for color: UIColor) -> UIColor {

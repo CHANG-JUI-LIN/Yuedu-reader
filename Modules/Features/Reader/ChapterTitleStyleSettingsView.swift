@@ -48,10 +48,8 @@ struct ChapterTitleStyleSettingsView: View {
         .toolbarTitleDisplayMode(.inline    )
         .themedAppSurface(for: .settings)
         .onDisappear {
-            // Guarantee the currently visible cached chapter is rebuilt when
-            // returning from this subpage. This stays entirely inside the
-            // render-settings path and never invokes chapter/network refresh.
-            readerConfig.refresh.send(.layout)
+            // ReaderView observes the immutable render-settings snapshot and
+            // submits the refresh after any title-style mutation.
         }
         .fileImporter(
             isPresented: $showingImporter,

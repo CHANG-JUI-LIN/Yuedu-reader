@@ -36,6 +36,22 @@ struct ReaderRenderRefreshTests {
         )
     }
 
+    @Test("render settings classify layout and appearance changes")
+    func renderSettingsClassifyRefreshIntent() {
+        let base = Self.makeSettings(fontSize: 18)
+        let layout = Self.makeSettings(fontSize: 20)
+        let appearance = Self.makeSettings(
+            fontSize: 18,
+            theme: "night",
+            textColor: .white,
+            backgroundColor: .black
+        )
+
+        #expect(layout.refreshIntent(comparedTo: base) == .layout)
+        #expect(appearance.refreshIntent(comparedTo: base) == .appearance)
+        #expect(base.refreshIntent(comparedTo: base) == nil)
+    }
+
     @Test("newer layout refresh supersedes older transaction")
     func newerRefreshSupersedesOlderTransaction() async {
         let renderer = EPUBPageRenderer()

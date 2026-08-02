@@ -253,7 +253,6 @@ struct ReaderView: View {
         }
         guard AppearanceThemePreset.activeReaderTheme != preset else { return }
         AppearanceThemePreset.activeReaderTheme = preset
-        readerConfig.refresh.send(.appearance)
     }
 
     var usesReadableReaderWidth: Bool {
@@ -1700,59 +1699,18 @@ struct ReaderView: View {
         )
         let settingsObservationLayers = AnyView(
             lifecycleLayers
-                .onChanged(of: settings.commentBubbleFollowsSourceSVG) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.commentBubblePresetMode) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.commentBubbleCustomStyles) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.commentBubbleSelectedCustomStyleID) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.commentBubbleScale) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.commentBubbleTextScale) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.readerTextUnderlineDecorationEnabled) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.readerTextUnderlineDecorationColorHex) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.readerTextUnderlineStyle) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.readerTextUnderlineThickness) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.readerTextUnderlineOffset) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.readerDialogueHighlightEnabled) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.readerDialogueHighlightColorHex) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.readerDialogueBoxEnabled) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.readerDialogueBoxColorHex) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(of: settings.readerDialogueBoxStyleRaw) { _ in
-            forceReaderRenderableContentRefresh()
-        }
-        .onChanged(
-            of: ReaderOverlayPaginationPolicy.insets(for: settings.readerOverlayLayout)
-        ) { _ in
-            handleReaderConfigRefresh(.layout)
-        }
+                .onChanged(of: activeReaderRenderSettings) { oldSettings, newSettings in
+                    guard let intent = newSettings.refreshIntent(comparedTo: oldSettings) else {
+                        return
+                    }
+                    submitReaderRefresh(intent: intent, settings: newSettings)
+                }
+                .onChanged(of: readerDocumentStyleFingerprint) { _ in
+                    submitReaderRefresh(
+                        intent: .chapterContent(currentChapterIndex),
+                        settings: activeReaderRenderSettings
+                    )
+                }
         .onChanged(of: settings.customAppearanceThemes) { _ in
             syncActiveThemePreset()
         }
@@ -1766,9 +1724,6 @@ struct ReaderView: View {
             if settings.followSystemBrightness {
                 settings.readerBrightness = current
             }
-        }
-        .onReceive(readerConfig.refresh) { kind in
-            handleReaderConfigRefresh(kind)
         }
         .onReceive(NotificationCenter.default.publisher(for: .coreTextUnderlineSelectionRequested)) { notification in
             guard let request = notification.userInfo?["request"] as? CoreTextUnderlineSelectionRequest else { return }
@@ -1812,7 +1767,7 @@ struct ReaderView: View {
                     )
                 )
             }
-            handleReaderConfigRefresh(.layout)
+            submitReaderRefresh(intent: .layout)
         }
         .onChanged(of: effectiveReaderSpreadMode) { _ in
             readerSessionCoordinator?.send(.updateSpreadMode(effectiveReaderSpreadMode))

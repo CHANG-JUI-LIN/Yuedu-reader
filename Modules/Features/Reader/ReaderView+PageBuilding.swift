@@ -20,6 +20,31 @@ extension ReaderView {
         effectiveScrollMode ? .scroll : .paged
     }
 
+    var activeReaderRenderSettings: ReaderRenderSettings {
+        readerRenderSettings(for: activeReaderDisplayMode)
+    }
+
+    var readerDocumentStyleFingerprint: ReaderDocumentStyleFingerprint {
+        ReaderDocumentStyleFingerprint(
+            commentBubbleFollowsSourceSVG: settings.commentBubbleFollowsSourceSVG,
+            commentBubblePresetMode: settings.commentBubblePresetMode,
+            commentBubbleCustomStyles: settings.commentBubbleCustomStyles,
+            commentBubbleSelectedCustomStyleID: settings.commentBubbleSelectedCustomStyleID,
+            commentBubbleScale: settings.commentBubbleScale,
+            commentBubbleTextScale: settings.commentBubbleTextScale,
+            readerTextUnderlineDecorationEnabled: settings.readerTextUnderlineDecorationEnabled,
+            readerTextUnderlineDecorationColorHex: settings.readerTextUnderlineDecorationColorHex,
+            readerTextUnderlineStyle: settings.readerTextUnderlineStyle,
+            readerTextUnderlineThickness: settings.readerTextUnderlineThickness,
+            readerTextUnderlineOffset: settings.readerTextUnderlineOffset,
+            readerDialogueHighlightEnabled: settings.readerDialogueHighlightEnabled,
+            readerDialogueHighlightColorHex: settings.readerDialogueHighlightColorHex,
+            readerDialogueBoxEnabled: settings.readerDialogueBoxEnabled,
+            readerDialogueBoxColorHex: settings.readerDialogueBoxColorHex,
+            readerDialogueBoxStyleRaw: settings.readerDialogueBoxStyleRaw
+        )
+    }
+
     func readerRenderSettings(for mode: ReaderDisplayMode) -> ReaderRenderSettings {
         let input = ReaderRenderSettingsSnapshotInput(
             theme: readerTheme.epubJSName,
@@ -468,71 +493,66 @@ extension ReaderView {
         }
     }
 
-    func handleReaderConfigRefresh(_ kind: ReaderConfigRefreshKind) {
-        switch kind {
-        case .layout:
-            performUnifiedRelayout()
-        case .appearance:
-            applyUnifiedAppearanceUpdate()
+    func submitReaderRefresh(
+        intent: ReaderRenderRefreshIntent,
+        settings: ReaderRenderSettings? = nil,
+        viewportSize: CGSize? = nil
+    ) {
+        guard epubRenderer.engine != nil || epubRenderer.scrollEngine != nil else { return }
+        let resolvedSettings = settings ?? activeReaderRenderSettings
+        let request = ReaderRenderRefreshRequest(
+            intent: intent,
+            mode: activeReaderDisplayMode,
+            settings: resolvedSettings,
+            position: currentReaderRefreshPosition,
+            viewportSize: viewportSize ?? currentReaderRenderSize
+        )
+        Task { @MainActor in
+            let result = await epubRenderer.refresh(request)
+            if case let .failed(transactionID, failure) = result {
+                AppLogger.render(
+                    "reader refresh failed transaction=\(transactionID) failure=\(failure)"
+                )
+            }
         }
+    }
+
+    var currentReaderRefreshPosition: CoreTextReadingPosition {
+        if let position = readerSessionCoordinator?.state.location.coreTextPosition {
+            return position
+        }
+        if let pendingScrollJumpTarget {
+            return pendingScrollJumpTarget
+        }
+        if let engine = epubRenderer.engine,
+           let position = engine.readingPosition(forPage: currentPage) {
+            return position
+        }
+        return CoreTextReadingPosition(
+            spineIndex: max(0, currentChapterIndex),
+            charOffset: 0
+        )
     }
 
     func performUnifiedRelayout(targetSize: CGSize? = nil) {
-        if effectiveScrollMode, epubRenderer.scrollEngine != nil {
-            scheduleScrollReslice()
-            return
-        }
-
-        guard let engine = epubRenderer.engine else {
-            rebuildPages()
-            return
-        }
-        let size = targetSize ?? engine.renderSize
-        let newSettings = readerRenderSettings(for: .paged)
-        if targetSize != nil,
-           abs(size.width - engine.renderSize.width) < 0.5,
-           abs(size.height - engine.renderSize.height) < 0.5 {
-            AppLogger.render("[FlipTrace] performUnifiedRelayout skip sameSize size=\(size)")
-            return
-        }
-        if let coreEngine = engine as? CoreTextPageEngine,
-           targetSize == nil,
-           newSettings == coreEngine.renderSettings {
-            AppLogger.render("[FlipTrace] performUnifiedRelayout skip sameSettings size=\(size)")
-            return
-        }
-        epubRenderer.updateRenderSettings(newSettings)
-        AppLogger.render("⟐ relayout invalidate begin size=\(size) css=\(newSettings.chapterTitleStyle.advancedCSSEnabled)")
-        Task {
-            let t0 = CFAbsoluteTimeGetCurrent()
-            await engine.invalidateLayout(newSize: size)
-            let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-            AppLogger.render("⟐ relayout invalidate end ms=\(ms)")
-        }
+        submitReaderRefresh(
+            intent: .layout,
+            settings: activeReaderRenderSettings,
+            viewportSize: targetSize
+        )
     }
 
     func forceReaderRenderableContentRefresh() {
-        if effectiveScrollMode, let scrollEngine = epubRenderer.scrollEngine {
-            scrollEngine.invalidateChapterDocument(at: currentChapterIndex)
-            scheduleScrollReslice()
-            return
-        }
-
-        guard let engine = epubRenderer.engine else {
-            rebuildPages()
-            return
-        }
-
-        epubRenderer.updateRenderSettings(readerRenderSettings(for: .paged))
-        Task { await engine.invalidateLayout(newSize: engine.renderSize) }
+        submitReaderRefresh(
+            intent: .chapterContent(currentChapterIndex),
+            settings: activeReaderRenderSettings
+        )
     }
 
     func applyUnifiedAppearanceUpdate() {
-        guard let engine = epubRenderer.engine else { return }
-        epubRenderer.updateRenderSettings(readerRenderSettings(for: activeReaderDisplayMode))
-        engine.applyThemeChange(
-            textColor: readerTheme.uiTextColor,
-            backgroundColor: readerTheme.uiBackgroundColor
+        submitReaderRefresh(
+            intent: .appearance,
+            settings: activeReaderRenderSettings
         )
     }
 

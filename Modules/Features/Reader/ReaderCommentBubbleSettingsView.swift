@@ -197,7 +197,6 @@ struct ReaderCommentBubbleSettingsView: View {
         ) {
             settings.selectCommentBubbleCustomStyle(id: style.id)
             settings.commentBubbleFollowsSourceSVG = false
-            notifyReaderLayoutChanged()
         }
     }
 
@@ -270,7 +269,6 @@ struct ReaderCommentBubbleSettingsView: View {
             get: { !settings.commentBubbleFollowsSourceSVG },
             set: { prioritizesSelectedStyle in
                 settings.commentBubbleFollowsSourceSVG = !prioritizesSelectedStyle
-                notifyReaderLayoutChanged()
             }
         )
     }
@@ -281,7 +279,6 @@ struct ReaderCommentBubbleSettingsView: View {
             set: { value in
                 settings.commentBubbleScale = value
                 settings.commentBubbleFollowsSourceSVG = false
-                notifyReaderLayoutChanged()
             }
         )
     }
@@ -292,7 +289,6 @@ struct ReaderCommentBubbleSettingsView: View {
             set: { value in
                 settings.commentBubbleTextScale = value
                 settings.commentBubbleFollowsSourceSVG = false
-                notifyReaderLayoutChanged()
             }
         )
     }
@@ -334,7 +330,6 @@ struct ReaderCommentBubbleSettingsView: View {
             return
         }
         settings.commentBubbleFollowsSourceSVG = false
-        notifyReaderLayoutChanged()
     }
 
     private func openNewStyleEditor() {
@@ -375,14 +370,12 @@ struct ReaderCommentBubbleSettingsView: View {
             )
         )
         settings.commentBubbleFollowsSourceSVG = false
-        notifyReaderLayoutChanged()
         return nil
     }
 
     private func deleteCustomStyle(_ style: ReaderCommentBubbleCustomStyle) {
         settings.deleteCommentBubbleCustomStyle(id: style.id)
         stylePendingDeletion = nil
-        notifyReaderLayoutChanged()
     }
 
     private func handleSVGImport(_ result: Result<[URL], Error>) {
@@ -409,7 +402,6 @@ struct ReaderCommentBubbleSettingsView: View {
                     settings.commentBubbleScale = GlobalSettings.sanitizedCommentBubbleScale(scale)
                 }
                 settings.commentBubbleFollowsSourceSVG = false
-                notifyReaderLayoutChanged()
                 importAlert = BubbleImportAlert(
                     titleKey: "SVG 匯入成功",
                     message: localized("已套用自訂段評氣泡 SVG。")
@@ -436,7 +428,6 @@ struct ReaderCommentBubbleSettingsView: View {
                 ReaderCommentBubbleCustomStyle(name: styleName, svg: trimmedSVG)
             )
             settings.commentBubbleFollowsSourceSVG = false
-            notifyReaderLayoutChanged()
             importAlert = BubbleImportAlert(
                 titleKey: "SVG 匯入成功",
                 message: localized("已套用自訂段評氣泡 SVG。")
@@ -481,9 +472,6 @@ struct ReaderCommentBubbleSettingsView: View {
         )
     }
 
-    private func notifyReaderLayoutChanged() {
-        readerConfig.refresh.send(.layout)
-    }
 }
 
 private struct CommentBubbleStyleEditorDraft: Identifiable {

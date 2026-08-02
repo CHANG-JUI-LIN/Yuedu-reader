@@ -372,7 +372,6 @@ struct ReaderSettingsView: View {
             Menu {
                 Button {
                     settings.selectedReaderFontPostScript = nil
-                    readerConfig.refresh.send(.layout)
                 } label: {
                     Label(localized("系統字體"), systemImage: settings.selectedReaderFontPostScript == nil ? "checkmark" : "textformat")
                 }
@@ -383,7 +382,6 @@ struct ReaderSettingsView: View {
                         ForEach(settings.userFonts, id: \.id) { font in
                             Button {
                                 settings.selectedReaderFontPostScript = font.postScriptName
-                                readerConfig.refresh.send(.layout)
                             } label: {
                                 Label(
                                     font.displayName,
@@ -399,7 +397,6 @@ struct ReaderSettingsView: View {
                         ForEach(settings.userFonts, id: \.id) { font in
                             Button(role: .destructive) {
                                 settings.deleteUserFont(font)
-                                readerConfig.refresh.send(.layout)
                             } label: {
                                 Label(font.displayName, systemImage: "trash")
                             }
@@ -718,7 +715,6 @@ struct ReaderSettingsView: View {
             get: { settings.readerTextUnderlineDecorationEnabled },
             set: { enabled in
                 settings.readerTextUnderlineDecorationEnabled = enabled
-                readerConfig.refresh.send(.layout)
             }
         )
     }
@@ -749,7 +745,6 @@ struct ReaderSettingsView: View {
             get: { settings.readerTextUnderlineStyle },
             set: { style in
                 settings.readerTextUnderlineStyle = style
-                readerConfig.refresh.send(.layout)
             }
         )
     }
@@ -759,7 +754,6 @@ struct ReaderSettingsView: View {
             get: { settings.readerTextUnderlineThickness },
             set: { value in
                 settings.readerTextUnderlineThickness = value
-                readerConfig.refresh.send(.layout)
             }
         )
     }
@@ -769,7 +763,6 @@ struct ReaderSettingsView: View {
             get: { settings.readerTextUnderlineOffset },
             set: { value in
                 settings.readerTextUnderlineOffset = value
-                readerConfig.refresh.send(.layout)
             }
         )
     }
@@ -845,7 +838,6 @@ struct ReaderSettingsView: View {
                 }
             }
             try settings.importReaderFont(from: url)
-            readerConfig.refresh.send(.layout)
         } catch {
             fontImportError = FontImportError(message: error.localizedDescription)
         }
@@ -937,7 +929,6 @@ struct ReaderSettingsView: View {
         if let pageTurnStyle = preset.pageTurnStyle, preset.scrollMode != true {
             settings.pageTurnStyle = pageTurnStyle
         }
-        readerConfig.refresh.send(.layout)
         return true
     }
 }

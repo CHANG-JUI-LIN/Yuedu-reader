@@ -95,16 +95,17 @@ extension ReaderView {
             .id(ObjectIdentifier(scrollEngine))
             .background(readerSurfaceBackground)
             .ignoresSafeArea()
-            .modifier(ScrollConfigObserver(readerConfig: readerConfig, readerTheme: readerTheme) { scheduleScrollReslice() })
         } else {
             legacyScrollBody
         }
     }
 
     func scheduleScrollReslice() {
-        guard let engine = epubRenderer.scrollEngine else { return }
-        engine.updateRenderSettings(readerRenderSettings(for: .scroll))
-        scrollResliceToken &+= 1
+        guard epubRenderer.scrollEngine != nil else { return }
+        submitReaderRefresh(
+            intent: .layout,
+            settings: readerRenderSettings(for: .scroll)
+        )
     }
 
     /// Scroll mode starting position priority:
