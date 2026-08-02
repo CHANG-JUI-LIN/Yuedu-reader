@@ -91,10 +91,15 @@ final class ReviewSummaryResponseCache: @unchecked Sendable {
 
     /// Waits only when another caller already owns this exact request. The JS bridge uses this
     /// on its dedicated serial queue, never on the main actor.
+    ///
+    /// The timeout is bounded well under `AppConfig.chapterFetchTimeoutSeconds` (35s): this
+    /// wait blocks the JS engine thread mid-chapter-fetch, so a wait long enough to outlast
+    /// the fetch would turn a slow review summary into 章節載入失敗. Callers that time out
+    /// issue their own request instead of failing.
     func waitForRequest(
         sourceKey: String,
         requestURL: String,
-        timeout: TimeInterval = 30
+        timeout: TimeInterval = 12
     ) -> String? {
         let key = makeKey(sourceKey: sourceKey, requestURL: requestURL)
         lock.lock()

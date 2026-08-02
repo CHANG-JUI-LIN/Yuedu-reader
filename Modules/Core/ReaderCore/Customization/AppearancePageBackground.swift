@@ -401,26 +401,31 @@ enum AppearanceThemeImportError: Error {
 /// The layer painted behind a page: configured gradient with the optional
 /// background image on top. Renders nothing when the slice is empty.
 struct AppearancePageBackgroundLayerView: View {
-    let slice: AppearancePageBackgroundSlice
+    /// Optional so callers can keep this decorative layer installed while the
+    /// configuration is loading or becomes unavailable. That keeps the parent
+    /// view's structure stable when entitlements/theme state changes.
+    let slice: AppearancePageBackgroundSlice?
 
     var body: some View {
         ZStack {
-            if let colors = slice.gradientColors {
-                LinearGradient(
-                    colors: colors,
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-            if let fileName = slice.imageFileName,
-               let image = AppearancePageBackgroundImageStore.shared.image(fileName: fileName) {
-                GeometryReader { proxy in
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        .clipped()
-                        .opacity(slice.imageOpacity)
+            if let slice {
+                if let colors = slice.gradientColors {
+                    LinearGradient(
+                        colors: colors,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                }
+                if let fileName = slice.imageFileName,
+                   let image = AppearancePageBackgroundImageStore.shared.image(fileName: fileName) {
+                    GeometryReader { proxy in
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .clipped()
+                            .opacity(slice.imageOpacity)
+                    }
                 }
             }
         }

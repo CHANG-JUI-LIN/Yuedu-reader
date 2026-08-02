@@ -6,6 +6,10 @@ struct OnlineBookView: View {
     /// The aggregated search book, when opened from search — enables source switching (換源).
     /// `nil` when opened from a single-source context (e.g. Discover).
     private let searchBook: SearchBook?
+    /// When opened from the reader, this is the shelf record whose source the detail page is
+    /// editing. `OnlineBook` is only a presentation value, so changing its local state alone
+    /// cannot update the reader's `ReadingBook`.
+    private let sourceSwitchBookId: UUID?
 
     @State private var currentBook: OnlineBook
     @EnvironmentObject var bookStore: BookStore
@@ -23,6 +27,7 @@ struct OnlineBookView: View {
     @State private var alreadyInShelf = false
     @State private var temporaryReaderBookId: UUID? = nil
     @State private var detailInfo: OnlineBook? = nil
+    @State private var pendingShelfSourceSwitch = false
     @State private var introExpanded = false
     @State private var showSourcePicker = false
     @State private var showChapterList = false
@@ -32,16 +37,18 @@ struct OnlineBookView: View {
     // MARK: Init
 
     /// Single-source entry (Discover). No source switching.
-    init(book: OnlineBook) {
+    init(book: OnlineBook, sourceSwitchBookId: UUID? = nil) {
         self.searchBook = nil
+        self.sourceSwitchBookId = sourceSwitchBookId
         _currentBook = State(
             initialValue: OnlineBookDetailPresentationPolicy.sanitized(book)
         )
     }
 
     /// Search entry — defaults to the first origin, keeps the rest for 換源.
-    init(searchBook: SearchBook) {
+    init(searchBook: SearchBook, sourceSwitchBookId: UUID? = nil) {
         self.searchBook = searchBook
+        self.sourceSwitchBookId = sourceSwitchBookId
         if let origin = searchBook.origins.first {
             _currentBook = State(initialValue: Self.makeOnlineBook(from: searchBook, origin: origin))
         } else {
@@ -594,6 +601,7 @@ struct OnlineBookView: View {
         guard newBook.sourceId != currentBook.sourceId
             || newBook.bookUrl != currentBook.bookUrl else { return }
 
+        pendingShelfSourceSwitch = sourceSwitchBookId != nil
         currentBook = newBook
         detailInfo = nil
         chapters = []
@@ -612,6 +620,15 @@ struct OnlineBookView: View {
     }
 
     private func checkAlreadyInShelf() {
+        // Reader details edit the book that opened the page. Do not replace its identity with
+        // an already-shelved sibling just because the newly selected source is also present.
+        // The source switch must commit back to the reader's original `bookId`.
+        if let sourceSwitchBookId,
+           bookStore.books.contains(where: { $0.id == sourceSwitchBookId }) {
+            addedBookId = sourceSwitchBookId
+            alreadyInShelf = true
+            return
+        }
         let existing = bookStore.onlineBook(
             sourceId: currentBook.sourceId, bookInfoURL: currentBook.bookUrl)
         addedBookId = existing?.id
@@ -627,6 +644,7 @@ struct OnlineBookView: View {
         loadingTOC = true
         tocError = nil
         let requestBook = currentBook
+        let shouldPersistShelfSourceSwitch = pendingShelfSourceSwitch
 
         do {
             var currentRuntimeVariables = requestBook.runtimeVariables
@@ -657,18 +675,46 @@ struct OnlineBookView: View {
                         self.chapters = firstChapters
                         self.loadingTOC = false
                     }
-                    if let bookId = self.addedBookId {
+                    if !shouldPersistShelfSourceSwitch, let bookId = self.addedBookId {
                         self.bookStore.updateOnlineChapters(bookId: bookId, chapters: firstChapters)
                     }
                 }
             }
 
             let applyFinal: (TOCPackage) async -> Void = { tocPackage in
+                if shouldPersistShelfSourceSwitch, let sourceSwitchBookId = self.sourceSwitchBookId {
+                    // A second source tap can finish before this request. Never let an older
+                    // TOC commit under the newer selection's shelf record.
+                    let commitContext = await MainActor.run { () -> (UUID, BookOrigin)? in
+                        guard self.isCurrentRequest(requestBook) else { return nil }
+                        return (sourceSwitchBookId, self.sourceOrigin(for: tocPackage))
+                    }
+                    guard let (sourceSwitchBookId, origin) = commitContext else { return }
+                    do {
+                        try await self.bookStore.updateOnlineBookSource(
+                            bookId: sourceSwitchBookId,
+                            origin: origin,
+                            preparedTOC: tocPackage,
+                            offlineChapterStore: self.dependencies.offlineChapterStore
+                        )
+                    } catch {
+                        await MainActor.run {
+                            guard self.isCurrentRequest(requestBook) else { return }
+                            self.tocError = error.localizedDescription
+                            self.loadingTOC = false
+                        }
+                        return
+                    }
+                    await MainActor.run {
+                        guard self.isCurrentRequest(requestBook) else { return }
+                        self.pendingShelfSourceSwitch = false
+                    }
+                }
                 await MainActor.run {
                     guard isCurrentRequest(requestBook) else { return }
                     chapters = tocPackage.chapters
                     loadingTOC = false
-                    if let bookId = addedBookId {
+                    if !shouldPersistShelfSourceSwitch, let bookId = addedBookId {
                         bookStore.updateOnlineChapters(bookId: bookId, chapters: tocPackage.chapters)
                     }
                 }
@@ -765,6 +811,25 @@ struct OnlineBookView: View {
                 loadingTOC = false
             }
         }
+    }
+
+    /// Converts the detail page's selected source back into the shelf model. The TOC package is
+    /// passed through so the source switch does not fetch the same TOC a second time.
+    private func sourceOrigin(for tocPackage: TOCPackage) -> BookOrigin {
+        BookOrigin(
+            sourceId: currentBook.sourceId,
+            sourceName: currentBook.sourceName,
+            bookUrl: currentBook.bookUrl,
+            tocUrl: resolvedTOCURL ?? tocPackage.tocURL,
+            coverUrl: displayCoverUrl,
+            intro: displayIntro,
+            lastChapter: displayLatestChapter,
+            wordCount: displayWordCount,
+            kind: detailInfo?.kind ?? currentBook.kind,
+            runtimeVariables: tocPackage.runtimeVariables
+                ?? detailInfo?.runtimeVariables
+                ?? currentBook.runtimeVariables
+        )
     }
 
     /// Remove from shelf.

@@ -304,6 +304,7 @@
 "已申請過 TestFlight" = "TestFlight already requested";
 "申請已記錄" = "Application recorded";
 "每個郵箱只能申請一次；如果尚未收到邀請，請聯絡管理員。" = "Each email address can apply only once. If you have not received the invite, contact the administrator.";
+"每個 Pro 帳號只能申請一次；如果尚未收到邀請，請聯絡管理員。" = "Each Pro account can apply only once. If you have not received the invite, contact the administrator.";
 "申請已記錄，但邀請尚未完成，請聯絡管理員。" = "Your application was recorded, but the invite could not be completed. Contact the administrator.";
 "留空使用書籍頁 URL" = "Leave empty to use book page URL";
 "當前速度" = "Current Speed";
@@ -1236,7 +1237,7 @@
 "套用後會作為自定義閱讀背景。" = "After applying, this becomes the custom reading background.";
 "圖片會直接顯示在閱讀背景與主題預覽中。" = "The image appears directly in the reading background and theme preview.";
 "閱讀背景匯入失敗" = "Reading Background Import Failed";
-"只支援 WebP、JPG、JPEG 圖片。" = "Only WebP, JPG, and JPEG images are supported.";
+"只支援 WebP、JPG、JPEG、PNG 圖片。" = "Only WebP, JPG, JPEG, and PNG images are supported.";
 "無法讀取圖片。" = "Couldn't read the image.";
 "無法匯入圖片背景。" = "Couldn't import the image background.";
 "縮小字體" = "Decrease Font Size";
@@ -1559,9 +1560,9 @@
 "直接購買" = "Purchase Without Signing In";
 "未登入時，會員只會跟隨本次購買使用的 Apple 帳號。登入後購買可綁定 Yuedu 帳號，切換 App Store 帳號後仍可使用。" = "Without signing in, Pro follows the Apple Account used for this purchase. Sign in first to link Pro to your Yuedu account and keep access after changing App Store accounts.";
 "請先登入後再綁定會員" = "Sign in before linking Pro";
-"無法連接帳號服務，請檢查網路後再試" = "Unable to connect to the account service. Check your connection and try again.";
 "購買成功，但未能綁定帳號，請稍後使用恢復購買重試" = "The purchase succeeded, but account linking failed. Use Restore Purchases later to try again.";
 "無法將購買綁定到此帳號" = "Unable to link the purchase to this account";
+"購買成功，帳號服務暫時無法連線，恢復連線後會自動綁定" = "Purchase complete. The account service is unreachable right now — it will link automatically once the connection is back.";
 
 /* Advanced CSS title */
 "高級 CSS 樣式" = "Advanced CSS";
@@ -1721,3 +1722,8 @@
 "文件" = "File";
 "是" = "Yes";
 "否" = "No";
+"正在載入目錄…" = "Loading contents…";
+"換源時載入目錄" = "Load Contents While Searching";
+"換源搜索時順便抓取每個書源的目錄，點選書源可立即切換；代價是搜索期間的網路請求加倍" = "Fetch each source's table of contents during the change-source search so tapping a source switches instantly. Costs twice as many requests while searching.";
+"找不到書源" = "Source not found";
+"此書源取不到目錄" = "This source returned no table of contents";

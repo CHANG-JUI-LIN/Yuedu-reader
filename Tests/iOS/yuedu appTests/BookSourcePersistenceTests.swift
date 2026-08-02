@@ -82,6 +82,83 @@ struct BookSourcePersistenceTests {
         #expect(persistedBook.onlineChapters?.map(\.url) == newChapters.map(\.url))
     }
 
+    @Test("a source that returns no chapters leaves the book untouched")
+    @MainActor
+    func emptyTOCDoesNotWipeChapters() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let metadataURL = directory.appendingPathComponent("books_meta.json")
+        let store = BookStore(metadataFileURL: metadataURL)
+        let oldSource = BookSource(bookSourceUrl: "https://old.example", bookSourceName: "舊書源")
+        let newSource = BookSource(bookSourceUrl: "https://new.example", bookSourceName: "新書源")
+        let previousSources = BookSourceStore.shared.sources
+        BookSourceStore.shared.sources = [oldSource, newSource]
+        defer { BookSourceStore.shared.sources = previousSources }
+
+        let oldChapters = [
+            OnlineChapterRef(index: 0, title: "第一章", url: "https://old.example/chapter/1")
+        ]
+        var book = ReadingBook(
+            title: "空目錄換源測試",
+            author: "測試作者",
+            source: "https://old.example/book",
+            contentFilename: ""
+        )
+        book.isOnline = true
+        book.contentPipelineKind = .html
+        book.bookSourceId = oldSource.id
+        book.bookInfoURL = "https://old.example/book"
+        book.tocURL = "https://old.example/book/toc"
+        book.onlineChapters = oldChapters
+        store.replaceBooksFromSync([book])
+
+        // A source whose TOC rules match nothing resolves to an empty package rather than
+        // throwing. Committing it wiped `onlineChapters`, which also removed the reader's
+        // 刷新 action (gated on a non-empty chapter list) until the book was reopened.
+        let fetcher = SourceSwitchBookSourceFetcher(
+            package: TOCPackage(
+                sourceId: newSource.id,
+                sourceName: newSource.bookSourceName,
+                tocURL: "https://new.example/book/toc",
+                runtimeVariables: nil,
+                chapters: [],
+                rawHTMLFilename: nil,
+                savedAt: Date()
+            )
+        )
+        let roots = OfflineStorageRoots(
+            textRoot: directory.appendingPathComponent("text", isDirectory: true),
+            mangaRoot: directory.appendingPathComponent("manga", isDirectory: true)
+        )
+        let origin = BookOrigin(
+            sourceId: newSource.id,
+            sourceName: newSource.bookSourceName,
+            bookUrl: "https://new.example/book",
+            tocUrl: "https://new.example/book/toc",
+            coverUrl: "",
+            intro: "",
+            lastChapter: "",
+            wordCount: "",
+            kind: "",
+            runtimeVariables: nil
+        )
+
+        await #expect(throws: (any Error).self) {
+            try await store.updateOnlineBookSource(
+                bookId: book.id,
+                origin: origin,
+                bookSourceFetcher: fetcher,
+                offlineChapterStore: OfflineChapterStore(roots: roots)
+            )
+        }
+
+        let current = try #require(store.books.first(where: { $0.id == book.id }))
+        #expect(current.bookSourceId == oldSource.id)
+        #expect(current.tocURL == "https://old.example/book/toc")
+        #expect(current.onlineChapters?.map(\.url) == oldChapters.map(\.url))
+    }
+
     @Test("same URL books from different sources remain distinct shelf items")
     @MainActor
     func sourceQualifiedShelfIdentity() throws {

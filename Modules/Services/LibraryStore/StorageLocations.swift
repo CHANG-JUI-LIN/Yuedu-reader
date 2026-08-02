@@ -75,6 +75,20 @@ enum StorageLocations {
         directory("online_cache")
     }
 
+    /// Offline manga pages downloaded for online books, per book id.
+    static var mangaCache: URL {
+        directory("manga")
+    }
+
+    /// Temporary audio data synthesized by HTTP TTS.
+    ///
+    /// The current TTS engine keeps active chunks in memory; this directory is
+    /// reserved for file-backed audio cache entries so cache management has one
+    /// stable location if a provider writes synthesized audio to disk.
+    static var ttsAudioCache: URL {
+        directory("tts_audio_cache")
+    }
+
     /// Per-book reading positions.
     static var readingPosition: URL {
         directory("reading_position")

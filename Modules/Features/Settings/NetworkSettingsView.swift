@@ -26,6 +26,15 @@ struct NetworkSettingsView: View {
                         value: $settings.searchCacheDays,
                         range: 0...30
                     )
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(
+                            localized("換源時載入目錄"),
+                            isOn: $settings.changeSourceLoadToc
+                        )
+                        Text(localized("換源搜索時順便抓取每個書源的目錄，點選書源可立即切換；代價是搜索期間的網路請求加倍"))
+                            .font(DSFont.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .interfaceSectionSurface()
             }

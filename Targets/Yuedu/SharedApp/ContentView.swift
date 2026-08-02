@@ -169,7 +169,6 @@ struct ContentView: View {
             ForEach(gs.visibleRootTabs) { tab in
                 rootTabContent(for: tab)
                     .modifier(ThemedSurfaceBackground(
-                        themeActive: resolvedAppTheme(for: colorScheme) != nil,
                         scope: AppearancePageBackgroundScope(rawValue: tab.rawValue) ?? .global,
                         isProActive: subscriptionStore.hasAccess(.readerThemePacks)
                     ))
@@ -246,9 +245,9 @@ struct ContentView: View {
 /// Retints scrollable Form/List surfaces to the active app theme by hiding the
 /// system background and painting the themed page color behind — plus, when the
 /// user configured a page background (Pro), the per-scope gradient/image layer.
-/// A no-op when neither applies, so default users keep the exact system look.
+/// The default palette resolves to the system grouped background, so default users
+/// keep the same appearance while the view structure stays stable across updates.
 private struct ThemedSurfaceBackground: ViewModifier {
-    let themeActive: Bool
     let scope: AppearancePageBackgroundScope
     let isProActive: Bool
     @ObservedObject private var gs = GlobalSettings.shared
@@ -275,12 +274,12 @@ private struct ThemedSurfaceBackground: ViewModifier {
         let slice = pageBackgroundSlice
         return content.background {
             ZStack {
-                if themeActive || slice != nil {
-                    DSColor.groupedBackground
-                }
-                if let slice {
-                    AppearancePageBackgroundLayerView(slice: slice)
-                }
+                // Keep this node present for every appearance. Changing a
+                // conditional child here while a reader is directly pushed onto
+                // the shelf navigation stack can make SwiftUI reconcile the
+                // tab subtree and detach the reader on foreground resume.
+                DSColor.groupedBackground
+                AppearancePageBackgroundLayerView(slice: slice)
             }
             .ignoresSafeArea()
         }

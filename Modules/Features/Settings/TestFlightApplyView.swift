@@ -112,7 +112,7 @@ struct TestFlightApplyView: View {
 
     private var submittedMessage: String {
         if wasAlreadySubmitted {
-            return localized("每個郵箱只能申請一次；如果尚未收到邀請，請聯絡管理員。")
+            return localized("每個 Pro 帳號只能申請一次；如果尚未收到邀請，請聯絡管理員。")
         }
         if submissionStatus == "failed" {
             return localized("申請已記錄，但邀請尚未完成，請聯絡管理員。")

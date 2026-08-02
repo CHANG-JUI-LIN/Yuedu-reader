@@ -543,6 +543,7 @@ private struct ReaderCustomBackgroundOptionsView: View {
         UTType(filenameExtension: "webp") ?? .data,
         UTType(filenameExtension: "jpg") ?? .jpeg,
         UTType(filenameExtension: "jpeg") ?? .jpeg,
+        UTType(filenameExtension: "png") ?? .png,
     ]
 
     var body: some View {

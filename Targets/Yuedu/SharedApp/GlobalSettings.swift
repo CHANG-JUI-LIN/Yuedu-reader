@@ -1173,6 +1173,12 @@ class GlobalSettings: ObservableObject {
     @Published var searchCacheDays: Int {
         didSet { UserDefaults.standard.set(searchCacheDays, forKey: "yd_search_cache_days") }
     }
+    /// 換源搜索時順便抓每個候選源的目錄（Legado `changeSourceLoadToc`）。Tapping a source
+    /// whose TOC was captured this way switches without a network round trip. Off by default
+    /// — same as Legado — because it turns one request per source into two.
+    @Published var changeSourceLoadToc: Bool {
+        didSet { UserDefaults.standard.set(changeSourceLoadToc, forKey: "yd_change_source_load_toc") }
+    }
 
     /// Auto iCloud sync: merge with iCloud on launch and when backgrounding.
     @Published var iCloudAutoSync: Bool {
@@ -1570,6 +1576,8 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_search_auto_pause_count") as? Int) ?? 0
         searchCacheDays =
             (UserDefaults.standard.object(forKey: "yd_search_cache_days") as? Int) ?? 5
+        changeSourceLoadToc =
+            (UserDefaults.standard.object(forKey: "yd_change_source_load_toc") as? Bool) ?? false
         iCloudAutoSync =
             (UserDefaults.standard.object(forKey: "yd_icloud_auto_sync") as? Bool) ?? true
         httpTtsUrlTemplate = UserDefaults.standard.string(forKey: "yd_http_tts_url_template") ?? ""
@@ -2543,7 +2551,7 @@ enum ReaderCustomBackgroundStorageError: Error {
     var messageKey: String {
         switch self {
         case .unsupportedImageFile:
-            return "只支援 WebP、JPG、JPEG 圖片。"
+            return "只支援 WebP、JPG、JPEG、PNG 圖片。"
         case .cannotReadImage:
             return "無法讀取圖片。"
         }
@@ -2554,7 +2562,7 @@ final class ReaderCustomBackgroundStorageManager {
     static let shared = ReaderCustomBackgroundStorageManager()
 
     private let fileManager: FileManager
-    private let allowedExtensions: Set<String> = ["webp", "jpg", "jpeg"]
+    private let allowedExtensions: Set<String> = ["webp", "jpg", "jpeg", "png"]
 
     private init(fileManager: FileManager = .default) {
         self.fileManager = fileManager

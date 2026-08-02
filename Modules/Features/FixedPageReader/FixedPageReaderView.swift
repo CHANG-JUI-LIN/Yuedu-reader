@@ -102,6 +102,14 @@ struct FixedPageReaderView: View {
         }
         .animation(DSAnimation.fast, value: state.showControls)
         .statusBarHidden(!state.showControls)
+        // Same immersive rule as the flowing reader: the home indicator fades with
+        // the controls and comes back with them.
+        .persistentSystemOverlays(
+            ReaderOverlayPresentationPolicy.hidesHomeIndicator(
+                showsReaderChrome: state.showControls,
+                isEditing: false
+            ) ? .hidden : .automatic
+        )
         .onAppear {
             beginReadingStatsSession()
         }

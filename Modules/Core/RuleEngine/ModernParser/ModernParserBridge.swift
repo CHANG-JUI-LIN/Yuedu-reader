@@ -315,18 +315,23 @@ class ModernParserBridge {
                     return cached
                 case .inFlight:
                     let waitStarted = ProcessInfo.processInfo.systemUptime
-                    guard let cached = ReviewSummaryResponseCache.shared.waitForRequest(
+                    if let cached = ReviewSummaryResponseCache.shared.waitForRequest(
                         sourceKey: reviewSummaryCacheKey,
                         requestURL: requestURL
-                    ) else { return nil }
-                    self.recordJSNetwork(url: requestURL, statusCode: 200, timedOut: false, body: cached)
-                    SourcePerfTrace.record(
-                        "chapter.reviewSummary.inFlightHit",
-                        sourceName,
-                        since: waitStarted,
-                        thresholdMs: 0
-                    )
-                    return cached
+                    ) {
+                        self.recordJSNetwork(url: requestURL, statusCode: 200, timedOut: false, body: cached)
+                        SourcePerfTrace.record(
+                            "chapter.reviewSummary.inFlightHit",
+                            sourceName,
+                            since: waitStarted,
+                            thresholdMs: 0
+                        )
+                        return cached
+                    }
+                    // The shared request failed or timed out. Issue this call's own request
+                    // instead of handing the source JS a null — sharing a request is an
+                    // optimisation, and it must never make the source worse off than the
+                    // one-request-per-call behaviour it replaced.
                 case .owner:
                     ownsReviewRequest = true
                 }
@@ -459,18 +464,22 @@ class ModernParserBridge {
                     )
                     return cached
                 case .inFlight:
-                    guard let cached = ReviewSummaryResponseCache.shared.waitForRequest(
+                    if let cached = ReviewSummaryResponseCache.shared.waitForRequest(
                         sourceKey: reviewSummaryCacheKey,
                         requestURL: requestURL
-                    ) else { return nil }
-                    self.recordJSNetwork(url: requestURL, statusCode: 200, timedOut: false, body: cached)
-                    SourcePerfTrace.record(
-                        "chapter.reviewSummary.inFlightHit",
-                        sourceName,
-                        since: ProcessInfo.processInfo.systemUptime,
-                        thresholdMs: 0
-                    )
-                    return cached
+                    ) {
+                        self.recordJSNetwork(url: requestURL, statusCode: 200, timedOut: false, body: cached)
+                        SourcePerfTrace.record(
+                            "chapter.reviewSummary.inFlightHit",
+                            sourceName,
+                            since: ProcessInfo.processInfo.systemUptime,
+                            thresholdMs: 0
+                        )
+                        return cached
+                    }
+                    // Shared request failed or timed out — fall through to this call's own
+                    // request rather than returning null to the source JS. See the same
+                    // branch in `analyzeUrlHandler`.
                 case .owner:
                     ownsReviewRequest = true
                 }

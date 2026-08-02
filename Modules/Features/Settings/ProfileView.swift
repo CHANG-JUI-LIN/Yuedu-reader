@@ -288,7 +288,9 @@ struct SettingsView: View {
 }
 
 private struct AboutSupportView: View {
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.openURL) private var openURL
+    @ObservedObject private var gs = GlobalSettings.shared
     @State private var showCopiedQQGroup = false
     let appVersion: String
     let feedbackEmail: String
@@ -338,22 +340,24 @@ private struct AboutSupportView: View {
             }
             .interfaceSectionSurface()
 
-            Section(header: Text(localized("加入測試"))) {
-                NavigationLink {
-                    TestFlightApplyView()
-                } label: {
-                    HStack {
-                        Label(localized("加入 TestFlight 測試版"), systemImage: "testtube.2")
-                            .foregroundColor(DSColor.textPrimary)
-                            .labelStyle(IconConsistentLabelStyle())
-                        Spacer(minLength: 12)
-                        Text(localized("測試版"))
-                            .font(DSFont.caption)
-                            .foregroundColor(DSColor.textSecondary)
+            if gs.isLoggedIn && subscriptionStore.accountIsProActive {
+                Section(header: Text(localized("加入測試"))) {
+                    NavigationLink {
+                        TestFlightApplyView()
+                    } label: {
+                        HStack {
+                            Label(localized("加入 TestFlight 測試版"), systemImage: "testtube.2")
+                                .foregroundColor(DSColor.textPrimary)
+                                .labelStyle(IconConsistentLabelStyle())
+                            Spacer(minLength: 12)
+                            Text(localized("測試版"))
+                                .font(DSFont.caption)
+                                .foregroundColor(DSColor.textSecondary)
+                        }
                     }
                 }
+                .interfaceSectionSurface()
             }
-            .interfaceSectionSurface()
 
             Section(header: Text(localized("開放原始碼"))) {
                 actionRow(

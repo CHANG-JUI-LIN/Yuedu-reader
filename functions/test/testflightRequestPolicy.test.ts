@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import {describe, it} from "node:test";
 
-import {normalizeTestFlightEmail} from "../src/testflightRequestPolicy.js";
+import {
+  decideTestFlightProRequest,
+  normalizeTestFlightEmail,
+} from "../src/testflightRequestPolicy.js";
 
 describe("testflight request policy", () => {
   it("normalizes valid addresses to lowercase trimmed form", () => {
@@ -25,5 +28,17 @@ describe("testflight request policy", () => {
   it("rejects addresses over 254 characters", () => {
     const tooLong = `user@${"a".repeat(250)}.com`;
     assert.equal(normalizeTestFlightEmail(tooLong), null);
+  });
+
+  it("allows the first request and only repeats the same email", () => {
+    assert.equal(decideTestFlightProRequest(undefined, "user@example.com"), "accept");
+    assert.equal(
+      decideTestFlightProRequest("user@example.com", "user@example.com"),
+      "alreadySubmitted"
+    );
+    assert.equal(
+      decideTestFlightProRequest("user@example.com", "other@example.com"),
+      "differentEmail"
+    );
   });
 });

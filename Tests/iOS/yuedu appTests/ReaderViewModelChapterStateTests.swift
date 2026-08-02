@@ -136,6 +136,92 @@ struct ReaderViewModelChapterStateTests {
         #expect(viewModel.chapterState(for: 0) == .idle)
     }
 
+    @Test("source switch drops every chapter state")
+    func resetAllChapterStatesClearsEverything() async throws {
+        let fetcher = MockChapterFetcher()
+        let book = makeBook()
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
+
+        await fetcher.setCached(chapterIndex: 0)
+        await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
+        #expect(viewModel.chapterStates[0] == .ready)
+
+        // 換源: this `.ready` describes the source we just left. Carried over, the reader
+        // compares it against the new source's (empty) cache and shows 資料不一致.
+        viewModel.resetAllChapterStates()
+
+        #expect(viewModel.chapterStates.isEmpty)
+        #expect(viewModel.chapterState(for: 0) == .idle)
+    }
+
+    @Test("a refetch clears the previous failure before probing the cache")
+    func refetchClearsFailureBeforeCacheProbe() async throws {
+        let fetcher = MockChapterFetcher()
+        let book = makeBook()
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
+
+        await fetcher.enqueueFailure(chapterIndex: 0, message: "offline")
+        await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
+        await waitForFailure("offline", in: viewModel, chapterIndex: 0)
+
+        await fetcher.blockNextCacheProbe()
+        await fetcher.enqueuePending(chapterIndex: 0)
+        let retry = Task { @MainActor in
+            await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
+        }
+
+        // The failure overlay renders straight off this state. While the cache probe runs
+        // the chapter is being loaded again, so it must not still read as failed.
+        await waitForState(.loading, in: viewModel, chapterIndex: 0)
+
+        await fetcher.resumeBlockedCacheProbe()
+        await retry.value
+    }
+
+    @Test("a tapped source switch publishes its origin and cancels cleanly")
+    func pendingSourceSwitchCancels() async throws {
+        let viewModel = makeViewModel(chapterFetcher: MockChapterFetcher())
+        let origin = makeOrigin()
+        let gate = SwitchGate()
+
+        // Stands in for the TOC fetch: the switch is parked here, which is exactly when the
+        // sheet used to look frozen and offer no way out.
+        viewModel.beginSourceSwitch(to: origin) {
+            await gate.wait()
+        }
+        #expect(viewModel.changeSourcePendingOrigin?.id == origin.id)
+
+        viewModel.cancelPendingSourceSwitch()
+
+        #expect(viewModel.changeSourcePendingOrigin == nil)
+        await gate.open()
+    }
+
+    @Test("stopping the search clears its loading flag")
+    func stopChangeSourceSearchClearsLoading() async throws {
+        let viewModel = makeViewModel(chapterFetcher: MockChapterFetcher())
+
+        // A tap stops the fan-out so it stops competing with the TOC fetch the user waits on.
+        viewModel.stopChangeSourceSearch()
+
+        #expect(viewModel.changeSourceLoading == false)
+    }
+
+    private func makeOrigin() -> BookOrigin {
+        BookOrigin(
+            sourceId: UUID(),
+            sourceName: "Source",
+            bookUrl: "https://example.com/book",
+            tocUrl: "https://example.com/book/toc",
+            coverUrl: "",
+            intro: "",
+            lastChapter: "Chapter 9",
+            wordCount: "",
+            kind: "",
+            runtimeVariables: nil
+        )
+    }
+
     @Test("jump promotes an in-flight immediate request")
     func jumpPromotesImmediateRequest() async throws {
         let fetcher = MockChapterFetcher()
@@ -265,6 +351,23 @@ struct ReaderViewModelChapterStateTests {
     }
 }
 
+/// Parks a source switch until the test releases it, so the pending state can be observed.
+private actor SwitchGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var opened = false
+
+    func wait() async {
+        guard !opened else { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        opened = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 actor MockChapterFetcher: ChapterFetching {
     struct MockError: LocalizedError {
         let message: String
@@ -284,6 +387,8 @@ actor MockChapterFetcher: ChapterFetching {
     private var cancelRecords: [Int: Int] = [:]
     private var blockCancellation = false
     private var blockedCancelContinuation: CheckedContinuation<Void, Never>?
+    private var blockCacheProbe = false
+    private var blockedCacheProbeContinuation: CheckedContinuation<Void, Never>?
 
     func setCached(chapterIndex: Int) {
         cachedChapters.insert(chapterIndex)
@@ -311,6 +416,18 @@ actor MockChapterFetcher: ChapterFetching {
         blockedCancelContinuation = nil
     }
 
+    /// Holds `isChapterCached` open so a test can observe the state the reader renders while
+    /// the cache probe is still running.
+    func blockNextCacheProbe() {
+        blockCacheProbe = true
+    }
+
+    func resumeBlockedCacheProbe() {
+        blockCacheProbe = false
+        blockedCacheProbeContinuation?.resume()
+        blockedCacheProbeContinuation = nil
+    }
+
     func fetchCount(for chapterIndex: Int) -> Int {
         fetchRecords[chapterIndex]?.count ?? 0
     }
@@ -332,7 +449,12 @@ actor MockChapterFetcher: ChapterFetching {
     }
 
     func isChapterCached(book: ReadingBook, chapterIndex: Int) async -> Bool {
-        cachedChapters.contains(chapterIndex)
+        if blockCacheProbe, blockedCacheProbeContinuation == nil {
+            await withCheckedContinuation { continuation in
+                blockedCacheProbeContinuation = continuation
+            }
+        }
+        return cachedChapters.contains(chapterIndex)
     }
 
     func fetchChapter(

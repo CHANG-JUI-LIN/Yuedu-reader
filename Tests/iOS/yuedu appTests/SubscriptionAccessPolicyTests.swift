@@ -4,12 +4,38 @@ import Testing
 
 @Suite("Subscription access policy")
 struct SubscriptionAccessPolicyTests {
-    @Test("StoreKit and account entitlements coexist")
+    @Test("StoreKit, account and iCloud entitlements coexist")
     func entitlementsCoexist() {
-        #expect(!SubscriptionAccessPolicy.isProActive(storeKit: false, account: false))
-        #expect(SubscriptionAccessPolicy.isProActive(storeKit: true, account: false))
-        #expect(SubscriptionAccessPolicy.isProActive(storeKit: false, account: true))
-        #expect(SubscriptionAccessPolicy.isProActive(storeKit: true, account: true))
+        #expect(!SubscriptionAccessPolicy.isProActive(storeKit: false, account: false, iCloud: false))
+        #expect(SubscriptionAccessPolicy.isProActive(storeKit: true, account: false, iCloud: false))
+        #expect(SubscriptionAccessPolicy.isProActive(storeKit: false, account: true, iCloud: false))
+        #expect(SubscriptionAccessPolicy.isProActive(storeKit: false, account: false, iCloud: true))
+        #expect(SubscriptionAccessPolicy.isProActive(storeKit: true, account: true, iCloud: true))
+    }
+
+    @Test("iCloud alone carries a guest purchase across an App Store account switch")
+    func iCloudMirrorSurvivesStoreAccountSwitch() {
+        // The reported failure: a guest purchase, so no Yuedu account, and the new
+        // App Store account holds no transactions. Only the mirror is left.
+        #expect(SubscriptionAccessPolicy.isProActive(storeKit: false, account: false, iCloud: true))
+    }
+
+    @Test("an emptied App Store account leaves the iCloud mirror alone")
+    func emptyStoreAccountDoesNotClearMirror() {
+        // Zero owned and zero revoked is what a switched App Store account looks
+        // like. Clearing here would erase the only surviving grant.
+        #expect(SubscriptionICloudMirrorPolicy.action(ownedCount: 0, revokedCount: 0) == .leaveAlone)
+    }
+
+    @Test("an Apple revocation clears the iCloud mirror")
+    func revocationClearsMirror() {
+        #expect(SubscriptionICloudMirrorPolicy.action(ownedCount: 0, revokedCount: 1) == .revoke)
+    }
+
+    @Test("an active entitlement is mirrored even alongside a revoked one")
+    func activeEntitlementIsMirrored() {
+        #expect(SubscriptionICloudMirrorPolicy.action(ownedCount: 1, revokedCount: 0) == .store)
+        #expect(SubscriptionICloudMirrorPolicy.action(ownedCount: 1, revokedCount: 1) == .store)
     }
 
     @Test("guest purchases require a choice while signed-in purchases continue")
@@ -41,6 +67,45 @@ struct SubscriptionAccessPolicyTests {
     @Test("existing entitlement document is authoritative over the cache")
     func existingEntitlementDocumentIsAuthoritative() {
         #expect(SubscriptionEntitlementRefreshPolicy.shouldApplyServerValue(documentExists: true))
+    }
+
+    @Test("verified cache restores account access before the network answers")
+    func cachedEntitlementSeedsColdLaunch() {
+        #expect(SubscriptionEntitlementSeedPolicy.shouldSeed(current: false, cached: true))
+    }
+
+    @Test("seeding never revokes and never runs without a verified cache")
+    func seedingIsOneDirectional() {
+        // No cache, or a cache the backend last verified as inactive: leave the
+        // cold-launch `false` alone rather than inventing access.
+        #expect(!SubscriptionEntitlementSeedPolicy.shouldSeed(current: false, cached: nil))
+        #expect(!SubscriptionEntitlementSeedPolicy.shouldSeed(current: false, cached: false))
+        // Already active: a stale cached `false` must not pull down a fresher
+        // live `true`. Only a real server response revokes.
+        #expect(!SubscriptionEntitlementSeedPolicy.shouldSeed(current: true, cached: false))
+        #expect(!SubscriptionEntitlementSeedPolicy.shouldSeed(current: true, cached: nil))
+        #expect(!SubscriptionEntitlementSeedPolicy.shouldSeed(current: true, cached: true))
+    }
+
+    @Test("an unreachable backend keeps the deferred binding retryable")
+    func unreachableBackendStaysRetryable() {
+        // 14 unavailable / 4 deadlineExceeded is what a purchase made without a
+        // VPN hits. These must retry, or the deferred binding never completes.
+        #expect(SubscriptionBindRetryPolicy.shouldRetry(isFunctionsError: true, code: 14))
+        #expect(SubscriptionBindRetryPolicy.shouldRetry(isFunctionsError: true, code: 4))
+        // Not a Functions status at all (URLSession, decoding): treat as temporary.
+        #expect(SubscriptionBindRetryPolicy.shouldRetry(isFunctionsError: false, code: 6))
+    }
+
+    @Test("a permanently rejected binding is not retried")
+    func permanentRejectionStopsRetrying() {
+        // 6 alreadyExists: the transaction belongs to another account. Retrying
+        // would re-post the same error on every foreground.
+        #expect(!SubscriptionBindRetryPolicy.shouldRetry(isFunctionsError: true, code: 6))
+        #expect(!SubscriptionBindRetryPolicy.shouldRetry(isFunctionsError: true, code: 9))
+        #expect(!SubscriptionBindRetryPolicy.shouldRetry(isFunctionsError: true, code: 3))
+        #expect(!SubscriptionBindRetryPolicy.shouldRetry(isFunctionsError: true, code: 7))
+        #expect(!SubscriptionBindRetryPolicy.shouldRetry(isFunctionsError: true, code: 16))
     }
 
     @Test("complete product cache reloads after the App Store storefront changes")

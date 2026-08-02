@@ -1,4 +1,5 @@
 import FirebaseAuth
+import FirebaseCore
 import FirebaseFirestore
 import FirebaseFunctions
 import Foundation
@@ -20,6 +21,28 @@ final class SubscriptionAccountService {
 
     var isAuthenticated: Bool {
         Auth.auth().currentUser != nil
+    }
+
+    /// The last entitlement this device saw the backend verify for the signed-in
+    /// UID, readable synchronously and without a network round-trip. Returns nil
+    /// when signed out, before Firebase is configured, or when this UID was never
+    /// verified here. An expired subscription reads as `false` through
+    /// `isActive()`, so this cannot keep a lapsed monthly plan alive offline.
+    func cachedEntitlement() -> Bool? {
+        guard FirebaseApp.app() != nil, let uid = Auth.auth().currentUser?.uid else { return nil }
+        return SubscriptionEntitlementCache.load(uid: uid)?.isActive()
+    }
+
+    /// Whether a failed `bind` is worth retrying later. Anything that isn't a
+    /// Cloud Functions status — a URLSession failure, a decoding error — is
+    /// treated as temporary, since those are the shapes an unreachable backend
+    /// takes.
+    nonisolated func isRetryable(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return SubscriptionBindRetryPolicy.shouldRetry(
+            isFunctionsError: nsError.domain == FunctionsErrorDomain,
+            code: nsError.code
+        )
     }
 
     func accountToken() async throws -> UUID {
@@ -57,16 +80,26 @@ final class SubscriptionAccountService {
         }
     }
 
-    /// Returns nil when Firebase is temporarily unavailable or the backend has
-    /// no entitlement document for this UID. The caller keeps the last value for
+    /// Returns nil when nothing authoritative is available: the backend has no
+    /// entitlement document for this UID, or Firebase is unreachable and this
+    /// device never cached a verified value. The caller keeps the last value for
     /// the same signed-in UID instead of revoking valid access.
     func refreshEntitlement() async -> Bool? {
         guard let uid = Auth.auth().currentUser?.uid else { return false }
         do {
+            // `.server`, not the default source: the default attempts the server
+            // and silently falls back to Firestore's own offline cache, so an
+            // unreachable backend answered with either a missing document (read
+            // below as "never verified") or a stale pre-purchase document whose
+            // `false` would overwrite the verified keychain value. Both looked
+            // like a successful read, so the catch branch that consults the
+            // keychain was never reached. Requiring the server makes an applied
+            // value provably authoritative and routes an unreachable Firebase
+            // into that catch branch.
             let snapshot = try await Firestore.firestore()
                 .collection("entitlements")
                 .document(uid)
-                .getDocument()
+                .getDocument(source: .server)
             guard SubscriptionEntitlementRefreshPolicy.shouldApplyServerValue(
                 documentExists: snapshot.exists
             ), let data = snapshot.data() else {
@@ -90,10 +123,11 @@ final class SubscriptionAccountService {
             )
             return entitlement.isActive()
         } catch {
+            let cached = SubscriptionEntitlementCache.load(uid: uid)?.isActive()
             subscriptionAccountLog.error(
-                "Account entitlement refresh failed: \(error.localizedDescription, privacy: .public)"
+                "Account entitlement refresh failed: \(error.localizedDescription, privacy: .public); keychain cache \(String(describing: cached), privacy: .public)"
             )
-            return SubscriptionEntitlementCache.load(uid: uid)?.isActive()
+            return cached
         }
     }
 

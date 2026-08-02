@@ -23,9 +23,15 @@ enum StorageMigration {
         userDefaults: UserDefaults = .standard,
         fileManager: FileManager = .default
     ) {
-        guard !userDefaults.bool(forKey: completedKey) else { return }
-
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        if userDefaults.bool(forKey: completedKey) {
+            // Covers imported by the first build after the migration were briefly
+            // written back to Documents. Repair those records even though the
+            // one-time directory migration itself is already complete.
+            repairMisplacedCovers(documents: documents, fileManager: fileManager)
+            return
+        }
+
         var succeeded = true
 
         // Covers first: their filenames are only knowable from the *old* metadata
@@ -84,6 +90,22 @@ enum StorageMigration {
             ) && succeeded
         }
         return succeeded
+    }
+
+    private static func repairMisplacedCovers(documents: URL, fileManager: FileManager) {
+        let metadataURL = StorageLocations.booksMetadataFile
+        guard let data = try? Data(contentsOf: metadataURL),
+              let books = try? JSONDecoder().decode([ReadingBook].self, from: data) else {
+            return
+        }
+
+        for name in Set(books.compactMap(\.coverImagePath)) where !name.isEmpty {
+            _ = move(
+                from: documents.appendingPathComponent(name),
+                to: StorageLocations.coverFile(name),
+                fileManager: fileManager
+            )
+        }
     }
 
     /// - Returns: `true` when there is nothing left to do for this item, whether it

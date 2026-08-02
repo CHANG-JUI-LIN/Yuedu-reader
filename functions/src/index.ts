@@ -21,7 +21,10 @@ import {
   environmentName,
   transactionIsActive,
 } from "./entitlementPolicy.js";
-import {normalizeTestFlightEmail} from "./testflightRequestPolicy.js";
+import {
+  decideTestFlightProRequest,
+  normalizeTestFlightEmail,
+} from "./testflightRequestPolicy.js";
 
 if (getApps().length === 0) {
   initializeApp();
@@ -76,10 +79,24 @@ interface PurchaseBindingDocument {
 }
 
 interface TestFlightRequestDocument {
+  uid?: string;
   email: string;
   status: string;
   createdAt: FieldValue;
   updatedAt?: FieldValue;
+}
+
+interface TestFlightProRequestDocument {
+  uid: string;
+  email: string;
+  status: string;
+  createdAt: FieldValue;
+  updatedAt?: FieldValue;
+}
+
+interface EntitlementDocument {
+  isProActive?: boolean;
+  expiresAt?: Timestamp | null;
 }
 
 const testFlightGroupNameSecret = defineSecret("APP_STORE_CONNECT_GROUP_NAME");
@@ -95,11 +112,27 @@ const appStoreConnectSecrets = [
 /// Beta group created automatically if the configured group does not exist.
 const defaultTestFlightGroupName = "Yuedu 測試版";
 
-function requireUid(auth: {uid: string} | undefined): string {
+function requireUid(
+  auth: {uid: string} | undefined,
+  message = "Sign in before linking a purchase."
+): string {
   if (auth === undefined) {
-    throw new HttpsError("unauthenticated", "Sign in before linking a purchase.");
+    throw new HttpsError("unauthenticated", message);
   }
   return auth.uid;
+}
+
+async function requireActivePro(uid: string): Promise<void> {
+  const snapshot = await db.collection("entitlements").doc(uid).get();
+  const entitlement = snapshot.data() as EntitlementDocument | undefined;
+  const expiresAt = entitlement?.expiresAt;
+  const expired = expiresAt instanceof Timestamp && expiresAt.toMillis() <= Date.now();
+  if (entitlement?.isProActive !== true || expired) {
+    throw new HttpsError(
+      "permission-denied",
+      "An active Pro account is required to request TestFlight access."
+    );
+  }
 }
 
 function requireString(value: unknown, field: string, maxLength: number): string {
@@ -302,25 +335,54 @@ async function inviteTestFlightTester(email: string): Promise<string> {
 export const requestTestFlightAccess = onCall(
   {region, secrets: appStoreConnectSecrets},
   async (request) => {
+    const uid = requireUid(
+      request.auth,
+      "Sign in with a Pro account before requesting TestFlight access."
+    );
+    await requireActivePro(uid);
+
     const email = normalizeTestFlightEmail(request.data?.email);
     if (email === null) {
       throw new HttpsError("invalid-argument", "Invalid email address.");
     }
 
-    // One document per normalized address. Claim the address transactionally so
-    // concurrent requests cannot both pass the one-time application gate.
+    // Claim both the Pro account's one-time slot and the normalized address in
+    // one transaction. This prevents two concurrent requests from the same Pro
+    // account (or two accounts using the same address) from both being invited.
     const reference = db.collection("testflightRequests").doc(email);
+    const ownerReference = db.collection("testflightProRequests").doc(uid);
     const data: TestFlightRequestDocument = {
+      uid,
+      email,
+      status: "pending",
+      createdAt: FieldValue.serverTimestamp(),
+    };
+    const ownerData: TestFlightProRequestDocument = {
+      uid,
       email,
       status: "pending",
       createdAt: FieldValue.serverTimestamp(),
     };
     const claim = await db.runTransaction(async (transaction) => {
+      const ownerSnapshot = await transaction.get(ownerReference);
       const snapshot = await transaction.get(reference);
+      const owner = ownerSnapshot.data() as TestFlightProRequestDocument | undefined;
+      const existing = snapshot.data() as TestFlightRequestDocument | undefined;
+
+      const ownerDecision = decideTestFlightProRequest(owner?.email, email);
+      if (ownerDecision === "alreadySubmitted") {
+        return {accepted: false, status: owner?.status ?? existing?.status ?? "pending"};
+      }
+      if (ownerDecision === "differentEmail") {
+        throw new HttpsError(
+          "already-exists",
+          "Each Pro account can request TestFlight access only once."
+        );
+      }
       if (snapshot.exists) {
-        const existing = snapshot.data() as TestFlightRequestDocument | undefined;
         return {accepted: false, status: existing?.status ?? "pending"};
       }
+      transaction.create(ownerReference, ownerData);
       transaction.create(reference, data);
       return {accepted: true, status: "pending"};
     });
@@ -329,7 +391,11 @@ export const requestTestFlightAccess = onCall(
     }
 
     const status = await inviteTestFlightTester(email);
-    await reference.update({status, updatedAt: FieldValue.serverTimestamp()});
+    const update = {status, updatedAt: FieldValue.serverTimestamp()};
+    const batch = db.batch();
+    batch.update(reference, update);
+    batch.update(ownerReference, update);
+    await batch.commit();
     return {alreadySubmitted: false, status};
   }
 );

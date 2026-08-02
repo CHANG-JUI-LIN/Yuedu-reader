@@ -70,6 +70,10 @@ struct ReaderView: View {
     // Online chapter lazy loading
     @StateObject var readerViewModel = ReaderViewModel()
     @State var observedChapterStates: [Int: ChapterLoadState] = [:]
+    /// Chapters already refetched once because their `.ready` state disagreed with the cache
+    /// on disk. Bounds `recoverInconsistentChapterOnce` so a genuinely broken chapter still
+    /// reaches the failure overlay instead of refetching forever.
+    @State var chapterConsistencyRecoveryAttempts: [Int: Int] = [:]
     @State var hasParagraphReviews = false
 
     /// Top safe area (points), passed to EPUB engine as minimum margin-top.
@@ -171,6 +175,7 @@ struct ReaderView: View {
     var changeSourceLoading: Bool { readerViewModel.changeSourceLoading }
     var changeSourceError: String? { readerViewModel.changeSourceError }
     var changeSourceFailedKeys: Set<String> { readerViewModel.changeSourceFailedKeys }
+    var changeSourcePendingOrigin: BookOrigin? { readerViewModel.changeSourcePendingOrigin }
 
     @State private var systemBrightness: Double = 0.5
 
@@ -877,14 +882,21 @@ struct ReaderView: View {
         progressTrace("onPageChanged page=\(newPage) chapter=\(currentChapterIndex) visiblePosition=\(String(describing: visiblePosition))")
 
         if chapterChanged {
+            let entryState = readerViewModel.chapterState(for: newChapter)
+            let entryContentAvailable = isChapterContentAvailable(at: newChapter)
             let entryAction = ReaderChapterPresentation.entryRefreshAction(
                 chapterIndex: newChapter,
                 usesCoreText: usesCoreTextEPUB,
-                loadState: readerViewModel.chapterState(for: newChapter),
-                isContentAvailable: isChapterContentAvailable(at: newChapter),
+                loadState: entryState,
+                isContentAvailable: entryContentAvailable,
                 isLayoutAvailable: engine.layouts[newChapter] != nil
             )
             ensureChapterReady(chapterIndex: newChapter)
+            // Entering a chapter whose state was already `.ready` publishes no transition, so
+            // the state/cache mismatch check in `applyChapterRefreshAction` never runs for it.
+            if entryState == .ready, !entryContentAvailable {
+                recoverInconsistentChapterOnce(newChapter)
+            }
             if case .notifyChapterDataChanged = entryAction {
                 Task { await engine.notifyChapterDataChanged(at: newChapter) }
             }
@@ -1500,6 +1512,18 @@ struct ReaderView: View {
                 isEditing: readerHeaderFooterEditorModel != nil
             )
         )
+        // The home indicator is the other half of the system chrome the immersive
+        // page has to shed. `.hidden` is an auto-hide request, so the indicator
+        // fades out while reading and still reappears on the next touch — exactly
+        // how it behaves in Books. Applied on the same layer as `.statusBarHidden`
+        // because that layer is proven to reach the hosting controller through the
+        // reader's inner NavigationStack.
+        .persistentSystemOverlays(
+            ReaderOverlayPresentationPolicy.hidesHomeIndicator(
+                showsReaderChrome: showBars,
+                isEditing: readerHeaderFooterEditorModel != nil
+            ) ? .hidden : .automatic
+        )
         .animation(.easeInOut(duration: 0.25), value: showBars)
         // Chrome-owned panels close with the chrome, wherever the chrome was hidden
         // from — the tap zone, the touch-zone editor, or a search result jump. Clearing
@@ -1967,7 +1991,7 @@ struct ReaderView: View {
         .fullScreenCover(isPresented: $showOnlineBookDetail) {
             if let detail = onlineBookDetail {
                 NavigationStack {
-                    OnlineBookView(book: detail)
+                    OnlineBookView(book: detail, sourceSwitchBookId: bookId)
                         .environmentObject(store)
                         .navigationTitle(localized("書籍詳情"))
                         .toolbarTitleDisplayMode(.inline)
@@ -2082,7 +2106,14 @@ struct ReaderView: View {
         return AnyView(
             presentationLayers
                 .onChanged(of: showChangeSourceSheet) { show in
-            if show { loadOtherOrigins() }
+            if show {
+                loadOtherOrigins()
+            } else {
+                // Swiping the sheet away is a cancel too — otherwise a switch the user
+                // walked away from would still commit and yank them to another source.
+                readerViewModel.cancelPendingSourceSwitch()
+                readerViewModel.stopChangeSourceSearch()
+            }
         }
         .onChanged(of: epubRenderer.isCoreTextReady) { ready in
             if ready {

@@ -274,7 +274,7 @@ class BookStore: ObservableObject, BookProvider {
         func cleanupImportedFiles() {
             try? FileManager.default.removeItem(at: destURL)
             if let coverFilename {
-                try? FileManager.default.removeItem(at: documentsURL(for: coverFilename))
+                try? FileManager.default.removeItem(at: StorageLocations.coverFile(coverFilename))
             }
             if let book {
                 try? FileManager.default.removeItem(at: LocalMangaArchive.bookDirectory(bookId: book.id))
@@ -298,7 +298,7 @@ class BookStore: ObservableObject, BookProvider {
                UIImage(data: cover.data) != nil {
                 let coverExt = cover.fileExtension.isEmpty ? "jpg" : cover.fileExtension
                 let candidate = "\(uuid)_cover.\(coverExt)"
-                try cover.data.write(to: documentsURL(for: candidate))
+                try cover.data.write(to: StorageLocations.coverFile(candidate))
                 coverFilename = candidate
             }
 
@@ -351,7 +351,7 @@ class BookStore: ObservableObject, BookProvider {
         func cleanupImportedFiles() {
             try? FileManager.default.removeItem(at: contentURL)
             if let coverFilename {
-                try? FileManager.default.removeItem(at: documentsURL(for: coverFilename))
+                try? FileManager.default.removeItem(at: StorageLocations.coverFile(coverFilename))
             }
         }
 
@@ -393,7 +393,7 @@ class BookStore: ObservableObject, BookProvider {
                let image = UIImage(data: data),
                let jpeg = image.jpegData(compressionQuality: 0.88) {
                 let candidate = "\(uuid)_cover.jpg"
-                try jpeg.write(to: documentsURL(for: candidate))
+                try jpeg.write(to: StorageLocations.coverFile(candidate))
                 coverFilename = candidate
             }
 
@@ -474,7 +474,7 @@ class BookStore: ObservableObject, BookProvider {
                 }
             }
             if let coverFilename {
-                let coverURL = documentsURL(for: coverFilename)
+                let coverURL = StorageLocations.coverFile(coverFilename)
                 if FileManager.default.fileExists(atPath: coverURL.path) {
                     do {
                         try FileManager.default.removeItem(at: coverURL)
@@ -510,15 +510,15 @@ class BookStore: ObservableObject, BookProvider {
             let coverStart = ProcessInfo.processInfo.systemUptime
             if let coverResult = await session?.publication.cover(), case .success(let optionalImage) = coverResult, let coverImage = optionalImage {
                 let coverName = "\(uuid)_cover.jpg"
-                let coverURL = documentsURL(for: coverName)
+                let coverURL = StorageLocations.coverFile(coverName)
                 // Convert cover to JPEG for space efficiency
                 if let jpegData = coverImage.jpegData(compressionQuality: 0.85) {
                     do {
                         try jpegData.write(to: coverURL)
+                        coverFilename = coverName
                     } catch {
                         Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to write cover image at \(coverURL): \(error)")
                     }
-                    coverFilename = coverName
                 }
             }
             importTrace(
@@ -1215,9 +1215,14 @@ class BookStore: ObservableObject, BookProvider {
         saveMeta()
     }
 
+    /// Commits a source switch. `preparedTOC` is the table of contents the caller already
+    /// fetched — the reader resolves it up front so it can show progress and stay cancellable,
+    /// and passing it here is what stops the switch from fetching the same TOC a second time
+    /// (Legado hands the toc to `changeTo(source, book, toc)` for the same reason).
     func updateOnlineBookSource(
         bookId: UUID,
         origin: BookOrigin,
+        preparedTOC: TOCPackage? = nil,
         bookSourceFetcher: any BookSourceFetching = LiveBookSourceFetcher(bookSourceFetcher: BookSourceFetcher.shared),
         offlineChapterStore: any OfflineChapterStoring = OfflineChapterStore()
     ) async throws {
@@ -1226,16 +1231,35 @@ class BookStore: ObservableObject, BookProvider {
             throw NSError(
                 domain: "BookStore", code: -1, userInfo: [NSLocalizedDescriptionKey: "找不到書源"])
         }
-        let tocPackage = try await bookSourceFetcher.fetchTOCPackage(
-            tocUrl: origin.tocUrl, source: source, runtimeVariables: origin.runtimeVariables)
+        let tocPackage: TOCPackage
+        if let preparedTOC {
+            tocPackage = preparedTOC
+        } else {
+            tocPackage = try await bookSourceFetcher.fetchTOCPackage(
+                tocUrl: origin.tocUrl, source: source, runtimeVariables: origin.runtimeVariables)
+        }
+        // `fetchTOCPackage` returns an empty package instead of throwing when a source's TOC
+        // rules match nothing, and committing that wipes `onlineChapters`: the book loses its
+        // chapter list, the reader's 刷新 action disappears (it is gated on a non-empty list),
+        // and only a reopen — which re-runs `refreshOnlineBookMetadata` — brings it back.
+        // A switch that cannot produce chapters has failed; leave the old source intact.
+        guard !tocPackage.chapters.isEmpty else {
+            throw NSError(
+                domain: "BookStore", code: -5,
+                userInfo: [NSLocalizedDescriptionKey: localized("此書源取不到目錄")])
+        }
         let oldRefs = await MainActor.run {
             books.first(where: { $0.id == bookId })?.onlineChapters ?? []
         }
-        try await offlineChapterStore.reconcileBook(
-            bookId: bookId,
-            oldRefs: oldRefs,
-            newRefs: tocPackage.chapters
-        )
+        try await SourcePerfTrace.spanAsync(
+            "changeSource.reconcileOffline", "\(max(oldRefs.count, tocPackage.chapters.count))ch"
+        ) {
+            try await offlineChapterStore.reconcileBook(
+                bookId: bookId,
+                oldRefs: oldRefs,
+                newRefs: tocPackage.chapters
+            )
+        }
         await MainActor.run {
             guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
             books[idx].bookSourceId = origin.sourceId
@@ -1248,11 +1272,13 @@ class BookStore: ObservableObject, BookProvider {
             // debounce is reserved for high-frequency progress/TOC updates.
             saveMetaImmediately()
         }
-        await reconcileOfflineTaskMetadata(
-            bookId: bookId,
-            oldRefs: oldRefs,
-            newRefs: tocPackage.chapters
-        )
+        await SourcePerfTrace.spanAsync("changeSource.reconcileTask") {
+            await reconcileOfflineTaskMetadata(
+                bookId: bookId,
+                oldRefs: oldRefs,
+                newRefs: tocPackage.chapters
+            )
+        }
     }
 
     @discardableResult
