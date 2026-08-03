@@ -54,45 +54,71 @@ describe("entitlement policy", () => {
     }, "token-a"), /different app account/);
   });
 
-  it("refuses to bind a free TestFlight (Sandbox) purchase", () => {
-    // The leak: a Sandbox purchase costs nothing, so binding one handed Pro to
-    // every beta tester who signed into the same account on the App Store build.
-    assert.throws(() => assertTransactionCanBind({
+  it("binds a TestFlight (Sandbox) purchase so testers can buy too", () => {
+    // Rejecting Sandbox here meant a tester's purchase was thrown away and
+    // nothing ever unlocked in TestFlight. Environment is an isolation
+    // dimension, not a reason to refuse.
+    assert.doesNotThrow(() => assertTransactionCanBind({
       productId: "com.zhangruilin.yuedureader.pro.lifetime",
       appAccountToken: "token-a",
       environment: "Sandbox",
-    }, "token-a"), /Only App Store purchases/);
-    assert.throws(() => assertTransactionCanBind({
-      productId: "com.zhangruilin.yuedureader.pro.lifetime",
+    }, "token-a"));
+    assert.doesNotThrow(() => assertTransactionCanBind({
+      productId: "com.zhangruilin.yuedureader.pro.monthly",
       appAccountToken: "token-a",
-    }, "token-a"), /Only App Store purchases/);
+      environment: "Sandbox",
+    }, "token-a"));
   });
 
-  it("counts only production bindings toward the entitlement", () => {
+  it("keeps TestFlight and App Store entitlements apart", () => {
     const now = Date.parse("2026-08-02T00:00:00Z");
     const lifetime = {active: true, expiresAt: null};
 
+    // Each environment grants only its own build. This is the leak that made a
+    // free TestFlight purchase unlock the App Store build for anyone signed
+    // into the same account — and why signing out was what cleared it.
     assert.equal(
-      bindingGrantsEntitlement({...lifetime, environment: "Production"}, now),
+      bindingGrantsEntitlement({...lifetime, environment: "Production"}, "Production", now),
       true
     );
-    // Already-stored Sandbox bindings stop counting the moment this deploys,
-    // which is what stops the leak without a data migration.
     assert.equal(
-      bindingGrantsEntitlement({...lifetime, environment: "Sandbox"}, now),
+      bindingGrantsEntitlement({...lifetime, environment: "Sandbox"}, "Production", now),
+      false
+    );
+    // ...but a tester still gets Pro in TestFlight from that same binding.
+    assert.equal(
+      bindingGrantsEntitlement({...lifetime, environment: "Sandbox"}, "Sandbox", now),
+      true
+    );
+    assert.equal(
+      bindingGrantsEntitlement({...lifetime, environment: "Production"}, "Sandbox", now),
       false
     );
     assert.equal(
-      bindingGrantsEntitlement({...lifetime, environment: undefined}, now),
-      false
-    );
-    assert.equal(
-      bindingGrantsEntitlement({active: false, expiresAt: null, environment: "Production"}, now),
+      bindingGrantsEntitlement({...lifetime, environment: undefined}, "Production", now),
       false
     );
     assert.equal(
       bindingGrantsEntitlement(
+        {active: false, expiresAt: null, environment: "Production"},
+        "Production",
+        now
+      ),
+      false
+    );
+    // A monthly subscription still expires inside its own environment.
+    assert.equal(
+      bindingGrantsEntitlement(
         {active: true, environment: "Production", expiresAt: {toMillis: () => now - 1}},
+        "Production",
+        now
+      ),
+      false
+    );
+    assert.equal(
+      bindingGrantsEntitlement(
+        {active: true, environment: "Sandbox", expiresAt: {toMillis: () => now - 1}},
+        "Sandbox",
         now
       ),
       false
@@ -100,6 +126,7 @@ describe("entitlement policy", () => {
     assert.equal(
       bindingGrantsEntitlement(
         {active: true, environment: "Production", expiresAt: {toMillis: () => now + 1}},
+        "Production",
         now
       ),
       true

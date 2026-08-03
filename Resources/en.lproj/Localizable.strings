@@ -1776,3 +1776,14 @@
 "尚未設定伺服器" = "Server not configured";
 "已設定，尚未同步" = "Configured, not synced yet";
 "已設定" = "Configured";
+"你已經是 閱讀Pro" = "You already have Yuedu Pro";
+"你持有永久會員，所有 Pro 功能都已啟用" = "You own the lifetime plan — every Pro feature is unlocked";
+"所有 Pro 功能都已啟用" = "Every Pro feature is unlocked";
+"目前方案" = "Current plan";
+"訂閱中" = "Subscribed";
+"升級" = "Upgrade";
+"升級為永久會員" = "Upgrade to Lifetime";
+"升級後請記得取消月訂閱，否則會繼續扣款" = "Remember to cancel the monthly plan after upgrading, or it will keep billing.";
+"請取消月訂閱" = "Cancel your monthly plan";
+"你已擁有永久會員，月訂閱不會自動停止，需要你手動取消才不會繼續扣款。" = "You now own the lifetime plan. The monthly subscription does not stop on its own — cancel it to avoid further charges.";
+"前往取消訂閱" = "Manage subscriptions";

@@ -20,6 +20,8 @@ import {
   assertTransactionCanBind,
   bindingGrantsEntitlement,
   environmentName,
+  productionEnvironment,
+  sandboxEnvironment,
   transactionIsActive,
 } from "./entitlementPolicy.js";
 import {
@@ -218,31 +220,64 @@ function bindingData(
   };
 }
 
-async function recomputeEntitlement(uid: string): Promise<Record<string, unknown>> {
-  const snapshot = await db.collection("purchaseBindings").where("uid", "==", uid).get();
-  // Second line of defence behind `assertTransactionCanBind`: this also
-  // neutralises the Sandbox bindings already written before that check existed,
-  // so the stale TestFlight grants stop counting the moment this deploys — no
-  // data migration needed to stop the leak.
-  const activeBindings = snapshot.docs
-    .map((document) => document.data() as PurchaseBindingDocument)
-    .filter((binding) => bindingGrantsEntitlement(binding));
-  const productIds = [...new Set(activeBindings.map((binding) => binding.productId))].sort();
-  const expirationDates = activeBindings
+interface EnvironmentEntitlement {
+  isProActive: boolean;
+  productIds: string[];
+  expiresAt: Timestamp | null;
+}
+
+function summariseEnvironment(
+  bindings: PurchaseBindingDocument[],
+  environment: string
+): EnvironmentEntitlement {
+  const active = bindings.filter((binding) => bindingGrantsEntitlement(binding, environment));
+  const productIds = [...new Set(active.map((binding) => binding.productId))].sort();
+  const expirationDates = active
     .map((binding) => binding.expiresAt?.toMillis())
     .filter((value): value is number => value !== undefined);
-  const hasLifetime = activeBindings.some((binding) => binding.expiresAt === null);
-  const data = {
-    isProActive: activeBindings.length > 0,
-    productIds,
-    expiresAt: hasLifetime || expirationDates.length === 0 ? null : Timestamp.fromMillis(Math.max(...expirationDates)),
-    updatedAt: FieldValue.serverTimestamp(),
-  };
-  await db.collection("entitlements").doc(uid).set(data);
+  const hasLifetime = active.some((binding) => binding.expiresAt === null);
   return {
-    isProActive: data.isProActive,
+    isProActive: active.length > 0,
     productIds,
-    expiresAtMilliseconds: data.expiresAt?.toMillis() ?? null,
+    expiresAt: hasLifetime || expirationDates.length === 0 ?
+      null :
+      Timestamp.fromMillis(Math.max(...expirationDates)),
+  };
+}
+
+/**
+ * Recomputes both entitlements for a UID and returns the one belonging to
+ * `responseEnvironment` — the environment the caller's own purchase came from.
+ *
+ * The two are stored side by side rather than merged. A TestFlight (Sandbox)
+ * purchase is free, so counting it towards the App Store entitlement handed out
+ * Pro for nothing, and a Sandbox lifetime binding carries `expiresAt: null` so
+ * it never aged out either. Keeping them separate lets a tester buy and unlock
+ * TestFlight while the App Store build reads only `isProActive`.
+ */
+async function recomputeEntitlement(
+  uid: string,
+  responseEnvironment: string = productionEnvironment
+): Promise<Record<string, unknown>> {
+  const snapshot = await db.collection("purchaseBindings").where("uid", "==", uid).get();
+  const bindings = snapshot.docs.map((document) => document.data() as PurchaseBindingDocument);
+  const production = summariseEnvironment(bindings, productionEnvironment);
+  const sandbox = summariseEnvironment(bindings, sandboxEnvironment);
+  await db.collection("entitlements").doc(uid).set({
+    isProActive: production.isProActive,
+    productIds: production.productIds,
+    expiresAt: production.expiresAt,
+    sandboxIsProActive: sandbox.isProActive,
+    sandboxProductIds: sandbox.productIds,
+    sandboxExpiresAt: sandbox.expiresAt,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  const response = responseEnvironment === sandboxEnvironment ? sandbox : production;
+  return {
+    isProActive: response.isProActive,
+    productIds: response.productIds,
+    expiresAtMilliseconds: response.expiresAt?.toMillis() ?? null,
+    environment: responseEnvironment,
   };
 }
 
@@ -284,7 +319,10 @@ async function bindVerifiedTransaction(
     }
     firestoreTransaction.set(reference, data, {merge: true});
   });
-  return recomputeEntitlement(uid);
+  // Answer with the entitlement for the environment this purchase came from, so
+  // a TestFlight buyer is told they now have Pro rather than reading the App
+  // Store entitlement they legitimately don't have.
+  return recomputeEntitlement(uid, data.environment);
 }
 
 export const getSubscriptionAccountToken = onCall({region}, async (request) => {

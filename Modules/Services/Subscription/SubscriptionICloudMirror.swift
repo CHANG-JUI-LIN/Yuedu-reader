@@ -41,9 +41,17 @@ final class SubscriptionICloudMirror {
         static let updatedAt = "updatedAt"
     }
 
-    /// One record per iCloud account. A fixed name keeps every access a direct
-    /// fetch by ID, so the record type needs no queryable index.
-    private static let recordName = "pro_entitlement"
+    /// One record per iCloud account *per StoreKit environment*. A fixed name
+    /// keeps every access a direct fetch by ID, so the record type needs no
+    /// queryable index.
+    ///
+    /// The environment suffix keeps TestFlight and App Store entitlements apart:
+    /// the mirror lives in the user's iCloud account, which both builds share, so
+    /// a single record would have let a free TestFlight purchase unlock the App
+    /// Store build on the same Apple ID.
+    private static var recordName: String {
+        "pro_entitlement" + SubscriptionRuntimeEnvironment.storageSuffix
+    }
 
     private let container: CKContainer
     private let database: CKDatabase
@@ -69,7 +77,7 @@ final class SubscriptionICloudMirror {
     /// Every one of those means "nothing to say", never "not subscribed" — the
     /// caller must not revoke access on nil.
     func load() async -> CachedSubscriptionEntitlement? {
-        guard await isAvailable() else { return nil }
+        guard SubscriptionRuntimeEnvironment.isResolved, await isAvailable() else { return nil }
         do {
             let record = try await fetchRecord(recordID)
             guard let entitlement = entitlement(from: record) else { return nil }
@@ -99,7 +107,9 @@ final class SubscriptionICloudMirror {
         productIDs: Set<String>,
         signedTransaction: String?
     ) async {
-        guard lastWritten != entitlement, await isAvailable() else { return }
+        guard SubscriptionRuntimeEnvironment.isResolved,
+              lastWritten != entitlement,
+              await isAvailable() else { return }
         // Fetch-then-modify, never a bare new record: `CKDatabase.save` defaults
         // to `.ifServerRecordUnchanged`, so a freshly constructed record carries
         // no change tag and fails with `serverRecordChanged` once a mirror exists.

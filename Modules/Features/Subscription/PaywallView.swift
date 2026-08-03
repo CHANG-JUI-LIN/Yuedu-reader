@@ -20,6 +20,10 @@ struct PaywallView: View {
     /// Switches the sheet content to the thank-you page once a Pro
     /// entitlement becomes active (purchase, offer-code redemption, restore).
     @State private var showSuccess = false
+    /// Set when the buyer held a monthly subscription as this sheet opened, so
+    /// the thank-you page can tell them to cancel it. Apple cannot prorate
+    /// across product types, so the old subscription keeps billing until they do.
+    @State private var upgradedFromMonthly = false
 
     private let privacyPolicyURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/privacy.html")
     /// Apple's standard EULA. The custom paid-terms.html page is retired.
@@ -34,11 +38,25 @@ struct PaywallView: View {
             }
     }
 
+    /// What to show right now: a thank-you page after a purchase completes here,
+    /// an "already Pro" page for someone who has nothing left to buy, or the
+    /// offer itself.
+    private var presentation: PaywallPresentationState {
+        PaywallPresentationPolicy.state(
+            purchasedProductIDs: store.purchasedProductIDs,
+            lifetimeProductID: SubscriptionStore.ProProduct.lifetime.rawValue,
+            monthlyProductID: SubscriptionStore.ProProduct.monthly.rawValue,
+            isProActive: store.isProActive
+        )
+    }
+
     var body: some View {
         NavigationStack {
             Group {
                 if showSuccess {
-                    PurchaseSuccessView()
+                    PurchaseSuccessView(showsMonthlyCancellationHint: upgradedFromMonthly)
+                } else if presentation == .alreadyPro {
+                    alreadyProContent
                 } else {
                     paywallContent
                 }
@@ -101,6 +119,60 @@ struct PaywallView: View {
                 .accessibilityLabel(localized("關閉"))
             }
         }
+    }
+
+    /// The "you already have Pro" page. Deliberately not `PurchaseSuccessView`:
+    /// nothing was just bought, so celebrating a purchase would be misleading.
+    private var alreadyProContent: some View {
+        ScrollView {
+            VStack(spacing: DSSpacing.xl) {
+                VStack(spacing: DSSpacing.sm) {
+                    Image(systemName: "crown.fill")
+                        .font(DSFont.fixed(size: 56))
+                        .foregroundStyle(DSColor.accent)
+                        .accessibilityHidden(true)
+                    Text(localized("你已經是 閱讀Pro"))
+                        .font(DSFont.largeTitle.weight(.bold))
+                        .multilineTextAlignment(.center)
+                    Text(ownedPlanDescription)
+                        .font(DSFont.subheadline)
+                        .foregroundColor(DSColor.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.top, DSSpacing.lg)
+
+                featureList
+
+                Button {
+                    dismiss()
+                } label: {
+                    Text(localized("開始閱讀"))
+                        .font(DSFont.bodyBold)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(DSSpacing.lg)
+            .frame(maxWidth: DSLayout.readableFormWidth)
+            .frame(maxWidth: .infinity)
+        }
+        .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+        .pageBackgroundToolbar(for: .settings)
+        .navigationTitle(localized("閱讀Pro"))
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button { dismiss() } label: { Image(systemName: "xmark") }
+                    .accessibilityLabel(localized("關閉"))
+            }
+        }
+    }
+
+    private var ownedPlanDescription: String {
+        store.purchasedProductIDs.contains(SubscriptionStore.ProProduct.lifetime.rawValue)
+            ? localized("你持有永久會員，所有 Pro 功能都已啟用")
+            : localized("所有 Pro 功能都已啟用")
     }
 
     private func presentSuccessIfProIsReady() {
@@ -205,26 +277,35 @@ struct PaywallView: View {
 
     private func planOption(_ pro: SubscriptionStore.ProProduct) -> some View {
         let product = store.product(for: pro)
-        let isSelected = selectedProduct == pro
+        // The plan they already pay for is shown as their current one, never as
+        // something to buy again.
+        let isCurrentPlan = presentation == .upgradeFromMonthly && pro == .monthly
+        let isSelected = selectedProduct == pro && !isCurrentPlan
         return Button {
             selectedProduct = pro
         } label: {
             HStack(spacing: DSSpacing.md) {
-                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(isSelected ? DSColor.accent : DSColor.textSecondary)
+                Image(systemName: planMarkSymbol(isCurrentPlan: isCurrentPlan, isSelected: isSelected))
+                    .foregroundStyle(isCurrentPlan ? DSColor.success : (isSelected ? DSColor.accent : DSColor.textSecondary))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: DSSpacing.xs) {
                         Text(planTitle(pro))
                             .font(DSFont.bodyBold)
                             .foregroundColor(DSColor.textPrimary)
-                        if pro == .lifetime {
-                            Text(localized("最超值"))
+                        if isCurrentPlan {
+                            Text(localized("目前方案"))
+                                .font(DSFont.caption2)
+                                .foregroundColor(DSColor.success)
+                        } else if pro == .lifetime {
+                            Text(presentation == .upgradeFromMonthly
+                                 ? localized("升級")
+                                 : localized("最超值"))
                                 .font(DSFont.caption2)
                                 .foregroundColor(DSColor.accent)
                         }
                     }
-                    Text(planDescription(pro))
+                    Text(isCurrentPlan ? localized("訂閱中") : planDescription(pro))
                         .font(DSFont.caption2)
                         .foregroundColor(DSColor.textSecondary)
                 }
@@ -232,7 +313,7 @@ struct PaywallView: View {
                 if let product {
                     Text(priceText(for: pro, product: product))
                         .font(DSFont.bodyBold)
-                        .foregroundColor(DSColor.textPrimary)
+                        .foregroundColor(isCurrentPlan ? DSColor.textSecondary : DSColor.textPrimary)
                 } else {
                     ProgressView()
                         .controlSize(.small)
@@ -247,7 +328,21 @@ struct PaywallView: View {
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
         }
         .buttonStyle(.plain)
-        .disabled(product == nil)
+        .disabled(product == nil || isCurrentPlan)
+    }
+
+    private var subscribeButtonTitle: String {
+        if presentation == .upgradeFromMonthly, selectedProduct == .lifetime {
+            return localized("升級為永久會員")
+        }
+        return selectedProduct == .lifetime
+            ? localized("購買 閱讀Pro")
+            : localized("訂閱 閱讀Pro")
+    }
+
+    private func planMarkSymbol(isCurrentPlan: Bool, isSelected: Bool) -> String {
+        if isCurrentPlan { return "checkmark.circle.fill" }
+        return isSelected ? "largecircle.fill.circle" : "circle"
     }
 
     private func planTitle(_ pro: SubscriptionStore.ProProduct) -> String {
@@ -277,15 +372,14 @@ struct PaywallView: View {
         VStack(spacing: DSSpacing.sm) {
             Button {
                 guard let product = store.product(for: selectedProduct) else { return }
+                upgradedFromMonthly = presentation == .upgradeFromMonthly
                 beginPurchase(product)
             } label: {
                 Group {
                     if store.isPurchasing {
                         ProgressView().tint(DSColor.textOnAccent)
                     } else {
-                        Text(selectedProduct == .lifetime
-                             ? localized("購買 閱讀Pro")
-                             : localized("訂閱 閱讀Pro"))
+                        Text(subscribeButtonTitle)
                             .font(DSFont.bodyBold)
                     }
                 }
@@ -294,6 +388,16 @@ struct PaywallView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(store.isPurchasing || store.product(for: selectedProduct) == nil)
+
+            if presentation == .upgradeFromMonthly, selectedProduct == .lifetime {
+                // Apple prorates only within a subscription group. Lifetime is a
+                // non-consumable, so the monthly subscription keeps billing until
+                // the user cancels it themselves — say so before they pay.
+                Text(localized("升級後請記得取消月訂閱，否則會繼續扣款"))
+                    .font(DSFont.caption)
+                    .foregroundColor(DSColor.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
 
             if let error = store.lastErrorMessage {
                 Text(error)

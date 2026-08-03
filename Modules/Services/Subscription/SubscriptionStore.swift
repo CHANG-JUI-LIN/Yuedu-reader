@@ -46,6 +46,36 @@ final class SubscriptionStore: ObservableObject {
         #endif
     }()
 
+    /// Resolves and persists the running environment from `AppTransaction`. Safe
+    /// to call repeatedly; it touches `AppTransaction` only until it succeeds once.
+    private func resolveRunningEnvironment() async {
+        guard SubscriptionRuntimeEnvironment.current == nil else { return }
+        do {
+            let result = try await AppTransaction.shared
+            guard case .verified(let appTransaction) = result else { return }
+            SubscriptionRuntimeEnvironment.remember(appTransaction.environment)
+            Self.subscriptionLog.notice(
+                "Running environment resolved: \(appTransaction.environment.rawValue, privacy: .public)"
+            )
+        } catch {
+            // Left unresolved rather than guessed. Unresolved means StoreKit's own
+            // separation stays in charge, which is safe; guessing wrong would file
+            // a TestFlight entitlement under the App Store slot and re-create the
+            // exact leak this is meant to close.
+            Self.subscriptionLog.error(
+                "AppTransaction unavailable: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    private func acceptsTransaction(_ environment: AppStore.Environment) -> Bool {
+        SubscriptionEntitlementFilter.shouldAccept(
+            environment: environment,
+            runningEnvironment: SubscriptionRuntimeEnvironment.current,
+            isDebugBuild: Self.isDebugBuild
+        )
+    }
+
     /// The product identifiers configured in App Store Connect and the local
     /// `.storekit` file. Order here is the display order on the paywall.
     enum ProProduct: String, CaseIterable {
@@ -117,6 +147,9 @@ final class SubscriptionStore: ObservableObject {
         updatesListenerTask = listenForTransactions()
         storefrontUpdatesListenerTask = listenForStorefrontChanges()
         Task {
+            // Before anything reads an environment-scoped store: the suffix that
+            // separates TestFlight from App Store state depends on it.
+            await resolveRunningEnvironment()
             seedAccountEntitlementFromCache()
             await refreshEntitlements()
             await refreshICloudEntitlement()
@@ -232,13 +265,11 @@ final class SubscriptionStore: ObservableObject {
                 let transaction = try checkVerified(verification)
                 // The environment filter belongs here too, not just in
                 // `refreshEntitlements`. This was the one path that reached
-                // `bind` unfiltered, so a TestFlight (Sandbox) purchase — which
-                // costs nothing — got bound to the Yuedu account and then
-                // unlocked Pro on the App Store build through `entitlements/{uid}`.
-                if accountToken != nil, SubscriptionEntitlementFilter.shouldAccept(
-                    environment: transaction.environment,
-                    isDebugBuild: Self.isDebugBuild
-                ) {
+                // `bind` unfiltered. It stays filtered by *this build's*
+                // environment: a TestFlight purchase binds and unlocks TestFlight,
+                // an App Store purchase binds and unlocks the App Store build, and
+                // neither leaks into the other.
+                if accountToken != nil, acceptsTransaction(transaction.environment) {
                     do {
                         accountIsProActive = try await accountService.bind(transaction: verification)
                     } catch {
@@ -328,6 +359,11 @@ final class SubscriptionStore: ObservableObject {
 
     /// Recomputes the entitlement from `Transaction.currentEntitlements`.
     func refreshEntitlements() async {
+        // Every entitlement path funnels through here, including purchase and the
+        // `Transaction.updates` listener. The environment must be resolved before
+        // `mirrorToICloud` writes, or an unresolved suffix would file a TestFlight
+        // entitlement in the App Store slot.
+        await resolveRunningEnvironment()
         var owned: Set<String> = []
         var revokedCount = 0
         var signedTransaction: String?
@@ -335,10 +371,7 @@ final class SubscriptionStore: ObservableObject {
         var hasUnexpiringProduct = false
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
-            guard SubscriptionEntitlementFilter.shouldAccept(
-                environment: transaction.environment,
-                isDebugBuild: Self.isDebugBuild
-            ) else { continue }
+            guard acceptsTransaction(transaction.environment) else { continue }
             if transaction.revocationDate == nil {
                 owned.insert(transaction.productID)
                 if ProProduct(rawValue: transaction.productID) != nil {
@@ -371,6 +404,7 @@ final class SubscriptionStore: ObservableObject {
 
     /// Call only after Firebase has been configured (app active/auth callbacks).
     func refreshAllEntitlements() async {
+        await resolveRunningEnvironment()
         seedAccountEntitlementFromCache()
         await refreshEntitlements()
         await refreshICloudEntitlement()
@@ -459,6 +493,10 @@ final class SubscriptionStore: ObservableObject {
             recomputeEntitlement()
             return
         }
+        // Fires from the auth listener, which can beat `init`'s resolve. Both the
+        // keychain seed below and the Firestore read pick their storage slot and
+        // field names from the environment.
+        await resolveRunningEnvironment()
         // Verified state first, network second: sign-in restore on a launch behind
         // an unreachable Firebase must not present a paid account as unsubscribed.
         seedAccountEntitlementFromCache()
@@ -485,10 +523,7 @@ final class SubscriptionStore: ObservableObject {
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result),
                   ProProduct(rawValue: transaction.productID) != nil,
-                  SubscriptionEntitlementFilter.shouldAccept(
-                    environment: transaction.environment,
-                    isDebugBuild: Self.isDebugBuild
-                  ) else { continue }
+                  acceptsTransaction(transaction.environment) else { continue }
             do {
                 accountIsProActive = try await accountService.bind(transaction: result)
                 permanentBindFailureProductIDs.remove(transaction.productID)

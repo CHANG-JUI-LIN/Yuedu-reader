@@ -11,12 +11,21 @@ struct CachedSubscriptionEntitlement: Codable, Equatable {
     }
 }
 
-/// Last server-verified account entitlement, isolated by Firebase UID.
+/// Last server-verified account entitlement, isolated by Firebase UID *and* by
+/// StoreKit environment.
+///
 /// This keeps previously verified access available when Firebase is unreachable.
+/// The environment suffix matters because keychain items outlive the app: without
+/// it, a TestFlight install's Sandbox entitlement was still present when an App
+/// Store build was installed over the top, and was read straight back as Pro.
 enum SubscriptionEntitlementCache {
-    private static let service = "com.zhangruilin.yuedureader.subscriptionEntitlement"
+    private static var service: String {
+        "com.zhangruilin.yuedureader.subscriptionEntitlement"
+            + SubscriptionRuntimeEnvironment.storageSuffix
+    }
 
     static func load(uid: String) -> CachedSubscriptionEntitlement? {
+        guard SubscriptionRuntimeEnvironment.isResolved else { return nil }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -32,7 +41,8 @@ enum SubscriptionEntitlementCache {
 
     @discardableResult
     static func save(_ entitlement: CachedSubscriptionEntitlement, uid: String) -> Bool {
-        guard let data = try? JSONEncoder().encode(entitlement) else { return false }
+        guard SubscriptionRuntimeEnvironment.isResolved,
+              let data = try? JSONEncoder().encode(entitlement) else { return false }
         let baseQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

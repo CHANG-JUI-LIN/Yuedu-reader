@@ -86,6 +86,10 @@ final class SubscriptionAccountService {
     /// the same signed-in UID instead of revoking valid access.
     func refreshEntitlement() async -> Bool? {
         guard let uid = Auth.auth().currentUser?.uid else { return false }
+        // Without a resolved environment there is no correct field to read:
+        // defaulting to `isProActive` would hand the App Store entitlement to a
+        // TestFlight build. Nothing to say beats saying the wrong thing.
+        guard SubscriptionRuntimeEnvironment.isResolved else { return nil }
         do {
             // `.server`, not the default source: the default attempts the server
             // and silently falls back to Firestore's own offline cache, so an
@@ -113,9 +117,14 @@ final class SubscriptionAccountService {
                 )
                 return nil
             }
+            // The document holds both environments side by side; read only this
+            // build's. Reading `isProActive` unconditionally is what let a free
+            // TestFlight purchase unlock the App Store build for anyone signed
+            // into the same Yuedu account — the leak that signing out cleared.
+            let fields = SubscriptionRuntimeEnvironment.entitlementFieldNames
             let entitlement = CachedSubscriptionEntitlement(
-                isProActive: data["isProActive"] as? Bool == true,
-                expiresAt: (data["expiresAt"] as? Timestamp)?.dateValue()
+                isProActive: data[fields.isActive] as? Bool == true,
+                expiresAt: (data[fields.expiresAt] as? Timestamp)?.dateValue()
             )
             SubscriptionEntitlementCache.save(entitlement, uid: uid)
             subscriptionAccountLog.notice(

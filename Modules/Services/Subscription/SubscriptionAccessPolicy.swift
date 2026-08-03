@@ -20,6 +20,36 @@ enum SubscriptionAccessPolicy {
     }
 }
 
+enum PaywallPresentationState: Equatable {
+    /// Nothing owned yet: the normal offer.
+    case offer
+    /// An active monthly subscription. Lifetime is still sellable, framed as an
+    /// upgrade, and monthly must not be offered again.
+    case upgradeFromMonthly
+    /// Lifetime owned, or Pro arriving from the Yuedu account / iCloud mirror
+    /// with no local transaction to identify the plan. Either way there is
+    /// nothing left to sell, so showing a paywall would be wrong.
+    case alreadyPro
+}
+
+enum PaywallPresentationPolicy {
+    /// What the paywall should show on open.
+    ///
+    /// Opening straight onto the purchase options for someone who already paid —
+    /// especially a lifetime buyer — reads as being asked to pay twice, so
+    /// ownership is resolved before anything is offered.
+    static func state(
+        purchasedProductIDs: Set<String>,
+        lifetimeProductID: String,
+        monthlyProductID: String,
+        isProActive: Bool
+    ) -> PaywallPresentationState {
+        if purchasedProductIDs.contains(lifetimeProductID) { return .alreadyPro }
+        if purchasedProductIDs.contains(monthlyProductID) { return .upgradeFromMonthly }
+        return isProActive ? .alreadyPro : .offer
+    }
+}
+
 enum SubscriptionEntitlementRefreshPolicy {
     /// Whether a server response is authoritative enough to overwrite the local
     /// cache. Only an existing document counts: a missing one means the backend
@@ -89,21 +119,82 @@ enum SubscriptionICloudMirrorPolicy {
     }
 }
 
+/// The environment this build itself runs in, as reported by Apple's
+/// `AppTransaction` (the app's own receipt, not any purchase): a TestFlight build
+/// reports `.sandbox`, an App Store build `.production`.
+///
+/// Not actor-isolated, because the keychain cache and the CloudKit mirror both
+/// need the storage suffix from outside the main actor.
+enum SubscriptionRuntimeEnvironment {
+    private static let storageKey = "subscription_running_environment"
+
+    /// `nil` until `AppTransaction` has been read once. Persisted after that: the
+    /// value cannot change for an installed build, so later launches resolve it
+    /// synchronously and offline.
+    static var current: AppStore.Environment? {
+        UserDefaults.standard.string(forKey: storageKey)
+            .map(AppStore.Environment.init(rawValue:))
+    }
+
+    static func remember(_ environment: AppStore.Environment) {
+        UserDefaults.standard.set(environment.rawValue, forKey: storageKey)
+    }
+
+    /// Gate for every environment-scoped store. Until the environment is known
+    /// there is no correct slot to use, and defaulting to the Production one
+    /// would let a TestFlight build file its free entitlement where the App Store
+    /// build reads it — the exact leak the suffix exists to close. Skipping the
+    /// cache entirely is safe: StoreKit still reports the live entitlement.
+    static var isResolved: Bool { current != nil }
+
+    /// Suffix that keeps each environment's entitlement state in its own storage
+    /// slot, for the two stores that outlive the app: the keychain cache and the
+    /// CloudKit mirror. Both survive one install replacing another, so a single
+    /// slot let a TestFlight install's Pro state be read straight back by an App
+    /// Store build put on top of it. Production keeps the bare key so entitlement
+    /// state already cached by paying users survives this change.
+    static var storageSuffix: String {
+        guard let current, current != .production else { return "" }
+        return ".\(current.rawValue.lowercased())"
+    }
+
+    /// Firestore field names on `entitlements/{uid}` for this environment. The
+    /// document carries both environments side by side so one account can hold a
+    /// TestFlight entitlement and an App Store one independently.
+    static var entitlementFieldNames: (isActive: String, expiresAt: String) {
+        current == .sandbox ?
+            ("sandboxIsProActive", "sandboxExpiresAt") :
+            ("isProActive", "expiresAt")
+    }
+}
+
 enum SubscriptionEntitlementFilter {
-    /// Whether a transaction from the given StoreKit environment counts as an
-    /// entitlement. Sandbox transactions are accepted only by DEBUG builds
-    /// used for local StoreKit testing; Release/TestFlight/App Store builds
-    /// never count a sandbox transaction, so stale TestFlight purchases
-    /// lingering in the device's shared StoreKit database cannot unlock Pro
-    /// in the production app.
-    static func shouldAccept(environment: AppStore.Environment, isDebugBuild: Bool) -> Bool {
-        switch environment {
-        case .sandbox:
-            return isDebugBuild
-        case .production, .xcode:
-            return true
-        default:
-            return false
-        }
+    /// Whether a transaction counts as an entitlement for *this* build.
+    ///
+    /// StoreKit already separates the two: a TestFlight build's
+    /// `Transaction.currentEntitlements` yields Sandbox transactions, an App
+    /// Store build's yields Production ones. So this is defence in depth, not the
+    /// primary boundary — the entitlement that actually leaked across builds was
+    /// the account one in `entitlements/{uid}`, which is why signing out was what
+    /// cleared it.
+    ///
+    /// Critically this compares against the *running* environment rather than
+    /// rejecting Sandbox outright. Rejecting it meant a TestFlight build threw
+    /// away the purchase it had just made, so neither the lifetime nor the
+    /// monthly product ever unlocked there.
+    static func shouldAccept(
+        environment: AppStore.Environment,
+        runningEnvironment: AppStore.Environment?,
+        isDebugBuild: Bool
+    ) -> Bool {
+        // A local Xcode run buys either through a StoreKit configuration file
+        // (.xcode) or a sandbox Apple Account (.sandbox); accept both so testing
+        // is not blocked by which one the developer picked.
+        if isDebugBuild { return true }
+        // Environment not resolved yet (first launch, `AppTransaction` still in
+        // flight): trust StoreKit's own separation rather than discarding a real
+        // purchase. The account path stays gated on a resolved environment.
+        guard let runningEnvironment else { return true }
+        return environment == runningEnvironment
     }
 }

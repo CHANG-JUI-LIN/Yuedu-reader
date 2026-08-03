@@ -69,6 +69,50 @@ struct SubscriptionAccessPolicyTests {
         #expect(SubscriptionEntitlementRefreshPolicy.shouldApplyServerValue(documentExists: true))
     }
 
+    private static let lifetimeID = "com.zhangruilin.yuedureader.pro.lifetime"
+    private static let monthlyID = "com.zhangruilin.yuedureader.pro.monthly"
+
+    private func paywallState(
+        purchased: Set<String>,
+        isProActive: Bool
+    ) -> PaywallPresentationState {
+        PaywallPresentationPolicy.state(
+            purchasedProductIDs: purchased,
+            lifetimeProductID: Self.lifetimeID,
+            monthlyProductID: Self.monthlyID,
+            isProActive: isProActive
+        )
+    }
+
+    @Test("a lifetime owner is never shown the purchase options again")
+    func lifetimeOwnerSeesNoPaywall() {
+        // Opening straight onto the plan picker reads as being asked to pay twice.
+        #expect(paywallState(purchased: [Self.lifetimeID], isProActive: true) == .alreadyPro)
+        // Even holding both, lifetime wins: there is nothing left to sell.
+        #expect(
+            paywallState(purchased: [Self.lifetimeID, Self.monthlyID], isProActive: true)
+                == .alreadyPro
+        )
+    }
+
+    @Test("a monthly subscriber is offered the lifetime upgrade")
+    func monthlySubscriberSeesUpgrade() {
+        #expect(paywallState(purchased: [Self.monthlyID], isProActive: true) == .upgradeFromMonthly)
+    }
+
+    @Test("Pro without a local transaction still hides the paywall")
+    func accountGrantedProHidesPaywall() {
+        // Pro arriving from the Yuedu account or the iCloud mirror — bought on
+        // another Apple Account — leaves no local transaction to name the plan,
+        // but there is still nothing to sell.
+        #expect(paywallState(purchased: [], isProActive: true) == .alreadyPro)
+    }
+
+    @Test("a free user sees the normal offer")
+    func freeUserSeesOffer() {
+        #expect(paywallState(purchased: [], isProActive: false) == .offer)
+    }
+
     @Test("verified cache restores account access before the network answers")
     func cachedEntitlementSeedsColdLaunch() {
         #expect(SubscriptionEntitlementSeedPolicy.shouldSeed(current: false, cached: true))
