@@ -386,6 +386,7 @@
 "朗讀失敗：%@" = "Narration failed: %@";
 "第 %d 段語音無法下載：%@" = "Audio segment %d could not be downloaded: %@";
 "第 %d 段語音無法播放" = "Audio segment %d could not be played";
+"系統語音無法播放，請到設定下載對應語音後重試" = "The system voice could not play. Download the matching voice in Settings and try again.";
 "語音朗讀設定" = "TTS Settings";
 "說明" = "Description";
 "調試規則" = "Debug Rule";

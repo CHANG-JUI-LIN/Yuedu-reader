@@ -527,7 +527,7 @@ private struct ReaderCustomBackgroundImportAlert: Identifiable {
     let message: String
 }
 
-/// A pushed choice page avoids presenting a `confirmationDialog` above the
+/// A pushed choice page avoids presenting another modal choice surface above the
 /// quick-settings sheet, which otherwise produces an overlapping popover on
 /// the immersive reader surface.
 private struct ReaderCustomBackgroundOptionsView: View {

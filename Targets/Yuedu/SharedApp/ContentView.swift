@@ -191,7 +191,21 @@ struct ContentView: View {
 
     /// The root tab bar is driven by `GlobalSettings` so users can hide pages
     /// and customize tab icon assets without changing the feature screens.
+    @ViewBuilder
     private var tabView: some View {
+        if #available(iOS 18.0, *) {
+            visibleTabsTabView
+        } else {
+            // iOS 17 invalidates a NavigationStack inside TabView when a sibling
+            // tab is removed while that stack is visible. Keep every tab's slot in
+            // the hierarchy and use EmptyView for hidden tabs; without `.tabItem`
+            // the placeholder reserves the slot without exposing a tab-bar item.
+            // Remove this compatibility path when iOS 17 support is dropped.
+            stableSlotsTabView
+        }
+    }
+
+    private var visibleTabsTabView: some View {
         TabView(selection: $selectedRootTab) {
             ForEach(gs.visibleRootTabs) { tab in
                 rootTabContent(for: tab)
@@ -204,6 +218,27 @@ struct ContentView: View {
                         rootTabItemLabel(for: tab)
                     }
                     .badge(tab == .rss && rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
+            }
+        }
+    }
+
+    private var stableSlotsTabView: some View {
+        TabView(selection: $selectedRootTab) {
+            ForEach(RootTabItem.allCases) { tab in
+                if gs.isRootTabVisible(tab) {
+                    rootTabContent(for: tab)
+                        .modifier(ThemedSurfaceBackground(
+                            scope: AppearancePageBackgroundScope(rawValue: tab.rawValue) ?? .global,
+                            isProActive: subscriptionStore.hasAccess(.readerThemePacks)
+                        ))
+                        .tag(tab)
+                        .tabItem {
+                            rootTabItemLabel(for: tab)
+                        }
+                        .badge(tab == .rss && rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
+                } else {
+                    EmptyView()
+                }
             }
         }
     }
@@ -246,9 +281,14 @@ struct ContentView: View {
             ),
             settings: gs
         ) {
-            Image(uiImage: renderedIcon.image)
-                .renderingMode(renderedIcon.isTemplate ? .template : .original)
-            if !shouldHideRootTabLabels {
+            if shouldHideRootTabLabels {
+                iconOnlyRootTabLabel(titleKey: tab.titleKey) {
+                    Image(uiImage: renderedIcon.image)
+                        .renderingMode(renderedIcon.isTemplate ? .template : .original)
+                }
+            } else {
+                Image(uiImage: renderedIcon.image)
+                    .renderingMode(renderedIcon.isTemplate ? .template : .original)
                 Text(localized(tab.titleKey))
             }
         } else if usesCustomRootTabIconSize {
@@ -256,16 +296,38 @@ struct ContentView: View {
                 for: tab,
                 pointSize: CGFloat(gs.rootTabIconSize)
             )
-            Image(uiImage: renderedIcon.image)
-                .renderingMode(.template)
-            if !shouldHideRootTabLabels {
+            if shouldHideRootTabLabels {
+                iconOnlyRootTabLabel(titleKey: tab.titleKey) {
+                    Image(uiImage: renderedIcon.image)
+                        .renderingMode(.template)
+                }
+            } else {
+                Image(uiImage: renderedIcon.image)
+                    .renderingMode(.template)
                 Text(localized(tab.titleKey))
             }
         } else if shouldHideRootTabLabels {
-            Image(systemName: tab.defaultSystemImage)
+            Label(localized(tab.titleKey), systemImage: tab.defaultSystemImage)
+                .labelStyle(.iconOnly)
         } else {
             Label(localized(tab.titleKey), systemImage: tab.defaultSystemImage)
         }
+    }
+
+    /// Keep the semantic tab title for VoiceOver while asking SwiftUI for its
+    /// supported icon-only layout. A bare Image is treated as the image slot of
+    /// the normal image-plus-title tab layout on iOS 17, which leaves it too high.
+    @ViewBuilder
+    private func iconOnlyRootTabLabel<Icon: View>(
+        titleKey: String,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
+        Label {
+            Text(localized(titleKey))
+        } icon: {
+            icon()
+        }
+        .labelStyle(.iconOnly)
     }
 }
 

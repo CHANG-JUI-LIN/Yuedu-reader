@@ -23,6 +23,7 @@ enum TTSNextUnitOutcome {
 enum TTSPlaybackError: LocalizedError {
     case chunkUnavailable(index: Int, underlying: Error)
     case playbackFailed(index: Int)
+    case systemVoiceUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -34,6 +35,8 @@ enum TTSPlaybackError: LocalizedError {
             )
         case let .playbackFailed(index):
             return String(format: localized("第 %d 段語音無法播放"), index + 1)
+        case .systemVoiceUnavailable:
+            return localized("系統語音無法播放，請到設定下載對應語音後重試")
         }
     }
 }

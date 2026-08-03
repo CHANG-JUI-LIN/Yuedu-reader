@@ -63,10 +63,21 @@ final class CacheManagementViewModel: ObservableObject {
 }
 
 struct CacheManagementView: View {
+    private enum CacheConfirmation: Identifiable {
+        case category(CacheCategory)
+        case all
+
+        var id: String {
+            switch self {
+            case .category(let category): return "category-\(category.id)"
+            case .all: return "all"
+            }
+        }
+    }
+
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: CacheManagementViewModel
-    @State private var pendingCategory: CacheCategory?
-    @State private var showClearAllConfirmation = false
+    @State private var pendingConfirmation: CacheConfirmation?
     @State private var showError = false
 
     init(service: CacheManagementService = CacheManagementService()) {
@@ -111,7 +122,7 @@ struct CacheManagementView: View {
 
                 Section {
                     Button {
-                        showClearAllConfirmation = true
+                        pendingConfirmation = .all
                     } label: {
                         HStack {
                             Spacer()
@@ -146,34 +157,33 @@ struct CacheManagementView: View {
             .refreshable {
                 await viewModel.refresh()
             }
-            .alert(
-                localized("清除快取？"),
-                isPresented: Binding(
-                    get: { pendingCategory != nil },
-                    set: { if !$0 { pendingCategory = nil } }
-                ),
-                presenting: pendingCategory
-            ) { category in
-                Button(localized(category.clearTitleKey), role: .destructive) {
-                    pendingCategory = nil
-                    Task { await viewModel.clear(category) }
+            .alert(item: $pendingConfirmation) { confirmation in
+                switch confirmation {
+                case .category(let category):
+                    Alert(
+                        title: Text(localized("清除快取？")),
+                        message: Text(localized(category.detailKey)),
+                        primaryButton: .destructive(Text(localized(category.clearTitleKey))) {
+                            pendingConfirmation = nil
+                            Task { await viewModel.clear(category) }
+                        },
+                        secondaryButton: .cancel(Text(localized("取消"))) {
+                            pendingConfirmation = nil
+                        }
+                    )
+                case .all:
+                    Alert(
+                        title: Text(localized("清除全部快取？")),
+                        message: Text(localized("將刪除所有可重新下載的快取內容。書籍、設定與備份同步資料不會受影響。")),
+                        primaryButton: .destructive(Text(localized("清除全部快取"))) {
+                            pendingConfirmation = nil
+                            Task { await viewModel.clearAll() }
+                        },
+                        secondaryButton: .cancel(Text(localized("取消"))) {
+                            pendingConfirmation = nil
+                        }
+                    )
                 }
-                Button(localized("取消"), role: .cancel) {
-                    pendingCategory = nil
-                }
-            } message: { category in
-                Text(localized(category.detailKey))
-            }
-            .alert(
-                localized("清除全部快取？"),
-                isPresented: $showClearAllConfirmation
-            ) {
-                Button(localized("清除全部快取"), role: .destructive) {
-                    Task { await viewModel.clearAll() }
-                }
-                Button(localized("取消"), role: .cancel) {}
-            } message: {
-                Text(localized("將刪除所有可重新下載的快取內容。書籍、設定與備份同步資料不會受影響。"))
             }
             .onChange(of: viewModel.errorMessage) { _, message in
                 showError = message != nil
@@ -199,7 +209,7 @@ struct CacheManagementView: View {
             }
 
             Button {
-                pendingCategory = category
+                pendingConfirmation = .category(category)
             } label: {
                 Text(localized(category.clearTitleKey))
                     .foregroundColor(DSColor.textPrimary)
